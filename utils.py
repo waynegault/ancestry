@@ -101,7 +101,7 @@ def log_action_configuration(config_dict: dict[str, Any]) -> None:
         # Output: Configuration: APP_MODE=dry_run, START_PAGE=1, MAX_PAGES=2, BATCH_SIZE=10, RATE_LIMIT_DELAY=2.50s
     """
     config_str = ", ".join([f"{k}={v}" for k, v in config_dict.items()])
-    logger.info(f"Configuration: {config_str}")
+    logger.info(f"Config: {config_str}")
 
 
 def log_starting_position(description: str, details: Optional[dict[str, Any]] = None) -> None:
@@ -121,7 +121,7 @@ def log_starting_position(description: str, details: Optional[dict[str, Any]] = 
     logger.info(description)
     if details:
         for key, value in details.items():
-            logger.info(f"{key}: {value}")
+            logger.info(f"{key}: {value}\n")
 
 
 def log_cumulative_counts(counts: dict[str, int], prefix: str = "Cumulative") -> None:

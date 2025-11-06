@@ -198,7 +198,7 @@ class LMStudioManager:
         if self.is_process_running():
             is_ready, error_msg = self.is_api_ready(timeout=5)
             if is_ready:
-                logger.info("✅ LM Studio already running and API ready")
+                logger.info("✅ LM Studio and API OK")
                 return True, None
             logger.debug(f"LM Studio running but API not ready: {error_msg}")
 

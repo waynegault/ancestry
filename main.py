@@ -78,14 +78,13 @@ def _log_configuration_summary(config: Any) -> None:
     # import os
     # os.system('cls' if os.name == 'nt' else 'clear')
 
-    logger.info(" CONFIGURATION ".center(80, "="))
+    print(" CONFIG ".center(80, "="))
     logger.info(f"  MAX_PAGES: {config.api.max_pages}")
     logger.info(f"  BATCH_SIZE: {config.batch_size}")
     logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
     logger.info(f"  MAX_INBOX: {config.max_inbox}")
     logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
     logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
-    logger.info("=" * 80)
     print("")  # Blank line after configuration
 
 
@@ -2163,12 +2162,12 @@ def _check_startup_status(session_manager: SessionManager) -> None:
     # Check database connection
     try:
         if session_manager.db_manager and session_manager.db_manager.ensure_ready():
-            logger.info("✅ Database connection ready")
+            logger.info("✅ Database connection OK")
         else:
             logger.warning("⚠️ Database connection not available")
     except Exception as e:
         logger.warning(f"⚠️ Database connection check failed: {e}")
-    
+
     # CRITICAL: Proactive cookie sync during warmup
     # Ensures fresh cookies for ALL actions before menu display
     # Prevents 303 redirects from stale cookies across all actions
@@ -2179,7 +2178,7 @@ def _check_startup_status(session_manager: SessionManager) -> None:
                 session_manager.browser_manager, session_manager=session_manager
             )
             if synced:
-                logger.info("✅ Cookies refreshed for all actions")
+                logger.info("✅ Cookies refreshed and OK")
             else:
                 logger.debug("Cookie sync returned False (may be normal)")
     except Exception as cookie_err:
@@ -2246,7 +2245,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
             logger.warning(f"⚠️ {error_msg}")
             logger.warning("   Please load the model in LM Studio before using AI features")
             return False
-        logger.info(f"✅ Local LLM ready: {actual_model_name}")
+        logger.info(f"✅ Local LLM {actual_model_name} OK")
         return True
     except Exception as e:
         logger.warning(f"⚠️ Could not validate Local LLM: {e}")
@@ -2301,6 +2300,19 @@ def _validate_ai_provider_on_startup() -> None:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
 
 
+def _display_tree_owner(session_manager: SessionManager) -> None:
+    """Display tree owner name at the end of startup checks."""
+    try:
+        # Get tree owner if available - this will log it via session_manager
+        if session_manager and session_manager.api_manager:
+            owner_name = session_manager.api_manager.tree_owner_name
+            if owner_name:
+                print("")
+                logger.info(f"Tree owner name: {owner_name}\n")
+    except Exception:
+        pass  # Silently ignore - not critical for startup
+
+
 def _initialize_application() -> "SessionManager":
     """Initialize application logging and configuration.
 
@@ -2308,8 +2320,34 @@ def _initialize_application() -> "SessionManager":
         SessionManager instance
     """
     print("")
+
+    # Clear log file before initializing logging (uses .env settings)
+    try:
+        log_dir = Path(os.getenv("LOG_DIR", "Logs"))
+        if not log_dir.is_absolute():
+            log_dir = (Path(__file__).parent / log_dir).resolve()
+        log_file = os.getenv("LOG_FILE", "app.log")
+        log_path = log_dir / log_file
+        if log_path.exists():
+            log_path.write_text("", encoding="utf-8")
+    except Exception:
+        pass  # Silently ignore if can't clear
+
     setup_logging()
     validate_action_config()
+
+    print(" Checks ".center(80, "="))
+
+    # Run Chrome/ChromeDriver diagnostics before any browser automation (silent mode)
+    try:
+        from diagnose_chrome import run_silent_diagnostic
+        success, message = run_silent_diagnostic()
+        if success:
+            logger.info("✅ Chrome/ChromeDriver OK")
+        else:
+            logger.warning(f"⚠️  Chrome diagnostic issue: {message}")
+    except Exception as diag_error:
+        logger.warning(f"Chrome diagnostics failed to run: {diag_error}")
 
     if config is None:
         _print_config_error_message()
@@ -2331,7 +2369,7 @@ def _pre_authenticate_session() -> None:
             action_name="Main Menu Initialization",
             skip_csrf=False
         )
-        logger.info("✅ Session authenticated successfully")
+        logger.info("✅ Session authenticated OK")
     except Exception as e:
         logger.warning(f"Session authentication failed (will authenticate during action): {e}")
 
@@ -2343,7 +2381,7 @@ def _pre_authenticate_ms_graph() -> None:
         logger.debug("Attempting MS Graph authentication at startup...")
         ms_token = acquire_token_device_flow()
         if ms_token:
-            logger.info("✅ MS Graph authenticated successfully")
+            logger.info("✅ MS Graph authenticated OK")
         else:
             logger.debug("MS Graph authentication skipped or failed (will retry during Action 9 if needed)")
     except Exception as e:
@@ -2356,7 +2394,6 @@ def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
     Args:
         session_manager: SessionManager instance to clean up
     """
-    logger.info("Performing final cleanup...")
 
     if session_manager is not None:
         try:
@@ -2369,8 +2406,8 @@ def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
         except Exception as final_close_e:
             logger.debug(f"Cleanup error (non-critical): {final_close_e}")
 
-    logger.info("--- Main program execution finished ---")
-    print("\nExecution finished.")
+
+    print("\nExit.")
 
 
 def main() -> None:
@@ -2389,6 +2426,9 @@ def main() -> None:
         _check_startup_status(session_manager)
         _validate_ai_provider_on_startup()
 
+        # Display tree owner at the end of startup checks
+        _display_tree_owner(session_manager)
+
         # Main menu loop
         while True:
             choice = menu()
@@ -2406,7 +2446,13 @@ def main() -> None:
     except Exception as e:
         logger.critical(f"Critical error in main: {e}", exc_info=True)
     finally:
-        _cleanup_session_manager(session_manager)
+        import contextlib
+        import io
+        # Suppress all stderr output during cleanup to hide undetected_chromedriver errors
+        with contextlib.redirect_stderr(io.StringIO()):
+            _cleanup_session_manager(session_manager)
+            # Small delay to allow cleanup to complete before exit
+            time.sleep(0.2)
 
 
 # end main
@@ -2812,7 +2858,15 @@ def run_comprehensive_tests() -> bool:
 # --- Entry Point ---
 
 if __name__ == "__main__":
+    import contextlib
+    import io
+    import sys
+
+    # Run main program
     main()
+
+    # Suppress stderr during final garbage collection to hide undetected_chromedriver cleanup errors
+    sys.stderr = io.StringIO()
 
 
 # end of main.py

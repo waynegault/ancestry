@@ -1405,11 +1405,8 @@ class SessionManager:
         try:
             owner_name = local_api_utils.call_tree_owner_api(self, tree_id)
             if owner_name:
-                # Store in API manager
+                # Store in API manager (logging done separately in main.py startup)
                 self.api_manager.tree_owner_name = owner_name
-                if not self._owner_logged:
-                    logger.info(f"Tree owner name: {owner_name}\n")
-                    self._owner_logged = True
                 return owner_name
             logger.warning("api_utils.call_tree_owner_api returned None.")
             return None
