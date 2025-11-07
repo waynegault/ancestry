@@ -2433,9 +2433,15 @@ def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
 
 def main() -> None:
     session_manager = None
+    sleep_state = None  # Track sleep prevention state
     _set_windows_console_focus()
 
     try:
+        # Prevent system sleep during entire session
+        from utils import prevent_system_sleep, restore_system_sleep
+        sleep_state = prevent_system_sleep()
+        logger.info("🔒 System sleep prevention activated for session")
+        
         # Initialize application
         session_manager = _initialize_application()
 
@@ -2467,6 +2473,12 @@ def main() -> None:
     except Exception as e:
         logger.critical(f"Critical error in main: {e}", exc_info=True)
     finally:
+        # Restore system sleep settings
+        if sleep_state is not None:
+            from utils import restore_system_sleep
+            restore_system_sleep(sleep_state)
+            logger.info("🔓 System sleep prevention deactivated")
+        
         import contextlib
         import io
         # Suppress all stderr output during cleanup to hide undetected_chromedriver errors

@@ -5385,14 +5385,18 @@ def _call_match_list_api(
     Returns:
         API response (dict, Response object, or None)
     """
+    # Get matches_per_page from config (respects MATCHES_PER_PAGE in .env)
+    # Default to 30 if not configured (balance between throughput and rate limiting)
+    items_per_page = getattr(config_schema.api, 'matches_per_page', 30)
+    
     # Use the working API endpoint pattern with itemsPerPage parameter
-    # OPTIMIZATION: itemsPerPage=30 balances throughput vs rate limiting
-    # - itemsPerPage=50 caused 429 errors (~70 API calls exceeds 10-token bucket capacity)
-    # - itemsPerPage=30 requires ~45 API calls (manageable with 2 workers, 3.5 RPS)
-    # - Still 50% better than default itemsPerPage=20
+    # OPTIMIZATION NOTE: Higher values require more API calls per page
+    # - itemsPerPage=50: ~70 API calls (risk of rate limiting)
+    # - itemsPerPage=30: ~45 API calls (safe with adaptive rate limiter)
+    # - itemsPerPage=20: ~30 API calls (Ancestry default, slower throughput)
     match_list_url = urljoin(
         config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage=30&currentPage={current_page}",
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?itemsPerPage={items_per_page}&currentPage={current_page}",
     )
     # Use simplified headers that were working earlier
     match_list_headers = {
@@ -5400,7 +5404,7 @@ def _call_match_list_api(
         "Accept": "application/json",
         "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
     }
-    logger.debug(f"Calling Match list API for page {current_page}...")
+    logger.debug(f"Calling Match list API for page {current_page} (itemsPerPage={items_per_page})...")
     logger.debug(
         f"Headers being passed to _api_req for Match list: {match_list_headers}"
     )
