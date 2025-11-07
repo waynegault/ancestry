@@ -308,8 +308,10 @@ from utils import (
 try:
     from config import config_schema as _cfg_temp
     MATCHES_PER_PAGE: int = getattr(_cfg_temp, 'matches_per_page', 20)
+    ENABLE_ETHNICITY_ENRICHMENT: bool = getattr(_cfg_temp, 'enable_ethnicity_enrichment', True)
 except ImportError:
     MATCHES_PER_PAGE: int = 20
+    ENABLE_ETHNICITY_ENRICHMENT: bool = True
 
 # Get DNA match probability threshold from environment, fallback to 10 cM
 try:
@@ -2007,6 +2009,10 @@ def _log_prefetch_summary(fetch_duration: float, stats: _PrefetchStats) -> None:
 
     logger.debug(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
 
+    if not ENABLE_ETHNICITY_ENRICHMENT:
+        logger.debug("🧬 Ethnicity enrichment disabled; skipping summary metrics.")
+        return
+
     if stats.ethnicity_fetch_count or stats.ethnicity_skipped:
         logger.debug(
             "🧬 Ethnicity fetches: %s prioritized, %s skipped (low priority)",
@@ -2062,6 +2068,8 @@ def _perform_api_prefetches(
     num_candidates = len(fetch_candidates_uuid)
     my_tree_id = session_manager.my_tree_id
     stats = _PrefetchStats()
+    if not ENABLE_ETHNICITY_ENRICHMENT:
+        logger.debug("Ethnicity enrichment disabled via configuration; skipping ethnicity API calls.")
 
     logger.debug(
         f"--- Starting SEQUENTIAL API Pre-fetch ({num_candidates} candidates) ---"
@@ -2081,7 +2089,7 @@ def _perform_api_prefetches(
 
     # SEQUENTIAL PROCESSING: Process each match one at a time
     temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
-    ethnicity_candidates = set(priority_uuids)
+    ethnicity_candidates = set(priority_uuids) if ENABLE_ETHNICITY_ENRICHMENT else set()
 
     for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
         _enforce_session_health_for_prefetch(session_manager, processed_count, num_candidates)
@@ -2099,13 +2107,17 @@ def _perform_api_prefetches(
             badge_candidates,
             temp_badge_results,
         )
-        _process_ethnicity_candidate(
-            session_manager,
-            uuid_val,
-            ethnicity_candidates,
-            batch_ethnicity_data,
-            stats,
-        )
+        if ENABLE_ETHNICITY_ENRICHMENT:
+            _process_ethnicity_candidate(
+                session_manager,
+                uuid_val,
+                ethnicity_candidates,
+                batch_ethnicity_data,
+                stats,
+            )
+        else:
+            stats.ethnicity_skipped += 1
+            batch_ethnicity_data[uuid_val] = None
         _log_prefetch_progress(processed_count, num_candidates, stats)
 
     batch_tree_data = _fetch_ladder_details_for_badges(

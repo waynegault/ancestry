@@ -94,6 +94,8 @@ class ConfigManager:
     """
 
     _token_fill_rate_clamp_logged = False
+    _unsafe_speed_override_logged = False
+    _unsafe_concurrency_override_logged = False
 
     def __init__(
         self,
@@ -180,23 +182,54 @@ class ConfigManager:
             raise ValidationError(f"Configuration loading failed: {e}") from e
 
     def _enforce_api_safety_constraints(self, config: ConfigSchema) -> None:
-        """Clamp API settings to safe sequential defaults to prevent rate-limit breaches."""
+        """Clamp API settings to safe sequential defaults unless override explicitly requested."""
 
         api = getattr(config, "api", None)
         if not api:
             return
 
-        # Enforce sequential processing
-        if getattr(api, "max_concurrency", 1) != 1:
-            logger.warning(
-                "max_concurrency=%s overridden to sequential-safe value of 1",
-                getattr(api, "max_concurrency", "unknown"),
-            )
-            api.max_concurrency = 1
+        speed_profile = str(getattr(api, "speed_profile", "safe")).lower()
+        unsafe_requested = getattr(api, "allow_unsafe_rate_limit", False)
+
+        if speed_profile in {"max", "aggressive", "experimental"}:
+            unsafe_requested = True
+
+        env_speed_profile = os.getenv("API_SPEED_PROFILE", "").strip().lower()
+        if env_speed_profile in {"max", "aggressive", "experimental"}:
+            unsafe_requested = True
+
+        env_allow_unsafe = os.getenv("ALLOW_UNSAFE_RATE_LIMIT", "").strip().lower()
+        if env_allow_unsafe in {"true", "1", "yes", "on"}:
+            unsafe_requested = True
+
+        # Enforce sequential processing unless override requested
+        max_concurrency_configured = getattr(api, "max_concurrency", 1)
+        if max_concurrency_configured != 1:
+            if unsafe_requested:
+                if not getattr(type(self), "_unsafe_concurrency_override_logged", False):
+                    logger.warning(
+                        "⚠️ Unsafe speed profile active; retaining max_concurrency=%s. Monitor session stability closely.",
+                        max_concurrency_configured,
+                    )
+                    setattr(type(self), "_unsafe_concurrency_override_logged", True)
+            else:
+                logger.warning(
+                    "max_concurrency=%s overridden to sequential-safe value of 1",
+                    max_concurrency_configured,
+                )
+                api.max_concurrency = 1
 
         safe_rps = 0.3
         current_rps = getattr(api, "requests_per_second", safe_rps)
-        if current_rps > safe_rps:
+
+        if unsafe_requested:
+            if not getattr(type(self), "_unsafe_speed_override_logged", False):
+                logger.warning(
+                    "⚠️ API speed profile '%s' enabled - disabling safety clamp; monitor for 429 errors.",
+                    speed_profile or "custom",
+                )
+                setattr(type(self), "_unsafe_speed_override_logged", True)
+        elif current_rps > safe_rps:
             if not getattr(self, "_rps_clamp_logged", False):
                 logger.debug(
                     "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
@@ -205,10 +238,11 @@ class ConfigManager:
                 )
                 setattr(self, "_rps_clamp_logged", True)
             api.requests_per_second = safe_rps
+            current_rps = safe_rps
 
-        # Ensure token bucket fill rate never exceeds enforced RPS
+        # Ensure token bucket fill rate never exceeds enforced RPS when safety clamp is active
         token_fill_rate = getattr(api, "token_bucket_fill_rate", current_rps)
-        if token_fill_rate > api.requests_per_second:
+        if not unsafe_requested and token_fill_rate > api.requests_per_second:
             if not getattr(type(self), "_token_fill_rate_clamp_logged", False):
                 logger.info(
                     "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
@@ -914,6 +948,15 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
+    def _set_bool_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+        """Set a boolean configuration value from environment variable."""
+        value = os.getenv(env_var)
+        if value is not None:
+            bool_value = value.strip().lower() in ("true", "1", "yes", "on")
+            if section not in config:
+                config[section] = {}
+            config[section][key] = bool_value
+
     def _load_additional_api_config_from_env(self, config: dict[str, Any]) -> None:
         """Load additional API configuration from environment variables."""
         if "api" not in config:
@@ -926,12 +969,14 @@ class ConfigManager:
         self._set_string_config(config, "api", "tree_id", "MY_TREE_ID")
         self._set_string_config(config, "api", "my_user_id", "MY_PROFILE_ID")
         self._set_string_config(config, "api", "my_uuid", "MY_UUID")
+        self._set_string_config(config, "api", "speed_profile", "API_SPEED_PROFILE")
 
         # Integer configurations
         self._set_int_config(config, "api", "request_timeout", "REQUEST_TIMEOUT")
         self._set_int_config(config, "api", "max_pages", "MAX_PAGES")
         self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
         self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
+        self._set_int_config(config, "api", "burst_limit", "BURST_LIMIT")
 
         # Float configurations - Rate limiting
         self._set_float_config(config, "api", "requests_per_second", "REQUESTS_PER_SECOND")
@@ -939,6 +984,12 @@ class ConfigManager:
         self._set_float_config(config, "api", "max_delay", "MAX_DELAY")
         self._set_float_config(config, "api", "backoff_factor", "BACKOFF_FACTOR")
         self._set_float_config(config, "api", "decrease_factor", "DECREASE_FACTOR")
+        self._set_float_config(config, "api", "token_bucket_capacity", "TOKEN_BUCKET_CAPACITY")
+        self._set_float_config(config, "api", "token_bucket_fill_rate", "TOKEN_BUCKET_FILL_RATE")
+
+        # Boolean configurations
+        self._set_bool_config(config, "api", "rate_limit_enabled", "RATE_LIMIT_ENABLED")
+        self._set_bool_config(config, "api", "allow_unsafe_rate_limit", "ALLOW_UNSAFE_RATE_LIMIT")
 
     def _load_int_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load a single integer environment variable into config."""
@@ -949,6 +1000,12 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
+    def _load_bool_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
+        """Load a single boolean environment variable into config."""
+        value = os.getenv(env_var)
+        if value is not None:
+            config[config_key] = value.strip().lower() in ("true", "1", "yes", "on")
+
     def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
         """Load processing limit configuration from environment variables."""
         self._load_int_env_var(config, "BATCH_SIZE", "batch_size")
@@ -956,6 +1013,7 @@ class ConfigManager:
         self._load_int_env_var(config, "MAX_PRODUCTIVE_TO_PROCESS", "max_productive_to_process")
         self._load_int_env_var(config, "MAX_INBOX", "max_inbox")
         self._load_int_env_var(config, "PARALLEL_WORKERS", "parallel_workers")
+        self._load_bool_env_var(config, "ENABLE_ETHNICITY_ENRICHMENT", "enable_ethnicity_enrichment")
 
     def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
         """Load logging configuration from environment variables."""

@@ -422,6 +422,8 @@ class APIConfig:
     rate_limit_enabled: bool = True
     requests_per_second: float = 0.3  # Conservative rate validated for zero 429 errors
     burst_limit: int = 4  # Allows better burst efficiency while maintaining stability
+    speed_profile: str = "safe"  # Controls rate limiting behavior presets (safe, balanced, max)
+    allow_unsafe_rate_limit: bool = False  # Explicit opt-in for disabling safety clamps
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
 
@@ -631,6 +633,7 @@ class ConfigSchema:
     enable_task_dedup: bool = False  # Guard flag for Phase 4.3 de-dup rollout (testing mode only initially)
     enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout
     enable_prompt_experiments: bool = False  # Guard flag for Phase 8.2 prompt A/B experimentation rollout
+    enable_ethnicity_enrichment: bool = True  # Controls optional Action 6 ethnicity prefetch cost
 
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", "local_llm", or ""
