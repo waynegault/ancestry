@@ -1,5 +1,7 @@
 # Ancestry Genealogical Research Automation
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/waynegault/ancestry)
+
 Comprehensive Python automation system for Ancestry.com genealogical research, featuring intelligent messaging, DNA match analysis, and family tree management.
 
 ## Overview
