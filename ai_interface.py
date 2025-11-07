@@ -561,13 +561,14 @@ def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[str | Non
         return None, f"Local LLM: Failed to check loaded models: {e}"
 
 
-def _handle_rate_limit_error(session_manager: SessionManager) -> None:
+def _handle_rate_limit_error(session_manager: SessionManager, source: Optional[str] = None) -> None:
     """Handle rate limit error by increasing delay."""
     if session_manager and hasattr(session_manager, "rate_limiter"):
         try:
             drl = getattr(session_manager, "rate_limiter", None)
             if drl is not None and hasattr(drl, "on_429_error"):
-                drl.on_429_error()  # Updated to AdaptiveRateLimiter interface
+                endpoint = source or "AI Provider"
+                drl.on_429_error(endpoint)  # type: ignore[misc]
         except Exception:
             pass
 
@@ -592,7 +593,7 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionM
         logger.error(f"AI Authentication Error ({provider}): {e}")
     elif isinstance(e, RateLimitError):
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
-        _handle_rate_limit_error(session_manager)
+        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
     elif isinstance(e, APIConnectionError):
         logger.error(f"AI Connection Error ({provider}): {e}")
     elif isinstance(e, APIError):
@@ -601,7 +602,7 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionM
         logger.error(f"Gemini Permission Denied: {e}")
     elif isinstance(e, google_exceptions.ResourceExhausted):
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
-        _handle_rate_limit_error(session_manager)
+        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
     elif isinstance(e, google_exceptions.GoogleAPIError):
         logger.error(f"Google API Error (Gemini): {e}")
     elif isinstance(e, AttributeError):

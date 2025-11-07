@@ -2332,7 +2332,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         if not success:
             logger.warning(f"⚠️ LM Studio not ready: {error_msg}")
             return False
-        logger.info(f"LM Studio ready; verifying model '{model_name}' is loaded")
+        logger.info(f"✅ LM Studio ready; verifying model '{model_name}' is loaded")
 
     except Exception as e:
         logger.warning(f"⚠️ Failed to start/verify LM Studio: {e}")

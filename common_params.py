@@ -136,6 +136,7 @@ class ConversationProcessingContext:
     comp_ts: Optional[Any] = None
     my_pid_lower: Optional[str] = None
     min_aware_dt: Optional[Any] = None
+    state: Optional[dict[str, Any]] = None
 
 
 @dataclass

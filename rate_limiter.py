@@ -57,6 +57,20 @@ class RateLimiterMetrics:
 
 
 @dataclass
+class _EndpointProfile:
+    """Runtime throttle configuration for a specific endpoint."""
+
+    min_interval: float = 0.0
+    delay_multiplier: float = 1.0
+    cooldown_after_429: float = 0.0
+
+    def __post_init__(self) -> None:
+        self.min_interval = max(0.0, float(self.min_interval))
+        self.delay_multiplier = max(1.0, float(self.delay_multiplier))
+        self.cooldown_after_429 = max(0.0, float(self.cooldown_after_429))
+
+
+@dataclass
 class _LimiterConfig:
     """Resolved configuration for initializing the adaptive rate limiter."""
 
@@ -372,11 +386,13 @@ def _update_existing_limiter(
     min_fill_rate: Optional[float],
     max_fill_rate: Optional[float],
     capacity: Optional[float],
+    endpoint_profiles: Optional[dict[str, Any]],
 ) -> None:
     """Apply runtime updates to the existing singleton instance."""
     _update_success_threshold(limiter, success_threshold)
     _update_rate_bounds(limiter, min_fill_rate, max_fill_rate)
     _update_capacity(limiter, capacity)
+    limiter.configure_endpoint_profiles(endpoint_profiles)
 
 
 class AdaptiveRateLimiter:
@@ -444,6 +460,7 @@ class AdaptiveRateLimiter:
         # Token bucket state
         self.capacity = capacity
         self.fill_rate = initial_fill_rate
+        self._initial_fill_rate = initial_fill_rate
         self.tokens = capacity  # Start with full bucket
         self.last_refill_time = time.monotonic()
 
@@ -467,6 +484,10 @@ class AdaptiveRateLimiter:
             "error_429_count": 0,
         }
 
+        self._endpoint_profiles: dict[str, _EndpointProfile] = {}
+        self._endpoint_last_call: dict[str, float] = {}
+        self._endpoint_penalty_until: dict[str, float] = {}
+
         self.initial_source = "default"
 
         logger.debug(
@@ -475,20 +496,14 @@ class AdaptiveRateLimiter:
             f"success_threshold={success_threshold}, speedup=+2%"
         )
 
-    def wait(self) -> float:
-        """
-        Wait according to token bucket algorithm.
+    def wait(self, endpoint: Optional[str] = None) -> float:
+        """Wait according to token bucket algorithm.
 
-        This is the core rate limiting method. It ensures requests are
-        spaced according to fill_rate while allowing bursts up to capacity.
+        Args:
+            endpoint: Optional identifier used to apply endpoint-specific throttling.
 
         Returns:
-            float: Time spent waiting in seconds
-
-        Example:
-            >>> limiter = AdaptiveRateLimiter(initial_fill_rate=2.0)
-            >>> wait_time = limiter.wait()  # May wait 0-0.5 seconds
-            >>> # Now safe to make request
+            Total time spent waiting in seconds (base token wait plus endpoint adjustments).
         """
         with self._lock:
             self._refill_tokens()
@@ -512,13 +527,114 @@ class AdaptiveRateLimiter:
                 self._refill_tokens()
                 self.tokens -= 1.0  # Consume after refill
 
+            wait_time = self._apply_endpoint_throttle(endpoint, wait_time)
+
             # Update metrics
             self._metrics["total_requests"] += 1
             self._metrics["total_wait_time"] += wait_time
 
             return wait_time
 
-    def on_429_error(self) -> None:
+    def _apply_endpoint_throttle(self, endpoint: Optional[str], base_wait: float) -> float:
+        """Apply endpoint-specific throttling rules and return updated wait time."""
+        if not endpoint:
+            return base_wait
+
+        profile = self._endpoint_profiles.get(endpoint)
+        if not profile:
+            return base_wait
+
+        now = time.monotonic()
+        extra_delay = 0.0
+
+        penalty_until = self._endpoint_penalty_until.get(endpoint)
+        if penalty_until is not None:
+            penalty_gap = penalty_until - now
+            if penalty_gap > 0.0:
+                extra_delay += penalty_gap
+            else:
+                self._endpoint_penalty_until.pop(endpoint, None)
+
+        last_call = self._endpoint_last_call.get(endpoint)
+        if profile.min_interval > 0.0 and last_call is not None:
+            gap = profile.min_interval - (now - last_call)
+            if gap > 0.0:
+                extra_delay += gap
+
+        if profile.delay_multiplier > 1.0 and base_wait > 0.0:
+            extra_delay += base_wait * (profile.delay_multiplier - 1.0)
+
+        if extra_delay > 0.0:
+            logger.debug(
+                "Endpoint '%s' throttle added %.3fs (base %.3fs)",
+                endpoint,
+                extra_delay,
+                base_wait,
+            )
+            time.sleep(extra_delay)
+            self._refill_tokens()
+            base_wait += extra_delay
+            now = time.monotonic()
+            self._endpoint_penalty_until.pop(endpoint, None)
+
+        self._endpoint_last_call[endpoint] = now
+        return base_wait
+
+    def configure_endpoint_profiles(self, profiles: Optional[dict[str, Any]]) -> None:
+        """Configure endpoint-specific throttling behavior."""
+        with self._lock:
+            if profiles is None:
+                return
+
+            self._endpoint_profiles.clear()
+            self._endpoint_last_call.clear()
+            self._endpoint_penalty_until.clear()
+
+            if not profiles:
+                return
+
+            for endpoint, raw_profile in profiles.items():
+                if not isinstance(endpoint, str):
+                    continue
+                if not isinstance(raw_profile, dict):
+                    logger.warning("Invalid endpoint throttle entry for %s; expected dict", endpoint)
+                    continue
+
+                min_interval = _safe_float(raw_profile.get("min_interval")) or 0.0
+                max_rate = _safe_float(raw_profile.get("max_rate")) or 0.0
+                delay_multiplier = _safe_float(raw_profile.get("delay_multiplier")) or 1.0
+                cooldown_after_429 = _safe_float(raw_profile.get("cooldown_after_429")) or 0.0
+
+                if max_rate > 0.0:
+                    derived_interval = 1.0 / max_rate
+                    if derived_interval > min_interval:
+                        min_interval = derived_interval
+
+                min_interval = max(0.0, min_interval)
+                delay_multiplier = max(1.0, delay_multiplier)
+                cooldown_after_429 = max(0.0, cooldown_after_429)
+
+                if min_interval <= 0.0 and delay_multiplier <= 1.0 and cooldown_after_429 <= 0.0:
+                    continue
+
+                profile = _EndpointProfile(
+                    min_interval=min_interval,
+                    delay_multiplier=delay_multiplier,
+                    cooldown_after_429=cooldown_after_429,
+                )
+                self._endpoint_profiles[endpoint] = profile
+
+            if self._endpoint_profiles:
+                summary_entries: list[str] = []
+                for name, profile in self._endpoint_profiles.items():
+                    parts = [f"min={profile.min_interval:.2f}s", f"mult={profile.delay_multiplier:.2f}"]
+                    if profile.cooldown_after_429 > 0.0:
+                        parts.append(f"cooldown={profile.cooldown_after_429:.1f}s")
+                    summary_entries.append(f"{name}({', '.join(parts)})")
+                summary = ", ".join(summary_entries)
+                logger.info("Endpoint throttles configured: %s", summary)
+
+    def on_429_error(self, endpoint: Optional[str] = None) -> None:
         """
         Handle 429 rate limit error by decreasing fill_rate.
 
@@ -549,6 +665,17 @@ class AdaptiveRateLimiter:
                 f"⚠️ 429 Rate Limit: Decreased rate from {old_rate:.3f} to "
                 f"{self.fill_rate:.3f} req/s (-20%)"
             )
+
+            if endpoint:
+                profile = self._endpoint_profiles.get(endpoint)
+                if profile and profile.cooldown_after_429 > 0.0:
+                    cooldown_until = time.monotonic() + profile.cooldown_after_429
+                    self._endpoint_penalty_until[endpoint] = cooldown_until
+                    logger.warning(
+                        "Endpoint '%s' entering cooldown for %.1fs after 429",
+                        endpoint,
+                        profile.cooldown_after_429,
+                    )
 
     def on_success(self) -> None:
         """
@@ -629,6 +756,40 @@ class AdaptiveRateLimiter:
                 avg_wait_time=avg_wait,
             )
 
+    def print_metrics_summary(self) -> None:
+        """Log a one-line summary of current limiter performance."""
+        metrics = self.get_metrics()
+        logger.info(
+            "RateLimiter | rate=%.2f req/s | tokens=%.2f/%.2f | total=%d | avg-wait=%.3fs | 429=%d | +%d/-%d",
+            metrics.current_fill_rate,
+            metrics.tokens_available,
+            self.capacity,
+            metrics.total_requests,
+            metrics.avg_wait_time,
+            metrics.error_429_count,
+            metrics.rate_increases,
+            metrics.rate_decreases,
+        )
+
+    @property
+    def current_delay(self) -> float:
+        """Approximate current per-request delay derived from fill rate."""
+        if self.fill_rate <= 0:
+            return float("inf")
+        return 1.0 / self.fill_rate
+
+    @property
+    def initial_delay(self) -> float:
+        """Initial per-request delay before adaptive tuning."""
+        if self._initial_fill_rate <= 0:
+            return float("inf")
+        return 1.0 / self._initial_fill_rate
+
+    @property
+    def initial_fill_rate(self) -> float:
+        """Expose starting fill rate for diagnostics and logging."""
+        return self._initial_fill_rate
+
     def reset(self) -> None:
         """
         Reset rate limiter to initial state.
@@ -642,6 +803,8 @@ class AdaptiveRateLimiter:
             self.tokens = self.capacity
             self.success_count = 0
             self.last_refill_time = time.monotonic()
+            self._endpoint_last_call.clear()
+            self._endpoint_penalty_until.clear()
             # Note: fill_rate is NOT reset - it represents learned optimal rate
             logger.info("Rate limiter state reset (fill_rate preserved)")
 
@@ -694,6 +857,7 @@ def get_adaptive_rate_limiter(
     min_fill_rate: Optional[float] = None,
     max_fill_rate: Optional[float] = None,
     capacity: Optional[float] = None,
+    endpoint_profiles: Optional[dict[str, Any]] = None,
 ) -> AdaptiveRateLimiter:
     """
     Get or create the global AdaptiveRateLimiter instance.
@@ -736,6 +900,7 @@ def get_adaptive_rate_limiter(
                 max_fill_rate=config.max_rate,
                 capacity=config.capacity,
             )
+            _global_rate_limiter.configure_endpoint_profiles(endpoint_profiles)
             _global_rate_limiter.initial_source = config.source
             _rate_limiter_state_source = config.source
             logger.debug(
@@ -754,6 +919,7 @@ def get_adaptive_rate_limiter(
                 min_fill_rate=min_fill_rate,
                 max_fill_rate=max_fill_rate,
                 capacity=capacity,
+                endpoint_profiles=endpoint_profiles,
             )
 
         return _global_rate_limiter
@@ -931,6 +1097,33 @@ def run_comprehensive_tests() -> bool:
         expected_outcome="ValueError raised for all invalid inputs",
     )
 
+    suite.run_test(
+        test_name="Endpoint min interval",
+        test_func=_test_endpoint_min_interval,
+        test_summary="Verify endpoint-specific min interval delay is enforced",
+        functions_tested="AdaptiveRateLimiter.wait, configure_endpoint_profiles",
+        method_description="Configure min interval and make consecutive calls",
+        expected_outcome="Second call delayed by the configured interval",
+    )
+
+    suite.run_test(
+        test_name="Endpoint delay multiplier",
+        test_func=_test_endpoint_delay_multiplier,
+        test_summary="Verify endpoint-specific delay multiplier increases wait",
+        functions_tested="AdaptiveRateLimiter.wait, configure_endpoint_profiles",
+        method_description="Configure delay multiplier and trigger base wait",
+        expected_outcome="Total wait reflects configured multiplier",
+    )
+
+    suite.run_test(
+        test_name="Endpoint 429 cooldown",
+        test_func=_test_endpoint_429_cooldown,
+        test_summary="Verify endpoint-specific cooldown applies after 429 errors",
+        functions_tested="AdaptiveRateLimiter.on_429_error, wait, configure_endpoint_profiles",
+        method_description="Configure cooldown, trigger 429, ensure next call waits",
+        expected_outcome="Subsequent call delayed by configured cooldown interval",
+    )
+
     return suite.finish_suite()
 
 
@@ -1103,6 +1296,49 @@ def _test_parameter_validation() -> None:
         raise AssertionError("Should raise ValueError when min > max")
     except ValueError:
         pass  # Expected
+
+
+def _test_endpoint_min_interval() -> None:
+    """Ensure endpoint-specific min interval delays consecutive calls."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=10.0, capacity=10.0)
+    limiter.configure_endpoint_profiles({"test-endpoint": {"min_interval": 0.3}})
+
+    limiter.wait("test-endpoint")
+    start = time.monotonic()
+    limiter.wait("test-endpoint")
+    elapsed = time.monotonic() - start
+
+    assert elapsed >= 0.28, f"Expected at least 0.28s delay, got {elapsed:.3f}s"
+
+
+def _test_endpoint_delay_multiplier() -> None:
+    """Ensure endpoint-specific delay multiplier increases wait duration."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=4.0, capacity=1.0)
+    limiter.configure_endpoint_profiles({"slow-endpoint": {"delay_multiplier": 2.0}})
+
+    limiter.tokens = 0.0
+    limiter.last_refill_time = time.monotonic()
+
+    start = time.monotonic()
+    limiter.wait("slow-endpoint")
+    elapsed = time.monotonic() - start
+
+    assert 0.45 <= elapsed <= 0.75, f"Expected ~0.5s wait, got {elapsed:.3f}s"
+
+
+def _test_endpoint_429_cooldown() -> None:
+    """Ensure endpoint cooldown prevents immediate reuse after a 429."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=5.0, capacity=5.0)
+    limiter.configure_endpoint_profiles({"penalized": {"cooldown_after_429": 0.6}})
+
+    limiter.wait("penalized")
+    limiter.on_429_error("penalized")
+
+    start = time.monotonic()
+    limiter.wait("penalized")
+    elapsed = time.monotonic() - start
+
+    assert elapsed >= 0.55, f"Expected cooldown-driven wait >=0.55s, got {elapsed:.3f}s"
 
 
 if __name__ == "__main__":

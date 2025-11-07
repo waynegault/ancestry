@@ -438,6 +438,7 @@ class APIConfig:
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
+    max_relationship_prob_fetches: int = 0  # Optional cap per page for relationship probability calls
 
     # Data freshness settings
     person_refresh_days: int = 7  # Skip fetching person details if updated within N days (0=disabled, 7=default)
@@ -463,6 +464,16 @@ class APIConfig:
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
         ]
+    )
+    endpoint_throttle_profiles: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "Ethnicity Comparison API": {
+                "min_interval": 2.5,
+                "delay_multiplier": 1.8,
+                "max_rate": 0.4,
+                "cooldown_after_429": 45.0,
+            }
+        }
     )
 
     # Retry settings
@@ -493,6 +504,61 @@ class APIConfig:
             raise ValueError("target_match_throughput must be non-negative")
         if self.max_throughput_catchup_delay < 0:
             raise ValueError("max_throughput_catchup_delay must be non-negative")
+        if self.max_relationship_prob_fetches < 0:
+            raise ValueError("max_relationship_prob_fetches must be non-negative")
+
+        raw_profiles = self.endpoint_throttle_profiles or {}
+        if not isinstance(raw_profiles, dict):
+            logger.warning("endpoint_throttle_profiles must be a dict; ignoring invalid value")
+            raw_profiles = {}
+
+        def _to_float(value: Any, default: float) -> float:
+            try:
+                if value is None:
+                    return default
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        sanitized_profiles: dict[str, dict[str, float]] = {}
+        for endpoint, profile_data in raw_profiles.items():
+            if not isinstance(endpoint, str):
+                continue
+            if not isinstance(profile_data, dict):
+                logger.warning("Invalid throttle profile for %s; expected dict", endpoint)
+                continue
+
+            min_interval_value = _to_float(profile_data.get("min_interval"), 0.0)
+            max_rate_value = _to_float(profile_data.get("max_rate"), 0.0)
+            delay_multiplier_value = _to_float(profile_data.get("delay_multiplier"), 1.0)
+            cooldown_value = _to_float(profile_data.get("cooldown_after_429"), 0.0)
+
+            delay_multiplier_value = max(1.0, delay_multiplier_value)
+            cooldown_value = max(0.0, cooldown_value)
+            if max_rate_value > 0.0:
+                derived_interval = 1.0 / max_rate_value
+                if derived_interval > min_interval_value:
+                    min_interval_value = derived_interval
+
+            min_interval_value = max(0.0, min_interval_value)
+
+            if min_interval_value <= 0.0 and delay_multiplier_value <= 1.0 and cooldown_value <= 0.0:
+                continue
+
+            sanitized_entry: dict[str, float] = {}
+            if min_interval_value > 0.0:
+                sanitized_entry["min_interval"] = float(min_interval_value)
+            if delay_multiplier_value > 1.0:
+                sanitized_entry["delay_multiplier"] = float(delay_multiplier_value)
+            if max_rate_value > 0.0:
+                sanitized_entry["max_rate"] = float(max_rate_value)
+            if cooldown_value > 0.0:
+                sanitized_entry["cooldown_after_429"] = float(cooldown_value)
+
+            if sanitized_entry:
+                sanitized_profiles[endpoint] = sanitized_entry
+
+        self.endpoint_throttle_profiles = sanitized_profiles
 
 
 @dataclass
@@ -640,6 +706,7 @@ class ConfigSchema:
     enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout
     enable_prompt_experiments: bool = False  # Guard flag for Phase 8.2 prompt A/B experimentation rollout
     enable_ethnicity_enrichment: bool = True  # Controls optional Action 6 ethnicity prefetch cost
+    ethnicity_enrichment_min_cm: int = 10  # Minimum shared DNA threshold for ethnicity enrichment API calls
 
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", "local_llm", or ""

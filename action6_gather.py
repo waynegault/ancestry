@@ -23,6 +23,10 @@ from typing import Any, Callable, Optional
 
 from core.enhanced_error_recovery import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
+from relationship_utils import (
+    convert_api_path_to_unified_format,
+    format_relationship_path_unified,
+)
 
 _api_performance_callbacks: list[Callable[[str, float, str], None]] = []
 
@@ -318,11 +322,34 @@ from utils import (
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
 try:
     from config import config_schema as _cfg_temp
-    MATCHES_PER_PAGE: int = getattr(_cfg_temp, 'matches_per_page', 20)
-    ENABLE_ETHNICITY_ENRICHMENT: bool = getattr(_cfg_temp, 'enable_ethnicity_enrichment', True)
+
+    MATCHES_PER_PAGE: int = getattr(_cfg_temp, "matches_per_page", 20)
+    ENABLE_ETHNICITY_ENRICHMENT: bool = getattr(
+        _cfg_temp, "enable_ethnicity_enrichment", True
+    )
+    try:
+        ETHNICITY_ENRICHMENT_MIN_CM: int = int(
+            getattr(_cfg_temp, "ethnicity_enrichment_min_cm", 10) or 0
+        )
+    except (TypeError, ValueError):
+        ETHNICITY_ENRICHMENT_MIN_CM = 10
+    _RELATIONSHIP_PROB_LIMIT_RAW = getattr(
+        getattr(_cfg_temp, "api", None), "max_relationship_prob_fetches", 0
+    )
 except ImportError:
-    MATCHES_PER_PAGE: int = 20
-    ENABLE_ETHNICITY_ENRICHMENT: bool = True
+    MATCHES_PER_PAGE = 20
+    ENABLE_ETHNICITY_ENRICHMENT = True
+    ETHNICITY_ENRICHMENT_MIN_CM = 10
+    _RELATIONSHIP_PROB_LIMIT_RAW = 0
+
+ETHNICITY_ENRICHMENT_MIN_CM = max(0, int(ETHNICITY_ENRICHMENT_MIN_CM))
+
+try:
+    RELATIONSHIP_PROB_MAX_PER_PAGE: int = int(_RELATIONSHIP_PROB_LIMIT_RAW or 0)
+except (TypeError, ValueError):
+    RELATIONSHIP_PROB_MAX_PER_PAGE = 0
+
+RELATIONSHIP_PROB_MAX_PER_PAGE = max(0, RELATIONSHIP_PROB_MAX_PER_PAGE)
 
 # Get DNA match probability threshold from environment, fallback to 10 cM
 try:
@@ -1320,13 +1347,17 @@ def _log_action_start(start_page: int) -> None:
     raw_max_pages = getattr(config_schema.api, "max_pages", 0)
     requested_max_pages = raw_max_pages if raw_max_pages else "unlimited"
 
-    logger.info(
-        "Action 6 start | start_page=%s | requested_pages=%s | matches_per_page=%s | mode=%s | dry_run=%s",
+    rel_prob_limit = (
+        RELATIONSHIP_PROB_MAX_PER_PAGE if RELATIONSHIP_PROB_MAX_PER_PAGE > 0 else "unlimited"
+    )
+    logger.debug(
+        "Action 6 start | start_page=%s | requested_pages=%s | matches_per_page=%s | mode=%s | dry_run=%s | rel_prob_limit=%s",
         start_page,
         requested_max_pages,
         MATCHES_PER_PAGE,
         app_mode,
         "yes" if dry_run_enabled else "no",
+        rel_prob_limit,
     )
     logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
 
@@ -1979,6 +2010,185 @@ def _classify_match_priorities(
 # Removed _apply_predictive_rate_limiting - sequential processing uses per-request rate limiting only
 
 
+def _relationship_priority_sort_key(match_data: dict[str, Any]) -> tuple[int, int, str]:
+    """Sort priority matches by descending cM, then tree presence."""
+
+    cm_value = _safe_cm_value(match_data)
+    has_tree = 0 if match_data.get("in_my_tree") else 1
+    uuid_val = match_data.get("uuid") or ""
+    return (-cm_value, has_tree, uuid_val)
+
+
+def _limit_relationship_probability_requests(
+    matches_to_process_later: list[dict[str, Any]],
+    high_priority_uuids: set[str],
+    medium_priority_uuids: set[str],
+    max_per_page: int,
+) -> tuple[set[str], set[str], int]:
+    """Restrict relationship-probability fetches to the highest-value matches."""
+
+    if max_per_page <= 0:
+        return high_priority_uuids.union(medium_priority_uuids), set(medium_priority_uuids), 0
+
+    allowed_high = set(high_priority_uuids)
+    remaining_slots = max(max_per_page - len(allowed_high), 0)
+
+    if remaining_slots >= len(medium_priority_uuids):
+        return allowed_high.union(medium_priority_uuids), set(medium_priority_uuids), 0
+
+    matches_by_uuid = {
+        match_data.get("uuid"): match_data
+        for match_data in matches_to_process_later
+        if match_data.get("uuid") in medium_priority_uuids
+    }
+
+    ranked_medium = sorted(matches_by_uuid.values(), key=_relationship_priority_sort_key)
+    selected_medium = {
+        match.get("uuid")
+        for match in ranked_medium[:remaining_slots]
+        if match and match.get("uuid")
+    }
+
+    trimmed_count = len(medium_priority_uuids) - len(selected_medium)
+    combined = allowed_high.union(selected_medium)
+    return combined, selected_medium, trimmed_count
+
+
+def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
+    """Clean verbose relationship phrases returned by the API."""
+
+    if not raw_value:
+        return ""
+
+    cleaned = raw_value.strip()
+    lower_cleaned = cleaned.lower()
+
+    prefix_variants = (
+        "you are the ",
+        "you are ",
+        "they are your ",
+        "they are the ",
+        "this person is your ",
+    )
+    for prefix in prefix_variants:
+        if lower_cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :]
+            lower_cleaned = cleaned.lower()
+            break
+
+    suffix_variants = (
+        " of you",
+        " of the user",
+        " of the tree owner",
+        " of your tree",
+    )
+    for suffix in suffix_variants:
+        if lower_cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)]
+            break
+
+    return cleaned.strip().rstrip(".")
+
+
+def _extract_relationship_from_narrative(narrative: Optional[str]) -> Optional[str]:
+    """Parse the narrative header to derive a concise relationship label."""
+
+    if not narrative:
+        return None
+
+    lines = [line.strip() for line in narrative.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+
+    relationship_line = lines[1]
+    if " is " not in relationship_line:
+        return None
+
+    _, remainder = relationship_line.split(" is ", 1)
+    for marker in ("'s ", "' "):
+        if marker in remainder:
+            remainder = remainder.split(marker, 1)[1]
+            break
+
+    relationship_text = remainder.rstrip(":").strip()
+    return relationship_text or None
+
+
+def _resolve_tree_owner_name(session_manager: SessionManager) -> str:
+    """Resolve the best available display name for the tree owner/reference person."""
+
+    owner_name = getattr(session_manager, "tree_owner_name", None)
+    if owner_name:
+        return owner_name
+
+    reference_name = getattr(config_schema, "reference_person_name", None)
+    if reference_name:
+        return reference_name
+
+    return getattr(config_schema, "user_name", "Tree Owner")
+
+
+def _format_relationship_path_from_kinship(
+    kinship_persons: list[dict[str, Any]],
+    session_manager: SessionManager,
+    match_display_name: Optional[str],
+) -> tuple[str, Optional[list[dict[str, Optional[str]]]]]:
+    """Convert kinshipPersons data into a narrative relationship path."""
+
+    owner_name = _resolve_tree_owner_name(session_manager)
+    if not kinship_persons:
+        return "(No relationship path available)", None
+
+    normalized_entries: list[dict[str, Optional[str]]] = []
+    for person in kinship_persons:
+        normalized_entries.append(
+            {
+                "name": person.get("name", "Unknown"),
+                "relationship": person.get("relationship", ""),
+                "lifespan": person.get("lifeSpan") or person.get("lifespan") or "",
+                "gender": person.get("gender"),
+            }
+        )
+
+    target_name = match_display_name or normalized_entries[0].get("name") or "Relative"
+    unified_path: Optional[list[dict[str, Optional[str]]]] = None
+
+    try:
+        unified_path = convert_api_path_to_unified_format(normalized_entries, target_name)
+    except Exception as conv_exc:  # pragma: no cover - diagnostic logging only
+        logger.debug("Failed to normalize kinship path for unified format: %s", conv_exc, exc_info=False)
+
+    if unified_path:
+        try:
+            narrative = format_relationship_path_unified(unified_path, target_name, owner_name, None)
+            return narrative, unified_path
+        except Exception as fmt_exc:  # pragma: no cover - diagnostic logging only
+            logger.debug("Unified relationship formatting failed: %s", fmt_exc, exc_info=False)
+
+    fallback_narrative = _format_kinship_path_for_action6(kinship_persons)
+    return fallback_narrative, None
+
+
+def _derive_actual_relationship_label(
+    kinship_persons: list[dict[str, Any]],
+    cfpid: str,
+    narrative: Optional[str],
+) -> Optional[str]:
+    """Determine the most useful relationship label from API data or the narrative."""
+
+    for person in kinship_persons:
+        if str(person.get("personId")) == str(cfpid):
+            parsed = _normalize_relationship_phrase(person.get("relationship"))
+            if parsed:
+                return parsed
+
+    fallback = _extract_relationship_from_narrative(narrative)
+    if fallback:
+        return fallback
+
+    return None
+
+
 # Removed _submit_api_call_groups - sequential processing doesn't need batch submission
 
 # Removed _store_future_result - not needed for sequential processing
@@ -2225,11 +2435,21 @@ def _fetch_ladder_details_for_badges(
 
         try:
             ladder_call_count += 1
-            ladder_result = _fetch_batch_ladder(session_manager, cfpid, my_tree_id)
+            badge_data = temp_badge_results.get(uuid_val) or {}
+            match_display_name = (
+                badge_data.get("their_firstname")
+                or badge_data.get("display_name")
+                or badge_data.get("name")
+            )
+            ladder_result = _fetch_batch_ladder(
+                session_manager,
+                cfpid,
+                my_tree_id,
+                match_display_name,
+            )
             if not ladder_result:
                 continue
 
-            badge_data = temp_badge_results.get(uuid_val) or {}
             combined_tree_info = badge_data.copy() if badge_data else {}
             combined_tree_info.update(ladder_result)
             enriched_tree_data[uuid_val] = combined_tree_info or ladder_result
@@ -2323,13 +2543,50 @@ def _perform_api_prefetches(
     )
 
     # Classify matches into priority tiers
-    high_priority_uuids, _, priority_uuids = _classify_match_priorities(
+    high_priority_uuids, medium_priority_uuids, priority_uuids = _classify_match_priorities(
         matches_to_process_later, fetch_candidates_uuid
     )
 
+    (
+        priority_uuids,
+        medium_priority_uuids,
+        trimmed_medium_count,
+    ) = _limit_relationship_probability_requests(
+        matches_to_process_later,
+        high_priority_uuids,
+        medium_priority_uuids,
+        RELATIONSHIP_PROB_MAX_PER_PAGE,
+    )
+
+    if trimmed_medium_count > 0:
+        logger.debug(
+            "Relationship probability fetch limit active (%s/page). Trimmed %s medium-priority matches.",
+            RELATIONSHIP_PROB_MAX_PER_PAGE,
+            trimmed_medium_count,
+        )
+
     # SEQUENTIAL PROCESSING: Process each match one at a time
     temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
-    ethnicity_candidates = set(priority_uuids) if ENABLE_ETHNICITY_ENRICHMENT else set()
+    ethnicity_candidates: set[str] = set()
+    if ENABLE_ETHNICITY_ENRICHMENT:
+        if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
+            ethnicity_candidates = set(priority_uuids)
+        else:
+            filtered_candidates: set[str] = set()
+            for match_data in matches_to_process_later:
+                uuid_candidate = match_data.get("uuid")
+                if not uuid_candidate or uuid_candidate not in priority_uuids:
+                    continue
+                if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
+                    filtered_candidates.add(uuid_candidate)
+            ethnicity_candidates = filtered_candidates
+            filtered_out = len(priority_uuids) - len(ethnicity_candidates)
+            if filtered_out > 0:
+                logger.debug(
+                    "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
+                    ETHNICITY_ENRICHMENT_MIN_CM,
+                    filtered_out,
+                )
 
     for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
         _enforce_session_health_for_prefetch(session_manager, processed_count, num_candidates)
@@ -3286,11 +3543,11 @@ def _create_master_id_map(
     Returns:
         Master ID map (UUID -> Person ID)
     """
-    logger.info(f"Creating master ID map: created_person_map={len(created_person_map)}, person_updates={len(person_updates)}, existing_persons_map={len(existing_persons_map)}")
+    logger.debug(f"Creating master ID map: created_person_map={len(created_person_map)}, person_updates={len(person_updates)}, existing_persons_map={len(existing_persons_map)}")
     all_person_ids_map: dict[str, int] = created_person_map.copy()
     _add_update_ids_to_map(all_person_ids_map, person_updates)
     _add_existing_ids_to_map(all_person_ids_map, prepared_bulk_data, existing_persons_map)
-    logger.info(f"Master ID map created with {len(all_person_ids_map)} total entries")
+    logger.debug(f"Master ID map created with {len(all_person_ids_map)} total entries")
     return all_person_ids_map
 
 
@@ -3342,7 +3599,7 @@ def _resolve_person_id(  # noqa: PLR0911
             all_person_ids_map[person_uuid] = person_id
             logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
             return person_id
-        logger.info(f"Person UUID {person_uuid} not found in database - will be created in next batch")
+        logger.debug(f"Person UUID {person_uuid} not found in database - will be created in next batch")
         return None
     except Exception as e:
         logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
@@ -4040,7 +4297,8 @@ def _log_batch_summary(
 ) -> None:
     """Emit a concise INFO-level summary for a processed batch."""
     logger.info(
-        "  • Batch %d/%d | matches=%d | new=%d updated=%d skipped=%d errors=%d | elapsed=%s | rate=%.2f match/s",
+        "  • Page %d | batch %d/%d | matches=%d | new=%d updated=%d skipped=%d errors=%d | elapsed=%s | rate=%.2f match/s",
+        current_page,
         batch_number,
         total_batches,
         batch_match_count,
@@ -4476,8 +4734,6 @@ def _process_page_matches(
             prefetch_breakdown=filtered_timings,
             prefetch_call_counts=filtered_counts,
         )
-
-        _enforce_page_throughput(page_metrics, current_page)
 
         return (
             page_statuses["new"],
@@ -7034,38 +7290,11 @@ def _format_kinship_path_for_action6(kinship_persons: list[dict[str, Any]]) -> s
     return " ".join(path_lines)
 
 
-@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-def _extract_relationship_from_person(person: dict[str, Any], cfpid: str, kinship_persons: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    """Extract relationship data from a kinship person record."""
-    if isinstance(person, dict) and person.get("personId") == cfpid:
-        relationship = person.get("relationship", "")
-        if relationship:
-            # Format the full kinship path with names and years
-            relationship_path = _format_kinship_path_for_action6(kinship_persons)
-            return {
-                "actual_relationship": relationship,
-                "relationship_path": relationship_path
-            }
-    return None
-
-
-def _extract_first_relationship(kinship_persons: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
-    """Extract relationship from the first kinship person."""
-    if kinship_persons and isinstance(kinship_persons[0], dict):
-        first_person = kinship_persons[0]
-        relationship = first_person.get("relationship", "")
-        if relationship:
-            # Format the full kinship path with names and years
-            relationship_path = _format_kinship_path_for_action6(kinship_persons)
-            return {
-                "actual_relationship": relationship,
-                "relationship_path": relationship_path
-            }
-    return None
-
-
 def _fetch_batch_ladder(
-    session_manager: SessionManager, cfpid: str, tree_id: str
+    session_manager: SessionManager,
+    cfpid: str,
+    tree_id: str,
+    match_display_name: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
@@ -7099,22 +7328,33 @@ def _fetch_batch_ladder(
 
     kinship_persons = enhanced_result.get("kinship_persons", [])
     if not kinship_persons:
-        logger.warning(f"Enhanced API returned no kinship data for {cfpid}")
+        logger.debug(f"Enhanced API returned no kinship data for {cfpid}")
         return None
 
-    # Extract relationship information from the enhanced API
-    for person in kinship_persons:
-        result = _extract_relationship_from_person(person, cfpid, kinship_persons)
-        if result:
-            return result
+    narrative, unified_path = _format_relationship_path_from_kinship(
+        kinship_persons,
+        session_manager,
+        match_display_name,
+    )
 
-    # If we have kinship data but no direct match, use the first relationship
-    result = _extract_first_relationship(kinship_persons)
-    if result:
-        return result
+    relationship_label = _derive_actual_relationship_label(
+        kinship_persons,
+        cfpid,
+        narrative,
+    )
 
-    logger.error(f"Enhanced API returned kinship data but failed to extract relationship for {cfpid}")
-    return None
+    if not relationship_label:
+        logger.debug(f"Unable to derive relationship label for cfpid {cfpid}")
+
+    ladder_payload: dict[str, Any] = {
+        "actual_relationship": relationship_label,
+        "relationship_path": narrative,
+    }
+
+    if unified_path:
+        ladder_payload["relationship_path_unified"] = unified_path
+
+    return ladder_payload
 
 
 # ============================================================================
@@ -7845,7 +8085,7 @@ def _log_page_completion_summary(
     else:
         body_lines.append("  Metrics unavailable for this page")
 
-    logger.info("\n".join(["", " | ".join(header_parts), *body_lines]))
+    logger.info("".join(["", " | ".join(header_parts), *body_lines]))
 
 
 # End of _log_page_completion_summary

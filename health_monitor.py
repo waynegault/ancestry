@@ -532,7 +532,7 @@ class SessionHealthMonitor:
             logger.critical(f"{prefix}🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
             self._trigger_immediate_intervention("SEVERE_ERROR_PATTERN", errors_in_window, window_name)
         elif window_name == "5-minute" and errors_in_window >= 75:
-            logger.warning(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
+            logger.debug(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
             self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
 
     def _check_error_rate_early_warning(self, current_time: float) -> None:
@@ -693,9 +693,9 @@ class SessionHealthMonitor:
         """Trigger enhanced monitoring for elevated error rates."""
         try:
             prefix = self._safety_prefix()
-            logger.warning(f"{prefix}📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
-            logger.warning(f"{prefix}   Pattern: {error_count} errors in {window}")
-            logger.warning(f"{prefix}   Action: Increasing monitoring frequency")
+            logger.debug(f"{prefix}📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
+            logger.debug(f"{prefix}   Pattern: {error_count} errors in {window}")
+            logger.debug(f"{prefix}   Action: Increasing monitoring frequency")
 
             # Set enhanced monitoring flag
             self._enhanced_monitoring_active = True
@@ -717,7 +717,7 @@ class SessionHealthMonitor:
             )
             self.alerts.append(alert)
 
-            logger.warning(f"{self._safety_prefix()}📊 ENHANCED MONITORING ACTIVE - Increased error rate surveillance")
+            logger.debug(f"{self._safety_prefix()}📊 ENHANCED MONITORING ACTIVE - Increased error rate surveillance")
 
         except Exception as e:
             logger.error(f"Failed to trigger enhanced monitoring: {e}")
@@ -756,7 +756,7 @@ class SessionHealthMonitor:
 
     def reset_intervention_flags(self) -> None:
         """Reset intervention flags (use with caution)."""
-        logger.warning("🔄 Resetting intervention flags")
+        logger.debug("🔄 Resetting intervention flags")
         self._emergency_halt_requested = False
         self._emergency_halt_reason = ""
         self._emergency_halt_timestamp = 0.0
@@ -859,7 +859,7 @@ class SessionHealthMonitor:
             logger.info("✅ Health monitoring optimized for long session")
 
         except Exception as e:
-            logger.warning(f"Failed to optimize for long session: {e}")
+            logger.debug(f"Failed to optimize for long session: {e}")
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for monitoring overhead analysis."""
@@ -910,7 +910,7 @@ class SessionHealthMonitor:
             self.update_metric("disk_usage_percent", disk_usage)
 
         except Exception as e:
-            logger.warning(f"Error updating system metrics: {e}")
+            logger.debug(f"Error updating system metrics: {e}")
 
     def _update_browser_health_metrics(self, monitor: Any) -> None:
         """Update browser health metrics from monitor."""
@@ -961,7 +961,7 @@ class SessionHealthMonitor:
                         logger.debug(f"Session health monitor update failed: {session_exc}")
 
         except Exception as e:
-            logger.warning(f"Error updating session metrics: {e}")
+            logger.debug(f"Error updating session metrics: {e}")
 
     def get_health_dashboard(self) -> dict[str, Any]:
         """Get comprehensive health dashboard data."""

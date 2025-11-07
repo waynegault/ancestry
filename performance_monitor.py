@@ -206,7 +206,7 @@ class PerformanceMonitor:
             self.record_metric("thread_count", thread_count, "system")
 
         except Exception as e:
-            logger.warning(f"Error collecting system metrics: {e}")
+            logger.debug(f"Error collecting system metrics: {e}")
 
     def record_metric(
         self,

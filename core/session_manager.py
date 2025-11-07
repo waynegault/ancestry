@@ -197,12 +197,22 @@ class SessionManager:
             max_fill_rate = desired_rate if allow_aggressive else safe_rps
             max_fill_rate = max(max_fill_rate, min_fill_rate)
             bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
+            endpoint_profiles_raw = getattr(config_schema.api, "endpoint_throttle_profiles", {})
+            if isinstance(endpoint_profiles_raw, dict):
+                endpoint_profiles = {
+                    key: dict(value)
+                    for key, value in endpoint_profiles_raw.items()
+                    if isinstance(key, str) and isinstance(value, dict)
+                }
+            else:
+                endpoint_profiles = {}
             self.rate_limiter = get_rate_limiter(
                 initial_fill_rate=safe_rps,
                 success_threshold=batch_threshold,
                 min_fill_rate=min_fill_rate,
                 max_fill_rate=max_fill_rate,
                 capacity=bucket_capacity,
+                endpoint_profiles=endpoint_profiles,
             )
             if self.rate_limiter:
                 logger.debug(

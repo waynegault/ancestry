@@ -1287,6 +1287,7 @@ def get_rate_limiter(
     min_fill_rate: Optional[float] = None,
     max_fill_rate: Optional[float] = None,
     capacity: Optional[float] = None,
+    endpoint_profiles: Optional[dict[str, Any]] = None,
 ):
     """Return the global AdaptiveRateLimiter singleton.
 
@@ -1306,6 +1307,7 @@ def get_rate_limiter(
         min_fill_rate=min_fill_rate,
         max_fill_rate=max_fill_rate,
         capacity=capacity,
+        endpoint_profiles=endpoint_profiles,
     )
 
 # ------------------------------
@@ -1646,7 +1648,7 @@ def _apply_rate_limiting(
     """
     wait_time = 0.0
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-        wait_time = session_manager.rate_limiter.wait()  # type: ignore[union-attr]
+        wait_time = session_manager.rate_limiter.wait(api_description)  # type: ignore[union-attr]
         if wait_time > 0.1:  # Log only significant waits
             logger.debug(
                 f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
@@ -1896,7 +1898,7 @@ def _handle_retryable_status(
     sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429 and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:  # Too Many Requests
-        session_manager.rate_limiter.on_429_error()  # Updated to AdaptiveRateLimiter interface
+        session_manager.rate_limiter.on_429_error(api_description)  # type: ignore[union-attr]
 
     retry_type = "🚨 429 EXPONENTIAL BACKOFF" if status == 429 else "Retry"
     logger.warning(

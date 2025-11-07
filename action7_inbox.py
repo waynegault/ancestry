@@ -240,6 +240,7 @@ class InboxProcessor:
             "conversations_fetched": 0,
             "conversations_processed": 0,
             "ai_classifications": 0,
+            "engagement_assessments": 0,
             "person_updates": 0,
             "errors": 0,
             "start_time": None,
@@ -967,7 +968,16 @@ class InboxProcessor:
 
         try:
             # Run inbox processing loop
-            stop_reason, total_api_items, ai_classified, status_updates, items_processed, session_deaths, session_recoveries = (
+            (
+                stop_reason,
+                total_api_items,
+                ai_classified,
+                engagement_assessments,
+                status_updates,
+                items_processed,
+                session_deaths,
+                session_recoveries,
+            ) = (
                 self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
             )
 
@@ -977,6 +987,7 @@ class InboxProcessor:
                 items_processed=items_processed,
                 new_logs=0,  # Upsert logic makes exact count difficult
                 ai_classified=ai_classified,
+                engagement_assessments=engagement_assessments,
                 status_updates=status_updates,
                 stop_reason=stop_reason,
                 max_inbox_limit=self.max_inbox_limit,
@@ -1024,10 +1035,11 @@ class InboxProcessor:
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],
         my_pid_lower: str
-    ) -> tuple[Optional[str], int, int, int, int, int, int]:
+    ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
         """Run the main inbox processing loop.
 
-        Returns: (stop_reason, total_api_items, ai_classified, status_updated, items_processed, session_deaths, session_recoveries)
+        Returns: (stop_reason, total_api_items, ai_classified, engagement_assessments,
+                  status_updated, items_processed, session_deaths, session_recoveries)
         """
         # Add newline before processing starts
         print()
@@ -1051,6 +1063,7 @@ class InboxProcessor:
         """Initialize state variables for the inbox processing loop."""
         return {
             "ai_classified_count": 0,
+            "engagement_assessment_count": 0,
             "status_updated_count": 0,
             "total_processed_api_items": 0,
             "items_processed_before_stop": 0,
@@ -1486,11 +1499,12 @@ class InboxProcessor:
         session.commit()
 
 
-    def _assess_and_upsert(self, session: DbSession, people_id: int, direction: MessageDirectionEnum) -> None:
+    def _assess_and_upsert(self, session: DbSession, people_id: int, direction: MessageDirectionEnum) -> bool:
         """Build context, assess engagement, and upsert state if result present."""
         formatted_context = self._build_recent_context(session, people_id)
         if not formatted_context:
-            return
+            return False
+
         result = assess_engagement(
             conversation_history=formatted_context,
             session_manager=self.session_manager,
@@ -1498,6 +1512,14 @@ class InboxProcessor:
         )
         if result:
             self._upsert_conversation_state(session, people_id, direction, result)
+            return True
+        return False
+
+    def _register_engagement_assessment(self, state: Optional[dict[str, Any]]) -> None:
+        """Track successful engagement assessments in stats and loop state."""
+        self.stats["engagement_assessments"] = self.stats.get("engagement_assessments", 0) + 1
+        if state is not None:
+            state["engagement_assessment_count"] = state.get("engagement_assessment_count", 0) + 1
 
     def _track_message_analytics(
         self,
@@ -1506,16 +1528,22 @@ class InboxProcessor:
         direction: MessageDirectionEnum,
         ai_sentiment: Optional[str] = None,
         conversation_phase: Optional[str] = None,
-    ) -> None:
-        """Track message analytics for conversation metrics and update conversation state (Phase 3)."""
+    ) -> bool:
+        """Track message analytics for conversation metrics and update conversation state (Phase 3).
+
+        Returns True when an engagement assessment succeeds."""
+        assessment_performed = False
         try:
             # 1) Record event and metrics
             self._record_event_and_metrics(session, people_id, direction, ai_sentiment, conversation_phase)
 
             # 2) AI engagement assessment
-            self._assess_and_upsert(session, people_id, direction)
+            assessment_performed = self._assess_and_upsert(session, people_id, direction)
         except Exception as e:
             logger.debug(f"Analytics tracking failed for people_id {people_id}: {e}")
+            return False
+
+        return assessment_performed
 
     def _update_person_status_from_ai(
         self, ai_sentiment: Optional[str], people_id: int, person_updates: dict[int, PersonStatusEnum]
@@ -1644,12 +1672,13 @@ class InboxProcessor:
             # Track analytics for received message
             db_session = self.session_manager.get_db_conn()
             if db_session:
-                self._track_message_analytics(
+                if self._track_message_analytics(
                     session=db_session,
                     people_id=people_id,
                     direction=MessageDirectionEnum.IN,
                     ai_sentiment=ai_sentiment_result,
-                )
+                ):
+                    self._register_engagement_assessment(ctx.state)
 
             self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
         else:
@@ -1686,11 +1715,12 @@ class InboxProcessor:
             # Track analytics for sent message
             db_session = self.session_manager.get_db_conn()
             if db_session:
-                self._track_message_analytics(
+                if self._track_message_analytics(
                     session=db_session,
                     people_id=people_id,
                     direction=MessageDirectionEnum.OUT,
-                )
+                ):
+                    self._register_engagement_assessment(ctx.state)
         else:
             logger.debug(f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})")
 
@@ -2149,16 +2179,6 @@ class InboxProcessor:
         state["total_processed_api_items"] += batch_api_item_count
         state["current_batch_num"] += 1
 
-        # Log batch completion at INFO level for every batch (simplified format matching Action 6)
-        print()  # Newline before batch complete log
-        logger.info(
-            f"Batch {state['current_batch_num']} complete: "
-            f"Processed={state['total_processed_api_items']}, "
-            f"AI={state['ai_classified_count']}, "
-            f"Updates={state['status_updated_count']}, "
-            f"Errors={state['error_count_this_loop']}"
-        )
-
         return False, None, all_conversations_batch, next_cursor_from_api
 
     def _handle_batch_and_commit(
@@ -2188,7 +2208,8 @@ class InboxProcessor:
             comp_conv_id=comp_conv_id,
             comp_ts=comp_ts,
             my_pid_lower=my_pid_lower,
-            min_aware_dt=state["min_aware_dt"]
+            min_aware_dt=state["min_aware_dt"],
+            state=state,
         )
         batch_stop, batch_stop_reason = self._process_conversations_in_batch(
             session, all_conversations_batch, ctx, state
@@ -2260,6 +2281,17 @@ class InboxProcessor:
         should_stop, stop_reason = self._handle_batch_and_commit(
             session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower
         )
+
+        print()
+        logger.info(
+            f"Batch {state['current_batch_num']} complete: "
+            f"Processed={state['total_processed_api_items']}, "
+            f"AI={state['ai_classified_count']}, "
+            f"Engagement={state['engagement_assessment_count']}, "
+            f"Updates={state['status_updated_count']}, "
+            f"Errors={state['error_count_this_loop']}"
+        )
+
         if should_stop:
             return True, stop_reason
 
@@ -2306,11 +2338,11 @@ class InboxProcessor:
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
          # Accept progress bar instance
-    ) -> tuple[Optional[str], int, int, int, int, int, int]:
-        """
-        Internal helper: Contains the main loop for fetching and processing inbox batches.
+    ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
+        """Run the core inbox processing loop.
 
-        Returns: (stop_reason, total_api_items, ai_classified, status_updated, items_processed, session_deaths, session_recoveries)
+        Returns: (stop_reason, total_api_items, ai_classified, engagement_assessments,
+                  status_updated, items_processed, session_deaths, session_recoveries)
         """
         # Initialize loop state
         state = self._initialize_loop_state()
@@ -2346,6 +2378,7 @@ class InboxProcessor:
                     state["stop_reason"],
                     state["total_processed_api_items"],
                     state["ai_classified_count"],
+                    state["engagement_assessment_count"],
                     state["status_updated_count"],
                     state["items_processed_before_stop"],
                     state["session_deaths"],
@@ -2381,6 +2414,7 @@ class InboxProcessor:
             state["stop_reason"],
             state["total_processed_api_items"],
             state["ai_classified_count"],
+            state["engagement_assessment_count"],
             state["status_updated_count"],
             state["items_processed_before_stop"],
             state["session_deaths"],
@@ -2395,6 +2429,7 @@ class InboxProcessor:
         items_processed: int,
         new_logs: int,
         ai_classified: int,
+        engagement_assessments: int,
         status_updates: int,
         stop_reason: Optional[str],
         max_inbox_limit: int,
@@ -2421,6 +2456,7 @@ class InboxProcessor:
         logger.info(f"Conversations Processed:      {items_processed}")
         # logger.info(f"New/Updated Log Entries:    {new_logs}") # Removed as upsert logic complicates exact counts
         logger.info(f"AI Classifications Attempted: {ai_classified}")
+        logger.info(f"AI Engagement Assessments:   {engagement_assessments}")
         logger.info(f"Person Status Updates Made:   {status_updates}")
 
         # Step 2.5: Log session health metrics if any occurred
@@ -2458,6 +2494,7 @@ class InboxProcessor:
                 "conversations_fetched": total_api_items,
                 "conversations_processed": items_processed,
                 "ai_classifications": ai_classified,
+                "engagement_assessments": engagement_assessments,
                 "person_updates": status_updates,
                 "session_deaths": session_deaths,
                 "session_recoveries": session_recoveries,

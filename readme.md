@@ -359,13 +359,14 @@ python demo_lm_studio_autostart.py
 ### Action 6: DNA Match Gathering
 Automated DNA match data collection from Ancestry.com with optimized API pagination and parallel processing.
 
-**Key Features:**
 - **Optimized Pagination**: Uses `itemsPerPage=50` parameter (60% fewer API pages than default 20)
 - **Parallel Processing**: Configurable worker threads for match detail fetching
 - **Rate Limiting**: Thread-safe token bucket algorithm prevents 429 errors
 - **Session Health Monitoring**: Adaptive health checks aligned with batch size
 - **Checkpoint System**: Auto-resume from last page on interruption
 - **Ethnicity Enrichment**: Fetches and stores DNA ethnicity percentages
+- **Relationship Ladder Throttling**: Optional per-page limit on relationship probability calls via `MAX_RELATIONSHIP_PROB_FETCHES`
+- **Unified Narratives**: Relationship paths now mirror Action 10 formatting and capture the normalized ladder JSON when available
 
 **API Endpoint:**
 ```
@@ -380,6 +381,7 @@ REQUESTS_PER_SECOND=3.5         # Token bucket fill rate
 BATCH_SIZE=25                   # Matches processed per DB transaction
                                 # Benefits: DB efficiency, error isolation,
                                 #          memory management, progress visibility
+MAX_RELATIONSHIP_PROB_FETCHES=0 # Medium-priority relationship probability fetch cap (0 disables trimming)
 ```
 
 **Adaptive Batch Processing:**

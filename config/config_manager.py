@@ -968,6 +968,7 @@ class ConfigManager:
         # Integer configurations
         self._set_int_config(config, "api", "request_timeout", "REQUEST_TIMEOUT")
         self._set_int_config(config, "api", "max_pages", "MAX_PAGES")
+        self._set_int_config(config, "api", "max_relationship_prob_fetches", "MAX_RELATIONSHIP_PROB_FETCHES")
         self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
         self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
         self._set_int_config(config, "api", "burst_limit", "BURST_LIMIT")
@@ -986,6 +987,17 @@ class ConfigManager:
         # Boolean configurations
         self._set_bool_config(config, "api", "rate_limit_enabled", "RATE_LIMIT_ENABLED")
         self._set_bool_config(config, "api", "allow_unsafe_rate_limit", "ALLOW_UNSAFE_RATE_LIMIT")
+
+        throttle_json = os.getenv("API_ENDPOINT_THROTTLES")
+        if throttle_json:
+            try:
+                override_data = json.loads(throttle_json)
+                if isinstance(override_data, dict):
+                    config["api"]["endpoint_throttle_profiles"] = override_data
+                else:
+                    logger.warning("API_ENDPOINT_THROTTLES must be a JSON object; ignoring value")
+            except json.JSONDecodeError as exc:
+                logger.warning(f"Failed to parse API_ENDPOINT_THROTTLES: {exc}")
 
     def _load_int_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load a single integer environment variable into config."""
@@ -1009,6 +1021,7 @@ class ConfigManager:
         self._load_int_env_var(config, "MAX_PRODUCTIVE_TO_PROCESS", "max_productive_to_process")
         self._load_int_env_var(config, "MAX_INBOX", "max_inbox")
         self._load_int_env_var(config, "PARALLEL_WORKERS", "parallel_workers")
+        self._load_int_env_var(config, "ETHNICITY_ENRICHMENT_MIN_CM", "ethnicity_enrichment_min_cm")
         self._load_bool_env_var(config, "ENABLE_ETHNICITY_ENRICHMENT", "enable_ethnicity_enrichment")
 
     def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
