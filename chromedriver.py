@@ -342,9 +342,9 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
         return None
 
 
-def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str, attempt_num: int) -> None:
+def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str, attempt_num: int) -> None:  # noqa: ARG001
     """Configure driver after initialization."""
-    # NOTE: CDP user-agent override disabled – Chrome 142+ closes immediately when invoked here.
+    # NOTE: CDP user-agent override disabled - Chrome 142+ closes immediately when invoked here.
     # The user-agent is already set via Chrome launch arguments, so no additional override required.
     logger.debug("User-Agent set via Chrome options (CDP override disabled for stability)")
 

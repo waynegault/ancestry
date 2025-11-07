@@ -1246,7 +1246,7 @@ def _log_action_start(start_page: int) -> None:
     app_mode = getattr(config_schema, "app_mode", "production")
     dry_run_enabled = app_mode.lower() == "dry_run"
     raw_max_pages = getattr(config_schema.api, "max_pages", 0)
-    requested_max_pages = "unlimited" if not raw_max_pages else raw_max_pages
+    requested_max_pages = raw_max_pages if raw_max_pages else "unlimited"
 
     log_action_configuration({
         "Action": "Action 6 - Gather DNA Matches",
@@ -6894,7 +6894,7 @@ def _try_cloudscraper_fallback(
             headers=rel_headers,
             json={},
             allow_redirects=True,
-            timeout=config_schema.selenium.api_timeout,
+            timeout=(30, 90),  # (connect_timeout, read_timeout) - prevents TCP hangs
         )
         if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
             data = cs_resp.json()
@@ -7833,8 +7833,11 @@ def _test_regression_prevention_configuration_respect():
         max_pages = getattr(getattr(config_schema, 'api', None), 'max_pages', None)
 
         if max_pages is not None:
-            if isinstance(max_pages, int) and max_pages >= 1:
-                print(f"   ✅ MAX_PAGES configuration valid: {max_pages}")
+            if isinstance(max_pages, int) and max_pages >= 0:
+                if max_pages == 0:
+                    print("   ✅ MAX_PAGES=0 (all pages mode - no limit)")
+                else:
+                    print(f"   ✅ MAX_PAGES configuration valid: {max_pages}")
                 results.append(True)
             else:
                 print(f"   ❌ MAX_PAGES configuration invalid: {max_pages}")

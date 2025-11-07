@@ -1432,7 +1432,9 @@ def _try_direct_suggest_fallback(
         logger.debug(f"Direct request cookies: {list(cookies.keys())}")
 
         direct_timeout = _get_api_timeout(30)
-        direct_response_obj = requests.get(suggest_url, headers=direct_headers, cookies=cookies, timeout=direct_timeout)
+        # Use timeout tuple: (connect_timeout, read_timeout) to prevent hangs
+        timeout_tuple = (30, direct_timeout) if isinstance(direct_timeout, (int, float)) else direct_timeout
+        direct_response_obj = requests.get(suggest_url, headers=direct_headers, cookies=cookies, timeout=timeout_tuple)
 
         if direct_response_obj.status_code == 200:
             direct_data = direct_response_obj.json()
@@ -1612,11 +1614,13 @@ def _try_direct_facts_request(
         logger.debug(f"Direct facts request headers: {direct_headers}")
         logger.debug(f"Direct facts request cookies: {list(cookies.keys())}")
 
+        # Use timeout tuple: (connect_timeout, read_timeout) to prevent hangs
+        timeout_tuple = (30, direct_timeout) if isinstance(direct_timeout, (int, float)) else direct_timeout
         direct_response_obj = requests.get(
             facts_api_url,
             headers=direct_headers,
             cookies=cookies,
-            timeout=direct_timeout,
+            timeout=timeout_tuple,
         )
 
         if direct_response_obj.status_code == 200:

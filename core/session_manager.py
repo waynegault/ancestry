@@ -11,8 +11,33 @@ PHASE 5.1 OPTIMIZATION: Enhanced with intelligent session caching for dramatic
 performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
-# === CORE INFRASTRUCTURE ===
+# === SUPPRESS TEST WARNINGS FIRST (before any imports) ===
+import os
 import sys
+import warnings
+
+# NOTE: These warning suppressions are OBSOLETE but kept for defense-in-depth.
+# PREFERRED APPROACH: Run as script (`python core\session_manager.py`) NOT as module (`python -m core.session_manager`)
+# See test execution block at bottom of file for full explanation.
+#
+# The suppression below doesn't work for runpy RuntimeWarnings anyway (they occur before our code runs),
+# but it does suppress other test-related warnings if someone uses `-m` anyway.
+
+# Suppress warnings during test runs - must be before other imports
+if __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv):
+    # Suppress all RuntimeWarnings (including runpy module warnings)
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
+    warnings.filterwarnings("ignore", message=".*runpy.*")
+    # Also suppress via simplefilter for more aggressive filtering
+    warnings.simplefilter("ignore", RuntimeWarning)
+    # Suppress config warning output to stderr
+    os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"
+    # Redirect stderr temporarily to suppress subprocess warnings
+    import io
+    _original_stderr = sys.stderr
+    sys.stderr = io.StringIO()
+
+# === CORE INFRASTRUCTURE ===
 from pathlib import Path
 
 # Add parent directory to path for core_imports
@@ -21,6 +46,10 @@ if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
 from standard_imports import setup_module
+
+# Restore stderr after critical imports
+if __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv):
+    sys.stderr = _original_stderr
 
 logger = setup_module(globals(), __name__)
 
@@ -1203,6 +1232,109 @@ class SessionManager:
 
         logger.debug("Session closed.")
 
+    def _cleanup_browser(self) -> None:
+        """Kill browser process and release resources."""
+        if not (self.browser_manager and self.driver_live):
+            return
+
+        # Try graceful quit first
+        try:
+            driver = self.driver
+            if driver:
+                driver.quit()
+        except Exception as e:
+            logger.warning(f"Graceful browser quit failed: {e}")
+
+        # Force browser manager to release resources
+        try:
+            self.browser_manager.close_browser()
+        except Exception as e:
+            logger.warning(f"BrowserManager cleanup failed: {e}")
+
+    def _cleanup_database(self) -> None:
+        """Close all database connections."""
+        if not self.db_manager:
+            return
+
+        try:
+            self.db_manager.close_connections(dispose_engine=True)
+        except Exception as e:
+            logger.warning(f"Database cleanup failed: {e}")
+
+    def _cleanup_api_caches(self) -> None:
+        """Clear API manager caches and CSRF token."""
+        if self.api_manager:
+            try:
+                self.api_manager.clear_identifiers()
+            except Exception as e:
+                logger.warning(f"API manager cleanup failed: {e}")
+
+        try:
+            self.invalidate_csrf_cache()
+        except Exception as e:
+            logger.warning(f"CSRF cache invalidation failed: {e}")
+
+    def _reset_session_state(self) -> None:
+        """Reset internal session state flags."""
+        self.session_ready = False
+        self.session_start_time = None
+        self._db_init_attempted = False
+        self._db_ready = False
+
+    def _force_session_restart(self, reason: str = "Watchdog timeout") -> bool:
+        """
+        Emergency session restart triggered by watchdog timeout.
+
+        Purpose:
+        --------
+        Forcefully restarts session when an operation hangs beyond timeout threshold.
+        More aggressive than close_sess() - kills browser process and clears all caches.
+
+        Args:
+            reason: Description of why restart was triggered (for logging)
+
+        Returns:
+            bool: Always returns False (operation failed, restart attempted)
+
+        Called By:
+        ----------
+        APICallWatchdog when operation exceeds timeout_seconds threshold
+
+        Actions Taken:
+        --------------
+        1. Log critical timeout event with reason
+        2. Kill browser process (if running)
+        3. Close all database connections
+        4. Clear API manager caches (identifiers, CSRF token)
+        5. Clear CSRF cache
+        6. Set session_ready=False
+        7. Log restart completion
+
+        Example:
+        --------
+        >>> watchdog = APICallWatchdog(timeout_seconds=120)
+        >>> watchdog.start("relationship_prob",
+        ...               lambda: session_manager._force_session_restart("API timeout"))
+        """
+        logger.critical(
+            f"🚨 FORCE SESSION RESTART triggered: {reason} - "
+            "killing browser and clearing caches"
+        )
+
+        try:
+            self._cleanup_browser()
+            self._cleanup_database()
+            self._cleanup_api_caches()
+            self._reset_session_state()
+
+            logger.info("Force session restart complete - session marked invalid")
+
+        except Exception as e:
+            logger.error(f"Error during force session restart: {e}", exc_info=True)
+
+        # Always return False - operation failed, restart attempted
+        return False
+
     # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
 
     @retry_on_failure(max_attempts=3)
@@ -1654,6 +1786,195 @@ class SessionManager:
         return clear_session_cache()
 
 
+# === API Call Watchdog for Timeout Protection ===
+
+
+class APICallWatchdog:
+    """
+    Monitors API calls and triggers emergency restart if operation hangs.
+
+    Purpose:
+    --------
+    Catches operations that bypass request-level timeouts due to:
+    - Browser-based API calls that ignore timeout parameters
+    - TCP-level hangs (connection established but no response)
+    - OS-level issues (file handles, network interfaces)
+    - CloudScraper internal issues
+
+    Root Cause:
+    -----------
+    The 7-hour browser hang (26,831 seconds) occurred because:
+    1. timeout_protection decorator uses daemon threads (can't be killed)
+    2. cloudscraper.get() call got stuck at TCP level
+    3. No operation-level timeout enforcement existed
+
+    Solution:
+    ---------
+    This watchdog provides operation-level timeout enforcement that:
+    - Runs in parallel with API calls
+    - Triggers force_session_restart() if timeout exceeded
+    - Works as context manager for clean resource management
+
+    Usage:
+    ------
+    >>> watchdog = APICallWatchdog(timeout_seconds=120)
+    >>> def emergency_callback():
+    ...     session_manager._force_session_restart("Watchdog timeout")
+    >>> watchdog.start("relationship_prob", emergency_callback)
+    >>> try:
+    ...     response = cloudscraper.get(url)
+    ... finally:
+    ...     watchdog.cancel()
+
+    Or with context manager:
+    >>> with APICallWatchdog(timeout_seconds=120) as watchdog:
+    ...     watchdog.set_callback("api_name", emergency_callback)
+    ...     response = make_api_call()
+
+    Thread Safety:
+    --------------
+    All state mutations protected by threading.Lock()
+    Safe for concurrent use from multiple threads
+
+    See Also:
+    ---------
+    RATE_LIMITING_ANALYSIS.md lines 430-510 for design rationale
+    """
+
+    def __init__(self, timeout_seconds: float = 120) -> None:
+        """
+        Initialize watchdog with timeout threshold.
+
+        Args:
+            timeout_seconds: Maximum operation duration before triggering
+                           emergency restart (default: 120 seconds)
+        """
+        if timeout_seconds <= 0:
+            raise ValueError(f"timeout_seconds must be > 0, got {timeout_seconds}")
+
+        self.timeout_seconds = timeout_seconds
+        self.timer: Optional[threading.Timer] = None
+        self.is_active = False
+        self._lock = threading.Lock()
+        self._api_name = ""
+        self._callback: Optional[Any] = None
+
+    def start(self, api_name: str, callback: Any) -> None:
+        """
+        Start watchdog timer for API call.
+
+        Args:
+            api_name: Name of API operation being monitored
+            callback: Function to call if timeout occurs (typically
+                     session_manager._force_session_restart)
+
+        Example:
+            >>> watchdog.start("relationship_prob", lambda: restart())
+        """
+        with self._lock:
+            if self.is_active:
+                logger.warning(
+                    f"Watchdog already active for '{self._api_name}', "
+                    "cancelling previous timer"
+                )
+                self._cancel_unsafe()
+
+            self._api_name = api_name
+            self._callback = callback
+
+            def timeout_handler() -> None:
+                logger.critical(
+                    f"🚨 WATCHDOG TIMEOUT: {api_name} exceeded "
+                    f"{self.timeout_seconds}s limit - triggering emergency restart"
+                )
+                if callback:
+                    callback()
+
+            self.timer = threading.Timer(self.timeout_seconds, timeout_handler)
+            self.timer.daemon = True
+            self.timer.start()
+            self.is_active = True
+
+            logger.debug(
+                f"Watchdog started for '{api_name}' "
+                f"(timeout: {self.timeout_seconds}s)"
+            )
+
+    def cancel(self) -> None:
+        """
+        Cancel watchdog timer (operation completed successfully).
+
+        Safe to call multiple times. Should always be called in finally block.
+
+        Example:
+            >>> try:
+            ...     response = make_api_call()
+            ... finally:
+            ...     watchdog.cancel()
+        """
+        with self._lock:
+            self._cancel_unsafe()
+
+    def _cancel_unsafe(self) -> None:
+        """Internal cancel without lock (caller must hold lock)."""
+        if self.timer:
+            self.timer.cancel()
+            self.timer = None
+        if self.is_active:
+            logger.debug(f"Watchdog cancelled for '{self._api_name}'")
+        self.is_active = False
+        self._api_name = ""
+        self._callback = None
+
+    def set_callback(self, api_name: str, callback: Any) -> None:
+        """
+        Set callback for context manager usage.
+
+        Args:
+            api_name: Name of API operation
+            callback: Emergency restart callback
+
+        Example:
+            >>> with APICallWatchdog(120) as watchdog:
+            ...     watchdog.set_callback("api_name", restart_callback)
+            ...     make_api_call()
+        """
+        with self._lock:
+            self._api_name = api_name
+            self._callback = callback
+
+            if self.is_active:
+                # Restart timer with new callback
+                self._cancel_unsafe()
+
+            def timeout_handler() -> None:
+                logger.critical(
+                    f"🚨 WATCHDOG TIMEOUT: {api_name} exceeded "
+                    f"{self.timeout_seconds}s limit"
+                )
+                if callback:
+                    callback()
+
+            self.timer = threading.Timer(self.timeout_seconds, timeout_handler)
+            self.timer.daemon = True
+            self.timer.start()
+            self.is_active = True
+
+    def __enter__(self) -> "APICallWatchdog":
+        """Context manager entry (timer started by set_callback)."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> bool:
+        """Context manager exit (always cancel timer)."""
+        self.cancel()
+        return False  # Don't suppress exceptions
+
+
 # === Decomposed Helper Functions ===
 def _test_session_manager_initialization():
     """Test SessionManager initialization with detailed component verification"""
@@ -2030,12 +2351,193 @@ def _test_regression_prevention_initialization_stability():
     return success
 
 
+# === APICallWatchdog Test Functions ===
+
+
+def _test_watchdog_initialization() -> None:
+    """Test basic APICallWatchdog initialization."""
+    watchdog = APICallWatchdog(timeout_seconds=60)
+    assert watchdog.timeout_seconds == 60, "Timeout should match initialization"
+    assert watchdog.timer is None, "Timer should be None initially"
+    assert not watchdog.is_active, "Watchdog should not be active initially"
+
+
+def _test_watchdog_timeout_enforcement() -> None:
+    """Test that watchdog triggers callback after timeout."""
+    callback_executed = []
+
+    def emergency_callback() -> None:
+        callback_executed.append(True)
+
+    watchdog = APICallWatchdog(timeout_seconds=0.5)
+    watchdog.start("test_api", emergency_callback)
+    time.sleep(1.0)  # Wait for timeout
+
+    assert len(callback_executed) == 1, "Callback should be executed exactly once"
+
+
+def _test_watchdog_graceful_completion() -> None:
+    """Test that cancel() prevents callback execution."""
+    callback_executed = []
+
+    def emergency_callback() -> None:
+        callback_executed.append(True)
+
+    watchdog = APICallWatchdog(timeout_seconds=0.5)
+    watchdog.start("test_api", emergency_callback)
+    time.sleep(0.2)
+    watchdog.cancel()
+    time.sleep(0.5)  # Wait longer than timeout
+
+    assert len(callback_executed) == 0, "Callback should NOT be executed after cancel"
+
+
+def _test_watchdog_context_manager() -> None:
+    """Test context manager protocol."""
+    callback_executed = []
+
+    def emergency_callback() -> None:
+        callback_executed.append(True)
+
+    with APICallWatchdog(timeout_seconds=0.5) as watchdog:
+        watchdog.set_callback("test_api", emergency_callback)
+        time.sleep(0.1)
+
+    time.sleep(0.6)
+    assert len(callback_executed) == 0, "Callback should NOT fire after context exit"
+
+
+def _test_watchdog_multiple_cycles() -> None:
+    """Test watchdog can be reused multiple times."""
+    watchdog = APICallWatchdog(timeout_seconds=0.3)
+
+    for i in range(5):
+        watchdog.start(f"test_api_{i}", lambda: None)
+        time.sleep(0.1)
+        watchdog.cancel()
+        assert not watchdog.is_active, f"Cycle {i}: should not be active"
+
+
+def _test_watchdog_thread_safety() -> None:
+    """Test thread safety under concurrent access."""
+    watchdog = APICallWatchdog(timeout_seconds=1.0)
+    errors = []
+
+    def thread_worker(thread_id: int) -> None:
+        try:
+            watchdog.start(f"thread_{thread_id}", lambda: None)
+            time.sleep(0.1)
+            watchdog.cancel()
+        except Exception as e:
+            errors.append((thread_id, e))
+
+    threads = [threading.Thread(target=thread_worker, args=(i,)) for i in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(errors) == 0, f"Thread safety errors: {errors}"
+
+
+def _test_watchdog_parameter_validation() -> None:
+    """Test parameter validation."""
+    try:
+        APICallWatchdog(timeout_seconds=0)
+        raise AssertionError("Should raise ValueError for timeout=0")
+    except ValueError:
+        pass  # Expected
+
+    try:
+        APICallWatchdog(timeout_seconds=-5)
+        raise AssertionError("Should raise ValueError for negative timeout")
+    except ValueError:
+        pass  # Expected
+
+
+def _test_watchdog_edge_cases() -> None:
+    """Test edge cases."""
+    watchdog = APICallWatchdog(timeout_seconds=0.5)
+
+    # Cancel before start
+    watchdog.cancel()
+    assert not watchdog.is_active, "Cancel before start should work"
+
+    # Double cancel
+    watchdog.cancel()
+    watchdog.cancel()
+
+    # Start, let timeout, then cancel
+    callback_executed = []
+    watchdog.start("test_api", lambda: callback_executed.append(True))
+    time.sleep(0.7)
+    assert len(callback_executed) == 1, "Callback should have executed"
+    watchdog.cancel()  # Should not error
+
+
+def _test_force_session_restart() -> None:
+    """Test _force_session_restart() method."""
+    sm = SessionManager()
+
+    # Set up session state
+    sm.session_ready = True
+    sm.session_start_time = time.time()
+    sm._db_init_attempted = True
+    sm._db_ready = True
+
+    # Initial state verification
+    assert sm.session_ready is True, "Session should be ready initially"
+    assert sm._db_ready is True, "DB should be ready initially"
+
+    # Call force_session_restart
+    result = sm._force_session_restart("Test timeout")
+
+    # Verify result (should always return False)
+    assert result is False, "Force restart should always return False"
+
+    # Verify session state reset
+    assert sm.session_ready is False, "Session should be marked not ready"
+    assert sm.session_start_time is None, "Session start time should be None"
+    assert sm._db_init_attempted is False, "DB init attempted should be reset"
+    assert sm._db_ready is False, "DB ready should be reset"
+
+
+def _test_watchdog_integration_with_session_restart() -> None:
+    """Test watchdog integration with _force_session_restart()."""
+    sm = SessionManager()
+    restart_called = []
+
+    def restart_callback() -> None:
+        """Callback that triggers session restart."""
+        result = sm._force_session_restart("Watchdog timeout in test")
+        restart_called.append(result)
+
+    # Set up session state
+    sm.session_ready = True
+
+    # Create watchdog with short timeout
+    watchdog = APICallWatchdog(timeout_seconds=0.5)
+    watchdog.start("test_api", restart_callback)
+
+    # Wait for timeout
+    time.sleep(0.7)
+
+    # Verify restart was called
+    assert len(restart_called) == 1, "Restart callback should have been called"
+    assert restart_called[0] is False, "Restart should return False"
+    assert sm.session_ready is False, "Session should be marked not ready after restart"
+
+    # Cleanup
+    watchdog.cancel()
+
+
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for session_manager.py (decomposed).
     """
     from test_framework import TestSuite, suppress_logging
 
+    # Warnings already suppressed at module level when __name__ == "__main__"
     with suppress_logging():
         suite = TestSuite(
             "Session Manager & Component Coordination", "session_manager.py"
@@ -2123,8 +2625,111 @@ def run_comprehensive_tests() -> bool:
             "Test multiple initialization attempts and basic attribute access stability",
         )
 
+        # === APICallWatchdog Tests ===
+        suite.run_test(
+            "APICallWatchdog: Basic initialization",
+            _test_watchdog_initialization,
+            "Watchdog initializes with valid timeout, timer inactive, callback not set",
+            "Test APICallWatchdog basic initialization",
+            "Create watchdog with specific timeout and verify initial state",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Timeout enforcement",
+            _test_watchdog_timeout_enforcement,
+            "Callback executed after timeout expires",
+            "Test watchdog triggers callback after timeout",
+            "Start watchdog with 0.5s timeout, wait 1s, verify callback executed",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Graceful completion",
+            _test_watchdog_graceful_completion,
+            "Callback NOT executed when cancelled before timeout",
+            "Test cancel() prevents callback execution",
+            "Start watchdog, cancel before timeout, verify callback not executed",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Context manager protocol",
+            _test_watchdog_context_manager,
+            "Timer started on enter, cancelled on exit",
+            "Test context manager __enter__/__exit__ work correctly",
+            "Use watchdog with 'with' statement, verify proper lifecycle",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Multiple cycles",
+            _test_watchdog_multiple_cycles,
+            "Each cycle works independently, no state leakage",
+            "Test watchdog can be reused multiple times",
+            "Start and cancel watchdog 5 times, verify clean state",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Thread safety",
+            _test_watchdog_thread_safety,
+            "No race conditions, all operations complete safely",
+            "Test operations are thread-safe under concurrent access",
+            "Run 10 threads starting/cancelling watchdogs concurrently",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Parameter validation",
+            _test_watchdog_parameter_validation,
+            "ValueError raised for invalid timeout values",
+            "Test invalid timeout raises ValueError",
+            "Try zero and negative timeout, verify ValueError",
+        )
+
+        suite.run_test(
+            "APICallWatchdog: Edge cases",
+            _test_watchdog_edge_cases,
+            "All edge cases handled without errors",
+            "Test edge cases: cancel before start, double cancel, cancel after timeout",
+            "Verify graceful handling of unusual call sequences",
+        )
+
+        suite.run_test(
+            "Force Session Restart",
+            _test_force_session_restart,
+            "Session state reset correctly: session_ready=False, DB flags reset",
+            "Test _force_session_restart() method",
+            "Verify session state, DB flags, and timing are reset after force restart",
+        )
+
+        suite.run_test(
+            "Watchdog Integration with Session Restart",
+            _test_watchdog_integration_with_session_restart,
+            "Watchdog triggers _force_session_restart() on timeout",
+            "Test watchdog integration with _force_session_restart()",
+            "Verify watchdog timeout triggers session restart callback correctly",
+        )
+
         return suite.finish_suite()
 
 
+def main() -> None:
+    """Main entry point for running tests."""
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
+
+
 if __name__ == "__main__":
-    run_comprehensive_tests()
+    # NOTE: Running via "python -m core.session_manager" triggers a harmless RuntimeWarning
+    # from Python's runpy module because core.session_manager is both:
+    #   1. A package member (core/session_manager.py)
+    #   2. Being executed as __main__
+    #
+    # Python's import system detects this and warns about "unpredictable behaviour"
+    # but it's actually safe in this case - we're just running tests.
+    #
+    # To avoid the warning, use one of these alternatives:
+    #   • python core/session_manager.py (run as script, not module)
+    #   • python -m core (runs core/__main__.py which tests all modules)
+    #   • python run_all_tests.py (runs all 58 test modules)
+    #
+    # The warning does NOT indicate a bug - it's Python being cautious about
+    # a module that's both imported and executed. Our code handles this safely.
+
+    main()

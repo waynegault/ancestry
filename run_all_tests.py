@@ -44,14 +44,42 @@ Usage:
     python run_all_tests.py --benchmark    # Run with detailed performance benchmarking
     python run_all_tests.py --analyze-logs # Analyze application logs for performance metrics
     python run_all_tests.py --fast --analyze-logs  # Run tests and then analyze logs
+
+IMPORTANT: Always run tests in venv (virtual environment)
+    Windows: .venv\\Scripts\activate
+    Linux/Mac: source .venv/bin/activate
 """
 
 import concurrent.futures
 import json
 import os
+import sys
+
+
+# Check if running in venv and warn if not
+def _check_venv():
+    """Check if running in a virtual environment and warn if not."""
+    in_venv = (
+        hasattr(sys, 'real_prefix') or
+        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    )
+    if not in_venv:
+        print("⚠️  WARNING: Not running in virtual environment!")
+        print("   Activate venv first:")
+        print(r"   Windows: .venv\Scripts\activate")
+        print("   Linux/Mac: source .venv/bin/activate")
+        print()
+        response = input("Continue anyway? (y/N): ").strip().lower()
+        if response != 'y':
+            print("Exiting. Please activate venv and try again.")
+            sys.exit(1)
+        print()
+
+_check_venv()
 import re
 import subprocess
-import sys
+
+# sys already imported above for venv check
 import threading
 import time
 from dataclasses import asdict, dataclass

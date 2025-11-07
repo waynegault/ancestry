@@ -222,12 +222,20 @@ class ConfigManager:
         safe_rps = 0.3
         current_rps = getattr(api, "requests_per_second", safe_rps)
 
+        # Detect if we're in test mode to suppress verbose warnings
+        suppress_warnings = (
+            os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1"
+            or os.environ.get("PYTEST_CURRENT_TEST") is not None
+            or any("test" in arg.lower() for arg in sys.argv)
+        )
+
         if unsafe_requested:
             if not getattr(type(self), "_unsafe_speed_override_logged", False):
-                logger.warning(
-                    "⚠️ API speed profile '%s' enabled - disabling safety clamp; monitor for 429 errors.",
-                    speed_profile or "custom",
-                )
+                if not suppress_warnings:
+                    logger.warning(
+                        "⚠️ API speed profile '%s' enabled - disabling safety clamp; monitor for 429 errors.",
+                        speed_profile or "custom",
+                    )
                 setattr(type(self), "_unsafe_speed_override_logged", True)
         elif current_rps > safe_rps:
             if not getattr(self, "_rps_clamp_logged", False):

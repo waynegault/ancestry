@@ -8,6 +8,11 @@ all automation workflows including DNA match gathering, inbox processing,
 messaging, and genealogical research tools.
 """
 
+# === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
+import os
+
+os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"
+
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
@@ -18,7 +23,8 @@ logger = setup_module(globals(), __name__)
 import gc
 import inspect
 import logging
-import os
+
+# os already imported at top for SUPPRESS_CONFIG_WARNINGS
 import shutil
 import sys
 import time

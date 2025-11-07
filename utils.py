@@ -104,10 +104,7 @@ def log_action_configuration(config_dict: dict[str, Any]) -> None:
     """
     formatted_parts: list[str] = []
     for key, value in config_dict.items():
-        if isinstance(value, bool):
-            value_str = "Yes" if value else "No"
-        else:
-            value_str = value
+        value_str = ("Yes" if value else "No") if isinstance(value, bool) else value
         formatted_parts.append(f"{key}={value_str}")
 
     summary = " | ".join(formatted_parts)
@@ -2240,7 +2237,14 @@ def _prepare_api_request(
     )
 
     # Prepare request details
+    # Timeout tuple: (connect_timeout, read_timeout)
+    # - connect_timeout: TCP handshake must complete within 30s
+    # - read_timeout: Response must arrive within 90s after connection
+    # This prevents indefinite hangs at both connection and response levels
     request_timeout = config.timeout if config.timeout is not None else sel_cfg.api_timeout
+    # Convert single timeout to tuple for requests library
+    timeout_tuple = (30, request_timeout) if isinstance(request_timeout, (int, float)) else request_timeout
+
     req_session = config.session_manager._requests_session
     effective_cookie_jar = config.cookie_jar if config.cookie_jar is not None else req_session.cookies
     http_method = config.method.upper()
@@ -2250,7 +2254,7 @@ def _prepare_api_request(
     # Note: Match List API should allow redirects (as it did in working version from 2 months ago)
 
     logger.debug(
-        f"[{config.api_description}] Preparing Request: Method={http_method}, URL={config.url}, Timeout={request_timeout}s, AllowRedirects={effective_allow_redirects}"
+        f"[{config.api_description}] Preparing Request: Method={http_method}, URL={config.url}, Timeout={timeout_tuple}s, AllowRedirects={effective_allow_redirects}"
     )
 
     # Sync cookies
@@ -2288,7 +2292,7 @@ def _prepare_api_request(
         "headers": final_headers,
         "data": config.data,
         "json": effective_json_data,  # Use 'json' for requests.request, not 'json_data'
-        "timeout": request_timeout,
+        "timeout": timeout_tuple,  # (connect_timeout, read_timeout) tuple
         "verify": True,  # Standard verification
         "allow_redirects": effective_allow_redirects,
         "cookies": effective_cookie_jar,
