@@ -126,13 +126,25 @@ ai_interface.py         # Multi-provider AI abstraction
   - action8_messaging.py: template loading and helpers now rely on the global session
   - scripts/test_editrelationships_shape.py: uses the global session (requires main.py to register it first)
 
-### Rate Limiting (CRITICAL)
+### Rate Limiting & Timeout Protection (CRITICAL)
+
+**Phase 2 Complete: Dual-Layer Timeout Protection**
+- **Request-level timeouts**: All HTTP requests use tuple pairs `(connect_timeout, read_timeout)`
+- **Operation-level watchdog**: `APICallWatchdog` monitors long-running operations (60s threshold)
+- **Force restart capability**: `_force_session_restart()` with circuit breaker pattern
+- **Proactive session health**: Automatic refresh at 25-minute mark (40-min session lifetime)
 
 **Adaptive Rate Limiting System:**
-- Class: `RateLimiter` in `utils.py` (lines 1360-1850)
+- Class: `RateLimiter` in `utils.py` (lines 1360-1850) - **Planned migration to `AdaptiveRateLimiter`**
 - Instance: `session_manager.rate_limiter` (single instance, thread-safe)
 - Algorithm: Token bucket with adaptive delay adjustment
 - Auto-saves optimized settings to `.env` after each run for convergence
+
+**Phase 3 Planned: AdaptiveRateLimiter Migration**
+- New class: `AdaptiveRateLimiter` in `rate_limiter.py` (better convergence, no oscillation)
+- Eliminates dual delay tracking (token bucket + adaptive delay)
+- Unified rate limiting across all API calls
+- Real-time metrics via `get_metrics()` API
 
 **Configuration Formula:**
 ```
@@ -151,8 +163,11 @@ Current safe settings:
 - Each run starts with optimized values from previous run
 - Converges to optimal settings over multiple runs
 
-**Validation:**
+**Timeout Protection Validation:**
 ```powershell
+# Check for timeout protection activity
+Select-String -Path Logs\app.log -Pattern "watchdog|timeout|force.*restart|🚨"
+
 # Check for 429 errors (should return 0)
 (Select-String -Path Logs\app.log -Pattern "429 error").Count
 
@@ -201,6 +216,52 @@ Phase status snapshot:
 - Architecture and global session pattern: see sections above
 - Actions 6–10: see per-action sections below
 - Action 10 performs GEDCOM-first; if GEDCOM returns no matches, it falls back to the API via api_search_core, with identical input prompts and output formatting across sources.
+
+### Code Quality & Testing Standards
+
+**Testing Framework:**
+- **58 test modules** embedded in source files (not separate test/ directory)
+- **run_all_tests.py**: Comprehensive test orchestrator with quality scoring
+- **Target**: 100/100 quality score for all modules
+- **Virtual environment enforcement**: Tests verify venv activation before running
+
+**Quality Metrics:**
+```
+Quality Score = 100 - (type_hints_issues × 5 + complexity_issues × 10)
+
+Type Hints: All functions must have complete type annotations
+Complexity: Target cyclomatic complexity < 10 per function
+Docstrings: Required for all public functions/classes
+```
+
+**Recent Quality Achievements:**
+- `core/session_manager.py`: 100/100 (21 tests, complexity reduced from 12→6)
+- Zero linting warnings (SIM108, SIM212, ARG001, RUF003 all fixed)
+- RuntimeWarning eliminated via proper script execution pattern
+
+**Running Tests:**
+```bash
+# All 58 modules (sequential, ~30 minutes)
+python run_all_tests.py
+
+# Parallel execution (faster)
+python run_all_tests.py --fast
+
+# Single module
+python core\session_manager.py
+
+# With performance analysis
+python run_all_tests.py --analyze-logs
+```
+
+**Linting:**
+```bash
+# Check only (no modifications)
+ruff check .
+
+# Auto-fix issues
+ruff check --fix .
+```
 
 - Testing and quality: run_all_tests.py is authoritative; tests must fail on genuine failures
 - Pylance/linters: fix errors, do not suppress; reduce function complexity (target <10) and keep functions short
