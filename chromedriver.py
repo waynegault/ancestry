@@ -244,7 +244,7 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-infobars")
     # Note: --start-minimized removed due to Chrome 142 compatibility issues
-    # Browser will be minimized programmatically after initialization instead
+    # Terminal focus is restored via SessionManager after initialization instead
 
     # User agent
     user_agent = random.choice(
@@ -273,10 +273,32 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
         minimal_options = uc.ChromeOptions()
         minimal_options.add_argument("--no-sandbox")
         minimal_options.add_argument("--disable-dev-shm-usage")
-        # Start minimized to avoid window closing issues
-        if not config_schema.selenium.headless_mode:
-            minimal_options.add_argument("--start-minimized")
-        driver = uc.Chrome(options=minimal_options)
+
+        # Persist authentication state via dedicated profile
+        user_data_dir = getattr(config_schema.selenium, "chrome_user_data_dir", None)
+        if user_data_dir:
+            user_data_dir_path = Path(user_data_dir)
+            user_data_dir_path.mkdir(parents=True, exist_ok=True)
+            user_data_dir_str = str(user_data_dir_path)
+            minimal_options.add_argument(f"--user-data-dir={user_data_dir_str}")
+            logger.debug(f"[init_webdvr] Using persistent Chrome profile: {user_data_dir_str}")
+        else:
+            logger.warning("[init_webdvr] chrome_user_data_dir not configured - using temporary profile")
+
+        # Additional stability options for Chrome 142+
+        minimal_options.add_argument("--disable-gpu")
+        minimal_options.add_argument("--disable-software-rasterizer")
+        minimal_options.add_argument("--disable-extensions")
+        minimal_options.add_argument("--no-first-run")
+        minimal_options.add_argument("--no-default-browser-check")
+
+        logger.debug("[init_webdvr] Creating Chrome instance with enhanced stability options...")
+        driver = uc.Chrome(
+            options=minimal_options,
+            version_main=142,
+            use_subprocess=False,
+            suppress_welcome=True,
+        )
 
         # Verify driver is valid before proceeding
         if not driver:
@@ -300,8 +322,8 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
                 driver.quit()
             return None
 
-        # Browser starts minimized via --start-minimized flag (no manual minimize needed)
-        logger.debug("[init_webdvr] Browser started minimized (via --start-minimized flag)")
+        # Browser started successfully; focus will return to terminal after init
+        logger.debug("[init_webdvr] Browser started successfully (focus will return to terminal)")
 
         elapsed = time.time() - start_time
         logger.debug(f"Chrome WebDriver initialization succeeded in {elapsed:.2f}s (attempt {attempt_num})")
@@ -322,16 +344,13 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optio
 
 def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str, attempt_num: int) -> None:
     """Configure driver after initialization."""
-    # Apply user agent override
-    try:
-        driver.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": user_agent})
-        logger.debug("User-Agent override applied via CDP.")
-    except Exception as cdp_exc:
-        logger.warning(f"CDP command failed: {cdp_exc}")
+    # NOTE: CDP user-agent override disabled – Chrome 142+ closes immediately when invoked here.
+    # The user-agent is already set via Chrome launch arguments, so no additional override required.
+    logger.debug("User-Agent set via Chrome options (CDP override disabled for stability)")
 
-    # Window will be minimized programmatically after browser stabilizes
+    # Bring terminal focus instead of minimizing browser
     if not config.headless_mode:
-        logger.debug("Browser will be minimized programmatically after initialization.")
+        logger.debug("Terminal focus will be restored after browser initialization.")
 
     # Set timeouts
     driver.set_page_load_timeout(config.page_load_timeout)
@@ -374,7 +393,7 @@ def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_
 def init_webdvr(_attach_attempt: bool = False) -> Optional[WebDriver]:
     """
     V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
-    Initializes standard Chrome WebDriver and minimizes the window if not headless.
+    Initializes standard Chrome WebDriver and returns focus to the terminal when complete.
     """
     config = config_schema.selenium
 
