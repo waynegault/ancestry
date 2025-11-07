@@ -61,7 +61,7 @@ def _log_api_duration_message(api_name: str, duration: float) -> None:
     elif duration > 2.0:
         logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
 
-
+        logger.info(f"Moderate API call: {api_name} took {duration:.3f}s")
 def _track_api_metrics(api_name: str, duration: float, response_status: str) -> None:
     """Forward metrics to optional performance monitor."""
     try:
@@ -70,6 +70,33 @@ def _track_api_metrics(api_name: str, duration: float, response_status: str) -> 
         track_api_performance(api_name, duration, response_status)
     except ImportError:
         pass  # Graceful degradation if performance monitor not available
+
+
+@dataclass
+class PageProcessingMetrics:
+    """Aggregated telemetry for a processed page."""
+
+    total_matches: int = 0
+    fetch_candidates: int = 0
+    existing_matches: int = 0
+    db_seconds: float = 0.0
+    prefetch_seconds: float = 0.0
+    commit_seconds: float = 0.0
+    total_seconds: float = 0.0
+    batches: int = 0
+
+    def merge(self, other: "PageProcessingMetrics") -> "PageProcessingMetrics":
+        """Combine metrics from another batch into this aggregate."""
+
+        self.total_matches += other.total_matches
+        self.fetch_candidates += other.fetch_candidates
+        self.existing_matches += other.existing_matches
+        self.db_seconds += other.db_seconds
+        self.prefetch_seconds += other.prefetch_seconds
+        self.commit_seconds += other.commit_seconds
+        self.total_seconds += other.total_seconds
+        self.batches += other.batches
+        return self
 
 
 # Performance monitoring helper with session manager integration
@@ -120,7 +147,6 @@ def _update_session_performance_tracking(session_manager, duration: float, respo
         else:
             session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
 
-        # Cap slow call counter to prevent endless accumulation
         session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
 
     except Exception as e:
@@ -801,7 +827,7 @@ def _process_single_page(
         return current_page_num + 1, loop_final_success
 
     # Process batch
-    page_new, page_updated, page_skipped, page_errors = _do_batch(
+    page_new, page_updated, page_skipped, page_errors, page_metrics = _do_batch(
         session_manager=session_manager,
         matches_on_page=matches,
         current_page=current_page_num,
@@ -809,7 +835,14 @@ def _process_single_page(
 
     _update_state_and_progress(state, page_new, page_updated, page_skipped, page_errors)
 
-    logger.info(f"=== Page {current_page_num} Complete: {page_new} new, {page_updated} updated, {page_skipped} skipped, {page_errors} errors ===")
+    _log_page_completion_summary(
+        current_page_num,
+        page_new,
+        page_updated,
+        page_skipped,
+        page_errors,
+        page_metrics,
+    )
 
     # Rate limiting
     _apply_rate_limiting(session_manager, current_page_num)
@@ -1208,13 +1241,18 @@ def _log_action_start(start_page: int) -> None:
     """
     from utils import log_action_configuration
 
+    app_mode = getattr(config_schema, "app_mode", "production")
+    dry_run_enabled = app_mode.lower() == "dry_run"
+    raw_max_pages = getattr(config_schema.api, "max_pages", 0)
+    requested_max_pages = "unlimited" if not raw_max_pages else raw_max_pages
+
     log_action_configuration({
         "Action": "Action 6 - Gather DNA Matches",
         "Start Page": start_page,
-        "Max Pages": getattr(config_schema.api, 'max_pages', 'unlimited'),
+        "Requested Pages": requested_max_pages,
         "Matches Per Page": MATCHES_PER_PAGE,
-        "App Mode": getattr(config_schema, 'app_mode', 'production'),
-        "Dry Run": getattr(config_schema, 'dry_run', False)
+        "Mode": app_mode,
+        "Dry Run": dry_run_enabled,
     })
     logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
 
@@ -1697,9 +1735,9 @@ def _classify_match_priorities(
 
     # Combined high and medium for API calls
     priority_uuids = high_priority_uuids.union(medium_priority_uuids)
-    logger.info(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
-               f"{len(medium_priority_uuids)} medium priority, "
-               f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
+    logger.debug(f"API Call Filtering: {len(high_priority_uuids)} high priority, "
+                 f"{len(medium_priority_uuids)} medium priority, "
+                 f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)")
 
     if log_state["suppressed_high"]:
         logger.debug(f"Suppressed debug output for {log_state['suppressed_high']} additional high priority matches")
@@ -1735,6 +1773,9 @@ def _classify_match_priorities(
 # Removed _check_session_health_periodic - sequential processing checks after each API call
 
 
+PREFETCH_PROGRESS_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75)
+
+
 @dataclass
 class _PrefetchStats:
     """Tracks counters for sequential API prefetch operations."""
@@ -1742,6 +1783,7 @@ class _PrefetchStats:
     critical_failures: int = 0
     ethnicity_fetch_count: int = 0
     ethnicity_skipped: int = 0
+    next_progress_threshold_index: int = 0
 
 
 def _identify_badge_candidates(
@@ -1884,11 +1926,25 @@ def _process_ethnicity_candidate(
         batch_ethnicity_data[uuid_val] = None
 
 
-def _log_prefetch_progress(processed_count: int, num_candidates: int) -> None:
-    """Emit progress updates at consistent intervals."""
+def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats) -> None:
+    """Emit throttled progress updates for lengthy prefetches."""
 
-    if processed_count % 10 == 0:
-        logger.info(f"📊 Progress: {processed_count}/{num_candidates} matches processed")
+    if num_candidates < 40:
+        return
+
+    progress = processed_count / num_candidates
+    while (
+        stats.next_progress_threshold_index < len(PREFETCH_PROGRESS_THRESHOLDS)
+        and progress >= PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index]
+    ):
+        percent = int(PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index] * 100)
+        logger.info(
+            "📊 Prefetch %d%% complete (%d/%d)",
+            percent,
+            processed_count,
+            num_candidates,
+        )
+        stats.next_progress_threshold_index += 1
 
 
 def _build_cfpid_mapping(
@@ -1949,10 +2005,10 @@ def _fetch_ladder_details_for_badges(
 def _log_prefetch_summary(fetch_duration: float, stats: _PrefetchStats) -> None:
     """Summarize prefetch work after completion."""
 
-    logger.info(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
+    logger.debug(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
 
     if stats.ethnicity_fetch_count or stats.ethnicity_skipped:
-        logger.info(
+        logger.debug(
             "🧬 Ethnicity fetches: %s prioritized, %s skipped (low priority)",
             stats.ethnicity_fetch_count,
             stats.ethnicity_skipped,
@@ -2007,7 +2063,7 @@ def _perform_api_prefetches(
     my_tree_id = session_manager.my_tree_id
     stats = _PrefetchStats()
 
-    logger.info(
+    logger.debug(
         f"--- Starting SEQUENTIAL API Pre-fetch ({num_candidates} candidates) ---"
     )
 
@@ -2050,7 +2106,7 @@ def _perform_api_prefetches(
             batch_ethnicity_data,
             stats,
         )
-        _log_prefetch_progress(processed_count, num_candidates)
+        _log_prefetch_progress(processed_count, num_candidates, stats)
 
     batch_tree_data = _fetch_ladder_details_for_badges(
         session_manager,
@@ -3514,7 +3570,7 @@ def _do_batch(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, PageProcessingMetrics]:
     """Process matches from a single page, respecting chunked BATCH_SIZE handling.
 
     BATCHING BENEFITS (Why We Batch):
@@ -3545,18 +3601,23 @@ def _do_batch(
 
     # If we have fewer matches than optimized batch size, process normally (no need to split)
     if num_matches_on_page <= optimized_batch_size:
-        return _process_page_matches(session_manager, matches_on_page, current_page)
+        new, updated, skipped, errors, metrics = _process_page_matches(
+            session_manager, matches_on_page, current_page
+        )
+        metrics.total_seconds = max(metrics.total_seconds, time.time() - batch_start_time)
+        return new, updated, skipped, errors, metrics
 
     # SURGICAL FIX #7: Create single session for all batches on this page
     page_session = session_manager.get_db_conn()
     if not page_session:
         logger.error(f"Page {current_page}: Failed to get DB session for batch processing.")
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, PageProcessingMetrics(total_matches=num_matches_on_page)
 
     try:
         # Otherwise, split into batches and process each with individual summaries
         logger.debug(f"Splitting page {current_page} ({num_matches_on_page} matches) into batches of {optimized_batch_size}")
         total_stats = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+        combined_metrics = PageProcessingMetrics(total_matches=0, batches=0)
 
         for batch_idx in range(0, num_matches_on_page, optimized_batch_size):
             batch_matches = matches_on_page[batch_idx:batch_idx + optimized_batch_size]
@@ -3565,7 +3626,7 @@ def _do_batch(
             logger.debug(f"--- Processing Page {current_page} Batch No{batch_num} ({len(batch_matches)} matches) ---")
 
             # Process this batch using the original logic with reused session
-            new, updated, skipped, errors = _process_page_matches(
+            new, updated, skipped, errors, batch_metrics = _process_page_matches(
                 session_manager, batch_matches, current_page, is_batch=True, reused_session=page_session
             )
 
@@ -3574,6 +3635,7 @@ def _do_batch(
             total_stats["updated"] += updated
             total_stats["skipped"] += skipped
             total_stats["error"] += errors
+            combined_metrics.merge(batch_metrics)
 
             # Log batch summary
             print()
@@ -3605,7 +3667,15 @@ def _do_batch(
         # Track performance in global monitoring
         _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
 
-        return total_stats["new"], total_stats["updated"], total_stats["skipped"], total_stats["error"]
+        combined_metrics.total_matches = num_matches_on_page or combined_metrics.total_matches
+        combined_metrics.total_seconds = max(combined_metrics.total_seconds, batch_duration)
+        return (
+            total_stats["new"],
+            total_stats["updated"],
+            total_stats["skipped"],
+            total_stats["error"],
+            combined_metrics,
+        )
 
     finally:
         # SURGICAL FIX #7: Clean up the reused session
@@ -3653,9 +3723,11 @@ def _process_batch_lookups(
     """Process batch lookups and identify candidates."""
     logger.debug(f"Page {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-    logger.info(f"Page {current_page}: DB lookup for {len(uuids_on_page)} matches...")
+    logger.debug(f"Page {current_page}: DB lookup for {len(uuids_on_page)} matches...")
     existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
-    logger.info(f"Page {current_page}: Found {len(existing_persons_map)} in database (will fetch {len(uuids_on_page) - len(existing_persons_map)} new)")
+    logger.debug(
+        f"Page {current_page}: Found {len(existing_persons_map)} in database (will fetch {len(uuids_on_page) - len(existing_persons_map)} new)"
+    )
 
     logger.debug(f"Batch {current_page}: Identifying candidates...")
     fetch_candidates_uuid, matches_to_process_later, skipped_count = (
@@ -3671,7 +3743,7 @@ def _handle_critical_batch_error(
     current_page: int,
     page_statuses: dict[str, int],
     num_matches_on_page: int
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, PageProcessingMetrics]:
     """Handle critical batch processing errors."""
     logger.critical(
         f"CRITICAL ERROR processing batch page {current_page}: {critical_err}",
@@ -3694,6 +3766,7 @@ def _handle_critical_batch_error(
         page_statuses["updated"],
         page_statuses["skipped"],
         final_error_count_for_page,
+        PageProcessingMetrics(total_matches=num_matches_on_page),
     )
 
 
@@ -3702,7 +3775,7 @@ def _handle_unhandled_batch_error(
     current_page: int,
     page_statuses: dict[str, int],
     num_matches_on_page: int
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, PageProcessingMetrics]:
     """Handle unhandled batch processing exceptions."""
     logger.critical(
         f"CRITICAL UNHANDLED EXCEPTION processing batch page {current_page}: {outer_batch_exc}",
@@ -3717,6 +3790,7 @@ def _handle_unhandled_batch_error(
         page_statuses["updated"],
         page_statuses["skipped"],
         max(0, final_error_count_for_page),
+        PageProcessingMetrics(total_matches=num_matches_on_page),
     )
 
 
@@ -3907,7 +3981,7 @@ def _process_page_matches(
     current_page: int,
     is_batch: bool = False,
     reused_session: Optional[SqlAlchemySession] = None,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, PageProcessingMetrics]:
     """
     Original batch processing logic - now used by both single page and chunked batch processing.
     Coordinates DB lookups, API prefetches, data preparation, and bulk DB operations.
@@ -3916,7 +3990,10 @@ def _process_page_matches(
 
     # TIMING BREAKDOWN: Track each phase for performance analysis
     phase_start = time.time()
-    timing_log = {}
+    timing_log: dict[str, float] = {}
+    page_metrics = PageProcessingMetrics()
+    existing_persons_map: dict[str, Person] = {}
+    fetch_candidates_uuid: set[str] = set()
 
     try:
         page_statuses, num_matches_on_page, _ = _initialize_page_processing(
@@ -3924,7 +4001,7 @@ def _process_page_matches(
         )
         timing_log["initialization"] = time.time() - phase_start
     except ValueError:
-        return 0, 0, 0, 0
+        return 0, 0, 0, 0, page_metrics
 
     try:
         batch_session = _get_batch_session(session_manager, reused_session, current_page)
@@ -3973,11 +4050,23 @@ def _process_page_matches(
                 f"({timing_log.get('data_prep_commit', 0) / total_time * 100:.1f}%)"
             )
 
+        page_metrics = PageProcessingMetrics(
+            total_matches=num_matches_on_page,
+            fetch_candidates=len(fetch_candidates_uuid),
+            existing_matches=len(existing_persons_map),
+            db_seconds=timing_log.get("db_lookups", 0.0),
+            prefetch_seconds=timing_log.get("api_prefetches", 0.0),
+            commit_seconds=timing_log.get("data_prep_commit", 0.0),
+            total_seconds=total_time,
+            batches=1,
+        )
+
         return (
             page_statuses["new"],
             page_statuses["updated"],
             page_statuses["skipped"],
             page_statuses["error"],
+            page_metrics,
         )
 
     except MaxApiFailuresExceededError:
@@ -7082,6 +7171,53 @@ def _log_page_summary(
 
 
 # End of _log_page_summary
+
+
+def _log_page_completion_summary(
+    page: int,
+    page_new: int,
+    page_updated: int,
+    page_skipped: int,
+    page_errors: int,
+    metrics: Optional[PageProcessingMetrics],
+) -> None:
+    """Emit a concise INFO-level summary for a completed page."""
+
+    total_processed = page_new + page_updated + page_skipped
+    total_matches = total_processed + page_errors
+
+    if metrics:
+        total_matches = metrics.total_matches or total_matches
+        avg_rate = (total_processed / metrics.total_seconds) if metrics.total_seconds else 0.0
+        prefetch_share = (
+            metrics.prefetch_seconds / metrics.total_seconds * 100
+            if metrics.total_seconds
+            else 0.0
+        )
+        prefetch_share = min(prefetch_share, 100.0)
+        summary_parts = [
+            f"matches={total_matches} (new={page_new} updated={page_updated} skipped={page_skipped} errors={page_errors})",
+            f"existing_reused={metrics.existing_matches}",
+            f"api_fetches={metrics.fetch_candidates} in {metrics.prefetch_seconds:.1f}s",
+            f"db={metrics.db_seconds:.2f}s | commit={metrics.commit_seconds:.2f}s",
+            f"elapsed={metrics.total_seconds:.1f}s",
+        ]
+        if prefetch_share >= 1.0 and metrics.fetch_candidates:
+            summary_parts[2] += f" (≈{prefetch_share:.0f}% runtime)"
+        if avg_rate:
+            summary_parts.append(f"avg={avg_rate:.2f} match/s")
+        if metrics.batches > 1:
+            summary_parts.append(f"batches={metrics.batches}")
+    else:
+        summary_parts = [
+            f"matches={total_matches} (new={page_new} updated={page_updated} skipped={page_skipped} errors={page_errors})",
+            "metrics=unavailable",
+        ]
+
+    logger.info(f"Page {page} summary | {' | '.join(summary_parts)}")
+
+
+# End of _log_page_completion_summary
 
 
 # Removed unused function: _log_coord_summary

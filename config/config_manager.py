@@ -93,6 +93,8 @@ class ConfigManager:
     - Credential integration with SecurityManager
     """
 
+    _token_fill_rate_clamp_logged = False
+
     def __init__(
         self,
         config_file: Optional[Union[str, Path]] = None,
@@ -207,11 +209,13 @@ class ConfigManager:
         # Ensure token bucket fill rate never exceeds enforced RPS
         token_fill_rate = getattr(api, "token_bucket_fill_rate", current_rps)
         if token_fill_rate > api.requests_per_second:
-            logger.info(
-                "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
-                token_fill_rate,
-                api.requests_per_second,
-            )
+            if not getattr(type(self), "_token_fill_rate_clamp_logged", False):
+                logger.info(
+                    "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
+                    token_fill_rate,
+                    api.requests_per_second,
+                )
+                setattr(type(self), "_token_fill_rate_clamp_logged", True)
             api.token_bucket_fill_rate = api.requests_per_second
 
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:

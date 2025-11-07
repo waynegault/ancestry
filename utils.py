@@ -102,8 +102,16 @@ def log_action_configuration(config_dict: dict[str, Any]) -> None:
         })
         # Output: Configuration: APP_MODE=dry_run, START_PAGE=1, MAX_PAGES=2, BATCH_SIZE=10, RATE_LIMIT_DELAY=2.50s
     """
-    config_str = ", ".join([f"{k}={v}" for k, v in config_dict.items()])
-    logger.info(f"Config: {config_str}")
+    formatted_parts: list[str] = []
+    for key, value in config_dict.items():
+        if isinstance(value, bool):
+            value_str = "Yes" if value else "No"
+        else:
+            value_str = value
+        formatted_parts.append(f"{key}={value_str}")
+
+    summary = " | ".join(formatted_parts)
+    logger.info(f"Config: {summary}")
 
 
 def log_starting_position(description: str, details: Optional[dict[str, Any]] = None) -> None:
@@ -120,10 +128,12 @@ def log_starting_position(description: str, details: Optional[dict[str, Any]] = 
             {"Estimated matches": "~40 (20 per page)"}
         )
     """
-    logger.info(description)
-    if details:
-        for key, value in details.items():
-            logger.info(f"{key}: {value}\n")
+    if not details:
+        logger.info(description)
+        return
+
+    detail_parts = [f"{key}={value}" for key, value in details.items()]
+    logger.info(f"{description} | " + " | ".join(detail_parts))
 
 
 def log_cumulative_counts(counts: dict[str, int], prefix: str = "Cumulative") -> None:

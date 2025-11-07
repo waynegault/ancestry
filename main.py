@@ -1027,9 +1027,7 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
             reset_successful, recreation_session = _perform_database_reset_steps(temp_manager)
 
             if reset_successful:
-                logger.info("Database reset completed successfully.")
-
-                # Clear in-memory API cache to prevent stale data
+                # Clear in-memory API cache to prevent stale data before announcing success
                 try:
                     import action6_gather
                     cache_size = len(action6_gather.API_RESPONSE_CACHE)
@@ -1037,6 +1035,8 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
                     logger.info(f"✅ Cleared in-memory API cache ({cache_size} entries)")
                 except Exception as cache_err:
                     logger.warning(f"Could not clear API cache: {cache_err}")
+
+                logger.info("✅ Database reset completed successfully.")
 
         except Exception as recreate_err:
             logger.error(f"Error during DB recreation/seeding: {recreate_err}", exc_info=True)
