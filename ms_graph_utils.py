@@ -485,26 +485,37 @@ def _execute_task_creation_request(
     task_data: dict[str, Any],
     task_title: str,
     list_id: str,
-) -> bool:
+) -> Optional[str]:
     """Execute task creation request and handle errors."""
     try:
         response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
         response.raise_for_status()
 
-        logger.info(f"Successfully created task '{task_title[:50]}...'.")
+        response_data: Optional[dict[str, Any]] = None
         with contextlib.suppress(json.JSONDecodeError):
-            logger.debug(f"Create task response details: {response.json()}")
-        return True
+            response_data = response.json()
+            logger.debug(f"Create task response details: {response_data}")
+
+        task_id = None
+        if isinstance(response_data, dict):
+            task_id = response_data.get("id")
+
+        if task_id:
+            logger.info(f"Successfully created task '{task_title[:50]}...' (ID: {task_id}).")
+        else:
+            logger.info(f"Successfully created task '{task_title[:50]}...' (ID unavailable).")
+
+        return task_id
 
     except requests.exceptions.HTTPError as http_err:
         _handle_task_creation_http_error(http_err, list_id)
-        return False
+        return None
     except requests.exceptions.RequestException as req_err:
         logger.error(f"Network error creating To-Do task: {req_err}", exc_info=False)
-        return False
+        return None
     except Exception as e:
         logger.error(f"Unexpected error creating To-Do task: {e}", exc_info=True)
-        return False
+        return None
 
 
 def create_todo_task(
@@ -515,7 +526,7 @@ def create_todo_task(
     importance: Optional[str] = None,
     due_date: Optional[str] = None,
     categories: Optional[list[str]] = None,
-) -> bool:
+) -> Optional[str]:
     """
     Creates a new task in a specified Microsoft To-Do list using MS Graph API.
     Includes specific handling for common HTTP errors.
@@ -533,7 +544,7 @@ def create_todo_task(
         categories: Optional list of category strings for task organization.
 
     Returns:
-        True if the task was created successfully, False otherwise.
+        The task ID if created successfully, otherwise None.
     """
     # Validate inputs
     if not access_token or not list_id or not task_title:

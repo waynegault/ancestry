@@ -426,6 +426,8 @@ class APIConfig:
     allow_unsafe_rate_limit: bool = False  # Explicit opt-in for disabling safety clamps
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
+    target_match_throughput: float = 1.0  # Target matches processed per second (0 disables pacing)
+    max_throughput_catchup_delay: float = 5.0  # Max pacing delay inserted per page (seconds)
 
     # Concurrency - REMOVED: Parallel processing eliminated for API safety
     # Sequential processing only to prevent 429 rate limiting errors
@@ -487,6 +489,10 @@ class APIConfig:
             raise ValueError("retry_backoff_factor must be non-negative")
         if self.requests_per_second <= 0:
             raise ValueError("requests_per_second must be positive")
+        if self.target_match_throughput < 0:
+            raise ValueError("target_match_throughput must be non-negative")
+        if self.max_throughput_catchup_delay < 0:
+            raise ValueError("max_throughput_catchup_delay must be non-negative")
 
 
 @dataclass

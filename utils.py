@@ -85,12 +85,13 @@ SessionManagerType = Optional[
 # === STANDARDIZED LOGGING HELPERS ===
 # These functions provide consistent logging format across Actions 6-9
 
-def log_action_configuration(config_dict: dict[str, Any]) -> None:
+def log_action_configuration(config_dict: dict[str, Any], section_title: str = "Config") -> None:
     """
     Log action configuration in standardized format.
 
     Args:
         config_dict: Dictionary of configuration key-value pairs
+        section_title: Title prefix for the log entry (default: "Config")
 
     Example:
         log_action_configuration({
@@ -108,7 +109,7 @@ def log_action_configuration(config_dict: dict[str, Any]) -> None:
         formatted_parts.append(f"{key}={value_str}")
 
     summary = " | ".join(formatted_parts)
-    logger.info(f"Config: {summary}")
+    logger.info(f"{section_title}: {summary}")
 
 
 def log_starting_position(description: str, details: Optional[dict[str, Any]] = None) -> None:
@@ -1280,21 +1281,32 @@ class CircuitBreaker:
 # ------------------------------
 # PHASE 3.1: Direct AdaptiveRateLimiter usage
 # ------------------------------
-def get_rate_limiter():
-    """
-    Get the global AdaptiveRateLimiter singleton.
-    
+def get_rate_limiter(
+    initial_fill_rate: Optional[float] = None,
+    success_threshold: Optional[int] = None,
+    min_fill_rate: Optional[float] = None,
+    max_fill_rate: Optional[float] = None,
+    capacity: Optional[float] = None,
+):
+    """Return the global AdaptiveRateLimiter singleton.
+
     PHASE 3.1: Now directly returns AdaptiveRateLimiter (no adapter/wrapper).
-    All calling code updated to use new interface:
-    - wait() → wait()
-    - increase_delay() → on_429_error()
-    - decrease_delay() → on_success()
-    
+    All calling code updated to use the new interface:
+    - wait() -> wait()
+    - increase_delay() -> on_429_error()
+    - decrease_delay() -> on_success()
+
     Returns:
         AdaptiveRateLimiter: The unified rate limiter singleton
     """
     from rate_limiter import get_adaptive_rate_limiter
-    return get_adaptive_rate_limiter()
+    return get_adaptive_rate_limiter(
+        initial_fill_rate=initial_fill_rate,
+        success_threshold=success_threshold,
+        min_fill_rate=min_fill_rate,
+        max_fill_rate=max_fill_rate,
+        capacity=capacity,
+    )
 
 # ------------------------------
 # Session Management (MOVED TO core.session_manager)
@@ -4368,7 +4380,7 @@ if __name__ == "__main__":
         limiter.on_429_error()  # Simulate 429 error
         metrics = limiter.get_metrics()
         assert metrics.error_429_count == 1, "Should track 429 error"
-        
+
         # Test success tracking
         limiter.on_success()
         metrics = limiter.get_metrics()

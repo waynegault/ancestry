@@ -10,7 +10,7 @@ exponential backoff) with a single adaptive token bucket.
 Key Design Principles:
 1. Single source of truth: fill_rate controls request rate
 2. Adaptive learning: Adjusts fill_rate based on API feedback
-3. Conservative speedup: Requires 100 successes before increasing
+3. Balanced speedup: Requires 50 successes before increasing
 4. Aggressive slowdown: Decreases 20% on 429 errors
 5. No oscillation: Long stabilization period prevents fighting
 
@@ -19,14 +19,26 @@ Date: November 7, 2025
 Status: Phase 1 - Foundation
 """
 
+import json
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
+
+
+def _get_state_path() -> Path:
+    """Return the on-disk path used for persisting rate limiter state."""
+    project_root = Path(__file__).resolve().parent
+    return project_root / "Cache" / "rate_limiter_state.json"
+
+
+_persisted_state_cache: Optional[dict[str, Any]] = None
+_rate_limiter_state_source: str = "default"
 
 
 @dataclass
@@ -44,6 +56,329 @@ class RateLimiterMetrics:
     avg_wait_time: float = 0.0
 
 
+@dataclass
+class _LimiterConfig:
+    """Resolved configuration for initializing the adaptive rate limiter."""
+
+    rate: float
+    success_threshold: int
+    min_rate: float
+    max_rate: float
+    capacity: float
+    source: str
+
+
+def _safe_int(value: Any) -> Optional[int]:
+    """Return an int if the value is numeric, otherwise None."""
+    if isinstance(value, bool):  # Guard against bool subclassing int
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    return None
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    """Return a float if the value is numeric, otherwise None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _resolve_rate_from_persisted(
+    rate: Optional[float],
+    persisted: Optional[dict[str, Any]],
+    source: str,
+) -> tuple[Optional[float], str]:
+    """Prefer persisted rate when no explicit rate is provided."""
+    if not persisted:
+        return rate, source
+
+    persisted_rate = _safe_float(persisted.get("fill_rate"))
+    if rate is None and persisted_rate is not None:
+        return persisted_rate, "previous_run"
+    return rate, source
+
+
+def _finalize_rate(rate: Optional[float], explicit_rate: Optional[float]) -> float:
+    """Determine the starting fill rate."""
+    if explicit_rate is not None:
+        return float(explicit_rate)
+    if rate is not None:
+        return float(rate)
+    return 0.5
+
+
+def _finalize_threshold(threshold_value: Optional[int]) -> int:
+    """Ensure a valid success threshold is selected."""
+    return max(threshold_value or 50, 1)
+
+
+def _finalize_min_rate(min_rate: Optional[float]) -> float:
+    """Ensure the minimum rate is positive and reasonable."""
+    value = min_rate if min_rate is not None else 0.1
+    return max(0.01, float(value))
+
+
+def _finalize_max_rate(max_rate: Optional[float], min_rate: float) -> float:
+    """Ensure the maximum rate is not below the minimum."""
+    value = max_rate if max_rate is not None else 3.0
+    return max(min_rate, float(value))
+
+
+def _finalize_capacity(capacity: Optional[float]) -> float:
+    """Ensure capacity is at least one token."""
+    value = capacity if capacity is not None else 10.0
+    return max(1.0, float(value))
+
+
+def _sanitize_positive_int(value: Optional[int]) -> Optional[int]:
+    """Return value when positive integer, otherwise None."""
+    if value is None:
+        return None
+    return value if value > 0 else None
+
+
+def _sanitize_positive_float(value: Optional[float]) -> Optional[float]:
+    """Return value when positive float, otherwise None."""
+    if value is None:
+        return None
+    return value if value > 0 else None
+
+
+def _adjust_bounds_for_explicit_rate(
+    min_rate: float,
+    max_rate: float,
+    explicit_rate: Optional[float],
+    persisted_min_used: bool,
+    persisted_max_used: bool,
+) -> tuple[float, float]:
+    """Broaden persisted bounds when explicit config requires it."""
+    if explicit_rate is None:
+        return min_rate, max_rate
+
+    explicit_value = float(explicit_rate)
+    if persisted_min_used and explicit_value < min_rate:
+        min_rate = max(0.01, explicit_value)
+    if persisted_max_used and explicit_value > max_rate:
+        max_rate = max(min_rate, explicit_value)
+    return min_rate, max_rate
+
+
+def _clamp_rate(rate: float, min_rate: float, max_rate: float) -> float:
+    """Clamp the rate within configured bounds."""
+    return min(max(rate, min_rate), max_rate)
+
+
+def _apply_persisted_config(
+    persisted: Optional[dict[str, Any]],
+    threshold_value: Optional[int],
+    current_min_rate: Optional[float],
+    current_max_rate: Optional[float],
+    bucket_capacity: Optional[float],
+) -> tuple[
+    Optional[int],
+    Optional[float],
+    Optional[float],
+    Optional[float],
+    bool,
+    bool,
+]:
+    """Merge persisted configuration defaults into requested overrides."""
+    if not persisted:
+        return (
+            threshold_value,
+            current_min_rate,
+            current_max_rate,
+            bucket_capacity,
+            False,
+            False,
+        )
+
+    persisted_min_used = False
+    persisted_max_used = False
+
+    if threshold_value is None:
+        threshold_value = _safe_int(persisted.get("success_threshold"))
+    if current_min_rate is None:
+        current_min_rate = _safe_float(persisted.get("min_fill_rate"))
+        persisted_min_used = current_min_rate is not None
+    if current_max_rate is None:
+        current_max_rate = _safe_float(persisted.get("max_fill_rate"))
+        persisted_max_used = current_max_rate is not None
+    if bucket_capacity is None:
+        bucket_capacity = _safe_float(persisted.get("capacity"))
+
+    return (
+        threshold_value,
+        current_min_rate,
+        current_max_rate,
+        bucket_capacity,
+        persisted_min_used,
+        persisted_max_used,
+    )
+
+
+def _finalize_config_values(
+    rate: Optional[float],
+    threshold_value: Optional[int],
+    min_rate: Optional[float],
+    max_rate: Optional[float],
+    capacity: Optional[float],
+    initial_fill_rate: Optional[float],
+    persisted_min_used: bool,
+    persisted_max_used: bool,
+) -> tuple[float, int, float, float, float]:
+    """Return finalized configuration values with clamped rate."""
+    rate_value = _finalize_rate(rate, initial_fill_rate)
+    threshold = _finalize_threshold(threshold_value)
+    min_value = _finalize_min_rate(min_rate)
+    max_value = _finalize_max_rate(max_rate, min_value)
+    capacity_value = _finalize_capacity(capacity)
+    min_value, max_value = _adjust_bounds_for_explicit_rate(
+        min_value,
+        max_value,
+        initial_fill_rate,
+        persisted_min_used,
+        persisted_max_used,
+    )
+    clamped_rate = _clamp_rate(rate_value, min_value, max_value)
+    return clamped_rate, threshold, min_value, max_value, capacity_value
+
+
+def _build_limiter_config(
+    initial_fill_rate: Optional[float],
+    success_threshold: Optional[int],
+    min_fill_rate: Optional[float],
+    max_fill_rate: Optional[float],
+    capacity: Optional[float],
+) -> _LimiterConfig:
+    """Resolve limiter configuration using overrides and persisted state."""
+    persisted = _load_persisted_state()
+    source = "config" if initial_fill_rate is not None else "default"
+
+    rate = initial_fill_rate
+    threshold_value = _sanitize_positive_int(success_threshold)
+    current_min_rate = _sanitize_positive_float(min_fill_rate)
+    current_max_rate = _sanitize_positive_float(max_fill_rate)
+    bucket_capacity = _sanitize_positive_float(capacity)
+
+    rate, source = _resolve_rate_from_persisted(rate, persisted, source)
+    (
+        threshold_value,
+        current_min_rate,
+        current_max_rate,
+        bucket_capacity,
+        persisted_min_used,
+        persisted_max_used,
+    ) = _apply_persisted_config(
+        persisted,
+        threshold_value,
+        current_min_rate,
+        current_max_rate,
+        bucket_capacity,
+    )
+
+    (
+        clamped_rate,
+        threshold_value,
+        min_rate_value,
+        max_rate_value,
+        capacity_value,
+    ) = _finalize_config_values(
+        rate,
+        threshold_value,
+        current_min_rate,
+        current_max_rate,
+        bucket_capacity,
+        initial_fill_rate,
+        persisted_min_used,
+        persisted_max_used,
+    )
+
+    return _LimiterConfig(
+        rate=clamped_rate,
+        success_threshold=threshold_value,
+        min_rate=min_rate_value,
+        max_rate=max_rate_value,
+        capacity=capacity_value,
+        source=source,
+    )
+
+
+def _update_success_threshold(limiter: "AdaptiveRateLimiter", success_threshold: Optional[int]) -> None:
+    """Apply a new success threshold when provided."""
+    if success_threshold is None or success_threshold <= 0:
+        return
+
+    new_threshold = int(success_threshold)
+    if new_threshold != limiter.success_threshold:
+        limiter.success_threshold = new_threshold
+        logger.debug(
+            "Updated AdaptiveRateLimiter success threshold to %d",
+            limiter.success_threshold,
+        )
+
+
+def _update_rate_bounds(
+    limiter: "AdaptiveRateLimiter",
+    min_fill_rate: Optional[float],
+    max_fill_rate: Optional[float],
+) -> None:
+    """Update limiter bounds and clamp the current rate."""
+    bounds_changed = False
+
+    if min_fill_rate is not None and min_fill_rate > 0:
+        new_min = max(0.01, float(min_fill_rate))
+        if abs(new_min - limiter.min_fill_rate) > 1e-6:
+            limiter.min_fill_rate = new_min
+            bounds_changed = True
+
+    if max_fill_rate is not None and max_fill_rate > 0:
+        new_max = max(limiter.min_fill_rate, float(max_fill_rate))
+        if abs(new_max - limiter.max_fill_rate) > 1e-6:
+            limiter.max_fill_rate = new_max
+            bounds_changed = True
+
+    if bounds_changed:
+        limiter.fill_rate = _clamp_rate(
+            limiter.fill_rate,
+            limiter.min_fill_rate,
+            limiter.max_fill_rate,
+        )
+        logger.debug(
+            "Adjusted AdaptiveRateLimiter bounds to %.3f-%.3f; current rate=%.3f",
+            limiter.min_fill_rate,
+            limiter.max_fill_rate,
+            limiter.fill_rate,
+        )
+
+
+def _update_capacity(limiter: "AdaptiveRateLimiter", capacity: Optional[float]) -> None:
+    """Update token bucket capacity when requested."""
+    if capacity is None or capacity <= 0:
+        return
+
+    new_capacity = float(capacity)
+    if abs(new_capacity - limiter.capacity) > 1e-6:
+        limiter.capacity = new_capacity
+        limiter.tokens = min(limiter.tokens, limiter.capacity)
+
+
+def _update_existing_limiter(
+    limiter: "AdaptiveRateLimiter",
+    success_threshold: Optional[int],
+    min_fill_rate: Optional[float],
+    max_fill_rate: Optional[float],
+    capacity: Optional[float],
+) -> None:
+    """Apply runtime updates to the existing singleton instance."""
+    _update_success_threshold(limiter, success_threshold)
+    _update_rate_bounds(limiter, min_fill_rate, max_fill_rate)
+    _update_capacity(limiter, capacity)
+
+
 class AdaptiveRateLimiter:
     """
     Unified adaptive rate limiter using token bucket algorithm.
@@ -56,7 +391,7 @@ class AdaptiveRateLimiter:
 
     Adaptive Logic:
     - 429 error → decrease fill_rate by 20% (slow down significantly)
-    - Success → increase fill_rate by 1% after 100 consecutive successes
+    - Success → increase fill_rate by 2% after 50 consecutive successes
     - Separate immediate retry backoff from system-wide rate
 
     Thread Safety:
@@ -74,22 +409,22 @@ class AdaptiveRateLimiter:
     """
 
     def __init__(
-        self,
-        initial_fill_rate: float = 0.5,
-        capacity: float = 10.0,
-        min_fill_rate: float = 0.1,
-        max_fill_rate: float = 2.0,
-        success_threshold: int = 100,
+    self,
+    initial_fill_rate: float = 1.5,
+    capacity: float = 10.0,
+    min_fill_rate: float = 0.1,
+    max_fill_rate: float = 3.0,
+    success_threshold: int = 50,
     ):
         """
         Initialize adaptive rate limiter.
 
         Args:
-            initial_fill_rate: Starting rate in requests per second (default: 0.5)
+            initial_fill_rate: Starting rate in requests per second (default: 1.5)
             capacity: Maximum burst capacity in tokens (default: 10.0)
             min_fill_rate: Minimum allowed rate (default: 0.1 req/s = 10s between)
-            max_fill_rate: Maximum allowed rate (default: 2.0 req/s)
-            success_threshold: Successes required before speedup (default: 100)
+            max_fill_rate: Maximum allowed rate (default: 3.0 req/s)
+            success_threshold: Successes required before speedup (default: 50)
         """
         # Validate parameters
         if initial_fill_rate <= 0:
@@ -132,9 +467,12 @@ class AdaptiveRateLimiter:
             "error_429_count": 0,
         }
 
-        logger.info(
+        self.initial_source = "default"
+
+        logger.debug(
             f"AdaptiveRateLimiter initialized: fill_rate={initial_fill_rate:.3f} req/s, "
-            f"capacity={capacity:.1f}, range=[{min_fill_rate:.3f}, {max_fill_rate:.3f}]"
+            f"capacity={capacity:.1f}, range=[{min_fill_rate:.3f}, {max_fill_rate:.3f}], "
+            f"success_threshold={success_threshold}, speedup=+2%"
         )
 
     def wait(self) -> float:
@@ -214,17 +552,17 @@ class AdaptiveRateLimiter:
 
     def on_success(self) -> None:
         """
-        Handle successful API call.
+    Handle successful API call.
 
-        Increases fill_rate by 1% only after success_threshold consecutive
-        successes (default: 100). This prevents oscillation and ensures
-        stable operation.
+    Increases fill_rate by 2% only after success_threshold consecutive
+    successes (default: 50). This prevents oscillation and ensures
+    stable operation while converging faster.
 
         Example:
             >>> limiter = AdaptiveRateLimiter(initial_fill_rate=1.0)
-            >>> for _ in range(100):
+            >>> for _ in range(50):
             ...     limiter.on_success()
-            >>> # After 100th success, rate increases to 1.01 req/s
+            >>> # After 50th success, rate increases to 1.02 req/s
         """
         with self._lock:
             self.success_count += 1
@@ -232,7 +570,7 @@ class AdaptiveRateLimiter:
             if self.success_count >= self.success_threshold:
                 old_rate = self.fill_rate
                 self.fill_rate = min(
-                    self.fill_rate * 1.01,  # 1% increase
+                    self.fill_rate * 1.02,  # 2% increase
                     self.max_fill_rate,
                 )
                 self.success_count = 0  # Reset counter
@@ -245,7 +583,7 @@ class AdaptiveRateLimiter:
                     logger.info(
                         f"✅ After {self.success_threshold} successes: "
                         f"Increased rate to {self.fill_rate:.3f} req/s "
-                        f"(+1% from {old_rate:.3f})"
+                        f"(+2% from {old_rate:.3f})"
                     )
 
     def _refill_tokens(self) -> None:
@@ -308,6 +646,43 @@ class AdaptiveRateLimiter:
             logger.info("Rate limiter state reset (fill_rate preserved)")
 
 
+def _load_persisted_state() -> Optional[dict[str, Any]]:
+    """Load persisted rate limiter state from disk."""
+    global _persisted_state_cache  # noqa: PLW0603
+
+    if _persisted_state_cache is not None:
+        return _persisted_state_cache
+
+    state_path = _get_state_path()
+    if not state_path.exists():
+        return None
+
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if isinstance(data, dict) and "fill_rate" in data:
+            _persisted_state_cache = data
+            return data
+    except Exception as exc:  # pragma: no cover - diagnostics only
+        logger.debug(f"Failed to load persisted rate limiter state: {exc}")
+
+    _persisted_state_cache = None
+    return None
+
+
+def _persist_state(payload: dict[str, Any]) -> None:
+    """Persist rate limiter state to disk."""
+    global _persisted_state_cache  # noqa: PLW0603
+
+    state_path = _get_state_path()
+    try:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _persisted_state_cache = payload
+    except Exception as exc:  # pragma: no cover - diagnostics only
+        logger.debug(f"Failed to persist rate limiter state: {exc}")
+
+
 # Singleton instance for global access
 _global_rate_limiter: Optional[AdaptiveRateLimiter] = None
 _global_rate_limiter_lock = threading.Lock()
@@ -315,6 +690,10 @@ _global_rate_limiter_lock = threading.Lock()
 
 def get_adaptive_rate_limiter(
     initial_fill_rate: Optional[float] = None,
+    success_threshold: Optional[int] = None,
+    min_fill_rate: Optional[float] = None,
+    max_fill_rate: Optional[float] = None,
+    capacity: Optional[float] = None,
 ) -> AdaptiveRateLimiter:
     """
     Get or create the global AdaptiveRateLimiter instance.
@@ -324,7 +703,11 @@ def get_adaptive_rate_limiter(
 
     Args:
         initial_fill_rate: Initial rate if creating new instance.
-                          If None, uses default (0.5 req/s)
+                          If None, uses persisted state or default (0.5 req/s)
+        success_threshold: Number of successes before increasing rate.
+        min_fill_rate: Minimum allowed rate (overrides default/persisted value).
+        max_fill_rate: Maximum allowed rate (overrides default/persisted value).
+        capacity: Token bucket capacity (overrides default/persisted value).
 
     Returns:
         AdaptiveRateLimiter: The global rate limiter instance
@@ -334,14 +717,84 @@ def get_adaptive_rate_limiter(
         >>> limiter.wait()
     """
     global _global_rate_limiter  # noqa: PLW0603
+    global _rate_limiter_state_source  # noqa: PLW0603
 
     with _global_rate_limiter_lock:
         if _global_rate_limiter is None:
-            rate = initial_fill_rate if initial_fill_rate is not None else 0.5
-            _global_rate_limiter = AdaptiveRateLimiter(initial_fill_rate=rate)
-            logger.info(f"Created global AdaptiveRateLimiter with rate={rate:.3f} req/s")
+            config = _build_limiter_config(
+                initial_fill_rate=initial_fill_rate,
+                success_threshold=success_threshold,
+                min_fill_rate=min_fill_rate,
+                max_fill_rate=max_fill_rate,
+                capacity=capacity,
+            )
+
+            _global_rate_limiter = AdaptiveRateLimiter(
+                initial_fill_rate=config.rate,
+                success_threshold=config.success_threshold,
+                min_fill_rate=config.min_rate,
+                max_fill_rate=config.max_rate,
+                capacity=config.capacity,
+            )
+            _global_rate_limiter.initial_source = config.source
+            _rate_limiter_state_source = config.source
+            logger.debug(
+                "Created global AdaptiveRateLimiter with rate=%.3f req/s (source=%s, threshold=%d, bounds=%.3f-%.3f, capacity=%.1f)",
+                _global_rate_limiter.fill_rate,
+                config.source,
+                _global_rate_limiter.success_threshold,
+                _global_rate_limiter.min_fill_rate,
+                _global_rate_limiter.max_fill_rate,
+                _global_rate_limiter.capacity,
+            )
+        else:
+            _update_existing_limiter(
+                _global_rate_limiter,
+                success_threshold=success_threshold,
+                min_fill_rate=min_fill_rate,
+                max_fill_rate=max_fill_rate,
+                capacity=capacity,
+            )
 
         return _global_rate_limiter
+
+
+def get_rate_limiter_state_source() -> str:
+    """Return the origin of the current rate limiter initialization."""
+    return _rate_limiter_state_source
+
+
+def get_persisted_rate_state() -> Optional[dict[str, Any]]:
+    """Expose the persisted rate limiter state (if available)."""
+    return _load_persisted_state()
+
+
+def persist_rate_limiter_state(
+    limiter: Optional[AdaptiveRateLimiter],
+    metrics: Optional[RateLimiterMetrics] = None,
+) -> None:
+    """Persist the latest limiter state and optional metrics for next run reuse."""
+
+    if limiter is None:
+        return
+
+    metrics = metrics or limiter.get_metrics()
+
+    payload: dict[str, Any] = {
+        "fill_rate": float(limiter.fill_rate),
+        "success_threshold": int(limiter.success_threshold),
+        "capacity": float(limiter.capacity),
+        "min_fill_rate": float(limiter.min_fill_rate),
+        "max_fill_rate": float(limiter.max_fill_rate),
+        "timestamp": time.time(),
+        "total_requests": int(metrics.total_requests),
+        "avg_wait_time": float(metrics.avg_wait_time),
+        "rate_increases": int(metrics.rate_increases),
+        "rate_decreases": int(metrics.rate_decreases),
+        "error_429_count": int(metrics.error_429_count),
+    }
+
+    _persist_state(payload)
 
 
 def reset_global_rate_limiter() -> None:
@@ -356,9 +809,11 @@ def reset_global_rate_limiter() -> None:
         >>> limiter = get_adaptive_rate_limiter(initial_fill_rate=1.0)
     """
     global _global_rate_limiter  # noqa: PLW0603
+    global _rate_limiter_state_source  # noqa: PLW0603
 
     with _global_rate_limiter_lock:
         _global_rate_limiter = None
+        _rate_limiter_state_source = "default"
         logger.info("Global rate limiter reset")
 
 
@@ -410,10 +865,10 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         test_name="Success threshold",
         test_func=_test_success_threshold,
-        test_summary="Verify success requires 100 calls before rate increase",
+            test_summary="Verify success requires 50 calls before rate increase",
         functions_tested="AdaptiveRateLimiter.on_success",
         method_description="Call on_success 100 times",
-        expected_outcome="No increase until 100th success, then +1%",
+            expected_outcome="No increase until 50th success, then +2%",
     )
 
     # Test 5: 429 resets success counter
@@ -527,23 +982,23 @@ def _test_429_decreases_rate() -> None:
 
 def _test_success_threshold() -> None:
     """Test success requires threshold before increasing rate."""
-    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, success_threshold=100)
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, success_threshold=50)
 
-    # First 99 successes: no change
-    for _ in range(99):
+    # First 49 successes: no change
+    for _ in range(49):
         limiter.on_success()
     assert limiter.fill_rate == 1.0, "Rate should not change before threshold"
-    assert limiter.success_count == 99
+    assert limiter.success_count == 49
 
-    # 100th success: increases by 1%
+    # 50th success: increases by 2%
     limiter.on_success()
-    assert abs(limiter.fill_rate - 1.01) < 0.001, f"Expected 1.01, got {limiter.fill_rate}"
+    assert abs(limiter.fill_rate - 1.02) < 0.001, f"Expected 1.02, got {limiter.fill_rate}"
     assert limiter.success_count == 0, "Counter should reset after increase"
 
 
 def _test_429_resets_success_count() -> None:
     """Test 429 error resets success counter."""
-    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0)
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, success_threshold=60)
 
     # 50 successes
     for _ in range(50):

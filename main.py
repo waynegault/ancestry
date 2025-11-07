@@ -28,6 +28,7 @@ import logging
 import shutil
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
@@ -91,6 +92,97 @@ def _log_configuration_summary(config: Any) -> None:
     logger.info(f"  MAX_INBOX: {config.max_inbox}")
     logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
     logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+    speed_profile = str(getattr(config.api, "speed_profile", "safe")).lower()
+    allow_unsafe = bool(getattr(config.api, "allow_unsafe_rate_limit", False))
+    suppress_warnings = (
+        os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1"
+        or os.environ.get("PYTEST_CURRENT_TEST") is not None
+        or any("test" in arg.lower() for arg in sys.argv)
+    )
+    if getattr(config.api, "target_match_throughput", 0.0) > 0:
+        logger.info(
+            f"  Match Throughput Target: {config.api.target_match_throughput:.2f} match/s"
+        )
+    else:
+        logger.info("  Match Throughput Target: disabled")
+    logger.info(
+        "  Max Pacing Delay/Page: %.2fs",
+        getattr(config.api, "max_throughput_catchup_delay", 0.0),
+    )
+
+    if not suppress_warnings and (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
+        profile_label = speed_profile or "custom"
+        logger.warning(
+            "  Unsafe API speed profile '%s' active; safety clamps relaxed. Monitor for 429 errors.",
+            profile_label,
+        )
+
+    try:
+        from rate_limiter import (
+            get_persisted_rate_state,
+            get_rate_limiter_state_source,
+        )
+        from utils import get_rate_limiter
+
+        persisted_state = get_persisted_rate_state()
+        success_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
+        safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
+        desired_rate = (
+            getattr(config.api, "token_bucket_fill_rate", None)
+            or safe_rps
+        )
+        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
+        min_fill_rate = max(0.05, safe_rps * 0.5)
+        max_fill_rate = desired_rate if allow_aggressive else safe_rps
+        max_fill_rate = max(max_fill_rate, min_fill_rate)
+        bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
+
+        # Allow persisted state to provide initial rate when available
+        initial_rate = None if persisted_state else desired_rate
+
+        limiter = get_rate_limiter(
+            initial_fill_rate=initial_rate,
+            success_threshold=success_threshold,
+            min_fill_rate=min_fill_rate,
+            max_fill_rate=max_fill_rate,
+            capacity=bucket_capacity,
+        )
+
+        source = get_rate_limiter_state_source()
+        source_labels = {
+            "previous_run": "previous run",
+            "config": "config",
+            "default": "default",
+        }
+        source_label = source_labels.get(source, source)
+
+        logger.info(
+            "  Rate Limiter: start=%.3f req/s (source=%s) | success_threshold=%d",
+            limiter.fill_rate,
+            source_label,
+            limiter.success_threshold,
+        )
+
+        if persisted_state:
+            saved_rate = persisted_state.get("fill_rate")
+            saved_requests = persisted_state.get("total_requests", "n/a")
+            timestamp_value = persisted_state.get("timestamp")
+            if isinstance(timestamp_value, (int, float)):
+                timestamp_str = datetime.fromtimestamp(timestamp_value).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                timestamp_str = "unknown"
+
+            if isinstance(saved_rate, (int, float)):
+                logger.info(
+                    "    Last run: %.3f req/s | saved at %s | total_requests=%s",
+                    float(saved_rate),
+                    timestamp_str,
+                    saved_requests,
+                )
+
+    except ImportError:
+        logger.debug("Rate limiter module unavailable during configuration summary")
+
     print("")  # Blank line after configuration
 
 
@@ -2240,6 +2332,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         if not success:
             logger.warning(f"⚠️ LM Studio not ready: {error_msg}")
             return False
+        logger.info(f"LM Studio ready; verifying model '{model_name}' is loaded")
 
     except Exception as e:
         logger.warning(f"⚠️ Failed to start/verify LM Studio: {e}")
@@ -2324,12 +2417,8 @@ def _display_tree_owner(session_manager: SessionManager) -> None:
         pass  # Silently ignore - not critical for startup
 
 
-def _initialize_application() -> "SessionManager":
-    """Initialize application logging and configuration.
-
-    Returns:
-        SessionManager instance
-    """
+def _initialize_application() -> tuple["SessionManager", Any]:
+    """Initialize application logging, configuration, and sleep prevention."""
     print("")
 
     # Clear log file before initializing logging (uses .env settings)
@@ -2347,7 +2436,19 @@ def _initialize_application() -> "SessionManager":
     setup_logging()
     validate_action_config()
 
+    sleep_state: Any = None
+    try:
+        from utils import prevent_system_sleep
+
+        sleep_state = prevent_system_sleep()
+    except Exception as sleep_err:
+        logger.warning(f"⚠️ System sleep prevention unavailable: {sleep_err}")
+
     print(" Checks ".center(80, "="))
+    if sleep_state is not None:
+        logger.info("✅ System sleep prevention active")
+    else:
+        logger.info("⚠️ System sleep prevention inactive")
 
     # Run Chrome/ChromeDriver diagnostics before any browser automation (silent mode)
     try:
@@ -2369,7 +2470,7 @@ def _initialize_application() -> "SessionManager":
     set_global_session(session_manager)
     logger.debug("✅ SessionManager registered as global session")
 
-    return session_manager
+    return session_manager, sleep_state
 
 
 def _pre_authenticate_session() -> None:
@@ -2437,13 +2538,8 @@ def main() -> None:
     _set_windows_console_focus()
 
     try:
-        # Prevent system sleep during entire session
-        from utils import prevent_system_sleep, restore_system_sleep
-        sleep_state = prevent_system_sleep()
-        logger.info("🔒 System sleep prevention activated for session")
-        
-        # Initialize application
-        session_manager = _initialize_application()
+        # Initialize application (handles sleep prevention and diagnostics)
+        session_manager, sleep_state = _initialize_application()
 
         # Pre-authenticate services
         _pre_authenticate_session()
@@ -2478,7 +2574,7 @@ def main() -> None:
             from utils import restore_system_sleep
             restore_system_sleep(sleep_state)
             logger.info("🔓 System sleep prevention deactivated")
-        
+
         import contextlib
         import io
         # Suppress all stderr output during cleanup to hide undetected_chromedriver errors

@@ -94,7 +94,6 @@ class ConfigManager:
     """
 
     _token_fill_rate_clamp_logged = False
-    _unsafe_speed_override_logged = False
     _unsafe_concurrency_override_logged = False
 
     def __init__(
@@ -111,9 +110,11 @@ class ConfigManager:
             environment: Environment name (development, testing, production)
             auto_load: Whether to automatically load configuration
         """
-        # Load .env file if available
+        # Load .env file if available (unless explicitly skipped for tests)
         if DOTENV_AVAILABLE:
-            load_dotenv()
+            skip_dotenv = os.getenv("CONFIG_SKIP_DOTENV", "").strip().lower()
+            if skip_dotenv not in {"1", "true", "yes", "on"}:
+                load_dotenv()
 
         self.config_file = Path(config_file) if config_file else None
         self.environment = environment or os.getenv("ENVIRONMENT", "development")
@@ -222,22 +223,7 @@ class ConfigManager:
         safe_rps = 0.3
         current_rps = getattr(api, "requests_per_second", safe_rps)
 
-        # Detect if we're in test mode to suppress verbose warnings
-        suppress_warnings = (
-            os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1"
-            or os.environ.get("PYTEST_CURRENT_TEST") is not None
-            or any("test" in arg.lower() for arg in sys.argv)
-        )
-
-        if unsafe_requested:
-            if not getattr(type(self), "_unsafe_speed_override_logged", False):
-                if not suppress_warnings:
-                    logger.warning(
-                        "⚠️ API speed profile '%s' enabled - disabling safety clamp; monitor for 429 errors.",
-                        speed_profile or "custom",
-                    )
-                setattr(type(self), "_unsafe_speed_override_logged", True)
-        elif current_rps > safe_rps:
+        if not unsafe_requested and current_rps > safe_rps:
             if not getattr(self, "_rps_clamp_logged", False):
                 logger.debug(
                     "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
@@ -994,6 +980,8 @@ class ConfigManager:
         self._set_float_config(config, "api", "decrease_factor", "DECREASE_FACTOR")
         self._set_float_config(config, "api", "token_bucket_capacity", "TOKEN_BUCKET_CAPACITY")
         self._set_float_config(config, "api", "token_bucket_fill_rate", "TOKEN_BUCKET_FILL_RATE")
+        self._set_float_config(config, "api", "target_match_throughput", "TARGET_MATCH_THROUGHPUT")
+        self._set_float_config(config, "api", "max_throughput_catchup_delay", "MAX_THROUGHPUT_CATCHUP_DELAY")
 
         # Boolean configurations
         self._set_bool_config(config, "api", "rate_limit_enabled", "RATE_LIMIT_ENABLED")
@@ -1309,6 +1297,9 @@ def _test_requests_per_second_loading():
     else:
         original_value = None
 
+    original_skip_dotenv = os.environ.get("CONFIG_SKIP_DOTENV")
+    os.environ["CONFIG_SKIP_DOTENV"] = "1"
+
     # Test 1: Default value (no env var set)
     # Need to reload dotenv to ensure clean state
     load_dotenv(override=True)
@@ -1343,6 +1334,11 @@ def _test_requests_per_second_loading():
         os.environ["REQUESTS_PER_SECOND"] = original_value
     elif "REQUESTS_PER_SECOND" in os.environ:
         del os.environ["REQUESTS_PER_SECOND"]
+
+    if original_skip_dotenv is not None:
+        os.environ["CONFIG_SKIP_DOTENV"] = original_skip_dotenv
+    elif "CONFIG_SKIP_DOTENV" in os.environ:
+        del os.environ["CONFIG_SKIP_DOTENV"]
 
     # Reload dotenv to restore .env file values
     load_dotenv(override=True)

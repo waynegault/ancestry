@@ -17,9 +17,10 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 import json
+import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
@@ -361,6 +362,193 @@ class MSGraphState:
     list_id: Optional[str] = None
     list_name: str = ""
     auth_attempted: bool = False
+
+
+_ENHANCED_TASK_STATE = MSGraphState(list_name=config_schema.ms_todo_list_name)
+
+
+@dataclass
+class EnhancedTaskPayload:
+    """Data required to create an enhanced MS To-Do task."""
+
+    title: str
+    body: str
+    importance: str
+    due_date: Optional[str]
+    categories: list[str]
+
+
+def _should_skip_enhanced_tasks() -> bool:
+    """Return True when MS Graph enhancements should be skipped."""
+    if os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true":
+        logger.debug("Skipping MS Graph initialization for enhanced tasks (SKIP_LIVE_API_TESTS=true).")
+        return True
+    if not getattr(ms_graph_utils, "msal_app_instance", None):
+        logger.debug("MS Graph client not configured; skipping enhanced task creation.")
+        return True
+    return False
+
+
+def _ensure_task_list_name(state: MSGraphState) -> None:
+    """Populate the list name if it is missing."""
+    if not state.list_name:
+        state.list_name = config_schema.ms_todo_list_name
+
+
+def _ensure_task_token(state: MSGraphState) -> bool:
+    """Ensure an authentication token is available for MS Graph calls."""
+    if state.token:
+        return True
+    if state.auth_attempted:
+        return bool(state.token)
+
+    state.token = ms_graph_utils.acquire_token_device_flow()
+    state.auth_attempted = True
+    if not state.token:
+        logger.warning("MS Graph authentication unavailable; cannot create enhanced task.")
+        return False
+    return True
+
+
+def _ensure_task_list_id(state: MSGraphState) -> bool:
+    """Ensure the MS To-Do list identifier has been resolved."""
+    if state.list_id:
+        return True
+
+    if not state.token:
+        return False
+
+    logger.debug(f"Resolving MS To-Do list '{state.list_name}' for enhanced task creation...")
+    state.list_id = ms_graph_utils.get_todo_list_id(state.token, state.list_name)
+    if not state.list_id:
+        logger.warning(
+            f"MS To-Do list '{state.list_name}' not found; skipping enhanced task creation."
+        )
+        return False
+    return True
+
+
+def _ensure_enhanced_task_ms_graph_state(state: MSGraphState) -> bool:
+    """Ensure MS Graph token and list ID are available for enhanced task creation."""
+    if _should_skip_enhanced_tasks():
+        return False
+
+    _ensure_task_list_name(state)
+
+    if not _ensure_task_token(state):
+        return False
+
+    if not state.token:
+        return False
+
+    return _ensure_task_list_id(state)
+
+
+def _merge_task_categories(categories: Optional[list[str]]) -> list[str]:
+    """Merge default and user-provided categories without duplicates."""
+    default_categories = ["Genealogy Research", "DNA Matches"]
+    final_categories: list[str] = []
+    for category in default_categories + (categories or []):
+        if category and category not in final_categories:
+            final_categories.append(category)
+    return final_categories
+
+
+def _compute_due_date(days_until_due: Optional[int]) -> Optional[str]:
+    """Return an ISO date string for the suggested due date."""
+    if not days_until_due or days_until_due <= 0:
+        return None
+
+    due_dt = datetime.now(timezone.utc) + timedelta(days=days_until_due)
+    return due_dt.strftime("%Y-%m-%d")
+
+
+def _compose_task_title(person_name: str, relationship: Optional[str]) -> str:
+    """Create a descriptive task title."""
+    if relationship:
+        return f"Research: {person_name} ({relationship})"
+    return f"Research: {person_name}"
+
+
+def _compose_task_body(
+    person_name: str,
+    relationship: Optional[str],
+    shared_dna_cm: Optional[float],
+    importance: str,
+    due_date: Optional[str],
+    categories: list[str],
+) -> str:
+    """Build the task body with key research context."""
+    body_lines = [f"Research target: {person_name}"]
+    if relationship:
+        body_lines.append(f"Relationship: {relationship}")
+    if shared_dna_cm is not None:
+        body_lines.append(f"Shared DNA: {shared_dna_cm:.1f} cM")
+    body_lines.append(f"Priority: {importance.title()}")
+    if due_date:
+        body_lines.append(f"Suggested due date: {due_date}")
+    if categories:
+        body_lines.append(f"Categories: {', '.join(categories)}")
+    return "\n".join(body_lines)
+
+
+def _build_enhanced_task_payload(
+    person_name: str,
+    relationship: Optional[str],
+    shared_dna_cm: Optional[float],
+    categories: Optional[list[str]],
+) -> EnhancedTaskPayload:
+    """Construct the payload required to submit an enhanced task."""
+    importance, days_until_due = calculate_task_priority_from_relationship(
+        relationship,
+        shared_dna_cm,
+    )
+    final_categories = _merge_task_categories(categories)
+    due_date = _compute_due_date(days_until_due)
+    title = _compose_task_title(person_name, relationship)
+    body = _compose_task_body(
+        person_name,
+        relationship,
+        shared_dna_cm,
+        importance,
+        due_date,
+        final_categories,
+    )
+    return EnhancedTaskPayload(
+        title=title,
+        body=body,
+        importance=importance,
+        due_date=due_date,
+        categories=final_categories,
+    )
+
+
+def _submit_enhanced_task(
+    state: MSGraphState,
+    payload: EnhancedTaskPayload,
+    person_name: str,
+) -> Optional[str]:
+    """Send the enhanced task request to MS Graph."""
+    if not state.token or not state.list_id:
+        logger.warning("MS Graph state incomplete after initialization; skipping task creation.")
+        return None
+
+    task_id = ms_graph_utils.create_todo_task(
+        state.token,
+        state.list_id,
+        payload.title,
+        payload.body,
+        importance=payload.importance,
+        due_date=payload.due_date,
+        categories=payload.categories,
+    )
+
+    if task_id:
+        logger.info(f"Created enhanced research task for {person_name} (ID: {task_id}).")
+    else:
+        logger.warning(f"Enhanced research task creation failed for {person_name}.")
+
+    return task_id
 
 
 @dataclass
@@ -1077,8 +1265,6 @@ class PersonProcessor:
         Returns:
             Tuple of (importance, due_date, categories)
         """
-        from datetime import datetime, timedelta
-
         # Default values
         importance = "normal"
         due_date = None
@@ -1141,7 +1327,7 @@ class PersonProcessor:
     def _submit_task_to_ms_graph(self, task_title: str, task_body: str, importance: str, due_date: Optional[str], categories: list[str]) -> bool:
         """Submit task to MS Graph and return success status."""
         if self.ms_state.token and self.ms_state.list_id:
-            return ms_graph_utils.create_todo_task(
+            task_id = ms_graph_utils.create_todo_task(
                 self.ms_state.token,
                 self.ms_state.list_id,
                 task_title,
@@ -1150,6 +1336,10 @@ class PersonProcessor:
                 due_date=due_date,
                 categories=categories,
             )
+            if task_id:
+                logger.debug(f"MS To-Do task created with ID {task_id}.")
+                return True
+            return False
         logger.warning("MS Graph token or list_id is None, skipping task creation")
         return False
 
@@ -2647,24 +2837,24 @@ def create_enhanced_research_task(
         Task ID if created successfully, None otherwise
     """
     try:
-        # Calculate priority and due date
-        importance, days_until_due = calculate_task_priority_from_relationship(
-            relationship, shared_dna_cm
+        if not person_name:
+            logger.error("Cannot create enhanced research task: person_name missing.")
+            return None
+
+        payload = _build_enhanced_task_payload(
+            person_name,
+            relationship,
+            shared_dna_cm,
+            categories,
         )
 
-        # Default categories
-        if not categories:
-            categories = ["Genealogy Research", "DNA Matches"]
+        if not _ensure_enhanced_task_ms_graph_state(_ENHANCED_TASK_STATE):
+            logger.info(
+                f"Enhanced task creation skipped for {person_name}: MS Graph unavailable."
+            )
+            return None
 
-        # Create task title
-        task_title = f"Research: {person_name}"
-        if relationship:
-            task_title += f" ({relationship})"
-
-        # Note: create_todo_task requires access_token and list_id which are not available in this context
-        # This function is a placeholder for Phase 5 integration
-        logger.info(f"Would create {importance} priority task for {person_name} (due in {days_until_due} days)")
-        return None
+        return _submit_enhanced_task(_ENHANCED_TASK_STATE, payload, person_name)
 
     except Exception as e:
         logger.error(f"Failed to create enhanced research task: {e}")

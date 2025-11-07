@@ -186,7 +186,29 @@ class SessionManager:
         # Initialize rate limiter (use global singleton for all API calls)
         try:
             from utils import get_rate_limiter
-            self.rate_limiter = get_rate_limiter()
+            batch_threshold = getattr(config_schema, "batch_size", 50) or 50
+            batch_threshold = max(int(batch_threshold), 1)
+            safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
+            speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
+            allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
+            allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
+            min_fill_rate = max(0.05, safe_rps * 0.5)
+            desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
+            max_fill_rate = desired_rate if allow_aggressive else safe_rps
+            max_fill_rate = max(max_fill_rate, min_fill_rate)
+            bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
+            self.rate_limiter = get_rate_limiter(
+                initial_fill_rate=safe_rps,
+                success_threshold=batch_threshold,
+                min_fill_rate=min_fill_rate,
+                max_fill_rate=max_fill_rate,
+                capacity=bucket_capacity,
+            )
+            if self.rate_limiter:
+                logger.debug(
+                    "AdaptiveRateLimiter bound to session (success_threshold=%d)",
+                    self.rate_limiter.success_threshold,
+                )
         except ImportError:
             self.rate_limiter = None
 
