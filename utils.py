@@ -1277,598 +1277,30 @@ class CircuitBreaker:
 
 # End of CircuitBreaker
 
-# Global RateLimiter singleton instance
-_global_rate_limiter: Optional['RateLimiter'] = None
-
-def get_rate_limiter() -> 'RateLimiter':
+# ------------------------------
+# PHASE 3.1: Direct AdaptiveRateLimiter usage
+# ------------------------------
+def get_rate_limiter():
     """
-    Get or create the global RateLimiter singleton instance.
-
-    This ensures rate limiting state (delay, metrics, circuit breaker) is preserved
-    across multiple SessionManager instances, preventing redundant initialization
-    and maintaining adaptive delay tuning.
-
+    Get the global AdaptiveRateLimiter singleton.
+    
+    PHASE 3.1: Now directly returns AdaptiveRateLimiter (no adapter/wrapper).
+    All calling code updated to use new interface:
+    - wait() → wait()
+    - increase_delay() → on_429_error()
+    - decrease_delay() → on_success()
+    
     Returns:
-        RateLimiter: The global singleton instance
+        AdaptiveRateLimiter: The unified rate limiter singleton
     """
-    global _global_rate_limiter  # noqa: PLW0603
-    if _global_rate_limiter is None:
-        _global_rate_limiter = RateLimiter()
-        logger.debug("Global RateLimiter singleton created")
-    return _global_rate_limiter
-
-# ------------------------------
-# Rate Limiting (Remains in utils.py)
-# ------------------------------
-class RateLimiter:
-    """
-    Implements a token bucket rate limiter with dynamic delay adjustments based on feedback.
-    """
-
-    def __init__(
-        self,
-        initial_delay: Optional[float] = None,
-        max_delay: Optional[float] = None,
-        backoff_factor: Optional[float] = None,
-        decrease_factor: Optional[float] = None,
-        token_capacity: Optional[float] = None,
-        token_fill_rate: Optional[float] = None,
-    ):
-        cfg = config_schema  # Use new config system
-        self.initial_delay = (
-            initial_delay
-            if initial_delay is not None
-            else getattr(cfg, "INITIAL_DELAY", 0.5)
-        )
-        self.max_delay = (
-            max_delay if max_delay is not None else getattr(cfg, "MAX_DELAY", 60.0)
-        )
-        self.backoff_factor = (
-            backoff_factor
-            if backoff_factor is not None
-            else getattr(cfg, "BACKOFF_FACTOR", 1.8)
-        )
-        self.decrease_factor = (
-            decrease_factor
-            if decrease_factor is not None
-            else getattr(cfg, "DECREASE_FACTOR", 0.98)
-        )
-        self.current_delay = self.initial_delay
-        self.last_throttled = False
-        # Token Bucket parameters
-        # CRITICAL FIX: Restore working version behavior (c3b5535)
-        # Token bucket capacity and fill_rate MUST use config values
-        # fill_rate = requests_per_second (controls actual rate limiting)
-        # BURST PREVENTION: Reduced capacity from 10.0 to 2.0 to prevent parallel worker bursts
-        # With 2 workers, max burst = 2 tokens = 2 simultaneous calls (safe for Ancestry)
-        # Original 10 tokens allowed 10 simultaneous calls = instant 429 errors!
-        api = getattr(cfg, 'api', None)
-        self.capacity = float(
-            token_capacity
-            if token_capacity is not None
-            else (getattr(api, "token_bucket_capacity", 2.0) if api else 2.0)
-        )
-        # CRITICAL: fill_rate MUST use requests_per_second for proper rate limiting!
-        # Working version (c3b5535) used: getattr(api, "requests_per_second", 0.7)
-        # Current .env has REQUESTS_PER_SECOND=0.4 (battle-tested value)
-        self.fill_rate = float(
-            token_fill_rate
-            if token_fill_rate is not None
-            else (getattr(api, "requests_per_second", 0.4) if api else 0.4)
-        )
-        if self.fill_rate <= 0:
-            logger.warning(
-                f"Token fill rate ({self.fill_rate}) must be positive. Setting to 1.0."
-            )
-            self.fill_rate = 1.0
-        # End of if
-        self.tokens = float(self.capacity)
-        self.last_refill_time = time.monotonic()
-
-        # Thread safety for parallel API calls
-        self._lock = threading.Lock()
-
-        # Circuit breaker for 429 error protection
-        self.circuit_breaker = CircuitBreaker(
-            failure_threshold=5,  # Open circuit after 5 consecutive 429 errors
-            recovery_timeout=60.0,  # Wait 60 seconds before testing recovery
-            half_open_max_requests=3,  # Allow 3 test requests in HALF_OPEN state
-        )
-
-        # Metrics tracking
-        self._metrics = {
-            'total_requests': 0,
-            'total_wait_time': 0.0,
-            'token_bucket_empty_count': 0,
-            'delay_increases': 0,
-            'delay_decreases': 0,
-            'error_429_count': 0,
-            'successful_requests': 0,
-            'failed_requests': 0,
-            'max_wait_time': 0.0,
-            'min_wait_time': float('inf'),
-            'start_time': time.time(),
-        }
-        self._metrics_lock = threading.Lock()
-
-        # Load rate limiting settings if they exist
-        self._load_rate_limiting_settings()
-
-        # Only log at DEBUG level to reduce verbosity
-        # Detailed initialization info available if needed for troubleshooting
-
-    # End of __init__
-
-    def _load_rate_limiting_settings(self) -> None:
-        """
-        Load rate limiting settings from .env file if they exist.
-        This allows the rate limiter to start with optimized settings from previous runs.
-        """
-        try:
-            # Import here to avoid circular imports
-            from config import config_schema
-
-            # Load rate limiting settings from config if available
-            rate_limiting_initial_delay = getattr(config_schema, 'RATE_LIMITING_INITIAL_DELAY', None)
-            rate_limiting_max_delay = getattr(config_schema, 'RATE_LIMITING_MAX_DELAY', None)
-            rate_limiting_backoff_factor = getattr(config_schema, 'RATE_LIMITING_BACKOFF_FACTOR', None)
-            rate_limiting_decrease_factor = getattr(config_schema, 'RATE_LIMITING_DECREASE_FACTOR', None)
-
-            # Apply rate limiting settings if they exist and are valid
-            if rate_limiting_initial_delay is not None and rate_limiting_initial_delay > 0:
-                self.initial_delay = float(rate_limiting_initial_delay)
-                logger.info(f"Loaded rate_limiting initial_delay: {self.initial_delay:.2f}s")
-
-            if rate_limiting_max_delay is not None and rate_limiting_max_delay > 0:
-                self.max_delay = float(rate_limiting_max_delay)
-                logger.info(f"Loaded rate_limiting max_delay: {self.max_delay:.1f}s")
-
-            if rate_limiting_backoff_factor is not None and rate_limiting_backoff_factor > 0:
-                self.backoff_factor = float(rate_limiting_backoff_factor)
-                logger.info(f"Loaded rate_limiting backoff_factor: {self.backoff_factor:.2f}")
-
-            if rate_limiting_decrease_factor is not None and rate_limiting_decrease_factor > 0:
-                self.decrease_factor = float(rate_limiting_decrease_factor)
-                logger.info(f"Loaded rate_limiting decrease_factor: {self.decrease_factor:.3f}")
-
-        except Exception as e:
-            logger.debug(f"Could not load rate_limiting settings (expected on first run): {e}")
-            # This is expected on first run when no rate_limiting settings exist yet
-
-    # End of _load_rate_limiting_settings
-
-    def _refill_tokens(self) -> None:
-        now = time.monotonic()
-        elapsed = max(0, now - self.last_refill_time)
-        tokens_to_add = elapsed * self.fill_rate
-        self.tokens = min(self.capacity, self.tokens + tokens_to_add)
-        self.last_refill_time = now
-        # Removed excessive debug logging - token bucket refill happens on every request
-
-    # End of _refill_tokens
-
-    def wait(self) -> float:
-        """
-        Wait for rate limiting with thread-safe token bucket implementation.
-        Ensures only one thread at a time can check/update rate limiting state.
-        """
-        with self._lock:  # Critical section - serialize access from multiple threads
-            self._refill_tokens()
-            # requested_at = time.monotonic() # Less critical now
-            sleep_duration = 0.0
-            bucket_was_empty = False
-
-            if self.tokens >= 1.0:
-                self.tokens -= 1.0
-                # Apply base delay even if token is available
-                jitter_factor = random.uniform(0.8, 1.2)
-                base_sleep = self.current_delay
-                sleep_duration = min(base_sleep * jitter_factor, self.max_delay)
-                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-                logger.debug(
-                    f"🪙 Token consumed: {self.tokens:.2f} remaining (POST-consumption, after 1 token used | Capacity: {self.capacity:.0f}). "
-                    f"Applying base delay: {sleep_duration:.3f}s (CurrentDelay: {self.current_delay:.2f}s)"
-                )
-            else:
-                # Token bucket empty, wait for a token to generate
-                bucket_was_empty = True
-                wait_needed = (1.0 - self.tokens) / self.fill_rate
-                jitter_amount = random.uniform(0.0, 0.2)  # Small extra jitter
-                sleep_duration = wait_needed + jitter_amount
-                sleep_duration = min(sleep_duration, self.max_delay)  # Cap wait time
-                sleep_duration = max(0.01, sleep_duration)  # Ensure minimum sleep
-                logger.debug(
-                    f"Token bucket empty ({self.tokens:.2f}). Waiting for token: {sleep_duration:.3f}s"
-                )
-            # End of if/else
-
-            # Perform the sleep
-            if sleep_duration > 0:
-                time.sleep(sleep_duration)
-            # End of if
-
-            # Refill again *after* sleeping
-            self._refill_tokens()
-
-            # Update metrics
-            self._update_metrics(sleep_duration, bucket_was_empty)
-
-            return sleep_duration
-
-    # End of wait
-
-    def reset_delay(self) -> None:
-        """Thread-safe reset of delay to initial value."""
-        with self._lock:
-            if self.current_delay != self.initial_delay:
-                logger.info(
-                    f"Rate limiter base delay reset from {self.current_delay:.2f}s to initial: {self.initial_delay:.2f}s"
-                )
-                self.current_delay = self.initial_delay
-            # End of if
-            self.last_throttled = False
-
-    # End of reset_delay
-
-    def decrease_delay(self) -> None:
-        """
-        Thread-safe decrease of delay on successful operations.
-
-        Uses adaptive decrease rate:
-        - If delay is > 2x initial_delay: decrease by 10% (fast recovery)
-        - Otherwise: decrease by configured decrease_factor (gradual recovery)
-
-        Note: Can decrease below initial_delay (which is a starting point, not a minimum).
-        Hard minimum is 0.1s to prevent API hammering.
-        """
-        # Record success in circuit breaker
-        self.circuit_breaker.record_success()
-
-        with self._lock:
-            # Allow decrease as long as we're above hard minimum and not recently throttled
-            if not self.last_throttled and self.current_delay > 0.1:
-                previous_delay = self.current_delay
-
-                # Adaptive decrease rate: faster recovery when delay is high
-                if self.current_delay > (self.initial_delay * 2.0):
-                    # Fast recovery: 10% decrease when delay is significantly elevated
-                    adaptive_decrease_factor = 0.90
-                else:
-                    # Gradual recovery: 2% decrease when close to initial delay
-                    adaptive_decrease_factor = self.decrease_factor
-
-                # Allow delay to decrease below initial_delay (initial_delay is starting point, not minimum)
-                # Minimum delay is determined by token bucket refill rate, not initial_delay
-                self.current_delay = max(
-                    self.current_delay * adaptive_decrease_factor, 0.1  # Hard minimum: 0.1s
-                )
-                if (
-                    abs(previous_delay - self.current_delay) > 0.01
-                ):  # Log only significant changes
-                    logger.debug(
-                        f"Decreased base delay component to {self.current_delay:.2f}s (from {previous_delay:.2f}s)"
-                    )
-                    # Track metric
-                    with self._metrics_lock:
-                        self._metrics['delay_decreases'] += 1
-                # End of if
-            # End of if
-            self.last_throttled = False  # Reset flag after successful operation
-            # Track successful request
-            with self._metrics_lock:
-                self._metrics['successful_requests'] += 1
-
-    # End of decrease_delay
-
-    def increase_delay(self) -> None:
-        """Thread-safe increase of delay on rate limit feedback."""
-        # Record 429 error in circuit breaker
-        self.circuit_breaker.record_failure()
-
-        with self._lock:
-            previous_delay = self.current_delay
-            self.current_delay = min(
-                self.current_delay * self.backoff_factor, self.max_delay
-            )
-            if (
-                abs(previous_delay - self.current_delay) > 0.01
-            ):  # Log only significant changes
-                logger.info(
-                    f"⚡ ADAPTIVE DELAY: Increased base delay from {previous_delay:.2f}s to {self.current_delay:.2f}s "
-                    f"(Circuit: {self.circuit_breaker.get_state()}) | This is the adaptive learning system, separate from 429 backoff delays"
-                )
-            else:
-                logger.debug(
-                    f"Rate limit feedback received, but delay already at max ({self.max_delay:.2f}s) or increase too small."
-                )
-            # End of if/else
-            self.last_throttled = True
-            # Track metrics
-            with self._metrics_lock:
-                self._metrics['delay_increases'] += 1
-                self._metrics['error_429_count'] += 1
-                self._metrics['failed_requests'] += 1
-
-    # End of increase_delay
-
-    def is_throttled(self) -> bool:
-        return self.last_throttled
-
-    # End of is_throttled
-
-    def check_circuit_breaker(self) -> bool:
-        """
-        Check if circuit breaker allows requests.
-
-        Returns:
-            True if circuit is CLOSED (requests allowed)
-            False if circuit is OPEN (requests blocked)
-        """
-        state = self.circuit_breaker.get_state()
-        if state == "OPEN":
-            logger.warning("🔴 Circuit breaker is OPEN - blocking API requests to prevent cascading failures")
-            return False
-        if state == "HALF_OPEN":
-            logger.info("🟡 Circuit breaker is HALF_OPEN - allowing limited test requests")
-        return True
-
-    # End of check_circuit_breaker
-
-    def _update_metrics(self, wait_time: float, bucket_was_empty: bool) -> None:
-        """Update internal metrics tracking."""
-        with self._metrics_lock:
-            self._metrics['total_requests'] += 1
-            self._metrics['total_wait_time'] += wait_time
-            if bucket_was_empty:
-                self._metrics['token_bucket_empty_count'] += 1
-            self._metrics['max_wait_time'] = max(wait_time, self._metrics['max_wait_time'])
-            self._metrics['min_wait_time'] = min(wait_time, self._metrics['min_wait_time'])
-
-    # End of _update_metrics
-
-    def get_metrics(self) -> dict:
-        """
-        Get current rate limiter metrics.
-
-        Returns:
-            Dictionary containing:
-            - total_requests: Total number of API requests made
-            - total_wait_time: Total time spent waiting (seconds)
-            - avg_wait_time: Average wait time per request (seconds)
-            - token_bucket_empty_count: Number of times bucket was empty
-            - delay_increases: Number of times delay was increased (429 errors)
-            - delay_decreases: Number of times delay was decreased (successful requests)
-            - error_429_count: Total 429 errors encountered
-            - successful_requests: Total successful requests
-            - failed_requests: Total failed requests
-            - max_wait_time: Maximum wait time for a single request
-            - min_wait_time: Minimum wait time for a single request
-            - uptime_seconds: Time since rate limiter was created
-            - current_delay: Current base delay setting
-            - requests_per_second: Configured RPS limit
-            - effective_rps: Actual requests per second achieved
-        """
-        with self._metrics_lock:
-            metrics = self._metrics.copy()
-
-        # Calculate derived metrics
-        uptime = time.time() - metrics['start_time']
-        metrics['uptime_seconds'] = uptime
-        metrics['avg_wait_time'] = (
-            metrics['total_wait_time'] / metrics['total_requests']
-            if metrics['total_requests'] > 0
-            else 0.0
-        )
-        metrics['effective_rps'] = (
-            metrics['total_requests'] / uptime
-            if uptime > 0
-            else 0.0
-        )
-        metrics['current_delay'] = self.current_delay
-        metrics['requests_per_second'] = self.fill_rate
-
-        # Handle min_wait_time infinity case
-        if metrics['min_wait_time'] == float('inf'):
-            metrics['min_wait_time'] = 0.0
-
-        return metrics
-
-    # End of get_metrics
-
-    def print_metrics_summary(self) -> None:
-        """Print a formatted summary of rate limiter metrics."""
-        metrics = self.get_metrics()
-        cb_metrics = self.circuit_breaker.get_metrics()
-        logger.info("-" * 45)
-        logger.info("Rate Limiter Metrics")
-        logger.info("-" * 45)
-        logger.info(f"Total Requests:        {metrics['total_requests']}")
-        logger.info(f"Successful Requests:   {metrics['successful_requests']}")
-        logger.info(f"Failed Requests:       {metrics['failed_requests']}")
-        logger.info(f"429 Errors:            {metrics['error_429_count']}")
-
-        logger.info(f"Total Wait Time:       {metrics['total_wait_time']:.2f}s")
-        logger.info(f"Average Wait Time:     {metrics['avg_wait_time']:.3f}s")
-        logger.info(f"Max Wait Time:         {metrics['max_wait_time']:.3f}s")
-        logger.info(f"Min Wait Time:         {metrics['min_wait_time']:.3f}s")
-
-        logger.info(f"Token Bucket Empty:    {metrics['token_bucket_empty_count']} times")
-        logger.info(f"Delay Increases:       {metrics['delay_increases']}")
-        logger.info(f"Delay Decreases:       {metrics['delay_decreases']}")
-
-        logger.info(f"Configured RPS:        {metrics['requests_per_second']:.2f}/s")
-        logger.info(f"Effective RPS:         {metrics['effective_rps']:.2f}/s")
-        logger.info(f"Current Delay:         {metrics['current_delay']:.3f}s")
-        logger.info("-" * 45)
-        logger.info("Circuit Breaker Metrics")
-        logger.info("-" * 45)
-        logger.info(f"Current State:         {self.circuit_breaker.get_state()}")
-        logger.info(f"Total Requests:        {cb_metrics['total_requests']}")
-        logger.info(f"Blocked Requests:      {cb_metrics['blocked_requests']}")
-        logger.info(f"Circuit Opens:         {cb_metrics['circuit_opens']}")
-        logger.info(f"Circuit Closes:        {cb_metrics['circuit_closes']}")
-        logger.info(f"Half-Open Successes:   {cb_metrics['half_open_successes']}")
-        logger.info(f"Half-Open Failures:    {cb_metrics['half_open_failures']}")
-        logger.info(f"Uptime:                {metrics['uptime_seconds']:.1f}s")
-
-    # End of print_metrics_summary
-
-    def _get_settings_to_save(self) -> dict[str, str]:
-        """Get settings dictionary to save to .env file.
-
-        Returns:
-            Dictionary of setting names to values
-        """
-        return {
-            'INITIAL_DELAY': f"{self.current_delay:.2f}",  # Save adapted delay as new initial
-            'MAX_DELAY': f"{self.max_delay:.1f}",
-            'BACKOFF_FACTOR': f"{self.backoff_factor:.2f}",
-            'DECREASE_FACTOR': f"{self.decrease_factor:.3f}",
-        }
-
-    def _update_existing_settings(
-        self,
-        lines: list[str],
-        settings_to_save: dict[str, str]
-    ) -> tuple[list[str], set[str]]:
-        """Update existing settings in .env file lines.
-
-        Args:
-            lines: Original .env file lines
-            settings_to_save: Settings to update
-
-        Returns:
-            Tuple of (updated_lines, set_of_updated_setting_keys)
-        """
-        updated_settings = set()
-        new_lines = []
-
-        for line in lines:
-            line_updated = False
-            for setting_key, setting_value in settings_to_save.items():
-                if line.strip().startswith(f"{setting_key}=") or line.strip().startswith(f"#{setting_key}="):
-                    # Update existing setting (commented or uncommented)
-                    new_lines.append(f"{setting_key}={setting_value}\n")
-                    updated_settings.add(setting_key)
-                    line_updated = True
-                    logger.info(f"Updated .env: {setting_key}={setting_value}")
-                    break
-
-            if not line_updated:
-                new_lines.append(line)
-
-        return new_lines, updated_settings
-
-    def _add_missing_settings(
-        self,
-        new_lines: list[str],
-        settings_to_save: dict[str, str],
-        updated_settings: set[str]
-    ) -> list[str]:
-        """Add settings that weren't found in .env file.
-
-        Args:
-            new_lines: Current .env file lines
-            settings_to_save: All settings to save
-            updated_settings: Settings that were already updated
-
-        Returns:
-            Updated lines with missing settings added
-        """
-        if updated_settings == set(settings_to_save.keys()):
-            return new_lines  # All settings already updated
-
-        # Find insertion point (after REQUESTS_PER_SECOND or at end)
-        insert_index = None
-        for i, line in enumerate(new_lines):
-            if 'REQUESTS_PER_SECOND' in line:
-                insert_index = i + 1
-                break
-
-        if insert_index is None:
-            insert_index = len(new_lines)
-
-        # Add header comment if adding new settings
-        if insert_index < len(new_lines):
-            new_lines.insert(insert_index, "\n# Adapted rate limiting settings (auto-updated by rate limiter)\n")
-            insert_index += 1
-
-        # Add missing settings
-        for setting_key, setting_value in settings_to_save.items():
-            if setting_key not in updated_settings:
-                new_lines.insert(insert_index, f"{setting_key}={setting_value}\n")
-                insert_index += 1
-                logger.info(f"Added to .env: {setting_key}={setting_value}")
-
-        return new_lines
-
-    def save_adapted_settings(self) -> None:
-        """
-        Save adapted rate limiting settings to .env file.
-        This allows future runs to start with optimized delay settings.
-
-        Saves the current delay settings that have been adapted through backoff/decrease
-        during this run, so the next run can start with better initial values.
-        """
-        from pathlib import Path
-
-        env_file = Path('.env')
-        if not env_file.exists():
-            logger.warning("No .env file found - cannot save adapted rate limiting settings")
-            return
-
-        # Read current .env content
-        with Path(env_file).open(encoding='utf-8') as f:
-            lines = f.readlines()
-
-        # Get settings to save
-        settings_to_save = self._get_settings_to_save()
-
-        # Update existing settings
-        new_lines, updated_settings = self._update_existing_settings(lines, settings_to_save)
-
-        # Add any settings that weren't found
-        new_lines = self._add_missing_settings(new_lines, settings_to_save, updated_settings)
-
-        # Write updated content back to .env
-        with Path(env_file).open('w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-
-        logger.info(f"✅ Saved adapted rate limiting settings to .env (current_delay: {self.current_delay:.2f}s)")
-
-    # End of save_adapted_settings
-
-    def reset_metrics(self) -> None:
-        """Reset all metrics counters."""
-        with self._metrics_lock:
-            self._metrics = {
-                'total_requests': 0,
-                'total_wait_time': 0.0,
-                'token_bucket_empty_count': 0,
-                'delay_increases': 0,
-                'delay_decreases': 0,
-                'error_429_count': 0,
-                'successful_requests': 0,
-                'failed_requests': 0,
-                'max_wait_time': 0.0,
-                'min_wait_time': float('inf'),
-                'start_time': time.time(),
-            }
-        logger.debug("Rate limiter metrics reset")
-
-    # End of reset_metrics
-
-# End of RateLimiter class
+    from rate_limiter import get_adaptive_rate_limiter
+    return get_adaptive_rate_limiter()
 
 # ------------------------------
 # Session Management (MOVED TO core.session_manager)
 # ------------------------------
 # SessionManager class has been moved to core.session_manager.SessionManager
 # Import it from there: from core.session_manager import SessionManager
-
-# ----------------------------------------------------------------------------
-
-# ----------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
 # Stand alone functions
@@ -2452,7 +1884,7 @@ def _handle_retryable_status(
     sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
 
     if status == 429 and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:  # Too Many Requests
-        session_manager.rate_limiter.increase_delay()  # type: ignore[union-attr]
+        session_manager.rate_limiter.on_429_error()  # Updated to AdaptiveRateLimiter interface
 
     retry_type = "🚨 429 EXPONENTIAL BACKOFF" if status == 429 else "Retry"
     logger.warning(
@@ -2677,7 +2109,7 @@ def _handle_response_status(
     if response.ok:
         logger.debug(f"{api_description}: Successful response ({status} {reason}).")
         if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-            session_manager.rate_limiter.decrease_delay()  # type: ignore[union-attr]
+            session_manager.rate_limiter.on_success()  # Updated to AdaptiveRateLimiter interface
         processed_response = _process_api_response(
             response=response,
             api_description=api_description,
@@ -4710,8 +4142,8 @@ def utils_module_tests() -> bool:
         assert format_name("john doe") == "John Doe", "format_name basic test failed"
         assert format_name(None) == "Valued Relative", "format_name None test failed"
 
-        # Test RateLimiter
-        limiter = RateLimiter(initial_delay=0.001)
+        # Test AdaptiveRateLimiter via get_rate_limiter()
+        limiter = get_rate_limiter()
         limiter.wait()  # Should not hang
 
         # Test SessionManager - import it properly at runtime
@@ -4918,25 +4350,13 @@ if __name__ == "__main__":
         assert metrics['half_open_successes'] == 2, "Should have 2 successful test requests"
 
     def test_rate_limiter():
-        # Test RateLimiter instantiation and basic functionality
-        limiter = RateLimiter(initial_delay=0.001, max_delay=0.01)
+        # Test AdaptiveRateLimiter via get_rate_limiter()
+        limiter = get_rate_limiter()
         assert limiter is not None, "Rate limiter should instantiate"
         assert hasattr(limiter, "wait"), "Rate limiter should have wait method"
-        assert hasattr(
-            limiter, "reset_delay"
-        ), "Rate limiter should have reset_delay method"
-        assert hasattr(
-            limiter, "increase_delay"
-        ), "Rate limiter should have increase_delay method"
-        assert hasattr(
-            limiter, "decrease_delay"
-        ), "Rate limiter should have decrease_delay method"
-        assert hasattr(
-            limiter, "circuit_breaker"
-        ), "Rate limiter should have circuit_breaker"
-        assert hasattr(
-            limiter, "check_circuit_breaker"
-        ), "Rate limiter should have check_circuit_breaker method"
+        assert hasattr(limiter, "on_429_error"), "Rate limiter should have on_429_error method"
+        assert hasattr(limiter, "on_success"), "Rate limiter should have on_success method"
+        assert hasattr(limiter, "get_metrics"), "Rate limiter should have get_metrics method"
 
         # Test wait method (should not hang)
         start_time = time.time()
@@ -4944,10 +4364,15 @@ if __name__ == "__main__":
         elapsed = time.time() - start_time
         assert elapsed < 1.0, "Wait should complete quickly in test"
 
-        # Test circuit breaker integration
-        assert limiter.circuit_breaker.get_state() == "CLOSED", "Circuit should start CLOSED"
-        limiter.increase_delay()  # Simulate 429 error
-        assert limiter.circuit_breaker.failure_count == 1, "Circuit should track failure"
+        # Test AdaptiveRateLimiter interface
+        limiter.on_429_error()  # Simulate 429 error
+        metrics = limiter.get_metrics()
+        assert metrics.error_429_count == 1, "Should track 429 error"
+        
+        # Test success tracking
+        limiter.on_success()
+        metrics = limiter.get_metrics()
+        assert metrics.success_count == 1, "Should track success"
 
     def test_session_manager():
         sm, mock_db, mock_browser, mock_api, mock_validator = _create_stubbed_session_manager()
@@ -4996,9 +4421,7 @@ if __name__ == "__main__":
 
         # Test that core functions are available
         assert "format_name" in globals(), "format_name should be in globals"
-        assert (
-            "RateLimiter" in globals()
-        ), "RateLimiter should be in globals"
+        assert "get_rate_limiter" in globals(), "get_rate_limiter should be in globals (replaces RateLimiter)"
         assert "SessionManager" in globals(), "SessionManager should be in globals"
 
     def test_performance_validation():

@@ -1342,9 +1342,18 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
         run_time_seconds
     )
 
-    # Performance Statistics
+    # Performance Statistics (AdaptiveRateLimiter metrics)
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
-        session_manager.rate_limiter.print_metrics_summary()
+        metrics = session_manager.rate_limiter.get_metrics()
+        logger.info("-" * 60)
+        logger.info("Rate Limiter Performance")
+        logger.info("-" * 60)
+        logger.info(f"Total Requests:        {metrics.total_requests}")
+        logger.info(f"429 Errors:            {metrics.error_429_count}")
+        logger.info(f"Current Rate:          {metrics.current_fill_rate:.3f} req/s")
+        logger.info(f"Rate Adjustments:      ↓{metrics.rate_decreases} ↑{metrics.rate_increases}")
+        logger.info(f"Average Wait Time:     {metrics.avg_wait_time:.3f}s")
+        logger.info("-" * 60)
 
     # Success/Failure Statement
     log_action_status(
@@ -7252,17 +7261,17 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
             f"⚠️ Adaptive rate limiting: Throttling detected on page {current_page}. Delay remains increased."
         )
     else:
-        previous_delay = getattr(limiter, "current_delay", None)
-        if hasattr(limiter, "decrease_delay"):
-            limiter.decrease_delay()
-        new_delay = getattr(limiter, "current_delay", None)
-        # Log all significant decreases (>0.01s change) - removed the unnecessary initial_delay check
+        # Success - notify rate limiter (AdaptiveRateLimiter interface)
+        if hasattr(limiter, "on_success"):
+            limiter.on_success()
+            logger.debug("API success recorded in rate limiter")
+        # Log significant rate changes
+        metrics = limiter.get_metrics() if hasattr(limiter, "get_metrics") else None
         if (
-            previous_delay is not None and new_delay is not None and
-            abs(previous_delay - new_delay) > 0.01
+            metrics and hasattr(metrics, "current_fill_rate")
         ):
             logger.info(
-                f"⚡ Adaptive rate limiting: Decreased delay to {new_delay:.2f}s after page {current_page} (was {previous_delay:.2f}s)."
+                f"⚡ Adaptive rate limiting: Current rate {metrics.current_fill_rate:.3f} req/s after page {current_page}"
             )
 
 

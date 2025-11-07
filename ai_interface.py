@@ -566,8 +566,8 @@ def _handle_rate_limit_error(session_manager: SessionManager) -> None:
     if session_manager and hasattr(session_manager, "rate_limiter"):
         try:
             drl = getattr(session_manager, "rate_limiter", None)
-            if drl is not None and hasattr(drl, "increase_delay"):
-                drl.increase_delay()
+            if drl is not None and hasattr(drl, "on_429_error"):
+                drl.on_429_error()  # Updated to AdaptiveRateLimiter interface
         except Exception:
             pass
 
