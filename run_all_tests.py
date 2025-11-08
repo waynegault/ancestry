@@ -57,7 +57,7 @@ import sys
 
 
 # Check if running in venv and warn if not
-def _check_venv():
+def _check_venv() -> None:
     """Check if running in a virtual environment and warn if not."""
     in_venv = (
         hasattr(sys, 'real_prefix') or
@@ -69,7 +69,7 @@ def _check_venv():
         print(r"   Windows: .venv\Scripts\activate")
         print("   Linux/Mac: source .venv/bin/activate")
         print()
-        response = input("Continue anyway? (y/N): ").strip().lower()
+        response: str = input("Continue anyway? (y/N): ").strip().lower()
         if response != 'y':
             print("Exiting. Please activate venv and try again.")
             sys.exit(1)

@@ -79,6 +79,136 @@ def _check_rate_limiting_settings(config: Any) -> None:
     _ = config  # Parameter kept for API compatibility but not currently used
 
 
+def _log_basic_configuration_values(config: Any) -> None:
+    """Log the primary configuration values shown at startup."""
+
+    logger.info(f"  MAX_PAGES: {config.api.max_pages}")
+    logger.info(f"  BATCH_SIZE: {config.batch_size}")
+    logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
+    logger.info(f"  MAX_INBOX: {config.max_inbox}")
+    logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
+    logger.info(
+        f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s"
+    )
+
+    match_throughput = getattr(config.api, "target_match_throughput", 0.0)
+    if match_throughput > 0:
+        logger.info("  Match Throughput Target: %.2f match/s", match_throughput)
+    else:
+        logger.info("  Match Throughput Target: disabled")
+
+    logger.info(
+        "  Max Pacing Delay/Page: %.2fs",
+        getattr(config.api, "max_throughput_catchup_delay", 0.0),
+    )
+
+
+def _should_suppress_config_warnings() -> bool:
+    """Return True when runtime context indicates configuration warnings should be muted."""
+
+    if os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1":
+        return True
+    if os.environ.get("PYTEST_CURRENT_TEST") is not None:
+        return True
+    return any("test" in arg.lower() for arg in sys.argv)
+
+
+def _warn_if_unsafe_profile(speed_profile: str, allow_unsafe: bool, suppress_warnings: bool) -> None:
+    """Emit warning when unsafe API profiles are active."""
+
+    if suppress_warnings:
+        return
+
+    if not (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
+        return
+
+    profile_label = speed_profile or "custom"
+    logger.warning(
+        "  Unsafe API speed profile '%s' active; safety clamps relaxed. Monitor for 429 errors.",
+        profile_label,
+    )
+
+
+def _log_persisted_rate_state(persisted_state: dict[str, Any]) -> None:
+    """Log persisted rate limiter metadata from previous runs."""
+
+    saved_rate = persisted_state.get("fill_rate")
+    saved_requests = persisted_state.get("total_requests", "n/a")
+    timestamp_value = persisted_state.get("timestamp")
+    if isinstance(timestamp_value, (int, float)):
+        timestamp_str = datetime.fromtimestamp(timestamp_value).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        timestamp_str = "unknown"
+
+    if isinstance(saved_rate, (int, float)):
+        logger.info(
+            "    Last run: %.3f req/s | saved at %s | total_requests=%s",
+            float(saved_rate),
+            timestamp_str,
+            saved_requests,
+        )
+
+
+def _log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: str) -> None:
+    """Log the adaptive rate limiter configuration and persisted state."""
+
+    try:
+        from rate_limiter import get_persisted_rate_state, get_rate_limiter_state_source
+        from utils import get_rate_limiter
+    except ImportError:
+        logger.debug("Rate limiter module unavailable during configuration summary")
+        return
+
+    persisted_state = get_persisted_rate_state()
+    success_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
+    safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
+    desired_rate = getattr(config.api, "token_bucket_fill_rate", None) or safe_rps
+    allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
+    # Allow the adaptive limiter to back off further before hitting the floor.
+    min_fill_rate = max(0.05, safe_rps * 0.25)
+    max_fill_rate = desired_rate if allow_aggressive else safe_rps
+    max_fill_rate = max(max_fill_rate, min_fill_rate)
+    bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
+
+    initial_rate = None if persisted_state else desired_rate
+
+    limiter = get_rate_limiter(
+        initial_fill_rate=initial_rate,
+        success_threshold=success_threshold,
+        min_fill_rate=min_fill_rate,
+        max_fill_rate=max_fill_rate,
+        capacity=bucket_capacity,
+    )
+
+    if limiter is None:
+        logger.debug("Rate limiter unavailable during configuration summary")
+        return
+
+    source = get_rate_limiter_state_source()
+    source_labels = {
+        "previous_run": "previous run",
+        "config": "config",
+        "default": "default",
+    }
+    source_label = source_labels.get(source, source)
+
+    logger.info(
+        "  Rate Limiter: start=%.3f req/s (source=%s) | success_threshold=%d",
+        limiter.fill_rate,
+        source_label,
+        limiter.success_threshold,
+    )
+
+    if persisted_state:
+        _log_persisted_rate_state(persisted_state)
+
+    endpoint_summary = getattr(limiter, "get_endpoint_summary", None)
+    if callable(endpoint_summary):
+        summary_value = endpoint_summary()
+        if summary_value:
+            logger.info("    %s", summary_value)
+
+
 def _log_configuration_summary(config: Any) -> None:
     """Log current configuration for transparency."""
     # Clear screen at startup (temporarily disabled for debugging global session complaints)
@@ -86,103 +216,12 @@ def _log_configuration_summary(config: Any) -> None:
     # os.system('cls' if os.name == 'nt' else 'clear')
 
     print(" CONFIG ".center(80, "="))
-    logger.info(f"  MAX_PAGES: {config.api.max_pages}")
-    logger.info(f"  BATCH_SIZE: {config.batch_size}")
-    logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
-    logger.info(f"  MAX_INBOX: {config.max_inbox}")
-    logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
-    logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
     speed_profile = str(getattr(config.api, "speed_profile", "safe")).lower()
     allow_unsafe = bool(getattr(config.api, "allow_unsafe_rate_limit", False))
-    suppress_warnings = (
-        os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1"
-        or os.environ.get("PYTEST_CURRENT_TEST") is not None
-        or any("test" in arg.lower() for arg in sys.argv)
-    )
-    if getattr(config.api, "target_match_throughput", 0.0) > 0:
-        logger.info(
-            f"  Match Throughput Target: {config.api.target_match_throughput:.2f} match/s"
-        )
-    else:
-        logger.info("  Match Throughput Target: disabled")
-    logger.info(
-        "  Max Pacing Delay/Page: %.2fs",
-        getattr(config.api, "max_throughput_catchup_delay", 0.0),
-    )
-
-    if not suppress_warnings and (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
-        profile_label = speed_profile or "custom"
-        logger.warning(
-            "  Unsafe API speed profile '%s' active; safety clamps relaxed. Monitor for 429 errors.",
-            profile_label,
-        )
-
-    try:
-        from rate_limiter import (
-            get_persisted_rate_state,
-            get_rate_limiter_state_source,
-        )
-        from utils import get_rate_limiter
-
-        persisted_state = get_persisted_rate_state()
-        success_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
-        safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
-        desired_rate = (
-            getattr(config.api, "token_bucket_fill_rate", None)
-            or safe_rps
-        )
-        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-        min_fill_rate = max(0.05, safe_rps * 0.5)
-        max_fill_rate = desired_rate if allow_aggressive else safe_rps
-        max_fill_rate = max(max_fill_rate, min_fill_rate)
-        bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
-
-        # Allow persisted state to provide initial rate when available
-        initial_rate = None if persisted_state else desired_rate
-
-        limiter = get_rate_limiter(
-            initial_fill_rate=initial_rate,
-            success_threshold=success_threshold,
-            min_fill_rate=min_fill_rate,
-            max_fill_rate=max_fill_rate,
-            capacity=bucket_capacity,
-        )
-
-        source = get_rate_limiter_state_source()
-        source_labels = {
-            "previous_run": "previous run",
-            "config": "config",
-            "default": "default",
-        }
-        source_label = source_labels.get(source, source)
-
-        logger.info(
-            "  Rate Limiter: start=%.3f req/s (source=%s) | success_threshold=%d",
-            limiter.fill_rate,
-            source_label,
-            limiter.success_threshold,
-        )
-
-        if persisted_state:
-            saved_rate = persisted_state.get("fill_rate")
-            saved_requests = persisted_state.get("total_requests", "n/a")
-            timestamp_value = persisted_state.get("timestamp")
-            if isinstance(timestamp_value, (int, float)):
-                timestamp_str = datetime.fromtimestamp(timestamp_value).strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                timestamp_str = "unknown"
-
-            if isinstance(saved_rate, (int, float)):
-                logger.info(
-                    "    Last run: %.3f req/s | saved at %s | total_requests=%s",
-                    float(saved_rate),
-                    timestamp_str,
-                    saved_requests,
-                )
-
-    except ImportError:
-        logger.debug("Rate limiter module unavailable during configuration summary")
-
+    _log_basic_configuration_values(config)
+    suppress_warnings = _should_suppress_config_warnings()
+    _warn_if_unsafe_profile(speed_profile, allow_unsafe, suppress_warnings)
+    _log_rate_limiter_summary(config, allow_unsafe, speed_profile)
     print("")  # Blank line after configuration
 
 

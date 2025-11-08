@@ -488,6 +488,12 @@ class APIConfig:
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
+        self._validate_api_basics()
+        self.endpoint_throttle_profiles = self._sanitize_endpoint_profiles()
+
+    def _validate_api_basics(self) -> None:
+        """Validate core API configuration values."""
+
         if not self.base_url:
             raise ValueError("base_url is required")
         if not self.base_url.startswith(("http://", "https://")):
@@ -507,58 +513,70 @@ class APIConfig:
         if self.max_relationship_prob_fetches < 0:
             raise ValueError("max_relationship_prob_fetches must be non-negative")
 
+    def _sanitize_endpoint_profiles(self) -> dict[str, dict[str, float]]:
+        """Normalize endpoint throttling profiles defined in configuration."""
+
         raw_profiles = self.endpoint_throttle_profiles or {}
         if not isinstance(raw_profiles, dict):
             logger.warning("endpoint_throttle_profiles must be a dict; ignoring invalid value")
-            raw_profiles = {}
-
-        def _to_float(value: Any, default: float) -> float:
-            try:
-                if value is None:
-                    return default
-                return float(value)
-            except (TypeError, ValueError):
-                return default
+            return {}
 
         sanitized_profiles: dict[str, dict[str, float]] = {}
         for endpoint, profile_data in raw_profiles.items():
             if not isinstance(endpoint, str):
                 continue
-            if not isinstance(profile_data, dict):
-                logger.warning("Invalid throttle profile for %s; expected dict", endpoint)
-                continue
+            sanitized = self._build_sanitized_profile(endpoint, profile_data)
+            if sanitized:
+                sanitized_profiles[endpoint] = sanitized
 
-            min_interval_value = _to_float(profile_data.get("min_interval"), 0.0)
-            max_rate_value = _to_float(profile_data.get("max_rate"), 0.0)
-            delay_multiplier_value = _to_float(profile_data.get("delay_multiplier"), 1.0)
-            cooldown_value = _to_float(profile_data.get("cooldown_after_429"), 0.0)
+        return sanitized_profiles
 
-            delay_multiplier_value = max(1.0, delay_multiplier_value)
-            cooldown_value = max(0.0, cooldown_value)
-            if max_rate_value > 0.0:
-                derived_interval = 1.0 / max_rate_value
-                if derived_interval > min_interval_value:
-                    min_interval_value = derived_interval
+    def _build_sanitized_profile(self, endpoint: str, profile_data: Any) -> Optional[dict[str, float]]:
+        """Convert a raw profile entry into sanitized throttle parameters."""
 
-            min_interval_value = max(0.0, min_interval_value)
+        if not isinstance(profile_data, dict):
+            logger.warning("Invalid throttle profile for %s; expected dict", endpoint)
+            return None
 
-            if min_interval_value <= 0.0 and delay_multiplier_value <= 1.0 and cooldown_value <= 0.0:
-                continue
+        min_interval_value = self._to_float(profile_data.get("min_interval"), 0.0)
+        max_rate_value = self._to_float(profile_data.get("max_rate"), 0.0)
+        delay_multiplier_value = self._to_float(profile_data.get("delay_multiplier"), 1.0)
+        cooldown_value = self._to_float(profile_data.get("cooldown_after_429"), 0.0)
 
-            sanitized_entry: dict[str, float] = {}
-            if min_interval_value > 0.0:
-                sanitized_entry["min_interval"] = float(min_interval_value)
-            if delay_multiplier_value > 1.0:
-                sanitized_entry["delay_multiplier"] = float(delay_multiplier_value)
-            if max_rate_value > 0.0:
-                sanitized_entry["max_rate"] = float(max_rate_value)
-            if cooldown_value > 0.0:
-                sanitized_entry["cooldown_after_429"] = float(cooldown_value)
+        delay_multiplier_value = max(1.0, delay_multiplier_value)
+        cooldown_value = max(0.0, cooldown_value)
 
-            if sanitized_entry:
-                sanitized_profiles[endpoint] = sanitized_entry
+        if max_rate_value > 0.0:
+            derived_interval = 1.0 / max_rate_value
+            min_interval_value = max(derived_interval, min_interval_value)
 
-        self.endpoint_throttle_profiles = sanitized_profiles
+        min_interval_value = max(0.0, min_interval_value)
+
+        if min_interval_value <= 0.0 and delay_multiplier_value <= 1.0 and cooldown_value <= 0.0:
+            return None
+
+        sanitized_entry: dict[str, float] = {}
+        if min_interval_value > 0.0:
+            sanitized_entry["min_interval"] = float(min_interval_value)
+        if delay_multiplier_value > 1.0:
+            sanitized_entry["delay_multiplier"] = float(delay_multiplier_value)
+        if max_rate_value > 0.0:
+            sanitized_entry["max_rate"] = float(max_rate_value)
+        if cooldown_value > 0.0:
+            sanitized_entry["cooldown_after_429"] = float(cooldown_value)
+
+        return sanitized_entry if sanitized_entry else None
+
+    @staticmethod
+    def _to_float(value: Any, default: float) -> float:
+        """Best-effort float conversion with fallback."""
+
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
 
 @dataclass

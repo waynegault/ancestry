@@ -18,7 +18,7 @@ from config import config_schema
 from lm_studio_manager import create_manager_from_config
 
 
-def main():
+def main() -> int:
     print("\n" + "="*60)
     print("LM Studio Auto-Start Demo")
     print("="*60 + "\n")

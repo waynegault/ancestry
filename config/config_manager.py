@@ -190,7 +190,18 @@ class ConfigManager:
             return
 
         speed_profile = str(getattr(api, "speed_profile", "safe")).lower()
-        unsafe_requested = getattr(api, "allow_unsafe_rate_limit", False)
+        unsafe_requested = self._unsafe_rate_limit_requested(api, speed_profile)
+
+        self._enforce_max_concurrency(api, unsafe_requested)
+
+        safe_rps = 0.3
+        self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
+        self._align_token_bucket_fill_rate(api, unsafe_requested)
+
+    def _unsafe_rate_limit_requested(self, api: Any, speed_profile: str) -> bool:
+        """Return True when any configuration requests relaxed API safety."""
+
+        unsafe_requested = bool(getattr(api, "allow_unsafe_rate_limit", False))
 
         if speed_profile in {"max", "aggressive", "experimental"}:
             unsafe_requested = True
@@ -203,48 +214,68 @@ class ConfigManager:
         if env_allow_unsafe in {"true", "1", "yes", "on"}:
             unsafe_requested = True
 
-        # Enforce sequential processing unless override requested
+        return unsafe_requested
+
+    def _enforce_max_concurrency(self, api: Any, unsafe_requested: bool) -> None:
+        """Ensure concurrency stays within safe sequential defaults."""
+
         max_concurrency_configured = getattr(api, "max_concurrency", 1)
-        if max_concurrency_configured != 1:
-            if unsafe_requested:
-                if not getattr(type(self), "_unsafe_concurrency_override_logged", False):
-                    logger.warning(
-                        "⚠️ Unsafe speed profile active; retaining max_concurrency=%s. Monitor session stability closely.",
-                        max_concurrency_configured,
-                    )
-                    setattr(type(self), "_unsafe_concurrency_override_logged", True)
-            else:
+        if max_concurrency_configured == 1:
+            return
+
+        if unsafe_requested:
+            if not getattr(type(self), "_unsafe_concurrency_override_logged", False):
                 logger.warning(
-                    "max_concurrency=%s overridden to sequential-safe value of 1",
+                    "⚠️ Unsafe speed profile active; retaining max_concurrency=%s. Monitor session stability closely.",
                     max_concurrency_configured,
                 )
-                api.max_concurrency = 1
+                setattr(type(self), "_unsafe_concurrency_override_logged", True)
+            return
 
-        safe_rps = 0.3
+        logger.warning(
+            "max_concurrency=%s overridden to sequential-safe value of 1",
+            max_concurrency_configured,
+        )
+        api.max_concurrency = 1
+
+    def _enforce_requests_per_second(self, api: Any, unsafe_requested: bool, safe_rps: float) -> float:
+        """Clamp requests_per_second when safety clamps are active."""
+
         current_rps = getattr(api, "requests_per_second", safe_rps)
+        if unsafe_requested or current_rps <= safe_rps:
+            return current_rps
 
-        if not unsafe_requested and current_rps > safe_rps:
-            if not getattr(self, "_rps_clamp_logged", False):
-                logger.debug(
-                    "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
-                    current_rps,
-                    safe_rps,
-                )
-                setattr(self, "_rps_clamp_logged", True)
-            api.requests_per_second = safe_rps
-            current_rps = safe_rps
+        if not getattr(self, "_rps_clamp_logged", False):
+            logger.debug(
+                "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
+                current_rps,
+                safe_rps,
+            )
+            setattr(self, "_rps_clamp_logged", True)
 
-        # Ensure token bucket fill rate never exceeds enforced RPS when safety clamp is active
-        token_fill_rate = getattr(api, "token_bucket_fill_rate", current_rps)
-        if not unsafe_requested and token_fill_rate > api.requests_per_second:
-            if not getattr(type(self), "_token_fill_rate_clamp_logged", False):
-                logger.info(
-                    "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
-                    token_fill_rate,
-                    api.requests_per_second,
-                )
-                setattr(type(self), "_token_fill_rate_clamp_logged", True)
-            api.token_bucket_fill_rate = api.requests_per_second
+        api.requests_per_second = safe_rps
+        return safe_rps
+
+    def _align_token_bucket_fill_rate(self, api: Any, unsafe_requested: bool) -> None:
+        """Keep token bucket fill rate aligned with the enforced RPS."""
+
+        if unsafe_requested:
+            return
+
+        target_rps = getattr(api, "requests_per_second", 0.3)
+        token_fill_rate = getattr(api, "token_bucket_fill_rate", target_rps)
+        if token_fill_rate <= target_rps:
+            return
+
+        if not getattr(type(self), "_token_fill_rate_clamp_logged", False):
+            logger.info(
+                "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
+                token_fill_rate,
+                target_rps,
+            )
+            setattr(type(self), "_token_fill_rate_clamp_logged", True)
+
+        api.token_bucket_fill_rate = target_rps
 
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:
         """

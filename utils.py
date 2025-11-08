@@ -300,9 +300,7 @@ def log_action_status(action_name: str, success: bool, error_msg: Optional[str] 
         log_action_status("Match gathering", False, "Session expired")
         # Output: ✗ Match gathering failed: Session expired
     """
-    if success:
-        logger.info(f"✓ {action_name} completed successfully.")
-    else:
+    if not success:
         logger.error(f"✗ {action_name} failed: {error_msg or 'Unknown error'}")
 
 

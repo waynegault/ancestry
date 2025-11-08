@@ -29,6 +29,7 @@ from relationship_utils import (
 )
 
 _api_performance_callbacks: list[Callable[[str, float, str], None]] = []
+_HEALTH_MONITOR_EXCLUDED_APIS: set[str] = {"batch_processing"}
 
 
 def register_api_metrics_callback(callback: Callable[[str, float, str], None]) -> None:
@@ -37,7 +38,10 @@ def register_api_metrics_callback(callback: Callable[[str, float, str], None]) -
 
 
 def _record_health_monitor_metrics(duration: float, api_name: str, response_status: str) -> None:
-    """Send timing data to the health monitor."""
+    """Send timing data to the health monitor while filtering synthetic batch metrics."""
+    if api_name in _HEALTH_MONITOR_EXCLUDED_APIS:
+        return
+
     try:
         monitor = get_health_monitor()
         monitor.record_api_response_time(duration)
@@ -58,6 +62,15 @@ def _notify_api_callbacks(api_name: str, duration: float, response_status: str) 
 
 def _log_api_duration_message(api_name: str, duration: float) -> None:
     """Emit context-aware log messages for slow calls."""
+    if api_name == "batch_processing":
+        if duration >= 180.0:
+            logger.warning("⚠️  Batch processing window exceeded 180s (%.3fs)", duration)
+        elif duration >= 90.0:
+            logger.info("⚠️  Batch processing window took %.3fs", duration)
+        else:
+            logger.debug("Batch processing window took %.3fs", duration)
+        return
+
     if duration > 10.0:
         logger.info(f"⚠️  Extended API call {api_name} took {duration:.3f}s (monitoring)")
     elif duration > 5.0:
@@ -1051,7 +1064,7 @@ def _try_fast_skip_page(
         # If all matches on the page can be skipped, do fast processing
         if len(fetch_candidates_uuid) == 0:
             logger.info(
-                f"Page {current_page_num}: All {len(matches_on_page)} matches unchanged - fast skip"
+                f"{len(matches_on_page)} matches unchanged - fast skip"
             )
             state["total_skipped"] += page_skip_count
             state["total_pages_processed"] += 1
@@ -1276,7 +1289,7 @@ def _main_page_processing_loop(
     if total_matches_estimate_this_run <= 0:
         total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
 
-    logger.info(f"📊 Estimated matches to process: {total_matches_estimate_this_run}")
+    logger.info(f"📊 Estimated matches to process: {total_matches_estimate_this_run}\n")
 
     loop_final_success = True  # Success flag for this loop's execution
 
@@ -1808,6 +1821,7 @@ def _identify_fetch_candidates(
             # --- Case 1: New Person ---
             # Always fetch details for new people.
             fetch_candidates_uuid.add(uuid_val)
+            match_api_data["_needs_ethnicity_refresh"] = True
             matches_to_process_later.append(match_api_data)
         else:
             # --- Case 2: Existing Person ---
@@ -1817,6 +1831,11 @@ def _identify_fetch_candidates(
             # Add to fetch list or increment skipped count
             if needs_fetch:
                 fetch_candidates_uuid.add(uuid_val)
+                existing_dna = getattr(existing_person, "dna_match", None)
+                if existing_dna is None:
+                    match_api_data["_needs_ethnicity_refresh"] = True
+                else:
+                    match_api_data["_needs_ethnicity_refresh"] = _needs_ethnicity_refresh(existing_dna)
                 matches_to_process_later.append(match_api_data)
             else:
                 skipped_count_this_batch += 1  # Step 3: Log summary of identification
@@ -2189,26 +2208,6 @@ def _derive_actual_relationship_label(
     return None
 
 
-# Removed _submit_api_call_groups - sequential processing doesn't need batch submission
-
-# Removed _store_future_result - not needed for sequential processing
-
-# Removed _process_single_future_result - not needed for sequential processing
-
-# Removed _build_cfpid_mapping - replaced by inline logic in sequential version
-
-# Removed _submit_ladder_futures - not needed for sequential processing
-
-# Removed _process_single_ladder_result - replaced by inline logic in sequential version
-
-# Removed _process_ladder_api_calls - sequential processing doesn't use ThreadPoolExecutor
-
-# Removed _combine_badge_ladder_results - integrated into sequential logic
-
-# Removed _check_critical_failure_threshold - sequential processing uses simpler error handling
-
-# Removed _check_session_health_periodic - sequential processing checks after each API call
-
 
 PREFETCH_PROGRESS_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75)
 PREFETCH_ENDPOINT_LABELS: dict[str, str] = {
@@ -2228,6 +2227,202 @@ class _PrefetchStats:
     ethnicity_fetch_count: int = 0
     ethnicity_skipped: int = 0
     next_progress_threshold_index: int = 0
+
+
+@dataclass
+class _PrefetchPlan:
+    """Immutable plan describing how the prefetch run should behave."""
+
+    stats: _PrefetchStats
+    badge_candidates: set[str]
+    priority_uuids: set[str]
+    high_priority_uuids: set[str]
+    ethnicity_candidates: set[str]
+    num_candidates: int
+    my_tree_id: Optional[str]
+
+
+def _prepare_prefetch_plan(
+    session_manager: SessionManager,
+    fetch_candidates_uuid: set[str],
+    matches_to_process_later: list[dict[str, Any]],
+) -> _PrefetchPlan:
+    """Derive the prefetch execution plan from current configuration."""
+
+    stats = _PrefetchStats()
+    num_candidates = len(fetch_candidates_uuid)
+    badge_candidates = _identify_badge_candidates(
+        matches_to_process_later, fetch_candidates_uuid
+    )
+    logger.debug(
+        f"Identified {len(badge_candidates)} candidates for Badge/Ladder fetch."
+    )
+
+    high_priority_uuids, medium_priority_uuids, priority_uuids = _classify_match_priorities(
+        matches_to_process_later, fetch_candidates_uuid
+    )
+
+    (
+        priority_uuids,
+        medium_priority_uuids,
+        trimmed_medium_count,
+    ) = _limit_relationship_probability_requests(
+        matches_to_process_later,
+        high_priority_uuids,
+        medium_priority_uuids,
+        RELATIONSHIP_PROB_MAX_PER_PAGE,
+    )
+
+    if trimmed_medium_count > 0:
+        logger.debug(
+            "Relationship probability fetch limit active (%s/page). Trimmed %s medium-priority matches.",
+            RELATIONSHIP_PROB_MAX_PER_PAGE,
+            trimmed_medium_count,
+        )
+
+    ethnicity_candidates = _determine_ethnicity_candidates(
+        matches_to_process_later, priority_uuids
+    )
+
+    return _PrefetchPlan(
+        stats=stats,
+        badge_candidates=badge_candidates,
+        priority_uuids=priority_uuids,
+        high_priority_uuids=high_priority_uuids,
+        ethnicity_candidates=ethnicity_candidates,
+        num_candidates=num_candidates,
+        my_tree_id=session_manager.my_tree_id,
+    )
+
+
+def _determine_ethnicity_candidates(
+    matches_to_process_later: list[dict[str, Any]],
+    priority_uuids: set[str],
+) -> set[str]:
+    """Identify which matches qualify for ethnicity enrichment."""
+
+    if not ENABLE_ETHNICITY_ENRICHMENT:
+        logger.debug("Ethnicity enrichment disabled via configuration; skipping ethnicity API calls.")
+        return set()
+
+    if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
+        return set(priority_uuids)
+
+    filtered_candidates: set[str] = set()
+    for match_data in matches_to_process_later:
+        uuid_candidate = match_data.get("uuid")
+        if not uuid_candidate or uuid_candidate not in priority_uuids:
+            continue
+        if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
+            filtered_candidates.add(uuid_candidate)
+
+    filtered_out = len(priority_uuids) - len(filtered_candidates)
+    if ETHNICITY_ENRICHMENT_MIN_CM > 0 and filtered_out > already_up_to_date:
+        threshold_filtered = filtered_out - already_up_to_date
+        logger.debug(
+            "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
+            ETHNICITY_ENRICHMENT_MIN_CM,
+            threshold_filtered,
+        )
+
+    return filtered_candidates
+
+
+def _prefetch_combined_details(
+    session_manager: SessionManager,
+    uuid_val: str,
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    stats: _PrefetchStats,
+    endpoint_durations: dict[str, float],
+    endpoint_counts: dict[str, int],
+) -> None:
+    """Fetch combined details and record timing metadata."""
+
+    combined_start = time.time()
+    _handle_combined_details_fetch(session_manager, uuid_val, batch_combined_details, stats)
+    endpoint_durations["combined_details"] += time.time() - combined_start
+    endpoint_counts["combined_details"] += 1
+
+
+def _prefetch_relationship_probability(
+    session_manager: SessionManager,
+    uuid_val: str,
+    plan: _PrefetchPlan,
+    batch_relationship_prob_data: dict[str, Optional[str]],
+    endpoint_durations: dict[str, float],
+    endpoint_counts: dict[str, int],
+) -> None:
+    """Fetch relationship probability for priority matches."""
+
+    if uuid_val not in plan.priority_uuids:
+        return
+
+    rel_start = time.time()
+    _fetch_optional_relationship_data(
+        session_manager,
+        uuid_val,
+        plan.high_priority_uuids,
+        plan.priority_uuids,
+        batch_relationship_prob_data,
+    )
+    endpoint_durations["relationship_prob"] += time.time() - rel_start
+    endpoint_counts["relationship_prob"] += 1
+
+
+def _prefetch_badge_metadata(
+    session_manager: SessionManager,
+    uuid_val: str,
+    plan: _PrefetchPlan,
+    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    endpoint_durations: dict[str, float],
+    endpoint_counts: dict[str, int],
+) -> None:
+    """Fetch badge metadata for matches tied to the user tree."""
+
+    if uuid_val not in plan.badge_candidates:
+        return
+
+    badge_start = time.time()
+    _fetch_optional_badge_data(
+        session_manager,
+        uuid_val,
+        plan.badge_candidates,
+        temp_badge_results,
+    )
+    endpoint_durations["badge_details"] += time.time() - badge_start
+    endpoint_counts["badge_details"] += 1
+
+
+def _prefetch_ethnicity_data(
+    session_manager: SessionManager,
+    uuid_val: str,
+    plan: _PrefetchPlan,
+    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    endpoint_durations: dict[str, float],
+    endpoint_counts: dict[str, int],
+) -> None:
+    """Fetch ethnicity enrichment data when allowed."""
+
+    if not ENABLE_ETHNICITY_ENRICHMENT:
+        plan.stats.ethnicity_skipped += 1
+        batch_ethnicity_data[uuid_val] = None
+        return
+
+    if uuid_val not in plan.ethnicity_candidates:
+        plan.stats.ethnicity_skipped += 1
+        batch_ethnicity_data[uuid_val] = None
+        return
+
+    ethnicity_start = time.time()
+    _process_ethnicity_candidate(
+        session_manager,
+        uuid_val,
+        plan.ethnicity_candidates,
+        batch_ethnicity_data,
+        plan.stats,
+    )
+    endpoint_durations["ethnicity"] += time.time() - ethnicity_start
+    endpoint_counts["ethnicity"] += 1
 
 
 def _identify_badge_candidates(
@@ -2357,19 +2552,39 @@ def _process_ethnicity_candidate(
     """Fetch ethnicity data when the match qualifies."""
 
     if uuid_val not in ethnicity_candidates:
-        stats.ethnicity_skipped += 1
-        batch_ethnicity_data[uuid_val] = None
-        return
+    filtered_candidates: set[str] = set()
+    already_up_to_date = 0
 
+    def _needs_refresh(match_info: dict[str, Any]) -> bool:
+        return bool(match_info.get("_needs_ethnicity_refresh", True))
+
+    if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
+        for match_data in matches_to_process_later:
+            uuid_candidate = match_data.get("uuid")
+            if not uuid_candidate or uuid_candidate not in priority_uuids:
+                continue
+            if not _needs_refresh(match_data):
+                already_up_to_date += 1
+                continue
+            filtered_candidates.add(uuid_candidate)
+    else:
+        for match_data in matches_to_process_later:
+            uuid_candidate = match_data.get("uuid")
+            if not uuid_candidate or uuid_candidate not in priority_uuids:
+                continue
+            if not _needs_refresh(match_data):
+                already_up_to_date += 1
+                continue
+            if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
+                filtered_candidates.add(uuid_candidate)
+
+    if already_up_to_date:
+        logger.debug(
+            "🧬 Ethnicity refresh skipped for %d matches already up to date",
+            already_up_to_date,
+        )
     try:
-        ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
-        batch_ethnicity_data[uuid_val] = ethnicity_result
-        stats.ethnicity_fetch_count += 1
-    except Exception as exc:  # pragma: no cover - logging only
-        logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
-        batch_ethnicity_data[uuid_val] = None
-
-
+    filtered_out = len(priority_uuids) - len(filtered_candidates)
 def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats) -> None:
     """Emit throttled progress updates for lengthy prefetches."""
 
@@ -2524,131 +2739,74 @@ def _perform_api_prefetches(
         logger.debug("No fetch candidates provided for API pre-fetch.")
         return ({"combined": {}, "tree": {}, "rel_prob": {}, "ethnicity": {}}, endpoint_durations, endpoint_counts)
 
-    fetch_start_time = time.time()
-    num_candidates = len(fetch_candidates_uuid)
-    my_tree_id = session_manager.my_tree_id
-    stats = _PrefetchStats()
-    if not ENABLE_ETHNICITY_ENRICHMENT:
-        logger.debug("Ethnicity enrichment disabled via configuration; skipping ethnicity API calls.")
-
-    logger.debug(
-        f"--- Starting SEQUENTIAL API Pre-fetch ({num_candidates} candidates) ---"
-    )
-
-    badge_candidates = _identify_badge_candidates(
-        matches_to_process_later, fetch_candidates_uuid
-    )
-    logger.debug(
-        f"Identified {len(badge_candidates)} candidates for Badge/Ladder fetch."
-    )
-
-    # Classify matches into priority tiers
-    high_priority_uuids, medium_priority_uuids, priority_uuids = _classify_match_priorities(
-        matches_to_process_later, fetch_candidates_uuid
-    )
-
-    (
-        priority_uuids,
-        medium_priority_uuids,
-        trimmed_medium_count,
-    ) = _limit_relationship_probability_requests(
+    plan = _prepare_prefetch_plan(
+        session_manager,
+        fetch_candidates_uuid,
         matches_to_process_later,
-        high_priority_uuids,
-        medium_priority_uuids,
-        RELATIONSHIP_PROB_MAX_PER_PAGE,
     )
 
-    if trimmed_medium_count > 0:
-        logger.debug(
-            "Relationship probability fetch limit active (%s/page). Trimmed %s medium-priority matches.",
-            RELATIONSHIP_PROB_MAX_PER_PAGE,
-            trimmed_medium_count,
+    fetch_start_time = time.time()
+    logger.debug(
+        f"--- Starting SEQUENTIAL API Pre-fetch ({plan.num_candidates} candidates) ---"
+    )
+
+    temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
+    for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
+        _enforce_session_health_for_prefetch(
+            session_manager,
+            processed_count,
+            plan.num_candidates,
         )
 
-    # SEQUENTIAL PROCESSING: Process each match one at a time
-    temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
-    ethnicity_candidates: set[str] = set()
-    if ENABLE_ETHNICITY_ENRICHMENT:
-        if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
-            ethnicity_candidates = set(priority_uuids)
-        else:
-            filtered_candidates: set[str] = set()
-            for match_data in matches_to_process_later:
-                uuid_candidate = match_data.get("uuid")
-                if not uuid_candidate or uuid_candidate not in priority_uuids:
-                    continue
-                if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
-                    filtered_candidates.add(uuid_candidate)
-            ethnicity_candidates = filtered_candidates
-            filtered_out = len(priority_uuids) - len(ethnicity_candidates)
-            if filtered_out > 0:
-                logger.debug(
-                    "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
-                    ETHNICITY_ENRICHMENT_MIN_CM,
-                    filtered_out,
-                )
+        _prefetch_combined_details(
+            session_manager,
+            uuid_val,
+            batch_combined_details,
+            plan.stats,
+            endpoint_durations,
+            endpoint_counts,
+        )
 
-    for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
-        _enforce_session_health_for_prefetch(session_manager, processed_count, num_candidates)
-        combined_start = time.time()
-        _handle_combined_details_fetch(session_manager, uuid_val, batch_combined_details, stats)
-        endpoint_durations["combined_details"] += time.time() - combined_start
-        endpoint_counts["combined_details"] += 1
+        _prefetch_relationship_probability(
+            session_manager,
+            uuid_val,
+            plan,
+            batch_relationship_prob_data,
+            endpoint_durations,
+            endpoint_counts,
+        )
 
-        if uuid_val in priority_uuids:
-            rel_start = time.time()
-            _fetch_optional_relationship_data(
-                session_manager,
-                uuid_val,
-                high_priority_uuids,
-                priority_uuids,
-                batch_relationship_prob_data,
-            )
-            endpoint_durations["relationship_prob"] += time.time() - rel_start
-            endpoint_counts["relationship_prob"] += 1
+        _prefetch_badge_metadata(
+            session_manager,
+            uuid_val,
+            plan,
+            temp_badge_results,
+            endpoint_durations,
+            endpoint_counts,
+        )
 
-        if uuid_val in badge_candidates:
-            badge_start = time.time()
-            _fetch_optional_badge_data(
-                session_manager,
-                uuid_val,
-                badge_candidates,
-                temp_badge_results,
-            )
-            endpoint_durations["badge_details"] += time.time() - badge_start
-            endpoint_counts["badge_details"] += 1
+        _prefetch_ethnicity_data(
+            session_manager,
+            uuid_val,
+            plan,
+            batch_ethnicity_data,
+            endpoint_durations,
+            endpoint_counts,
+        )
 
-        if ENABLE_ETHNICITY_ENRICHMENT:
-            if uuid_val in ethnicity_candidates:
-                ethnicity_start = time.time()
-                _process_ethnicity_candidate(
-                    session_manager,
-                    uuid_val,
-                    ethnicity_candidates,
-                    batch_ethnicity_data,
-                    stats,
-                )
-                endpoint_durations["ethnicity"] += time.time() - ethnicity_start
-                endpoint_counts["ethnicity"] += 1
-            else:
-                stats.ethnicity_skipped += 1
-                batch_ethnicity_data[uuid_val] = None
-        else:
-            stats.ethnicity_skipped += 1
-            batch_ethnicity_data[uuid_val] = None
-        _log_prefetch_progress(processed_count, num_candidates, stats)
+        _log_prefetch_progress(processed_count, plan.num_candidates, plan.stats)
 
     ladder_start = time.time()
     batch_tree_data, ladder_calls = _fetch_ladder_details_for_badges(
         session_manager,
-        my_tree_id,
+        plan.my_tree_id,
         temp_badge_results,
     )
     endpoint_durations["ladder_details"] += time.time() - ladder_start
     endpoint_counts["ladder_details"] += ladder_calls
 
     fetch_duration = time.time() - fetch_start_time
-    _log_prefetch_summary(fetch_duration, stats)
+    _log_prefetch_summary(fetch_duration, plan.stats)
 
     return (
         {
@@ -4297,7 +4455,7 @@ def _log_batch_summary(
 ) -> None:
     """Emit a concise INFO-level summary for a processed batch."""
     logger.info(
-        "  • Page %d | batch %d/%d | matches=%d | new=%d updated=%d skipped=%d errors=%d | elapsed=%s | rate=%.2f match/s",
+        "Page %d batch %d/%d | matches=%d | new=%d updated=%d skipped=%d errors=%d | elapsed=%s | rate=%.2f match/s",
         current_page,
         batch_number,
         total_batches,
@@ -4329,15 +4487,7 @@ def _record_batch_performance(
         success_rate * 100,
         batch_size,
     )
-
-    if batch_duration > 30.0:
-        logger.info(
-            "⚠️  Page %d sustained batch processing for %.1fs (monitoring)",
-            current_page,
-            batch_duration,
-        )
-
-    _log_api_performance("batch_processing", batch_start_time, f"success_{success_rate:.0%}")
+    _log_api_performance("batch_processing", batch_start_time, f"success {success_rate:.0%}")
 
 
 def _update_recent_batch_history(duration: float) -> None:
@@ -4704,7 +4854,7 @@ def _process_page_matches(
         total_time = sum(timing_log.values())
         if total_time > 30.0:
             logger.info(
-                "⏱️  Page %d timing snapshot (total %.1fs): DB %.2fs | API %.2fs | prep %.2fs",
+                "Timings: Total %.1fs: DB %.2fs | API %.2fs | prep %.2fs",
                 current_page,
                 total_time,
                 timing_log.get("db_lookups", 0.0),
@@ -5262,6 +5412,28 @@ def _filter_dna_dict(dna_dict_base: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _filter_changed_ethnicity_values(
+    existing_dna_match: Optional[DnaMatch],
+    prefetched_ethnicity: dict[str, Optional[int]],
+) -> dict[str, Optional[int]]:
+    """Return only ethnicity values that differ from what is already stored."""
+
+    if existing_dna_match is None:
+        return prefetched_ethnicity
+
+    changed: dict[str, Optional[int]] = {}
+    for column_name, new_value in prefetched_ethnicity.items():
+        if not hasattr(existing_dna_match, column_name):
+            changed[column_name] = new_value
+            continue
+
+        current_value = getattr(existing_dna_match, column_name)
+        if current_value != new_value:
+            changed[column_name] = new_value
+
+    return changed
+
+
 def _add_ethnicity_data(
     dna_dict_base: dict[str, Any],
     existing_dna_match: Optional[DnaMatch],
@@ -5275,8 +5447,16 @@ def _add_ethnicity_data(
         # Use prefetched ethnicity data from sequential API fetch
         prefetched_ethnicity = match.get("_prefetched_ethnicity")
         if prefetched_ethnicity and isinstance(prefetched_ethnicity, dict):
-            dna_dict_base.update(prefetched_ethnicity)
-            logger_instance.debug(f"{log_ref_short}: Added ethnicity data ({len(prefetched_ethnicity)} regions)")
+            ethnicity_updates = _filter_changed_ethnicity_values(existing_dna_match, prefetched_ethnicity)
+            if ethnicity_updates:
+                dna_dict_base.update(ethnicity_updates)
+                logger_instance.debug(
+                    "%s: Added ethnicity data (%d regions)",
+                    log_ref_short,
+                    len(ethnicity_updates),
+                )
+            else:
+                logger_instance.debug(f"{log_ref_short}: Ethnicity unchanged; skipping update")
         else:
             short_uuid = match_uuid[:8] if match_uuid else "unknown"
             logger_instance.debug(
@@ -7901,10 +8081,9 @@ def _log_page_start(current_page: int, state: dict[str, Any]) -> None:
     eta = avg_per_page * pages_remaining if avg_per_page else None
     percent_complete = (pages_done / pages_target * 100.0) if pages_target else 0.0
 
-    tokens = [
-        f"Page {page_index}/{pages_target} (dataset page {current_page})",
-        f"{percent_complete:.0f}% complete",
-    ]
+    tokens = [f"Page {current_page} ({page_index} of {pages_target})"]
+
+    tokens.append(f"{percent_complete:.0f}% complete")
 
     if elapsed is not None:
         tokens.append(f"elapsed {_format_brief_duration(elapsed)}")
@@ -7959,8 +8138,10 @@ def _format_endpoint_breakdown(
     breakdown: dict[str, float],
     counts: dict[str, int],
     limit: int | None = 3,
+    *,
+    style: Literal["inline", "list"] = "inline",
 ) -> str:
-    """Format a compact endpoint timing summary for inline logging."""
+    """Format endpoint timing summary for logging."""
 
     entries: list[str] = []
     for endpoint, total, count, _avg in _iter_endpoint_stats(breakdown, counts):
@@ -7969,6 +8150,13 @@ def _format_endpoint_breakdown(
         entries.append(f"{label}={duration_summary}")
         if limit and len(entries) >= limit:
             break
+
+    if not entries:
+        return ""
+
+    if style == "list":
+        return "\n".join(f"- {entry}" for entry in entries)
+
     return " | ".join(entries)
 
 
@@ -8026,17 +8214,17 @@ def _log_page_completion_summary(
         eta = _format_brief_duration(progress.get("eta"))
 
         header_parts.append(
-            f"Page {page_index}/{pages_target} complete (dataset page {page})"
+            f"Page {page} done:"
         )
-        header_parts.append(f"{percent:.0f}% done")
-        header_parts.append(f"elapsed {elapsed}")
+        header_parts.append(f"{percent:.0f}% of total")
+        header_parts.append(f"took {elapsed}")
         if eta != "--":
             header_parts.append(f"ETA {eta}")
     else:
-        header_parts.append(f"Page {page} complete")
+        header_parts.append(f"Page {page} done")
 
     body_lines = [
-        "  Matches: "
+        "\n- Matches: "
         f"new={page_new}, updated={page_updated}, skipped={page_skipped}, errors={page_errors}",
     ]
 
@@ -8066,28 +8254,27 @@ def _log_page_completion_summary(
         )
 
         body_lines.append(
-            f"  API: {metrics.fetch_candidates} fetches in {api_line}"
+            f"\nTimings:\n- API: {metrics.fetch_candidates} in {api_line}"
         )
-        body_lines.append(f"  DB: {db_line} | Commit: {commit_line}")
-        body_lines.append(f"  Total: {total_line}")
+        body_lines.append(f"\n- DB: {db_line} | Commit: {commit_line}")
+        body_lines.append(f"\n- Total: {total_line}")
         if avg_rate:
             body_lines[-1] += f" | Rate: {avg_rate:.2f} match/s"
         if metrics.batches > 1:
-            body_lines.append(f"  Batches: {metrics.batches}")
+            body_lines.append(f"\nBatches: {metrics.batches}")
         inline_breakdown = _format_endpoint_breakdown(
             metrics.prefetch_breakdown,
             metrics.prefetch_call_counts,
+            style="list",
         )
         if inline_breakdown:
-            body_lines.append(f"  Top API endpoints: {inline_breakdown}")
+            body_lines.append(f"\nTop API endpoints (by total time):\n{inline_breakdown}")
         if metrics.idle_seconds > 0.05:
-            body_lines.append(f"  Pacing delay: {metrics.idle_seconds:.2f}s")
+            body_lines.append(f"\nPacing delay: {metrics.idle_seconds:.2f}s")
     else:
-        body_lines.append("  Metrics unavailable for this page")
+        body_lines.append("\n- Metrics unavailable for this page\n")
 
-    logger.info("".join(["", " | ".join(header_parts), *body_lines]))
-
-
+    logger.info("".join(["", "\n- ".join(header_parts), *body_lines]))
 # End of _log_page_completion_summary
 
 
@@ -8162,7 +8349,7 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
             metrics and hasattr(metrics, "current_fill_rate")
         ):
             logger.info(
-                f"⚡ Adaptive rate limiting: Current rate {metrics.current_fill_rate:.3f} req/s after page {current_page}"
+                f"⚡ Rate limiting: Current {metrics.current_fill_rate:.3f} req/s after page {current_page}"
             )
 
 

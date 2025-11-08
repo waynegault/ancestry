@@ -65,7 +65,8 @@ logger = setup_module(globals(), __name__)
 
 # Default thresholds for dynamically registered metrics
 _DYNAMIC_METRIC_DEFAULTS: dict[str, dict[str, float]] = {
-    "api_batch_processing_last_duration": {"warning": 120.0, "critical": 240.0, "weight": 1.5},
+    # Ethnicity-heavy batches routinely exceed a minute; stretch thresholds to prevent noise.
+    "api_batch_processing_last_duration": {"warning": 180.0, "critical": 300.0, "weight": 1.2},
     "api_combined_details_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.2},
     "api_relationship_prob_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},
     "api_ethnicity_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},

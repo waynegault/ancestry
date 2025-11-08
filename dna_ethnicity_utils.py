@@ -224,10 +224,12 @@ def fetch_ethnicity_comparison(
 
     if "comparisons" not in response:
         logger.debug(f"Ethnicity comparison response missing 'comparisons' field for match {match_test_guid}")
-        return None
+        comparison_data: Optional[dict[str, Any]] = None
+    else:
+        logger.debug(f"Successfully fetched ethnicity comparison for match {match_test_guid}")
+        comparison_data = response
 
-    logger.debug(f"Successfully fetched ethnicity comparison for match {match_test_guid}")
-    return response
+    return comparison_data
 
 
 def sanitize_column_name(region_name: str) -> str:

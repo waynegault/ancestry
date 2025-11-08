@@ -54,6 +54,7 @@ class RateLimiterMetrics:
     success_count: int = 0
     tokens_available: float = 0.0
     avg_wait_time: float = 0.0
+    endpoint_rate_cap: Optional[float] = None
 
 
 @dataclass
@@ -63,11 +64,15 @@ class _EndpointProfile:
     min_interval: float = 0.0
     delay_multiplier: float = 1.0
     cooldown_after_429: float = 0.0
+    max_rate: Optional[float] = None
 
     def __post_init__(self) -> None:
         self.min_interval = max(0.0, float(self.min_interval))
         self.delay_multiplier = max(1.0, float(self.delay_multiplier))
         self.cooldown_after_429 = max(0.0, float(self.cooldown_after_429))
+        if self.max_rate is not None:
+            max_rate = max(0.0, float(self.max_rate))
+            self.max_rate = max_rate or None
 
 
 @dataclass
@@ -485,8 +490,10 @@ class AdaptiveRateLimiter:
         }
 
         self._endpoint_profiles: dict[str, _EndpointProfile] = {}
+        self._endpoint_rate_cap: Optional[float] = None
         self._endpoint_last_call: dict[str, float] = {}
         self._endpoint_penalty_until: dict[str, float] = {}
+        self._endpoint_summary: Optional[str] = None
 
         self.initial_source = "default"
 
@@ -537,6 +544,7 @@ class AdaptiveRateLimiter:
 
     def _apply_endpoint_throttle(self, endpoint: Optional[str], base_wait: float) -> float:
         """Apply endpoint-specific throttling rules and return updated wait time."""
+
         if not endpoint:
             return base_wait
 
@@ -547,92 +555,240 @@ class AdaptiveRateLimiter:
         now = time.monotonic()
         extra_delay = 0.0
 
-        penalty_until = self._endpoint_penalty_until.get(endpoint)
-        if penalty_until is not None:
-            penalty_gap = penalty_until - now
-            if penalty_gap > 0.0:
-                extra_delay += penalty_gap
-            else:
-                self._endpoint_penalty_until.pop(endpoint, None)
-
-        last_call = self._endpoint_last_call.get(endpoint)
-        if profile.min_interval > 0.0 and last_call is not None:
-            gap = profile.min_interval - (now - last_call)
-            if gap > 0.0:
-                extra_delay += gap
-
-        if profile.delay_multiplier > 1.0 and base_wait > 0.0:
-            extra_delay += base_wait * (profile.delay_multiplier - 1.0)
+        extra_delay += self._calculate_penalty_delay(endpoint, now)
+        extra_delay += self._calculate_min_interval_delay(endpoint, profile, now)
+        extra_delay += self._calculate_delay_multiplier(profile, base_wait)
 
         if extra_delay > 0.0:
-            logger.debug(
-                "Endpoint '%s' throttle added %.3fs (base %.3fs)",
-                endpoint,
-                extra_delay,
-                base_wait,
-            )
-            time.sleep(extra_delay)
-            self._refill_tokens()
-            base_wait += extra_delay
-            now = time.monotonic()
-            self._endpoint_penalty_until.pop(endpoint, None)
+            base_wait, now = self._perform_endpoint_delay(endpoint, base_wait, extra_delay)
 
         self._endpoint_last_call[endpoint] = now
         return base_wait
 
     def configure_endpoint_profiles(self, profiles: Optional[dict[str, Any]]) -> None:
         """Configure endpoint-specific throttling behavior."""
+
         with self._lock:
             if profiles is None:
                 return
 
-            self._endpoint_profiles.clear()
-            self._endpoint_last_call.clear()
-            self._endpoint_penalty_until.clear()
-
+            self._reset_endpoint_profiles()
             if not profiles:
                 return
 
-            for endpoint, raw_profile in profiles.items():
-                if not isinstance(endpoint, str):
-                    continue
-                if not isinstance(raw_profile, dict):
-                    logger.warning("Invalid endpoint throttle entry for %s; expected dict", endpoint)
-                    continue
-
-                min_interval = _safe_float(raw_profile.get("min_interval")) or 0.0
-                max_rate = _safe_float(raw_profile.get("max_rate")) or 0.0
-                delay_multiplier = _safe_float(raw_profile.get("delay_multiplier")) or 1.0
-                cooldown_after_429 = _safe_float(raw_profile.get("cooldown_after_429")) or 0.0
-
-                if max_rate > 0.0:
-                    derived_interval = 1.0 / max_rate
-                    if derived_interval > min_interval:
-                        min_interval = derived_interval
-
-                min_interval = max(0.0, min_interval)
-                delay_multiplier = max(1.0, delay_multiplier)
-                cooldown_after_429 = max(0.0, cooldown_after_429)
-
-                if min_interval <= 0.0 and delay_multiplier <= 1.0 and cooldown_after_429 <= 0.0:
-                    continue
-
-                profile = _EndpointProfile(
-                    min_interval=min_interval,
-                    delay_multiplier=delay_multiplier,
-                    cooldown_after_429=cooldown_after_429,
-                )
-                self._endpoint_profiles[endpoint] = profile
+            rate_caps = self._build_endpoint_profiles(profiles)
 
             if self._endpoint_profiles:
-                summary_entries: list[str] = []
-                for name, profile in self._endpoint_profiles.items():
-                    parts = [f"min={profile.min_interval:.2f}s", f"mult={profile.delay_multiplier:.2f}"]
-                    if profile.cooldown_after_429 > 0.0:
-                        parts.append(f"cooldown={profile.cooldown_after_429:.1f}s")
-                    summary_entries.append(f"{name}({', '.join(parts)})")
-                summary = ", ".join(summary_entries)
-                logger.info("Endpoint throttles configured: %s", summary)
+                self._log_endpoint_summary()
+
+            if rate_caps:
+                self._apply_endpoint_rate_cap(min(rate_caps))
+
+    def _calculate_penalty_delay(self, endpoint: str, now: float) -> float:
+        """Return cooldown delay remaining for an endpoint."""
+
+        penalty_until = self._endpoint_penalty_until.get(endpoint)
+        if penalty_until is None:
+            return 0.0
+
+        penalty_gap = penalty_until - now
+        if penalty_gap > 0.0:
+            return penalty_gap
+
+        self._endpoint_penalty_until.pop(endpoint, None)
+        return 0.0
+
+    def _calculate_min_interval_delay(
+        self,
+        endpoint: str,
+        profile: _EndpointProfile,
+        now: float,
+    ) -> float:
+        """Compute additional delay required to satisfy min_interval."""
+
+        if profile.min_interval <= 0.0:
+            return 0.0
+
+        last_call = self._endpoint_last_call.get(endpoint)
+        if last_call is None:
+            return 0.0
+
+        gap = profile.min_interval - (now - last_call)
+        return gap if gap > 0.0 else 0.0
+
+    def _calculate_delay_multiplier(self, profile: _EndpointProfile, base_wait: float) -> float:
+        """Return additional delay driven by the configured multiplier."""
+
+        if profile.delay_multiplier <= 1.0 or base_wait <= 0.0:
+            return 0.0
+
+        return base_wait * (profile.delay_multiplier - 1.0)
+
+    def _perform_endpoint_delay(
+        self,
+        endpoint: str,
+        base_wait: float,
+        extra_delay: float,
+    ) -> tuple[float, float]:
+        """Sleep for the calculated delay and refresh timing state."""
+
+        logger.debug(
+            "Endpoint '%s' throttle added %.3fs (base %.3fs)",
+            endpoint,
+            extra_delay,
+            base_wait,
+        )
+        time.sleep(extra_delay)
+        self._refill_tokens()
+        updated_wait = base_wait + extra_delay
+        self._endpoint_penalty_until.pop(endpoint, None)
+        return updated_wait, time.monotonic()
+
+    def _reset_endpoint_profiles(self) -> None:
+        """Clear existing endpoint throttle state."""
+
+        self._endpoint_profiles.clear()
+        self._endpoint_last_call.clear()
+        self._endpoint_penalty_until.clear()
+        self._endpoint_rate_cap = None
+        self._endpoint_summary = None
+
+    def _build_endpoint_profiles(self, profiles: dict[str, Any]) -> list[float]:
+        """Normalize provided profiles and collect any derived rate caps."""
+
+        rate_caps: list[float] = []
+        for endpoint, raw_profile in profiles.items():
+            if not isinstance(endpoint, str):
+                continue
+
+            normalized = self._normalize_endpoint_profile(endpoint, raw_profile)
+            if not normalized:
+                continue
+
+            profile, cap = normalized
+            self._endpoint_profiles[endpoint] = profile
+            if cap is not None:
+                rate_caps.append(cap)
+
+        return rate_caps
+
+    def _normalize_endpoint_profile(
+        self,
+        endpoint: str,
+        raw_profile: Any,
+    ) -> Optional[tuple[_EndpointProfile, Optional[float]]]:
+        """Return sanitized endpoint profile and any effective rate cap."""
+
+        if not isinstance(raw_profile, dict):
+            logger.warning("Invalid endpoint throttle entry for %s; expected dict", endpoint)
+            return None
+
+        min_interval = _safe_float(raw_profile.get("min_interval")) or 0.0
+        max_rate = self._sanitize_max_rate(raw_profile.get("max_rate"))
+        delay_multiplier = _safe_float(raw_profile.get("delay_multiplier")) or 1.0
+        cooldown_after_429 = _safe_float(raw_profile.get("cooldown_after_429")) or 0.0
+
+        min_interval, rate_cap = self._apply_rate_cap_adjustments(min_interval, max_rate)
+
+        delay_multiplier = max(1.0, delay_multiplier)
+        cooldown_after_429 = max(0.0, cooldown_after_429)
+
+        if self._is_profile_inactive(min_interval, delay_multiplier, cooldown_after_429):
+            return None
+
+        profile = _EndpointProfile(
+            min_interval=min_interval,
+            delay_multiplier=delay_multiplier,
+            cooldown_after_429=cooldown_after_429,
+            max_rate=max_rate,
+        )
+
+        return profile, rate_cap
+
+    @staticmethod
+    def _sanitize_max_rate(value: Any) -> Optional[float]:
+        """Return a positive max rate when specified."""
+
+        max_rate = _safe_float(value)
+        if max_rate is None or max_rate <= 0.0:
+            return None
+        return max_rate
+
+    @staticmethod
+    def _is_profile_inactive(
+        min_interval: float,
+        delay_multiplier: float,
+        cooldown_after_429: float,
+    ) -> bool:
+        """Return True when profile contains no throttling behaviour."""
+
+        return (
+            min_interval <= 0.0
+            and delay_multiplier <= 1.0
+            and cooldown_after_429 <= 0.0
+        )
+
+    @staticmethod
+    def _apply_rate_cap_adjustments(
+        min_interval: float,
+        max_rate: Optional[float],
+    ) -> tuple[float, Optional[float]]:
+        """Harmonize min interval and max rate, returning any cap discovered."""
+
+        if max_rate is not None:
+            derived_interval = 1.0 / max_rate
+            min_interval = max(derived_interval, min_interval)
+            return max(min_interval, 0.0), max_rate
+
+        if min_interval > 0.0:
+            return max(min_interval, 0.0), 1.0 / min_interval
+
+        return max(min_interval, 0.0), None
+
+    def _log_endpoint_summary(self) -> None:
+        """Emit a concise summary of active endpoint throttles."""
+
+        summary_entries: list[str] = []
+        for name, profile in self._endpoint_profiles.items():
+            parts = [f"min={profile.min_interval:.2f}s", f"mult={profile.delay_multiplier:.2f}"]
+            if profile.cooldown_after_429 > 0.0:
+                parts.append(f"cooldown={profile.cooldown_after_429:.1f}s")
+            if profile.max_rate:
+                parts.append(f"max={profile.max_rate:.2f}/s")
+            elif profile.min_interval > 0.0:
+                parts.append(f"max≈{(1.0 / profile.min_interval):.2f}/s")
+            summary_entries.append(f"{name}({', '.join(parts)})")
+
+        if summary_entries:
+            summary = ", ".join(summary_entries)
+            self._endpoint_summary = f"Endpoint throttles configured: {summary}"
+            logger.debug(self._endpoint_summary)
+        else:
+            self._endpoint_summary = None
+
+    def _apply_endpoint_rate_cap(self, new_cap: float) -> None:
+        """Clamp limiter bounds when endpoint caps require it."""
+
+        self._endpoint_rate_cap = new_cap
+        if new_cap >= self.max_fill_rate - 1e-6:
+            return
+
+        self.max_fill_rate = max(new_cap, self.min_fill_rate)
+        if self.fill_rate > self.max_fill_rate:
+            logger.info(
+                "Endpoint cap enforced: reducing fill rate from %.3f to %.3f req/s",
+                self.fill_rate,
+                self.max_fill_rate,
+            )
+            self.fill_rate = self.max_fill_rate
+
+        if self.min_fill_rate > self.max_fill_rate:
+            self.min_fill_rate = max(0.01, self.max_fill_rate * 0.5)
+
+    def get_endpoint_summary(self) -> Optional[str]:
+        """Return the most recent endpoint throttle summary, if available."""
+
+        return self._endpoint_summary
 
     def on_429_error(self, endpoint: Optional[str] = None) -> None:
         """
@@ -754,13 +910,19 @@ class AdaptiveRateLimiter:
                 success_count=self.success_count,
                 tokens_available=self.tokens,
                 avg_wait_time=avg_wait,
+                endpoint_rate_cap=self._endpoint_rate_cap,
             )
 
     def print_metrics_summary(self) -> None:
         """Log a one-line summary of current limiter performance."""
         metrics = self.get_metrics()
+        cap_fragment = (
+            f" | endpoint-cap={metrics.endpoint_rate_cap:.2f}/s"
+            if metrics.endpoint_rate_cap
+            else ""
+        )
         logger.info(
-            "RateLimiter | rate=%.2f req/s | tokens=%.2f/%.2f | total=%d | avg-wait=%.3fs | 429=%d | +%d/-%d",
+            "RateLimiter | rate=%.2f req/s | tokens=%.2f/%.2f | total=%d | avg-wait=%.3fs | 429=%d | +%d/-%d%s",
             metrics.current_fill_rate,
             metrics.tokens_available,
             self.capacity,
@@ -769,6 +931,7 @@ class AdaptiveRateLimiter:
             metrics.error_429_count,
             metrics.rate_increases,
             metrics.rate_decreases,
+            cap_fragment,
         )
 
     @property

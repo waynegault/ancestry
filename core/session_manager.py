@@ -184,43 +184,7 @@ class SessionManager:
         self._owner_logged: bool = False
 
         # Initialize rate limiter (use global singleton for all API calls)
-        try:
-            from utils import get_rate_limiter
-            batch_threshold = getattr(config_schema, "batch_size", 50) or 50
-            batch_threshold = max(int(batch_threshold), 1)
-            safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
-            speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
-            allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
-            allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-            min_fill_rate = max(0.05, safe_rps * 0.5)
-            desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
-            max_fill_rate = desired_rate if allow_aggressive else safe_rps
-            max_fill_rate = max(max_fill_rate, min_fill_rate)
-            bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
-            endpoint_profiles_raw = getattr(config_schema.api, "endpoint_throttle_profiles", {})
-            if isinstance(endpoint_profiles_raw, dict):
-                endpoint_profiles = {
-                    key: dict(value)
-                    for key, value in endpoint_profiles_raw.items()
-                    if isinstance(key, str) and isinstance(value, dict)
-                }
-            else:
-                endpoint_profiles = {}
-            self.rate_limiter = get_rate_limiter(
-                initial_fill_rate=safe_rps,
-                success_threshold=batch_threshold,
-                min_fill_rate=min_fill_rate,
-                max_fill_rate=max_fill_rate,
-                capacity=bucket_capacity,
-                endpoint_profiles=endpoint_profiles,
-            )
-            if self.rate_limiter:
-                logger.debug(
-                    "AdaptiveRateLimiter bound to session (success_threshold=%d)",
-                    self.rate_limiter.success_threshold,
-                )
-        except ImportError:
-            self.rate_limiter = None
+        self.rate_limiter = self._initialize_rate_limiter()
 
         # Alias for backward compatibility with code that references dynamic_rate_limiter
         # Both attributes point to the same RateLimiter instance
@@ -288,6 +252,89 @@ class SessionManager:
         """Get cached SessionValidator instance"""
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
+
+    def _initialize_rate_limiter(self) -> Optional[Any]:
+        """Create or reuse the adaptive rate limiter configured for this session."""
+
+        try:
+            from utils import get_rate_limiter
+        except ImportError:
+            return None
+
+        batch_threshold = getattr(config_schema, "batch_size", 50) or 50
+        batch_threshold = max(int(batch_threshold), 1)
+        success_threshold = max(batch_threshold * 2, 50)
+
+        safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
+        speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
+        allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
+        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
+
+        # Match CLI configuration: let rate limiter drop to 25% of configured RPS.
+        min_fill_rate = max(0.05, safe_rps * 0.25)
+        desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
+        max_fill_rate = desired_rate if allow_aggressive else safe_rps
+
+        endpoint_profiles = self._build_endpoint_profile_config()
+        endpoint_rate_cap = self._calculate_endpoint_rate_cap(endpoint_profiles)
+        if endpoint_rate_cap is not None:
+            max_fill_rate = min(max_fill_rate, endpoint_rate_cap)
+
+        if max_fill_rate < min_fill_rate:
+            min_fill_rate = max(0.05, max_fill_rate * 0.5)
+
+        bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
+        initial_fill_rate = min(safe_rps, max_fill_rate)
+
+        limiter = get_rate_limiter(
+            initial_fill_rate=initial_fill_rate,
+            success_threshold=success_threshold,
+            min_fill_rate=min_fill_rate,
+            max_fill_rate=max_fill_rate,
+            capacity=bucket_capacity,
+            endpoint_profiles=endpoint_profiles,
+        )
+
+        if limiter:
+            logger.debug(
+                "AdaptiveRateLimiter bound to session (success_threshold=%d)",
+                limiter.success_threshold,
+            )
+
+        return limiter
+
+    def _build_endpoint_profile_config(self) -> dict[str, dict[str, Any]]:
+        """Normalize endpoint throttle profiles from configuration."""
+
+        endpoint_profiles_raw = getattr(config_schema.api, "endpoint_throttle_profiles", {})
+        if not isinstance(endpoint_profiles_raw, dict):
+            return {}
+
+        return {
+            key: dict(value)
+            for key, value in endpoint_profiles_raw.items()
+            if isinstance(key, str) and isinstance(value, dict)
+        }
+
+    def _calculate_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> Optional[float]:
+        """Derive the tightest rate cap from endpoint throttle definitions."""
+
+        endpoint_rate_cap: Optional[float] = None
+        for profile in endpoint_profiles.values():
+            max_rate_val = profile.get("max_rate")
+            min_interval_val = profile.get("min_interval")
+            candidate_rates: list[float] = []
+
+            if isinstance(max_rate_val, (int, float)) and max_rate_val > 0:
+                candidate_rates.append(float(max_rate_val))
+            if isinstance(min_interval_val, (int, float)) and min_interval_val > 0:
+                candidate_rates.append(1.0 / float(min_interval_val))
+
+            if candidate_rates:
+                cap_candidate = min(candidate_rates)
+                endpoint_rate_cap = cap_candidate if endpoint_rate_cap is None else min(endpoint_rate_cap, cap_candidate)
+
+        return endpoint_rate_cap
 
     def _initialize_enhanced_requests_session(self) -> None:
         """
