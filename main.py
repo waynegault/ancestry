@@ -2428,6 +2428,9 @@ def _validate_ai_provider_on_startup() -> None:
     elif ai_provider == "gemini":
         _validate_cloud_provider("Gemini", config_schema.api.google_api_key,
                                 config_schema.api.google_ai_model)
+    elif ai_provider == "moonshot":
+        _validate_cloud_provider("Moonshot", config_schema.api.moonshot_api_key,
+                                config_schema.api.moonshot_ai_model)
     else:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
 

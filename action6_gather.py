@@ -2240,6 +2240,65 @@ def _prepare_prefetch_plan(
     )
 
 
+@dataclass
+class _EthnicityScreeningStats:
+    """Track screening outcomes for ethnicity enrichment."""
+
+    already_up_to_date: int = 0
+    threshold_filtered: int = 0
+
+
+def _match_requires_ethnicity_refresh(
+    match_info: dict[str, Any],
+    stats: _EthnicityScreeningStats,
+) -> bool:
+    """Return True if the match should request refreshed ethnicity data."""
+
+    flag = match_info.get("_needs_ethnicity_refresh")
+    if flag is None or bool(flag):
+        return True
+
+    stats.already_up_to_date += 1
+    return False
+
+
+def _is_below_ethnicity_threshold(
+    match_info: dict[str, Any],
+    threshold_cm: int,
+    stats: _EthnicityScreeningStats,
+) -> bool:
+    """Return True when the match falls below the enrichment cM threshold."""
+
+    if threshold_cm <= 0:
+        return False
+
+    if _safe_cm_value(match_info) < threshold_cm:
+        stats.threshold_filtered += 1
+        return True
+
+    return False
+
+
+def _log_ethnicity_skip_counts(
+    stats: _EthnicityScreeningStats,
+    threshold_cm: int,
+) -> None:
+    """Emit debug logs summarizing ethnicity enrichment skips."""
+
+    if stats.already_up_to_date:
+        logger.debug(
+            "🧬 Ethnicity refresh skipped for %d matches already up to date",
+            stats.already_up_to_date,
+        )
+
+    if threshold_cm > 0 and stats.threshold_filtered:
+        logger.debug(
+            "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
+            threshold_cm,
+            stats.threshold_filtered,
+        )
+
+
 def _determine_ethnicity_candidates(
     matches_to_process_later: list[dict[str, Any]],
     priority_uuids: set[str],
@@ -2251,43 +2310,23 @@ def _determine_ethnicity_candidates(
         return set()
 
     filtered_candidates: set[str] = set()
-    already_up_to_date = 0
-    threshold_filtered = 0
-
-    def _needs_refresh(match_info: dict[str, Any]) -> bool:
-        flag = match_info.get("_needs_ethnicity_refresh")
-        if flag is None:
-            return True
-        return bool(flag)
+    screening_stats = _EthnicityScreeningStats()
+    threshold_cm = ETHNICITY_ENRICHMENT_MIN_CM
 
     for match_data in matches_to_process_later:
         uuid_candidate = match_data.get("uuid")
         if not uuid_candidate or uuid_candidate not in priority_uuids:
             continue
 
-        if not _needs_refresh(match_data):
-            already_up_to_date += 1
+        if not _match_requires_ethnicity_refresh(match_data, screening_stats):
             continue
 
-        if ETHNICITY_ENRICHMENT_MIN_CM > 0:
-            if _safe_cm_value(match_data) < ETHNICITY_ENRICHMENT_MIN_CM:
-                threshold_filtered += 1
-                continue
+        if _is_below_ethnicity_threshold(match_data, threshold_cm, screening_stats):
+            continue
 
         filtered_candidates.add(uuid_candidate)
 
-    if already_up_to_date:
-        logger.debug(
-            "🧬 Ethnicity refresh skipped for %d matches already up to date",
-            already_up_to_date,
-        )
-
-    if ETHNICITY_ENRICHMENT_MIN_CM > 0 and threshold_filtered > 0:
-        logger.debug(
-            "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
-            ETHNICITY_ENRICHMENT_MIN_CM,
-            threshold_filtered,
-        )
+    _log_ethnicity_skip_counts(screening_stats, threshold_cm)
 
     return filtered_candidates
 
@@ -8155,12 +8194,7 @@ def _log_page_completion_summary(
             lines.append(f"  - ETA {eta} to full download")
 
     lines.append(
-        "  - new={new} updated={updated} skipped={skipped} errors={errors}".format(
-            new=page_new,
-            updated=page_updated,
-            skipped=page_skipped,
-            errors=page_errors,
-        )
+        f"  - new={page_new} updated={page_updated} skipped={page_skipped} errors={page_errors}"
     )
 
     total_processed = page_new + page_updated + page_skipped

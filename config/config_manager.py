@@ -859,6 +859,10 @@ class ConfigManager:
             # Google API configuration
             ("GOOGLE_API_KEY", "google_api_key"),
             ("GOOGLE_AI_MODEL", "google_ai_model"),
+            # Moonshot (Kimi) API configuration
+            ("MOONSHOT_API_KEY", "moonshot_api_key"),
+            ("MOONSHOT_AI_MODEL", "moonshot_ai_model"),
+            ("MOONSHOT_AI_BASE_URL", "moonshot_ai_base_url"),
             # Local LLM API configuration
             ("LOCAL_LLM_API_KEY", "local_llm_api_key"),
             ("LOCAL_LLM_MODEL", "local_llm_model"),

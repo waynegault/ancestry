@@ -14,6 +14,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - **Action 10**: GEDCOM-first search with API fallback (unified presentation)
 - **API search core**: api_search_core.py (helpers used by Action 10 and 9)
 
+See `development_plan.md` for the consolidated roadmap and active priorities.
+
 ## Quick Start
 
 ### Prerequisites
@@ -46,22 +48,19 @@ ANCESTRY_USERNAME=your_username
 ANCESTRY_PASSWORD=your_password
 
 # Rate Limiting (CRITICAL - Prevents 429 errors)
-# Effective RPS = PARALLEL_WORKERS × REQUESTS_PER_SECOND
-# MUST keep effective RPS ≤ 5.0 to prevent rate limiting
-PARALLEL_WORKERS=3
-REQUESTS_PER_SECOND=1.0  # 3 workers × 1.0 = 3.0 effective RPS (SAFE)
-
-# Adaptive rate limiting (auto-updated by system for convergence)
-INITIAL_DELAY=1.00  # Must equal 1 / REQUESTS_PER_SECOND
-MAX_DELAY=60.0
-BACKOFF_FACTOR=1.80
-DECREASE_FACTOR=0.980
+# Sequential processing only. Do not raise without 50+ page validation.
+REQUESTS_PER_SECOND=0.3
 
 # Processing Limits
 MAX_PAGES=5
 MAX_INBOX=5
 MAX_PRODUCTIVE_TO_PROCESS=5
-BATCH_SIZE=30  # Matches per page (30 is optimal)
+MATCHES_PER_PAGE=30
+SKIP_LIVE_API_TESTS=true
+
+# Session Health
+HEALTH_CHECK_INTERVAL_PAGES=5
+SESSION_REFRESH_THRESHOLD_MIN=25
 
 # Application Mode
 APP_MODE=development  # or 'production'
@@ -128,57 +127,28 @@ ai_interface.py         # Multi-provider AI abstraction
 
 ### Rate Limiting & Timeout Protection (CRITICAL)
 
-**Phase 2 Complete: Dual-Layer Timeout Protection**
-- **Request-level timeouts**: All HTTP requests use tuple pairs `(connect_timeout, read_timeout)`
-- **Operation-level watchdog**: `APICallWatchdog` monitors long-running operations (60s threshold)
-- **Force restart capability**: `_force_session_restart()` with circuit breaker pattern
-- **Proactive session health**: Automatic refresh at 25-minute mark (40-min session lifetime)
+- **Thread-safe RateLimiter**: Implemented in `utils.py` (token bucket + adaptive delay). `SessionManager` creates a **single instance** that gates *all* outbound API calls.
+- **Sequential enforcement**: API requests are executed one at a time. Do not introduce thread pools or background fetches; doing so will reintroduce 429 penalties (72-second backoffs).
+- **Tuned default**: `REQUESTS_PER_SECOND=0.3` is the validated ceiling from 50+ page runs. Any increase requires a validation campaign with zero 429s.
+- **Timeout layers**: Request-level timeouts wrap every HTTP call and an `APICallWatchdog` protects long operations (60s threshold). The circuit breaker halts processing after five consecutive failures.
+- **Session health monitoring**: Every few pages we refresh cookies proactively (default: 25-minute threshold) to avoid `403` responses during long runs.
 
-**Adaptive Rate Limiting System:**
-- Class: `RateLimiter` in `utils.py` (lines 1360-1850) - **Planned migration to `AdaptiveRateLimiter`**
-- Instance: `session_manager.rate_limiter` (single instance, thread-safe)
-- Algorithm: Token bucket with adaptive delay adjustment
-- Auto-saves optimized settings to `.env` after each run for convergence
-
-**Phase 3 Planned: AdaptiveRateLimiter Migration**
-- New class: `AdaptiveRateLimiter` in `rate_limiter.py` (better convergence, no oscillation)
-- Eliminates dual delay tracking (token bucket + adaptive delay)
-- Unified rate limiting across all API calls
-- Real-time metrics via `get_metrics()` API
-
-**Configuration Formula:**
-```
-Effective RPS = PARALLEL_WORKERS × REQUESTS_PER_SECOND
-MUST maintain: Effective RPS ≤ 5.0 (Ancestry rate limit)
-
-Current safe settings:
-  PARALLEL_WORKERS=3
-  REQUESTS_PER_SECOND=1.0
-  → Effective RPS = 3.0 (safe margin: 40%)
-```
-
-**Adaptive Learning:**
-- System automatically adjusts `INITIAL_DELAY` based on 429 errors
-- Settings saved to `.env` at end of run via `save_adapted_settings()`
-- Each run starts with optimized values from previous run
-- Converges to optimal settings over multiple runs
-
-**Timeout Protection Validation:**
+**Validation Commands:**
 ```powershell
-# Check for timeout protection activity
-Select-String -Path Logs\app.log -Pattern "watchdog|timeout|force.*restart|🚨"
-
-# Check for 429 errors (should return 0)
+# Confirm no rate limit breaches
 (Select-String -Path Logs\app.log -Pattern "429 error").Count
 
-# View current effective RPS
-Select-String -Path Logs\app.log -Pattern "effective RPS" | Select-Object -Last 1
+# Verify rate limiter initialization during startup
+Select-String -Path Logs\app.log -Pattern "Thread-safe RateLimiter" | Select-Object -Last 1
+
+# Watch live API activity (safe for long runs)
+Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
 ```
 
-**WARNING**: Do NOT manually change rate limiting settings without:
-1. Understanding the effective RPS calculation
-2. Testing for 50+ pages with zero 429 errors
-3. Monitoring logs for rate limit warnings
+**Change Control Checklist:**
+1. Route every new HTTP path through `session_manager.api_manager` so the rate limiter can serialize the call.
+2. When adjusting rate limiter logic, run `validate_rate_limiting.py` and a 5-page Action 6 smoke test.
+3. Monitor `Logs/app.log` for `429`, `timeout`, and circuit breaker messages after each execution.
 
 ### Database Schema
 
@@ -347,55 +317,36 @@ python demo_lm_studio_autostart.py
 
 ## Future Developer Ideas
 
-- Engagement-based follow-up scheduler with activity heuristics
-- Conversation analytics dashboard with trends and funnel metrics
-- A/B testing for template variants and enrichment choices
-- Automatic fallback to DeepSeek on local model failures
-- Prompt variant optimization for local models to improve speed/quality
-- Relationship diagram inline images using lightweight SVG rendering
+Longer-term concepts are tracked in `development_plan.md`. Review that file for the prioritized backlog.
 
 ## Actions
 
 ### Action 6: DNA Match Gathering
-Automated DNA match data collection from Ancestry.com with optimized API pagination and parallel processing.
+Automates DNA match harvesting from Ancestry.com with resilient session management and configurable pagination.
 
-- **Optimized Pagination**: Uses `itemsPerPage=50` parameter (60% fewer API pages than default 20)
-- **Parallel Processing**: Configurable worker threads for match detail fetching
-- **Rate Limiting**: Thread-safe token bucket algorithm prevents 429 errors
-- **Session Health Monitoring**: Adaptive health checks aligned with batch size
-- **Checkpoint System**: Auto-resume from last page on interruption
-- **Ethnicity Enrichment**: Fetches and stores DNA ethnicity percentages
-- **Relationship Ladder Throttling**: Optional per-page limit on relationship probability calls via `MAX_RELATIONSHIP_PROB_FETCHES`
-- **Unified Narratives**: Relationship paths now mirror Action 10 formatting and capture the normalized ladder JSON when available
+- **Config-driven pagination**: `MATCHES_PER_PAGE` controls the API `itemsPerPage` value (default 30). Change the environment variable if Ancestry throughput rules shift.
+- **Sequential rate limiting**: All API calls funnel through the shared `RateLimiter`; there is no parallel worker pool to guarantee zero 429 responses.
+- **Session health monitoring**: Proactive checks keep the session refreshed before the 40-minute expiry window.
+- **Checkpoint resume**: Automatic state saves allow interrupted runs to resume from the last completed page.
+- **Ethnicity enrichment**: Optional fetches pull DNA ethnicity percentages when available.
+- **Relationship ladder throttling**: Use `MAX_RELATIONSHIP_PROB_FETCHES` to cap expensive relationship probability lookups per page.
 
 **API Endpoint:**
 ```
-GET /discoveryui-matches/parents/list/api/matchList/{test_guid}?itemsPerPage=50&currentPage={page}
+GET /discoveryui-matches/parents/list/api/matchList/{test_guid}?itemsPerPage={MATCHES_PER_PAGE}&currentPage={page}
 ```
 
 **Configuration (.env):**
 ```bash
-# Performance tuning (validated stable)
-PARALLEL_WORKERS=2              # Concurrent API fetch workers
-REQUESTS_PER_SECOND=3.5         # Token bucket fill rate
-BATCH_SIZE=25                   # Matches processed per DB transaction
-                                # Benefits: DB efficiency, error isolation,
-                                #          memory management, progress visibility
-MAX_RELATIONSHIP_PROB_FETCHES=0 # Medium-priority relationship probability fetch cap (0 disables trimming)
+# Core controls
+REQUESTS_PER_SECOND=0.3
+MATCHES_PER_PAGE=30
+MAX_RELATIONSHIP_PROB_FETCHES=0
+
+# Optional health overrides
+HEALTH_CHECK_INTERVAL_PAGES=5
+SESSION_REFRESH_THRESHOLD_MIN=25
 ```
-
-**Adaptive Batch Processing:**
-- **Base**: Starts with configured `BATCH_SIZE` from .env (default: 25)
-- **Dynamic Adaptation**: Adjusts based on server performance metrics
-  - Very slow server (>10s avg): Reduces to BATCH_SIZE/4 (min 5)
-  - Slow server (>7s avg): Reduces to BATCH_SIZE/2 (min 8)
-  - Fast server (<3s avg): Increases to BATCH_SIZE*1.5 (max 25)
-- **Health Checks**: Every BATCH_SIZE/2 tasks (e.g., every 12 tasks with BATCH_SIZE=25)
-
-**Expected Performance (with itemsPerPage=50):**
-- **Throughput**: 3,000-3,500 matches/hour (vs 2,100 with itemsPerPage=20)
-- **16,000 matches**: ~320 pages in 4.5-5.5 hours (vs 800 pages in 7-8 hours)
-- **Error Rate**: 0 (validated stable configuration)
 
 ```bash
 python action6_gather.py

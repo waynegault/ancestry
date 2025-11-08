@@ -341,6 +341,50 @@ def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int,
     return None
 
 
+def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
+    """Call Moonshot (Kimi) AI model using OpenAI-compatible endpoint."""
+    if not openai_available or OpenAI is None:
+        logger.error("_call_ai_model: OpenAI library not available for Moonshot.")
+        return None
+
+    api_key = getattr(config_schema.api, "moonshot_api_key", None)
+    model_name = getattr(config_schema.api, "moonshot_ai_model", None)
+    base_url = getattr(config_schema.api, "moonshot_ai_base_url", None)
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_ai_model: Moonshot configuration incomplete.")
+        return None
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    request_params: dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if response_format_type == "json_object":
+        request_params["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**request_params)
+    if response.choices and response.choices[0].message and response.choices[0].message.content:
+        try:
+            reasoning_content = getattr(response.choices[0].message, "reasoning_content", None)
+            if reasoning_content:
+                # Log a short preview to help during provider evaluation without overwhelming logs.
+                logger.debug(f"Moonshot reasoning preview: {str(reasoning_content)[:200]}")
+        except Exception:
+            pass
+        return response.choices[0].message.content.strip()
+
+    logger.error("Moonshot returned an empty or invalid response structure.")
+    return None
+
+
 # Helper functions for _call_gemini_model
 
 def _validate_gemini_availability() -> bool:
@@ -580,6 +624,8 @@ def _route_ai_provider_call(
     """Route call to appropriate AI provider."""
     if provider == "deepseek":
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    if provider == "moonshot":
+        return _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "gemini":
         return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
     if provider == "local_llm":
@@ -1506,8 +1552,8 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in ["deepseek", "gemini", "local_llm"]:
-        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek', 'gemini', or 'local_llm'")
+    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm"]:
+        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek', 'gemini', 'moonshot', or 'local_llm'")
         return False
     logger.info(f"✅ AI_PROVIDER: {ai_provider}")
     return True
@@ -1576,6 +1622,41 @@ def _validate_gemini_config() -> bool:
     return config_valid
 
 
+def _validate_moonshot_config() -> bool:
+    """Validate Moonshot-specific configuration."""
+    config_valid = True
+
+    if not openai_available:
+        logger.error("❌ OpenAI library not available for Moonshot")
+        config_valid = False
+    else:
+        logger.info("✅ OpenAI library available (for Moonshot)")
+
+    api_key = getattr(config_schema.api, "moonshot_api_key", None)
+    model_name = getattr(config_schema.api, "moonshot_ai_model", None)
+    base_url = getattr(config_schema.api, "moonshot_ai_base_url", None)
+
+    if not api_key:
+        logger.error("❌ MOONSHOT_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ MOONSHOT_API_KEY configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ MOONSHOT_AI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ MOONSHOT_AI_MODEL: {model_name}")
+
+    if not base_url:
+        logger.error("❌ MOONSHOT_AI_BASE_URL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ MOONSHOT_AI_BASE_URL: {base_url}")
+
+    return config_valid
+
+
 def _validate_local_llm_config() -> bool:
     """Validate Local LLM-specific configuration."""
     config_valid = True
@@ -1628,6 +1709,8 @@ def test_configuration() -> bool:
         return _validate_deepseek_config()
     if ai_provider == "gemini":
         return _validate_gemini_config()
+    if ai_provider == "moonshot":
+        return _validate_moonshot_config()
     if ai_provider == "local_llm":
         return _validate_local_llm_config()
 
@@ -1991,6 +2074,8 @@ def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
         return bool(config_schema.api.deepseek_api_key), openai_available
     if ai_provider == "gemini":
         return bool(config_schema.api.google_api_key), genai_available
+    if ai_provider == "moonshot":
+        return bool(getattr(config_schema.api, "moonshot_api_key", None)), openai_available
     if ai_provider == "local_llm":
         return bool(config_schema.api.local_llm_api_key), openai_available
     return False, False
