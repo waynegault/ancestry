@@ -1065,7 +1065,8 @@ def _determine_gender_for_person(
 ) -> Optional[str]:
     """Determine gender for a person using all available information."""
     # Check explicit gender field
-    gender = person_data.get("gender", "").upper() or None
+    gender_raw = person_data.get("gender")
+    gender = gender_raw.upper() if isinstance(gender_raw, str) else None
     if gender:
         return gender
 
@@ -1094,7 +1095,8 @@ def _parse_relationship_term_and_gender(relationship_text: str, person_data: dic
     rel_lower = relationship_text.lower()
 
     # Check explicit gender first
-    gender = person_data.get("gender", "").upper() or None
+    gender_raw = person_data.get("gender")
+    gender = gender_raw.upper() if isinstance(gender_raw, str) else None
 
     # Relationship mapping: (term, gender)
     relationship_map = {

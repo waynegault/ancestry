@@ -190,10 +190,7 @@ def _update_session_performance_tracking(session_manager, duration: float, respo
 # FINAL OPTIMIZATION 2: Memory Optimization Import
 # Note: ObjectPool and lazy_property removed - not essential for core functionality
 # from memory_optimizer import ObjectPool, lazy_property
-# ENHANCEMENT: Advanced Caching Layer
-import hashlib
-from functools import wraps
-
+# Historical note: prior advanced caching layer removed for clarity
 from core.logging_utils import OptimizedLogger
 from standard_imports import setup_module
 
@@ -202,53 +199,6 @@ from utils import (
     JSONP_PATTERN,
     fast_json_loads,
 )
-
-# In-memory cache for API responses with TTL
-API_RESPONSE_CACHE = {}
-CACHE_TTL = {
-    'combined_details': 3600,  # 1 hour cache for profile details
-    'relationship_prob': 86400,  # 24 hour cache for relationship probabilities
-    'person_facts': 1800,  # 30 minute cache for person facts
-}
-
-def api_cache(cache_key_prefix: str, ttl_seconds: int = 3600) -> Callable:
-    """Decorator for caching API responses with TTL."""
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # Create cache key from function name and arguments
-            cache_args = str(args[1:]) + str(kwargs) if len(args) > 1 else str(kwargs)
-            cache_key = f"{cache_key_prefix}_{hashlib.md5(cache_args.encode()).hexdigest()}"
-
-            current_time = time.time()
-
-            # Check cache hit
-            if cache_key in API_RESPONSE_CACHE:
-                cached_data, cache_time = API_RESPONSE_CACHE[cache_key]
-                if current_time - cache_time < ttl_seconds:
-                    logger.debug(f"Cache hit: {cache_key_prefix} (age: {current_time - cache_time:.1f}s)")
-                    return cached_data
-                # Remove expired entry
-                del API_RESPONSE_CACHE[cache_key]
-
-            # Cache miss - execute function
-            result = func(*args, **kwargs)
-
-            # Cache successful results only
-            if result is not None:
-                API_RESPONSE_CACHE[cache_key] = (result, current_time)
-
-                # Cleanup old cache entries (keep max 1000 entries)
-                if len(API_RESPONSE_CACHE) > 1000:
-                    # Remove oldest 200 entries
-                    sorted_keys = sorted(API_RESPONSE_CACHE.keys(),
-                                       key=lambda k: API_RESPONSE_CACHE[k][1])
-                    for old_key in sorted_keys[:200]:
-                        del API_RESPONSE_CACHE[old_key]
-
-            return result
-        return wrapper
-    return decorator
 
 # === MODULE SETUP ===
 raw_logger = setup_module(globals(), __name__)
@@ -1289,7 +1239,7 @@ def _main_page_processing_loop(
     if total_matches_estimate_this_run <= 0:
         total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
 
-    logger.info(f"📊 Estimated matches to process: {total_matches_estimate_this_run}\n")
+    logger.info(f"Estimated matches: {total_matches_estimate_this_run}")
 
     loop_final_success = True  # Success flag for this loop's execution
 
@@ -1462,9 +1412,7 @@ def _log_timing_breakdown_details(
     total_processed_matches: int,
 ) -> None:
     """Emit detailed timing statistics for the run."""
-    logger.info("-" * 60)
     logger.info("Timing Breakdown")
-    logger.info("-" * 60)
     logger.info(f"Tracked Pages:        {pages_with_metrics}")
     logger.info(
         "Tracked Matches:      %s",
@@ -1569,9 +1517,7 @@ def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
         return
 
     metrics = limiter.get_metrics()
-    logger.info("-" * 60)
     logger.info("Rate Limiter Performance")
-    logger.info("-" * 60)
     logger.info(f"Total Requests:        {metrics.total_requests}")
     logger.info(f"429 Errors:            {metrics.error_429_count}")
     logger.info(f"Current Rate:          {metrics.current_fill_rate:.3f} req/s")
@@ -1579,7 +1525,6 @@ def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
         f"Rate Adjustments:      ↓{metrics.rate_decreases} ↑{metrics.rate_increases}"
     )
     logger.info(f"Average Wait Time:     {metrics.avg_wait_time:.3f}s")
-    logger.info("-" * 60)
 
     try:
         from rate_limiter import persist_rate_limiter_state
@@ -2211,11 +2156,11 @@ def _derive_actual_relationship_label(
 
 PREFETCH_PROGRESS_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75)
 PREFETCH_ENDPOINT_LABELS: dict[str, str] = {
-    "combined_details": "Match profile details",
+    "combined_details": "Match profile",
     "relationship_prob": "Relationship probability",
-    "badge_details": "DNA badge metadata",
-    "ladder_details": "Tree ladder insights",
-    "ethnicity": "Ethnicity breakdown",
+    "badge_details": "DNA badge",
+    "ladder_details": "Tree ladder",
+    "ethnicity": "Ethnicity",
 }
 
 
@@ -2305,20 +2250,39 @@ def _determine_ethnicity_candidates(
         logger.debug("Ethnicity enrichment disabled via configuration; skipping ethnicity API calls.")
         return set()
 
-    if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
-        return set(priority_uuids)
-
     filtered_candidates: set[str] = set()
+    already_up_to_date = 0
+    threshold_filtered = 0
+
+    def _needs_refresh(match_info: dict[str, Any]) -> bool:
+        flag = match_info.get("_needs_ethnicity_refresh")
+        if flag is None:
+            return True
+        return bool(flag)
+
     for match_data in matches_to_process_later:
         uuid_candidate = match_data.get("uuid")
         if not uuid_candidate or uuid_candidate not in priority_uuids:
             continue
-        if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
-            filtered_candidates.add(uuid_candidate)
 
-    filtered_out = len(priority_uuids) - len(filtered_candidates)
-    if ETHNICITY_ENRICHMENT_MIN_CM > 0 and filtered_out > already_up_to_date:
-        threshold_filtered = filtered_out - already_up_to_date
+        if not _needs_refresh(match_data):
+            already_up_to_date += 1
+            continue
+
+        if ETHNICITY_ENRICHMENT_MIN_CM > 0:
+            if _safe_cm_value(match_data) < ETHNICITY_ENRICHMENT_MIN_CM:
+                threshold_filtered += 1
+                continue
+
+        filtered_candidates.add(uuid_candidate)
+
+    if already_up_to_date:
+        logger.debug(
+            "🧬 Ethnicity refresh skipped for %d matches already up to date",
+            already_up_to_date,
+        )
+
+    if ETHNICITY_ENRICHMENT_MIN_CM > 0 and threshold_filtered > 0:
         logger.debug(
             "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
             ETHNICITY_ENRICHMENT_MIN_CM,
@@ -2423,6 +2387,27 @@ def _prefetch_ethnicity_data(
     )
     endpoint_durations["ethnicity"] += time.time() - ethnicity_start
     endpoint_counts["ethnicity"] += 1
+
+
+def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats) -> None:
+    """Emit throttled progress updates for lengthy prefetches."""
+
+    if num_candidates < 40:
+        return
+
+    progress = processed_count / max(num_candidates, 1)
+    while (
+        stats.next_progress_threshold_index < len(PREFETCH_PROGRESS_THRESHOLDS)
+        and progress >= PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index]
+    ):
+        percent = int(PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index] * 100)
+        logger.info(
+            "📊 Prefetch %d%% complete (%d/%d)",
+            percent,
+            processed_count,
+            num_candidates,
+        )
+        stats.next_progress_threshold_index += 1
 
 
 def _identify_badge_candidates(
@@ -2552,58 +2537,17 @@ def _process_ethnicity_candidate(
     """Fetch ethnicity data when the match qualifies."""
 
     if uuid_val not in ethnicity_candidates:
-    filtered_candidates: set[str] = set()
-    already_up_to_date = 0
-
-    def _needs_refresh(match_info: dict[str, Any]) -> bool:
-        return bool(match_info.get("_needs_ethnicity_refresh", True))
-
-    if ETHNICITY_ENRICHMENT_MIN_CM <= 0:
-        for match_data in matches_to_process_later:
-            uuid_candidate = match_data.get("uuid")
-            if not uuid_candidate or uuid_candidate not in priority_uuids:
-                continue
-            if not _needs_refresh(match_data):
-                already_up_to_date += 1
-                continue
-            filtered_candidates.add(uuid_candidate)
-    else:
-        for match_data in matches_to_process_later:
-            uuid_candidate = match_data.get("uuid")
-            if not uuid_candidate or uuid_candidate not in priority_uuids:
-                continue
-            if not _needs_refresh(match_data):
-                already_up_to_date += 1
-                continue
-            if _safe_cm_value(match_data) >= ETHNICITY_ENRICHMENT_MIN_CM:
-                filtered_candidates.add(uuid_candidate)
-
-    if already_up_to_date:
-        logger.debug(
-            "🧬 Ethnicity refresh skipped for %d matches already up to date",
-            already_up_to_date,
-        )
-    try:
-    filtered_out = len(priority_uuids) - len(filtered_candidates)
-def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats) -> None:
-    """Emit throttled progress updates for lengthy prefetches."""
-
-    if num_candidates < 40:
+        stats.ethnicity_skipped += 1
+        batch_ethnicity_data[uuid_val] = None
         return
 
-    progress = processed_count / num_candidates
-    while (
-        stats.next_progress_threshold_index < len(PREFETCH_PROGRESS_THRESHOLDS)
-        and progress >= PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index]
-    ):
-        percent = int(PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index] * 100)
-        logger.info(
-            "📊 Prefetch %d%% complete (%d/%d)",
-            percent,
-            processed_count,
-            num_candidates,
-        )
-        stats.next_progress_threshold_index += 1
+    try:
+        ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
+        batch_ethnicity_data[uuid_val] = ethnicity_result
+        stats.ethnicity_fetch_count += 1
+    except Exception as exc:  # pragma: no cover - logging only
+        logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
+        batch_ethnicity_data[uuid_val] = None
 
 
 def _build_cfpid_mapping(
@@ -4454,19 +4398,12 @@ def _log_batch_summary(
     throughput: float,
 ) -> None:
     """Emit a concise INFO-level summary for a processed batch."""
-    logger.info(
-        "Page %d batch %d/%d | matches=%d | new=%d updated=%d skipped=%d errors=%d | elapsed=%s | rate=%.2f match/s",
-        current_page,
-        batch_number,
-        total_batches,
-        batch_match_count,
-        new,
-        updated,
-        skipped,
-        errors,
-        _format_brief_duration(duration),
-        throughput,
-    )
+    message_lines = [
+        f"Page {current_page} batch {batch_number} of {total_batches}",
+        f"  new={new} updated={updated} skipped={skipped} errors={errors}",
+        f"  rate={throughput:.2f} match/s",
+    ]
+    logger.info("\n".join(message_lines))
 
 
 def _record_batch_performance(
@@ -4854,7 +4791,7 @@ def _process_page_matches(
         total_time = sum(timing_log.values())
         if total_time > 30.0:
             logger.info(
-                "Timings: Total %.1fs: DB %.2fs | API %.2fs | prep %.2fs",
+                "Timings: Page %d total %.1fs | DB %.2fs | API %.2fs | prep %.2fs",
                 current_page,
                 total_time,
                 timing_log.get("db_lookups", 0.0),
@@ -6907,7 +6844,6 @@ def get_matches(
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-@api_cache("combined_details", CACHE_TTL['combined_details'])
 def _get_api_headers() -> dict[str, str]:
     """Get standard API headers for match details requests."""
     return {
@@ -7551,7 +7487,6 @@ def _fetch_batch_ladder(
         cloudscraper.exceptions.CloudflareException,  # type: ignore
     )
 )
-@api_cache("relationship_prob", CACHE_TTL['relationship_prob'])
 def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> Optional[str]:
     """Get cached CSRF token if available."""
     if (hasattr(session_manager, '_cached_csrf_token') and
@@ -8089,8 +8024,9 @@ def _log_page_start(current_page: int, state: dict[str, Any]) -> None:
         tokens.append(f"elapsed {_format_brief_duration(elapsed)}")
     if eta is not None:
         tokens.append(f"ETA {_format_brief_duration(eta)}")
-
+    print("")
     logger.info(" | ".join(tokens))
+
 
 
 def _format_duration_with_avg(total_seconds: float, denominator: float, unit: str) -> str:
@@ -8179,6 +8115,9 @@ def _detailed_endpoint_lines(
 def _log_timing_snapshot(pages_tracked: int, metrics: PageProcessingMetrics) -> None:
     """Log a periodic timing snapshot using aggregated metrics."""
 
+    if pages_tracked <= 1:
+        return
+
     breakdown_limit = 3 if pages_tracked < 10 else None
     snapshot = _format_endpoint_breakdown(
         metrics.prefetch_breakdown,
@@ -8188,7 +8127,7 @@ def _log_timing_snapshot(pages_tracked: int, metrics: PageProcessingMetrics) -> 
     if not snapshot:
         return
 
-    logger.info(f"⏱️  Timing snapshot after {pages_tracked} page(s): {snapshot}")
+    logger.info(f"Timing snapshot after {pages_tracked} page(s): {snapshot}")
 
 
 def _log_page_completion_summary(
@@ -8202,79 +8141,50 @@ def _log_page_completion_summary(
 ) -> None:
     """Emit a structured INFO-level summary for a completed page."""
 
-    total_processed = page_new + page_updated + page_skipped
-    total_matches = total_processed + page_errors
+    lines: list[str] = [f"Page {page} complete:"]
 
-    header_parts: list[str] = []
     if progress:
-        page_index = progress.get("page_index", 1)
-        pages_target = progress.get("pages_target", page_index)
         percent = progress.get("percent", 0.0)
         elapsed = _format_brief_duration(progress.get("elapsed"))
         eta = _format_brief_duration(progress.get("eta"))
 
-        header_parts.append(
-            f"Page {page} done:"
-        )
-        header_parts.append(f"{percent:.0f}% of total")
-        header_parts.append(f"took {elapsed}")
+        lines.append(f"  - {percent:.0f}% of total downloaded")
+        if elapsed != "--":
+            lines.append(f"  - took {elapsed}")
         if eta != "--":
-            header_parts.append(f"ETA {eta}")
-    else:
-        header_parts.append(f"Page {page} done")
+            lines.append(f"  - ETA {eta} to full download")
 
-    body_lines = [
-        "\n- Matches: "
-        f"new={page_new}, updated={page_updated}, skipped={page_skipped}, errors={page_errors}",
-    ]
+    lines.append(
+        "  - new={new} updated={updated} skipped={skipped} errors={errors}".format(
+            new=page_new,
+            updated=page_updated,
+            skipped=page_skipped,
+            errors=page_errors,
+        )
+    )
 
-    if metrics:
-        total_matches = metrics.total_matches or total_matches
-        matches_for_avg = max(total_matches, 1)
+    total_processed = page_new + page_updated + page_skipped
+    if metrics and metrics.total_seconds:
         avg_rate = (
             (total_processed / metrics.total_seconds)
-            if metrics.total_seconds and total_processed
+            if total_processed and metrics.total_seconds
             else 0.0
         )
-        api_line = _format_duration_with_avg(
-            metrics.prefetch_seconds,
-            float(metrics.fetch_candidates) if metrics.fetch_candidates else 0.0,
-            "call",
-        )
-        db_line = _format_duration_with_avg(metrics.db_seconds, matches_for_avg, "match")
-        commit_line = _format_duration_with_avg(
-            metrics.commit_seconds,
-            matches_for_avg,
-            "match",
-        )
-        total_line = _format_duration_with_avg(
-            metrics.total_seconds,
-            matches_for_avg,
-            "match",
-        )
+        lines.append(f"  - rate={avg_rate:.2f} match/s")
 
-        body_lines.append(
-            f"\nTimings:\n- API: {metrics.fetch_candidates} in {api_line}"
-        )
-        body_lines.append(f"\n- DB: {db_line} | Commit: {commit_line}")
-        body_lines.append(f"\n- Total: {total_line}")
-        if avg_rate:
-            body_lines[-1] += f" | Rate: {avg_rate:.2f} match/s"
-        if metrics.batches > 1:
-            body_lines.append(f"\nBatches: {metrics.batches}")
-        inline_breakdown = _format_endpoint_breakdown(
+        breakdown_list = _format_endpoint_breakdown(
             metrics.prefetch_breakdown,
             metrics.prefetch_call_counts,
             style="list",
         )
-        if inline_breakdown:
-            body_lines.append(f"\nTop API endpoints (by total time):\n{inline_breakdown}")
-        if metrics.idle_seconds > 0.05:
-            body_lines.append(f"\nPacing delay: {metrics.idle_seconds:.2f}s")
-    else:
-        body_lines.append("\n- Metrics unavailable for this page\n")
+        if breakdown_list:
+            lines.append("  API endpoints (by total time):")
+            for entry in breakdown_list.splitlines():
+                lines.append(f"    {entry}")
+    elif not metrics:
+        lines.append("  - metrics unavailable for this page")
 
-    logger.info("".join(["", "\n- ".join(header_parts), *body_lines]))
+    logger.info("\n".join(lines))
 # End of _log_page_completion_summary
 
 
@@ -8336,7 +8246,7 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         return
     if hasattr(limiter, "is_throttled") and limiter.is_throttled():
         logger.info(
-            f"⚠️ Adaptive rate limiting: Throttling detected on page {current_page}. Delay remains increased."
+            f"Adaptive rate limiting: throttling detected on page {current_page}. Delay remains increased."
         )
     else:
         # Success - notify rate limiter (AdaptiveRateLimiter interface)
@@ -8349,7 +8259,7 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
             metrics and hasattr(metrics, "current_fill_rate")
         ):
             logger.info(
-                f"⚡ Rate limiting: Current {metrics.current_fill_rate:.3f} req/s after page {current_page}"
+                f"Rate limiting currently {metrics.current_fill_rate:.3f} req/s after page {current_page}"
             )
 
 

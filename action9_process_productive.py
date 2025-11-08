@@ -16,9 +16,12 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
+import hashlib
 import json
 import os
+import re
 import sys
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Union
@@ -82,6 +85,9 @@ EXCLUSION_KEYWORDS = [
     "do not respond",
     "no reply",
 ]
+
+MAX_OTHER_MESSAGE_WORDS_FOR_AI = 25
+NAME_LIKE_PATTERN = re.compile(r"\b[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?\s+[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?\b")
 
 
 def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
@@ -605,6 +611,7 @@ class PersonProcessor:
             if session_manager.my_profile_id
             else ""
         )
+        self._ai_cache: dict[str, tuple[dict[str, Any], list[str]]] = {}
 
     def process_person(self, person: Person) -> tuple[bool, str]:
         """
@@ -626,11 +633,15 @@ class PersonProcessor:
                 return False, "no_context"
 
             # Check exclusions and status
-            if self._should_skip_person(person, context_logs, log_prefix):
+            should_skip, latest_message = self._should_skip_person(person, context_logs, log_prefix)
+            if should_skip:
                 return False, "skipped"
 
+            if latest_message is None:
+                return False, "no_context"
+
             # Process with AI
-            ai_results = self._process_with_ai(person, context_logs)
+            ai_results = self._process_with_ai(person, context_logs, latest_message, log_prefix)
             if not ai_results:
                 return False, "ai_error"
 
@@ -644,7 +655,7 @@ class PersonProcessor:
 
             # Generate and send response
             success = self._handle_message_response(
-                person, context_logs, extracted_data, lookup_results, log_prefix
+                person, context_logs, extracted_data, lookup_results, log_prefix, latest_message
             )
             if not success:
                 return False, "send_error"
@@ -674,8 +685,13 @@ class PersonProcessor:
 
     def _should_skip_person(
         self, person: Person, context_logs: list[ConversationLog], log_prefix: str
-    ) -> bool:
-        """Check if person should be skipped based on various criteria."""
+    ) -> tuple[bool, Optional[ConversationLog]]:
+        """Check if person should be skipped based on various criteria.
+
+        Returns:
+            Tuple where first element indicates whether to skip and second
+            element provides the latest incoming message when available.
+        """
 
         # Check person status
         excluded_statuses = [
@@ -687,11 +703,11 @@ class PersonProcessor:
 
         if person.status in excluded_statuses:
             logger.info(f"{log_prefix}: Person has status {person.status}. Skipping.")
-            return True
+            return True, None
         # Get latest message
         latest_message = self._get_latest_incoming_message(context_logs)
         if not latest_message:
-            return True
+            return True, None
 
         # Check if custom reply already sent
         custom_reply_sent_at = safe_column_value(
@@ -699,7 +715,7 @@ class PersonProcessor:
         )
         if custom_reply_sent_at is not None:
             logger.info(f"{log_prefix}: Custom reply already sent. Skipping.")
-            return True
+            return True, latest_message
 
         # Check for exclusion keywords
         latest_message_content = safe_column_value(
@@ -707,7 +723,7 @@ class PersonProcessor:
         )
         if should_exclude_message(latest_message_content):
             logger.info(f"{log_prefix}: Message contains exclusion keyword. Skipping.")
-            return True
+            return True, latest_message
 
         # Check if OTHER message with no mentioned names
         ai_sentiment = safe_column_value(latest_message, "ai_sentiment", None)
@@ -715,7 +731,7 @@ class PersonProcessor:
             # We'll handle this in the AI processing step
             pass
 
-        return False
+        return False, latest_message
 
     def _get_latest_incoming_message(
         self, context_logs: list[ConversationLog]
@@ -727,8 +743,42 @@ class PersonProcessor:
                 return log
         return None
 
+    def _should_bypass_ai_extraction(
+        self, latest_message: ConversationLog, log_prefix: str
+    ) -> bool:
+        """Determine if AI extraction can be skipped for low-detail OTHER replies."""
+
+        ai_sentiment = safe_column_value(latest_message, "ai_sentiment", None)
+        if ai_sentiment != OTHER_SENTIMENT:
+            return False
+
+        content = safe_column_value(latest_message, "latest_message_content", "").strip()
+        if not content:
+            logger.debug(f"{log_prefix}: Empty content for OTHER message; skipping AI extraction.")
+            return True
+
+        word_count = len(content.split())
+        if word_count > MAX_OTHER_MESSAGE_WORDS_FOR_AI:
+            return False
+
+        has_name_like = bool(NAME_LIKE_PATTERN.search(content))
+        has_digit = any(ch.isdigit() for ch in content)
+        has_question = "?" in content
+
+        if has_name_like or has_digit or has_question:
+            return False
+
+        logger.debug(
+            f"{log_prefix}: OTHER message with {word_count} words and no obvious genealogical cues; bypassing AI."
+        )
+        return True
+
     def _process_with_ai(
-        self, person: Person, context_logs: list[ConversationLog]
+        self,
+        person: Person,
+        context_logs: list[ConversationLog],
+        latest_message: ConversationLog,
+        log_prefix: str,
     ) -> Optional[tuple[dict[str, Any], list[str]]]:
         """Process message content with AI and return extracted data and tasks."""
 
@@ -741,6 +791,29 @@ class PersonProcessor:
         formatted_context = _format_context_for_ai_extraction(
             context_logs, self.my_pid_lower
         )
+
+        # Allow fast-path skip for low-information OTHER replies
+        if self._should_bypass_ai_extraction(latest_message, log_prefix):
+            default_structure = _get_default_ai_response_structure()
+            logger.info(
+                f"{log_prefix}: Skipping AI extraction for low-detail 'OTHER' reply."
+            )
+            return (
+                deepcopy(default_structure["extracted_data"]),
+                list(default_structure["suggested_tasks"]),
+            )
+
+        # Reuse AI results within this run when the conversation context is identical
+        ai_provider = config_schema.ai_provider.lower()
+        context_hash = hashlib.sha1(formatted_context.encode("utf-8")).hexdigest()
+        cache_key = f"{ai_provider}:{context_hash}"
+        cached_result = self._ai_cache.get(cache_key)
+        if cached_result:
+            logger.debug(
+                f"{log_prefix}: Using cached AI extraction result (hash {context_hash[:8]})."
+            )
+            cached_data, cached_tasks = cached_result
+            return deepcopy(cached_data), list(cached_tasks)
 
         # Call AI
         logger.debug(f"Calling AI for {person.username}...")
@@ -762,6 +835,12 @@ class PersonProcessor:
         entity_counts = {k: len(v) for k, v in extracted_data.items()}
         logger.debug(
             f"Extracted entities for {person.username}: {json.dumps(entity_counts)}"
+        )
+
+        # Cache result for this context to avoid repeated AI calls during the run
+        self._ai_cache[cache_key] = (
+            deepcopy(extracted_data),
+            list(suggested_tasks),
         )
 
         return extracted_data, suggested_tasks
@@ -1425,13 +1504,10 @@ class PersonProcessor:
         extracted_data: dict[str, Any],
         lookup_results: list[PersonLookupResult],
         log_prefix: str,
+        latest_message: ConversationLog,
     ) -> bool:
         """Handle generating and sending the appropriate response message."""
 
-        # Get latest message
-        latest_message = self._get_latest_incoming_message(context_logs)
-        if not latest_message:
-            return False
         # Check if this is an OTHER message with no mentioned names
         ai_sentiment = safe_column_value(latest_message, "ai_sentiment", None)
         if ai_sentiment == OTHER_SENTIMENT:
@@ -2279,7 +2355,6 @@ def _process_candidates(
     commit_manager = BatchCommitManager(db_state)
 
     logger.info(f"Processing {state.total_candidates} candidates...")
-    print()  # Blank line before processing starts
 
     for idx, person in enumerate(candidates, start=1):
         if state.critical_db_error_occurred:
@@ -2294,6 +2369,7 @@ def _process_candidates(
         state.processed_count += 1
 
         # Log candidate being processed (matching Action 6 batch format)
+        print("")
         logger.info(f"Candidate {idx}/{state.total_candidates}: {person.username}")
 
         # Process individual person

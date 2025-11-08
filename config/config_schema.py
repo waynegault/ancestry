@@ -729,7 +729,7 @@ class ConfigSchema:
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", "local_llm", or ""
     ai_context_messages_count: int = 5
-    ai_context_message_max_words: int = 100
+    ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
 
     # Proactive refresh settings

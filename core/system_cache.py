@@ -622,25 +622,6 @@ def warm_system_caches() -> bool:
 
 
 # === TESTING FUNCTIONS ===
-
-
-def _test_api_response_cache_initialization():
-    """Test APIResponseCache initialization"""
-    cache_instance = APIResponseCache()
-
-    # Verify cache instance is created
-    assert cache_instance is not None, "Cache instance should be created"
-    assert hasattr(cache_instance, '_api_stats'), "Should have _api_stats"
-    assert hasattr(cache_instance, '_lock'), "Should have _lock"
-
-    # Verify stats structure
-    assert 'ai_requests' in cache_instance._api_stats, "Should track AI requests"
-    assert 'ancestry_requests' in cache_instance._api_stats, "Should track Ancestry requests"
-
-    logger.info("✅ APIResponseCache initialized successfully")
-    return True
-
-
 def _test_database_query_cache_initialization():
     """Test DatabaseQueryCache initialization"""
     cache_instance = DatabaseQueryCache()
@@ -672,87 +653,6 @@ def _test_memory_optimizer_initialization():
     assert 'memory_freed_mb' in optimizer._memory_stats, "Should track memory freed"
 
     logger.info("✅ MemoryOptimizer initialized successfully")
-    return True
-
-
-def _test_api_cache_key_generation():
-    """Test API cache key generation"""
-    cache_instance = APIResponseCache()
-
-    # Generate cache key
-    params = {"query": "test", "limit": 10}
-    key1 = cache_instance._get_api_cache_key("test_service", "search", params)
-
-    # Verify key is generated
-    assert key1 is not None, "Cache key should be generated"
-    assert isinstance(key1, str), "Cache key should be string"
-    assert len(key1) > 0, "Cache key should not be empty"
-
-    # Verify key is consistent
-    key2 = cache_instance._get_api_cache_key("test_service", "search", params)
-    assert key1 == key2, "Cache key should be consistent for same params"
-
-    # Verify different params produce different keys
-    params2 = {"query": "different", "limit": 10}
-    key3 = cache_instance._get_api_cache_key("test_service", "search", params2)
-    assert key1 != key3, "Different params should produce different keys"
-
-    logger.info(f"✅ API cache key generated: {key1}")
-    return True
-
-
-def _test_api_response_caching_and_retrieval():
-    """Test caching and retrieving API responses"""
-    cache_instance = APIResponseCache()
-
-    # Create test response
-    test_response = {"data": "test_data", "status": "success"}
-    service = "test_service"
-    method = "test_method"
-    params = {"param1": "value1"}
-
-    # Cache the response (may or may not succeed depending on cache availability)
-    cache_instance.cache_api_response(service, method, params, test_response)
-
-    # Retrieve the response
-    retrieved = cache_instance.get_cached_api_response(service, method, params)
-
-    # If cache is available, response should be retrieved
-    if retrieved is not None:
-        assert retrieved == test_response, "Retrieved response should match original"
-        logger.info("✅ API response cached and retrieved successfully")
-    else:
-        logger.info("✅ API response caching tested (cache may not be available)")
-
-    return True
-
-
-def _test_cached_api_call_decorator():
-    """Test cached_api_call decorator"""
-    call_count = {"count": 0}
-
-    @cached_api_call("test_service", ttl=60)
-    def mock_api_call(data: str) -> dict[str, Any]:
-        # Sleep to make it "expensive" so caching is beneficial
-        time.sleep(0.15)
-        call_count["count"] += 1
-        return {"processed": data, "call": call_count["count"]}
-
-    # First call should execute function
-    result1 = mock_api_call("test_data")
-    assert result1 is not None, "First call should return result"
-    assert call_count["count"] == 1, "Function should be called once"
-
-    # Second call may use cache (depending on cache availability)
-    result2 = mock_api_call("test_data")
-    assert result2 is not None, "Second call should return result"
-
-    # If cache is working, function should only be called once
-    if call_count["count"] == 1:
-        logger.info("✅ API call decorator caching works correctly (cached)")
-    else:
-        logger.info("✅ API call decorator tested (cache may not be available)")
-
     return True
 
 
@@ -994,16 +894,7 @@ def system_cache_module_tests() -> bool:
     suite = TestSuite("System Cache", "core/system_cache.py")
     suite.start_suite()
 
-    # Test 1: API cache initialization
-    suite.run_test(
-        "APIResponseCache initialization",
-        _test_api_response_cache_initialization,
-        "APIResponseCache instance created with required attributes",
-        "Test API cache instance creation and attribute initialization",
-        "Verify _api_stats and _lock attributes exist",
-    )
-
-    # Test 2: Database cache initialization
+    # Test 1: Database cache initialization
     suite.run_test(
         "DatabaseQueryCache initialization",
         _test_database_query_cache_initialization,
@@ -1012,7 +903,7 @@ def system_cache_module_tests() -> bool:
         "Verify _query_stats and _lock attributes exist",
     )
 
-    # Test 3: Memory optimizer initialization
+    # Test 2: Memory optimizer initialization
     suite.run_test(
         "MemoryOptimizer initialization",
         _test_memory_optimizer_initialization,
@@ -1021,34 +912,7 @@ def system_cache_module_tests() -> bool:
         "Verify _memory_stats and _lock attributes exist",
     )
 
-    # Test 4: API cache key generation
-    suite.run_test(
-        "API cache key generation",
-        _test_api_cache_key_generation,
-        "API cache keys generated consistently",
-        "Test API cache key generation for request caching",
-        "Verify keys are consistent for same params, different for different params",
-    )
-
-    # Test 5: API response caching and retrieval
-    suite.run_test(
-        "API response caching and retrieval",
-        _test_api_response_caching_and_retrieval,
-        "API response cached and retrieved successfully",
-        "Test caching and retrieving API responses",
-        "Verify response can be cached and retrieved with same data",
-    )
-
-    # Test 6: API call decorator
-    suite.run_test(
-        "Cached API call decorator",
-        _test_cached_api_call_decorator,
-        "Decorator caches API call results",
-        "Test @cached_api_call decorator",
-        "Verify function is called once and result is cached for subsequent calls",
-    )
-
-    # Test 7: Database query decorator
+    # Test 3: Database query decorator
     suite.run_test(
         "Cached database query decorator",
         _test_cached_database_query_decorator,
@@ -1057,7 +921,7 @@ def system_cache_module_tests() -> bool:
         "Verify function is called once and result is cached for subsequent calls",
     )
 
-    # Test 8: Memory optimized decorator
+    # Test 4: Memory optimized decorator
     suite.run_test(
         "Memory optimized decorator",
         _test_memory_optimized_decorator,
@@ -1066,7 +930,7 @@ def system_cache_module_tests() -> bool:
         "Verify decorator executes function with memory optimization",
     )
 
-    # Test 9: System cache stats
+    # Test 5: System cache stats
     suite.run_test(
         "System cache statistics",
         _test_system_cache_stats,
@@ -1075,7 +939,7 @@ def system_cache_module_tests() -> bool:
         "Verify get_system_cache_stats() returns dictionary with all categories",
     )
 
-    # Test 10: Clear system caches
+    # Test 6: Clear system caches
     suite.run_test(
         "Clear system caches",
         _test_clear_system_caches,

@@ -917,12 +917,12 @@ class AdaptiveRateLimiter:
         """Log a one-line summary of current limiter performance."""
         metrics = self.get_metrics()
         cap_fragment = (
-            f" | endpoint-cap={metrics.endpoint_rate_cap:.2f}/s"
+            f"\n - endpoint-cap={metrics.endpoint_rate_cap:.2f}/s"
             if metrics.endpoint_rate_cap
             else ""
         )
         logger.info(
-            "RateLimiter | rate=%.2f req/s | tokens=%.2f/%.2f | total=%d | avg-wait=%.3fs | 429=%d | +%d/-%d%s",
+            "RateLimiter\n - rate=%.2f req/s\n - tokens=%.2f/%.2f\n - total=%d\n - avg-wait=%.3f\n - 429=%d\n - +%d/-%d%s",
             metrics.current_fill_rate,
             metrics.tokens_available,
             self.capacity,

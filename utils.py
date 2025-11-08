@@ -130,8 +130,8 @@ def log_starting_position(description: str, details: Optional[dict[str, Any]] = 
         logger.info(description)
         return
 
-    detail_parts = [f"{key}={value}" for key, value in details.items()]
-    logger.info(f"{description} | " + " | ".join(detail_parts))
+    detail_parts = [f"{key}: {value}" for key, value in details.items()]
+    logger.info(f"{description}\n " + "\n".join(detail_parts))
 
 
 def log_cumulative_counts(counts: dict[str, int], prefix: str = "Cumulative") -> None:
@@ -264,10 +264,10 @@ def log_final_summary(summary_dict: dict[str, Any], run_time_seconds: float) -> 
         # ================================================================================
         # (blank line)
     """
-    logger.info("")
-    logger.info("=" * 80)
-    logger.info("FINAL SUMMARY")
-    logger.info("=" * 80)
+    print("")
+    logger.info("-" * 45)
+    logger.info("Final Summary")
+    logger.info("-" * 45)
 
     # Log all summary items with aligned labels
     max_label_len = max(len(str(k)) for k in summary_dict)
@@ -279,9 +279,6 @@ def log_final_summary(summary_dict: dict[str, Any], run_time_seconds: float) -> 
     minutes = int((run_time_seconds % 3600) // 60)
     seconds = run_time_seconds % 60
     logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-
-    logger.info("=" * 80)
-    logger.info("")
 
 
 def log_action_status(action_name: str, success: bool, error_msg: Optional[str] = None) -> None:

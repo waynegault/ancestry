@@ -363,7 +363,6 @@ def _process_list_query_response(lists_data: dict, list_name: str) -> Optional[s
     first_match = value_list[0]
     list_id = first_match.get("id")
     if list_id:
-        logger.info(f"Found To-Do list '{list_name}' with ID: {list_id}")
         return list_id
 
     logger.error(f"List '{list_name}' found, but 'id' field missing: {first_match}")
@@ -404,7 +403,6 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     # Prepare API request
     headers = {"Authorization": f"Bearer {access_token}"}
     list_query_url = f"{GRAPH_API_ENDPOINT}/me/todo/lists?$filter=displayName eq '{list_name}'"
-    logger.info(f"Querying MS Graph API for To-Do list named '{list_name}'...")
     logger.debug(f"List query URL: {list_query_url}")
 
     # Execute API request and handle errors

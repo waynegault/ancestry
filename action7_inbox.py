@@ -2282,9 +2282,8 @@ class InboxProcessor:
             session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower
         )
 
-        print()
         logger.info(
-            f"Batch {state['current_batch_num']} complete: "
+            f"Batch {state['current_batch_num']}: "
             f"Processed={state['total_processed_api_items']}, "
             f"AI={state['ai_classified_count']}, "
             f"Engagement={state['engagement_assessment_count']}, "
@@ -2393,7 +2392,7 @@ class InboxProcessor:
             or state["stop_reason"]
             in (  # Only commit if loop ended somewhat gracefully
                 "Comparator Found",
-                "Comparator Found (No Change)",
+                "No Change",
                 f"Inbox Limit ({self.max_inbox_limit})",
                 "End of Inbox Reached (Empty Batch, No Cursor)",
                 "End of Inbox Reached (No Next Cursor)",
@@ -2444,9 +2443,9 @@ class InboxProcessor:
 
         # Step 1: Print header
         print("")  # Blank line before summary
-        logger.info("=" * 80)
-        logger.info("FINAL SUMMARY")
-        logger.info("=" * 80)
+        logger.info("-" * 35)
+        logger.info("Final summary")
+        logger.info("-" * 35)
 
         # Mark unused parameters to satisfy linter without changing signature
         _ = new_logs
@@ -2454,9 +2453,8 @@ class InboxProcessor:
         # Step 2: Log key metrics
         logger.info(f"API Conversations Fetched:    {total_api_items}")
         logger.info(f"Conversations Processed:      {items_processed}")
-        # logger.info(f"New/Updated Log Entries:    {new_logs}") # Removed as upsert logic complicates exact counts
-        logger.info(f"AI Classifications Attempted: {ai_classified}")
-        logger.info(f"AI Engagement Assessments:   {engagement_assessments}")
+        logger.info(f"AI Classifications Attempted:  {ai_classified}")
+        logger.info(f"AI Engagement Assessments:     {engagement_assessments}")
         logger.info(f"Person Status Updates Made:   {status_updates}")
 
         # Step 2.5: Log session health metrics if any occurred
@@ -2472,17 +2470,13 @@ class InboxProcessor:
                 final_reason = "End of Inbox Reached or Comparator Match"
             else:
                 final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
-        logger.info(f"Processing Stopped Due To:    {final_reason}")
+        logger.info(f"Stopped Due To:    {final_reason}")
 
         # Step 4: Log run time in consistent format
         hours = int(total_run_time // 3600)
         minutes = int((total_run_time % 3600) // 60)
         seconds = total_run_time % 60
         logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-
-        # Step 5: Print footer
-        logger.info("=" * 80)
-        print("")  # Blank line after summary
 
         # Print rate limiter metrics if available
         if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
@@ -2501,7 +2495,6 @@ class InboxProcessor:
                 "end_time": datetime.now(timezone.utc),
             }
         )
-
     # End of _log_unified_summary
 
 

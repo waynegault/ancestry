@@ -527,7 +527,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
         mem_log = f"Memory usage unavailable: {mem_err}"
 
     logger.info(f"{'='*45}")
-    logger.info(f"Action {choice} ({action_name}) finished.")
+    logger.info(f"Action {choice} finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
     logger.info(f"{'='*45}\n")
@@ -1164,15 +1164,6 @@ def reset_db_actn(session_manager: SessionManager, *_) -> bool:
             reset_successful, recreation_session = _perform_database_reset_steps(temp_manager)
 
             if reset_successful:
-                # Clear in-memory API cache to prevent stale data before announcing success
-                try:
-                    import action6_gather
-                    cache_size = len(action6_gather.API_RESPONSE_CACHE)
-                    action6_gather.API_RESPONSE_CACHE.clear()
-                    logger.info(f"✅ Cleared in-memory API cache ({cache_size} entries)")
-                except Exception as cache_err:
-                    logger.warning(f"Could not clear API cache: {cache_err}")
-
                 logger.info("✅ Database reset completed successfully.")
 
         except Exception as recreate_err:
@@ -1444,18 +1435,14 @@ def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[
         if result is False:
             logger.error("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
             return False
+        print("")
         logger.info("✓ Match gathering completed successfully.")
 
         return True
     except Exception as e:
         logger.error(f"Error during gather_dna_matches: {e}", exc_info=True)
         return False
-
-
 # End of gather_dna_matches
-
-
-
 
 
 # Action 7 (srch_inbox_actn)
@@ -1494,6 +1481,7 @@ def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
         if result is False:
             logger.error("Inbox search reported failure.")
             return False
+        print("")
         logger.info("Inbox search OK.")
         return True  # Use INFO
     except Exception as e:
@@ -1552,6 +1540,7 @@ def send_messages_action(session_manager: Any, *_: Any) -> bool:
         if result is False:
             logger.error("Message sending reported failure.")
             return False
+        print("")
         logger.info("Messages sent OK.")
         return True  # Use INFO
     except Exception as e:

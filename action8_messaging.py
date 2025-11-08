@@ -113,8 +113,6 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
 
 # === SQLALCHEMY & UTILITIES ===
 from sqlalchemy.orm import Session, joinedload
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
 
 # === API & CORE ===
 from api_utils import call_send_message_api
@@ -2653,7 +2651,7 @@ def _send_or_simulate_message(
 ) -> tuple[str, Optional[str]]:
     """Send or simulate message, return status and conversation ID."""
     if msg_flags.send_message_flag:
-        log_prefix_for_api = f"Action8: {msg_ctx.person.username} #{msg_ctx.person.id}"
+        log_prefix_for_api = f"{msg_ctx.person.username} #{msg_ctx.person.id}"
         api_success, api_result = _safe_api_call_with_validation(
             session_manager,
             call_send_message_api,
@@ -2914,7 +2912,7 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
     """Validate prerequisites for Action 8 execution."""
     # System health check
     if not _validate_system_health(session_manager):
-        logger.critical("🚨 Action 8: System health check failed - cannot proceed safely. Aborting.")
+        logger.critical("🚨 System health check failed – aborting messaging run.")
         return False, None
 
     # Get profile ID
@@ -2924,12 +2922,12 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
 
     if not profile_id:
         profile_id = "TEST_PROFILE_ID_FOR_DEBUGGING"
-        logger.warning("Action 8: Using test profile ID for debugging message progression logic")
+        logger.warning("Using test profile ID for debugging message progression logic")
 
     # Check message templates
     ensure_message_templates_loaded()
     if not MESSAGE_TEMPLATES:
-        logger.error("Action 8: Message templates not loaded.")
+        logger.error("Message templates not loaded.")
         return False, None
 
     # Login check is already performed by _validate_system_health() above
@@ -2946,17 +2944,19 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
         return None, None, 0
 
     if message_type_map is None or candidate_persons is None:
-        logger.error("Action 8: Failed to fetch essential messaging data. Aborting.")
+        logger.error("Failed to fetch essential messaging data. Aborting run.")
         return None, None, 0
 
     total_candidates = len(candidate_persons)
     if total_candidates == 0:
-        logger.warning("Action 8: No candidates found meeting messaging criteria. Finishing.\n")
+        logger.warning("No messaging candidates met the criteria; exiting.\n")
     else:
-        logger.info(f"Action 8: Found {total_candidates} candidates to process.")
+        logger.info(f"Found {total_candidates} messaging candidates.")
         max_messages_to_send_this_run = config_schema.max_inbox
         if max_messages_to_send_this_run > 0:
-            logger.info(f"Action 8: Will send/ack a maximum of {max_messages_to_send_this_run} messages this run.\n")
+            logger.info(
+                f"Sending or acknowledging up to {max_messages_to_send_this_run} messages this run.\n"
+            )
 
     return message_type_map, candidate_persons, total_candidates
 
@@ -2965,20 +2965,7 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
 # Main Action Function
 # ------------------------------------------------------------------------------
 
-
 # Helper functions for send_messages_to_matches
-
-def _setup_progress_bar(total_candidates: int) -> dict:
-    """Setup progress bar configuration for message processing - simplified to match Action 6/7."""
-    import sys
-    return {
-        "total": total_candidates,
-        "desc": "Processing candidates",
-        "unit": "it",
-        "leave": True,
-        "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}, {rate_fmt}]",  # rate_fmt shows it/s instead of s/it
-        "file": sys.stderr,
-    }
 
 
 def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,
@@ -3037,8 +3024,10 @@ def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_c
                            acked_count: int, skipped_count: int, error_count: int) -> None:
     """Log progress every 5% or every 100 people."""
     if processed_in_loop > 0 and (processed_in_loop % max(100, total_candidates // 20) == 0):
-        logger.info(f"Action 8 Progress: {processed_in_loop}/{total_candidates} processed "
-                   f"(Sent={sent_count} ACK={acked_count} Skip={skipped_count} Err={error_count})")
+        logger.info(
+            f"Progress {processed_in_loop}/{total_candidates} processed "
+            f"(sent={sent_count} ack={acked_count} skip={skipped_count} err={error_count})"
+        )
 
 
 def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
@@ -3258,7 +3247,8 @@ def _process_single_candidate_iteration(
     batch_config: BatchConfig,
     counters: BatchCounters,
     batch_data: MessagingBatchData,
-    state: ProcessingState
+    state: ProcessingState,
+    total_candidates: int
 ) -> dict:
     """
     Process a single candidate iteration in the main loop.
@@ -3280,7 +3270,7 @@ def _process_single_candidate_iteration(
         return _create_result_dict(counters, state, should_continue=False)
 
     # Log periodic progress
-    _log_periodic_progress(state.processed_in_loop, 0, counters.sent, counters.acked, counters.skipped, counters.errors)
+    _log_periodic_progress(state.processed_in_loop, total_candidates, counters.sent, counters.acked, counters.skipped, counters.errors)
 
     # Get person ID and message history
     person_id_int = int(safe_column_value(person, "id", 0))
@@ -3349,9 +3339,9 @@ def _log_final_summary(
 
         # Print header
         print("")  # Blank line before summary
-        logger.info("=" * 80)
-        logger.info("FINAL SUMMARY")
-        logger.info("=" * 80)
+        logger.info("-" * 35)
+        logger.info("Final summary")
+        logger.info("-" * 35)
 
         logger.info(f"Candidates Considered:              {total_candidates}")
         logger.info(f"Candidates Processed in Loop:       {state.processed_in_loop}")
@@ -3363,7 +3353,6 @@ def _log_final_summary(
 
         error_summary = error_categorizer.get_error_summary()
         if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
-            print("")
             logger.info(f"Technical Errors:                   {error_summary['total_technical_errors']}")
             logger.info(f"Business Logic Skips:               {error_summary['total_business_skips']}")
             logger.info(f"Error Rate:                         {error_summary['error_rate']:.1%}")
@@ -3376,9 +3365,8 @@ def _log_final_summary(
                     logger.info(f"  {error_type.replace('_', ' ').title()}: {count}")
 
         # Log run time
-        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-        logger.info("=" * 80)
-        print("")  # Blank line after summary
+        logger.info(f"Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+
     except Exception as summary_err:
         logger.warning(f"Failed to log final summary: {summary_err}")
 
@@ -3552,13 +3540,12 @@ def _log_performance_summary() -> None:
             perf_summary = {}
 
         try:
-            logger.info("--- Performance Summary ---")
             logger.info(f"  Runtime: {perf_summary.get('total_runtime', 'N/A')}")
             logger.info(f"  Memory Peak: {perf_summary.get('peak_memory_mb', 0):.1f}MB")
             logger.info(f"  Operations Completed: {perf_summary.get('total_operations', 0)}")
             logger.info(f"  API Calls: {perf_summary.get('api_calls', 0)}")
             logger.info(f"  Errors: {perf_summary.get('total_errors', 0)}")
-            logger.info("---------------------------")
+
         except Exception as logging_err:
             logger.warning(f"  - Performance summary logging failed: {logging_err}", exc_info=True)
     except Exception as perf_err:
@@ -3592,66 +3579,58 @@ def _process_all_candidates(
         person_updates={}
     )
 
-    # Setup progress bar
-    tqdm_args = _setup_progress_bar(total_candidates)
     logger.debug("Processing candidates...")
 
-    # Add newline before progress bar to prevent log bleeding into progress bar
-    print()
+    for person in candidate_persons:
+        state.processed_in_loop += 1
 
-    with logging_redirect_tqdm(), tqdm(**tqdm_args) as progress_bar:
-        state.progress_bar = progress_bar
-
-        for person in candidate_persons:
-            state.processed_in_loop += 1
-
-            # Check for critical DB error
-            if critical_db_error_occurred:
-                remaining_to_skip = _handle_critical_db_error(
-                    progress_bar, total_candidates, state.processed_in_loop,
-                    counters.sent, counters.acked, counters.skipped, counters.errors
-                )
-                counters.skipped += remaining_to_skip
-                break
-
-            # Browser health monitoring
-            should_break, additional_skips = _check_and_handle_browser_health(
-                session_manager, state, counters, total_candidates
+        # Check for critical DB error
+        if critical_db_error_occurred:
+            remaining_to_skip = _handle_critical_db_error(
+                state.progress_bar, total_candidates, state.processed_in_loop,
+                counters.sent, counters.acked, counters.skipped, counters.errors
             )
-            if should_break:
-                critical_db_error_occurred = True
-                overall_success = False
-                counters.skipped += additional_skips
-                break
+            counters.skipped += remaining_to_skip
+            break
 
-            # Resource management
-            if state.processed_in_loop % 10 == 0:
-                resource_manager.periodic_maintenance()
+        # Browser health monitoring
+        should_break, additional_skips = _check_and_handle_browser_health(
+            session_manager, state, counters, total_candidates
+        )
+        if should_break:
+            critical_db_error_occurred = True
+            overall_success = False
+            counters.skipped += additional_skips
+            break
 
-            # Process single candidate iteration
-            iteration_result = _process_single_candidate_iteration(
-                person, db_session, session_manager, message_type_map,
-                error_categorizer,
-                batch_config, counters, batch_data, state
-            )
+        # Resource management
+        if state.processed_in_loop % 10 == 0:
+            resource_manager.periodic_maintenance()
 
-            # Update counters from iteration result
-            counters.sent = iteration_result['sent_count']
-            counters.acked = iteration_result['acked_count']
-            counters.skipped = iteration_result['skipped_count']
-            counters.errors = iteration_result['error_count']
-            state.batch_num = iteration_result['batch_num']
+        # Process single candidate iteration
+        iteration_result = _process_single_candidate_iteration(
+            person, db_session, session_manager, message_type_map,
+            error_categorizer,
+            batch_config, counters, batch_data, state, total_candidates
+        )
 
-            # Check for critical errors or halt conditions
-            if iteration_result['critical_db_error_occurred']:
-                critical_db_error_occurred = True
-                overall_success = False
-                break
+        # Update counters from iteration result
+        counters.sent = iteration_result['sent_count']
+        counters.acked = iteration_result['acked_count']
+        counters.skipped = iteration_result['skipped_count']
+        counters.errors = iteration_result['error_count']
+        state.batch_num = iteration_result['batch_num']
 
-            if not iteration_result['should_continue']:
-                break
+        # Check for critical errors or halt conditions
+        if iteration_result['critical_db_error_occurred']:
+            critical_db_error_occurred = True
+            overall_success = False
+            break
 
-            overall_success = iteration_result['overall_success']
+        if not iteration_result['should_continue']:
+            break
+
+        overall_success = iteration_result['overall_success']
 
     # Return all results as a dictionary
     return {
@@ -3729,7 +3708,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
               entire action to return False unless they lead to a DB commit failure.
     """
     # --- Step 1: Initialization and System Health Check ---
-    logger.debug("--- Starting Action 8: Send Standard Messages ---")
+    logger.debug("--- Messaging run started: send standard messages ---")
     start_time = time.time()
     start_advanced_monitoring()
 
@@ -3761,7 +3740,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     try:
         db_session = session_manager.get_db_conn()
         if not db_session:
-            logger.critical("Action 8: Failed to get DB Session. Aborting.")
+            logger.critical("Failed to obtain database session; aborting messaging run.")
             return False
 
         # Fetch messaging data

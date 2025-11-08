@@ -859,14 +859,13 @@ def extract_genealogical_entities(
     system_prompt = _get_extraction_prompt(session_manager)
 
     # Log AI call start for visibility (helps user understand why processing is slow)
-    logger.info(f"Calling AI ({ai_provider}) for entity extraction...")
     start_time = time.time()
     ai_response_str = _call_ai_model(
         provider=ai_provider,
         system_prompt=system_prompt,
         user_content=context_history,
-        session_manager=session_manager,
-        max_tokens=3000,  # Increased to prevent truncation of complex JSON responses
+    session_manager=session_manager,
+    max_tokens=1800,  # Reduced to speed up extraction while keeping high detail
         temperature=0.2,
         response_format_type="json_object",  # For DeepSeek
     )

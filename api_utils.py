@@ -2545,7 +2545,10 @@ def _handle_dry_run_mode(person: "Person", existing_conv_id: Optional[str], log_
     """Handle dry run mode for message sending."""
     message_status = SEND_SUCCESS_DRY_RUN
     effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
-    logger.info(f"{log_prefix}: Dry Run - Simulated message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')}.")
+    person_id = getattr(person, "id", None)
+    identifier = f"#{person_id}" if person_id is not None else log_prefix
+    person_label = getattr(person, "username", None) or getattr(person, "profile_id", "Unknown")
+    logger.info(f"{identifier} Simulated message sent to {person_label}")
     return message_status, effective_conv_id
 
 

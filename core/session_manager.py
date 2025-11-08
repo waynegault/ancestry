@@ -631,11 +631,8 @@ class SessionManager:
         Returns:
             bool: True if recovery should be attempted
         """
-        # Only attempt recovery if session was previously working
-        # and we're in a long-running operation
-        return bool(self.session_ready and
-                   self.session_start_time and
-                   time.time() - self.session_start_time > 300)  # 5 minutes
+        # Attempt recovery any time a session that was marked ready becomes invalid
+        return bool(self.session_ready)
 
     def _attempt_session_recovery(self) -> bool:
         """
