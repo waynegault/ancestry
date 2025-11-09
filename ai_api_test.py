@@ -10,10 +10,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import dataclass, field
-import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -390,7 +392,7 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("gemini", False, False, messages)
 
     api_key = os.getenv("GOOGLE_API_KEY")
-    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-1.5-pro")
+    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-1.5-flash-latest")
     base_url = os.getenv("GOOGLE_AI_BASE_URL", "")
 
     if not api_key:
@@ -437,7 +439,10 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
         messages.append("Gemini response contained no text content.")
         return TestResult("gemini", False, endpoint_ok, messages)
     except Exception as exc:  # pylint: disable=broad-except
-        messages.append(_format_provider_error("gemini", exc))
+        error_msg = _format_provider_error("gemini", exc)
+        if "is not found" in error_msg.lower() or "not supported" in error_msg.lower():
+            error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model like 'gemini-1.5-flash-latest'."
+        messages.append(error_msg)
         return TestResult("gemini", False, endpoint_ok, messages)
 
 
@@ -454,6 +459,21 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
     if not base_url:
         messages.append("LOCAL_LLM_BASE_URL not configured.")
         return TestResult("local_llm", False, False, messages)
+
+    # Auto-start LM Studio if configured
+    auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
+    if auto_start:
+        lm_path = os.getenv("LM_STUDIO_PATH")
+        if lm_path and os.path.exists(lm_path):
+            try:
+                subprocess.Popen([lm_path], shell=True)
+                startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
+                messages.append(f"Attempting to start LM Studio (waiting {min(startup_timeout, 10)}s for initialization)...")
+                time.sleep(min(startup_timeout, 10))
+            except Exception as e:
+                messages.append(f"Failed to start LM Studio: {e}")
+        else:
+            messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
 
     normalized_base_url, changed = _normalize_base_url(base_url, required_suffix="/v1")
     endpoint_ok = normalized_base_url.endswith("/v1")
@@ -481,7 +501,10 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
         messages.append("Local LLM returned an empty response.")
         return TestResult("local_llm", False, endpoint_ok, messages)
     except Exception as exc:  # pylint: disable=broad-except
-        messages.append(_format_provider_error("local_llm", exc))
+        error_msg = _format_provider_error("local_llm", exc)
+        if "no models loaded" in str(exc).lower():
+            error_msg += " Please start LM Studio, load a model (e.g., qwen3-4b-2507), and ensure it's running on the configured endpoint."
+        messages.append(error_msg)
         return TestResult("local_llm", False, endpoint_ok, messages)
 
 
@@ -511,7 +534,7 @@ def _provider_base_url(provider: str) -> str:
     return ""
 
 
-def _prompt_for_provider() -> str:
+def _prompt_for_provider() -> str | None:
     print("Available providers:")
     provider_list = list(PROVIDERS)
     for idx, provider in enumerate(provider_list, start=1):
@@ -520,9 +543,11 @@ def _prompt_for_provider() -> str:
         print(f"  {idx}. {display_name} [{base_url}]")
 
     while True:
-        choice = input("Enter the number of the provider you want to test: ").strip()
+        choice = input("Enter the number of the provider you want to test (or 'q' to quit): ").strip()
+        if choice.lower() == 'q':
+            return None
         if not choice.isdigit():
-            print("Please enter a number from the list above.")
+            print("Please enter a number from the list above or 'q' to quit.")
             continue
         index = int(choice)
         if 1 <= index <= len(provider_list):
@@ -550,23 +575,33 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.env_file and args.env_file != ".env":
         _ensure_env_loaded(args.env_file, parser)
 
-    provider = args.provider or _prompt_for_provider()
-    tester = PROVIDER_TESTERS.get(provider)
-    if not tester:
-        parser.error(f"Unsupported provider: {provider}")
+    while True:
+        provider = args.provider or _prompt_for_provider()
+        if provider is None:
+            break
+        tester = PROVIDER_TESTERS.get(provider)
+        if not tester:
+            parser.error(f"Unsupported provider: {provider}")
 
-    print(f"\nTesting provider: {provider}")
-    result = tester(args.prompt, args.max_tokens)
-    _print_result(result)
+        print(f"\nTesting provider: {provider}")
+        result = tester(args.prompt, args.max_tokens)
+        _print_result(result)
 
-    if result.api_status and result.full_output:
-        follow_up = input("The model responded successfully. View the full output? [y/N]: ").strip().lower()
-        if follow_up in ("y", "yes"):
-            print("\n=== Full Response ===")
-            print(result.full_output)
-            print("=== End Full Response ===")
+        if result.api_status and result.full_output:
+            follow_up = input("The model responded successfully. View the full output? [y/N]: ").strip().lower()
+            if follow_up in ("y", "yes"):
+                print("\n=== Full Response ===")
+                print(result.full_output)
+                print("=== End Full Response ===")
 
-    return 0 if result.api_status else 1
+        if args.provider:
+            break
+
+        continue_choice = input("Test another provider? [y/N]: ").strip().lower()
+        if continue_choice not in ("y", "yes"):
+            break
+
+    return 0
 
 
 if __name__ == "__main__":

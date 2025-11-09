@@ -4351,7 +4351,7 @@ def _process_batches_for_page(
 
     for batch_index, start_index in enumerate(range(0, len(matches_on_page), batch_size), start=1):
         batch_matches = matches_on_page[start_index:start_index + batch_size]
-        batch_duration, batch_metrics, counts = _execute_single_batch(
+        _, batch_metrics, counts = _execute_single_batch(
             session_manager,
             page_session,
             batch_matches,
