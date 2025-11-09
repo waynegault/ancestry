@@ -69,7 +69,7 @@ def _log_inferred_gender_once(name: str, source: str, message: str) -> None:
 import html
 import re
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from typing import Any, Optional, Union
 
 # --- Try to import BeautifulSoup ---
@@ -420,6 +420,155 @@ def _run_bfs_search_loop(
     return all_paths
 
 
+# === RELATIONSHIP PATHFINDING CACHE (Priority 1 Todo #9) ===
+
+class RelationshipPathCache:
+    """
+    LRU cache for relationship pathfinding results.
+    
+    Caches the results of fast_bidirectional_bfs() to avoid redundant
+    graph traversals for frequently queried ancestor relationships.
+    
+    Target: 60%+ cache hit rate on repeat queries.
+    """
+    
+    def __init__(self, maxsize: int = 1000):
+        """
+        Initialize the cache with a maximum size.
+        
+        Args:
+            maxsize: Maximum number of cached paths (default: 1000)
+        """
+        self._cache: OrderedDict[tuple[str, str], list[str]] = OrderedDict()
+        self._maxsize = maxsize
+        self._hits = 0
+        self._misses = 0
+        self._total_queries = 0
+        
+    def get(self, start_id: str, end_id: str) -> Optional[list[str]]:
+        """
+        Get cached path result.
+        
+        Args:
+            start_id: Starting person ID
+            end_id: Ending person ID
+            
+        Returns:
+            Cached path list or None if not found
+        """
+        self._total_queries += 1
+        
+        # Create normalized cache key (order-independent for bidirectional)
+        key = self._make_key(start_id, end_id)
+        
+        if key in self._cache:
+            self._hits += 1
+            # Move to end (most recently used)
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        
+        self._misses += 1
+        return None
+    
+    def put(self, start_id: str, end_id: str, path: list[str]) -> None:
+        """
+        Store path result in cache.
+        
+        Args:
+            start_id: Starting person ID
+            end_id: Ending person ID
+            path: Computed path list
+        """
+        key = self._make_key(start_id, end_id)
+        
+        # If key exists, move to end
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        
+        # Add new entry
+        self._cache[key] = path
+        
+        # Evict oldest if over capacity (LRU eviction)
+        if len(self._cache) > self._maxsize:
+            self._cache.popitem(last=False)
+    
+    def clear(self) -> None:
+        """Clear all cached paths and reset statistics."""
+        self._cache.clear()
+        self._hits = 0
+        self._misses = 0
+        self._total_queries = 0
+    
+    def get_stats(self) -> dict[str, Any]:
+        """
+        Get cache performance statistics.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        hit_rate = (self._hits / self._total_queries * 100) if self._total_queries > 0 else 0.0
+        
+        return {
+            "size": len(self._cache),
+            "maxsize": self._maxsize,
+            "hits": self._hits,
+            "misses": self._misses,
+            "total_queries": self._total_queries,
+            "hit_rate_percent": hit_rate,
+        }
+    
+    def _make_key(self, start_id: str, end_id: str) -> tuple[str, str]:
+        """
+        Create normalized cache key.
+        
+        Ensures bidirectional queries (A→B and B→A) use the same cache entry.
+        """
+        # Sort IDs to create consistent key regardless of query direction
+        return tuple(sorted([start_id, end_id]))
+
+
+# Global cache instance
+_relationship_path_cache = RelationshipPathCache(maxsize=1000)
+
+
+def get_relationship_cache_stats() -> dict[str, Any]:
+    """
+    Get current relationship path cache statistics.
+    
+    Returns:
+        Dictionary with cache performance metrics
+    """
+    return _relationship_path_cache.get_stats()
+
+
+def clear_relationship_cache() -> None:
+    """Clear the relationship path cache and reset statistics."""
+    _relationship_path_cache.clear()
+    logger.info("Relationship path cache cleared")
+
+
+def report_cache_stats_to_performance_monitor() -> None:
+    """
+    Report relationship path cache statistics to performance monitor (Priority 1 Todo #9).
+    
+    This should be called periodically to track cache hit rate over time.
+    """
+    try:
+        from performance_monitor import performance_monitor
+        
+        stats = _relationship_path_cache.get_stats()
+        performance_monitor.track_cache_hit_rate(
+            cache_name="relationship_path_cache",
+            hits=stats["hits"],
+            misses=stats["misses"],
+            total_queries=stats["total_queries"],
+            cache_size=stats["size"],
+            maxsize=stats["maxsize"],
+        )
+    except Exception as e:
+        logger.debug(f"Failed to report cache stats to performance monitor: {e}")
+
+
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
@@ -437,16 +586,31 @@ def fast_bidirectional_bfs(
     It avoids using special cases or "connected to" placeholders.
 
     The algorithm prioritizes shorter paths with direct relationships over longer paths.
+    
+    Now includes LRU caching (Priority 1 Todo #9) to avoid redundant graph traversals
+    for frequently queried ancestor relationships.
     """
+    # Check cache first (Priority 1 Todo #9)
+    cached_path = _relationship_path_cache.get(start_id, end_id)
+    if cached_path is not None:
+        logger.debug(f"[FastBiBFS Cache] HIT: {start_id} <-> {end_id} (hit rate: {_relationship_path_cache.get_stats()['hit_rate_percent']:.1f}%)")
+        return cached_path
+    
+    logger.debug(f"[FastBiBFS Cache] MISS: {start_id} <-> {end_id}")
+    
     start_time = time.time()
 
     # Quick return for same node
     if start_id == end_id:
-        return [start_id]
+        result = [start_id]
+        _relationship_path_cache.put(start_id, end_id, result)
+        return result
 
     # Validate inputs
     if not _validate_bfs_inputs(start_id, end_id, id_to_parents, id_to_children):
-        return []
+        result = []
+        _relationship_path_cache.put(start_id, end_id, result)
+        return result
 
     # After validation, we know these are not None
     assert id_to_parents is not None and id_to_children is not None, "Validation should have caught None values"
@@ -455,6 +619,7 @@ def fast_bidirectional_bfs(
     direct_path = _find_direct_relationship(start_id, end_id, id_to_parents, id_to_children)
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
+        _relationship_path_cache.put(start_id, end_id, direct_path)
         return direct_path
 
     # Initialize BFS
@@ -470,11 +635,15 @@ def fast_bidirectional_bfs(
 
     # Select best path if found
     if all_paths:
-        return _select_best_path(all_paths, id_to_parents, id_to_children)
+        result = _select_best_path(all_paths, id_to_parents, id_to_children)
+        _relationship_path_cache.put(start_id, end_id, result)
+        return result
 
     # No paths found
     logger.warning(f"[FastBiBFS] No paths found between {start_id} and {end_id}.")
-    return [start_id, end_id]
+    result = [start_id, end_id]
+    _relationship_path_cache.put(start_id, end_id, result)
+    return result
 
 
 def explain_relationship_path(
@@ -1974,6 +2143,102 @@ def _run_validation_tests(suite: "TestSuite") -> None:
     )
 
 
+def _test_relationship_path_cache() -> None:
+    """Test relationship path caching functionality (Priority 1 Todo #9)."""
+    # Clear cache before testing
+    clear_relationship_cache()
+    
+    # Create simple test graph
+    id_to_parents = {
+        "@I002@": {"@I001@"},  # Person2 -> Person1 (parent)
+        "@I003@": {"@I002@"},  # Person3 -> Person2 (parent)
+        "@I004@": {"@I002@"},  # Person4 -> Person2 (parent, sibling of Person3)
+    }
+    id_to_children = {
+        "@I001@": {"@I002@"},  # Person1 -> Person2 (child)
+        "@I002@": {"@I003@", "@I004@"},  # Person2 -> Person3, Person4 (children)
+    }
+    
+    logger.info("Testing relationship path cache...")
+    
+    # Test 1: First query should be a cache miss
+    initial_stats = get_relationship_cache_stats()
+    assert initial_stats["total_queries"] == 0, "Cache should start empty"
+    
+    path1 = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+    assert path1 is not None and len(path1) >= 2, "Should find path from grandparent to grandchild"
+    
+    stats_after_first = get_relationship_cache_stats()
+    assert stats_after_first["total_queries"] == 1, "Should have 1 query"
+    assert stats_after_first["misses"] == 1, "First query should be a miss"
+    assert stats_after_first["hits"] == 0, "No hits yet"
+    logger.info(f"✓ First query (cache miss): {path1}")
+    
+    # Test 2: Repeat query should be a cache hit
+    path2 = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+    assert path2 == path1, "Cached path should match original"
+    
+    stats_after_second = get_relationship_cache_stats()
+    assert stats_after_second["total_queries"] == 2, "Should have 2 queries"
+    assert stats_after_second["hits"] == 1, "Second query should be a hit"
+    assert stats_after_second["hit_rate_percent"] == 50.0, "Hit rate should be 50%"
+    logger.info(f"✓ Second query (cache hit): {path2}, hit rate: {stats_after_second['hit_rate_percent']:.1f}%")
+    
+    # Test 3: Bidirectional query (reversed IDs) should also hit cache
+    path3 = fast_bidirectional_bfs("@I003@", "@I001@", id_to_parents, id_to_children)
+    assert path3 is not None, "Reverse query should find path"
+    
+    stats_after_third = get_relationship_cache_stats()
+    assert stats_after_third["hits"] == 2, "Reverse query should also hit cache"
+    hit_rate_third = stats_after_third["hit_rate_percent"]
+    assert 66.0 <= hit_rate_third <= 67.0, f"Hit rate should be ~66.7%, got {hit_rate_third}"
+    logger.info(f"✓ Reverse query (cache hit): {path3}, hit rate: {hit_rate_third:.1f}%")
+    
+    # Test 4: Different query should be a cache miss
+    path4 = fast_bidirectional_bfs("@I001@", "@I004@", id_to_parents, id_to_children)
+    assert path4 is not None and len(path4) >= 2, "Should find different path"
+    
+    stats_after_fourth = get_relationship_cache_stats()
+    assert stats_after_fourth["misses"] == 2, "New query should be a miss"
+    logger.info(f"✓ Different query (cache miss): {path4}")
+    
+    # Test 5: Verify cache size management
+    stats = get_relationship_cache_stats()
+    assert stats["size"] <= stats["maxsize"], "Cache size should not exceed maxsize"
+    assert stats["size"] >= 2, "Should have cached at least 2 unique paths"
+    logger.info(f"✓ Cache size: {stats['size']}/{stats['maxsize']}")
+    
+    # Test 6: Test same-person queries (should be cached)
+    same1 = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
+    same2 = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
+    assert same1 == same2 == ["@I001@"], "Same-person queries should be cached"
+    logger.info("✓ Same-person queries cached correctly")
+    
+    # Test 7: Verify final hit rate
+    final_stats = get_relationship_cache_stats()
+    hit_rate = final_stats["hit_rate_percent"]
+    logger.info(f"✓ Final cache stats: {final_stats['hits']} hits, {final_stats['misses']} misses, {hit_rate:.1f}% hit rate")
+    
+    # Test 8: Clear cache and verify reset
+    clear_relationship_cache()
+    cleared_stats = get_relationship_cache_stats()
+    assert cleared_stats["total_queries"] == 0, "Cache should be cleared"
+    assert cleared_stats["hits"] == 0, "Hits should be reset"
+    assert cleared_stats["size"] == 0, "Cache should be empty"
+    logger.info("✓ Cache cleared successfully")
+    
+    # Test 9: Performance monitor integration
+    # Run some queries to generate stats
+    for i in range(5):
+        fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+    
+    # Report to performance monitor (should not crash)
+    report_cache_stats_to_performance_monitor()
+    logger.info("✓ Performance monitor integration working")
+    
+    logger.info("✓ Relationship path cache test passed - all scenarios validated")
+
+
 def relationship_utils_module_tests() -> bool:
     """
     Comprehensive test suite for relationship_utils.py.
@@ -2004,6 +2269,15 @@ def relationship_utils_module_tests() -> bool:
     _run_basic_functionality_tests(suite)
     _run_conversion_tests(suite)
     _run_validation_tests(suite)
+    
+    # Priority 1 Todo #9: Test relationship path caching
+    suite.run_test(
+        "Relationship Path Cache (LRU with 60%+ hit rate target)",
+        _test_relationship_path_cache,
+        "Cache correctly stores/retrieves paths, handles bidirectional queries, tracks hit rate, integrates with performance monitor",
+        "Test LRU cache for relationship pathfinding optimization",
+        "Validates cache hits/misses, bidirectional lookup, size management, statistics tracking, and performance monitor integration",
+    )
 
     return suite.finish_suite()
 

@@ -525,6 +525,54 @@ class PerformanceMonitor:
 
         logger.info(f"Performance report exported to {filepath}")
         return filepath
+    
+    def track_cache_hit_rate(
+        self,
+        cache_name: str,
+        hits: int,
+        misses: int,
+        total_queries: int,
+        cache_size: int = 0,
+        maxsize: int = 0,
+    ) -> None:
+        """
+        Track cache performance metrics (Priority 1 Todo #9).
+        
+        Args:
+            cache_name: Name of the cache (e.g., 'relationship_path_cache')
+            hits: Number of cache hits
+            misses: Number of cache misses
+            total_queries: Total number of queries
+            cache_size: Current cache size (optional)
+            maxsize: Maximum cache size (optional)
+        """
+        hit_rate = (hits / total_queries * 100) if total_queries > 0 else 0.0
+        
+        # Record hit rate metric
+        self.record_metric(
+            f"{cache_name}_hit_rate_percent",
+            hit_rate,
+            "cache",
+            metadata={
+                "hits": hits,
+                "misses": misses,
+                "total_queries": total_queries,
+                "cache_size": cache_size,
+                "maxsize": maxsize,
+            }
+        )
+        
+        # Check if hit rate is below target threshold (60%)
+        if total_queries >= 10 and hit_rate < 60.0:
+            logger.warning(
+                f"⚠️  Cache hit rate below target: {cache_name} = {hit_rate:.1f}% "
+                f"(target: 60%+, hits: {hits}, misses: {misses}, queries: {total_queries})"
+            )
+        elif total_queries >= 10:
+            logger.debug(
+                f"✓ {cache_name} hit rate: {hit_rate:.1f}% "
+                f"(hits: {hits}, misses: {misses}, queries: {total_queries})"
+            )
 
 
 # Global performance monitor instance
