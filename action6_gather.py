@@ -4439,6 +4439,7 @@ def _log_batch_summary(
     """Emit a concise INFO-level summary for a processed batch."""
     message_lines = [
         f"Page {current_page} batch {batch_number} of {total_batches}",
+        f"  matches={batch_match_count} duration={duration:.2f}s",
         f"  new={new} updated={updated} skipped={skipped} errors={errors}",
         f"  rate={throughput:.2f} match/s",
     ]
@@ -4457,7 +4458,8 @@ def _record_batch_performance(
     """Record batch performance metrics for future optimization."""
     _update_recent_batch_history(batch_duration)
     logger.debug(
-        "Batch performance: %.2fs for %d matches (%.1f%% success rate, batch size: %d)",
+        "Page %d batch performance: %.2fs for %d matches (%.1f%% success rate, batch size: %d)",
+        current_page,
         batch_duration,
         num_matches,
         success_rate * 100,

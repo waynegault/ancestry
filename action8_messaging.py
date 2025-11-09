@@ -2912,7 +2912,7 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
     """Validate prerequisites for Action 8 execution."""
     # System health check
     if not _validate_system_health(session_manager):
-        logger.critical("🚨 System health check failed – aborting messaging run.")
+        logger.critical("🚨 System health check failed - aborting messaging run.")
         return False, None
 
     # Get profile ID

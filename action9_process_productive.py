@@ -621,6 +621,8 @@ class PersonProcessor:
             Tuple of (success: bool, status_message: str)
         """
         log_prefix = f"Productive: {person.username} #{person.id}"
+        success = True
+        status = "success"
 
         try:
             # Apply rate limiting
@@ -630,44 +632,48 @@ class PersonProcessor:
             # Get message context
             context_logs = self._get_context_logs(person, log_prefix)
             if not context_logs:
-                return False, "no_context"
+                success, status = False, "no_context"
+            else:
+                # Check exclusions and status
+                should_skip, latest_message = self._should_skip_person(person, context_logs, log_prefix)
+                if should_skip:
+                    success, status = False, "skipped"
+                elif latest_message is None:
+                    success, status = False, "no_context"
+                else:
+                    # Process with AI
+                    ai_results = self._process_with_ai(person, context_logs, latest_message, log_prefix)
+                    if not ai_results:
+                        success, status = False, "ai_error"
+                    else:
+                        extracted_data, suggested_tasks = ai_results
 
-            # Check exclusions and status
-            should_skip, latest_message = self._should_skip_person(person, context_logs, log_prefix)
-            if should_skip:
-                return False, "skipped"
+                        # Phase 2: Look up mentioned people
+                        lookup_results = self._lookup_mentioned_people(extracted_data, person)
 
-            if latest_message is None:
-                return False, "no_context"
+                        # Create MS Graph tasks
+                        self._create_ms_tasks(person, suggested_tasks, log_prefix)
 
-            # Process with AI
-            ai_results = self._process_with_ai(person, context_logs, latest_message, log_prefix)
-            if not ai_results:
-                return False, "ai_error"
-
-            extracted_data, suggested_tasks = ai_results
-
-            # Phase 2: Look up mentioned people
-            lookup_results = self._lookup_mentioned_people(extracted_data, person)
-
-            # Create MS Graph tasks
-            self._create_ms_tasks(person, suggested_tasks, log_prefix)
-
-            # Generate and send response
-            success = self._handle_message_response(
-                person, context_logs, extracted_data, lookup_results, log_prefix, latest_message
-            )
-            if not success:
-                return False, "send_error"
-
-            # Phase 2: Update conversation state tracking
-            self._update_conversation_state(person, extracted_data, context_logs, log_prefix)
-
-            return True, "success"
+                        # Generate and send response
+                        response_sent = self._handle_message_response(
+                            person,
+                            context_logs,
+                            extracted_data,
+                            lookup_results,
+                            log_prefix,
+                            latest_message,
+                        )
+                        if not response_sent:
+                            success, status = False, "send_error"
+                        else:
+                            # Phase 2: Update conversation state tracking
+                            self._update_conversation_state(person, extracted_data, context_logs, log_prefix)
 
         except Exception as e:
             logger.error(f"Error processing {log_prefix}: {e}", exc_info=True)
             return False, f"error: {e!s}"
+
+        return success, status
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
