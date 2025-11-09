@@ -150,6 +150,57 @@ Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
 2. When adjusting rate limiter logic, run `validate_rate_limiting.py` and a 5-page Action 6 smoke test.
 3. Monitor `Logs/app.log` for `429`, `timeout`, and circuit breaker messages after each execution.
 
+**Validation Loop (Mandatory for Rate Limiting Changes):**
+
+When modifying rate limiting logic (rate_limiter.py, api_manager.py, or REQUESTS_PER_SECOND setting):
+
+1. **Pre-deployment validation:**
+   ```powershell
+   # Step 1: Run rate limiting validation script
+   python validate_rate_limiting.py
+   # Expected: All checks pass, 0 failures reported
+   
+   # Step 2: Execute 5-page Action 6 smoke test
+   python main.py  # Choose "6", enter "1" for start page
+   # Let it run for 5 pages, then Ctrl+C to abort
+   
+   # Step 3: Verify zero 429 errors
+   (Select-String -Path Logs\app.log -Pattern "429 error").Count
+   # MUST return 0 - any 429s are FATAL and require tuning
+   ```
+
+2. **Performance benchmarks (expected ranges):**
+   - **Throughput**: 40-60 seconds per page (20 matches/page)
+   - **API response time**: 0.3-0.8s average per call
+   - **Rate limiter effective delay**: ~3.3s between requests (at 0.3 req/s)
+   - **Cache hit rate**: 14-20% on subsequent runs
+   - **Matches processed**: 580-620 matches/hour with 1 worker
+
+3. **Variance tolerances:**
+   - Throughput variance: ±20% acceptable (network conditions, API load)
+   - Response time spikes: <5% of calls may exceed 2s (still within safe zone)
+   - Zero tolerance: 429 errors, circuit breaker trips, session expiry during run
+
+4. **Post-deployment monitoring (first 50 pages):**
+   ```powershell
+   # Real-time monitoring during production run
+   Get-Content Logs\app.log -Wait | Select-String "429|circuit|timeout|effective delay"
+   
+   # After run completion, generate performance report
+   Select-String -Path Logs\app.log -Pattern "Performance Report|Throughput|Cache hit"
+   ```
+
+5. **Rollback criteria:**
+   - Any 429 errors detected → immediate rollback + rate decrease
+   - Circuit breaker trips → investigate session health + rollback if reproducible
+   - Throughput drops >30% → investigate bottleneck + consider rollback
+   - Average response time >1.5s → check API endpoint health + rollback if sustained
+
+**Documentation requirements:**
+- Document rationale for rate limiting changes in git commit message
+- Update this section if new throughput benchmarks are established
+- Log all validation results in `Logs/rate_limiting_validation_YYYYMMDD.txt`
+
 ### Database Schema
 
 SQLite database (`Data/ancestry.db`) with tables:

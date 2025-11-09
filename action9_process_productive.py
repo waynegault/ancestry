@@ -1221,6 +1221,59 @@ class PersonProcessor:
 
         return min(score, 100)
 
+    def _calculate_next_contact_date(
+        self, person: Person, engagement_score: int
+    ) -> Optional[datetime]:
+        """
+        Calculate next contact date based on engagement score and status transitions.
+
+        Phase 4: Adaptive Follow-Up Scheduling
+
+        Timing strategy:
+        - HIGH engagement (>75): 3-5 days
+        - MEDIUM engagement (50-75): 7-10 days
+        - LOW engagement (<50): 14-21 days
+        - Status transitions accelerate/decelerate:
+          * OUT_OF_TREE → IN_TREE: accelerate (-2 days)
+          * Any → DESIST: no follow-up
+
+        Args:
+            person: Person object with status
+            engagement_score: Current engagement score (0-100)
+
+        Returns:
+            Next contact datetime (UTC) or None if no follow-up needed
+        """
+        # Don't schedule follow-up for DESIST, ARCHIVE, BLOCKED, or DEAD
+        excluded_statuses = [
+            PersonStatusEnum.DESIST,
+            PersonStatusEnum.ARCHIVE,
+            PersonStatusEnum.BLOCKED,
+            PersonStatusEnum.DEAD,
+        ]
+        if person.status in excluded_statuses:
+            return None
+
+        # Base delay calculation from engagement score
+        if engagement_score >= 75:
+            base_days = 4  # High engagement: 3-5 days (use middle)
+        elif engagement_score >= 50:
+            base_days = 8  # Medium engagement: 7-10 days (use middle)
+        else:
+            base_days = 17  # Low engagement: 14-21 days (use middle)
+
+        # Adjust for status transitions
+        if person.tree_status == "in_tree":
+            # In-tree matches get accelerated follow-up
+            base_days = max(base_days - 2, 2)
+        elif person.tree_status == "out_tree":
+            # Out-of-tree matches stay at base rate
+            pass
+
+        # Calculate next contact date
+        next_date = datetime.now(timezone.utc) + timedelta(days=base_days)
+        return next_date
+
     def _update_conversation_state(
         self,
         person: Person,
@@ -1278,6 +1331,16 @@ class PersonProcessor:
             questions = extracted_data.get("questions", [])
             if questions:
                 conv_state.pending_questions = json.dumps(questions)  # type: ignore[assignment]
+
+            # Phase 4: Calculate next contact date based on engagement and status
+            current_engagement = safe_column_value(conv_state, "engagement_score", 0)
+            next_contact_date = self._calculate_next_contact_date(
+                person, current_engagement
+            )
+            if next_contact_date:
+                conv_state.next_action_date = next_contact_date  # type: ignore[assignment]
+                conv_state.next_action = "send_follow_up"  # type: ignore[assignment]
+                logger.debug(f"{log_prefix}: Next contact scheduled for {next_contact_date}")
 
             # Commit changes
             self.db_state.session.flush()
@@ -2305,10 +2368,13 @@ def _query_candidates(
         .subquery("latest_ack_out_sub")
     )
 
-    # Main query
+    # Main query with Phase 4 adaptive follow-up scheduling
+    from database import ConversationState
+
     candidates_query = (
         db_state.session.query(Person)
         .options(joinedload(Person.family_tree))
+        .outerjoin(ConversationState, Person.id == ConversationState.people_id)
         .join(latest_in_log_subq, Person.id == latest_in_log_subq.c.people_id)
         .join(
             ConversationLog,
@@ -2333,6 +2399,11 @@ def _query_candidates(
             | (
                 latest_ack_out_log_subq.c.max_ack_out_ts
                 < latest_in_log_subq.c.max_in_ts
+            ),
+            # Phase 4: Respect next_action_date for adaptive follow-up timing
+            or_(
+                ConversationState.next_action_date.is_(None),
+                ConversationState.next_action_date <= datetime.now(timezone.utc),
             ),
         )
         .order_by(Person.id)

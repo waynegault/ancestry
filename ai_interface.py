@@ -1381,6 +1381,99 @@ def assess_engagement(
         return None
 
 
+def generate_clarifying_questions(
+    user_message: str,
+    extracted_entities: dict[str, Any],
+    ambiguity_context: str,
+    session_manager: SessionManager,
+) -> dict[str, Any] | None:
+    """
+    Generate AI-powered clarifying questions for ambiguous extracted entities.
+    
+    Priority 1 Todo #7: Action 7 Intent Clarifier
+    
+    Args:
+        user_message: Original user message
+        extracted_entities: Dictionary of extracted entity data
+        ambiguity_context: Description of detected ambiguities
+        session_manager: SessionManager instance for AI calls
+        
+    Returns:
+        Dictionary with clarifying_questions, primary_ambiguity, urgency, reasoning.
+        None if AI call fails.
+        
+    Example output:
+        {
+            "clarifying_questions": ["When was Charles born?", "Which Scotland location?"],
+            "primary_ambiguity": "date",
+            "urgency": "critical",
+            "reasoning": "Birth year critical for tree search..."
+        }
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error("generate_clarifying_questions: AI_PROVIDER not configured.")
+        return None
+
+    # Get the clarification prompt from ai_prompts.json
+    prompt = get_prompt("intent_clarification") if USE_JSON_PROMPTS else None
+    if not prompt:
+        logger.error("generate_clarifying_questions: intent_clarification prompt not available.")
+        return None
+
+    # Format the prompt with provided data
+    try:
+        formatted_prompt = prompt.format(
+            user_message=user_message,
+            extracted_entities=json.dumps(extracted_entities, indent=2),
+            ambiguity_context=ambiguity_context,
+        )
+    except KeyError as e:
+        logger.error(f"generate_clarifying_questions: Prompt formatting error - missing key: {e}")
+        return None
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=formatted_prompt,
+        user_content="Generate clarifying questions based on the provided context.",
+        session_manager=session_manager,
+        max_tokens=600,
+        temperature=0.3,  # Low temperature for consistent, focused questions
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if not ai_response_str:
+        logger.error(f"generate_clarifying_questions: AI call failed. (Took {duration:.2f}s)")
+        return None
+
+    try:
+        result = json.loads(ai_response_str)
+        
+        # Validate expected structure
+        if not isinstance(result, dict) or "clarifying_questions" not in result:
+            logger.error(f"generate_clarifying_questions: Invalid response structure")
+            return None
+            
+        questions = result.get("clarifying_questions", [])
+        if not questions or not isinstance(questions, list):
+            logger.warning("generate_clarifying_questions: No questions generated")
+            return None
+        
+        logger.info(
+            f"✅ Generated {len(questions)} clarifying question(s) "
+            f"for {result.get('primary_ambiguity', 'unknown')} ambiguity. (Took {duration:.2f}s)"
+        )
+        return result
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"generate_clarifying_questions: Failed to parse JSON response: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"generate_clarifying_questions: Unexpected error: {e}", exc_info=True)
+        return None
+
 
 def extract_with_custom_prompt(
     context_history: str, custom_prompt: str, session_manager: SessionManager

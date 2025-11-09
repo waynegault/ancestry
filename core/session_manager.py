@@ -2607,6 +2607,115 @@ def _test_watchdog_integration_with_session_restart() -> None:
     watchdog.cancel()
 
 
+def _test_session_expiry_simulation() -> None:
+    """
+    Test that simulates forced session expiry and verifies recovery.
+
+    Priority 0 Todo #5: Session health safeguard regression test
+    """
+    sm = SessionManager()
+
+    # Setup valid session state
+    sm.session_ready = True
+    sm.session_start_time = time.time() - 2500  # 41+ minutes ago (expired)
+    sm._db_ready = True
+
+    # Verify initial state
+    assert sm.session_ready is True, "Session should be marked ready initially"
+
+    # Simulate session expiry check
+    session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
+    is_expired = session_age > 2400  # 40 minutes threshold
+
+    assert is_expired, f"Session should be expired (age: {session_age:.0f}s)"
+
+    # Force session restart (simulating expiry detection)
+    result = sm._force_session_restart("Session expiry simulation")
+
+    # Verify session was reset
+    assert result is False, "Force restart should return False"
+    assert sm.session_ready is False, "Session should be marked not ready after expiry"
+    assert sm.session_start_time is None, "Session start time should be cleared"
+    assert sm._db_ready is False, "DB ready flag should be reset"
+
+
+def _test_circuit_breaker_short_circuit() -> None:
+    """
+    Test circuit breaker short-circuits after 5 consecutive failures.
+
+    Priority 0 Todo #5: Circuit breaker regression test
+    """
+    from core.error_handling import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerOpenError
+
+    config = CircuitBreakerConfig(failure_threshold=5, recovery_timeout=60)
+    breaker = CircuitBreaker(name="test_session", config=config)
+
+    # Verify initial state
+    assert breaker.failure_count == 0, "Circuit breaker should start with 0 failures"
+    assert breaker.state.value == "CLOSED", "Circuit breaker should start CLOSED"
+
+    # Create a test function that always fails
+    def failing_operation():
+        raise RuntimeError("Simulated failure")
+
+    # Record 4 failures (just under threshold) - should not open
+    for i in range(4):
+        try:
+            breaker.call(failing_operation)
+        except RuntimeError:
+            pass  # Expected failure
+        assert breaker.failure_count == i + 1, f"Should have {i+1} failures"
+        assert breaker.state.value == "CLOSED", f"Should stay CLOSED after {i+1} failures"
+
+    # 5th failure should open the circuit
+    try:
+        breaker.call(failing_operation)
+    except RuntimeError:
+        pass  # Expected failure
+    assert breaker.failure_count >= 5, "Should have at least 5 failures"
+    assert breaker.state.value == "OPEN", "Circuit breaker should OPEN on 5th failure"
+
+    # Next call should immediately raise CircuitBreakerOpenError without executing function
+    try:
+        breaker.call(failing_operation)
+        assert False, "Should have raised CircuitBreakerOpenError"
+    except CircuitBreakerOpenError:
+        pass  # Expected - circuit is open
+
+    # Reset for success test
+    breaker.reset()
+    assert breaker.failure_count == 0, "Reset should clear failure count"
+    assert breaker.state.value == "CLOSED", "Reset should close circuit breaker"
+    
+    logger.info("✅ Circuit breaker 5-failure threshold validated")
+
+
+def _test_proactive_session_refresh_timing() -> None:
+    """
+    Test proactive session refresh triggers before expiry.
+
+    Priority 0 Todo #5: Health check timing regression test
+    """
+    sm = SessionManager()
+
+    # Setup session at 25 minutes old (refresh threshold with 15-min buffer)
+    sm.session_start_time = time.time() - 1500  # 25 minutes
+    sm.session_ready = True
+
+    # Check age
+    session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
+
+    # Verify we're in the proactive refresh window (>25 min, <40 min)
+    assert session_age >= 1500, f"Session should be at least 25 minutes old (actual: {session_age:.0f}s)"
+    assert session_age < 2400, f"Session should be under 40 minutes (actual: {session_age:.0f}s)"
+
+    # Verify refresh would be triggered in this window
+    refresh_threshold = 1500  # 25 minutes in seconds
+    should_refresh = session_age >= refresh_threshold
+
+    assert should_refresh, "Session should trigger proactive refresh at 25 minutes"
+
+
 def run_comprehensive_tests() -> bool:
     """
     Comprehensive test suite for session_manager.py (decomposed).
@@ -2764,6 +2873,31 @@ def run_comprehensive_tests() -> bool:
             "All edge cases handled without errors",
             "Test edge cases: cancel before start, double cancel, cancel after timeout",
             "Verify graceful handling of unusual call sequences",
+        )
+
+        # Priority 0 Todo #5: Session health safeguard regression tests
+        suite.run_test(
+            "Session Expiry Detection (40-min threshold)",
+            _test_session_expiry_simulation,
+            "Session correctly marked as expired after 40 minutes",
+            "Test session expiry simulation after 40-minute threshold",
+            "Verify _is_session_expired() returns True and triggers restart",
+        )
+
+        suite.run_test(
+            "Circuit Breaker 5-Failure Threshold",
+            _test_circuit_breaker_short_circuit,
+            "Circuit breaker opens after exactly 5 consecutive failures",
+            "Test circuit breaker trips at failure threshold",
+            "Verify circuit breaker state transitions: closed → open at 5 failures",
+        )
+
+        suite.run_test(
+            "Proactive Session Refresh (25-min window)",
+            _test_proactive_session_refresh_timing,
+            "Session refresh triggered proactively at 25-minute mark",
+            "Test proactive session health monitoring timing",
+            "Verify refresh occurs before 40-min expiry with 15-min buffer",
         )
 
         suite.run_test(

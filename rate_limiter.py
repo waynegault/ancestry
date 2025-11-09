@@ -817,9 +817,15 @@ class AdaptiveRateLimiter:
             self._metrics["error_429_count"] += 1
             self._metrics["rate_decreases"] += 1
 
+            # Calculate effective delay between requests
+            effective_delay = 1.0 / self.fill_rate if self.fill_rate > 0 else float('inf')
+            old_delay = 1.0 / old_rate if old_rate > 0 else float('inf')
+
             logger.warning(
                 f"⚠️ 429 Rate Limit: Decreased rate from {old_rate:.3f} to "
-                f"{self.fill_rate:.3f} req/s (-20%)"
+                f"{self.fill_rate:.3f} req/s (-20%) | "
+                f"Effective delay: {old_delay:.2f}s → {effective_delay:.2f}s | "
+                f"Total 429s: {self._metrics['error_429_count']}"
             )
 
             if endpoint:
@@ -861,12 +867,18 @@ class AdaptiveRateLimiter:
                 # Update metrics
                 self._metrics["rate_increases"] += 1
 
+                # Calculate effective delay
+                old_delay = 1.0 / old_rate if old_rate > 0 else float('inf')
+                new_delay = 1.0 / self.fill_rate if self.fill_rate > 0 else float('inf')
+
                 # Only log if rate actually changed
                 if abs(old_rate - self.fill_rate) > 0.001:
                     logger.info(
                         f"✅ After {self.success_threshold} successes: "
                         f"Increased rate to {self.fill_rate:.3f} req/s "
-                        f"(+2% from {old_rate:.3f})"
+                        f"(+2% from {old_rate:.3f}) | "
+                        f"Effective delay: {old_delay:.2f}s → {new_delay:.2f}s | "
+                        f"Total increases: {self._metrics['rate_increases']}"
                     )
 
     def _refill_tokens(self) -> None:

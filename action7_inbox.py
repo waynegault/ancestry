@@ -1421,6 +1421,124 @@ class InboxProcessor:
             "script_message_status": None,
         }
 
+    def clarify_ambiguous_intent(
+        self,
+        user_message: str,
+        extracted_entities: dict[str, Any],
+        ambiguity_analysis: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Generate AI-powered clarifying questions when extracted entities are incomplete or ambiguous.
+        
+        Priority 1 Todo #7: Action 7 Intent Clarifier
+        
+        Use cases:
+        - Multiple people with same name in tree (e.g., "Which Mary Smith?")
+        - Missing temporal context (birth/death years)
+        - Location too broad (e.g., "Scotland" vs "Banff, Scotland")
+        - Unclear relationships (e.g., maternal vs paternal grandmother)
+        
+        Args:
+            user_message: The original message from the DNA match
+            extracted_entities: Dictionary of extracted entity data (names, dates, places, relationships)
+            ambiguity_analysis: Optional context describing the ambiguity (e.g., "3 Mary Smiths in tree")
+            
+        Returns:
+            Dictionary with clarifying_questions list, primary_ambiguity type, urgency, and reasoning.
+            None if AI call fails or entities are not ambiguous.
+            
+        Example return:
+            {
+                "clarifying_questions": [
+                    "I have three Mary Smiths in my tree! Do you mean Mary Smith born around 1850...",
+                    "Do you happen to know Mary Smith's husband's name?"
+                ],
+                "primary_ambiguity": "name",
+                "urgency": "critical",
+                "reasoning": "Multiple matches require temporal context..."
+            }
+        """
+        if not user_message or not extracted_entities:
+            logger.debug("clarify_ambiguous_intent: Missing required inputs")
+            return None
+            
+        # Build ambiguity context if not provided
+        if ambiguity_analysis is None:
+            ambiguity_analysis = self._analyze_entity_ambiguity(extracted_entities)
+            
+        # If no ambiguity detected, no clarification needed
+        if not ambiguity_analysis or ambiguity_analysis == "No ambiguity detected":
+            logger.debug("No ambiguity detected - clarification not needed")
+            return None
+        
+        try:
+            # Import AI interface function (will be added next)
+            from ai_interface import generate_clarifying_questions
+            
+            result = generate_clarifying_questions(
+                user_message=user_message,
+                extracted_entities=extracted_entities,
+                ambiguity_context=ambiguity_analysis,
+                session_manager=self.session_manager,
+            )
+            
+            if result and isinstance(result, dict) and "clarifying_questions" in result:
+                logger.info(
+                    f"✅ Generated {len(result['clarifying_questions'])} clarifying questions "
+                    f"for {result.get('primary_ambiguity', 'unknown')} ambiguity"
+                )
+                return result
+            
+            logger.warning("AI clarification returned invalid format")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to generate clarifying questions: {e}", exc_info=True)
+            return None
+    
+    def _analyze_entity_ambiguity(self, extracted_entities: dict[str, Any]) -> str:
+        """
+        Analyze extracted entities to detect ambiguity.
+        
+        Returns description of ambiguity type for AI prompt context.
+        """
+        ambiguities = []
+        
+        # Check for names without sufficient context
+        mentioned_people = extracted_entities.get("mentioned_people", [])
+        if mentioned_people:
+            for person in mentioned_people:
+                name = person.get("name", "")
+                has_birth_year = person.get("birth_year") is not None
+                has_location = person.get("birth_place") or person.get("death_place")
+                has_relationship = person.get("relationship") is not None
+                
+                if name and not (has_birth_year or has_location):
+                    ambiguities.append(f"Name '{name}' lacks temporal or location context")
+                elif name and not has_relationship:
+                    ambiguities.append(f"Name '{name}' relationship unclear")
+        
+        # Check for vague locations
+        locations = extracted_entities.get("locations", [])
+        for loc in locations:
+            place = loc.get("place", "")
+            if place and len(place.split(",")) == 1:  # Only country/state, no city
+                if place in ["Scotland", "England", "Ireland", "Wales", "USA", "Canada"]:
+                    ambiguities.append(f"Location '{place}' too broad - need city/county")
+        
+        # Check for relationships without names
+        relationships = extracted_entities.get("relationships", [])
+        for rel in relationships:
+            person1 = rel.get("person1", "")
+            person2 = rel.get("person2", "")
+            if not person1 or not person2:
+                ambiguities.append("Relationship mentioned without both person names")
+        
+        if not ambiguities:
+            return "No ambiguity detected"
+        
+        return "; ".join(ambiguities)
+
     def _record_event_and_metrics(
         self,
         session: DbSession,
@@ -2766,6 +2884,65 @@ def _test_error_recovery() -> None:
     return True
 
 
+def _test_clarify_ambiguous_intent() -> None:
+    """Test ambiguous intent clarification (Priority 1 Todo #7)."""
+    from unittest.mock import MagicMock
+    
+    # Create mock session manager
+    sm = MagicMock()
+    processor = InboxProcessor(sm)
+    
+    # Test Case 1: Entity ambiguity detection
+    entities_ambiguous = {
+        "mentioned_people": [
+            {"name": "Mary Smith", "birth_year": None, "birth_place": None, "relationship": None}
+        ],
+        "locations": [{"place": "Scotland", "context": "birthplace"}],
+    }
+    
+    ambiguity_analysis = processor._analyze_entity_ambiguity(entities_ambiguous)
+    assert ambiguity_analysis != "No ambiguity detected", "Should detect name and location ambiguity"
+    assert "Mary Smith" in ambiguity_analysis, "Should mention ambiguous name"
+    assert "Scotland" in ambiguity_analysis or "too broad" in ambiguity_analysis, "Should detect broad location"
+    
+    logger.info(f"✅ Detected ambiguity: {ambiguity_analysis}")
+    
+    # Test Case 2: No ambiguity (complete entities)
+    entities_complete = {
+        "mentioned_people": [
+            {
+                "name": "Charles Fetch",
+                "birth_year": 1881,
+                "birth_place": "Banff, Scotland",
+                "relationship": "great-grandfather",
+            }
+        ],
+        "locations": [{"place": "Banff, Banffshire, Scotland", "context": "birthplace"}],
+    }
+    
+    ambiguity_analysis_complete = processor._analyze_entity_ambiguity(entities_complete)
+    assert ambiguity_analysis_complete == "No ambiguity detected", "Should not detect ambiguity in complete entities"
+    
+    logger.info("✅ No ambiguity detected for complete entities")
+    
+    # Test Case 3: Clarification when no ambiguity returns None
+    result = processor.clarify_ambiguous_intent(
+        user_message="Charles Fetch was born in 1881 in Banff, Scotland",
+        extracted_entities=entities_complete,
+    )
+    assert result is None, "Should return None when no ambiguity detected"
+    
+    logger.info("✅ Returns None for non-ambiguous entities")
+    
+    # Test Case 4: Method signature validation
+    assert hasattr(processor, "clarify_ambiguous_intent"), "Should have clarify_ambiguous_intent method"
+    assert hasattr(processor, "_analyze_entity_ambiguity"), "Should have _analyze_entity_ambiguity method"
+    
+    logger.info("✅ All clarify_ambiguous_intent tests passed")
+    
+    return True
+
+
 def action7_inbox_module_tests() -> bool:
     """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
     from test_framework import TestSuite, suppress_logging
@@ -2846,6 +3023,14 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="_initialize_loop_state",
             method_description="Test error recovery state tracking",
             expected_outcome="State tracks session deaths and recoveries",
+        )
+        suite.run_test(
+            test_name="Clarify ambiguous intent (Priority 1 Todo #7)",
+            test_func=_test_clarify_ambiguous_intent,
+            test_summary="AI-powered clarification questions",
+            functions_tested="clarify_ambiguous_intent, _analyze_entity_ambiguity",
+            method_description="Generate clarifying questions for incomplete entities",
+            expected_outcome="Ambiguity detected, questions generated for missing data, None for complete data",
         )
 
     return suite.finish_suite()
