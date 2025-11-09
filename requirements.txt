@@ -62,7 +62,7 @@ multidict==6.4.3
 nbformat==5.10.4
 nest-asyncio==1.6.0
 numpy==2.2.3
-openai==1.74.0
+openai==1.82.0  # Shared OpenAI-compatible client for DeepSeek and Moonshot APIs
 orjson==3.10.17  # Fast JSON library for performance optimization
 outcome==1.3.0.post0
 packaging==24.2

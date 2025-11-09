@@ -403,10 +403,15 @@ class APIConfig:
     deepseek_ai_base_url: str = "https://api.deepseek.com"
     google_ai_model: str = "gemini-1.5-flash-latest"
 
+    # Comet API configuration
+    comet_api_key: Optional[str] = None
+    comet_ai_model: str = "gpt-4o-mini"
+    comet_ai_base_url: str = "https://api.cometapi.com/v1"
+
     # Moonshot (Kimi) configuration
     moonshot_api_key: Optional[str] = None
-    moonshot_ai_model: str = "moonshot-v1-8k"
-    moonshot_ai_base_url: str = "https://api.moonshot.cn/v1"
+    moonshot_ai_model: str = "kimi-k2-thinking"
+    moonshot_ai_base_url: str = "https://api.moonshot.ai/v1"
 
     # Local LLM Configuration (LM Studio)
     local_llm_api_key: Optional[str] = None
@@ -732,7 +737,7 @@ class ConfigSchema:
     ethnicity_enrichment_min_cm: int = 10  # Minimum shared DNA threshold for ethnicity enrichment API calls
 
     # AI settings
-    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", or ""
+    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "comet", or ""
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message

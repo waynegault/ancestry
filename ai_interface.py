@@ -385,6 +385,74 @@ def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int,
     return None
 
 
+def _normalize_comet_base_url(raw_base_url: str) -> str:
+    """Normalize Comet base URL to end with /v1 and remove /chat/completions."""
+    trimmed = raw_base_url.strip()
+    if not trimmed:
+        return trimmed
+
+    normalized = trimmed.rstrip("/")
+    completions_suffix = "/chat/completions"
+    if normalized.endswith(completions_suffix):
+        normalized = normalized[: -len(completions_suffix)]
+
+    if not normalized.endswith("/v1"):
+        normalized = f"{normalized}/v1"
+
+    return normalized
+
+
+def _call_comet_model(
+    system_prompt: str,
+    user_content: str,
+    max_tokens: int,
+    temperature: float,
+    response_format_type: str | None,
+) -> str | None:
+    """Call Comet API using OpenAI-compatible endpoint."""
+    if not openai_available or OpenAI is None:
+        logger.error("_call_ai_model: OpenAI library not available for Comet.")
+        return None
+
+    api_key = getattr(config_schema.api, "comet_api_key", None)
+    model_name = getattr(config_schema.api, "comet_ai_model", None)
+    base_url = getattr(config_schema.api, "comet_ai_base_url", None)
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_ai_model: Comet configuration incomplete.")
+        return None
+
+    normalized_base_url = _normalize_comet_base_url(base_url)
+    if normalized_base_url != base_url.strip():
+        logger.debug(
+            "Comet base URL normalized from '%s' to '%s'",
+            base_url,
+            normalized_base_url,
+        )
+
+    client = OpenAI(api_key=api_key, base_url=normalized_base_url)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    request_params: dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if response_format_type == "json_object":
+        request_params["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**request_params)
+    if response.choices and response.choices[0].message and response.choices[0].message.content:
+        return response.choices[0].message.content.strip()
+
+    logger.error("Comet returned an empty or invalid response structure.")
+    return None
+
+
 # Helper functions for _call_gemini_model
 
 def _validate_gemini_availability() -> bool:
@@ -624,6 +692,8 @@ def _route_ai_provider_call(
     """Route call to appropriate AI provider."""
     if provider == "deepseek":
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    if provider == "comet":
+        return _call_comet_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "moonshot":
         return _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "gemini":
@@ -632,6 +702,41 @@ def _route_ai_provider_call(
         return _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
     return None
+
+
+def _provider_is_configured(provider: str) -> bool:
+    """Return True when the specified provider has enough configuration to attempt a call."""
+    if provider == "deepseek":
+        return bool(getattr(config_schema.api, "deepseek_api_key", None))
+    if provider == "comet":
+        return bool(getattr(config_schema.api, "comet_api_key", None))
+    if provider == "gemini":
+        return bool(getattr(config_schema.api, "google_api_key", None))
+    if provider == "local_llm":
+        return all(
+            getattr(config_schema.api, attr, None)
+            for attr in ("local_llm_api_key", "local_llm_model", "local_llm_base_url")
+        )
+    return False
+
+
+def _resolve_provider_chain(primary_provider: str) -> list[str]:
+    """Build the list of providers to attempt, including safe fallbacks."""
+    provider_chain = [primary_provider]
+    if primary_provider == "moonshot":
+        for candidate in ("deepseek", "gemini", "local_llm"):
+            if candidate not in provider_chain and _provider_is_configured(candidate):
+                provider_chain.append(candidate)
+    return provider_chain
+
+
+def _should_fallback_to_next_provider(provider: str, error: Exception) -> bool:
+    """Determine whether a fallback provider should be attempted after the given error."""
+    if provider != "moonshot":
+        return False
+    if isinstance(error, AuthenticationError):
+        return True
+    return isinstance(error, APIError) and getattr(error, "status_code", None) == 401
 
 def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
     """Handle AI API exceptions with appropriate logging and actions."""
@@ -674,13 +779,47 @@ def _call_ai_model(
     """
     logger.debug(f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}")
 
-    _apply_rate_limiting(session_manager, provider)
+    provider_chain = _resolve_provider_chain(provider)
+    last_exception: Exception | None = None
 
-    try:
-        return _route_ai_provider_call(provider, system_prompt, user_content, max_tokens, temperature, response_format_type)
-    except Exception as e:
-        _handle_ai_exceptions(e, provider, session_manager)
-        return None
+    for idx, active_provider in enumerate(provider_chain):
+        _apply_rate_limiting(session_manager, active_provider)
+
+        try:
+            result = _route_ai_provider_call(active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type)
+            if active_provider != provider:
+                logger.warning(
+                    "AI provider '%s' failed, successfully fell back to '%s'.",
+                    provider,
+                    active_provider,
+                )
+            return result
+        except Exception as exc:
+            last_exception = exc
+            _handle_ai_exceptions(exc, active_provider, session_manager)
+
+            should_try_fallback = (
+                idx < len(provider_chain) - 1
+                and _should_fallback_to_next_provider(active_provider, exc)
+            )
+
+            if should_try_fallback:
+                logger.warning(
+                    "Attempting fallback AI provider '%s' after %s authentication failure.",
+                    provider_chain[idx + 1],
+                    active_provider,
+                )
+                continue
+
+            break
+
+    if last_exception is not None:
+        logger.error(
+            "AI provider '%s' failed without available fallback: %s",
+            provider,
+            type(last_exception).__name__,
+        )
+    return None
 
 
 # End of _call_ai_model
@@ -1552,8 +1691,11 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm"]:
-        logger.error(f"❌ Invalid AI_PROVIDER: {ai_provider}. Must be 'deepseek', 'gemini', 'moonshot', or 'local_llm'")
+    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm", "comet"]:
+        logger.error(
+            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', or 'comet'",
+            ai_provider,
+        )
         return False
     logger.info(f"✅ AI_PROVIDER: {ai_provider}")
     return True
@@ -1618,6 +1760,44 @@ def _validate_gemini_config() -> bool:
         config_valid = False
     else:
         logger.info(f"✅ GOOGLE_AI_MODEL: {model_name}")
+
+    return config_valid
+
+
+def _validate_comet_config() -> bool:
+    """Validate Comet-specific configuration."""
+    config_valid = True
+
+    if not openai_available:
+        logger.error("❌ OpenAI library not available for Comet")
+        config_valid = False
+    else:
+        logger.info("✅ OpenAI library available (for Comet)")
+
+    api_key = getattr(config_schema.api, "comet_api_key", None)
+    model_name = getattr(config_schema.api, "comet_ai_model", None)
+    base_url = getattr(config_schema.api, "comet_ai_base_url", None)
+
+    if not api_key:
+        logger.error("❌ COMET_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ COMET_API_KEY configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ COMET_AI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ COMET_AI_MODEL: {model_name}")
+
+    if not base_url:
+        logger.error("❌ COMET_AI_BASE_URL not configured")
+        config_valid = False
+    else:
+        normalized = _normalize_comet_base_url(base_url)
+        logger.info(f"✅ COMET_AI_BASE_URL (normalized): {normalized}")
+        if normalized != base_url.strip():
+            logger.info(f"ℹ️ COMET_AI_BASE_URL normalized from '{base_url}'")
 
     return config_valid
 
@@ -1709,6 +1889,8 @@ def test_configuration() -> bool:
         return _validate_deepseek_config()
     if ai_provider == "gemini":
         return _validate_gemini_config()
+    if ai_provider == "comet":
+        return _validate_comet_config()
     if ai_provider == "moonshot":
         return _validate_moonshot_config()
     if ai_provider == "local_llm":

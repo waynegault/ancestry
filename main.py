@@ -527,7 +527,7 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
         mem_log = f"Memory usage unavailable: {mem_err}"
 
     logger.info(f"{'='*45}")
-    logger.info(f"Action {choice} finished.")
+    logger.info(f"Action {choice} ({action_name}) finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
     logger.info(f"{'='*45}\n")
