@@ -399,7 +399,7 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
     auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
     if auto_start:
         lm_path = os.getenv("LM_STUDIO_PATH")
-        if lm_path and os.path.exists(lm_path):
+        if lm_path and Path(lm_path).exists():
             # Check if LM Studio is already running by testing the endpoint first
             try:
                 import socket
