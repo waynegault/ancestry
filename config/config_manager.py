@@ -859,10 +859,6 @@ class ConfigManager:
             # Google API configuration
             ("GOOGLE_API_KEY", "google_api_key"),
             ("GOOGLE_AI_MODEL", "google_ai_model"),
-            # Comet API configuration
-            ("COMET_API_KEY", "comet_api_key"),
-            ("COMET_AI_MODEL", "comet_ai_model"),
-            ("COMET_AI_BASE_URL", "comet_ai_base_url"),
             # Moonshot (Kimi) API configuration
             ("MOONSHOT_API_KEY", "moonshot_api_key"),
             ("MOONSHOT_AI_MODEL", "moonshot_ai_model"),
@@ -1522,4 +1518,3 @@ if __name__ == "__main__":
     print("🧪 Running Config Manager Comprehensive Tests...")
     success = config_manager_module_tests()
     sys.exit(0 if success else 1)
-

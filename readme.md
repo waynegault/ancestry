@@ -67,9 +67,11 @@ APP_MODE=development  # or 'production'
 DEBUG_MODE=false
 
 # AI Integration (Optional)
+# Active providers: moonshot, deepseek, gemini, local_llm
+MOONSHOT_API_KEY=your_moonshot_key
 DEEPSEEK_API_KEY=your_deepseek_key
 GOOGLE_API_KEY=your_google_key
-AI_PROVIDER=deepseek  # or 'gemini' or ''
+AI_PROVIDER=deepseek  # or 'moonshot' or 'gemini' or 'local_llm' or ''
 
 # Microsoft Graph (Optional - for To-Do integration)
 MS_CLIENT_ID=your_client_id
@@ -159,11 +161,11 @@ When modifying rate limiting logic (rate_limiter.py, api_manager.py, or REQUESTS
    # Step 1: Run rate limiting validation script
    python validate_rate_limiting.py
    # Expected: All checks pass, 0 failures reported
-   
+
    # Step 2: Execute 5-page Action 6 smoke test
    python main.py  # Choose "6", enter "1" for start page
    # Let it run for 5 pages, then Ctrl+C to abort
-   
+
    # Step 3: Verify zero 429 errors
    (Select-String -Path Logs\app.log -Pattern "429 error").Count
    # MUST return 0 - any 429s are FATAL and require tuning
@@ -185,7 +187,7 @@ When modifying rate limiting logic (rate_limiter.py, api_manager.py, or REQUESTS
    ```powershell
    # Real-time monitoring during production run
    Get-Content Logs\app.log -Wait | Select-String "429|circuit|timeout|effective delay"
-   
+
    # After run completion, generate performance report
    Select-String -Path Logs\app.log -Pattern "Performance Report|Throughput|Cache hit"
    ```
@@ -873,7 +875,8 @@ For issues or questions:
   - Parents, spouses, children shown; siblings intentionally omitted in API path
 
 - AI Providers and Local LLM
-  - ai_provider: one of ["deepseek", "gemini", "local_llm"]
+  - ai_provider: one of ["moonshot", "deepseek", "gemini", "local_llm"]
+  - Active providers: Moonshot (Kimi), DeepSeek, Google Gemini, Local LLM (LM Studio)
   - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
   - Default base URL: http://localhost:1234/v1 (LM Studio)
 

@@ -983,7 +983,7 @@ def test_session_lifecycle() -> None:
 
 def test_transaction_isolation() -> None:
     """Test transaction isolation and concurrent session handling."""
-    db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
+    db_manager, _engine_mock, _factory, _sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
         db_manager.ensure_ready()

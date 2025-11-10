@@ -385,74 +385,6 @@ def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int,
     return None
 
 
-def _normalize_comet_base_url(raw_base_url: str) -> str:
-    """Normalize Comet base URL to end with /v1 and remove /chat/completions."""
-    trimmed = raw_base_url.strip()
-    if not trimmed:
-        return trimmed
-
-    normalized = trimmed.rstrip("/")
-    completions_suffix = "/chat/completions"
-    if normalized.endswith(completions_suffix):
-        normalized = normalized[: -len(completions_suffix)]
-
-    if not normalized.endswith("/v1"):
-        normalized = f"{normalized}/v1"
-
-    return normalized
-
-
-def _call_comet_model(
-    system_prompt: str,
-    user_content: str,
-    max_tokens: int,
-    temperature: float,
-    response_format_type: str | None,
-) -> str | None:
-    """Call Comet API using OpenAI-compatible endpoint."""
-    if not openai_available or OpenAI is None:
-        logger.error("_call_ai_model: OpenAI library not available for Comet.")
-        return None
-
-    api_key = getattr(config_schema.api, "comet_api_key", None)
-    model_name = getattr(config_schema.api, "comet_ai_model", None)
-    base_url = getattr(config_schema.api, "comet_ai_base_url", None)
-
-    if not all([api_key, model_name, base_url]):
-        logger.error("_call_ai_model: Comet configuration incomplete.")
-        return None
-
-    normalized_base_url = _normalize_comet_base_url(base_url)
-    if normalized_base_url != base_url.strip():
-        logger.debug(
-            "Comet base URL normalized from '%s' to '%s'",
-            base_url,
-            normalized_base_url,
-        )
-
-    client = OpenAI(api_key=api_key, base_url=normalized_base_url)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    request_params: dict[str, Any] = {
-        "model": model_name,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stream": False,
-    }
-    if response_format_type == "json_object":
-        request_params["response_format"] = {"type": "json_object"}
-
-    response = client.chat.completions.create(**request_params)
-    if response.choices and response.choices[0].message and response.choices[0].message.content:
-        return response.choices[0].message.content.strip()
-
-    logger.error("Comet returned an empty or invalid response structure.")
-    return None
-
-
 # Helper functions for _call_gemini_model
 
 def _validate_gemini_availability() -> bool:
@@ -480,13 +412,102 @@ def _get_gemini_config() -> tuple[str | None, str | None]:
     return api_key, model_name
 
 
+def _list_available_gemini_models() -> list[str]:
+    """
+    List all available Gemini models with generateContent support.
+
+    Returns:
+        List of model names (e.g., ["gemini-2.5-flash", "gemini-2.5-pro-preview-03-25"])
+        Returns empty list if listing fails or genai is not available.
+    """
+    if not genai_available:
+        return []
+
+    if not hasattr(genai, "list_models"):
+        logger.debug("genai.list_models() not available in this SDK version")
+        return []
+
+    try:
+        models = []
+        for model in genai.list_models():  # type: ignore[attr-defined]
+            if hasattr(model, "supported_generation_methods"):
+                methods = getattr(model, "supported_generation_methods", [])
+                if "generateContent" in methods:
+                    # Strip "models/" prefix for easier use
+                    model_name = getattr(model, "name", "")
+                    normalized_name = model_name.replace("models/", "")
+                    if normalized_name:
+                        models.append(normalized_name)
+        return models
+    except Exception as e:
+        logger.debug(f"Failed to list Gemini models: {e}")
+        return []
+
+
+def _validate_gemini_model_exists(model_name: str) -> bool:
+    """
+    Check if the configured model exists and supports generateContent.
+
+    Args:
+        model_name: Model name to validate (e.g., "gemini-2.5-flash")
+
+    Returns:
+        True if model is valid, False otherwise.
+        Returns True if model listing is not available (to avoid breaking existing functionality).
+    """
+    available = _list_available_gemini_models()
+
+    # If we couldn't list models, assume the configured model is valid
+    # (better to attempt the API call than block it)
+    if not available:
+        return True
+
+    # Handle both formats: "gemini-2.5-flash" and "models/gemini-2.5-flash"
+    normalized = model_name.replace("models/", "")
+
+    if normalized not in available:
+        logger.error(f"❌ Model '{model_name}' not found or doesn't support generateContent")
+        if len(available) > 0:
+            logger.error(f"📋 Available models: {', '.join(available[:5])}")
+            if len(available) > 5:
+                logger.error(f"   ... and {len(available) - 5} more")
+        return False
+
+    logger.debug(f"✅ Model '{normalized}' validated successfully")
+    return True
+
+
 def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
-    """Initialize Gemini model."""
+    """
+    Initialize Gemini model with validation.
+
+    Args:
+        api_key: Google API key
+        model_name: Model name (e.g., "gemini-2.5-flash")
+
+    Returns:
+        Initialized model instance or None if validation/initialization fails
+    """
+    # Validate model exists before attempting API call
+    if not _validate_gemini_model_exists(model_name):
+        available = _list_available_gemini_models()
+        if available:
+            suggested = available[0]
+            logger.error(f"💡 Suggestion: Update GOOGLE_AI_MODEL in .env to: {suggested}")
+            logger.error(f"💡 Or choose from: {', '.join(available[:3])}")
+        return None
+
     try:
         genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-        return genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+        logger.debug(f"✅ Gemini model '{model_name}' initialized successfully")
+        return model
     except Exception as e:
-        logger.error(f"_call_ai_model: Failed initializing Gemini model: {e}")
+        logger.error(f"_call_ai_model: Failed initializing Gemini model '{model_name}': {e}")
+        # Suggest available models on failure
+        available = _list_available_gemini_models()
+        if available:
+            logger.error(f"💡 Available models: {', '.join(available[:3])}")
         return None
 
 
@@ -673,7 +694,7 @@ def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[str | Non
         return None, f"Local LLM: Failed to check loaded models: {e}"
 
 
-def _handle_rate_limit_error(session_manager: SessionManager, source: Optional[str] = None) -> None:
+def _handle_rate_limit_error(session_manager: SessionManager, source: str | None = None) -> None:
     """Handle rate limit error by increasing delay."""
     if session_manager and hasattr(session_manager, "rate_limiter"):
         try:
@@ -692,8 +713,6 @@ def _route_ai_provider_call(
     """Route call to appropriate AI provider."""
     if provider == "deepseek":
         return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    if provider == "comet":
-        return _call_comet_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "moonshot":
         return _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     if provider == "gemini":
@@ -708,8 +727,6 @@ def _provider_is_configured(provider: str) -> bool:
     """Return True when the specified provider has enough configuration to attempt a call."""
     if provider == "deepseek":
         return bool(getattr(config_schema.api, "deepseek_api_key", None))
-    if provider == "comet":
-        return bool(getattr(config_schema.api, "comet_api_key", None))
     if provider == "gemini":
         return bool(getattr(config_schema.api, "google_api_key", None))
     if provider == "local_llm":
@@ -1381,6 +1398,33 @@ def assess_engagement(
         return None
 
 
+def _format_clarification_prompt(prompt: str, user_message: str, extracted_entities: dict[str, Any], ambiguity_context: str) -> str | None:
+    """Format clarification prompt with user data."""
+    try:
+        return prompt.format(
+            user_message=user_message,
+            extracted_entities=json.dumps(extracted_entities, indent=2),
+            ambiguity_context=ambiguity_context,
+        )
+    except KeyError as e:
+        logger.error(f"generate_clarifying_questions: Prompt formatting error - missing key: {e}")
+        return None
+
+
+def _validate_clarification_response(result: dict[str, Any]) -> bool:
+    """Validate AI clarification response structure."""
+    if not isinstance(result, dict) or "clarifying_questions" not in result:
+        logger.error("generate_clarifying_questions: Invalid response structure")
+        return False
+
+    questions = result.get("clarifying_questions", [])
+    if not questions or not isinstance(questions, list):
+        logger.warning("generate_clarifying_questions: No questions generated")
+        return False
+
+    return True
+
+
 def generate_clarifying_questions(
     user_message: str,
     extracted_entities: dict[str, Any],
@@ -1422,14 +1466,8 @@ def generate_clarifying_questions(
         return None
 
     # Format the prompt with provided data
-    try:
-        formatted_prompt = prompt.format(
-            user_message=user_message,
-            extracted_entities=json.dumps(extracted_entities, indent=2),
-            ambiguity_context=ambiguity_context,
-        )
-    except KeyError as e:
-        logger.error(f"generate_clarifying_questions: Prompt formatting error - missing key: {e}")
+    formatted_prompt = _format_clarification_prompt(prompt, user_message, extracted_entities, ambiguity_context)
+    if not formatted_prompt:
         return None
 
     start_time = time.time()
@@ -1452,15 +1490,10 @@ def generate_clarifying_questions(
         result = json.loads(ai_response_str)
 
         # Validate expected structure
-        if not isinstance(result, dict) or "clarifying_questions" not in result:
-            logger.error("generate_clarifying_questions: Invalid response structure")
+        if not _validate_clarification_response(result):
             return None
 
         questions = result.get("clarifying_questions", [])
-        if not questions or not isinstance(questions, list):
-            logger.warning("generate_clarifying_questions: No questions generated")
-            return None
-
         logger.info(
             f"✅ Generated {len(questions)} clarifying question(s) "
             f"for {result.get('primary_ambiguity', 'unknown')} ambiguity. (Took {duration:.2f}s)"
@@ -1784,9 +1817,9 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm", "comet"]:
+    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm"]:
         logger.error(
-            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', or 'comet'",
+            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', or 'local_llm'",
             ai_provider,
         )
         return False
@@ -1853,44 +1886,6 @@ def _validate_gemini_config() -> bool:
         config_valid = False
     else:
         logger.info(f"✅ GOOGLE_AI_MODEL: {model_name}")
-
-    return config_valid
-
-
-def _validate_comet_config() -> bool:
-    """Validate Comet-specific configuration."""
-    config_valid = True
-
-    if not openai_available:
-        logger.error("❌ OpenAI library not available for Comet")
-        config_valid = False
-    else:
-        logger.info("✅ OpenAI library available (for Comet)")
-
-    api_key = getattr(config_schema.api, "comet_api_key", None)
-    model_name = getattr(config_schema.api, "comet_ai_model", None)
-    base_url = getattr(config_schema.api, "comet_ai_base_url", None)
-
-    if not api_key:
-        logger.error("❌ COMET_API_KEY not configured")
-        config_valid = False
-    else:
-        logger.info(f"✅ COMET_API_KEY configured (length: {len(api_key)})")
-
-    if not model_name:
-        logger.error("❌ COMET_AI_MODEL not configured")
-        config_valid = False
-    else:
-        logger.info(f"✅ COMET_AI_MODEL: {model_name}")
-
-    if not base_url:
-        logger.error("❌ COMET_AI_BASE_URL not configured")
-        config_valid = False
-    else:
-        normalized = _normalize_comet_base_url(base_url)
-        logger.info(f"✅ COMET_AI_BASE_URL (normalized): {normalized}")
-        if normalized != base_url.strip():
-            logger.info(f"ℹ️ COMET_AI_BASE_URL normalized from '{base_url}'")
 
     return config_valid
 
@@ -1982,8 +1977,6 @@ def test_configuration() -> bool:
         return _validate_deepseek_config()
     if ai_provider == "gemini":
         return _validate_gemini_config()
-    if ai_provider == "comet":
-        return _validate_comet_config()
     if ai_provider == "moonshot":
         return _validate_moonshot_config()
     if ai_provider == "local_llm":

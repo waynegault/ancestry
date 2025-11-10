@@ -43,13 +43,13 @@ _cache_stats = {
 def _normalize_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
     """
     Normalize search criteria for consistent cache key generation.
-    
+
     Ensures that slight variations in input (e.g., 'John' vs 'john', 1850 vs '1850',
     'givenName' vs 'GivenName') produce the same cache key.
-    
+
     Args:
         criteria: Raw search criteria dictionary
-        
+
     Returns:
         Normalized criteria dictionary with lowercase keys and normalized values
     """
@@ -81,10 +81,10 @@ def _normalize_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
 def _generate_cache_key(criteria: dict[str, Any]) -> str:
     """
     Generate SHA256 hash of normalized search criteria for cache key.
-    
+
     Args:
         criteria: Search criteria dictionary
-        
+
     Returns:
         64-character SHA256 hex string
     """
@@ -98,14 +98,14 @@ def _generate_cache_key(criteria: dict[str, Any]) -> str:
     return hashlib.sha256(criteria_json.encode('utf-8')).hexdigest()
 
 
-def _get_cached_search_results(cache_key: str, db_session: Any) -> Optional[list[dict]]:
+def _get_cached_search_results(cache_key: str, db_session: Any) -> list[dict] | None:
     """
     Retrieve cached search results if available and not expired.
-    
+
     Args:
         cache_key: SHA256 hash of search criteria
         db_session: SQLAlchemy database session
-        
+
     Returns:
         Cached results list or None if not found/expired
     """
@@ -157,7 +157,7 @@ def _store_search_results_in_cache(
 ) -> None:
     """
     Store API search results in cache for 7 days.
-    
+
     Args:
         cache_key: SHA256 hash of search criteria
         criteria: Original search criteria
@@ -205,7 +205,7 @@ def _store_search_results_in_cache(
 def get_api_search_cache_stats() -> dict[str, Any]:
     """
     Get current API search cache statistics.
-    
+
     Returns:
         Dictionary with cache performance metrics
     """
@@ -229,10 +229,10 @@ def get_api_search_cache_hit_rate() -> float:
 def clear_api_search_cache(db_session: Any) -> int:
     """
     Clear all API search cache entries from database.
-    
+
     Args:
         db_session: SQLAlchemy database session
-        
+
     Returns:
         Number of entries deleted
     """
@@ -259,10 +259,10 @@ def clear_api_search_cache(db_session: Any) -> int:
 def cleanup_expired_api_search_cache(db_session: Any) -> int:
     """
     Remove expired cache entries from database.
-    
+
     Args:
         db_session: SQLAlchemy database session
-        
+
     Returns:
         Number of expired entries deleted
     """
@@ -288,13 +288,13 @@ def cleanup_expired_api_search_cache(db_session: Any) -> int:
 def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
     """
     Report API search cache statistics to PerformanceMonitor for tracking and alerting.
-    
+
     Priority 1 Todo #10: Performance monitor integration - tracks cache hit rate and alerts
     when hit rate falls below 60% target threshold.
-    
+
     Args:
         session_manager: SessionManager instance with performance_monitor attribute
-        
+
     Example:
         # After running API searches, report cache statistics
         report_api_cache_stats_to_performance_monitor(session_manager)
@@ -487,15 +487,15 @@ def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
 def search_ancestry_api_for_person(session_manager: Any, search_criteria: dict[str, Any], max_results: int = 20) -> list[dict]:
     """
     Search Ancestry API for matching persons with caching to prevent duplicate API calls.
-    
+
     Priority 1 Todo #10: Integrated caching layer - checks database for recent searches (<7 days)
     before calling Ancestry API to reduce API load and improve response time.
-    
+
     Args:
         session_manager: SessionManager instance with database and API access
         search_criteria: Dict with keys like givenName, surname, birthYear, birthPlace, etc.
         max_results: Maximum number of results to return (default: 20)
-        
+
     Returns:
         List of processed and scored candidate matches (dicts with id, name, dates, places, score)
     """

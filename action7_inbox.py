@@ -1398,6 +1398,59 @@ class InboxProcessor:
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 
+    def _is_closed_status(self, ai_sentiment: Optional[str]) -> bool:
+        """Check if conversation should be marked CLOSED."""
+        return ai_sentiment in ("DESIST", "UNINTERESTED")
+
+    def _is_initial_outreach_status(
+        self,
+        direction: MessageDirectionEnum,
+        in_messages: list[Any],
+    ) -> bool:
+        """Check if conversation is in INITIAL_OUTREACH (outbound only, no response)."""
+        return direction == MessageDirectionEnum.OUT and len(in_messages) == 0
+
+    def _is_response_received_status(
+        self,
+        direction: MessageDirectionEnum,
+        in_messages: list[Any],
+    ) -> bool:
+        """Check if conversation is in RESPONSE_RECEIVED (first inbound)."""
+        return direction == MessageDirectionEnum.IN and len(in_messages) == 1
+
+    def _is_stalled_status(self, days_since_last: int, total_exchanges: int) -> bool:
+        """Check if conversation is STALLED (>30 days, multiple exchanges)."""
+        return days_since_last > 30 and total_exchanges > 1
+
+    def _is_collaboration_active_status(
+        self,
+        total_exchanges: int,
+        days_since_last: int,
+        conv_logs: list[Any],
+    ) -> bool:
+        """Check if conversation is COLLABORATION_ACTIVE (4+ exchanges, recent, productive)."""
+        if total_exchanges >= 4 and days_since_last <= 14:
+            productive_count = sum(
+                1 for log in conv_logs[-4:]  # Last 4 messages
+                if log.ai_sentiment == "PRODUCTIVE"
+            )
+            return productive_count >= 2
+        return False
+
+    def _is_information_shared_status(
+        self,
+        total_exchanges: int,
+        conv_logs: list[Any],
+        ai_sentiment: Optional[str],
+    ) -> bool:
+        """Check if conversation is INFORMATION_SHARED (2+ exchanges, productive)."""
+        if total_exchanges >= 2:
+            productive_count = sum(
+                1 for log in conv_logs if log.ai_sentiment == "PRODUCTIVE"
+            )
+            return productive_count >= 1 or ai_sentiment == "PRODUCTIVE"
+        return False
+
     def _determine_conversation_phase(
         self,
         conversation_id: str,
@@ -1440,18 +1493,6 @@ class InboxProcessor:
             out_messages = [log for log in conv_logs if log.direction == DBMessageDirectionEnum.OUT]
             total_exchanges = len(in_messages) + len(out_messages)
 
-            # Check for CLOSED status triggers
-            if ai_sentiment in ("DESIST", "UNINTERESTED"):
-                return ConversationPhaseEnum.CLOSED
-
-            # INITIAL_OUTREACH: Only OUT messages exist, no response yet
-            if direction == MessageDirectionEnum.OUT and len(in_messages) == 0:
-                return ConversationPhaseEnum.INITIAL_OUTREACH
-
-            # RESPONSE_RECEIVED: First IN message received
-            if direction == MessageDirectionEnum.IN and len(in_messages) == 1:
-                return ConversationPhaseEnum.RESPONSE_RECEIVED
-
             # Calculate days since last message
             if conv_logs:
                 latest_log = max(conv_logs, key=lambda log: log.latest_timestamp)
@@ -1459,28 +1500,24 @@ class InboxProcessor:
             else:
                 days_since_last = 0
 
-            # STALLED: No activity for >30 days
-            if days_since_last > 30 and total_exchanges > 1:
+            # Check phases in priority order
+            if self._is_closed_status(ai_sentiment):
+                return ConversationPhaseEnum.CLOSED
+
+            if self._is_initial_outreach_status(direction, in_messages):
+                return ConversationPhaseEnum.INITIAL_OUTREACH
+
+            if self._is_response_received_status(direction, in_messages):
+                return ConversationPhaseEnum.RESPONSE_RECEIVED
+
+            if self._is_stalled_status(days_since_last, total_exchanges):
                 return ConversationPhaseEnum.STALLED
 
-            # COLLABORATION_ACTIVE: 4+ exchanges with recent activity
-            if total_exchanges >= 4 and days_since_last <= 14:
-                # Check for PRODUCTIVE sentiment in recent messages
-                productive_count = sum(
-                    1 for log in conv_logs[-4:]  # Last 4 messages
-                    if log.ai_sentiment == "PRODUCTIVE"
-                )
-                if productive_count >= 2:
-                    return ConversationPhaseEnum.COLLABORATION_ACTIVE
+            if self._is_collaboration_active_status(total_exchanges, days_since_last, conv_logs):
+                return ConversationPhaseEnum.COLLABORATION_ACTIVE
 
-            # INFORMATION_SHARED: 2+ exchanges with PRODUCTIVE classification
-            if total_exchanges >= 2:
-                productive_count = sum(
-                    1 for log in conv_logs
-                    if log.ai_sentiment == "PRODUCTIVE"
-                )
-                if productive_count >= 1 or ai_sentiment == "PRODUCTIVE":
-                    return ConversationPhaseEnum.INFORMATION_SHARED
+            if self._is_information_shared_status(total_exchanges, conv_logs, ai_sentiment):
+                return ConversationPhaseEnum.INFORMATION_SHARED
 
             # Default: Return RESPONSE_RECEIVED if messages exist, otherwise None
             return ConversationPhaseEnum.RESPONSE_RECEIVED if total_exchanges > 0 else None
@@ -1619,8 +1656,8 @@ class InboxProcessor:
 
     def _create_follow_up_reminder_task(
         self,
-        person_id: int,
-        conversation_id: str,
+        _person_id: int,
+        _conversation_id: str,
         task_title: str,
         task_body: Optional[str],
         due_date: Optional[datetime],
@@ -1632,8 +1669,8 @@ class InboxProcessor:
         Priority 1 Todo #5: Follow-Up Reminder System
 
         Args:
-            person_id: Database ID of person
-            conversation_id: Unique conversation identifier
+            _person_id: Database ID of person (reserved for future use)
+            _conversation_id: Unique conversation identifier (reserved for future use)
             task_title: Title for MS To-Do task
             task_body: Detailed task body with context
             due_date: When follow-up is due
@@ -1696,9 +1733,8 @@ class InboxProcessor:
             if task_id:
                 logger.info(f"✓ Created follow-up reminder task (ID: {task_id}): {task_title[:60]}...")
                 return True
-            else:
-                logger.warning(f"Failed to create follow-up reminder task: {task_title[:60]}...")
-                return False
+            logger.warning(f"Failed to create follow-up reminder task: {task_title[:60]}...")
+            return False
 
         except Exception as e:
             logger.error(f"Error creating follow-up reminder task: {e}", exc_info=True)
@@ -1813,43 +1849,68 @@ class InboxProcessor:
             logger.error(f"Failed to generate clarifying questions: {e}", exc_info=True)
             return None
 
+    def _check_person_ambiguities(self, mentioned_people: list[dict[str, Any]]) -> list[str]:
+        """Check for ambiguous person mentions (missing context)."""
+        ambiguities: list[str] = []
+        for person in mentioned_people:
+            name = person.get("name", "")
+            if not name:
+                continue
+
+            has_birth_year = person.get("birth_year") is not None
+            has_location = person.get("birth_place") or person.get("death_place")
+            has_relationship = person.get("relationship") is not None
+
+            if not (has_birth_year or has_location):
+                ambiguities.append(f"Name '{name}' lacks temporal or location context")
+            elif not has_relationship:
+                ambiguities.append(f"Name '{name}' relationship unclear")
+
+        return ambiguities
+
+    def _check_location_ambiguities(self, locations: list[dict[str, Any]]) -> list[str]:
+        """Check for overly broad location mentions."""
+        ambiguities: list[str] = []
+        broad_countries = ["Scotland", "England", "Ireland", "Wales", "USA", "Canada"]
+
+        for loc in locations:
+            place = loc.get("place", "")
+            if place and len(place.split(",")) == 1 and place in broad_countries:
+                ambiguities.append(f"Location '{place}' too broad - need city/county")
+
+        return ambiguities
+
+    def _check_relationship_ambiguities(self, relationships: list[dict[str, Any]]) -> list[str]:
+        """Check for incomplete relationship mentions."""
+        ambiguities: list[str] = []
+        for rel in relationships:
+            person1 = rel.get("person1", "")
+            person2 = rel.get("person2", "")
+            if not person1 or not person2:
+                ambiguities.append("Relationship mentioned without both person names")
+
+        return ambiguities
+
     def _analyze_entity_ambiguity(self, extracted_entities: dict[str, Any]) -> str:
         """
         Analyze extracted entities to detect ambiguity.
 
         Returns description of ambiguity type for AI prompt context.
         """
-        ambiguities = []
+        ambiguities: list[str] = []
 
-        # Check for names without sufficient context
+        # Check person ambiguities
         mentioned_people = extracted_entities.get("mentioned_people", [])
         if mentioned_people:
-            for person in mentioned_people:
-                name = person.get("name", "")
-                has_birth_year = person.get("birth_year") is not None
-                has_location = person.get("birth_place") or person.get("death_place")
-                has_relationship = person.get("relationship") is not None
+            ambiguities.extend(self._check_person_ambiguities(mentioned_people))
 
-                if name and not (has_birth_year or has_location):
-                    ambiguities.append(f"Name '{name}' lacks temporal or location context")
-                elif name and not has_relationship:
-                    ambiguities.append(f"Name '{name}' relationship unclear")
-
-        # Check for vague locations
+        # Check location ambiguities
         locations = extracted_entities.get("locations", [])
-        for loc in locations:
-            place = loc.get("place", "")
-            if place and len(place.split(",")) == 1:  # Only country/state, no city
-                if place in ["Scotland", "England", "Ireland", "Wales", "USA", "Canada"]:
-                    ambiguities.append(f"Location '{place}' too broad - need city/county")
+        ambiguities.extend(self._check_location_ambiguities(locations))
 
-        # Check for relationships without names
+        # Check relationship ambiguities
         relationships = extracted_entities.get("relationships", [])
-        for rel in relationships:
-            person1 = rel.get("person1", "")
-            person2 = rel.get("person2", "")
-            if not person1 or not person2:
-                ambiguities.append("Relationship mentioned without both person names")
+        ambiguities.extend(self._check_relationship_ambiguities(relationships))
 
         if not ambiguities:
             return "No ambiguity detected"
@@ -3507,8 +3568,7 @@ def action7_inbox_module_tests() -> bool:
             """Test follow-up extraction for PRODUCTIVE conversations."""
             from unittest.mock import MagicMock
 
-            from database import ConversationLog, ConversationPhaseEnum
-            from database import MessageDirectionEnum as DBMessageDirectionEnum
+            from database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
 
             sm = MagicMock()
             processor = InboxProcessor(session_manager=sm)
@@ -3585,8 +3645,8 @@ def action7_inbox_module_tests() -> bool:
 
         def _test_follow_up_reminder_task_creation() -> None:
             """Test MS To-Do reminder task creation."""
-            from unittest.mock import MagicMock
             from datetime import timedelta
+            from unittest.mock import MagicMock
 
             sm = MagicMock()
             processor = InboxProcessor(session_manager=sm)
@@ -3617,8 +3677,8 @@ def action7_inbox_module_tests() -> bool:
 
         def _test_conversation_log_follow_up_fields() -> None:
             """Test that conversation log upsert includes follow-up fields."""
-            from unittest.mock import MagicMock
             from datetime import timedelta
+            from unittest.mock import MagicMock
 
             sm = MagicMock()
             processor = InboxProcessor(session_manager=sm)

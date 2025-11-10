@@ -3,7 +3,7 @@
 
 Loads credentials from the project's .env file, asks which provider to test,
 validates the configured endpoint, and attempts a simple completion request.
-Currently supports Comet, OpenRouter, DeepSeek, and Google Gemini.
+Currently supports Moonshot, DeepSeek, Google Gemini, and Local LLM.
 """
 from __future__ import annotations
 
@@ -37,11 +37,9 @@ except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
 DEFAULT_PROMPT = "Please confirm you can see this message."
-PROVIDERS = ("comet", "openrouter", "moonshot", "deepseek", "gemini", "local_llm")
+PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
-    "comet": "Comet API",
-    "openrouter": "OpenRouter (Moonshot Kimi)",
     "moonshot": "Moonshot (Kimi)",
     "deepseek": "DeepSeek",
     "gemini": "Google Gemini",
@@ -55,7 +53,7 @@ class TestResult:
     api_status: bool
     endpoint_status: bool
     messages: list[str] = field(default_factory=list)
-    full_output: Optional[str] = None
+    full_output: str | None = None
 
 
 def _load_env_file(env_path: Path, override: bool = False) -> None:
@@ -181,117 +179,6 @@ def _format_provider_error(provider: str, exc: Exception) -> str:
     return f"{provider_name} request failed: {detail_text}"
 
 
-def _test_comet(prompt: str, max_tokens: int) -> TestResult:
-    messages: list[str] = []
-    if OpenAI is None:
-        messages.append("OpenAI library not available. Install the openai package.")
-        return TestResult("comet", False, False, messages)
-
-    api_key = os.getenv("COMET_API_KEY")
-    base_url = os.getenv("COMET_AI_BASE_URL", "https://api.cometapi.com/v1")
-    model_name = os.getenv("COMET_AI_MODEL", "gpt-4o-mini")
-
-    if not api_key:
-        messages.append("COMET_API_KEY not configured.")
-        return TestResult("comet", False, False, messages)
-
-    normalized_base_url, changed = _normalize_base_url(
-        base_url,
-        required_suffix="/v1",
-        drop_suffixes=("/chat/completions",),
-    )
-    endpoint_ok = normalized_base_url.endswith("/v1")
-    if changed:
-        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
-    if not endpoint_ok:
-        messages.append("Base URL is missing the required /v1 suffix.")
-
-    client = OpenAI(api_key=api_key, base_url=normalized_base_url)
-    try:
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are Comet, an AI assistant."},
-                {"role": "user", "content": [{"type": "text", "text": prompt}]},
-            ],
-            stream=False,
-            temperature=0.7,
-            max_tokens=max_tokens,
-        )
-        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
-            full_output = completion.choices[0].message.content.strip()
-            messages.append(_build_messages_preview(full_output))
-            return TestResult("comet", True, endpoint_ok, messages, full_output=full_output)
-        messages.append("Received empty response payload from Comet.")
-        return TestResult("comet", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
-        messages.append(_format_provider_error("comet", exc))
-        return TestResult("comet", False, endpoint_ok, messages)
-
-
-def _default_openrouter_headers() -> dict[str, str] | None:
-    referer = os.getenv("OPENROUTER_HTTP_REFERER")
-    title = os.getenv("OPENROUTER_TITLE")
-    headers: dict[str, str] = {}
-    if referer:
-        headers["HTTP-Referer"] = referer
-    if title:
-        headers["X-Title"] = title
-    return headers or None
-
-
-def _test_openrouter(prompt: str, max_tokens: int) -> TestResult:
-    messages: list[str] = []
-    if OpenAI is None:
-        messages.append("OpenAI library not available. Install the openai package.")
-        return TestResult("openrouter", False, False, messages)
-
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-    model_name = os.getenv("OPENROUTER_MODEL", "moonshotai/kimi-k2:free")
-
-    if not api_key:
-        messages.append("OPENROUTER_API_KEY not configured.")
-        return TestResult("openrouter", False, False, messages)
-
-    normalized_base_url, changed = _normalize_base_url(
-        base_url,
-        required_suffix="/api/v1",
-        drop_suffixes=("/chat/completions",),
-    )
-    endpoint_ok = normalized_base_url.endswith("/api/v1")
-    if changed:
-        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
-    if not endpoint_ok:
-        messages.append("Base URL is missing the required /api/v1 suffix.")
-
-    headers = _default_openrouter_headers()
-    if headers:
-        messages.append("Applying OpenRouter headers for referer/title identification.")
-
-    client = OpenAI(api_key=api_key, base_url=normalized_base_url, default_headers=headers)
-    try:
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are Kimi, accessible via OpenRouter."},
-                {"role": "user", "content": [{"type": "text", "text": prompt}]},
-            ],
-            stream=False,
-            temperature=0.7,
-            max_tokens=max_tokens,
-        )
-        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
-            full_output = completion.choices[0].message.content.strip()
-            messages.append(_build_messages_preview(full_output))
-            return TestResult("openrouter", True, endpoint_ok, messages, full_output=full_output)
-        messages.append("Received empty response payload from OpenRouter.")
-        return TestResult("openrouter", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
-        messages.append(_format_provider_error("openrouter", exc))
-        return TestResult("openrouter", False, endpoint_ok, messages)
-
-
 def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if OpenAI is None:
@@ -347,19 +234,17 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("deepseek", False, False, messages)
 
     api_key = os.getenv("DEEPSEEK_API_KEY")
-    base_url = os.getenv("DEEPSEEK_AI_BASE_URL", "https://api.deepseek.com/v1")
+    base_url = os.getenv("DEEPSEEK_AI_BASE_URL", "https://api.deepseek.com")
     model_name = os.getenv("DEEPSEEK_AI_MODEL", "deepseek-chat")
 
     if not api_key:
         messages.append("DEEPSEEK_API_KEY not configured.")
         return TestResult("deepseek", False, False, messages)
 
-    normalized_base_url, changed = _normalize_base_url(base_url, required_suffix="/v1")
-    endpoint_ok = normalized_base_url.endswith("/v1")
-    if changed:
-        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
-    if not endpoint_ok:
-        messages.append("Base URL is missing the required /v1 suffix.")
+    # DeepSeek uses base URL without /v1 suffix - use as-is
+    normalized_base_url = base_url.rstrip("/")
+    endpoint_ok = True
+    messages.append(f"Using DeepSeek endpoint: {normalized_base_url}")
 
     client = OpenAI(api_key=api_key, base_url=normalized_base_url)
     try:
@@ -414,7 +299,39 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
             messages.append("google-generativeai module is missing required interfaces (configure/GenerativeModel).")
             return TestResult("gemini", False, endpoint_ok, messages)
 
+        # Configure API first (required for list_models)
         configure_fn(api_key=api_key)
+
+        # List available models with generateContent support
+        list_models_fn = getattr(genai, "list_models", None)
+        if callable(list_models_fn):
+            try:
+                messages.append("\n📋 Available Gemini models with generateContent support:")
+                model_count = 0
+                found_configured = False
+                for model in list_models_fn():
+                    methods = getattr(model, "supported_generation_methods", [])
+                    if "generateContent" in methods:
+                        name = getattr(model, "name", "").replace("models/", "")
+                        if name:
+                            marker = " ← CONFIGURED" if name == model_name else ""
+                            messages.append(f"   • {name}{marker}")
+                            model_count += 1
+                            if name == model_name:
+                                found_configured = True
+                            # Limit output to first 5 models
+                            if model_count >= 5:
+                                messages.append("   ... (additional models available)")
+                                break
+                if model_count == 0:
+                    messages.append("   ⚠️  No models found with generateContent support")
+                elif not found_configured:
+                    messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
+                messages.append("")  # Blank line for readability
+            except Exception as e:
+                messages.append(f"   ⚠️  Could not list models: {e}")
+                messages.append("")  # Blank line for readability
+
         model = generative_model_cls(model_name)
         response = model.generate_content(
             prompt,
@@ -441,7 +358,25 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     except Exception as exc:  # pylint: disable=broad-except
         error_msg = _format_provider_error("gemini", exc)
         if "is not found" in error_msg.lower() or "not supported" in error_msg.lower():
-            error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model like 'gemini-1.5-flash-latest'."
+            # Suggest available models from the list
+            try:
+                list_models_fn = getattr(genai, "list_models", None)
+                if callable(list_models_fn):
+                    available_models = []
+                    for model in list_models_fn():
+                        methods = getattr(model, "supported_generation_methods", [])
+                        if "generateContent" in methods:
+                            name = getattr(model, "name", "").replace("models/", "")
+                            if name:
+                                available_models.append(name)
+                            if len(available_models) >= 3:
+                                break
+                    if available_models:
+                        error_msg += f" Try: {', '.join(available_models)}"
+            except Exception:
+                pass
+            if "Try:" not in error_msg:
+                error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model."
         messages.append(error_msg)
         return TestResult("gemini", False, endpoint_ok, messages)
 
@@ -465,13 +400,29 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
     if auto_start:
         lm_path = os.getenv("LM_STUDIO_PATH")
         if lm_path and os.path.exists(lm_path):
+            # Check if LM Studio is already running by testing the endpoint first
             try:
-                subprocess.Popen([lm_path], shell=True)
-                startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
-                messages.append(f"Attempting to start LM Studio (waiting {min(startup_timeout, 10)}s for initialization)...")
-                time.sleep(min(startup_timeout, 10))
-            except Exception as e:
-                messages.append(f"Failed to start LM Studio: {e}")
+                import socket
+                from urllib.parse import urlparse
+                parsed = urlparse(base_url)
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex((parsed.hostname or "localhost", parsed.port or 1234))
+                sock.close()
+                already_running = (result == 0)
+            except Exception:
+                already_running = False
+
+            if not already_running:
+                try:
+                    subprocess.Popen([lm_path], shell=True)
+                    startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
+                    messages.append(f"Starting LM Studio (waiting {min(startup_timeout, 10)}s for initialization)...")
+                    time.sleep(min(startup_timeout, 10))
+                except Exception as e:
+                    messages.append(f"Failed to start LM Studio: {e}")
+            else:
+                messages.append("LM Studio is already running.")
         else:
             messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
 
@@ -509,8 +460,6 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
 
 
 PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
-    "comet": _test_comet,
-    "openrouter": _test_openrouter,
     "moonshot": _test_moonshot,
     "deepseek": _test_deepseek,
     "gemini": _test_gemini,
@@ -519,18 +468,14 @@ PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
 
 
 def _provider_base_url(provider: str) -> str:
-    if provider == "comet":
-        return os.getenv("COMET_AI_BASE_URL") or "https://api.cometapi.com/v1"
-    if provider == "openrouter":
-        return os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
     if provider == "moonshot":
-        return os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1"
+        return (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/")
     if provider == "deepseek":
-        return os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com/v1"
+        return (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/")
     if provider == "gemini":
         return os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)"
     if provider == "local_llm":
-        return os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1"
+        return (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/")
     return ""
 
 
@@ -567,7 +512,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     _ensure_env_loaded(".env", parser)
     args = parser.parse_args(argv)
@@ -575,10 +520,31 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.env_file and args.env_file != ".env":
         _ensure_env_loaded(args.env_file, parser)
 
+    # If provider specified via CLI arg, test once and exit
+    if args.provider:
+        tester = PROVIDER_TESTERS.get(args.provider)
+        if not tester:
+            parser.error(f"Unsupported provider: {args.provider}")
+
+        print(f"\nTesting provider: {args.provider}")
+        result = tester(args.prompt, args.max_tokens)
+        _print_result(result)
+
+        if result.api_status and result.full_output:
+            follow_up = input("The model responded successfully. View the full output? [y/N]: ").strip().lower()
+            if follow_up in ("y", "yes"):
+                print("\n=== Full Response ===")
+                print(result.full_output)
+                print("=== End Full Response ===")
+
+        return 0
+
+    # Interactive mode - loop through providers
     while True:
-        provider = args.provider or _prompt_for_provider()
+        provider = _prompt_for_provider()
         if provider is None:
             break
+
         tester = PROVIDER_TESTERS.get(provider)
         if not tester:
             parser.error(f"Unsupported provider: {provider}")
@@ -593,13 +559,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                 print("\n=== Full Response ===")
                 print(result.full_output)
                 print("=== End Full Response ===")
-
-        if args.provider:
-            break
-
-        continue_choice = input("Test another provider? [y/N]: ").strip().lower()
-        if continue_choice not in ("y", "yes"):
-            break
 
     return 0
 

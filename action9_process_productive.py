@@ -1271,8 +1271,7 @@ class PersonProcessor:
             pass
 
         # Calculate next contact date
-        next_date = datetime.now(timezone.utc) + timedelta(days=base_days)
-        return next_date
+        return datetime.now(timezone.utc) + timedelta(days=base_days)
 
     def _update_conversation_state(
         self,
@@ -1730,6 +1729,105 @@ class PersonProcessor:
             log_prefix=log_prefix,
         )
 
+    def _score_relationship_path(self, response_lower: str, lookup_results: list[PersonLookupResult]) -> int:
+        """Score relationship path specificity (30 points max)."""
+        relationship_keywords = [
+            "cousin", "great-grandfather", "great-grandmother", "grandfather", "grandmother",
+            "2nd cousin", "3rd cousin", "4th cousin", "once removed", "twice removed",
+            "through", "common ancestor", "descended from", "related through"
+        ]
+        relationship_count = sum(1 for keyword in relationship_keywords if keyword in response_lower)
+
+        if relationship_count >= 3:
+            return 30  # Excellent: 3+ relationship terms
+        if relationship_count == 2:
+            return 22  # Good: 2 relationship terms
+        if relationship_count == 1:
+            return 15  # Fair: 1 relationship term
+        if any(lookup_result.relationship_path for lookup_result in lookup_results):
+            return 10  # Minimal: lookup results have paths but not used in text
+        return 0
+
+    def _score_evidence_citations(self, response_text: str, response_lower: str) -> int:
+        """Score genealogical evidence citations (25 points max)."""
+        evidence_patterns = {
+            "years": len([w for w in response_text.split() if w.isdigit() and len(w) == 4 and 1700 < int(w) < 2025]),
+            "places": sum(1 for place in ["Scotland", "England", "Ireland", "Wales", "Aberdeen", "Banff", "Edinburgh", "Glasgow", "county", "parish"] if place.lower() in response_lower),
+            "record_types": sum(1 for record in ["census", "birth record", "death record", "marriage record", "baptism", "burial", "certificate", "register"] if record.lower() in response_lower),
+            "dates": response_text.count("(") if "(" in response_text else 0,  # Parenthetical dates like "(1850-1920)"
+        }
+        total_evidence = sum(evidence_patterns.values())
+
+        if total_evidence >= 8:
+            return 25  # Excellent: 8+ pieces of evidence
+        if total_evidence >= 5:
+            return 20  # Good: 5-7 pieces
+        if total_evidence >= 3:
+            return 15  # Fair: 3-4 pieces
+        if total_evidence >= 1:
+            return 10  # Minimal: 1-2 pieces
+        return 0
+
+    def _score_actionable_steps(self, response_text: str, response_lower: str) -> int:
+        """Score actionable next steps (25 points max)."""
+        action_verbs = [
+            "search for", "look for", "check", "verify", "find", "locate", "review",
+            "examine", "compare", "confirm", "investigate", "explore", "research"
+        ]
+        action_verb_count = sum(1 for verb in action_verbs if verb in response_lower)
+
+        question_count = response_text.count("?")
+
+        next_step_phrases = [
+            "next step", "would you like", "can you share", "do you have", "could you",
+            "would it help", "i can", "i'll", "let me know", "if you", "when you"
+        ]
+        next_step_count = sum(1 for phrase in next_step_phrases if phrase in response_lower)
+
+        total_actionable = action_verb_count + question_count + next_step_count
+
+        if total_actionable >= 6:
+            return 25  # Excellent: 6+ actionable elements
+        if total_actionable >= 4:
+            return 20  # Good: 4-5 elements
+        if total_actionable >= 2:
+            return 15  # Fair: 2-3 elements
+        if total_actionable >= 1:
+            return 10  # Minimal: 1 element
+        return 0
+
+    def _score_personalization(self, response_lower: str, word_count: int, person: Person) -> int:
+        """Score personalization and warmth (20 points max)."""
+        # Check for name usage
+        name_mentions = 0
+        if person.name:
+            name_parts = person.name.split()
+            name_mentions = sum(1 for part in name_parts if part.lower() in response_lower and len(part) > 2)
+
+        # Check for warm language
+        warm_words = [
+            "thank you", "thanks", "wonderful", "exciting", "great", "pleased", "happy",
+            "appreciate", "interesting", "fascinating", "amazing", "delighted"
+        ]
+        warm_count = sum(1 for word in warm_words if word in response_lower)
+
+        # Check for acknowledgment phrases
+        acknowledgment_phrases = [
+            "you mentioned", "you said", "your message", "your question", "your great", "your ancestor"
+        ]
+        acknowledgment_count = sum(1 for phrase in acknowledgment_phrases if phrase in response_lower)
+
+        # Scoring
+        if name_mentions >= 2 and warm_count >= 2 and acknowledgment_count >= 1:
+            return 20  # Excellent: names, warmth, acknowledgment
+        if name_mentions >= 1 and warm_count >= 1:
+            return 15  # Good: some personalization
+        if warm_count >= 2 or acknowledgment_count >= 1:
+            return 10  # Fair: warm or acknowledging
+        if word_count >= 150:
+            return 5  # Minimal: adequate length
+        return 0
+
     def _score_response_quality(
         self,
         response_text: str,
@@ -1758,134 +1856,22 @@ class PersonProcessor:
         if not response_text:
             return 0
 
-        score = 0
         response_lower = response_text.lower()
         word_count = len(response_text.split())
 
-        # === 1. RELATIONSHIP PATH SPECIFICITY (30 points) ===
-        relationship_score = 0
+        # Calculate component scores
+        relationship_score = self._score_relationship_path(response_lower, lookup_results)
+        evidence_score = self._score_evidence_citations(response_text, response_lower)
+        actionable_score = self._score_actionable_steps(response_text, response_lower)
+        personalization_score = self._score_personalization(response_lower, word_count, person)
 
-        # Check for relationship path keywords
-        relationship_keywords = [
-            "cousin", "great-grandfather", "great-grandmother", "grandfather", "grandmother",
-            "2nd cousin", "3rd cousin", "4th cousin", "once removed", "twice removed",
-            "through", "common ancestor", "descended from", "related through"
-        ]
-        relationship_count = sum(1 for keyword in relationship_keywords if keyword in response_lower)
+        score = relationship_score + evidence_score + actionable_score + personalization_score
 
-        if relationship_count >= 3:
-            relationship_score = 30  # Excellent: 3+ relationship terms
-        elif relationship_count == 2:
-            relationship_score = 22  # Good: 2 relationship terms
-        elif relationship_count == 1:
-            relationship_score = 15  # Fair: 1 relationship term
-        elif any(lookup_result.relationship_path for lookup_result in lookup_results):
-            relationship_score = 10  # Minimal: lookup results have paths but not used in text
-
-        score += relationship_score
-
-        # === 2. RECORD EVIDENCE CITATIONS (25 points) ===
-        evidence_score = 0
-
-        # Check for specific genealogical evidence
-        evidence_patterns = {
-            "years": len([w for w in response_text.split() if w.isdigit() and len(w) == 4 and 1700 < int(w) < 2025]),
-            "places": sum(1 for place in ["Scotland", "England", "Ireland", "Wales", "Aberdeen", "Banff", "Edinburgh", "Glasgow", "county", "parish"] if place.lower() in response_lower),
-            "record_types": sum(1 for record in ["census", "birth record", "death record", "marriage record", "baptism", "burial", "certificate", "register"] if record.lower() in response_lower),
-            "dates": response_text.count("(") if "(" in response_text else 0,  # Parenthetical dates like "(1850-1920)"
-        }
-
-        total_evidence = sum(evidence_patterns.values())
-
-        if total_evidence >= 8:
-            evidence_score = 25  # Excellent: 8+ pieces of evidence
-        elif total_evidence >= 5:
-            evidence_score = 20  # Good: 5-7 pieces
-        elif total_evidence >= 3:
-            evidence_score = 15  # Fair: 3-4 pieces
-        elif total_evidence >= 1:
-            evidence_score = 10  # Minimal: 1-2 pieces
-
-        score += evidence_score
-
-        # === 3. ACTIONABLE NEXT STEPS (25 points) ===
-        actionable_score = 0
-
-        # Check for action-oriented language
-        action_verbs = [
-            "search for", "look for", "check", "verify", "find", "locate", "review",
-            "examine", "compare", "confirm", "investigate", "explore", "research"
-        ]
-        action_verb_count = sum(1 for verb in action_verbs if verb in response_lower)
-
-        # Check for questions (engagement)
-        question_count = response_text.count("?")
-
-        # Check for specific next steps
-        next_step_phrases = [
-            "next step", "would you like", "can you share", "do you have", "could you",
-            "would it help", "i can", "i'll", "let me know", "if you", "when you"
-        ]
-        next_step_count = sum(1 for phrase in next_step_phrases if phrase in response_lower)
-
-        total_actionable = action_verb_count + question_count + next_step_count
-
-        if total_actionable >= 6:
-            actionable_score = 25  # Excellent: 6+ actionable elements
-        elif total_actionable >= 4:
-            actionable_score = 20  # Good: 4-5 elements
-        elif total_actionable >= 2:
-            actionable_score = 15  # Fair: 2-3 elements
-        elif total_actionable >= 1:
-            actionable_score = 10  # Minimal: 1 element
-
-        score += actionable_score
-
-        # === 4. PERSONALIZATION (20 points) ===
-        personalization_score = 0
-
-        # Check for name usage
-        if person.name:
-            name_parts = person.name.split()
-            name_mentions = sum(1 for part in name_parts if part.lower() in response_lower and len(part) > 2)
-        else:
-            name_mentions = 0
-
-        # Check for personal pronouns and warm language
-        warm_words = [
-            "thank you", "thanks", "wonderful", "exciting", "great", "pleased", "happy",
-            "appreciate", "interesting", "fascinating", "amazing", "delighted"
-        ]
-        warm_count = sum(1 for word in warm_words if word in response_lower)
-
-        # Check for acknowledgment phrases
-        acknowledgment_phrases = [
-            "you mentioned", "you said", "your message", "your question", "your great", "your ancestor"
-        ]
-        acknowledgment_count = sum(1 for phrase in acknowledgment_phrases if phrase in response_lower)
-
-        # Scoring personalization
-        if name_mentions >= 2 and warm_count >= 2 and acknowledgment_count >= 1:
-            personalization_score = 20  # Excellent: names, warmth, acknowledgment
-        elif name_mentions >= 1 and warm_count >= 1:
-            personalization_score = 15  # Good: some personalization
-        elif warm_count >= 2 or acknowledgment_count >= 1:
-            personalization_score = 10  # Fair: warm or acknowledging
-        elif word_count >= 150:
-            personalization_score = 5  # Minimal: adequate length
-
-        score += personalization_score
-
-        # === QUALITY PENALTIES ===
-        # Too short (< 100 words)
+        # Apply quality penalties
         if word_count < 100:
-            score = int(score * 0.8)  # 20% penalty
-
-        # Too long (> 500 words)
+            score = int(score * 0.8)  # 20% penalty for too short
         if word_count > 500:
-            score = int(score * 0.9)  # 10% penalty
-
-        # No lookup results used (when available)
+            score = int(score * 0.9)  # 10% penalty for too long
         if lookup_results and relationship_score == 0:
             score = int(score * 0.85)  # 15% penalty for not using available data
 

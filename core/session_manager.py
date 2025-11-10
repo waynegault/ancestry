@@ -2655,7 +2655,7 @@ def _test_circuit_breaker_short_circuit() -> None:
     assert breaker.state.value == "CLOSED", "Circuit breaker should start CLOSED"
 
     # Create a test function that always fails
-    def failing_operation():
+    def failing_operation() -> None:
         raise RuntimeError("Simulated failure")
 
     # Record 4 failures (just under threshold) - should not open
@@ -2678,7 +2678,7 @@ def _test_circuit_breaker_short_circuit() -> None:
     # Next call should immediately raise CircuitBreakerOpenError without executing function
     try:
         breaker.call(failing_operation)
-        assert False, "Should have raised CircuitBreakerOpenError"
+        raise AssertionError("Should have raised CircuitBreakerOpenError")
     except CircuitBreakerOpenError:
         pass  # Expected - circuit is open
 

@@ -2229,7 +2229,7 @@ def _test_relationship_path_cache() -> None:
 
     # Test 9: Performance monitor integration
     # Run some queries to generate stats
-    for i in range(5):
+    for _i in range(5):
         fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
 
     # Report to performance monitor (should not crash)
