@@ -114,6 +114,25 @@ class RoleType(enum.Enum):
 # End of RoleType
 
 
+class ConversationPhaseEnum(enum.Enum):
+    """
+    Enumeration for conversation lifecycle phases.
+    
+    Priority 1 Todo #11: Track conversation phases to improve follow-up timing and strategy.
+    Phases represent the maturity and engagement level of genealogical collaboration.
+    """
+
+    INITIAL_OUTREACH = "INITIAL_OUTREACH"  # First message sent, awaiting response
+    RESPONSE_RECEIVED = "RESPONSE_RECEIVED"  # Contact replied, conversation started
+    INFORMATION_SHARED = "INFORMATION_SHARED"  # Exchanging research details, records, photos
+    COLLABORATION_ACTIVE = "COLLABORATION_ACTIVE"  # Ongoing research partnership established
+    STALLED = "STALLED"  # No response >30 days, needs re-engagement
+    CLOSED = "CLOSED"  # Conversation concluded (DESIST/ARCHIVE/completed research)
+
+
+# End of ConversationPhaseEnum
+
+
 class PersonStatusEnum(enum.Enum):
     """
     Enumeration defining the processing status of a Person (DNA match).
@@ -190,6 +209,13 @@ class ConversationLog(Base):
         nullable=True,
         index=True,
         comment="AI-determined sentiment/intent (e.g., PRODUCTIVE, DESIST) for IN messages.",
+    )
+    conversation_phase: Mapped[Optional[ConversationPhaseEnum]] = mapped_column(
+        SQLEnum(ConversationPhaseEnum),
+        nullable=True,
+        index=True,
+        default=None,
+        comment="Priority 1 Todo #11: Conversation lifecycle phase (INITIAL_OUTREACH → RESPONSE_RECEIVED → INFORMATION_SHARED → COLLABORATION_ACTIVE → STALLED → CLOSED). Used to determine follow-up strategy and timing.",
     )
     message_template_id: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -1058,16 +1084,16 @@ class ApiSearchCache(Base):
     
     Priority 1 Todo #10: API Search Deduplication
     """
-    
+
     __tablename__ = "api_search_cache"
-    
+
     # --- Columns ---
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
         comment="Unique identifier for the cache entry."
     )
-    
+
     search_criteria_hash: Mapped[str] = mapped_column(
         String(64),  # SHA256 hash length
         nullable=False,
@@ -1075,26 +1101,26 @@ class ApiSearchCache(Base):
         index=True,
         comment="SHA256 hash of normalized search criteria for fast lookup."
     )
-    
+
     search_criteria_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         comment="JSON blob of actual search criteria for debugging and audit."
     )
-    
+
     result_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Number of results returned by the API search."
     )
-    
+
     api_response_cached: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
         comment="Cached API response as JSON blob for quick retrieval."
     )
-    
+
     search_timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -1102,27 +1128,27 @@ class ApiSearchCache(Base):
         index=True,
         comment="Timestamp when the API search was performed (UTC)."
     )
-    
+
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         index=True,
         comment="Timestamp when this cache entry expires (7 days from search_timestamp)."
     )
-    
+
     hit_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         comment="Number of times this cached result has been used (cache hits)."
     )
-    
+
     last_hit_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp of the most recent cache hit (UTC)."
     )
-    
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -1398,6 +1398,97 @@ class InboxProcessor:
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 
+    def _determine_conversation_phase(
+        self,
+        conversation_id: str,
+        direction: MessageDirectionEnum,
+        ai_sentiment: Optional[str],
+        existing_logs: list[Any],
+        timestamp: datetime,
+    ) -> Optional[Any]:  # ConversationPhaseEnum imported at runtime
+        """
+        Determine conversation lifecycle phase based on message history and patterns.
+
+        Priority 1 Todo #11: Conversation Phase Transitions
+
+        Phase Logic:
+        - INITIAL_OUTREACH: First OUT message sent, no IN messages yet
+        - RESPONSE_RECEIVED: First IN message received after outreach
+        - INFORMATION_SHARED: 2+ exchanges with PRODUCTIVE classification
+        - COLLABORATION_ACTIVE: 4+ exchanges, recent activity (<14 days)
+        - STALLED: Last message >30 days ago, pending response
+        - CLOSED: DESIST/ARCHIVE status, or explicit conclusion
+
+        Args:
+            conversation_id: Unique conversation identifier
+            direction: Current message direction (IN or OUT)
+            ai_sentiment: AI classification result (PRODUCTIVE, DESIST, etc.)
+            existing_logs: List of existing ConversationLog entries for this conversation
+            timestamp: Timestamp of current message
+
+        Returns:
+            ConversationPhaseEnum value or None if unable to determine
+        """
+        try:
+            from database import ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
+
+            # Filter logs for this conversation
+            conv_logs = [log for log in existing_logs if log.conversation_id == conversation_id]
+
+            # Count message exchanges
+            in_messages = [log for log in conv_logs if log.direction == DBMessageDirectionEnum.IN]
+            out_messages = [log for log in conv_logs if log.direction == DBMessageDirectionEnum.OUT]
+            total_exchanges = len(in_messages) + len(out_messages)
+
+            # Check for CLOSED status triggers
+            if ai_sentiment in ("DESIST", "UNINTERESTED"):
+                return ConversationPhaseEnum.CLOSED
+
+            # INITIAL_OUTREACH: Only OUT messages exist, no response yet
+            if direction == MessageDirectionEnum.OUT and len(in_messages) == 0:
+                return ConversationPhaseEnum.INITIAL_OUTREACH
+
+            # RESPONSE_RECEIVED: First IN message received
+            if direction == MessageDirectionEnum.IN and len(in_messages) == 1:
+                return ConversationPhaseEnum.RESPONSE_RECEIVED
+
+            # Calculate days since last message
+            if conv_logs:
+                latest_log = max(conv_logs, key=lambda log: log.latest_timestamp)
+                days_since_last = (timestamp - latest_log.latest_timestamp).days
+            else:
+                days_since_last = 0
+
+            # STALLED: No activity for >30 days
+            if days_since_last > 30 and total_exchanges > 1:
+                return ConversationPhaseEnum.STALLED
+
+            # COLLABORATION_ACTIVE: 4+ exchanges with recent activity
+            if total_exchanges >= 4 and days_since_last <= 14:
+                # Check for PRODUCTIVE sentiment in recent messages
+                productive_count = sum(
+                    1 for log in conv_logs[-4:]  # Last 4 messages
+                    if log.ai_sentiment == "PRODUCTIVE"
+                )
+                if productive_count >= 2:
+                    return ConversationPhaseEnum.COLLABORATION_ACTIVE
+
+            # INFORMATION_SHARED: 2+ exchanges with PRODUCTIVE classification
+            if total_exchanges >= 2:
+                productive_count = sum(
+                    1 for log in conv_logs
+                    if log.ai_sentiment == "PRODUCTIVE"
+                )
+                if productive_count >= 1 or ai_sentiment == "PRODUCTIVE":
+                    return ConversationPhaseEnum.INFORMATION_SHARED
+
+            # Default: Return RESPONSE_RECEIVED if messages exist, otherwise None
+            return ConversationPhaseEnum.RESPONSE_RECEIVED if total_exchanges > 0 else None
+
+        except Exception as e:
+            logger.warning(f"Error determining conversation phase for {conversation_id}: {e}")
+            return None
+
     def _create_conversation_log_upsert(
         self,
         api_conv_id: str,
@@ -1406,8 +1497,13 @@ class InboxProcessor:
         message_content: str,
         timestamp: datetime,
         ai_sentiment: Optional[str] = None,
+        conversation_phase: Optional[Any] = None,
     ) -> dict:
-        """Create conversation log upsert dictionary."""
+        """
+        Create conversation log upsert dictionary.
+        
+        Priority 1 Todo #11: Enhanced with conversation_phase field for lifecycle tracking.
+        """
         return {
             "conversation_id": api_conv_id,
             "direction": direction,
@@ -1417,6 +1513,7 @@ class InboxProcessor:
             ],
             "latest_timestamp": timestamp,
             "ai_sentiment": ai_sentiment,
+            "conversation_phase": conversation_phase,
             "message_template_id": None,
             "script_message_status": None,
         }
@@ -1461,41 +1558,41 @@ class InboxProcessor:
         if not user_message or not extracted_entities:
             logger.debug("clarify_ambiguous_intent: Missing required inputs")
             return None
-            
+
         # Build ambiguity context if not provided
         if ambiguity_analysis is None:
             ambiguity_analysis = self._analyze_entity_ambiguity(extracted_entities)
-            
+
         # If no ambiguity detected, no clarification needed
         if not ambiguity_analysis or ambiguity_analysis == "No ambiguity detected":
             logger.debug("No ambiguity detected - clarification not needed")
             return None
-        
+
         try:
             # Import AI interface function (will be added next)
             from ai_interface import generate_clarifying_questions
-            
+
             result = generate_clarifying_questions(
                 user_message=user_message,
                 extracted_entities=extracted_entities,
                 ambiguity_context=ambiguity_analysis,
                 session_manager=self.session_manager,
             )
-            
+
             if result and isinstance(result, dict) and "clarifying_questions" in result:
                 logger.info(
                     f"✅ Generated {len(result['clarifying_questions'])} clarifying questions "
                     f"for {result.get('primary_ambiguity', 'unknown')} ambiguity"
                 )
                 return result
-            
+
             logger.warning("AI clarification returned invalid format")
             return None
-            
+
         except Exception as e:
             logger.error(f"Failed to generate clarifying questions: {e}", exc_info=True)
             return None
-    
+
     def _analyze_entity_ambiguity(self, extracted_entities: dict[str, Any]) -> str:
         """
         Analyze extracted entities to detect ambiguity.
@@ -1503,7 +1600,7 @@ class InboxProcessor:
         Returns description of ambiguity type for AI prompt context.
         """
         ambiguities = []
-        
+
         # Check for names without sufficient context
         mentioned_people = extracted_entities.get("mentioned_people", [])
         if mentioned_people:
@@ -1512,12 +1609,12 @@ class InboxProcessor:
                 has_birth_year = person.get("birth_year") is not None
                 has_location = person.get("birth_place") or person.get("death_place")
                 has_relationship = person.get("relationship") is not None
-                
+
                 if name and not (has_birth_year or has_location):
                     ambiguities.append(f"Name '{name}' lacks temporal or location context")
                 elif name and not has_relationship:
                     ambiguities.append(f"Name '{name}' relationship unclear")
-        
+
         # Check for vague locations
         locations = extracted_entities.get("locations", [])
         for loc in locations:
@@ -1525,7 +1622,7 @@ class InboxProcessor:
             if place and len(place.split(",")) == 1:  # Only country/state, no city
                 if place in ["Scotland", "England", "Ireland", "Wales", "USA", "Canada"]:
                     ambiguities.append(f"Location '{place}' too broad - need city/county")
-        
+
         # Check for relationships without names
         relationships = extracted_entities.get("relationships", [])
         for rel in relationships:
@@ -1533,10 +1630,10 @@ class InboxProcessor:
             person2 = rel.get("person2", "")
             if not person1 or not person2:
                 ambiguities.append("Relationship mentioned without both person names")
-        
+
         if not ambiguities:
             return "No ambiguity detected"
-        
+
         return "; ".join(ambiguities)
 
     def _record_event_and_metrics(
@@ -1780,12 +1877,22 @@ class InboxProcessor:
             else:
                 logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
 
+            # Priority 1 Todo #11: Determine conversation phase based on history
+            conversation_phase = self._determine_conversation_phase(
+                conversation_id=api_conv_id,
+                direction=MessageDirectionEnum.IN,
+                ai_sentiment=ai_sentiment_result,
+                existing_logs=ctx.existing_conv_logs,
+                timestamp=ctx_ts_in_aware,
+            )
+
             upsert_dict_in = self._create_conversation_log_upsert(
                 api_conv_id, MessageDirectionEnum.IN, people_id,
                 latest_ctx_in.get("content", ""), ctx_ts_in_aware, ai_sentiment_result,
+                conversation_phase=conversation_phase,
             )
             ctx.conv_log_upserts_dicts.append(upsert_dict_in)
-            logger.debug(f"Created IN message log entry for conversation {api_conv_id}")
+            logger.debug(f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
 
             # Track analytics for received message
             db_session = self.session_manager.get_db_conn()
@@ -1822,12 +1929,23 @@ class InboxProcessor:
 
         if ctx_ts_out_aware and ctx_ts_out_aware > db_latest_ts_out_compare:
             logger.debug(f"Processing new/updated OUT message for {api_conv_id} (timestamp: {ctx_ts_out_aware})")
+
+            # Priority 1 Todo #11: Determine conversation phase for OUT messages
+            conversation_phase = self._determine_conversation_phase(
+                conversation_id=api_conv_id,
+                direction=MessageDirectionEnum.OUT,
+                ai_sentiment=None,  # OUT messages don't have AI sentiment
+                existing_logs=ctx.existing_conv_logs,
+                timestamp=ctx_ts_out_aware,
+            )
+
             upsert_dict_out = self._create_conversation_log_upsert(
                 api_conv_id, MessageDirectionEnum.OUT, people_id,
                 latest_ctx_out.get("content", ""), ctx_ts_out_aware,
+                conversation_phase=conversation_phase,
             )
             ctx.conv_log_upserts_dicts.append(upsert_dict_out)
-            logger.debug(f"Created OUT message log entry for conversation {api_conv_id}")
+            logger.debug(f"Created OUT message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
 
             # Track analytics for sent message
             db_session = self.session_manager.get_db_conn()
@@ -2887,11 +3005,11 @@ def _test_error_recovery() -> None:
 def _test_clarify_ambiguous_intent() -> None:
     """Test ambiguous intent clarification (Priority 1 Todo #7)."""
     from unittest.mock import MagicMock
-    
+
     # Create mock session manager
     sm = MagicMock()
     processor = InboxProcessor(sm)
-    
+
     # Test Case 1: Entity ambiguity detection
     entities_ambiguous = {
         "mentioned_people": [
@@ -2899,14 +3017,14 @@ def _test_clarify_ambiguous_intent() -> None:
         ],
         "locations": [{"place": "Scotland", "context": "birthplace"}],
     }
-    
+
     ambiguity_analysis = processor._analyze_entity_ambiguity(entities_ambiguous)
     assert ambiguity_analysis != "No ambiguity detected", "Should detect name and location ambiguity"
     assert "Mary Smith" in ambiguity_analysis, "Should mention ambiguous name"
     assert "Scotland" in ambiguity_analysis or "too broad" in ambiguity_analysis, "Should detect broad location"
-    
+
     logger.info(f"✅ Detected ambiguity: {ambiguity_analysis}")
-    
+
     # Test Case 2: No ambiguity (complete entities)
     entities_complete = {
         "mentioned_people": [
@@ -2919,27 +3037,27 @@ def _test_clarify_ambiguous_intent() -> None:
         ],
         "locations": [{"place": "Banff, Banffshire, Scotland", "context": "birthplace"}],
     }
-    
+
     ambiguity_analysis_complete = processor._analyze_entity_ambiguity(entities_complete)
     assert ambiguity_analysis_complete == "No ambiguity detected", "Should not detect ambiguity in complete entities"
-    
+
     logger.info("✅ No ambiguity detected for complete entities")
-    
+
     # Test Case 3: Clarification when no ambiguity returns None
     result = processor.clarify_ambiguous_intent(
         user_message="Charles Fetch was born in 1881 in Banff, Scotland",
         extracted_entities=entities_complete,
     )
     assert result is None, "Should return None when no ambiguity detected"
-    
+
     logger.info("✅ Returns None for non-ambiguous entities")
-    
+
     # Test Case 4: Method signature validation
     assert hasattr(processor, "clarify_ambiguous_intent"), "Should have clarify_ambiguous_intent method"
     assert hasattr(processor, "_analyze_entity_ambiguity"), "Should have _analyze_entity_ambiguity method"
-    
+
     logger.info("✅ All clarify_ambiguous_intent tests passed")
-    
+
     return True
 
 
@@ -3031,6 +3149,140 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="clarify_ambiguous_intent, _analyze_entity_ambiguity",
             method_description="Generate clarifying questions for incomplete entities",
             expected_outcome="Ambiguity detected, questions generated for missing data, None for complete data",
+        )
+
+        # === Priority 1 Todo #11: Conversation Phase Transitions Tests ===
+        
+        def _test_conversation_phase_initial_outreach() -> None:
+            """Test INITIAL_OUTREACH phase determination."""
+            from unittest.mock import MagicMock
+            from database import MessageDirectionEnum as DBMessageDirectionEnum
+            
+            sm = MagicMock()
+            processor = InboxProcessor(session_manager=sm)
+            
+            # No existing messages - first OUT message
+            phase = processor._determine_conversation_phase(
+                conversation_id="test_conv_1",
+                direction=MessageDirectionEnum.OUT,
+                ai_sentiment=None,
+                existing_logs=[],
+                timestamp=datetime.now(timezone.utc),
+            )
+            
+            assert phase is not None, "Phase should be determined for first message"
+            assert str(phase).endswith("INITIAL_OUTREACH"), f"Expected INITIAL_OUTREACH, got {phase}"
+        
+        suite.run_test(
+            test_name="Conversation phase: INITIAL_OUTREACH",
+            test_func=_test_conversation_phase_initial_outreach,
+            test_summary="First outgoing message phase",
+            functions_tested="_determine_conversation_phase",
+            method_description="Determine phase for first OUT message",
+            expected_outcome="Phase set to INITIAL_OUTREACH",
+        )
+        
+        def _test_conversation_phase_response_received() -> None:
+            """Test RESPONSE_RECEIVED phase determination."""
+            from unittest.mock import MagicMock
+            from database import MessageDirectionEnum as DBMessageDirectionEnum, ConversationLog
+            
+            sm = MagicMock()
+            processor = InboxProcessor(session_manager=sm)
+            
+            # Existing OUT message, first IN message
+            mock_out_log = MagicMock(spec=ConversationLog)
+            mock_out_log.conversation_id = "test_conv_2"
+            mock_out_log.direction = DBMessageDirectionEnum.OUT
+            mock_out_log.latest_timestamp = datetime.now(timezone.utc)
+            mock_out_log.ai_sentiment = None
+            
+            phase = processor._determine_conversation_phase(
+                conversation_id="test_conv_2",
+                direction=MessageDirectionEnum.IN,
+                ai_sentiment="PRODUCTIVE",
+                existing_logs=[mock_out_log],
+                timestamp=datetime.now(timezone.utc),
+            )
+            
+            assert phase is not None, "Phase should be determined"
+            assert str(phase).endswith("RESPONSE_RECEIVED"), f"Expected RESPONSE_RECEIVED, got {phase}"
+        
+        suite.run_test(
+            test_name="Conversation phase: RESPONSE_RECEIVED",
+            test_func=_test_conversation_phase_response_received,
+            test_summary="First response phase",
+            functions_tested="_determine_conversation_phase",
+            method_description="Determine phase for first IN message",
+            expected_outcome="Phase set to RESPONSE_RECEIVED",
+        )
+        
+        def _test_conversation_phase_information_shared() -> None:
+            """Test INFORMATION_SHARED phase determination."""
+            from unittest.mock import MagicMock
+            from database import MessageDirectionEnum as DBMessageDirectionEnum, ConversationLog
+            
+            sm = MagicMock()
+            processor = InboxProcessor(session_manager=sm)
+            
+            # Multiple messages with PRODUCTIVE classification
+            base_time = datetime.now(timezone.utc)
+            mock_logs = []
+            for i in range(3):
+                mock_log = MagicMock(spec=ConversationLog)
+                mock_log.conversation_id = "test_conv_3"
+                mock_log.direction = DBMessageDirectionEnum.IN if i % 2 == 0 else DBMessageDirectionEnum.OUT
+                mock_log.latest_timestamp = base_time
+                mock_log.ai_sentiment = "PRODUCTIVE" if i % 2 == 0 else None
+                mock_logs.append(mock_log)
+            
+            phase = processor._determine_conversation_phase(
+                conversation_id="test_conv_3",
+                direction=MessageDirectionEnum.IN,
+                ai_sentiment="PRODUCTIVE",
+                existing_logs=mock_logs,
+                timestamp=base_time,
+            )
+            
+            assert phase is not None, "Phase should be determined"
+            assert str(phase).endswith("INFORMATION_SHARED"), f"Expected INFORMATION_SHARED, got {phase}"
+        
+        suite.run_test(
+            test_name="Conversation phase: INFORMATION_SHARED",
+            test_func=_test_conversation_phase_information_shared,
+            test_summary="Information exchange phase",
+            functions_tested="_determine_conversation_phase",
+            method_description="Determine phase for PRODUCTIVE exchanges",
+            expected_outcome="Phase set to INFORMATION_SHARED",
+        )
+        
+        def _test_conversation_phase_closed() -> None:
+            """Test CLOSED phase determination."""
+            from unittest.mock import MagicMock
+            from database import ConversationLog
+            
+            sm = MagicMock()
+            processor = InboxProcessor(session_manager=sm)
+            
+            # DESIST sentiment triggers CLOSED phase
+            phase = processor._determine_conversation_phase(
+                conversation_id="test_conv_4",
+                direction=MessageDirectionEnum.IN,
+                ai_sentiment="DESIST",
+                existing_logs=[],
+                timestamp=datetime.now(timezone.utc),
+            )
+            
+            assert phase is not None, "Phase should be determined"
+            assert str(phase).endswith("CLOSED"), f"Expected CLOSED for DESIST sentiment, got {phase}"
+        
+        suite.run_test(
+            test_name="Conversation phase: CLOSED",
+            test_func=_test_conversation_phase_closed,
+            test_summary="Conversation closure phase",
+            functions_tested="_determine_conversation_phase",
+            method_description="Determine phase for DESIST classification",
+            expected_outcome="Phase set to CLOSED",
         )
 
     return suite.finish_suite()
