@@ -36,7 +36,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
-DEFAULT_PROMPT = "I'm interested in geneology. How many great-great-gresat grandparents did I have?"
+DEFAULT_PROMPT = "I'm interested in geneology. How many great-great-great grandparents did I have?"
 PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
