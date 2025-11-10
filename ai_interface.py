@@ -1389,19 +1389,19 @@ def generate_clarifying_questions(
 ) -> dict[str, Any] | None:
     """
     Generate AI-powered clarifying questions for ambiguous extracted entities.
-    
+
     Priority 1 Todo #7: Action 7 Intent Clarifier
-    
+
     Args:
         user_message: Original user message
         extracted_entities: Dictionary of extracted entity data
         ambiguity_context: Description of detected ambiguities
         session_manager: SessionManager instance for AI calls
-        
+
     Returns:
         Dictionary with clarifying_questions, primary_ambiguity, urgency, reasoning.
         None if AI call fails.
-        
+
     Example output:
         {
             "clarifying_questions": ["When was Charles born?", "Which Scotland location?"],
@@ -1450,23 +1450,23 @@ def generate_clarifying_questions(
 
     try:
         result = json.loads(ai_response_str)
-        
+
         # Validate expected structure
         if not isinstance(result, dict) or "clarifying_questions" not in result:
-            logger.error(f"generate_clarifying_questions: Invalid response structure")
+            logger.error("generate_clarifying_questions: Invalid response structure")
             return None
-            
+
         questions = result.get("clarifying_questions", [])
         if not questions or not isinstance(questions, list):
             logger.warning("generate_clarifying_questions: No questions generated")
             return None
-        
+
         logger.info(
             f"✅ Generated {len(questions)} clarifying question(s) "
             f"for {result.get('primary_ambiguity', 'unknown')} ambiguity. (Took {duration:.2f}s)"
         )
         return result
-        
+
     except json.JSONDecodeError as e:
         logger.error(f"generate_clarifying_questions: Failed to parse JSON response: {e}")
         return None

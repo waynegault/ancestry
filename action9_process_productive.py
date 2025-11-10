@@ -1739,32 +1739,32 @@ class PersonProcessor:
     ) -> int:
         """
         Score generated reply quality on 0-100 scale (Priority 1 Todo #8).
-        
+
         Scoring breakdown:
         - Relationship path specificity (30 points): Presence and detail of relationship connections
         - Record evidence citations (25 points): References to specific records, dates, places
         - Actionable next steps (25 points): Clear research suggestions or follow-up questions
         - Personalization (20 points): Uses names, acknowledges user's message, warm tone
-        
+
         Args:
             response_text: The generated reply text
             lookup_results: Person lookup results used in response
             person: Person object for context
             log_prefix: Logging prefix
-            
+
         Returns:
             Quality score 0-100
         """
         if not response_text:
             return 0
-        
+
         score = 0
         response_lower = response_text.lower()
         word_count = len(response_text.split())
-        
+
         # === 1. RELATIONSHIP PATH SPECIFICITY (30 points) ===
         relationship_score = 0
-        
+
         # Check for relationship path keywords
         relationship_keywords = [
             "cousin", "great-grandfather", "great-grandmother", "grandfather", "grandmother",
@@ -1772,7 +1772,7 @@ class PersonProcessor:
             "through", "common ancestor", "descended from", "related through"
         ]
         relationship_count = sum(1 for keyword in relationship_keywords if keyword in response_lower)
-        
+
         if relationship_count >= 3:
             relationship_score = 30  # Excellent: 3+ relationship terms
         elif relationship_count == 2:
@@ -1781,12 +1781,12 @@ class PersonProcessor:
             relationship_score = 15  # Fair: 1 relationship term
         elif any(lookup_result.relationship_path for lookup_result in lookup_results):
             relationship_score = 10  # Minimal: lookup results have paths but not used in text
-        
+
         score += relationship_score
-        
+
         # === 2. RECORD EVIDENCE CITATIONS (25 points) ===
         evidence_score = 0
-        
+
         # Check for specific genealogical evidence
         evidence_patterns = {
             "years": len([w for w in response_text.split() if w.isdigit() and len(w) == 4 and 1700 < int(w) < 2025]),
@@ -1794,9 +1794,9 @@ class PersonProcessor:
             "record_types": sum(1 for record in ["census", "birth record", "death record", "marriage record", "baptism", "burial", "certificate", "register"] if record.lower() in response_lower),
             "dates": response_text.count("(") if "(" in response_text else 0,  # Parenthetical dates like "(1850-1920)"
         }
-        
+
         total_evidence = sum(evidence_patterns.values())
-        
+
         if total_evidence >= 8:
             evidence_score = 25  # Excellent: 8+ pieces of evidence
         elif total_evidence >= 5:
@@ -1805,31 +1805,31 @@ class PersonProcessor:
             evidence_score = 15  # Fair: 3-4 pieces
         elif total_evidence >= 1:
             evidence_score = 10  # Minimal: 1-2 pieces
-        
+
         score += evidence_score
-        
+
         # === 3. ACTIONABLE NEXT STEPS (25 points) ===
         actionable_score = 0
-        
+
         # Check for action-oriented language
         action_verbs = [
             "search for", "look for", "check", "verify", "find", "locate", "review",
             "examine", "compare", "confirm", "investigate", "explore", "research"
         ]
         action_verb_count = sum(1 for verb in action_verbs if verb in response_lower)
-        
+
         # Check for questions (engagement)
         question_count = response_text.count("?")
-        
+
         # Check for specific next steps
         next_step_phrases = [
             "next step", "would you like", "can you share", "do you have", "could you",
             "would it help", "i can", "i'll", "let me know", "if you", "when you"
         ]
         next_step_count = sum(1 for phrase in next_step_phrases if phrase in response_lower)
-        
+
         total_actionable = action_verb_count + question_count + next_step_count
-        
+
         if total_actionable >= 6:
             actionable_score = 25  # Excellent: 6+ actionable elements
         elif total_actionable >= 4:
@@ -1838,32 +1838,32 @@ class PersonProcessor:
             actionable_score = 15  # Fair: 2-3 elements
         elif total_actionable >= 1:
             actionable_score = 10  # Minimal: 1 element
-        
+
         score += actionable_score
-        
+
         # === 4. PERSONALIZATION (20 points) ===
         personalization_score = 0
-        
+
         # Check for name usage
         if person.name:
             name_parts = person.name.split()
             name_mentions = sum(1 for part in name_parts if part.lower() in response_lower and len(part) > 2)
         else:
             name_mentions = 0
-        
+
         # Check for personal pronouns and warm language
         warm_words = [
             "thank you", "thanks", "wonderful", "exciting", "great", "pleased", "happy",
             "appreciate", "interesting", "fascinating", "amazing", "delighted"
         ]
         warm_count = sum(1 for word in warm_words if word in response_lower)
-        
+
         # Check for acknowledgment phrases
         acknowledgment_phrases = [
             "you mentioned", "you said", "your message", "your question", "your great", "your ancestor"
         ]
         acknowledgment_count = sum(1 for phrase in acknowledgment_phrases if phrase in response_lower)
-        
+
         # Scoring personalization
         if name_mentions >= 2 and warm_count >= 2 and acknowledgment_count >= 1:
             personalization_score = 20  # Excellent: names, warmth, acknowledgment
@@ -1873,31 +1873,31 @@ class PersonProcessor:
             personalization_score = 10  # Fair: warm or acknowledging
         elif word_count >= 150:
             personalization_score = 5  # Minimal: adequate length
-        
+
         score += personalization_score
-        
+
         # === QUALITY PENALTIES ===
         # Too short (< 100 words)
         if word_count < 100:
             score = int(score * 0.8)  # 20% penalty
-        
+
         # Too long (> 500 words)
         if word_count > 500:
             score = int(score * 0.9)  # 10% penalty
-        
+
         # No lookup results used (when available)
         if lookup_results and relationship_score == 0:
             score = int(score * 0.85)  # 15% penalty for not using available data
-        
+
         # Clamp to 0-100 range
         score = max(0, min(100, score))
-        
+
         logger.info(
             f"{log_prefix}: Response quality score: {score}/100 "
             f"(Relationship: {relationship_score}/30, Evidence: {evidence_score}/25, "
             f"Actionable: {actionable_score}/25, Personal: {personalization_score}/20)"
         )
-        
+
         return score
 
     def _generate_custom_reply(
@@ -1927,7 +1927,7 @@ class PersonProcessor:
 
             if custom_reply:
                 logger.info(f"{log_prefix}: Generated contextual dialogue response with lookup results.")
-                
+
                 # Priority 1 Todo #8: Score response quality
                 quality_score = self._score_response_quality(
                     response_text=custom_reply,
@@ -1935,7 +1935,7 @@ class PersonProcessor:
                     person=person,
                     log_prefix=log_prefix,
                 )
-                
+
                 # Log quality score to conversation_analytics
                 if self.db_state and self.db_state.session:
                     try:
@@ -1954,7 +1954,7 @@ class PersonProcessor:
                         )
                     except Exception as e:
                         logger.warning(f"{log_prefix}: Failed to log quality score to analytics: {e}")
-                    
+
             else:
                 logger.warning(
                     f"{log_prefix}: Failed to generate contextual reply. Will fall back to standard reply."
@@ -3604,9 +3604,9 @@ def _test_message_templates_available() -> bool:
 def _test_response_quality_scoring() -> None:
     """Test response quality scoring system."""
     from unittest.mock import MagicMock
-    
+
     from person_lookup_utils import PersonLookupResult
-    
+
     # Create mock PersonProcessor with correct constructor signature
     processor = PersonProcessor(
         session_manager=MagicMock(),
@@ -3614,31 +3614,31 @@ def _test_response_quality_scoring() -> None:
         msg_config=MagicMock(),
         ms_state=MagicMock()
     )
-    
+
     # Create mock person
     mock_person = MagicMock()
     mock_person.username = "John Smith"
-    
+
     # Test Case 1: High-quality response (should score 80-100)
     high_quality_response = """
     Hi John! Thanks for reaching out about our shared ancestor William Gault.
-    
-    Based on my research, William Gault (1820-1892) was born in Banff, Scotland 
-    and emigrated to Nova Scotia in 1845. I found his birth record in the Old Parish 
+
+    Based on my research, William Gault (1820-1892) was born in Banff, Scotland
+    and emigrated to Nova Scotia in 1845. I found his birth record in the Old Parish
     Registers (1820) and his marriage record to Margaret Fraser (1843) in Aberdeen.
-    
+
     Our relationship: You're my 3rd cousin once removed through the Gault line.
     William was your great-great-grandfather and my great-great-great-grandfather.
-    
+
     Next steps to explore:
     1. Search for William's immigration records (1845 passenger lists)
     2. Look for census records in Nova Scotia (1851, 1861 censuses)
     3. Check land grant records in Pictou County
-    
-    Would you like me to share copies of the records I've found? I'd also love to 
+
+    Would you like me to share copies of the records I've found? I'd also love to
     compare notes on the Fraser connection.
     """
-    
+
     lookup_results = [
         PersonLookupResult(
             found=True,
@@ -3647,57 +3647,57 @@ def _test_response_quality_scoring() -> None:
             source='gedcom'
         )
     ]
-    
+
     score1 = processor._score_response_quality(
         response_text=high_quality_response,
         lookup_results=lookup_results,
         person=mock_person
     )
-    
+
     assert 80 <= score1 <= 100, f"High-quality response scored {score1}, expected 80-100"
     logger.info(f"✓ High-quality response scored {score1:.1f}/100")
-    
+
     # Test Case 2: Medium-quality response (should score 50-79)
     medium_quality_response = """
-    Hi John, thanks for your message about William Gault. I have some information 
-    about him from my family tree. He lived in Scotland in the 1800s and had several 
-    children. We're related through the Gault family line. Let me know if you want 
+    Hi John, thanks for your message about William Gault. I have some information
+    about him from my family tree. He lived in Scotland in the 1800s and had several
+    children. We're related through the Gault family line. Let me know if you want
     more details.
     """
-    
+
     score2 = processor._score_response_quality(
         response_text=medium_quality_response,
         lookup_results=[],
         person=mock_person
     )
-    
+
     assert 40 <= score2 <= 79, f"Medium-quality response scored {score2}, expected 40-79"
     logger.info(f"✓ Medium-quality response scored {score2:.1f}/100")
-    
+
     # Test Case 3: Low-quality response (should score 0-49)
     low_quality_response = """
     Thanks for the message. I'll check my records.
     """
-    
+
     score3 = processor._score_response_quality(
         response_text=low_quality_response,
         lookup_results=[],
         person=mock_person
     )
-    
+
     assert 0 <= score3 <= 49, f"Low-quality response scored {score3}, expected 0-49"
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
-    
+
     # Test Case 4: Edge case - empty response
     score4 = processor._score_response_quality(
         response_text="",
         lookup_results=[],
         person=mock_person
     )
-    
+
     assert score4 == 0, f"Empty response scored {score4}, expected 0"
     logger.info(f"✓ Empty response scored {score4:.1f}/100")
-    
+
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
     score5 = processor._score_response_quality(
@@ -3705,13 +3705,13 @@ def _test_response_quality_scoring() -> None:
         lookup_results=[],
         person=mock_person
     )
-    
+
     # Should have penalty applied for being too long (>500 words)
     logger.info(f"✓ Very long response scored {score5:.1f}/100 (penalty applied)")
-    
+
     # Test Case 6: Unused lookup results penalty
     unused_lookup_response = "Thanks for reaching out!"
-    
+
     rich_lookup_results = [
         PersonLookupResult(
             found=True,
@@ -3724,16 +3724,16 @@ def _test_response_quality_scoring() -> None:
             source='gedcom'
         )
     ]
-    
+
     score6 = processor._score_response_quality(
         response_text=unused_lookup_response,
         lookup_results=rich_lookup_results,
         person=mock_person
     )
-    
+
     # Should have penalty for not using rich lookup data
     logger.info(f"✓ Unused lookup results scored {score6:.1f}/100 (penalty applied)")
-    
+
     logger.info("✓ Response quality scoring test passed - all scenarios validated")
 
 

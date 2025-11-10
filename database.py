@@ -117,7 +117,7 @@ class RoleType(enum.Enum):
 class ConversationPhaseEnum(enum.Enum):
     """
     Enumeration for conversation lifecycle phases.
-    
+
     Priority 1 Todo #11: Track conversation phases to improve follow-up timing and strategy.
     Phases represent the maturity and engagement level of genealogical collaboration.
     """
@@ -234,6 +234,17 @@ class ConversationLog(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
+    )
+    follow_up_due_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Priority 1 Todo #5: Timestamp (UTC) when follow-up is due. Calculated based on urgency (7/14/30 days) for PRODUCTIVE conversations with pending questions/promises.",
+    )
+    awaiting_response_from: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="Priority 1 Todo #5: Who needs to respond next ('me' or 'them'). Used to track conversation responsibility and trigger appropriate reminders.",
     )
 
     # --- Relationships ---
@@ -1077,11 +1088,11 @@ class Person(Base):
 class ApiSearchCache(Base):
     """
     Cache for Ancestry API search results to prevent duplicate queries.
-    
+
     Stores search criteria and results for 7 days to avoid redundant API calls
     for the same search parameters. Tracks cache hit statistics for performance
     monitoring.
-    
+
     Priority 1 Todo #10: API Search Deduplication
     """
 

@@ -2686,7 +2686,7 @@ def _test_circuit_breaker_short_circuit() -> None:
     breaker.reset()
     assert breaker.failure_count == 0, "Reset should clear failure count"
     assert breaker.state.value == "CLOSED", "Reset should close circuit breaker"
-    
+
     logger.info("✅ Circuit breaker 5-failure threshold validated")
 
 

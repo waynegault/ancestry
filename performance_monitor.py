@@ -525,7 +525,7 @@ class PerformanceMonitor:
 
         logger.info(f"Performance report exported to {filepath}")
         return filepath
-    
+
     def track_cache_hit_rate(
         self,
         cache_name: str,
@@ -537,7 +537,7 @@ class PerformanceMonitor:
     ) -> None:
         """
         Track cache performance metrics (Priority 1 Todo #9).
-        
+
         Args:
             cache_name: Name of the cache (e.g., 'relationship_path_cache')
             hits: Number of cache hits
@@ -547,7 +547,7 @@ class PerformanceMonitor:
             maxsize: Maximum cache size (optional)
         """
         hit_rate = (hits / total_queries * 100) if total_queries > 0 else 0.0
-        
+
         # Record hit rate metric
         self.record_metric(
             f"{cache_name}_hit_rate_percent",
@@ -561,7 +561,7 @@ class PerformanceMonitor:
                 "maxsize": maxsize,
             }
         )
-        
+
         # Check if hit rate is below target threshold (60%)
         if total_queries >= 10 and hit_rate < 60.0:
             logger.warning(
