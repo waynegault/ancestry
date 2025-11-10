@@ -250,6 +250,194 @@ class PerformanceMetricsConfig:
     enable_benchmark: bool
 
 
+# ==============================================
+# Test Infrastructure Todo #18: Optimize Parallel Test Execution
+# ==============================================
+
+
+class TestResultCache:
+    """Cache test results to skip unchanged modules."""
+
+    CACHE_FILE = Path("Cache/test_results_cache.json")
+
+    @classmethod
+    def load_cache(cls) -> dict[str, dict[str, Any]]:
+        """Load test result cache from disk."""
+        if not cls.CACHE_FILE.exists():
+            return {}
+        try:
+            with cls.CACHE_FILE.open() as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    @classmethod
+    def save_cache(cls, cache: dict[str, dict[str, Any]]) -> None:
+        """Save test result cache to disk."""
+        try:
+            cls.CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with cls.CACHE_FILE.open("w") as f:
+                json.dump(cache, f, indent=2)
+        except Exception:
+            pass  # Silently fail - caching is optional
+
+    @classmethod
+    def get_module_hash(cls, module_name: str) -> Optional[str]:
+        """Get hash of module file contents."""
+        try:
+            import hashlib
+            module_path = Path(f"{module_name}.py")
+            if not module_path.exists():
+                return None
+            content = module_path.read_bytes()
+            return hashlib.md5(content).hexdigest()
+        except Exception:
+            return None
+
+    @classmethod
+    def should_skip_module(cls, module_name: str, cache: dict[str, dict[str, Any]]) -> bool:
+        """Determine if module can be skipped based on cache."""
+        if module_name not in cache:
+            return False
+
+        cached_entry = cache[module_name]
+        if not cached_entry.get("success", False):
+            return False  # Always re-run failed tests
+
+        # Check if file has changed
+        current_hash = cls.get_module_hash(module_name)
+        cached_hash = cached_entry.get("file_hash")
+
+        if current_hash and cached_hash and current_hash == cached_hash:
+            # File unchanged and test passed previously
+            return True
+
+        return False
+
+
+def optimize_test_order(modules: list[str]) -> list[str]:
+    """
+    Optimize test execution order for faster feedback.
+
+    Test Infrastructure Todo #18: Smart test ordering
+    Strategy:
+    1. Fast tests first (< 1s historical duration)
+    2. Recently failed tests next (for quick failure detection)
+    3. Slow tests last (can be parallelized)
+
+    Args:
+        modules: List of module names to test
+
+    Returns:
+        Optimized list of module names
+    """
+    # Load historical performance data
+    metrics_file = Path("Logs/test_metrics_history.json")
+    historical_data: dict[str, dict[str, Any]] = {}
+    if metrics_file.exists():
+        try:
+            with metrics_file.open() as f:
+                historical_data = json.load(f)
+        except Exception:
+            pass
+
+    # Categorize modules
+    fast_modules = []
+    recently_failed = []
+    slow_modules = []
+    unknown_modules = []
+
+    for module in modules:
+        if module not in historical_data:
+            unknown_modules.append(module)
+            continue
+
+        data = historical_data[module]
+        duration = data.get("avg_duration", 999)
+        last_success = data.get("last_success", True)
+
+        if not last_success:
+            recently_failed.append((module, duration))
+        elif duration < 1.0:
+            fast_modules.append((module, duration))
+        else:
+            slow_modules.append((module, duration))
+
+    # Sort each category by duration (fastest first)
+    fast_modules.sort(key=lambda x: x[1])
+    recently_failed.sort(key=lambda x: x[1])
+    slow_modules.sort(key=lambda x: x[1])
+
+    # Build optimized order: fast → failed → slow → unknown
+    optimized = (
+        [m for m, _ in fast_modules]
+        + [m for m, _ in recently_failed]
+        + [m for m, _ in slow_modules]
+        + unknown_modules
+    )
+
+    return optimized
+
+
+def update_test_history(
+    module_name: str,
+    duration: float,
+    success: bool
+) -> None:
+    """
+    Update test execution history for smart ordering.
+
+    Args:
+        module_name: Name of test module
+        duration: Test execution duration in seconds
+        success: Whether test passed
+    """
+    metrics_file = Path("Logs/test_metrics_history.json")
+    metrics_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing data
+    historical_data: dict[str, dict[str, Any]] = {}
+    if metrics_file.exists():
+        try:
+            with metrics_file.open() as f:
+                historical_data = json.load(f)
+        except Exception:
+            pass
+
+    # Update or create entry
+    if module_name not in historical_data:
+        historical_data[module_name] = {
+            "avg_duration": duration,
+            "run_count": 1,
+            "last_success": success,
+            "last_run": datetime.now().isoformat(),
+        }
+    else:
+        entry = historical_data[module_name]
+        run_count = entry.get("run_count", 1)
+        avg_duration = entry.get("avg_duration", duration)
+
+        # Update running average
+        new_avg = ((avg_duration * run_count) + duration) / (run_count + 1)
+
+        entry["avg_duration"] = new_avg
+        entry["run_count"] = run_count + 1
+        entry["last_success"] = success
+        entry["last_run"] = datetime.now().isoformat()
+
+    # Save updated data
+    try:
+        with metrics_file.open("w") as f:
+            json.dump(historical_data, f, indent=2)
+    except Exception:
+        pass  # Silently fail
+
+
+# ==============================================
+# End Test Infrastructure Todo #18
+# ==============================================
+
+
 class PerformanceMonitor:
     """Monitor system performance during test execution."""
 
@@ -1365,6 +1553,11 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     # De-duplicate while preserving order
     discovered_modules = list(dict.fromkeys(discovered_modules))
 
+    # Test Infrastructure Todo #18: Apply smart test ordering
+    if "--fast" in sys.argv:
+        print("🎯 Optimizing test order for faster feedback...")
+        discovered_modules = optimize_test_order(discovered_modules)
+
     # Extract descriptions from module docstrings for enhanced reporting
     module_descriptions = {}
     enhanced_count = 0
@@ -1423,10 +1616,18 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
             print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
             sys.stdout.flush()
 
+            # Test Infrastructure Todo #18: Track test execution start time
+            start_time = time.time()
+
             # Always collect metrics for quality summary (not just when monitoring enabled)
             success, test_count, metrics = run_module_tests(
                 module_name, description, enable_monitoring=True, coverage=config.enable_benchmark
             )
+
+            # Test Infrastructure Todo #18: Update test history for smart ordering
+            duration = time.time() - start_time
+            update_test_history(module_name, duration, success)
+
             total_tests_run += test_count
             if success:
                 passed_count += 1
