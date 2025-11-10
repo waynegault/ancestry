@@ -525,6 +525,137 @@ def create_standard_test_runner(module_test_function):
 # ==============================================
 
 
+def create_mock_session_manager() -> MagicMock:
+    """
+    Create a mock SessionManager for testing.
+
+    Test Infrastructure Todo #17: Shared test helpers
+    Consolidates the pattern of creating mock session managers across test modules.
+
+    Returns:
+        MagicMock: A mock SessionManager with common attributes
+
+    Example:
+        sm = create_mock_session_manager()
+        sm.get_db_conn.return_value = mock_db_session
+    """
+    sm = MagicMock()
+    sm.session_ready = True
+    sm.get_db_conn.return_value = MagicMock(spec=Session)
+    sm.driver = MagicMock()
+    sm.requests_session = MagicMock()
+    return sm
+
+
+def create_test_database() -> Session:
+    """
+    Create an in-memory test database with schema.
+
+    Test Infrastructure Todo #17: Shared test helpers
+    Consolidates the pattern of creating test databases across modules.
+
+    Returns:
+        Session: SQLAlchemy session connected to in-memory test database
+
+    Example:
+        session = create_test_database()
+        # Use session for testing
+        session.close()
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from database import Base
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
+
+
+def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
+    """
+    Load a GEDCOM file for testing.
+
+    Test Infrastructure Todo #17: Shared test helpers
+    Consolidates the pattern of loading GEDCOM test files.
+
+    Args:
+        gedcom_path: Path to GEDCOM file (default: uses config)
+
+    Returns:
+        Parsed GEDCOM data object
+
+    Example:
+        gedcom_data = load_test_gedcom()
+        individual = gedcom_data.get_individual("@I1@")
+    """
+    import sys
+    from pathlib import Path
+
+    try:
+        import gedcom  # type: ignore
+    except ImportError:
+        return None
+
+    if gedcom_path is None:
+        from config import config_schema
+        gedcom_path = getattr(config_schema, "gedcom_file_path", None)
+
+    if not gedcom_path or not Path(gedcom_path).exists():
+        return None
+
+    try:
+        gedcom_data = gedcom.parse(gedcom_path)
+        return gedcom_data
+    except Exception:
+        return None
+
+
+def create_test_person(
+    person_id: int = 1,
+    uuid: str = "TEST-UUID-1234",
+    username: str = "Test User",
+    cm_dna: Optional[int] = None,
+    engagement_score: int = 50,
+) -> MagicMock:
+    """
+    Create a mock Person object for testing.
+
+    Test Infrastructure Todo #17: Shared test helpers
+    Consolidates the pattern of creating test Person objects.
+
+    Args:
+        person_id: Database ID
+        uuid: Person UUID
+        username: Display name
+        cm_dna: Shared centimorgans (creates dna_match if provided)
+        engagement_score: Current engagement score (0-100)
+
+    Returns:
+        MagicMock: Mock Person object with DNA match if cm_dna provided
+
+    Example:
+        person = create_test_person(cm_dna=100, engagement_score=75)
+        assert person.dna_match.cm_dna == 100
+    """
+    from database import Person
+
+    person = MagicMock(spec=Person)
+    person.id = person_id
+    person.uuid = uuid
+    person.username = username
+    person.current_engagement_score = engagement_score
+
+    if cm_dna is not None:
+        from database import DnaMatch
+        person.dna_match = MagicMock(spec=DnaMatch)
+        person.dna_match.cm_dna = cm_dna
+    else:
+        person.dna_match = None
+
+    return person
+
+
 def run_parameterized_tests(test_cases: list[tuple[str, Callable, Any, str]], suite: Any) -> None:
     """
     Run a list of parameterized test cases.
@@ -720,6 +851,43 @@ def _test_mock_api_response() -> None:
     assert mock_response.text == "Not found"
 
 
+def _test_create_mock_session_manager() -> None:
+    """Test the create_mock_session_manager helper (Todo #17)."""
+    sm = create_mock_session_manager()
+    assert sm.session_ready is True
+    assert sm.get_db_conn.return_value is not None
+    assert sm.driver is not None
+    assert sm.requests_session is not None
+
+
+def _test_create_test_database() -> None:
+    """Test the create_test_database helper (Todo #17)."""
+    session = create_test_database()
+    assert session is not None
+    # Test that we can query
+    from database import Person
+    result = session.query(Person).count()
+    assert result == 0  # Empty database
+    session.close()
+
+
+def _test_create_test_person() -> None:
+    """Test the create_test_person helper (Todo #17)."""
+    # Test without DNA match
+    person = create_test_person()
+    assert person.id == 1
+    assert person.uuid == "TEST-UUID-1234"
+    assert person.username == "Test User"
+    assert person.current_engagement_score == 50
+    assert person.dna_match is None
+
+    # Test with DNA match
+    person_with_dna = create_test_person(cm_dna=150, engagement_score=80)
+    assert person_with_dna.dna_match is not None
+    assert person_with_dna.dna_match.cm_dna == 150
+    assert person_with_dna.current_engagement_score == 80
+
+
 def test_utilities_module_tests() -> bool:
     """Test the test utilities module itself."""
     from test_framework import TestSuite, suppress_logging
@@ -733,6 +901,9 @@ def test_utilities_module_tests() -> bool:
         ("Test runner factory", _test_runner_factory, "Test runner creation", "direct", "Test runner creation"),
         ("Assert function behavior", _test_assert_function_behavior, "Test assertion helper", "direct", "Test assertion helper"),
         ("Mock API response", _test_mock_api_response, "Test mock response creation", "direct", "Test mock response creation"),
+        ("Create mock session manager (Todo #17)", _test_create_mock_session_manager, "Test session manager mock helper", "direct", "Test session manager mock helper"),
+        ("Create test database (Todo #17)", _test_create_test_database, "Test database creation helper", "direct", "Test database creation helper"),
+        ("Create test person (Todo #17)", _test_create_test_person, "Test person mock helper", "direct", "Test person mock helper"),
     ]
 
     with suppress_logging():
