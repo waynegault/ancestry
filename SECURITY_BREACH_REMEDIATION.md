@@ -31,7 +31,7 @@
   3. Generate new API key
   4. Update `.env` file with new key: `DEEPSEEK_API_KEY=sk-new-key-here`
   5. Test: `python -c "from ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'test'}))"`
-- **Status**: [ ] Not Started / [ ] In Progress / [ ] ✅ Complete
+- **Status**: [x] ✅ Complete
 
 ---
 
@@ -43,7 +43,7 @@
   3. Create new API key
   4. Update `.env` file with new key: `GOOGLE_API_KEY=AIza...new-key`
   5. Test: Change `AI_PROVIDER="gemini"` in .env and run AI test
-- **Status**: [ ] Not Started / [ ] In Progress / [ ] ✅ Complete
+- **Status**: [x] ✅ Complete
 
 ---
 
@@ -73,7 +73,7 @@
   4. Update `.env` file: `ANCESTRY_PASSWORD=new-password-here`
   5. **ALSO**: If `francesmchardy@gmail.com` is a valid account, change that password too
   6. Test: Run `python main.py` → Option 5: Check Login Status
-- **Status**: [ ] Not Started / [ ] In Progress / [ ] ✅ Complete
+- **Status**: [x] ✅ Complete
 
 ---
 
