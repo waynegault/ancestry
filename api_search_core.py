@@ -4,9 +4,15 @@ API Search Core Intelligence & Advanced Genealogical Discovery Engine
 Lightweight API search core used by Action 10 and Action 9. Performs TreesUI list search,
 scores results using universal GEDCOM scorer, provides table-row formatting compatible with
 Action 10, and presents post-selection details (family + relationship path).
+
+Priority 1 Todo #10: API Search Deduplication - Caches search results for 7 days
+to prevent duplicate API calls for the same search criteria.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from api_search_utils import get_api_family_details
@@ -17,6 +23,317 @@ from genealogy_presenter import present_post_selection
 from logging_config import logger
 from relationship_utils import convert_discovery_api_path_to_unified_format
 from universal_scoring import calculate_display_bonuses
+
+# -----------------------------
+# Scoring helpers (minimal port)
+# -----------------------------
+
+# -----------------------------
+# API Search Cache Management (Priority 1 Todo #10)
+# -----------------------------
+
+# Global cache statistics
+_cache_stats = {
+    "hits": 0,
+    "misses": 0,
+    "total_queries": 0,
+}
+
+
+def _normalize_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normalize search criteria for consistent cache key generation.
+    
+    Ensures that slight variations in input (e.g., 'John' vs 'john', 1850 vs '1850',
+    'givenName' vs 'GivenName') produce the same cache key.
+    
+    Args:
+        criteria: Raw search criteria dictionary
+        
+    Returns:
+        Normalized criteria dictionary with lowercase keys and normalized values
+    """
+    normalized = {}
+
+    for key, value in criteria.items():
+        if value is None:
+            continue
+
+        # Normalize key to lowercase for consistency
+        normalized_key = key.lower()
+
+        # Normalize strings: lowercase and strip whitespace
+        if isinstance(value, str):
+            # Try to convert numeric strings to int
+            if value.strip().isdigit():
+                normalized[normalized_key] = int(value.strip())
+            else:
+                normalized[normalized_key] = value.lower().strip()
+        # Normalize numbers to int
+        elif isinstance(value, (int, float)):
+            normalized[normalized_key] = int(value)
+        else:
+            normalized[normalized_key] = value
+
+    return normalized
+
+
+def _generate_cache_key(criteria: dict[str, Any]) -> str:
+    """
+    Generate SHA256 hash of normalized search criteria for cache key.
+    
+    Args:
+        criteria: Search criteria dictionary
+        
+    Returns:
+        64-character SHA256 hex string
+    """
+    # Normalize criteria
+    normalized = _normalize_search_criteria(criteria)
+
+    # Sort keys for consistent JSON serialization
+    criteria_json = json.dumps(normalized, sort_keys=True)
+
+    # Generate SHA256 hash
+    return hashlib.sha256(criteria_json.encode('utf-8')).hexdigest()
+
+
+def _get_cached_search_results(cache_key: str, db_session: Any) -> Optional[list[dict]]:
+    """
+    Retrieve cached search results if available and not expired.
+    
+    Args:
+        cache_key: SHA256 hash of search criteria
+        db_session: SQLAlchemy database session
+        
+    Returns:
+        Cached results list or None if not found/expired
+    """
+    try:
+        from database import ApiSearchCache
+
+        # Query for unexpired cache entry
+        cache_entry = db_session.query(ApiSearchCache).filter(
+            ApiSearchCache.search_criteria_hash == cache_key,
+            ApiSearchCache.expires_at > datetime.now(timezone.utc)
+        ).first()
+
+        if not cache_entry:
+            _cache_stats["misses"] += 1
+            _cache_stats["total_queries"] += 1
+            logger.debug(f"[API Search Cache] MISS: {cache_key[:16]}... (hit rate: {get_api_search_cache_hit_rate():.1f}%)")
+            return None
+
+        # Update hit statistics
+        cache_entry.hit_count += 1
+        cache_entry.last_hit_at = datetime.now(timezone.utc)
+        db_session.commit()
+
+        _cache_stats["hits"] += 1
+        _cache_stats["total_queries"] += 1
+
+        # Parse cached response
+        if cache_entry.api_response_cached:
+            results = json.loads(cache_entry.api_response_cached)
+            logger.info(
+                f"✓ API Search Cache HIT: {cache_entry.result_count} results, "
+                f"saved API call (hit rate: {get_api_search_cache_hit_rate():.1f}%, "
+                f"entry age: {(datetime.now(timezone.utc) - cache_entry.search_timestamp).days}d)"
+            )
+            return results
+
+        return None
+
+    except Exception as e:
+        logger.error(f"Error retrieving cached search results: {e}", exc_info=True)
+        return None
+
+
+def _store_search_results_in_cache(
+    cache_key: str,
+    criteria: dict[str, Any],
+    results: list[dict],
+    db_session: Any
+) -> None:
+    """
+    Store API search results in cache for 7 days.
+    
+    Args:
+        cache_key: SHA256 hash of search criteria
+        criteria: Original search criteria
+        results: API search results to cache
+        db_session: SQLAlchemy database session
+    """
+    try:
+        from database import ApiSearchCache
+
+        # Check if entry already exists (shouldn't, but be safe)
+        existing = db_session.query(ApiSearchCache).filter(
+            ApiSearchCache.search_criteria_hash == cache_key
+        ).first()
+
+        if existing:
+            # Update existing entry
+            existing.api_response_cached = json.dumps(results)
+            existing.result_count = len(results)
+            existing.search_timestamp = datetime.now(timezone.utc)
+            existing.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+            existing.hit_count = 0
+            existing.last_hit_at = None
+        else:
+            # Create new cache entry
+            cache_entry = ApiSearchCache(
+                search_criteria_hash=cache_key,
+                search_criteria_json=json.dumps(criteria, sort_keys=True, indent=2),
+                result_count=len(results),
+                api_response_cached=json.dumps(results),
+                search_timestamp=datetime.now(timezone.utc),
+                expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+                hit_count=0,
+                last_hit_at=None,
+            )
+            db_session.add(cache_entry)
+
+        db_session.commit()
+        logger.debug(f"[API Search Cache] Stored {len(results)} results, expires in 7 days")
+
+    except Exception as e:
+        logger.error(f"Error storing search results in cache: {e}", exc_info=True)
+        db_session.rollback()
+
+
+def get_api_search_cache_stats() -> dict[str, Any]:
+    """
+    Get current API search cache statistics.
+    
+    Returns:
+        Dictionary with cache performance metrics
+    """
+    hit_rate = (_cache_stats["hits"] / _cache_stats["total_queries"] * 100) if _cache_stats["total_queries"] > 0 else 0.0
+
+    return {
+        "hits": _cache_stats["hits"],
+        "misses": _cache_stats["misses"],
+        "total_queries": _cache_stats["total_queries"],
+        "hit_rate_percent": hit_rate,
+    }
+
+
+def get_api_search_cache_hit_rate() -> float:
+    """Get current cache hit rate percentage."""
+    if _cache_stats["total_queries"] == 0:
+        return 0.0
+    return (_cache_stats["hits"] / _cache_stats["total_queries"]) * 100
+
+
+def clear_api_search_cache(db_session: Any) -> int:
+    """
+    Clear all API search cache entries from database.
+    
+    Args:
+        db_session: SQLAlchemy database session
+        
+    Returns:
+        Number of entries deleted
+    """
+    try:
+        from database import ApiSearchCache
+
+        count = db_session.query(ApiSearchCache).delete()
+        db_session.commit()
+
+        # Reset statistics
+        _cache_stats["hits"] = 0
+        _cache_stats["misses"] = 0
+        _cache_stats["total_queries"] = 0
+
+        logger.info(f"Cleared {count} API search cache entries")
+        return count
+
+    except Exception as e:
+        logger.error(f"Error clearing API search cache: {e}", exc_info=True)
+        db_session.rollback()
+        return 0
+
+
+def cleanup_expired_api_search_cache(db_session: Any) -> int:
+    """
+    Remove expired cache entries from database.
+    
+    Args:
+        db_session: SQLAlchemy database session
+        
+    Returns:
+        Number of expired entries deleted
+    """
+    try:
+        from database import ApiSearchCache
+
+        count = db_session.query(ApiSearchCache).filter(
+            ApiSearchCache.expires_at <= datetime.now(timezone.utc)
+        ).delete()
+        db_session.commit()
+
+        if count > 0:
+            logger.info(f"Cleaned up {count} expired API search cache entries")
+
+        return count
+
+    except Exception as e:
+        logger.error(f"Error cleaning up expired cache entries: {e}", exc_info=True)
+        db_session.rollback()
+        return 0
+
+
+def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
+    """
+    Report API search cache statistics to PerformanceMonitor for tracking and alerting.
+    
+    Priority 1 Todo #10: Performance monitor integration - tracks cache hit rate and alerts
+    when hit rate falls below 60% target threshold.
+    
+    Args:
+        session_manager: SessionManager instance with performance_monitor attribute
+        
+    Example:
+        # After running API searches, report cache statistics
+        report_api_cache_stats_to_performance_monitor(session_manager)
+        # PerformanceMonitor will log warnings if hit rate < 60%
+    """
+    try:
+        # Get performance monitor from session_manager
+        perf_monitor = getattr(session_manager, 'performance_monitor', None)
+        if not perf_monitor:
+            logger.debug("PerformanceMonitor not available in session_manager")
+            return
+
+        # Get current cache statistics
+        stats = get_api_search_cache_stats()
+        hit_rate_percent = get_api_search_cache_hit_rate()
+
+        # Check if we have any queries to report
+        if stats['total_queries'] == 0:
+            logger.debug("No API search queries to report (total_queries=0)")
+            return
+
+        # Report to performance monitor
+        perf_monitor.track_cache_hit_rate(
+            cache_name="API Search Cache",
+            hits=stats['hits'],
+            misses=stats['misses'],
+            hit_rate=hit_rate_percent,
+            target_hit_rate=60.0  # Alert if below 60% (same threshold as relationship cache)
+        )
+
+        logger.info(
+            f"📊 Reported API Search Cache stats to PerformanceMonitor: "
+            f"{stats['hits']} hits, {stats['misses']} misses, "
+            f"{hit_rate_percent:.1f}% hit rate"
+        )
+
+    except Exception as e:
+        logger.warning(f"Error reporting API cache stats to PerformanceMonitor: {e}")
+
 
 # -----------------------------
 # Scoring helpers (minimal port)
@@ -168,12 +485,53 @@ def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
 
 
 def search_ancestry_api_for_person(session_manager: Any, search_criteria: dict[str, Any], max_results: int = 20) -> list[dict]:
+    """
+    Search Ancestry API for matching persons with caching to prevent duplicate API calls.
+    
+    Priority 1 Todo #10: Integrated caching layer - checks database for recent searches (<7 days)
+    before calling Ancestry API to reduce API load and improve response time.
+    
+    Args:
+        session_manager: SessionManager instance with database and API access
+        search_criteria: Dict with keys like givenName, surname, birthYear, birthPlace, etc.
+        max_results: Maximum number of results to return (default: 20)
+        
+    Returns:
+        List of processed and scored candidate matches (dicts with id, name, dates, places, score)
+    """
+    # Step 1: Resolve base_url and tree_id for API calls
     base_url, tree_id = _resolve_base_and_tree(session_manager)
     if not (base_url and tree_id):
         logger.error("Missing base_url or tree_id for API search")
         return []
+
+    # Step 2: Get database session for cache operations
+    db_session = None
+    try:
+        if hasattr(session_manager, 'database_manager') and session_manager.database_manager:
+            db_session = session_manager.database_manager.get_session()
+    except Exception as e:
+        logger.warning(f"Could not get database session for caching: {e}")
+
+    # Step 3: Check cache for recent search results (if database available)
+    if db_session:
+        cache_key = _generate_cache_key(search_criteria)
+        cached_results = _get_cached_search_results(cache_key, db_session)
+
+        if cached_results is not None:
+            # Cache HIT - return cached results without API call
+            # Limit to max_results (cache stores full result set)
+            return cached_results[: max(1, max_results)]
+
+    # Step 4: Cache MISS - make API call to get fresh results
     suggestions = call_treesui_list_api(session_manager, tree_id, base_url, search_criteria) or []
     processed = _process_and_score_suggestions(suggestions, search_criteria)
+
+    # Step 5: Store results in cache for future queries (if database available)
+    if db_session:
+        _store_search_results_in_cache(cache_key, search_criteria, processed, db_session)
+
+    # Step 6: Return limited results to caller
     return processed[: max(1, max_results)]
 
 
@@ -389,6 +747,211 @@ def _api_search_core_module_tests() -> bool:
         functions_tested="search_ancestry_api_for_person",
         test_summary="Ensure empty suggestions yields empty processed list",
         expected_outcome="Returns [] without error",
+    )
+
+    # ===== Priority 1 Todo #10: API Search Cache Tests =====
+
+    def _test_cache_key_generation() -> None:
+        """Test cache key generation with normalization."""
+        # Same criteria, different case/spacing should produce same key
+        criteria1 = {"givenName": "John", "surname": "Smith", "birthYear": 1850}
+        criteria2 = {"givenName": "JOHN", "surname": "smith  ", "birthYear": "1850"}
+
+        key1 = _generate_cache_key(criteria1)
+        key2 = _generate_cache_key(criteria2)
+
+        assert key1 == key2, f"Normalized criteria should produce same key: {key1} != {key2}"
+        assert len(key1) == 64, f"SHA256 hash should be 64 hex characters: {len(key1)}"
+
+    suite.run_test(
+        test_name="Cache key generation with normalization",
+        test_func=_test_cache_key_generation,
+        functions_tested="_generate_cache_key, _normalize_search_criteria",
+        test_summary="Verify cache keys are consistent for normalized criteria",
+        expected_outcome="Same key for 'John' vs 'JOHN', 1850 vs '1850'",
+    )
+
+    def _test_cache_miss_and_store() -> None:
+        """Test cache miss returns None, then store works."""
+        from unittest.mock import MagicMock
+
+        # Create mock database session
+        mock_session = MagicMock()
+        mock_session.query.return_value.filter.return_value.first.return_value = None
+
+        # Test cache miss
+        cache_key = "test_key_123"
+        result = _get_cached_search_results(cache_key, mock_session)
+        assert result is None, "Cache miss should return None"
+
+        # Test cache store (should not raise exception)
+        test_criteria = {"givenName": "Test"}
+        test_results = [{"id": "123", "name": "Test Person", "score": 85}]
+        _store_search_results_in_cache(cache_key, test_criteria, test_results, mock_session)
+
+        # Verify session methods were called
+        assert mock_session.add.called, "Session.add should be called"
+        assert mock_session.commit.called, "Session.commit should be called"
+
+    suite.run_test(
+        test_name="Cache miss and store operations",
+        test_func=_test_cache_miss_and_store,
+        functions_tested="_get_cached_search_results, _store_search_results_in_cache",
+        test_summary="Verify cache miss returns None and store commits to database",
+        expected_outcome="None returned, session.add/commit called",
+    )
+
+    def _test_cache_statistics_tracking() -> None:
+        """Test cache hit/miss statistics are tracked correctly."""
+        global _cache_stats
+
+        # Save original stats
+        original_stats = _cache_stats.copy()
+
+        try:
+            # Reset stats for clean test
+            _cache_stats = {"hits": 0, "misses": 0, "total_queries": 0}
+
+            # Simulate cache operations (stats updated in _get_cached_search_results)
+            _cache_stats["hits"] += 2
+            _cache_stats["misses"] += 3
+            _cache_stats["total_queries"] = 5
+
+            # Test statistics functions
+            stats = get_api_search_cache_stats()
+            assert stats["hits"] == 2, f"Expected 2 hits, got {stats['hits']}"
+            assert stats["misses"] == 3, f"Expected 3 misses, got {stats['misses']}"
+            assert stats["total_queries"] == 5, f"Expected 5 total queries, got {stats['total_queries']}"
+
+            hit_rate = get_api_search_cache_hit_rate()
+            expected_rate = (2 / 5) * 100  # 40%
+            assert abs(hit_rate - expected_rate) < 0.01, f"Expected ~{expected_rate}% hit rate, got {hit_rate}%"
+
+        finally:
+            # Restore original stats
+            _cache_stats = original_stats
+
+    suite.run_test(
+        test_name="Cache statistics tracking",
+        test_func=_test_cache_statistics_tracking,
+        functions_tested="get_api_search_cache_stats, get_api_search_cache_hit_rate",
+        test_summary="Verify cache statistics are calculated correctly",
+        expected_outcome="Stats show 2 hits, 3 misses, 40% hit rate",
+    )
+
+    def _test_cache_clear_operation() -> None:
+        """Test cache clear deletes all entries and resets stats."""
+        from unittest.mock import MagicMock
+
+        global _cache_stats
+        original_stats = _cache_stats.copy()
+
+        try:
+            # Set some stats
+            _cache_stats = {"hits": 10, "misses": 5, "total_queries": 15}
+
+            # Create mock session
+            mock_session = MagicMock()
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.delete.return_value = 42  # Simulate 42 deleted entries
+
+            # Test clear operation
+            deleted_count = clear_api_search_cache(mock_session)
+
+            assert deleted_count == 42, f"Expected 42 deleted, got {deleted_count}"
+            assert _cache_stats["hits"] == 0, "Stats should be reset after clear"
+            assert _cache_stats["misses"] == 0, "Stats should be reset after clear"
+            assert _cache_stats["total_queries"] == 0, "Stats should be reset after clear"
+
+        finally:
+            _cache_stats = original_stats
+
+    suite.run_test(
+        test_name="Cache clear operation",
+        test_func=_test_cache_clear_operation,
+        functions_tested="clear_api_search_cache",
+        test_summary="Verify cache clear deletes entries and resets statistics",
+        expected_outcome="Database entries deleted, stats reset to 0",
+    )
+
+    def _test_cache_expiration_cleanup() -> None:
+        """Test expired cache entries are removed."""
+        from unittest.mock import MagicMock
+
+        # Create mock session
+        mock_session = MagicMock()
+        mock_query = MagicMock()
+        mock_filter = MagicMock()
+
+        mock_session.query.return_value = mock_query
+        mock_query.filter.return_value = mock_filter
+        mock_filter.delete.return_value = 15  # Simulate 15 expired entries
+
+        # Test cleanup
+        deleted_count = cleanup_expired_api_search_cache(mock_session)
+
+        assert deleted_count == 15, f"Expected 15 expired entries deleted, got {deleted_count}"
+        assert mock_session.commit.called, "Session should commit after delete"
+
+    suite.run_test(
+        test_name="Cache expiration cleanup",
+        test_func=_test_cache_expiration_cleanup,
+        functions_tested="cleanup_expired_api_search_cache",
+        test_summary="Verify expired cache entries (>7 days) are removed",
+        expected_outcome="Expired entries deleted, session committed",
+    )
+
+    def _test_search_with_cache_integration() -> None:
+        """Test search_ancestry_api_for_person handles database gracefully."""
+        from unittest.mock import MagicMock, patch
+
+        # Test 1: Search without database (should work without caching)
+        mock_sm_no_db = MagicMock()
+        mock_sm_no_db.database_manager = None  # No database
+        mock_sm_no_db.my_tree_id = "test_tree_123"
+
+        with patch('api_search_core.call_treesui_list_api', return_value=[]):
+            criteria = {"givenName": "Test"}
+            results = search_ancestry_api_for_person(mock_sm_no_db, criteria)
+            assert isinstance(results, list), "Should return list even without database"
+
+        # Test 2: Search with database manager that fails (should gracefully fall back)
+        mock_sm_fail = MagicMock()
+        mock_sm_fail.database_manager.get_session.side_effect = Exception("DB connection failed")
+        mock_sm_fail.my_tree_id = "test_tree_123"
+
+        with patch('api_search_core.call_treesui_list_api', return_value=[]):
+            results = search_ancestry_api_for_person(mock_sm_fail, criteria)
+            assert isinstance(results, list), "Should return list even when DB fails"
+
+        # Test 3: Verify cache functions are called correctly with working DB
+        mock_sm_db = MagicMock()
+        mock_db_manager = MagicMock()
+        mock_db_session = MagicMock()
+
+        # Setup working database mock
+        mock_sm_db.database_manager = mock_db_manager
+        mock_db_manager.get_session.return_value = mock_db_session
+        mock_sm_db.my_tree_id = "test_tree_123"
+
+        # Mock the cache table query to return None (cache miss)
+        mock_db_session.query.return_value.filter.return_value.first.return_value = None
+
+        with patch('api_search_core.call_treesui_list_api', return_value=[{"id": "1", "name": "Test"}]):
+            results = search_ancestry_api_for_person(mock_sm_db, criteria)
+
+            # Verify session methods were called (indicates cache was attempted)
+            assert mock_db_session.query.called or mock_db_session.add.called, \
+                "Database session should be used for caching"
+            assert isinstance(results, list), "Should return list of results"
+
+    suite.run_test(
+        test_name="Search with cache integration",
+        test_func=_test_search_with_cache_integration,
+        functions_tested="search_ancestry_api_for_person (with caching)",
+        test_summary="Verify search function integrates cache check and store",
+        expected_outcome="Cache checked before API, results stored after",
     )
 
     return suite.finish_suite()
