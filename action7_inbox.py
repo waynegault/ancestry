@@ -1654,6 +1654,82 @@ class InboxProcessor:
                 "awaiting_response_from": None,
             }
 
+    def _calculate_task_importance(
+        self,
+        person_id: int,
+        base_urgency: str = "standard",
+    ) -> str:
+        """
+        Calculate MS To-Do task importance from DNA relationship strength and engagement score.
+
+        Priority 0 Todo #14: MS To-Do prioritization with DNA/engagement data
+
+        Algorithm:
+        - High: cM > 100 AND engagement > 70 (close relatives with active conversation)
+        - High: base_urgency == "urgent" (AI-detected urgency overrides)
+        - Medium: cM > 50 OR engagement > 50 (moderate DNA or decent engagement)
+        - Low: All other cases (distant relatives, low engagement)
+
+        Args:
+            person_id: Database ID of person
+            base_urgency: AI-detected urgency level (urgent/standard/patient)
+
+        Returns:
+            MS Graph importance level: "high", "normal", or "low"
+        """
+        try:
+            # AI-detected urgency overrides all
+            if base_urgency == "urgent":
+                return "high"
+            if base_urgency == "patient":
+                return "low"
+
+            # Get database session
+            db_session = self.session_manager.get_db_conn()
+            if not db_session:
+                logger.debug("No DB session available for task importance calculation")
+                return "normal"
+
+            # Query person with DNA match and engagement data
+            from database import DnaMatch, Person
+
+            person = db_session.query(Person).filter(Person.id == person_id).first()
+            if not person:
+                logger.debug(f"Person {person_id} not found for importance calculation")
+                return "normal"
+
+            # Get DNA data (cM shared)
+            cm_shared = 0
+            if person.dna_match and person.dna_match.cm_dna:
+                cm_shared = person.dna_match.cm_dna
+
+            # Get engagement score (0-100)
+            engagement = person.current_engagement_score if hasattr(person, "current_engagement_score") else 0
+
+            # Apply algorithm
+            if cm_shared > 100 and engagement > 70:
+                logger.debug(
+                    f"Task importance HIGH: person_id={person_id}, cM={cm_shared}, "
+                    f"engagement={engagement} (close relative + active conversation)"
+                )
+                return "high"
+            if cm_shared > 50 or engagement > 50:
+                logger.debug(
+                    f"Task importance NORMAL: person_id={person_id}, cM={cm_shared}, "
+                    f"engagement={engagement} (moderate DNA or engagement)"
+                )
+                return "normal"
+
+            logger.debug(
+                f"Task importance LOW: person_id={person_id}, cM={cm_shared}, "
+                f"engagement={engagement} (distant relative or low engagement)"
+            )
+            return "low"
+
+        except Exception as e:
+            logger.error(f"Error calculating task importance for person {person_id}: {e}", exc_info=True)
+            return "normal"  # Safe default
+
     def _create_follow_up_reminder_task(
         self,
         _person_id: int,
@@ -1666,10 +1742,11 @@ class InboxProcessor:
         """
         Create MS To-Do reminder task for follow-up.
 
+        Priority 0 Todo #14: MS To-Do task prioritization with DNA/engagement data
         Priority 1 Todo #5: Follow-Up Reminder System
 
         Args:
-            _person_id: Database ID of person (reserved for future use)
+            _person_id: Database ID of person (used for DNA/engagement prioritization)
             _conversation_id: Unique conversation identifier (reserved for future use)
             task_title: Title for MS To-Do task
             task_body: Detailed task body with context
@@ -1705,13 +1782,11 @@ class InboxProcessor:
                 logger.warning(f"MS To-Do list '{list_name}' not found, skipping reminder task")
                 return False
 
-            # Map urgency to importance
-            importance_map = {
-                "urgent": "high",
-                "standard": "normal",
-                "patient": "low",
-            }
-            importance = importance_map.get(urgency_level, "normal")
+            # Priority 0 Todo #14: Calculate importance from DNA + engagement data
+            importance = self._calculate_task_importance(
+                person_id=_person_id,
+                base_urgency=urgency_level,
+            )
 
             # Format due date for MS Graph API
             due_date_str = None
@@ -3673,6 +3748,74 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="_create_follow_up_reminder_task (Todo #5)",
             method_description="Create reminder tasks with urgency-based due dates and importance",
             expected_outcome="MS To-Do task created or gracefully skipped in test mode",
+        )
+
+        def _test_task_importance_calculation() -> None:
+            """Test task importance calculation from DNA + engagement data (Priority 0 Todo #14)."""
+            from unittest.mock import MagicMock
+
+            from database import DnaMatch, Person
+
+            # Mock session manager with database
+            sm = MagicMock()
+            mock_db_session = MagicMock()
+            sm.get_db_conn.return_value = mock_db_session
+
+            processor = InboxProcessor(session_manager=sm)
+
+            # Test Case 1: High importance (close DNA + high engagement)
+            person_high = MagicMock(spec=Person)
+            person_high.id = 1
+            person_high.current_engagement_score = 80
+            person_high.dna_match = MagicMock(spec=DnaMatch)
+            person_high.dna_match.cm_dna = 150  # Close relative
+            mock_db_session.query().filter().first.return_value = person_high
+
+            importance = processor._calculate_task_importance(person_id=1, base_urgency="standard")
+            assert importance == "high", f"Expected 'high' for cM=150, engagement=80, got '{importance}'"
+            logger.info(f"✅ High importance: cM=150, engagement=80 → {importance}")
+
+            # Test Case 2: Normal importance (moderate DNA)
+            person_medium = MagicMock(spec=Person)
+            person_medium.id = 2
+            person_medium.current_engagement_score = 40
+            person_medium.dna_match = MagicMock(spec=DnaMatch)
+            person_medium.dna_match.cm_dna = 75  # Moderate relative
+            mock_db_session.query().filter().first.return_value = person_medium
+
+            importance = processor._calculate_task_importance(person_id=2, base_urgency="standard")
+            assert importance == "normal", f"Expected 'normal' for cM=75, engagement=40, got '{importance}'"
+            logger.info(f"✅ Normal importance: cM=75, engagement=40 → {importance}")
+
+            # Test Case 3: Low importance (distant DNA + low engagement)
+            person_low = MagicMock(spec=Person)
+            person_low.id = 3
+            person_low.current_engagement_score = 20
+            person_low.dna_match = MagicMock(spec=DnaMatch)
+            person_low.dna_match.cm_dna = 30  # Distant relative
+            mock_db_session.query().filter().first.return_value = person_low
+
+            importance = processor._calculate_task_importance(person_id=3, base_urgency="standard")
+            assert importance == "low", f"Expected 'low' for cM=30, engagement=20, got '{importance}'"
+            logger.info(f"✅ Low importance: cM=30, engagement=20 → {importance}")
+
+            # Test Case 4: AI urgency override (urgent)
+            importance_urgent = processor._calculate_task_importance(person_id=3, base_urgency="urgent")
+            assert importance_urgent == "high", f"Expected 'high' for urgent override, got '{importance_urgent}'"
+            logger.info(f"✅ Urgency override: base_urgency='urgent' → {importance_urgent}")
+
+            # Test Case 5: AI urgency override (patient)
+            importance_patient = processor._calculate_task_importance(person_id=1, base_urgency="patient")
+            assert importance_patient == "low", f"Expected 'low' for patient override, got '{importance_patient}'"
+            logger.info(f"✅ Urgency override: base_urgency='patient' → {importance_patient}")
+
+        suite.run_test(
+            test_name="Task importance calculation (DNA + engagement)",
+            test_func=_test_task_importance_calculation,
+            test_summary="Calculate task priority from DNA strength and engagement score",
+            functions_tested="_calculate_task_importance (Priority 0 Todo #14)",
+            method_description="High: cM>100 & engagement>70; Medium: cM>50 | engagement>50; Low: other",
+            expected_outcome="Importance correctly calculated: high/normal/low based on DNA + engagement",
         )
 
         def _test_conversation_log_follow_up_fields() -> None:
