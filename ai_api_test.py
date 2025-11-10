@@ -25,7 +25,7 @@ except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None  # type: ignore[assignment]
 
 try:
-    import google.generativeai as genai
+    import google.generativeai as genai  # type: ignore[import-untyped]
     GENAI_IMPORT_ERROR: str | None = None
 except Exception as import_error:  # pragma: no cover - optional dependency
     genai = None  # type: ignore[assignment]
@@ -309,7 +309,7 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                 messages.append("\n📋 Available Gemini models with generateContent support:")
                 model_count = 0
                 found_configured = False
-                for model in list_models_fn():
+                for model in list_models_fn():  # type: ignore[misc]
                     methods = getattr(model, "supported_generation_methods", [])
                     if "generateContent" in methods:
                         name = getattr(model, "name", "").replace("models/", "")
@@ -363,7 +363,7 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                 list_models_fn = getattr(genai, "list_models", None)
                 if callable(list_models_fn):
                     available_models = []
-                    for model in list_models_fn():
+                    for model in list_models_fn():  # type: ignore[misc]
                         methods = getattr(model, "supported_generation_methods", [])
                         if "generateContent" in methods:
                             name = getattr(model, "name", "").replace("models/", "")

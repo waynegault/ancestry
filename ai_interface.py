@@ -80,7 +80,7 @@ except ImportError:
 
 # Attempt Google Gemini import
 try:
-    import google.generativeai as genai
+    import google.generativeai as genai  # type: ignore[import-untyped]
     from google.api_core import exceptions as google_exceptions
 
     genai_available = True
