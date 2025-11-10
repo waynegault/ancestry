@@ -527,15 +527,22 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"Unsupported provider: {args.provider}")
 
         print(f"\nTesting provider: {args.provider}")
+
+        # Start timer when making the API call
+        start_time = time.time()
         result = tester(args.prompt, args.max_tokens)
+        duration = time.time() - start_time
+
         _print_result(result)
 
+        # Always show full output if available
         if result.api_status and result.full_output:
-            follow_up = input("The model responded successfully. View the full output? [y/N]: ").strip().lower()
-            if follow_up in ("y", "yes"):
-                print("\n=== Full Response ===")
-                print(result.full_output)
-                print("=== End Full Response ===")
+            print("\n=== Full Response ===")
+            print(result.full_output)
+            print("=== End Full Response ===")
+
+        # Display response duration
+        print(f"\n⏱️  Response time: {duration:.2f}s")
 
         return 0
 
@@ -550,15 +557,22 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"Unsupported provider: {provider}")
 
         print(f"\nTesting provider: {provider}")
+
+        # Start timer when making the API call
+        start_time = time.time()
         result = tester(args.prompt, args.max_tokens)
+        duration = time.time() - start_time
+
         _print_result(result)
 
+        # Always show full output if available
         if result.api_status and result.full_output:
-            follow_up = input("The model responded successfully. View the full output? [y/N]: ").strip().lower()
-            if follow_up in ("y", "yes"):
-                print("\n=== Full Response ===")
-                print(result.full_output)
-                print("=== End Full Response ===")
+            print("\n=== Full Response ===")
+            print(result.full_output)
+            print("=== End Full Response ===")
+
+        # Display response duration
+        print(f"\n⏱️  Response time: {duration:.2f}s")
 
     return 0
 
