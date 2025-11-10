@@ -36,7 +36,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
-DEFAULT_PROMPT = "Please confirm you can see this message."
+DEFAULT_PROMPT = "I'm interested in geneology. How many great-great-gresat grandparents did I have?"
 PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
@@ -121,11 +121,8 @@ def _normalize_base_url(
 def _print_result(result: TestResult) -> None:
     print(f"\n=== {result.provider.upper()} Test Summary ===")
     print(f"Endpoint check : {'PASS' if result.endpoint_status else 'FAIL'}")
-    print(f"API call       : {'PASS' if result.api_status else 'FAIL'}")
-    if result.messages:
-        print("Details:")
-        for msg in result.messages:
-            print(f"  - {msg}")
+    print(f"API call : {'PASS' if result.api_status else 'FAIL'}")
+    # Removed the Details section to simplify output
 
 
 def _build_messages_preview(content: str) -> str:
@@ -535,14 +532,19 @@ def main(argv: list[str] | None = None) -> int:
 
         _print_result(result)
 
-        # Always show full output if available
+        # Always show prompt and response if available
         if result.api_status and result.full_output:
-            print("\n=== Full Response ===")
+            print(f"\nPrompt:")
+            print(f'"{args.prompt}"')
+            print(f"\nResponse:")
             print(result.full_output)
-            print("=== End Full Response ===")
-
-        # Display response duration
-        print(f"\n⏱️  Response time: {duration:.2f}s")
+            print(f"\nResponse time: {duration:.2f}s")
+        elif not result.api_status:
+            # Show error details if API call failed
+            if result.messages:
+                print("\nError details:")
+                for msg in result.messages:
+                    print(f"  {msg}")
 
         return 0
 
@@ -565,14 +567,19 @@ def main(argv: list[str] | None = None) -> int:
 
         _print_result(result)
 
-        # Always show full output if available
+        # Always show prompt and response if available
         if result.api_status and result.full_output:
-            print("\n=== Full Response ===")
+            print(f"\nPrompt:")
+            print(f'"{args.prompt}"')
+            print(f"\nResponse:")
             print(result.full_output)
-            print("=== End Full Response ===")
-
-        # Display response duration
-        print(f"\n⏱️  Response time: {duration:.2f}s")
+            print(f"\nResponse time: {duration:.2f}s")
+        elif not result.api_status:
+            # Show error details if API call failed
+            if result.messages:
+                print("\nError details:")
+                for msg in result.messages:
+                    print(f"  {msg}")
 
     return 0
 
