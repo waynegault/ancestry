@@ -307,12 +307,7 @@ class TestResultCache:
         # Check if file has changed
         current_hash = cls.get_module_hash(module_name)
         cached_hash = cached_entry.get("file_hash")
-
-        if current_hash and cached_hash and current_hash == cached_hash:
-            # File unchanged and test passed previously
-            return True
-
-        return False
+        return bool(current_hash and cached_hash and current_hash == cached_hash)
 
 
 def optimize_test_order(modules: list[str]) -> list[str]:
@@ -369,14 +364,12 @@ def optimize_test_order(modules: list[str]) -> list[str]:
     slow_modules.sort(key=lambda x: x[1])
 
     # Build optimized order: fast → failed → slow → unknown
-    optimized = (
+    return (
         [m for m, _ in fast_modules]
         + [m for m, _ in recently_failed]
         + [m for m, _ in slow_modules]
         + unknown_modules
     )
-
-    return optimized
 
 
 def update_test_history(

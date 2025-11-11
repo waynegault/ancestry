@@ -803,19 +803,18 @@ def _api_search_core_module_tests() -> bool:
 
     def _test_cache_statistics_tracking() -> None:
         """Test cache hit/miss statistics are tracked correctly."""
-        global _cache_stats
-
-        # Save original stats
-        original_stats = _cache_stats.copy()
+        stats_ref = _cache_stats
+        original_stats = stats_ref.copy()
 
         try:
             # Reset stats for clean test
-            _cache_stats = {"hits": 0, "misses": 0, "total_queries": 0}
+            stats_ref.clear()
+            stats_ref.update({"hits": 0, "misses": 0, "total_queries": 0})
 
             # Simulate cache operations (stats updated in _get_cached_search_results)
-            _cache_stats["hits"] += 2
-            _cache_stats["misses"] += 3
-            _cache_stats["total_queries"] = 5
+            stats_ref["hits"] += 2
+            stats_ref["misses"] += 3
+            stats_ref["total_queries"] = 5
 
             # Test statistics functions
             stats = get_api_search_cache_stats()
@@ -828,8 +827,8 @@ def _api_search_core_module_tests() -> bool:
             assert abs(hit_rate - expected_rate) < 0.01, f"Expected ~{expected_rate}% hit rate, got {hit_rate}%"
 
         finally:
-            # Restore original stats
-            _cache_stats = original_stats
+            stats_ref.clear()
+            stats_ref.update(original_stats)
 
     suite.run_test(
         test_name="Cache statistics tracking",
@@ -843,12 +842,13 @@ def _api_search_core_module_tests() -> bool:
         """Test cache clear deletes all entries and resets stats."""
         from unittest.mock import MagicMock
 
-        global _cache_stats
-        original_stats = _cache_stats.copy()
+        stats_ref = _cache_stats
+        original_stats = stats_ref.copy()
 
         try:
             # Set some stats
-            _cache_stats = {"hits": 10, "misses": 5, "total_queries": 15}
+            stats_ref.clear()
+            stats_ref.update({"hits": 10, "misses": 5, "total_queries": 15})
 
             # Create mock session
             mock_session = MagicMock()
@@ -860,12 +860,13 @@ def _api_search_core_module_tests() -> bool:
             deleted_count = clear_api_search_cache(mock_session)
 
             assert deleted_count == 42, f"Expected 42 deleted, got {deleted_count}"
-            assert _cache_stats["hits"] == 0, "Stats should be reset after clear"
-            assert _cache_stats["misses"] == 0, "Stats should be reset after clear"
-            assert _cache_stats["total_queries"] == 0, "Stats should be reset after clear"
+            assert stats_ref["hits"] == 0, "Stats should be reset after clear"
+            assert stats_ref["misses"] == 0, "Stats should be reset after clear"
+            assert stats_ref["total_queries"] == 0, "Stats should be reset after clear"
 
         finally:
-            _cache_stats = original_stats
+            stats_ref.clear()
+            stats_ref.update(original_stats)
 
     suite.run_test(
         test_name="Cache clear operation",

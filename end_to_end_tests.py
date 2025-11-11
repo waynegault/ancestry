@@ -14,7 +14,7 @@ Full end-to-end testing with live data requires a running session and would be d
 """
 
 import sys
-import os
+from pathlib import Path
 
 
 def _test_action6_module_exists() -> bool:
@@ -31,9 +31,12 @@ def _test_action6_module_exists() -> bool:
 
         # Verify main functions exist
         has_coord = hasattr(action6_gather, 'coord')
-        has_checkpoint = hasattr(action6_gather, '_save_checkpoint') or hasattr(action6_gather, '_load_checkpoint')
+        has_checkpoint_support = (
+            hasattr(action6_gather, '_save_checkpoint')
+            or hasattr(action6_gather, '_load_checkpoint')
+        )
 
-        return has_coord
+        return has_coord and has_checkpoint_support
 
     except ImportError:
         return False
@@ -91,7 +94,7 @@ def _test_database_models_exist() -> bool:
     - Relationships are defined
     """
     try:
-        from database import Person, DnaMatch, ConversationLog, FamilyTree
+        from database import ConversationLog, DnaMatch, FamilyTree, Person
 
         # Verify models have key attributes
         has_person_uuid = hasattr(Person, 'uuid')
@@ -122,11 +125,7 @@ def _test_error_handling_infrastructure() -> bool:
     - Circuit breaker pattern is available
     """
     try:
-        from core.error_handling import (
-            RetryableError,
-            FatalError,
-            retry_on_failure
-        )
+        from core.error_handling import FatalError, RetryableError, retry_on_failure
 
         # Verify retry decorator is callable
         has_retry = callable(retry_on_failure)
@@ -175,15 +174,16 @@ def _test_action6_checkpoint_system() -> bool:
     - Resume logic exists
     - Cache directory exists
     """
-    checkpoint_file = "Cache/action6_checkpoint.json"
-    cache_dir = "Cache"
+    checkpoint_path = Path("Cache/action6_checkpoint.json")
+    cache_dir = Path("Cache")
 
     # Verify cache directory exists
-    has_cache_dir = os.path.exists(cache_dir) and os.path.isdir(cache_dir)
+    has_cache_dir = cache_dir.exists() and cache_dir.is_dir()
 
-    # Checkpoint file may not exist yet (created on first run)
-    # Just verify the infrastructure is in place
-    return has_cache_dir
+    # Checkpoint file may not exist yet (created on first run); treat missing as acceptable
+    checkpoint_ready = not checkpoint_path.exists() or checkpoint_path.is_file()
+
+    return has_cache_dir and checkpoint_ready
 
 
 def _test_rate_limiter_thread_safety() -> bool:
@@ -199,6 +199,7 @@ def _test_rate_limiter_thread_safety() -> bool:
         # Note: utils.py exports a global rate limiter instance
         # We verify the implementation without importing the instance
         import inspect
+
         import utils
 
         # Check if RateLimiter class is defined in utils
@@ -226,17 +227,16 @@ def _test_ai_interface_exists() -> bool:
     """
     try:
         import ai_interface
-
-        # Verify call_ai function exists
-        has_call_ai = hasattr(ai_interface, 'call_ai')
-
-        # Verify prompt templates exist
-        prompts_exist = os.path.exists("ai_prompts.json")
-
-        return has_call_ai and prompts_exist
-
     except ImportError:
         return False
+
+    # Verify call_ai function exists
+    has_call_ai = hasattr(ai_interface, 'call_ai')
+
+    # Verify prompt templates exist
+    prompts_exist = Path("ai_prompts.json").exists()
+
+    return has_call_ai and prompts_exist
 
 
 def _test_configuration_system() -> bool:
@@ -249,7 +249,7 @@ def _test_configuration_system() -> bool:
     - config module can be imported
     """
     # Check if .env file exists
-    has_env_file = os.path.exists(".env")
+    has_env_file = Path(".env").exists()
 
     # Verify config module exists
     try:

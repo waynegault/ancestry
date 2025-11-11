@@ -18,15 +18,15 @@ Usage example:
         print(format_test_failure("my_test", my_test, exc, stdout, stderr))
 """
 
+import inspect
 import sys
 import traceback
-import inspect
-from typing import Callable, Any, Optional, Tuple
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
-from contextlib import redirect_stdout, redirect_stderr
+from typing import Any, Callable, Optional
 
 
-def capture_io(test_func: Callable[[], bool]) -> Callable[[], Tuple[bool, str, str, Optional[Exception]]]:
+def capture_io(test_func: Callable[[], bool]) -> Callable[[], tuple[bool, str, str, Optional[Exception]]]:
     """
     Decorator that captures stdout/stderr during test execution.
 
@@ -36,7 +36,7 @@ def capture_io(test_func: Callable[[], bool]) -> Callable[[], Tuple[bool, str, s
     Returns:
         Wrapped function that returns (result, stdout, stderr, exception)
     """
-    def wrapper() -> Tuple[bool, str, str, Optional[Exception]]:
+    def wrapper() -> tuple[bool, str, str, Optional[Exception]]:
         stdout_capture = StringIO()
         stderr_capture = StringIO()
         exception = None

@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Graph Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 24px;
+            font-weight: 300;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        input, select, button {
+            padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 14px;
+            backdrop-filter: blur(5px);
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        button {
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-1px);
+        }
+
+        .visualization {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .node:hover {
+            stroke-width: 3px;
+        }
+
+        .node.selected {
+            stroke: #ff6b6b;
+            stroke-width: 4px;
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+
+        .link:hover {
+            stroke-opacity: 1;
+            stroke-width: 3px;
+        }
+
+        .node-label {
+            font-size: 12px;
+            fill: white;
+            text-anchor: middle;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .link-label {
+            font-size: 10px;
+            fill: rgba(255, 255, 255, 0.8);
+            text-anchor: middle;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 300px;
+            z-index: 1000;
+        }
+
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+        }
+
+        .legend h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-size: 12px;
+        }
+
+        .stats h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Code Graph Visualization</h1>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="fileInput">Load JSON:</label>
+                    <input type="file" id="fileInput" accept=".json">
+                </div>
+                <div class="control-group">
+                    <label for="nodeFilter">Text Search:</label>
+                    <input type="text" id="nodeFilter" placeholder="Search nodes...">
+                </div>
+                <div class="control-group">
+                    <label for="qualityFilter">Quality:</label>
+                    <select id="qualityFilter" multiple>
+                        <option value="">All</option>
+                        <option value="stable">Stable</option>
+                        <option value="monitor">Monitor</option>
+                        <option value="needs-review">Needs Review</option>
+                        <option value="dead-code">Dead Code</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="typeFilter">Types:</label>
+                    <select id="typeFilter" multiple>
+                        <option value="">All</option>
+                        <option value="file">File</option>
+                        <option value="function">Function</option>
+                        <option value="class">Class</option>
+                        <option value="method">Method</option>
+                        <option value="module">Module</option>
+                        <option value="workflow">Workflow</option>
+                        <option value="config">Config</option>
+                        <option value="asset">Asset</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="layoutSelect">Layout:</label>
+                    <select id="layoutSelect">
+                        <option value="force">Force Directed</option>
+                        <option value="circular">Circular</option>
+                        <option value="hierarchical">Hierarchical</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <button id="resetZoom">Reset Zoom</button>
+                    <button id="toggleLabels">Toggle Labels</button>
+                    <button id="exportImage">Export PNG</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="visualization">
+            <div id="loading" class="loading">
+                <div class="loading-spinner"></div>
+                <div>Loading code graph data...</div>
+            </div>
+
+            <svg id="graph"></svg>
+
+                <div id="legend" class="legend" style="display: none;">
+                    <h3>Node Types</h3>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ff6b6b;"></div>
+                        <span>File</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #4ecdc4;"></div>
+                        <span>Function</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #45b7d1;"></div>
+                        <span>Class</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #96ceb4;"></div>
+                        <span>Method</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #feca57;"></div>
+                        <span>Module</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #ff9ff3;"></div>
+                        <span>Workflow</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #f39c12;"></div>
+                        <span>Config</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: #9b59b6;"></div>
+                        <span>Asset</span>
+                    </div>
+                </div>
+
+            <div id="stats" class="stats" style="display: none;">
+                <h3>Graph Statistics</h3>
+                <div id="statsContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class CodeGraphVisualizer {
+            constructor() {
+                this.data = null;
+                this.nodes = [];
+                this.links = [];
+                this.simulation = null;
+                this.svg = null;
+                this.g = null;
+                this.tooltip = null;
+                this.selectedNode = null;
+                this.showLabels = true;
+                this.currentLayout = 'force';
+
+                this.colorScale = {
+                    'file': '#ff6b6b',
+                    'function': '#4ecdc4',
+                    'class': '#45b7d1',
+                    'method': '#96ceb4',
+                    'module': '#feca57',
+                    'workflow': '#ff9ff3',
+                    'config': '#f39c12',
+                    'asset': '#9b59b6',
+                    'default': '#a8a8a8'
+                };
+
+                this.init();
+            }
+
+            init() {
+                this.setupSVG();
+                this.setupEventListeners();
+                this.loadDefaultData();
+            }
+
+            setupSVG() {
+                const container = document.querySelector('.visualization');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+
+                this.svg = d3.select('#graph')
+                    .attr('width', width)
+                    .attr('height', height);
+
+                // Add zoom behavior
+                const zoom = d3.zoom()
+                    .scaleExtent([0.1, 4])
+                    .on('zoom', (event) => {
+                        this.g.attr('transform', event.transform);
+                    });
+
+                this.svg.call(zoom);
+
+                // Create main group
+                this.g = this.svg.append('g');
+
+                // Create tooltip
+                this.tooltip = d3.select('body').append('div')
+                    .attr('class', 'tooltip')
+                    .style('opacity', 0);
+
+                // Handle window resize
+                window.addEventListener('resize', () => {
+                    const newWidth = container.clientWidth;
+                    const newHeight = container.clientHeight;
+                    this.svg.attr('width', newWidth).attr('height', newHeight);
+                    if (this.simulation) {
+                        this.simulation.force('center', d3.forceCenter(newWidth / 2, newHeight / 2));
+                        this.simulation.alpha(0.3).restart();
+                    }
+                });
+            }
+
+            setupEventListeners() {
+                document.getElementById('fileInput').addEventListener('change', (e) => {
+                    this.handleFileLoad(e);
+                });
+
+                document.getElementById('nodeFilter').addEventListener('input', (e) => {
+                    this.applyFilters();
+                });
+
+                document.getElementById('qualityFilter').addEventListener('change', (e) => {
+                    this.applyFilters();
+                });
+
+                document.getElementById('typeFilter').addEventListener('change', (e) => {
+                    this.applyFilters();
+                });
+
+                document.getElementById('layoutSelect').addEventListener('change', (e) => {
+                    this.changeLayout(e.target.value);
+                });
+
+                document.getElementById('resetZoom').addEventListener('click', () => {
+                    this.resetZoom();
+                });
+
+                document.getElementById('toggleLabels').addEventListener('click', () => {
+                    this.toggleLabels();
+                });
+
+                document.getElementById('exportImage').addEventListener('click', () => {
+                    this.exportImage();
+                });
+            }
+
+            async loadDefaultData() {
+                try {
+                    // Try to load the code_graph.json from the docs directory
+                    const response = await fetch('docs/code_graph.json');
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.processData(data);
+                    } else {
+                        // Fallback to sample data if file not found
+                        this.loadSampleData();
+                    }
+                } catch (error) {
+                    console.warn('Could not load code_graph.json, using sample data');
+                    this.loadSampleData();
+                }
+            }
+
+            loadSampleData() {
+                // Sample data for demonstration
+                const sampleData = {
+                    nodes: [
+                        {id: "main.py", type: "file", name: "main.py"},
+                        {id: "function:main.main", type: "function", name: "main"},
+                        {id: "class:core.session_manager.SessionManager", type: "class", name: "SessionManager"},
+                        {id: "method:SessionManager.ensure_session_ready", type: "method", name: "ensure_session_ready"},
+                        {id: "function:utils.log_in", type: "function", name: "log_in"},
+                        {id: "workflow:action6_gather.coord", type: "workflow", name: "coord"}
+                    ],
+                    edges: [
+                        {source: "main.py", target: "function:main.main", type: "defines"},
+                        {source: "function:main.main", target: "method:SessionManager.ensure_session_ready", type: "calls"},
+                        {source: "method:SessionManager.ensure_session_ready", target: "function:utils.log_in", type: "calls"},
+                        {source: "function:main.main", target: "workflow:action6_gather.coord", type: "calls"}
+                    ]
+                };
+                this.processData(sampleData);
+            }
+
+            processData(data) {
+                this.data = data;
+
+                // Create nodes array
+                this.nodes = data.nodes.map((node, i) => ({
+                    ...node,
+                    index: i,
+                    x: Math.random() * 800,
+                    y: Math.random() * 600
+                }));
+
+                // Create links array
+                this.links = data.edges.map(edge => ({
+                    source: this.nodes.find(n => n.id === edge.source),
+                    target: this.nodes.find(n => n.id === edge.target),
+                    type: edge.type,
+                    description: edge.description
+                })).filter(link => link.source && link.target);
+
+                this.updateVisualization();
+                this.updateStats();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('legend').style.display = 'block';
+                document.getElementById('stats').style.display = 'block';
+            }
+
+            updateVisualization() {
+                // Clear existing elements
+                this.g.selectAll('*').remove();
+
+                // Create link elements
+                const link = this.g.append('g')
+                    .attr('class', 'links')
+                    .selectAll('line')
+                    .data(this.links)
+                    .enter().append('line')
+                    .attr('class', 'link')
+                    .attr('stroke', d => this.getLinkColor(d.type))
+                    .attr('stroke-width', 2)
+                    .on('mouseover', (event, d) => this.showLinkTooltip(event, d))
+                    .on('mouseout', () => this.hideTooltip());
+
+                // Create node elements
+                const node = this.g.append('g')
+                    .attr('class', 'nodes')
+                    .selectAll('circle')
+                    .data(this.nodes)
+                    .enter().append('circle')
+                    .attr('class', 'node')
+                    .attr('r', d => this.getNodeSize(d))
+                    .attr('fill', d => this.getNodeColor(d))
+                    .attr('stroke', '#fff')
+                    .attr('stroke-width', 2)
+                    .on('click', (event, d) => this.selectNode(d))
+                    .on('mouseover', (event, d) => this.showNodeTooltip(event, d))
+                    .on('mouseout', () => this.hideTooltip())
+                    .call(d3.drag()
+                        .on('start', (event, d) => this.dragstarted(event, d))
+                        .on('drag', (event, d) => this.dragged(event, d))
+                        .on('end', (event, d) => this.dragended(event, d)));
+
+                // Create labels
+                const labels = this.g.append('g')
+                    .attr('class', 'labels')
+                    .selectAll('text')
+                    .data(this.nodes)
+                    .enter().append('text')
+                    .attr('class', 'node-label')
+                    .text(d => d.name)
+                    .style('display', this.showLabels ? 'block' : 'none');
+
+                // Create simulation
+                this.simulation = d3.forceSimulation(this.nodes)
+                    .force('link', d3.forceLink(this.links).id(d => d.id).distance(100))
+                    .force('charge', d3.forceManyBody().strength(-300))
+                    .force('center', d3.forceCenter(this.svg.attr('width') / 2, this.svg.attr('height') / 2))
+                    .force('collision', d3.forceCollide().radius(d => this.getNodeSize(d) + 5))
+                    .on('tick', () => {
+                        link
+                            .attr('x1', d => d.source.x)
+                            .attr('y1', d => d.source.y)
+                            .attr('x2', d => d.target.x)
+                            .attr('y2', d => d.target.y);
+
+                        node
+                            .attr('cx', d => d.x)
+                            .attr('cy', d => d.y);
+
+                        labels
+                            .attr('x', d => d.x)
+                            .attr('y', d => d.y + this.getNodeSize(d) + 15);
+                    });
+            }
+
+            getNodeColor(node) {
+                return this.colorScale[node.type] || this.colorScale.default;
+            }
+
+            getNodeSize(node) {
+                const baseSizes = {
+                    'file': 12,
+                    'function': 8,
+                    'class': 10,
+                    'method': 6,
+                    'module': 14,
+                    'workflow': 9
+                };
+                return baseSizes[node.type] || 8;
+            }
+
+            getLinkColor(type) {
+                const colors = {
+                    'defines': '#4ecdc4',
+                    'calls': '#ff6b6b',
+                    'depends-on': '#45b7d1',
+                    'uses': '#96ceb4',
+                    'mutates': '#feca57',
+                    'decorated-with': '#ff9ff3',
+                    'instantiates': '#a8a8a8',
+                    'wraps': '#dda0dd',
+                    'returns': '#98fb98'
+                };
+                return colors[type] || '#a8a8a8';
+            }
+
+            showNodeTooltip(event, node) {
+                this.tooltip.transition()
+                    .duration(200)
+                    .style('opacity', .9);
+
+                const connections = this.links.filter(l =>
+                    l.source === node || l.target === node
+                ).length;
+
+                let tooltipContent = `<strong>${node.name}</strong><br/>`;
+                tooltipContent += `Type: ${node.type}<br/>`;
+                tooltipContent += `Connections: ${connections}<br/>`;
+
+                if (node.path) tooltipContent += `Path: ${node.path}<br/>`;
+                if (node.summary) tooltipContent += `Summary: ${node.summary}<br/>`;
+                if (node.mechanism) tooltipContent += `Mechanism: ${node.mechanism}<br/>`;
+                if (node.quality) tooltipContent += `Quality: ${node.quality}<br/>`;
+                if (node.concerns && node.concerns.length > 0) {
+                    tooltipContent += `Concerns: ${node.concerns.join(', ')}<br/>`;
+                }
+                if (node.opportunities && node.opportunities.length > 0) {
+                    tooltipContent += `Opportunities: ${node.opportunities.join(', ')}<br/>`;
+                }
+                if (node.tests) tooltipContent += `Tests: ${node.tests}<br/>`;
+                if (node.notes) tooltipContent += `Notes: ${node.notes}<br/>`;
+
+                this.tooltip.html(tooltipContent)
+                    .style('left', (event.pageX + 10) + 'px')
+                    .style('top', (event.pageY - 28) + 'px');
+            }
+
+            showLinkTooltip(event, link) {
+                this.tooltip.transition()
+                    .duration(200)
+                    .style('opacity', .9);
+
+                this.tooltip.html(`
+                    <strong>${link.type}</strong><br/>
+                    From: ${link.source.name}<br/>
+                    To: ${link.target.name}<br/>
+                    ${link.description ? `Description: ${link.description}<br/>` : ''}
+                `)
+                    .style('left', (event.pageX + 10) + 'px')
+                    .style('top', (event.pageY - 28) + 'px');
+            }
+
+            hideTooltip() {
+                this.tooltip.transition()
+                    .duration(500)
+                    .style('opacity', 0);
+            }
+
+            selectNode(node) {
+                // Remove previous selection
+                this.g.selectAll('.node').classed('selected', false);
+
+                if (this.selectedNode === node) {
+                    this.selectedNode = null;
+                    return;
+                }
+
+                this.selectedNode = node;
+
+                // Highlight selected node
+                this.g.selectAll('.node')
+                    .filter(d => d === node)
+                    .classed('selected', true);
+
+                // Highlight connected nodes and links
+                const connectedNodes = new Set();
+                this.links.forEach(link => {
+                    if (link.source === node || link.target === node) {
+                        connectedNodes.add(link.source);
+                        connectedNodes.add(link.target);
+                    }
+                });
+
+                this.g.selectAll('.node')
+                    .style('opacity', d => connectedNodes.has(d) ? 1 : 0.3);
+
+                this.g.selectAll('.link')
+                    .style('opacity', d =>
+                        (d.source === node || d.target === node) ? 1 : 0.1
+                    );
+            }
+
+            applyFilters() {
+                const textSearch = document.getElementById('nodeFilter').value.toLowerCase();
+                const qualityFilter = Array.from(document.getElementById('qualityFilter').selectedOptions).map(opt => opt.value);
+                const typeFilter = Array.from(document.getElementById('typeFilter').selectedOptions).map(opt => opt.value);
+
+                // If no filters are applied, show all nodes
+                if (!textSearch && qualityFilter.length === 0 && typeFilter.length === 0) {
+                    this.g.selectAll('.node').style('opacity', 1);
+                    this.g.selectAll('.node-label').style('opacity', 1);
+                    this.g.selectAll('.link').style('opacity', 0.6);
+                    return;
+                }
+
+                const matchingNodes = this.nodes.filter(node => {
+                    // Text search filter
+                    let textMatch = true;
+                    if (textSearch) {
+                        textMatch = this.matchesTextSearch(node, textSearch);
+                    }
+
+                    // Quality filter
+                    let qualityMatch = true;
+                    if (qualityFilter.length > 0 && !qualityFilter.includes('')) {
+                        qualityMatch = qualityFilter.includes(node.quality || '');
+                    }
+
+                    // Type filter
+                    let typeMatch = true;
+                    if (typeFilter.length > 0 && !typeFilter.includes('')) {
+                        typeMatch = typeFilter.includes(node.type || '');
+                    }
+
+                    return textMatch && qualityMatch && typeMatch;
+                });
+
+                const matchingNodeIds = new Set(matchingNodes.map(n => n.id));
+
+                this.g.selectAll('.node')
+                    .style('opacity', d => matchingNodeIds.has(d.id) ? 1 : 0.1);
+
+                this.g.selectAll('.node-label')
+                    .style('opacity', d => matchingNodeIds.has(d.id) ? 1 : 0.1);
+
+                this.g.selectAll('.link')
+                    .style('opacity', d =>
+                        matchingNodeIds.has(d.source.id) || matchingNodeIds.has(d.target.id) ? 0.6 : 0.05
+                    );
+            }
+
+            matchesTextSearch(node, searchTerm) {
+                const term = searchTerm.toLowerCase();
+
+                // Basic info search
+                if (node.name.toLowerCase().includes(term) ||
+                    node.id.toLowerCase().includes(term) ||
+                    (node.type && node.type.toLowerCase().includes(term)) ||
+                    (node.path && node.path.toLowerCase().includes(term))) {
+                    return true;
+                }
+
+                // Documentation search
+                if ((node.summary && node.summary.toLowerCase().includes(term)) ||
+                    (node.mechanism && node.mechanism.toLowerCase().includes(term))) {
+                    return true;
+                }
+
+                // Quality metrics search
+                if (node.quality && node.quality.toLowerCase().includes(term)) {
+                    return true;
+                }
+
+                // Concerns search
+                if (node.concerns && node.concerns.some(concern =>
+                    concern.toLowerCase().includes(term))) {
+                    return true;
+                }
+
+                // Opportunities search
+                if (node.opportunities && node.opportunities.some(opportunity =>
+                    opportunity.toLowerCase().includes(term))) {
+                    return true;
+                }
+
+                // Tests search
+                if (node.tests && node.tests.toLowerCase().includes(term)) {
+                    return true;
+                }
+
+                // Notes search
+                if (node.notes && node.notes.toLowerCase().includes(term)) {
+                    return true;
+                }
+
+                return false;
+            }
+
+            changeLayout(layoutType) {
+                this.currentLayout = layoutType;
+
+                if (this.simulation) {
+                    this.simulation.stop();
+                }
+
+                switch (layoutType) {
+                    case 'circular':
+                        this.applyCircularLayout();
+                        break;
+                    case 'hierarchical':
+                        this.applyHierarchicalLayout();
+                        break;
+                    default:
+                        this.applyForceLayout();
+                }
+            }
+
+            applyCircularLayout() {
+                const width = +this.svg.attr('width');
+                const height = +this.svg.attr('height');
+                const radius = Math.min(width, height) / 2 - 50;
+                const centerX = width / 2;
+                const centerY = height / 2;
+
+                this.nodes.forEach((node, i) => {
+                    const angle = (i / this.nodes.length) * 2 * Math.PI;
+                    node.x = centerX + radius * Math.cos(angle);
+                    node.y = centerY + radius * Math.sin(angle);
+                });
+
+                this.updateNodePositions();
+            }
+
+            applyHierarchicalLayout() {
+                // Simple hierarchical layout based on node types
+                const levels = {
+                    'file': 0,
+                    'module': 1,
+                    'class': 2,
+                    'workflow': 2,
+                    'function': 3,
+                    'method': 4
+                };
+
+                const width = +this.svg.attr('width');
+                const height = +this.svg.attr('height');
+                const levelHeight = height / 5;
+
+                // Group nodes by level
+                const nodesByLevel = {};
+                this.nodes.forEach(node => {
+                    const level = levels[node.type] || 3;
+                    if (!nodesByLevel[level]) nodesByLevel[level] = [];
+                    nodesByLevel[level].push(node);
+                });
+
+                // Position nodes within each level
+                Object.keys(nodesByLevel).forEach(level => {
+                    const nodes = nodesByLevel[level];
+                    const y = +level * levelHeight + levelHeight / 2;
+                    const spacing = width / (nodes.length + 1);
+
+                    nodes.forEach((node, i) => {
+                        node.x = spacing * (i + 1);
+                        node.y = y;
+                    });
+                });
+
+                this.updateNodePositions();
+            }
+
+            applyForceLayout() {
+                if (this.simulation) {
+                    this.simulation.alpha(0.3).restart();
+                }
+            }
+
+            updateNodePositions() {
+                this.g.selectAll('.node')
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+
+                this.g.selectAll('.node-label')
+                    .attr('x', d => d.x)
+                    .attr('y', d => d.y + this.getNodeSize(d) + 15);
+
+                this.g.selectAll('.link')
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+            }
+
+            toggleLabels() {
+                this.showLabels = !this.showLabels;
+                this.g.selectAll('.node-label')
+                    .style('display', this.showLabels ? 'block' : 'none');
+            }
+
+            resetZoom() {
+                this.svg.transition()
+                    .duration(750)
+                    .call(d3.zoom().transform, d3.zoomIdentity);
+            }
+
+            exportImage() {
+                const svgElement = this.svg.node();
+                const svgData = new XMLSerializer().serializeToString(svgElement);
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+
+                canvas.width = +this.svg.attr('width');
+                canvas.height = +this.svg.attr('height');
+
+                img.onload = () => {
+                    ctx.fillStyle = '#1e3c72';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+
+                    const link = document.createElement('a');
+                    link.download = 'code-graph-visualization.png';
+                    link.href = canvas.toDataURL();
+                    link.click();
+                };
+
+                img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+            }
+
+            updateStats() {
+                const statsContent = document.getElementById('statsContent');
+                const nodeTypes = {};
+                const edgeTypes = {};
+
+                this.nodes.forEach(node => {
+                    nodeTypes[node.type] = (nodeTypes[node.type] || 0) + 1;
+                });
+
+                this.links.forEach(link => {
+                    edgeTypes[link.type] = (edgeTypes[link.type] || 0) + 1;
+                });
+
+                let statsHtml = `<div>Nodes: ${this.nodes.length}</div>`;
+                statsHtml += `<div>Edges: ${this.links.length}</div>`;
+                statsHtml += '<div style="margin-top: 10px;"><strong>Node Types:</strong></div>';
+
+                Object.entries(nodeTypes).forEach(([type, count]) => {
+                    statsHtml += `<div>${type}: ${count}</div>`;
+                });
+
+                statsHtml += '<div style="margin-top: 10px;"><strong>Edge Types:</strong></div>';
+
+                Object.entries(edgeTypes).forEach(([type, count]) => {
+                    statsHtml += `<div>${type}: ${count}</div>`;
+                });
+
+                statsContent.innerHTML = statsHtml;
+            }
+
+            handleFileLoad(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        this.processData(data);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+
+            dragstarted(event, d) {
+                if (!event.active) this.simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            dragended(event, d) {
+                if (!event.active) this.simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        // Initialize the visualizer when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new CodeGraphVisualizer();
+        });
+    </script>
+</body>
+</html>

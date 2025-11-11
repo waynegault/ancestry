@@ -5,6 +5,12 @@ Demonstrates testing exception handling and error conditions.
 """
 
 import sys
+from pathlib import Path
+
+# Ensure repository root is importable when run directly
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 
 class ValidationError(Exception):
@@ -35,8 +41,8 @@ def parse_year(year_str: str) -> int:
 
     try:
         year = int(year_str)
-    except ValueError:
-        raise ValueError(f"Invalid year format: {year_str}")
+    except ValueError as err:
+        raise ValueError(f"Invalid year format: {year_str}") from err
 
     if year < 1000 or year > 9999:
         raise ValueError(f"Year must be 4 digits: {year}")
@@ -120,8 +126,7 @@ def _test_parse_year_invalid_format() -> bool:
         parse_year("not a year")
         return False
     except ValueError as e:
-        has_error_message = "invalid" in str(e).lower() or "format" in str(e).lower()
-        return has_error_message
+        return "invalid" in str(e).lower() or "format" in str(e).lower()
     except Exception:
         return False
 

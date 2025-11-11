@@ -36,7 +36,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
-DEFAULT_PROMPT = "I'm interested in geneology. How many great-great-great grandparents did I have?"
+DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
 PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
@@ -54,6 +54,7 @@ class TestResult:
     endpoint_status: bool
     messages: list[str] = field(default_factory=list)
     full_output: str | None = None
+    finish_reason: str | None = None  # Track why generation stopped
 
 
 def _load_env_file(env_path: Path, override: bool = False) -> None:
@@ -123,6 +124,13 @@ def _print_result(result: TestResult) -> None:
     print(f"Endpoint check : {'PASS' if result.endpoint_status else 'FAIL'}")
     print(f"API call : {'PASS' if result.api_status else 'FAIL'}")
     # Removed the Details section to simplify output
+
+
+def _is_response_truncated(text: str, finish_reason: str | None) -> bool:
+    """Check if response appears truncated."""
+    if finish_reason == "length":
+        return True
+    return bool(text and not text.endswith((".", "!", "?", ")", '"', "'")))
 
 
 def _build_messages_preview(content: str) -> str:
@@ -215,8 +223,9 @@ def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
         )
         if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
             full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("moonshot", True, endpoint_ok, messages, full_output=full_output)
+            return TestResult("moonshot", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Moonshot returned an empty response.")
         return TestResult("moonshot", False, endpoint_ok, messages)
     except Exception as exc:  # pylint: disable=broad-except
@@ -257,8 +266,9 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
         )
         if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
             full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("deepseek", True, endpoint_ok, messages, full_output=full_output)
+            return TestResult("deepseek", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Received empty response payload from DeepSeek.")
         return TestResult("deepseek", False, endpoint_ok, messages)
     except Exception as exc:  # pylint: disable=broad-except
@@ -287,19 +297,21 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     else:
         messages.append("Using default Google Generative Language endpoint.")
 
+    configure_fn: Callable[..., Any] | None = getattr(genai, "configure", None)
+    generation_config_cls: Any = getattr(genai, "GenerationConfig", None)
+    generative_model_cls: Any = getattr(genai, "GenerativeModel", None)
+
+    if not callable(configure_fn) or generation_config_cls is None or generative_model_cls is None:
+        messages.append("google-generativeai module is missing required interfaces (configure/GenerativeModel).")
+        return TestResult("gemini", False, endpoint_ok, messages)
+
+    success = False
+    full_output: str | None = None
+    finish_reason_str: str | None = None
+
     try:
-        configure_fn: Callable[..., Any] | None = getattr(genai, "configure", None)
-        generation_config_cls: Any = getattr(genai, "GenerationConfig", None)
-        generative_model_cls: Any = getattr(genai, "GenerativeModel", None)
-
-        if not callable(configure_fn) or generation_config_cls is None or generative_model_cls is None:
-            messages.append("google-generativeai module is missing required interfaces (configure/GenerativeModel).")
-            return TestResult("gemini", False, endpoint_ok, messages)
-
-        # Configure API first (required for list_models)
         configure_fn(api_key=api_key)
 
-        # List available models with generateContent support
         list_models_fn = getattr(genai, "list_models", None)
         if callable(list_models_fn):
             try:
@@ -316,7 +328,6 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                             model_count += 1
                             if name == model_name:
                                 found_configured = True
-                            # Limit output to first 5 models
                             if model_count >= 5:
                                 messages.append("   ... (additional models available)")
                                 break
@@ -324,10 +335,10 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                     messages.append("   ⚠️  No models found with generateContent support")
                 elif not found_configured:
                     messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
-                messages.append("")  # Blank line for readability
-            except Exception as e:
-                messages.append(f"   ⚠️  Could not list models: {e}")
-                messages.append("")  # Blank line for readability
+                messages.append("")
+            except Exception as exc:  # pragma: no cover - diagnostic helper
+                messages.append(f"   ⚠️  Could not list models: {exc}")
+                messages.append("")
 
         model = generative_model_cls(model_name)
         response = model.generate_content(
@@ -338,28 +349,45 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                 temperature=0.7,
             ),
         )
-        if not response.candidates:
+
+        candidates = getattr(response, "candidates", [])
+        if not candidates:
             messages.append("Gemini returned no candidates.")
-            return TestResult("gemini", False, endpoint_ok, messages)
-        text_parts = []
-        for part in response.candidates[0].content.parts:
-            value = getattr(part, "text", "")
-            if value:
-                text_parts.append(value)
-        combined = " ".join(text_parts).strip()
-        if combined:
-            messages.append(_build_messages_preview(combined))
-            return TestResult("gemini", True, endpoint_ok, messages, full_output=combined)
-        messages.append("Gemini response contained no text content.")
-        return TestResult("gemini", False, endpoint_ok, messages)
+        else:
+            candidate = candidates[0]
+            finish_reason = getattr(candidate, "finish_reason", None)
+            safety_ratings = getattr(candidate, "safety_ratings", [])
+
+            if finish_reason and finish_reason != 1:  # 1 = STOP (normal completion)
+                messages.append(f"⚠️  Generation stopped with finish_reason: {finish_reason}")
+                if safety_ratings:
+                    messages.append(f"Safety ratings: {safety_ratings}")
+
+            text_parts: list[str] = []
+            for part in candidate.content.parts:
+                value = getattr(part, "text", "")
+                if value:
+                    text_parts.append(value)
+
+            combined = " ".join(text_parts).strip()
+            if combined:
+                messages.append(_build_messages_preview(combined))
+                finish_reason_str = str(finish_reason) if finish_reason is not None else None
+                full_output = combined
+                success = True
+            else:
+                messages.append("Gemini response contained no text content.")
+                if hasattr(response, "prompt_feedback"):
+                    messages.append(f"Prompt feedback: {response.prompt_feedback}")
+
     except Exception as exc:  # pylint: disable=broad-except
         error_msg = _format_provider_error("gemini", exc)
-        if "is not found" in error_msg.lower() or "not supported" in error_msg.lower():
-            # Suggest available models from the list
+        lowered = error_msg.lower()
+        if "is not found" in lowered or "not supported" in lowered:
             try:
                 list_models_fn = getattr(genai, "list_models", None)
                 if callable(list_models_fn):
-                    available_models = []
+                    available_models: list[str] = []
                     for model in list_models_fn():  # type: ignore[misc]
                         methods = getattr(model, "supported_generation_methods", [])
                         if "generateContent" in methods:
@@ -370,12 +398,20 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
                                 break
                     if available_models:
                         error_msg += f" Try: {', '.join(available_models)}"
-            except Exception:
+            except Exception:  # pragma: no cover - suggestion helper
                 pass
             if "Try:" not in error_msg:
                 error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model."
         messages.append(error_msg)
-        return TestResult("gemini", False, endpoint_ok, messages)
+
+    return TestResult(
+        "gemini",
+        success,
+        endpoint_ok,
+        messages,
+        full_output=full_output,
+        finish_reason=finish_reason_str,
+    )
 
 
 def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
@@ -444,8 +480,9 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
         )
         if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
             full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("local_llm", True, endpoint_ok, messages, full_output=full_output)
+            return TestResult("local_llm", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Local LLM returned an empty response.")
         return TestResult("local_llm", False, endpoint_ok, messages)
     except Exception as exc:  # pylint: disable=broad-except
@@ -477,7 +514,7 @@ def _provider_base_url(provider: str) -> str:
 
 
 def _prompt_for_provider() -> str | None:
-    print("Available providers:")
+    print("Available providers:\n")
     provider_list = list(PROVIDERS)
     for idx, provider in enumerate(provider_list, start=1):
         display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
@@ -485,7 +522,7 @@ def _prompt_for_provider() -> str | None:
         print(f"  {idx}. {display_name} [{base_url}]")
 
     while True:
-        choice = input("Enter the number of the provider you want to test (or 'q' to quit): ").strip()
+        choice = input("\nEnter the number of the provider you want to test (or 'q' to quit): ").strip()
         if choice.lower() == 'q':
             return None
         if not choice.isdigit():
@@ -504,8 +541,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--provider", choices=PROVIDERS, help="Provider to test. If omitted, you will be prompted.")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt to send to the provider.")
-    parser.add_argument("--max-tokens", dest="max_tokens", type=int, default=256, help="Maximum tokens/output length.")
+    parser.add_argument("--max-tokens", dest="max_tokens", type=int, default=2048, help="Maximum tokens/output length.")
     parser.add_argument("--env-file", dest="env_file", default=".env", help="Path to .env file to load before running.")
+    parser.add_argument("--show-truncation-warning", action="store_true", help="Show warning if response appears truncated.")
     return parser
 
 
@@ -534,11 +572,17 @@ def main(argv: list[str] | None = None) -> int:
 
         # Always show prompt and response if available
         if result.api_status and result.full_output:
-            print(f"\nPrompt:")
+            print("\nPrompt:")
             print(f'"{args.prompt}"')
-            print(f"\nResponse:")
+            print("\nResponse:")
             print(result.full_output)
             print(f"\nResponse time: {duration:.2f}s")
+
+            # Check for truncation
+            if _is_response_truncated(result.full_output, result.finish_reason):
+                print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
+                print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
+            print()
         elif not result.api_status:
             # Show error details if API call failed
             if result.messages:
@@ -569,11 +613,17 @@ def main(argv: list[str] | None = None) -> int:
 
         # Always show prompt and response if available
         if result.api_status and result.full_output:
-            print(f"\nPrompt:")
+            print("\nPrompt:")
             print(f'"{args.prompt}"')
-            print(f"\nResponse:")
+            print("\nResponse:")
             print(result.full_output)
             print(f"\nResponse time: {duration:.2f}s")
+
+            # Check for truncation
+            if _is_response_truncated(result.full_output, result.finish_reason):
+                print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
+                print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
+            print()
         elif not result.api_status:
             # Show error details if API call failed
             if result.messages:

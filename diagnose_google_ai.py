@@ -21,7 +21,7 @@ try:
 
     # Check version
     if hasattr(genai, "__version__"):
-        print(f"   ℹ️  Version: {genai.__version__}")
+        print(f"   INFO: Version: {genai.__version__}")
     else:
         print("   ⚠️  Version attribute not found")
 
@@ -54,7 +54,7 @@ for method in required_methods:
 
 for method in optional_methods:
     if hasattr(genai, method):
-        print(f"   ℹ️  {method}: available (newer API)")
+        print(f"   INFO: {method}: available (newer API)")
     else:
         print(f"   ⚠️  {method}: not available (older API)")
 
@@ -102,7 +102,7 @@ if api_key:
             except Exception as e:
                 print(f"   ❌ Error listing models: {e}")
         else:
-            print("   ℹ️  list_models() not available (older API version)")
+            print("   INFO: list_models() not available (older API version)")
 
         # Test 5: Try to create a model instance
         print("\n5. Testing model instantiation...")

@@ -15,6 +15,7 @@ Test Coverage:
 
 import sys
 import time
+from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from unittest.mock import MagicMock, patch
@@ -65,7 +66,7 @@ def _test_token_refresh_trigger() -> None:
 def _test_403_error_recovery() -> None:
     """Test recovery from 403 Forbidden errors."""
     # Mock scenario: 403 error should trigger cookie refresh
-    with patch('requests.Session') as mock_session:
+    with patch('requests.Session'):
         mock_response = MagicMock()
         mock_response.status_code = 403
         mock_response.raise_for_status.side_effect = Exception("403 Forbidden")
@@ -116,11 +117,9 @@ def _test_auth_failure_recovery() -> None:
     breaker = CircuitBreaker(name="auth_test", config=config)
 
     # Simulate 5 auth failures
-    for i in range(5):
-        try:
+    for _ in range(5):
+        with suppress(RuntimeError):
             breaker.call(lambda: (_ for _ in ()).throw(RuntimeError("Auth failed")))
-        except RuntimeError:
-            pass
 
     # Circuit should be open after 5 failures
     assert breaker.state.value == "OPEN", "Circuit breaker should open after 5 failures"
@@ -167,11 +166,11 @@ def _test_auth_retry_logic() -> None:
     call_count = 0
 
     @retry_on_failure(max_attempts=3, backoff_factor=2.0)
-    def flaky_auth():
+    def flaky_auth() -> bool:
         nonlocal call_count
         call_count += 1
         if call_count < 3:
-            raise Exception("Transient failure")
+            raise RuntimeError("Transient failure")
         return True
 
     # Should succeed after retries

@@ -15,6 +15,7 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 import os
 import sys
 import warnings
+from contextlib import suppress
 
 # NOTE: These warning suppressions are OBSOLETE but kept for defense-in-depth.
 # PREFERRED APPROACH: Run as script (`python core\session_manager.py`) NOT as module (`python -m core.session_manager`)
@@ -2660,18 +2661,14 @@ def _test_circuit_breaker_short_circuit() -> None:
 
     # Record 4 failures (just under threshold) - should not open
     for i in range(4):
-        try:
+        with suppress(RuntimeError):
             breaker.call(failing_operation)
-        except RuntimeError:
-            pass  # Expected failure
         assert breaker.failure_count == i + 1, f"Should have {i+1} failures"
         assert breaker.state.value == "CLOSED", f"Should stay CLOSED after {i+1} failures"
 
     # 5th failure should open the circuit
-    try:
+    with suppress(RuntimeError):
         breaker.call(failing_operation)
-    except RuntimeError:
-        pass  # Expected failure
     assert breaker.failure_count >= 5, "Should have at least 5 failures"
     assert breaker.state.value == "OPEN", "Circuit breaker should OPEN on 5th failure"
 

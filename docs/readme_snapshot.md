@@ -1,0 +1,36 @@
+# README Baseline Snapshot (2025-11-11)
+
+- **Title**: Ancestry Genealogical Research Automation
+- **High-level Sections**:
+  - Overview (project purpose and key automated actions)
+  - Quick Start
+    - Prerequisites
+    - Installation (clone, dependencies, .env setup)
+    - Configuration (environment variables grouped: Ancestry credentials, rate limiting, processing limits, session health, application mode, AI providers, Microsoft Graph)
+    - Running the Application (main menu, individual actions, test runner)
+  - Architecture
+    - Core Components directory map (core managers, config modules, utilities, ORM, AI interface)
+    - Global Session Pattern explanation
+    - Rate Limiting & Timeout Protection (token bucket, sequential policy, validation checklist, monitoring commands)
+    - Database Schema overview (key tables)
+  - Vision and Roadmap (phased capabilities status)
+  - Developer Instructions (architecture reminders, action notes)
+  - Code Quality & Testing Standards (framework expectations, metrics, linting commands)
+  - Local LLM Integration (configuration, auto-start workflow, troubleshooting)
+  - Future Developer Ideas (redirect to development_plan.md)
+  - Actions 6–10 (per-action purpose, commands, configuration and policies)
+  - Testing (run_all_tests usage)
+  - Pylance Configuration (pyrightconfig.json, workspace settings, reload steps, troubleshooting)
+  - Development Guidelines (code quality, testing, rate limiting, git workflow)
+  - Troubleshooting (common issues, log commands)
+  - Contributing (pull request steps)
+  - License (personal research use)
+  - Support (contact information)
+  - Appendices (beginning with Appendix A: Chronology of Changes)
+
+- **Notable Callouts**:
+  - Emphasis on single SessionManager instance and rate limiter invariants.
+  - Multiple command snippets provided in PowerShell/Bash style for validation and monitoring.
+  - Actions section still focused on Actions 6–10; no dedicated entries for lower-numbered actions.
+  - Quality metrics tie linting and type hints to a 100-point scoring system.
+  - Local LLM auto-start procedure tightly coupled with LM Studio configuration.

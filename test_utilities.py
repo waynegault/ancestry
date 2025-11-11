@@ -564,6 +564,7 @@ def create_test_database() -> Session:
     """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+
     from database import Base
 
     engine = create_engine("sqlite:///:memory:")
@@ -605,8 +606,7 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
         return None
 
     try:
-        gedcom_data = gedcom.parse(gedcom_path)
-        return gedcom_data
+        return gedcom.parse(gedcom_path)
     except Exception:
         return None
 

@@ -28,8 +28,8 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import Any, Literal, Optional, cast
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Literal, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -58,7 +58,9 @@ from core.error_handling import (
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
+    ConversationPhaseEnum,
     ConversationState,
+    DnaMatch,
     MessageDirectionEnum,
     Person,
     PersonStatusEnum,
@@ -1500,31 +1502,227 @@ class InboxProcessor:
             else:
                 days_since_last = 0
 
-            # Check phases in priority order
-            if self._is_closed_status(ai_sentiment):
-                return ConversationPhaseEnum.CLOSED
+            phase_checks = (
+                (self._is_closed_status(ai_sentiment), ConversationPhaseEnum.CLOSED),
+                (self._is_initial_outreach_status(direction, in_messages), ConversationPhaseEnum.INITIAL_OUTREACH),
+                (self._is_response_received_status(direction, in_messages), ConversationPhaseEnum.RESPONSE_RECEIVED),
+                (self._is_stalled_status(days_since_last, total_exchanges), ConversationPhaseEnum.STALLED),
+                (
+                    self._is_collaboration_active_status(total_exchanges, days_since_last, conv_logs),
+                    ConversationPhaseEnum.COLLABORATION_ACTIVE,
+                ),
+                (
+                    self._is_information_shared_status(total_exchanges, conv_logs, ai_sentiment),
+                    ConversationPhaseEnum.INFORMATION_SHARED,
+                ),
+            )
 
-            if self._is_initial_outreach_status(direction, in_messages):
-                return ConversationPhaseEnum.INITIAL_OUTREACH
+            phase_result: Optional[Any] = next(
+                (candidate for condition, candidate in phase_checks if condition),
+                None,
+            )
 
-            if self._is_response_received_status(direction, in_messages):
-                return ConversationPhaseEnum.RESPONSE_RECEIVED
+            if phase_result is None and total_exchanges > 0:
+                phase_result = ConversationPhaseEnum.RESPONSE_RECEIVED
 
-            if self._is_stalled_status(days_since_last, total_exchanges):
-                return ConversationPhaseEnum.STALLED
-
-            if self._is_collaboration_active_status(total_exchanges, days_since_last, conv_logs):
-                return ConversationPhaseEnum.COLLABORATION_ACTIVE
-
-            if self._is_information_shared_status(total_exchanges, conv_logs, ai_sentiment):
-                return ConversationPhaseEnum.INFORMATION_SHARED
-
-            # Default: Return RESPONSE_RECEIVED if messages exist, otherwise None
-            return ConversationPhaseEnum.RESPONSE_RECEIVED if total_exchanges > 0 else None
+            return phase_result
 
         except Exception as e:
             logger.warning(f"Error determining conversation phase for {conversation_id}: {e}")
             return None
+
+    @staticmethod
+    def _default_follow_up_payload() -> dict[str, Any]:
+        return {
+            "follow_up_required": False,
+            "follow_up_due_date": None,
+            "awaiting_response_from": None,
+        }
+
+    @staticmethod
+    def _should_skip_follow_up(
+        ai_sentiment: Optional[str],
+        conversation_phase: Optional[Any],
+    ) -> bool:
+        return (ai_sentiment in {"DESIST", "UNINTERESTED"}) or (
+            conversation_phase == ConversationPhaseEnum.CLOSED
+        )
+
+    @staticmethod
+    def _build_follow_up_history(conversation_history: list[Any]) -> str:
+        snippets: list[str] = []
+        for log_entry in conversation_history[-10:]:
+            direction = getattr(log_entry, "direction", MessageDirectionEnum.IN)
+            dir_label = "ME" if direction == MessageDirectionEnum.OUT else "USER"
+            content = getattr(log_entry, "latest_message_content", "") or ""
+            snippets.append(f"{dir_label}: {content[:500]}")
+        return "\n\n".join(snippets)
+
+    @staticmethod
+    def _build_follow_up_context(
+        conversation_history_str: str,
+        latest_message: str,
+        direction: MessageDirectionEnum,
+        conversation_phase: Optional[Any],
+        ai_sentiment: Optional[str],
+    ) -> dict[str, str]:
+        phase_str = conversation_phase.value if conversation_phase else "unknown"
+        direction_str = "IN" if direction == MessageDirectionEnum.IN else "OUT"
+        return {
+            "conversation_history": conversation_history_str,
+            "latest_message": latest_message[:1000],
+            "direction": direction_str,
+            "conversation_phase": phase_str,
+            "ai_sentiment": ai_sentiment or "UNKNOWN",
+        }
+
+    def _process_follow_up_result(
+        self,
+        result: Optional[dict[str, Any]],
+        conversation_id: str,
+    ) -> dict[str, Any]:
+        if not result or "error" in result:
+            error_msg = result.get("error") if isinstance(result, dict) else "unknown error"
+            logger.warning(
+                "Follow-up extraction failed for %s: %s", conversation_id, error_msg
+            )
+            return self._default_follow_up_payload()
+
+        follow_up_data: Optional[dict[str, Any]]
+        if isinstance(result, dict) and "response" in result:
+            follow_up_data = result.get("response")  # type: ignore[assignment]
+        else:
+            follow_up_data = result if isinstance(result, dict) else None
+
+        if not isinstance(follow_up_data, dict):
+            logger.warning(
+                "Invalid follow-up data format for %s: %s",
+                conversation_id,
+                type(follow_up_data),
+            )
+            return self._default_follow_up_payload()
+
+        follow_up_required = follow_up_data.get("follow_up_required", False)
+        days_until_due = follow_up_data.get("days_until_due")
+        awaiting_response_from = follow_up_data.get("awaiting_response_from")
+
+        follow_up_due_date = None
+        if follow_up_required and days_until_due:
+            follow_up_due_date = datetime.now(timezone.utc) + timedelta(days=days_until_due)
+            logger.info(
+                "Follow-up scheduled for %s: due in %s days (%s), awaiting: %s",
+                conversation_id,
+                days_until_due,
+                follow_up_due_date.strftime("%Y-%m-%d"),
+                awaiting_response_from,
+            )
+
+        return {
+            "follow_up_required": follow_up_required,
+            "follow_up_due_date": follow_up_due_date,
+            "awaiting_response_from": awaiting_response_from,
+            "follow_up_reason": follow_up_data.get("follow_up_reason"),
+            "pending_items": follow_up_data.get("pending_items", []),
+            "reminder_task_title": follow_up_data.get("reminder_task_title"),
+            "reminder_task_body": follow_up_data.get("reminder_task_body"),
+            "urgency_level": follow_up_data.get("urgency_level", "standard"),
+        }
+
+    @staticmethod
+    def _determine_follow_up_window(
+        direction: MessageDirectionEnum,
+        ai_sentiment: Optional[str],
+        conversation_phase: Optional[Any],
+    ) -> int:
+        if ai_sentiment == "PRODUCTIVE":
+            return 7 if direction == MessageDirectionEnum.IN else 14
+        if ai_sentiment == "CAUTIOUSLY_INTERESTED":
+            return 14
+        if conversation_phase == ConversationPhaseEnum.RESPONSE_RECEIVED:
+            return 14
+        return 30
+
+    @staticmethod
+    def _determine_pending_items(latest_message: str) -> list[str]:
+        stripped_message = latest_message.strip()
+        if stripped_message and "?" in stripped_message:
+            return [stripped_message]
+        return []
+
+    @staticmethod
+    def _derive_follow_up_reason(
+        follow_up_required: bool,
+        ai_sentiment: Optional[str],
+    ) -> Optional[str]:
+        if follow_up_required:
+            return "Match asked a question we should answer"
+        if ai_sentiment == "CAUTIOUSLY_INTERESTED":
+            return "Match shows interest but needs additional information"
+        return None
+
+    @staticmethod
+    def _build_reminder_details(
+        follow_up_required: bool,
+        pending_items: list[str],
+        conversation_history_str: str,
+    ) -> tuple[Optional[str], Optional[str]]:
+        if not follow_up_required:
+            return None, None
+
+        title = "Follow up with DNA match"
+        if pending_items:
+            return title, f"They asked: {pending_items[0]}"
+
+        if conversation_history_str:
+            last_line = conversation_history_str.splitlines()[-1][:200]
+            if last_line:
+                return title, last_line
+
+        return title, None
+
+    @staticmethod
+    def _calculate_urgency_level(
+        direction: MessageDirectionEnum,
+        ai_sentiment: Optional[str],
+    ) -> str:
+        if ai_sentiment == "PRODUCTIVE" and direction == MessageDirectionEnum.IN:
+            return "urgent"
+        if ai_sentiment == "CAUTIOUSLY_INTERESTED":
+            return "standard"
+        return "standard"
+
+    def _analyze_follow_up_requirements(
+        self,
+        conversation_history_str: str,
+        latest_message: str,
+        direction: MessageDirectionEnum,
+        conversation_phase: Optional[Any],
+        ai_sentiment: Optional[str],
+    ) -> dict[str, Any]:
+        follow_up_required = direction == MessageDirectionEnum.IN and ai_sentiment == "PRODUCTIVE"
+        awaiting_response_from = "me" if follow_up_required else None
+
+        pending_items = self._determine_pending_items(latest_message)
+        reason = self._derive_follow_up_reason(follow_up_required, ai_sentiment)
+        reminder_task_title, reminder_task_body = self._build_reminder_details(
+            follow_up_required,
+            pending_items,
+            conversation_history_str,
+        )
+
+        urgency_level = self._calculate_urgency_level(direction, ai_sentiment)
+        days_until_due = self._determine_follow_up_window(direction, ai_sentiment, conversation_phase)
+
+        return {
+            "follow_up_required": follow_up_required,
+            "awaiting_response_from": awaiting_response_from,
+            "pending_items": pending_items,
+            "follow_up_reason": reason,
+            "reminder_task_title": reminder_task_title,
+            "reminder_task_body": reminder_task_body,
+            "urgency_level": urgency_level,
+            "days_until_due": days_until_due,
+        }
 
     def _extract_follow_up_requirements(
         self,
@@ -1555,104 +1753,90 @@ class InboxProcessor:
             Dictionary with follow_up_required, due_date, awaiting_response_from fields
         """
         try:
-            from ai_interface import call_ai
-            from database import ConversationPhaseEnum
-
-            # Skip follow-up extraction for non-PRODUCTIVE conversations
-            if ai_sentiment in ("DESIST", "UNINTERESTED"):
-                logger.debug(f"Skipping follow-up extraction for {conversation_id}: sentiment={ai_sentiment}")
-                return {
-                    "follow_up_required": False,
-                    "follow_up_due_date": None,
-                    "awaiting_response_from": None,
-                }
-
-            # Skip for CLOSED phase
-            if conversation_phase == ConversationPhaseEnum.CLOSED:
-                logger.debug(f"Skipping follow-up extraction for {conversation_id}: phase=CLOSED")
-                return {
-                    "follow_up_required": False,
-                    "follow_up_due_date": None,
-                    "awaiting_response_from": None,
-                }
-
-            # Build conversation history string for AI
-            history_texts = []
-            for log_entry in conversation_history[-10:]:  # Last 10 messages for context
-                dir_label = "ME" if log_entry.direction == MessageDirectionEnum.OUT else "USER"
-                content = log_entry.latest_message_content or ""
-                history_texts.append(f"{dir_label}: {content[:500]}")
-
-            conversation_history_str = "\n\n".join(history_texts)
-
-            # Convert phase enum to string
-            phase_str = conversation_phase.value if conversation_phase else "unknown"
-            direction_str = "IN" if direction == MessageDirectionEnum.IN else "OUT"
-
-            # Call AI to extract follow-up requirements
-            context = {
-                "conversation_history": conversation_history_str,
-                "latest_message": latest_message[:1000],
-                "direction": direction_str,
-                "conversation_phase": phase_str,
-                "ai_sentiment": ai_sentiment or "UNKNOWN",
-            }
-
-            logger.debug(f"Extracting follow-up requirements for conversation {conversation_id}")
-            result = call_ai("follow_up_requirements_extraction", context)
-
-            if not result or "error" in result:
-                logger.warning(f"AI follow-up extraction failed for {conversation_id}: {result.get('error')}")
-                return {
-                    "follow_up_required": False,
-                    "follow_up_due_date": None,
-                    "awaiting_response_from": None,
-                }
-
-            # Extract AI response
-            follow_up_data = result.get("response", {})
-
-            if not isinstance(follow_up_data, dict):
-                logger.warning(f"Invalid follow-up data format for {conversation_id}: {type(follow_up_data)}")
-                return {
-                    "follow_up_required": False,
-                    "follow_up_due_date": None,
-                    "awaiting_response_from": None,
-                }
-
-            follow_up_required = follow_up_data.get("follow_up_required", False)
-            days_until_due = follow_up_data.get("days_until_due")
-            awaiting_response_from = follow_up_data.get("awaiting_response_from")
-
-            # Calculate due date if follow-up required
-            follow_up_due_date = None
-            if follow_up_required and days_until_due:
-                from datetime import timedelta
-                follow_up_due_date = datetime.now(timezone.utc) + timedelta(days=days_until_due)
-                logger.info(
-                    f"Follow-up scheduled for {conversation_id}: "
-                    f"due in {days_until_due} days ({follow_up_due_date.strftime('%Y-%m-%d')}), "
-                    f"awaiting: {awaiting_response_from}"
+            if self._should_skip_follow_up(ai_sentiment, conversation_phase):
+                logger.debug(
+                    "Skipping follow-up extraction for %s: sentiment=%s phase=%s",
+                    conversation_id,
+                    ai_sentiment,
+                    getattr(conversation_phase, "name", conversation_phase),
                 )
+                return self._default_follow_up_payload()
 
-            return {
-                "follow_up_required": follow_up_required,
-                "follow_up_due_date": follow_up_due_date,
-                "awaiting_response_from": awaiting_response_from,
-                "follow_up_reason": follow_up_data.get("follow_up_reason"),
-                "pending_items": follow_up_data.get("pending_items", []),
-                "reminder_task_title": follow_up_data.get("reminder_task_title"),
-                "reminder_task_body": follow_up_data.get("reminder_task_body"),
-                "urgency_level": follow_up_data.get("urgency_level", "standard"),
-            }
+            conversation_history_str = self._build_follow_up_history(conversation_history)
+
+            logger.debug(
+                "Analyzing follow-up requirements for conversation %s", conversation_id
+            )
+            heuristic_result = self._analyze_follow_up_requirements(
+                conversation_history_str,
+                latest_message,
+                direction,
+                conversation_phase,
+                ai_sentiment,
+            )
+            return self._process_follow_up_result(heuristic_result, conversation_id)
 
         except Exception as e:
             logger.error(f"Error extracting follow-up requirements for {conversation_id}: {e}", exc_info=True)
-            return {
-                "follow_up_required": False,
-                "follow_up_due_date": None,
-                "awaiting_response_from": None,
-            }
+            return self._default_follow_up_payload()
+
+    @staticmethod
+    def _apply_importance_override(base_urgency: str) -> Optional[str]:
+        if base_urgency == "urgent":
+            return "high"
+        if base_urgency == "patient":
+            return "low"
+        return None
+
+    def _load_person_for_importance(
+        self,
+        db_session: Optional[DbSession],
+        person_id: int,
+    ) -> Optional[Person]:
+        if not db_session:
+            logger.debug("No DB session available for task importance calculation")
+            return None
+        person = db_session.query(Person).filter(Person.id == person_id).first()
+        if not person:
+            logger.debug(f"Person {person_id} not found for importance calculation")
+        return person
+
+    @staticmethod
+    def _extract_importance_metrics(person: Person) -> tuple[int, int]:
+        dna_match = getattr(person, "dna_match", None)
+        cm_shared = getattr(dna_match, "cm_dna", 0) or 0
+        engagement = getattr(person, "current_engagement_score", 0) or 0
+        return cm_shared, engagement
+
+    @staticmethod
+    def _derive_importance_from_metrics(
+        cm_shared: int,
+        engagement: int,
+        person_id: int,
+    ) -> str:
+        if cm_shared > 100 and engagement > 70:
+            logger.debug(
+                "Task importance HIGH: person_id=%s, cM=%s, engagement=%s",
+                person_id,
+                cm_shared,
+                engagement,
+            )
+            return "high"
+        if cm_shared > 50 or engagement > 50:
+            logger.debug(
+                "Task importance NORMAL: person_id=%s, cM=%s, engagement=%s",
+                person_id,
+                cm_shared,
+                engagement,
+            )
+            return "normal"
+        logger.debug(
+            "Task importance LOW: person_id=%s, cM=%s, engagement=%s",
+            person_id,
+            cm_shared,
+            engagement,
+        )
+        return "low"
 
     def _calculate_task_importance(
         self,
@@ -1678,53 +1862,17 @@ class InboxProcessor:
             MS Graph importance level: "high", "normal", or "low"
         """
         try:
-            # AI-detected urgency overrides all
-            if base_urgency == "urgent":
-                return "high"
-            if base_urgency == "patient":
-                return "low"
+            override = self._apply_importance_override(base_urgency)
+            if override is not None:
+                return override
 
-            # Get database session
             db_session = self.session_manager.get_db_conn()
-            if not db_session:
-                logger.debug("No DB session available for task importance calculation")
-                return "normal"
-
-            # Query person with DNA match and engagement data
-            from database import DnaMatch, Person
-
-            person = db_session.query(Person).filter(Person.id == person_id).first()
+            person = self._load_person_for_importance(db_session, person_id)
             if not person:
-                logger.debug(f"Person {person_id} not found for importance calculation")
                 return "normal"
 
-            # Get DNA data (cM shared)
-            cm_shared = 0
-            if person.dna_match and person.dna_match.cm_dna:
-                cm_shared = person.dna_match.cm_dna
-
-            # Get engagement score (0-100)
-            engagement = person.current_engagement_score if hasattr(person, "current_engagement_score") else 0
-
-            # Apply algorithm
-            if cm_shared > 100 and engagement > 70:
-                logger.debug(
-                    f"Task importance HIGH: person_id={person_id}, cM={cm_shared}, "
-                    f"engagement={engagement} (close relative + active conversation)"
-                )
-                return "high"
-            if cm_shared > 50 or engagement > 50:
-                logger.debug(
-                    f"Task importance NORMAL: person_id={person_id}, cM={cm_shared}, "
-                    f"engagement={engagement} (moderate DNA or engagement)"
-                )
-                return "normal"
-
-            logger.debug(
-                f"Task importance LOW: person_id={person_id}, cM={cm_shared}, "
-                f"engagement={engagement} (distant relative or low engagement)"
-            )
-            return "low"
+            cm_shared, engagement = self._extract_importance_metrics(person)
+            return self._derive_importance_from_metrics(cm_shared, engagement, person_id)
 
         except Exception as e:
             logger.error(f"Error calculating task importance for person {person_id}: {e}", exc_info=True)
@@ -1732,8 +1880,8 @@ class InboxProcessor:
 
     def _create_follow_up_reminder_task(
         self,
-        _person_id: int,
-        _conversation_id: str,
+        person_id: int,
+        conversation_id: str,
         task_title: str,
         task_body: Optional[str],
         due_date: Optional[datetime],
@@ -1746,8 +1894,8 @@ class InboxProcessor:
         Priority 1 Todo #5: Follow-Up Reminder System
 
         Args:
-            _person_id: Database ID of person (used for DNA/engagement prioritization)
-            _conversation_id: Unique conversation identifier (reserved for future use)
+            person_id: Database ID of person (used for DNA/engagement prioritization)
+            conversation_id: Unique conversation identifier (reserved for future use)
             task_title: Title for MS To-Do task
             task_body: Detailed task body with context
             due_date: When follow-up is due
@@ -1757,44 +1905,38 @@ class InboxProcessor:
             True if task created successfully, False otherwise
         """
         try:
-            # Check if MS Graph is configured
+            logger.debug(
+                "Preparing follow-up reminder task for conversation %s", conversation_id
+            )
             import ms_graph_utils
+        except Exception as exc:  # pragma: no cover - import errors
+            logger.error(f"MS Graph utilities unavailable: {exc}", exc_info=True)
+            return False
 
+        try:
             if not getattr(ms_graph_utils, "msal_app_instance", None):
-                logger.debug("MS Graph not configured, skipping reminder task creation")
-                return False
+                raise RuntimeError("MS Graph not configured")
 
-            # Skip in test mode
             if config_schema.app_mode in ("dry_run", "test"):
                 logger.info(f"[DRY RUN] Would create follow-up reminder task: {task_title}")
                 return True
 
-            # Get MS Graph token (may already be cached from startup)
             token = ms_graph_utils.acquire_token_device_flow()
             if not token:
-                logger.warning("MS Graph authentication unavailable, skipping reminder task")
-                return False
+                raise RuntimeError("MS Graph authentication unavailable, skipping reminder task")
 
-            # Get list ID
             list_name = getattr(config_schema, "ms_todo_list_name", "Ancestry Follow-ups")
             list_id = ms_graph_utils.get_todo_list_id(token, list_name)
             if not list_id:
-                logger.warning(f"MS To-Do list '{list_name}' not found, skipping reminder task")
-                return False
+                raise RuntimeError(f"MS To-Do list '{list_name}' not found")
 
-            # Priority 0 Todo #14: Calculate importance from DNA + engagement data
             importance = self._calculate_task_importance(
-                person_id=_person_id,
+                person_id=person_id,
                 base_urgency=urgency_level,
             )
 
-            # Format due date for MS Graph API
-            due_date_str = None
-            if due_date:
-                # MS Graph expects YYYY-MM-DD format
-                due_date_str = due_date.strftime("%Y-%m-%d")
+            due_date_str = due_date.strftime("%Y-%m-%d") if due_date else None
 
-            # Create task
             task_id = ms_graph_utils.create_todo_task(
                 access_token=token,
                 list_id=list_id,
@@ -1805,14 +1947,18 @@ class InboxProcessor:
                 categories=["Ancestry", "Follow-up", "Conversation"],
             )
 
-            if task_id:
-                logger.info(f"✓ Created follow-up reminder task (ID: {task_id}): {task_title[:60]}...")
-                return True
-            logger.warning(f"Failed to create follow-up reminder task: {task_title[:60]}...")
-            return False
+            if not task_id:
+                raise RuntimeError("Failed to create follow-up reminder task")
 
-        except Exception as e:
-            logger.error(f"Error creating follow-up reminder task: {e}", exc_info=True)
+            logger.info(
+                "✓ Created follow-up reminder task (ID: %s): %s",
+                task_id,
+                task_title[:60],
+            )
+            return True
+
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error(f"Error creating follow-up reminder task: {exc}", exc_info=True)
             return False
 
     def _create_conversation_log_upsert(
@@ -3440,6 +3586,257 @@ def _test_clarify_ambiguous_intent() -> None:
     return True
 
 
+def _test_conversation_phase_initial_outreach() -> None:
+    """Test INITIAL_OUTREACH phase determination."""
+    from unittest.mock import MagicMock
+
+    from database import MessageDirectionEnum as DBMessageDirectionEnum
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    phase = processor._determine_conversation_phase(
+        conversation_id="test_conv_1",
+        direction=MessageDirectionEnum.OUT,
+        ai_sentiment=None,
+        existing_logs=[],
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    assert phase is not None, "Phase should be determined for first message"
+    assert str(phase).endswith("INITIAL_OUTREACH"), f"Expected INITIAL_OUTREACH, got {phase}"
+
+
+def _test_conversation_phase_response_received() -> None:
+    """Test RESPONSE_RECEIVED phase determination."""
+    from unittest.mock import MagicMock
+
+    from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    mock_out_log = MagicMock(spec=ConversationLog)
+    mock_out_log.conversation_id = "test_conv_2"
+    mock_out_log.direction = DBMessageDirectionEnum.OUT
+    mock_out_log.latest_timestamp = datetime.now(timezone.utc)
+    mock_out_log.ai_sentiment = None
+
+    phase = processor._determine_conversation_phase(
+        conversation_id="test_conv_2",
+        direction=MessageDirectionEnum.IN,
+        ai_sentiment="PRODUCTIVE",
+        existing_logs=[mock_out_log],
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    assert phase is not None, "Phase should be determined"
+    assert str(phase).endswith("RESPONSE_RECEIVED"), f"Expected RESPONSE_RECEIVED, got {phase}"
+
+
+def _test_conversation_phase_information_shared() -> None:
+    """Test INFORMATION_SHARED phase determination."""
+    from unittest.mock import MagicMock
+
+    from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    base_time = datetime.now(timezone.utc)
+    mock_logs = []
+    for i in range(3):
+        mock_log = MagicMock(spec=ConversationLog)
+        mock_log.conversation_id = "test_conv_3"
+        mock_log.direction = DBMessageDirectionEnum.IN if i % 2 == 0 else DBMessageDirectionEnum.OUT
+        mock_log.latest_timestamp = base_time
+        mock_log.ai_sentiment = "PRODUCTIVE" if i % 2 == 0 else None
+        mock_logs.append(mock_log)
+
+    phase = processor._determine_conversation_phase(
+        conversation_id="test_conv_3",
+        direction=MessageDirectionEnum.IN,
+        ai_sentiment="PRODUCTIVE",
+        existing_logs=mock_logs,
+        timestamp=base_time,
+    )
+
+    assert phase is not None, "Phase should be determined"
+    assert str(phase).endswith("INFORMATION_SHARED"), f"Expected INFORMATION_SHARED, got {phase}"
+
+
+def _test_follow_up_extraction_productive() -> None:
+    """Test follow-up extraction for PRODUCTIVE conversations."""
+    from unittest.mock import MagicMock
+
+    from database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    mock_log = MagicMock(spec=ConversationLog)
+    mock_log.conversation_id = "follow_up_test_1"
+    mock_log.direction = DBMessageDirectionEnum.IN
+    mock_log.latest_message_content = "Do you know when Charles Fetch was born?"
+    mock_log.ai_sentiment = "PRODUCTIVE"
+    conversation_history = [mock_log]
+
+    result = processor._extract_follow_up_requirements(
+        conversation_history=conversation_history,
+        latest_message="Do you know when Charles Fetch was born?",
+        direction=MessageDirectionEnum.IN,
+        conversation_phase=ConversationPhaseEnum.RESPONSE_RECEIVED,
+        ai_sentiment="PRODUCTIVE",
+        conversation_id="follow_up_test_1",
+    )
+
+    assert isinstance(result, dict), "Should return dictionary"
+    assert "follow_up_required" in result, "Should have follow_up_required field"
+    assert "follow_up_due_date" in result, "Should have follow_up_due_date field"
+    assert "awaiting_response_from" in result, "Should have awaiting_response_from field"
+
+
+def _test_follow_up_skips_desist() -> None:
+    """Test that follow-up extraction skips DESIST conversations."""
+    from unittest.mock import MagicMock
+
+    from database import ConversationPhaseEnum
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    result = processor._extract_follow_up_requirements(
+        conversation_history=[],
+        latest_message="I'm not interested in genealogy anymore.",
+        direction=MessageDirectionEnum.IN,
+        conversation_phase=ConversationPhaseEnum.CLOSED,
+        ai_sentiment="DESIST",
+        conversation_id="follow_up_test_2",
+    )
+
+    assert result["follow_up_required"] is False, "Should not require follow-up for DESIST"
+    assert result["follow_up_due_date"] is None, "Should not set due date for DESIST"
+    assert result["awaiting_response_from"] is None, "Should not set responsibility for DESIST"
+
+
+def _test_follow_up_reminder_task_creation() -> None:
+    """Test MS To-Do reminder task creation."""
+    from datetime import timedelta
+    from unittest.mock import MagicMock
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    due_date = datetime.now(timezone.utc) + timedelta(days=7)
+    result = processor._create_follow_up_reminder_task(
+        person_id=123,
+        conversation_id="task_test_1",
+        task_title="Follow up with @TestUser about Charles Fetch",
+        task_body="User asked: 'Do you know when Charles Fetch was born?'",
+        due_date=due_date,
+        urgency_level="urgent",
+    )
+
+    assert isinstance(result, bool), "Should return boolean success indicator"
+
+
+def _test_task_importance_calculation() -> None:
+    """Test task importance calculation from DNA + engagement data (Priority 0 Todo #14)."""
+    from unittest.mock import MagicMock
+
+    from database import Person
+
+    sm = MagicMock()
+    mock_db_session = MagicMock()
+    sm.get_db_conn.return_value = mock_db_session
+
+    processor = InboxProcessor(session_manager=sm)
+
+    person_high = MagicMock(spec=Person)
+    person_high.id = 1
+    person_high.current_engagement_score = 80
+    person_high.dna_match = MagicMock(spec=DnaMatch)
+    person_high.dna_match.cm_dna = 150
+    mock_db_session.query().filter().first.return_value = person_high
+
+    importance = processor._calculate_task_importance(person_id=1, base_urgency="standard")
+    assert importance == "high", f"Expected 'high' for cM=150, engagement=80, got '{importance}'"
+
+    person_medium = MagicMock(spec=Person)
+    person_medium.id = 2
+    person_medium.current_engagement_score = 40
+    person_medium.dna_match = MagicMock(spec=DnaMatch)
+    person_medium.dna_match.cm_dna = 75
+    mock_db_session.query().filter().first.return_value = person_medium
+
+    importance = processor._calculate_task_importance(person_id=2, base_urgency="standard")
+    assert importance == "normal", f"Expected 'normal' for cM=75, engagement=40, got '{importance}'"
+
+    person_low = MagicMock(spec=Person)
+    person_low.id = 3
+    person_low.current_engagement_score = 20
+    person_low.dna_match = MagicMock(spec=DnaMatch)
+    person_low.dna_match.cm_dna = 30
+    mock_db_session.query().filter().first.return_value = person_low
+
+    importance = processor._calculate_task_importance(person_id=3, base_urgency="standard")
+    assert importance == "low", f"Expected 'low' for cM=30, engagement=20, got '{importance}'"
+
+    importance_urgent = processor._calculate_task_importance(person_id=3, base_urgency="urgent")
+    assert importance_urgent == "high", f"Expected 'high' for urgent override, got '{importance_urgent}'"
+
+    importance_patient = processor._calculate_task_importance(person_id=1, base_urgency="patient")
+    assert importance_patient == "low", f"Expected 'low' for patient override, got '{importance_patient}'"
+
+
+def _test_conversation_log_follow_up_fields() -> None:
+    """Test that conversation log upsert includes follow-up fields."""
+    from datetime import timedelta
+    from unittest.mock import MagicMock
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    due_date = datetime.now(timezone.utc) + timedelta(days=14)
+    log_upsert = processor._create_conversation_log_upsert(
+        api_conv_id="log_test_1",
+        direction=MessageDirectionEnum.IN,
+        people_id=456,
+        message_content="Test message content",
+        timestamp=datetime.now(timezone.utc),
+        ai_sentiment="PRODUCTIVE",
+        conversation_phase=None,
+        follow_up_due_date=due_date,
+        awaiting_response_from="me",
+    )
+
+    assert "follow_up_due_date" in log_upsert, "Should include follow_up_due_date field"
+    assert "awaiting_response_from" in log_upsert, "Should include awaiting_response_from field"
+    assert log_upsert["follow_up_due_date"] == due_date, "Should preserve due date"
+    assert log_upsert["awaiting_response_from"] == "me", "Should preserve responsibility"
+
+
+def _test_conversation_phase_closed() -> None:
+    """Test CLOSED phase determination."""
+    from unittest.mock import MagicMock
+
+    from database import ConversationLog
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    phase = processor._determine_conversation_phase(
+        conversation_id="test_conv_4",
+        direction=MessageDirectionEnum.IN,
+        ai_sentiment="DESIST",
+        existing_logs=[],
+        timestamp=datetime.now(timezone.utc),
+    )
+
+    assert phase is not None, "Phase should be determined"
+    assert str(phase).endswith("CLOSED"), f"Expected CLOSED for DESIST sentiment, got {phase}"
+
+
 def action7_inbox_module_tests() -> bool:
     """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
     from test_framework import TestSuite, suppress_logging
@@ -3449,81 +3846,100 @@ def action7_inbox_module_tests() -> bool:
 
     with suppress_logging():
         # Removed smoke test: _test_class_and_methods_available
-        suite.run_test(
-            test_name="Inbox processor initialization",
-            test_func=_test_inbox_processor_initialization,
+
+        def _add_test(
+            test_name: str,
+            test_func: Callable[[], None],
+            *,
+            test_summary: str = "",
+            functions_tested: str = "",
+            method_description: str = "",
+            expected_outcome: str = "",
+        ) -> None:
+            suite.run_test(
+                test_name=test_name,
+                test_func=test_func,
+                test_summary=test_summary,
+                functions_tested=functions_tested,
+                method_description=method_description,
+                expected_outcome=expected_outcome,
+            )
+
+        _add_test(
+            "Inbox processor initialization",
+            _test_inbox_processor_initialization,
             test_summary="SessionManager integration",
             functions_tested="InboxProcessor.__init__",
             method_description="Initialize processor with authenticated session",
             expected_outcome="Processor initialized with SessionManager and stats dict",
         )
-        suite.run_test(
-            test_name="Fetch first page conversations",
-            test_func=_test_fetch_first_page_conversations,
+        _add_test(
+            "Fetch first page conversations",
+            _test_fetch_first_page_conversations,
             test_summary="API conversation fetching",
             functions_tested="search_inbox",
             method_description="Fetch conversations from Ancestry API",
             expected_outcome="Conversations fetched and processed count returned",
         )
-        suite.run_test(
-            test_name="Conversation database storage",
-            test_func=_test_conversation_database_storage,
+        _add_test(
+            "Conversation database storage",
+            _test_conversation_database_storage,
             test_summary="Database synchronization",
             functions_tested="search_inbox, ConversationLog",
             method_description="Store conversations in database",
             expected_outcome="Conversations stored in ConversationLog table",
         )
-        suite.run_test(
-            test_name="Conversation parsing",
-            test_func=_test_conversation_parsing,
+        _add_test(
+            "Conversation parsing",
+            _test_conversation_parsing,
             test_summary="API data parsing",
             functions_tested="search_inbox, ConversationLog",
             method_description="Parse conversation data from API response",
             expected_outcome="Conversations have required fields (ID, direction, timestamp)",
         )
-        suite.run_test(
-            test_name="AI classification",
-            test_func=_test_ai_classification,
+        _add_test(
+            "AI classification",
+            _test_ai_classification,
             test_summary="AI-powered message classification",
             functions_tested="search_inbox, classify_message_intent",
             method_description="Classify messages with AI",
             expected_outcome="Messages classified as PRODUCTIVE/DESIST/OTHER",
         )
-        suite.run_test(
-            test_name="Person status updates",
-            test_func=_test_person_status_updates,
+        _add_test(
+            "Person status updates",
+            _test_person_status_updates,
             test_summary="Person status synchronization",
             functions_tested="search_inbox, Person",
             method_description="Update person status from conversations",
             expected_outcome="Person status updated based on conversation classification",
         )
-        suite.run_test(
-            test_name="Stop on unchanged conversation",
-            test_func=_test_stop_on_unchanged_conversation,
+        _add_test(
+            "Stop on unchanged conversation",
+            _test_stop_on_unchanged_conversation,
             test_summary="Comparator logic (stop when no changes)",
             functions_tested="search_inbox, comparator",
             method_description="Stop processing when conversation unchanged",
             expected_outcome="Second run processes fewer conversations (stops on match)",
         )
-        suite.run_test(
-            test_name="Summary logging",
-            test_func=_test_summary_logging,
+        _add_test(
+            "Summary logging",
+            _test_summary_logging,
             test_summary="Result summary",
             functions_tested="search_inbox, _log_unified_summary",
             method_description="Log processing summary",
             expected_outcome="Summary includes processed/fetched counts",
         )
-        suite.run_test(
-            test_name="Error recovery",
-            test_func=_test_error_recovery,
+        _add_test(
+            "Error recovery",
+            _test_error_recovery,
             test_summary="Error recovery mechanisms",
             functions_tested="_initialize_loop_state",
             method_description="Test error recovery state tracking",
             expected_outcome="State tracks session deaths and recoveries",
         )
-        suite.run_test(
-            test_name="Clarify ambiguous intent (Priority 1 Todo #7)",
-            test_func=_test_clarify_ambiguous_intent,
+        _add_test(
+            "Clarify ambiguous intent (Priority 1 Todo #7)",
+            _test_clarify_ambiguous_intent,
             test_summary="AI-powered clarification questions",
             functions_tested="clarify_ambiguous_intent, _analyze_entity_ambiguity",
             method_description="Generate clarifying questions for incomplete entities",
@@ -3531,107 +3947,25 @@ def action7_inbox_module_tests() -> bool:
         )
 
         # === Priority 1 Todo #11: Conversation Phase Transitions Tests ===
-
-        def _test_conversation_phase_initial_outreach() -> None:
-            """Test INITIAL_OUTREACH phase determination."""
-            from unittest.mock import MagicMock
-
-            from database import MessageDirectionEnum as DBMessageDirectionEnum
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # No existing messages - first OUT message
-            phase = processor._determine_conversation_phase(
-                conversation_id="test_conv_1",
-                direction=MessageDirectionEnum.OUT,
-                ai_sentiment=None,
-                existing_logs=[],
-                timestamp=datetime.now(timezone.utc),
-            )
-
-            assert phase is not None, "Phase should be determined for first message"
-            assert str(phase).endswith("INITIAL_OUTREACH"), f"Expected INITIAL_OUTREACH, got {phase}"
-
-        suite.run_test(
-            test_name="Conversation phase: INITIAL_OUTREACH",
-            test_func=_test_conversation_phase_initial_outreach,
+        _add_test(
+            "Conversation phase: INITIAL_OUTREACH",
+            _test_conversation_phase_initial_outreach,
             test_summary="First outgoing message phase",
             functions_tested="_determine_conversation_phase",
             method_description="Determine phase for first OUT message",
             expected_outcome="Phase set to INITIAL_OUTREACH",
         )
-
-        def _test_conversation_phase_response_received() -> None:
-            """Test RESPONSE_RECEIVED phase determination."""
-            from unittest.mock import MagicMock
-
-            from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Existing OUT message, first IN message
-            mock_out_log = MagicMock(spec=ConversationLog)
-            mock_out_log.conversation_id = "test_conv_2"
-            mock_out_log.direction = DBMessageDirectionEnum.OUT
-            mock_out_log.latest_timestamp = datetime.now(timezone.utc)
-            mock_out_log.ai_sentiment = None
-
-            phase = processor._determine_conversation_phase(
-                conversation_id="test_conv_2",
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment="PRODUCTIVE",
-                existing_logs=[mock_out_log],
-                timestamp=datetime.now(timezone.utc),
-            )
-
-            assert phase is not None, "Phase should be determined"
-            assert str(phase).endswith("RESPONSE_RECEIVED"), f"Expected RESPONSE_RECEIVED, got {phase}"
-
-        suite.run_test(
-            test_name="Conversation phase: RESPONSE_RECEIVED",
-            test_func=_test_conversation_phase_response_received,
+        _add_test(
+            "Conversation phase: RESPONSE_RECEIVED",
+            _test_conversation_phase_response_received,
             test_summary="First response phase",
             functions_tested="_determine_conversation_phase",
             method_description="Determine phase for first IN message",
             expected_outcome="Phase set to RESPONSE_RECEIVED",
         )
-
-        def _test_conversation_phase_information_shared() -> None:
-            """Test INFORMATION_SHARED phase determination."""
-            from unittest.mock import MagicMock
-
-            from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Multiple messages with PRODUCTIVE classification
-            base_time = datetime.now(timezone.utc)
-            mock_logs = []
-            for i in range(3):
-                mock_log = MagicMock(spec=ConversationLog)
-                mock_log.conversation_id = "test_conv_3"
-                mock_log.direction = DBMessageDirectionEnum.IN if i % 2 == 0 else DBMessageDirectionEnum.OUT
-                mock_log.latest_timestamp = base_time
-                mock_log.ai_sentiment = "PRODUCTIVE" if i % 2 == 0 else None
-                mock_logs.append(mock_log)
-
-            phase = processor._determine_conversation_phase(
-                conversation_id="test_conv_3",
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment="PRODUCTIVE",
-                existing_logs=mock_logs,
-                timestamp=base_time,
-            )
-
-            assert phase is not None, "Phase should be determined"
-            assert str(phase).endswith("INFORMATION_SHARED"), f"Expected INFORMATION_SHARED, got {phase}"
-
-        suite.run_test(
-            test_name="Conversation phase: INFORMATION_SHARED",
-            test_func=_test_conversation_phase_information_shared,
+        _add_test(
+            "Conversation phase: INFORMATION_SHARED",
+            _test_conversation_phase_information_shared,
             test_summary="Information exchange phase",
             functions_tested="_determine_conversation_phase",
             method_description="Determine phase for PRODUCTIVE exchanges",
@@ -3639,248 +3973,49 @@ def action7_inbox_module_tests() -> bool:
         )
 
         # Priority 1 Todo #5: Follow-Up Reminder System Tests
-        def _test_follow_up_extraction_productive() -> None:
-            """Test follow-up extraction for PRODUCTIVE conversations."""
-            from unittest.mock import MagicMock
-
-            from database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Mock conversation history with pending question
-            mock_log = MagicMock(spec=ConversationLog)
-            mock_log.conversation_id = "follow_up_test_1"
-            mock_log.direction = DBMessageDirectionEnum.IN
-            mock_log.latest_message_content = "Do you know when Charles Fetch was born?"
-            mock_log.ai_sentiment = "PRODUCTIVE"
-            conversation_history = [mock_log]
-
-            # Extract follow-up requirements
-            result = processor._extract_follow_up_requirements(
-                conversation_history=conversation_history,
-                latest_message="Do you know when Charles Fetch was born?",
-                direction=MessageDirectionEnum.IN,
-                conversation_phase=ConversationPhaseEnum.RESPONSE_RECEIVED,
-                ai_sentiment="PRODUCTIVE",
-                conversation_id="follow_up_test_1",
-            )
-
-            # In test/dry_run mode, AI calls are skipped, so we check for graceful handling
-            assert isinstance(result, dict), "Should return dictionary"
-            assert "follow_up_required" in result, "Should have follow_up_required field"
-            assert "follow_up_due_date" in result, "Should have follow_up_due_date field"
-            assert "awaiting_response_from" in result, "Should have awaiting_response_from field"
-
-            logger.info("✅ Follow-up extraction handles PRODUCTIVE conversations correctly")
-
-        suite.run_test(
-            test_name="Follow-up extraction: PRODUCTIVE conversation",
-            test_func=_test_follow_up_extraction_productive,
+        _add_test(
+            "Follow-up extraction: PRODUCTIVE conversation",
+            _test_follow_up_extraction_productive,
             test_summary="Extract follow-up requirements from PRODUCTIVE messages",
             functions_tested="_extract_follow_up_requirements (Todo #5)",
             method_description="Analyze conversation for pending questions and calculate due date",
             expected_outcome="Follow-up requirements extracted with due date and responsibility",
         )
-
-        def _test_follow_up_skips_desist() -> None:
-            """Test that follow-up extraction skips DESIST conversations."""
-            from unittest.mock import MagicMock
-
-            from database import ConversationPhaseEnum
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Extract follow-up for DESIST conversation
-            result = processor._extract_follow_up_requirements(
-                conversation_history=[],
-                latest_message="I'm not interested in genealogy anymore.",
-                direction=MessageDirectionEnum.IN,
-                conversation_phase=ConversationPhaseEnum.CLOSED,
-                ai_sentiment="DESIST",
-                conversation_id="follow_up_test_2",
-            )
-
-            # Should skip follow-up for DESIST
-            assert result["follow_up_required"] is False, "Should not require follow-up for DESIST"
-            assert result["follow_up_due_date"] is None, "Should not set due date for DESIST"
-            assert result["awaiting_response_from"] is None, "Should not set responsibility for DESIST"
-
-            logger.info("✅ Follow-up extraction correctly skips DESIST conversations")
-
-        suite.run_test(
-            test_name="Follow-up extraction: Skip DESIST",
-            test_func=_test_follow_up_skips_desist,
+        _add_test(
+            "Follow-up extraction: Skip DESIST",
+            _test_follow_up_skips_desist,
             test_summary="DESIST conversations bypass follow-up",
             functions_tested="_extract_follow_up_requirements (Todo #5)",
             method_description="Skip follow-up extraction for DESIST/CLOSED conversations",
             expected_outcome="No follow-up required for DESIST conversations",
         )
-
-        def _test_follow_up_reminder_task_creation() -> None:
-            """Test MS To-Do reminder task creation."""
-            from datetime import timedelta
-            from unittest.mock import MagicMock
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Create reminder task (will be dry run in test mode)
-            due_date = datetime.now(timezone.utc) + timedelta(days=7)
-            result = processor._create_follow_up_reminder_task(
-                person_id=123,
-                conversation_id="task_test_1",
-                task_title="Follow up with @TestUser about Charles Fetch",
-                task_body="User asked: 'Do you know when Charles Fetch was born?'",
-                due_date=due_date,
-                urgency_level="urgent",
-            )
-
-            # Should handle gracefully even if MS Graph not configured
-            assert isinstance(result, bool), "Should return boolean success indicator"
-            logger.info(f"✅ Reminder task creation handled correctly: {result}")
-
-        suite.run_test(
-            test_name="Follow-up reminder task creation",
-            test_func=_test_follow_up_reminder_task_creation,
+        _add_test(
+            "Follow-up reminder task creation",
+            _test_follow_up_reminder_task_creation,
             test_summary="Create MS To-Do tasks for follow-ups",
             functions_tested="_create_follow_up_reminder_task (Todo #5)",
             method_description="Create reminder tasks with urgency-based due dates and importance",
             expected_outcome="MS To-Do task created or gracefully skipped in test mode",
         )
-
-        def _test_task_importance_calculation() -> None:
-            """Test task importance calculation from DNA + engagement data (Priority 0 Todo #14)."""
-            from unittest.mock import MagicMock
-
-            from database import DnaMatch, Person
-
-            # Mock session manager with database
-            sm = MagicMock()
-            mock_db_session = MagicMock()
-            sm.get_db_conn.return_value = mock_db_session
-
-            processor = InboxProcessor(session_manager=sm)
-
-            # Test Case 1: High importance (close DNA + high engagement)
-            person_high = MagicMock(spec=Person)
-            person_high.id = 1
-            person_high.current_engagement_score = 80
-            person_high.dna_match = MagicMock(spec=DnaMatch)
-            person_high.dna_match.cm_dna = 150  # Close relative
-            mock_db_session.query().filter().first.return_value = person_high
-
-            importance = processor._calculate_task_importance(person_id=1, base_urgency="standard")
-            assert importance == "high", f"Expected 'high' for cM=150, engagement=80, got '{importance}'"
-            logger.info(f"✅ High importance: cM=150, engagement=80 → {importance}")
-
-            # Test Case 2: Normal importance (moderate DNA)
-            person_medium = MagicMock(spec=Person)
-            person_medium.id = 2
-            person_medium.current_engagement_score = 40
-            person_medium.dna_match = MagicMock(spec=DnaMatch)
-            person_medium.dna_match.cm_dna = 75  # Moderate relative
-            mock_db_session.query().filter().first.return_value = person_medium
-
-            importance = processor._calculate_task_importance(person_id=2, base_urgency="standard")
-            assert importance == "normal", f"Expected 'normal' for cM=75, engagement=40, got '{importance}'"
-            logger.info(f"✅ Normal importance: cM=75, engagement=40 → {importance}")
-
-            # Test Case 3: Low importance (distant DNA + low engagement)
-            person_low = MagicMock(spec=Person)
-            person_low.id = 3
-            person_low.current_engagement_score = 20
-            person_low.dna_match = MagicMock(spec=DnaMatch)
-            person_low.dna_match.cm_dna = 30  # Distant relative
-            mock_db_session.query().filter().first.return_value = person_low
-
-            importance = processor._calculate_task_importance(person_id=3, base_urgency="standard")
-            assert importance == "low", f"Expected 'low' for cM=30, engagement=20, got '{importance}'"
-            logger.info(f"✅ Low importance: cM=30, engagement=20 → {importance}")
-
-            # Test Case 4: AI urgency override (urgent)
-            importance_urgent = processor._calculate_task_importance(person_id=3, base_urgency="urgent")
-            assert importance_urgent == "high", f"Expected 'high' for urgent override, got '{importance_urgent}'"
-            logger.info(f"✅ Urgency override: base_urgency='urgent' → {importance_urgent}")
-
-            # Test Case 5: AI urgency override (patient)
-            importance_patient = processor._calculate_task_importance(person_id=1, base_urgency="patient")
-            assert importance_patient == "low", f"Expected 'low' for patient override, got '{importance_patient}'"
-            logger.info(f"✅ Urgency override: base_urgency='patient' → {importance_patient}")
-
-        suite.run_test(
-            test_name="Task importance calculation (DNA + engagement)",
-            test_func=_test_task_importance_calculation,
+        _add_test(
+            "Task importance calculation (DNA + engagement)",
+            _test_task_importance_calculation,
             test_summary="Calculate task priority from DNA strength and engagement score",
             functions_tested="_calculate_task_importance (Priority 0 Todo #14)",
             method_description="High: cM>100 & engagement>70; Medium: cM>50 | engagement>50; Low: other",
             expected_outcome="Importance correctly calculated: high/normal/low based on DNA + engagement",
         )
-
-        def _test_conversation_log_follow_up_fields() -> None:
-            """Test that conversation log upsert includes follow-up fields."""
-            from datetime import timedelta
-            from unittest.mock import MagicMock
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # Create log upsert with follow-up fields
-            due_date = datetime.now(timezone.utc) + timedelta(days=14)
-            log_upsert = processor._create_conversation_log_upsert(
-                api_conv_id="log_test_1",
-                direction=MessageDirectionEnum.IN,
-                people_id=456,
-                message_content="Test message content",
-                timestamp=datetime.now(timezone.utc),
-                ai_sentiment="PRODUCTIVE",
-                conversation_phase=None,
-                follow_up_due_date=due_date,
-                awaiting_response_from="me",
-            )
-
-            # Verify follow-up fields are included
-            assert "follow_up_due_date" in log_upsert, "Should include follow_up_due_date field"
-            assert "awaiting_response_from" in log_upsert, "Should include awaiting_response_from field"
-            assert log_upsert["follow_up_due_date"] == due_date, "Should preserve due date"
-            assert log_upsert["awaiting_response_from"] == "me", "Should preserve responsibility"
-
-            logger.info("✅ Conversation log upsert includes follow-up fields correctly")
-
-        suite.run_test(
-            test_name="Conversation log follow-up fields",
-            test_func=_test_conversation_log_follow_up_fields,
+        _add_test(
+            "Conversation log follow-up fields",
+            _test_conversation_log_follow_up_fields,
             test_summary="Database storage includes follow-up metadata",
             functions_tested="_create_conversation_log_upsert (Todo #5)",
             method_description="Enhance conversation log with follow_up_due_date and awaiting_response_from",
             expected_outcome="Log upsert includes follow-up fields for database storage",
         )
-
-        def _test_conversation_phase_closed() -> None:
-            """Test CLOSED phase determination."""
-            from unittest.mock import MagicMock
-
-            from database import ConversationLog
-
-            sm = MagicMock()
-            processor = InboxProcessor(session_manager=sm)
-
-            # DESIST sentiment triggers CLOSED phase
-            phase = processor._determine_conversation_phase(
-                conversation_id="test_conv_4",
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment="DESIST",
-                existing_logs=[],
-                timestamp=datetime.now(timezone.utc),
-            )
-
-            assert phase is not None, "Phase should be determined"
-            assert str(phase).endswith("CLOSED"), f"Expected CLOSED for DESIST sentiment, got {phase}"
-
-        suite.run_test(
-            test_name="Conversation phase: CLOSED",
-            test_func=_test_conversation_phase_closed,
+        _add_test(
+            "Conversation phase: CLOSED",
+            _test_conversation_phase_closed,
             test_summary="Conversation closure phase",
             functions_tested="_determine_conversation_phase",
             method_description="Determine phase for DESIST classification",

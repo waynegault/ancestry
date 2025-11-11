@@ -1459,13 +1459,11 @@ def generate_clarifying_questions(
         logger.error("generate_clarifying_questions: AI_PROVIDER not configured.")
         return None
 
-    # Get the clarification prompt from ai_prompts.json
     prompt = get_prompt("intent_clarification") if USE_JSON_PROMPTS else None
     if not prompt:
         logger.error("generate_clarifying_questions: intent_clarification prompt not available.")
         return None
 
-    # Format the prompt with provided data
     formatted_prompt = _format_clarification_prompt(prompt, user_message, extracted_entities, ambiguity_context)
     if not formatted_prompt:
         return None
@@ -1482,30 +1480,27 @@ def generate_clarifying_questions(
     )
     duration = time.time() - start_time
 
-    if not ai_response_str:
+    result: dict[str, Any] | None = None
+
+    if ai_response_str:
+        try:
+            candidate = json.loads(ai_response_str)
+        except json.JSONDecodeError as exc:
+            logger.error(f"generate_clarifying_questions: Failed to parse JSON response: {exc}")
+        except Exception as exc:  # pragma: no cover - defensive logging for unexpected providers
+            logger.error(f"generate_clarifying_questions: Unexpected error: {exc}", exc_info=True)
+        else:
+            if _validate_clarification_response(candidate):
+                questions = candidate.get("clarifying_questions", [])
+                logger.info(
+                    f"✅ Generated {len(questions)} clarifying question(s) "
+                    f"for {candidate.get('primary_ambiguity', 'unknown')} ambiguity. (Took {duration:.2f}s)"
+                )
+                result = candidate
+    else:
         logger.error(f"generate_clarifying_questions: AI call failed. (Took {duration:.2f}s)")
-        return None
 
-    try:
-        result = json.loads(ai_response_str)
-
-        # Validate expected structure
-        if not _validate_clarification_response(result):
-            return None
-
-        questions = result.get("clarifying_questions", [])
-        logger.info(
-            f"✅ Generated {len(questions)} clarifying question(s) "
-            f"for {result.get('primary_ambiguity', 'unknown')} ambiguity. (Took {duration:.2f}s)"
-        )
-        return result
-
-    except json.JSONDecodeError as e:
-        logger.error(f"generate_clarifying_questions: Failed to parse JSON response: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"generate_clarifying_questions: Unexpected error: {e}", exc_info=True)
-        return None
+    return result
 
 
 def extract_with_custom_prompt(
