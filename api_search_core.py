@@ -727,7 +727,7 @@ def _api_search_core_module_tests() -> bool:
 
     def _test_search_empty_suggestions() -> None:
         """Test that search with empty suggestions fails appropriately - should not pass silently."""
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         def fake_list_api(sm: Any, tree_id: str, base: str, criteria: dict[str, Any]) -> list[dict]:
             # Unused parameters are intentional for API compatibility
@@ -742,7 +742,10 @@ def _api_search_core_module_tests() -> bool:
         class SM:  # minimal session manager
             pass
 
-        with patch('api_search_core.call_treesui_list_api', fake_list_api):
+        # Mock both _resolve_base_and_tree and call_treesui_list_api
+        with patch('api_search_core._resolve_base_and_tree') as mock_resolve, \
+             patch('api_search_core.call_treesui_list_api', fake_list_api):
+            mock_resolve.return_value = ("https://example.com", "tree123")
             # This test should fail because the search criteria is invalid
             # The current implementation allows this to pass, which is incorrect
             try:
