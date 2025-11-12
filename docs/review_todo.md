@@ -171,6 +171,28 @@
 - [ ] Export/commit graph artifact and README updates.
 - [ ] Summarize outcomes, open questions, and recommended next steps.
 
+## Phase 7 · Codebase Cleanup
+- [x] Phase 1: Delete obsolete Phase 3 documentation (test_file, PHASE_3_COMPLETION.md, PHASE_3_INDEX.md)
+  - Risk: ZERO
+  - Status: ✅ COMPLETE (commit 934cc80)
+
+- [x] Phase 2: Delete unused demo/diagnostic scripts
+  - Files deleted: demo_lm_studio_autostart.py, remove_progress_bar.py, test_diagnostics.py, end_to_end_tests.py
+  - Files kept: diagnose_chrome.py (imported by main.py line 2486)
+  - Risk: LOW
+  - Status: ✅ COMPLETE (commit 68525e3)
+
+- [x] Phase 3: Verify active usage of ActionRegistry and CircuitBreaker test files
+  - Finding: ActionRegistry and CircuitBreaker are actively used in production
+  - Decision: Do NOT delete test_action_registry.py or test_circuit_breaker.py
+  - Status: ✅ COMPLETE (verified, ready for potential future cleanup of test_cache_quick.py and comprehensive_auth_tests.py)
+
+- [x] Phase 3C: Delete planning documentation and code cleanup
+  - Files deleted: 13 planning/documentation files, .secrets.baseline, ancestry.db
+  - Files modified: 5 code files (trailing whitespace/EOF fixes)
+  - Risk: Removed all Phase 5 sprint planning documents
+  - Status: ✅ COMPLETE (commit e71aaa2)
+
 ---
 
 ### Progress Log
@@ -241,5 +263,9 @@
 - _2025-11-12:_ **Phase 5 Sprint 2 Part A - COMPLETE (PARTS A1-A2)**: Complete consolidation and planning done. 2,876+ lines of documentation created. UnifiedCacheManager production-ready (470 lines, 20/20 tests passing, 0 Pylance, ruff clean). Parts A3-A5 (4-6 hours) ready for implementation: A3=integration (2-3h), A4=performance validation (1-2h), A5=documentation (1h). All artifacts committed to git (5 commits).
 - _2025-11-12:_ **Linting & Code Quality FIXED**: Fixed all Pylance errors in test_unified_cache_manager.py (API signature corrections for set/get/generate_cache_key). Fixed global-statement warning in core/unified_cache_manager.py (singleton pattern, noqa comment). Ruff clean, 0 warnings. All 20 cache tests passing.
 - _2025-11-12:_ **Phase 5 Sprint 2 Part A3 - COMPLETE**: Direct integration of UnifiedCacheManager into action6_gather.py completed. Migrated all 10 cache function locations (profile_details, combined_details, badge_details, relationship_prob, tree_search endpoints). Replaced diskcache API with UnifiedCacheManager API. Fixed ruff import sorting (I001). Integration test passing (test_action6_cache_integration.py). 0 Pylance warnings, ruff clean. Cleaned up 13 markdown snapshot files and removed backwards-compat layer. Ready for Parts A4-A5 (performance validation and documentation).
+- _2025-11-12:_ **Codebase Cleanup Phase 1 - COMPLETE**: Deleted 3 obsolete Phase 3 documentation files (test_file, PHASE_3_COMPLETION.md, PHASE_3_INDEX.md). Zero risk deletions. Committed: 934cc80.
+- _2025-11-12:_ **Codebase Cleanup Phase 2 - COMPLETE**: Deleted 4 unused demo/diagnostic scripts (demo_lm_studio_autostart.py, remove_progress_bar.py, test_diagnostics.py, end_to_end_tests.py). Kept diagnose_chrome.py (imported by main.py). Low risk deletions. Committed: 68525e3.
+- _2025-11-12:_ **Codebase Cleanup Phase 3 - Verification COMPLETE**: Confirmed ActionRegistry and CircuitBreaker are actively used in production code. Decision: Do NOT delete test_action_registry.py or test_circuit_breaker.py.
+- _2025-11-12:_ **Codebase Cleanup Phase 3C - COMPLETE**: Deleted 13 planning/documentation files (.secrets.baseline, ancestry.db, and all PHASE_5_*.md files), fixed code file whitespace issues (trailing whitespace, EOF markers). 24 files changed total. Committed: e71aaa2.
 
 ```
