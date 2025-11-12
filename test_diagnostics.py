@@ -166,7 +166,7 @@ def _test_capture_io_exception() -> bool:
         print("Before exception")
         raise ValueError("Test failure reason")
 
-    result, stdout, stderr, exc = failing_test()
+    result, stdout, _stderr, exc = failing_test()
 
     result_false = result is False
     has_stdout = "Before exception" in stdout
@@ -222,7 +222,7 @@ def _test_capture_io_no_exception() -> bool:
         print("Test passed")
         return True
 
-    result, stdout, stderr, exc = passing_test()
+    result, stdout, _stderr, exc = passing_test()
 
     passed = result is True
     has_output = "Test passed" in stdout
@@ -239,7 +239,7 @@ def _test_capture_io_stderr() -> bool:
         sys.stderr.write("stderr line\n")
         return True
 
-    result, stdout, stderr, exc = test_with_stderr()
+    _result, stdout, stderr, _exc = test_with_stderr()
 
     stdout_correct = "stdout line" in stdout and "stderr line" not in stdout
     stderr_correct = "stderr line" in stderr and "stdout line" not in stderr
@@ -276,7 +276,7 @@ def _test_capture_io_complex_scenario() -> bool:
 
         return True
 
-    result, stdout, stderr, exc = complex_test()
+    _result, stdout, stderr, exc = complex_test()
 
     has_stdout = "Step 1: Initialize" in stdout and "Step 2: Value is 42" in stdout
     has_stderr = "Warning: edge case detected" in stderr

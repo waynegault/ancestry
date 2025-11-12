@@ -18,8 +18,9 @@ Usage:
 
 import argparse
 import json
+import subprocess
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -29,7 +30,8 @@ def load_experiments(log_file: Path, days: int = 7) -> list[dict[str, Any]]:
     if not log_file.exists():
         return []
 
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    # Use timezone-aware UTC cutoff so it compares cleanly with parsed ISO timestamps
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     experiments = []
 
     with log_file.open(encoding="utf-8") as f:
@@ -87,11 +89,27 @@ def load_baseline(baseline_file: Path) -> dict[str, Any]:
 
 def save_baseline(baseline_file: Path, median_score: float, experiment_count: int) -> None:
     """Save new baseline quality metrics."""
+    # Try to capture current git short SHA for provenance, if available
+    git_sha = None
+    try:
+        git_sha = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=Path(__file__).resolve().parent,
+                text=True,
+            )
+            .strip()
+        )
+    except Exception:
+        git_sha = None
+
     baseline = {
         "median_quality_score": median_score,
         "experiment_count": experiment_count,
         "generated_at": datetime.utcnow().isoformat() + "Z",
-        "description": "Baseline quality score for regression detection"
+        "baseline_id": f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{git_sha or 'nogit'}",
+        "git_ref": git_sha,
+        "description": "Baseline quality score for regression detection",
     }
 
     baseline_file.parent.mkdir(parents=True, exist_ok=True)
@@ -119,7 +137,7 @@ def check_regression(
     return is_regression, quality_drop
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     """Main entry point for quality regression gate."""
     parser = argparse.ArgumentParser(
         description="Quality Regression Gate - Block deployments on prompt quality drops"
@@ -153,6 +171,11 @@ def main(argv: list[str] | None = None) -> int:
         default=Path("Logs/quality_baseline.json"),
         help="Path to baseline JSON file"
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a compact JSON summary to stdout (machine-readable)"
+    )
 
     args = parser.parse_args(argv)
 
@@ -160,6 +183,14 @@ def main(argv: list[str] | None = None) -> int:
     experiments = load_experiments(args.experiments_file, args.days)
 
     if not experiments:
+        if args.json:
+            out = {
+                "status": "error",
+                "reason": "no_experiments",
+                "experiments_file": str(args.experiments_file),
+            }
+            print(json.dumps(out, separators=(",", ":")))
+            return 2
         print(f"❌ ERROR: No experiments found in {args.experiments_file}")
         print("   Cannot perform quality check without data.")
         return 2
@@ -171,19 +202,43 @@ def main(argv: list[str] | None = None) -> int:
         print(f"   Found {len(experiments)} experiments but none had quality_score.")
         return 2
 
-    print(f"📊 Current Quality Metrics (last {args.days} days):")
-    print(f"   Experiments analyzed: {len(experiments)}")
-    print(f"   Median quality score: {current_median:.1f}")
+    if not args.json:
+        print(f"📊 Current Quality Metrics (last {args.days} days):")
+        print(f"   Experiments analyzed: {len(experiments)}")
+        print(f"   Median quality score: {current_median:.1f}")
+    else:
+        # In JSON mode we'll emit a compact summary later; nothing to print here now
+        pass
 
     # Generate baseline mode
     if args.generate_baseline:
         save_baseline(args.baseline_file, current_median, len(experiments))
+        if args.json:
+            baseline_content = load_baseline(args.baseline_file)
+            out = {
+                "status": "baseline_generated",
+                "median_quality_score": round(current_median, 3),
+                "experiment_count": len(experiments),
+                "baseline_file": str(args.baseline_file),
+                "baseline_id": baseline_content.get("baseline_id"),
+                "git_ref": baseline_content.get("git_ref"),
+            }
+            print(json.dumps(out, separators=(",", ":")))
         return 0
 
     # Check against baseline
     baseline = load_baseline(args.baseline_file)
 
     if not baseline or "median_quality_score" not in baseline:
+        if args.json:
+            out = {
+                "status": "no_baseline",
+                "baseline_file": str(args.baseline_file),
+                "allow_deploy": True,
+                "experiments_analyzed": len(experiments),
+            }
+            print(json.dumps(out, separators=(",", ":")))
+            return 0
         print(f"\n⚠️  WARNING: No baseline found at {args.baseline_file}")
         print("   Run with --generate-baseline to create one.")
         print("   Allowing deployment (no baseline to compare against).")
@@ -192,14 +247,31 @@ def main(argv: list[str] | None = None) -> int:
     baseline_median = baseline["median_quality_score"]
     baseline_date = baseline.get("generated_at", "unknown")
 
-    print("\n📌 Baseline Quality Metrics:")
-    print(f"   Median quality score: {baseline_median:.1f}")
-    print(f"   Generated at: {baseline_date}")
+    if not args.json:
+        print("\n📌 Baseline Quality Metrics:")
+        print(f"   Median quality score: {baseline_median:.1f}")
+        print(f"   Generated at: {baseline_date}")
 
     # Check for regression
     is_regression, quality_drop = check_regression(
         current_median, baseline_median, args.threshold
     )
+
+    if args.json:
+        out = {
+            "status": "regression" if is_regression else "ok",
+            "is_regression": bool(is_regression),
+            "quality_drop": round(quality_drop, 3),
+            "threshold": args.threshold,
+            "current_median": round(current_median, 3),
+            "baseline_median": round(baseline_median, 3),
+            "experiments_analyzed": len(experiments),
+            "baseline_generated_at": baseline_date,
+            "baseline_id": baseline.get("baseline_id"),
+            "git_ref": baseline.get("git_ref"),
+        }
+        print(json.dumps(out, separators=(",", ":")))
+        return 1 if is_regression else 0
 
     print(f"\n{'='*60}")
     if is_regression:

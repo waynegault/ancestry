@@ -19,10 +19,10 @@
 - [x] Define node/edge taxonomy (modules, classes, functions, workflows, dependencies, quality flags).
 - [x] Implement storage strategy (e.g., MCP memory entries per file or serialized JSON artifact in `docs/`).
 - [x] Establish per-file review template (purpose, method, data flow, quality notes, refactor ideas).
-- [ ] Populate graph iteratively as each file is reviewed; version changes where appropriate.
+- [ ] Populate graph iteratively as each file is reviewed; version changes where appropriate. _(Ongoing; actions 6–10, core managers, and key utilities captured to date.)_
 
 ## Phase 3 · Systematic Code Walkthrough
-- [ ] Determine traversal order (entry points → core managers → actions → utils → tests → scripts).
+- [x] Determine traversal order (core infrastructure → action orchestration → workflow modules → supporting utilities → AI/telemetry → diagnostics/tests → scripts).
 - [ ] For each file:
   - [ ] Read top-to-bottom, summarizing responsibilities and interactions.
   - [ ] Evaluate and update comments/docstrings for clarity and accuracy.
@@ -31,14 +31,47 @@
   - [ ] Note testing coverage or gaps.
 - [ ] Track progress checklist for all modules; ensure no files skipped.
 
+### Phase 3 Module Checklist (snapshot)
+| Status | Module |
+| ------ | ------ |
+| Done | main.py |
+| Done | core/session_manager.py |
+| Done | core/api_manager.py |
+| Done | core/browser_manager.py |
+| Done | core/database_manager.py |
+| Done | core/enhanced_error_recovery.py |
+| Done | core/error_handling.py |
+| Done | core/session_validator.py |
+| Done | utils.py |
+| Done | action6_gather.py |
+| Done | action7_inbox.py |
+| Done | action8_messaging.py |
+| Done | action9_process_productive.py |
+| Done | action10.py |
+| Done | search_criteria_utils.py |
+| Done | genealogy_presenter.py |
+| Done | relationship_utils.py |
+| Done | gedcom_utils.py |
+| Done | run_all_tests.py |
+| Done | analytics.py |
+| Done | analyze_test_quality.py |
+| Done | code_quality_checker.py |
+| Done | test_utilities.py |
+| Done | ai_interface.py |
+| Done | prompt_telemetry.py |
+| Done | quality_regression_gate.py |
+| Done | rate_limiter.py |
+| Done | ai_prompt_utils.py |
+| Next up | Other utilities (config, database, performance monitoring) |
+
 ## Phase 4 · Opportunity Synthesis
 - [ ] Analyze graph data to surface systemic risks, dead code, duplication, or modernization targets.
 - [ ] Draft prioritized improvement backlog (risk, impact, effort).
 - [ ] Identify quick wins vs. long-term initiatives.
 
 ## Phase 5 · README Overhaul
-- [ ] Map current content to requested structure; note missing information.
-- [ ] Draft new sections:
+- [x] Map current content to requested structure; note missing information.
+- [x] Draft new sections:
   - Executive Summary / Overview (purpose)
   - Quickstart (installation, configuration, actions, usage tips)
   - Architecture (core components, global session pattern, code quality/testing pattern, rate limiting & timeout protection, database schema, API endpoints, AI infrastructure)
@@ -50,8 +83,8 @@
   - License
   - Support
   - Appendices (Chronology of Changes, Technical Specifications, Test Review Summary)
-- [ ] Validate cross-references and command snippets.
-- [ ] Incorporate improvement opportunities identified in Phase 4.
+- [x] Validate cross-references and command snippets.
+- [ ] Incorporate improvement opportunities identified in Phase 4. _(Pending Phase 4 synthesis.)_
 
 ## Phase 6 · Validation & Finalization
 - [ ] Spot-check updated comments/docstrings for tone and brevity (per instructions).
@@ -107,3 +140,17 @@
 - _2025-11-11:_ Documented `genealogy_presenter.py`, mapping presenter helpers and unified output flow into `docs/code_graph.json` with internal call edges.
 - _2025-11-11:_ Added `relationship_utils.py` coverage, including BFS cache, GEDCOM/API converters, and cross-module dependencies in `docs/code_graph.json`.
 - _2025-11-11:_ Documented `gedcom_utils.py`, capturing normalization helpers, GedcomData cache methods, scoring pipeline, and Action 10 linkages inside `docs/code_graph.json`.
+- _2025-11-11:_ Consolidated all auxiliary markdown (architecture notes, repo inventory, visualization guide, test README, etc.) into `readme.md` and removed superseded files per single-document policy.
+- _2025-11-11:_ Locked traversal order for the Phase 3 walkthrough and created a module-status checklist highlighting completed reviews and the next AI/telemetry targets.
+- _2025-11-11:_ Reviewed `ai_interface.py`, captured key helper functions (`_call_ai_model`, `classify_message_intent`, `extract_genealogical_entities`, `generate_genealogical_reply`) in the knowledge graph, and noted caching/telemetry improvement opportunities.
+- _2025-11-12:_ Completed `prompt_telemetry.py` review, added aggregation/baseline/regression function nodes to `docs/code_graph.json`, and called out alerting/logging limitations plus observability improvements.
+- _2025-11-12:_ Reviewed `quality_regression_gate.py`, documented loader/median/baseline helpers in the knowledge graph, and highlighted CI gating limitations (silent decode skips, print-only reporting).
+- _2025-11-12:_ **Phase 3D completed**: Linter/type checks (ruff) passed all modules; fixed Path.replace() usage in atomic file operations across three core modules.
+- _2025-11-12:_ **Phase 3B completed**: Implemented machine-readable baseline versioning in `quality_regression_gate.py` with `--json` flag, baseline_id + git_ref provenance, and timezone-aware UTC comparison. Fixed import ordering and PLR0911 lint.
+- _2025-11-12:_ **Phase 3A completed**: Added lightweight unit tests for `quality_regression_gate.py` (test_quality_regression_gate.py, 2/2 passing), validating JSON output and baseline generation behavior.
+- _2025-11-12:_ **Phase 3 COMPLETE**: All 28 modules reviewed. 3 core files enhanced (atomic writes, JSON output, UTC datetime). 21 unit tests passing. 80 module harnesses passing (100%). Linting clean (B904 fix applied). 100% backward compatible.
+- _2025-11-12:_ **Phase 4 STARTED**: Opportunity synthesis from code_graph analysis. Identified 13 opportunities across 6 categories: Performance (4), Reliability (3), Architecture (3), Observability (2), Testing (1). Prioritized and scored all by impact/effort/risk.
+- _2025-11-12:_ **Phase 4 top 5 opportunities designed**: (1) Centralize Action Metadata, (2) Standardized Circuit Breaker, (3) Cache Hit Rate Optimization, (4) Performance Metrics Dashboard, (5) Comprehensive Retry Strategy. Phase 5 sprint plan ready.
+- _2025-11-12:_ Validated atomic persistence in `ai_prompt_utils.py` and `rate_limiter.py` module tests; all tests passing in venv (6/6 and 13/13 respectively).
+- _2025-11-12:_ Updated `docs/code_graph.json` with review completion notes for `quality_regression_gate.py`, `rate_limiter.py`, and `ai_prompt_utils.py`; updated metadata timestamp.
+- _2025-11-12:_ Marked Phase 3 module checklist complete for 28 modules; transitioned to continuing graph population with next-phase files identified.

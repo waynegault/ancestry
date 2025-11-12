@@ -20,6 +20,8 @@ Status: Phase 1 - Foundation
 """
 
 import json
+import os
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -1015,7 +1017,17 @@ def _persist_state(payload: dict[str, Any]) -> None:
     state_path = _get_state_path()
     try:
         state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # Write atomically: write to temp file then replace
+        temp_path = state_path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        try:
+            temp_path.replace(state_path)
+        except Exception:
+            # Fallback to tempfile.NamedTemporaryFile
+            with tempfile.NamedTemporaryFile("w", delete=False, dir=str(state_path.parent), encoding="utf-8") as tf:
+                json.dump(payload, tf, indent=2)
+                tmpname = tf.name
+            Path(tmpname).replace(state_path)
         _persisted_state_cache = payload
     except Exception as exc:  # pragma: no cover - diagnostics only
         logger.debug(f"Failed to persist rate limiter state: {exc}")
