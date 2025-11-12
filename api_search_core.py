@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from api_search_utils import get_api_family_details
 from api_utils import call_discovery_relationship_api, call_treesui_list_api
