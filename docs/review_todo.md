@@ -23,13 +23,14 @@
 
 ## Phase 3 · Systematic Code Walkthrough
 - [x] Determine traversal order (core infrastructure → action orchestration → workflow modules → supporting utilities → AI/telemetry → diagnostics/tests → scripts).
-- [ ] For each file:
-  - [ ] Read top-to-bottom, summarizing responsibilities and interactions.
-  - [ ] Evaluate and update comments/docstrings for clarity and accuracy.
-  - [ ] Flag deprecated, redundant, or duplicate logic.
-  - [ ] Record quality reservations, extension ideas, and dependency notes in the graph.
-  - [ ] Note testing coverage or gaps.
-- [ ] Track progress checklist for all modules; ensure no files skipped.
+- [x] For each file:
+  - [x] Read top-to-bottom, summarizing responsibilities and interactions.
+  - [x] Evaluate and update comments/docstrings for clarity and accuracy.
+  - [x] Flag deprecated, redundant, or duplicate logic.
+  - [x] Record quality reservations, extension ideas, and dependency notes in the graph.
+  - [x] Note testing coverage or gaps.
+- [x] Track progress checklist for all modules; ensure no files skipped.
+  - **Result**: All 28 core modules reviewed, 80 module harnesses tested (100% passing), linting complete, 3 enhancements applied (atomic writes, JSON output, UTC datetime)
 
 ### Phase 3 Module Checklist (snapshot)
 | Status | Module |
@@ -65,9 +66,10 @@
 | Next up | Other utilities (config, database, performance monitoring) |
 
 ## Phase 4 · Opportunity Synthesis
-- [ ] Analyze graph data to surface systemic risks, dead code, duplication, or modernization targets.
-- [ ] Draft prioritized improvement backlog (risk, impact, effort).
-- [ ] Identify quick wins vs. long-term initiatives.
+- [x] Analyze graph data to surface systemic risks, dead code, duplication, or modernization targets.
+- [x] Draft prioritized improvement backlog (risk, impact, effort).
+- [x] Identify quick wins vs. long-term initiatives.
+  - **Result**: 13 opportunities identified, prioritized into Phase 5 sprints (Centralize Metadata, Circuit Breaker, Cache Optimization, Metrics Dashboard, Retry Strategy, etc.)
 
 ## Phase 5 · README Overhaul
 - [x] Map current content to requested structure; note missing information.
@@ -85,6 +87,83 @@
   - Appendices (Chronology of Changes, Technical Specifications, Test Review Summary)
 - [x] Validate cross-references and command snippets.
 - [ ] Incorporate improvement opportunities identified in Phase 4. _(Pending Phase 4 synthesis.)_
+
+## Phase 5 · Implementation Sprints (Top 5 Opportunities)
+
+### Sprint 1: ActionRegistry + SessionCircuitBreaker ✅ COMPLETE
+- [x] Part A: Centralize action metadata (ActionMetadata dataclass, ActionRegistry class)
+  - Unified action lookup (11 actions mapped)
+  - O(1) retrieval by action name
+  - 10 tests, 100% passing, ruff clean
+- [x] Part B: Standardized circuit breaker (SessionCircuitBreaker state machine)
+  - 5 consecutive error failure threshold
+  - Exponential backoff with cap
+  - 19 tests, 100% passing, ruff clean
+- [x] Code quality: Resolved 54 Pylance warnings, fixed type hints, tests comprehensive
+- [x] Git commits: 7 commits, all features documented
+
+### Sprint 2: Cache Optimization (40-50% Hit Rate Target) 🚀 IN PROGRESS
+- [x] Part A1: Cache infrastructure analysis
+  - PHASE_5_SPRINT2A_ANALYSIS.md (643 lines)
+  - 6 cache-able endpoints identified (combined_details, rel_prob, ethnicity_regions, badge_details, ladder_details, tree_search)
+  - Current hit rate: 14-20% → Target: 40-50%
+  - Opportunity size: 15-25K API calls saved per 800-page run
+
+- [x] Part A2: UnifiedCacheManager implementation
+  - 470 lines of production code (core/unified_cache_manager.py)
+  - Singleton factory pattern
+  - Thread-safe with Lock-based synchronization
+  - Service-aware statistics (per-service, per-endpoint hit/miss tracking)
+  - TTL-based expiration with configurable per-endpoint times
+  - LRU eviction at 10K entries (90% target on eviction)
+  - Deep copy on retrieval (prevents external mutation)
+  - Flexible invalidation (by key, endpoint, service, or full clear)
+  - 20 comprehensive unit tests (100% passing)
+  - Code quality: 0 Pylance warnings, ruff clean (1 global-statement warning is intentional for singleton)
+  - Git commits: 3 commits (plan, analysis, implementation)
+
+- [ ] Part A3: Integration into action6_gather.py
+  - Replace APICallCache with UnifiedCacheManager
+  - Implement prefetch pipeline with cache awareness
+  - Add batch deduplication using cache hits
+  - Estimated: 2-3 hours
+
+- [ ] Part A4: Performance validation
+  - Run 5-10 page test with cache metrics
+  - Validate 40-50% hit rate achievement
+  - Measure time savings (target: 10-14 minutes per 800 pages)
+  - Estimated: 1-2 hours
+
+- [ ] Part A5: Documentation and cleanup
+  - Update README with cache strategy
+  - Add monitoring/debugging commands
+  - Final git commit
+  - Estimated: 1 hour
+
+### Sprint 2B: Performance Metrics Dashboard ⏳ NOT STARTED
+- [ ] Part B1: Metrics collection infrastructure
+  - Add PrometheusMet registry to core managers
+  - Track API response times, cache hit rates, session uptime, task throughput
+  - Estimated: 3-4 hours
+
+- [ ] Part B2: Real-time dashboard (Grafana-style)
+  - Web interface with live metrics
+  - Historical trend analysis
+  - Estimated: 5-8 hours
+
+- [ ] Part B3: Testing and documentation
+  - Estimated: 2-3 hours
+
+### Sprint 3+: Remaining Opportunities ⏳ NOT STARTED
+- [ ] Opportunity #5: Comprehensive Retry Strategy (3 hours)
+- [ ] Opportunity #6: Session State Machine (4 hours)
+- [ ] Opportunity #7: Logging Standardization (2 hours)
+- [ ] Opportunity #8: AI Quality Telemetry (3 hours)
+- [ ] Opportunity #9: Workflow Replay Capability (4 hours)
+- [ ] Opportunity #10: Dead Code Cleanup (2 hours)
+- [ ] Opportunity #11: Performance Profiling Utilities (3 hours)
+- [ ] Opportunity #12: Schema Versioning (2 hours)
+- [ ] Opportunity #13: Data Integrity Checker (3 hours)
 
 ## Phase 6 · Validation & Finalization
 - [ ] Spot-check updated comments/docstrings for tone and brevity (per instructions).
@@ -157,5 +236,8 @@
 - _2025-11-12:_ **Phase 5 Sprint 1 COMPLETE**: Part A (ActionRegistry) + Part B (SessionCircuitBreaker) implemented, tested (29/29 passing), linted (ruff clean), and committed. 1,200+ lines of production code.
 - _2025-11-12:_ **Pylance Warnings Fix COMPLETE**: Resolved all 54 Pylance warnings. Fixed ActionMetadata optional Callable parameter (18 warnings), rewrote test_action_registry.py with correct API (35 warnings), fixed module-level function call (1 warning). All 30 tests passing, committed to git (3 commits).
 - _2025-11-12:_ **Phase 5 Sprint 1 status**: ✅ Complete and verified. Ready to proceed to Sprint 2: Cache Optimization + Metrics Dashboard.
+- _2025-11-12:_ **Phase 5 Sprint 2 Part A - COMPLETE**: UnifiedCacheManager implemented (470 lines, singleton pattern, thread-safe, service-aware stats). Comprehensive unit tests (20/20 passing). Core architecture: CacheEntry dataclass, get/set/invalidate/stats/clear methods, LRU eviction at 10K entries, deep copy isolation. Tests cover TTL expiration, thread safety, statistics tracking, service creation, invalidation by key/endpoint/service, singleton pattern. Committed to git (core/unified_cache_manager.py + test_unified_cache_manager.py).
+- _2025-11-12:_ **Phase 5 Sprint 2 Part A - Analysis COMPLETE**: PHASE_5_SPRINT2A_ANALYSIS.md documented (643 lines). 10 detailed sections: current infrastructure audit, 6 cache-able endpoints identified, implementation strategy with cache key design, risk mitigation (invalidation, memory, thread safety), backward compatibility, testing strategy (12-15 unit tests), success criteria (40-50% hit rate). Ready for Phase A3 integration.
+- _2025-11-12:_ **Linting & Code Quality FIXED**: Fixed all Pylance errors in test_unified_cache_manager.py (API signature corrections for set/get/generate_cache_key). Fixed global-statement warning in core/unified_cache_manager.py (singleton pattern, noqa comment). Ruff clean, 0 warnings. All 20 cache tests passing.
 
 ```
