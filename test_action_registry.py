@@ -4,7 +4,6 @@ Unit tests for core/action_registry.py.
 Tests the ActionRegistry implementation including:
 - Registration and lookups
 - Menu generation
-- Workflow composition
 - Consistency validation
 - Backward compatibility
 """
@@ -17,13 +16,16 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from core.action_registry import (
+    ActionCategory,
     ActionMetadata,
     ActionRegistry,
-    get_action_metadata,
+    ActionRequirement,
+    get_action,
     get_action_registry,
-    get_browser_requirement,
-    get_menu_items,
-    get_required_state,
+    get_browserless_actions,
+    get_menu_actions,
+    is_browserless_action,
+    requires_browser_session,
 )
 from test_framework import TestSuite
 
@@ -32,53 +34,24 @@ def test_registry_creation() -> bool:
     """Test that global registry is created correctly."""
     registry = get_action_registry()
     assert registry is not None, "Registry should not be None"
-    assert len(registry) == 11, f"Expected 11 actions, got {len(registry)}"
+    actions = registry.get_all_actions()
+    assert len(actions) > 0, f"Expected actions, got {len(actions)}"
     return True
 
 
-def test_lookup_by_choice() -> bool:
-    """Test O(1) lookup by choice string."""
+def test_action_retrieval_by_id() -> bool:
+    """Test action retrieval by ID."""
     registry = get_action_registry()
 
-    # Test valid choices
-    for choice in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
-        metadata = registry.get_by_choice(choice)
-        assert metadata is not None, f"Action {choice} should exist"
-        assert metadata.choice == choice, f"Choice should match: {choice}"
+    # Test valid IDs (0-10, test, testall, etc.)
+    for action_id in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
+        metadata = registry.get_action(action_id)
+        assert metadata is not None, f"Action {action_id} should exist"
+        assert metadata.id == action_id, f"ID should match: {action_id}"
 
-    # Test invalid choice
-    metadata = registry.get_by_choice("999")
-    assert metadata is None, "Invalid choice should return None"
-
-    return True
-
-
-def test_lookup_by_name() -> bool:
-    """Test lookup by function name."""
-    registry = get_action_registry()
-
-    names = [
-        "all_but_first_actn",
-        "run_core_workflow_action",
-        "reset_db_actn",
-        "backup_db_actn",
-        "restore_db_actn",
-        "check_login_actn",
-        "gather_dna_matches",
-        "srch_inbox_actn",
-        "send_messages_action",
-        "process_productive_messages_action",
-        "run_gedcom_then_api_fallback",
-    ]
-
-    for name in names:
-        metadata = registry.get_by_name(name)
-        assert metadata is not None, f"Action {name} should exist"
-        assert metadata.name == name, f"Name should match: {name}"
-
-    # Test invalid name
-    metadata = registry.get_by_name("nonexistent_action")
-    assert metadata is None, "Invalid name should return None"
+    # Test invalid ID
+    metadata = registry.get_action("999")
+    assert metadata is None, "Invalid ID should return None"
 
     return True
 
@@ -88,92 +61,137 @@ def test_browser_requirement_consistency() -> bool:
     registry = get_action_registry()
 
     # Database-only actions (no browser needed)
-    db_only = ["0", "2", "3", "4", "10"]
-    for choice in db_only:
-        metadata = registry.get_by_choice(choice)
-        assert metadata is not None, f"Action {choice} should exist"
-        assert not metadata.requires_browser, f"Action {choice} should not require browser"
+    db_only = ["0", "2", "3", "4"]
+    for action_id in db_only:
+        metadata = registry.get_action(action_id)
+        assert metadata is not None, f"Action {action_id} should exist"
+        assert metadata.browser_requirement == ActionRequirement.NONE, \
+            f"Action {action_id} should not require browser"
+        assert registry.is_browserless_action(action_id), \
+            f"Action {action_id} should be browserless"
 
     # Browser-required actions
-    browser_required = ["1", "5", "6", "7", "8", "9"]
-    for choice in browser_required:
-        metadata = registry.get_by_choice(choice)
-        assert metadata is not None, f"Action {choice} should exist"
-        assert metadata.requires_browser, f"Action {choice} should require browser"
+    browser_required = ["1", "5", "6", "7", "8", "9", "10"]
+    for action_id in browser_required:
+        metadata = registry.get_action(action_id)
+        assert metadata is not None, f"Action {action_id} should exist"
+        assert metadata.browser_requirement != ActionRequirement.NONE, \
+            f"Action {action_id} should require browser"
+        assert not registry.is_browserless_action(action_id), \
+            f"Action {action_id} should require browser"
 
     return True
 
 
-def test_required_state_consistency() -> bool:
-    """Test that required state is correctly set."""
+def test_category_grouping() -> bool:
+    """Test that actions are properly categorized."""
     registry = get_action_registry()
 
-    # DB-only actions should have "db_only" or "any"
-    db_only_choices = ["0", "2", "3", "4", "10"]
-    for choice in db_only_choices:
-        metadata = registry.get_by_choice(choice)
-        assert metadata is not None, f"Action {choice} should exist"
-        assert metadata.required_state in ["db_only", "any"], \
-            f"Action {choice} should have db_only or any state"
+    # Get actions by category
+    db_actions = registry.get_actions_by_category(ActionCategory.DATABASE)
+    assert len(db_actions) > 0, "Should have database actions"
+    assert all(a.category == ActionCategory.DATABASE for a in db_actions), \
+        "All database actions should have DATABASE category"
 
-    # Browser-required actions should have "ready" or "any"
-    browser_choices = ["1", "5", "6", "7", "8", "9"]
-    for choice in browser_choices:
-        metadata = registry.get_by_choice(choice)
-        assert metadata is not None, f"Action {choice} should exist"
-        assert metadata.required_state in ["ready", "any"], \
-            f"Action {choice} should have ready state"
+    workflow_actions = registry.get_actions_by_category(ActionCategory.WORKFLOW)
+    assert len(workflow_actions) > 0, "Should have workflow actions"
+    assert all(a.category == ActionCategory.WORKFLOW for a in workflow_actions), \
+        "All workflow actions should have WORKFLOW category"
+
+    browser_actions = registry.get_actions_by_category(ActionCategory.BROWSER)
+    assert len(browser_actions) > 0, "Should have browser actions"
+    assert all(a.category == ActionCategory.BROWSER for a in browser_actions), \
+        "All browser actions should have BROWSER category"
 
     return True
 
 
-def test_workflow_actions() -> bool:
-    """Test that workflow actions are correctly marked."""
+def test_menu_actions() -> bool:
+    """Test menu action generation."""
     registry = get_action_registry()
-    workflow = registry.get_workflow_actions()
+    menu_actions = registry.get_menu_actions()
 
-    # Should have at least 3 actions (7, 8, 9 are in workflow)
-    assert len(workflow) >= 3, f"Expected at least 3 workflow actions, got {len(workflow)}"
+    # Should have menu actions (non-test, non-meta)
+    assert len(menu_actions) > 0, "Should have menu actions"
 
-    # Check specific workflow actions
-    workflow_choices = {m.choice for m in workflow}
-    assert "7" in workflow_choices, "Action 7 should be in workflow"
-    assert "8" in workflow_choices, "Action 8 should be in workflow"
-    assert "9" in workflow_choices, "Action 9 should be in workflow"
-    assert "1" in workflow_choices, "Action 1 should be in workflow"
+    # All should be in sorted order by menu_order
+    orders = [a.menu_order for a in menu_actions]
+    assert orders == sorted(orders), "Menu actions should be sorted by menu_order"
+
+    # Test convenience function
+    menu_actions_2 = get_menu_actions()
+    assert len(menu_actions) == len(menu_actions_2), "Convenience function should return same count"
 
     return True
 
 
-def test_menu_generation() -> bool:
-    """Test menu item generation."""
+def test_browserless_actions() -> bool:
+    """Test browserless action grouping."""
     registry = get_action_registry()
-    menu_items = registry.get_menu_items()
 
-    # Should have 11 items
-    assert len(menu_items) == 11, f"Expected 11 menu items, got {len(menu_items)}"
+    # Get browserless actions
+    browserless = registry.get_actions_by_browser_requirement(ActionRequirement.NONE)
+    assert len(browserless) > 0, "Should have browserless actions"
 
-    # Check structure: each item should be (choice, description) tuple
-    for choice, description in menu_items:
-        assert isinstance(choice, str), "Choice should be string"
-        assert isinstance(description, str), "Description should be string"
-        assert len(description) > 0, "Description should not be empty"
+    # All should have NONE requirement
+    assert all(a.browser_requirement == ActionRequirement.NONE for a in browserless), \
+        "All browserless actions should have NONE requirement"
 
-    # Verify all choices are present
-    choices = [choice for choice, _ in menu_items]
-    for i in range(11):
-        assert str(i) in choices, f"Choice {i} should be in menu"
+    # Test convenience function
+    browserless_2 = get_browserless_actions()
+    assert len(browserless) == len(browserless_2), "Convenience function should return same count"
 
     return True
 
 
-def test_consistency_validation() -> bool:
-    """Test registry consistency validation."""
-    registry = get_action_registry()
-    is_valid, errors = registry.validate_consistency()
+def test_requires_browser_session() -> bool:
+    """Test full session requirement checking."""
+    # Action 6 should require full session
+    assert requires_browser_session("6"), "Action 6 should require full session"
 
-    assert is_valid, f"Registry validation should pass: {errors}"
-    assert len(errors) == 0, f"Should have no errors: {errors}"
+    # Action 0 should not
+    assert not requires_browser_session("0"), "Action 0 should not require session"
+
+    return True
+
+
+def test_test_and_meta_actions() -> bool:
+    """Test identification of test and meta actions."""
+    registry = get_action_registry()
+
+    # Get test actions
+    test_actions = registry.get_test_actions()
+    assert len(test_actions) > 0, "Should have test actions"
+    assert all(a.is_test_action for a in test_actions), \
+        "All test actions should have is_test_action=True"
+
+    # Get meta actions
+    meta_actions = registry.get_meta_actions()
+    assert len(meta_actions) > 0, "Should have meta actions"
+    assert all(a.is_meta_action for a in meta_actions), \
+        "All meta actions should have is_meta_action=True"
+
+    return True
+
+
+def test_confirmation_messages() -> bool:
+    """Test confirmation message handling."""
+    registry = get_action_registry()
+
+    # Some actions should require confirmation
+    action_0 = registry.get_action("0")
+    assert action_0 is not None, "Action 0 should exist"
+    assert action_0.requires_confirmation, "Action 0 should require confirmation"
+    assert registry.requires_confirmation("0"), "Confirmation check should work"
+    confirmation = registry.get_confirmation_message("0")
+    assert confirmation is not None, "Should have confirmation message"
+    assert len(confirmation) > 0, "Confirmation message should not be empty"
+
+    # Some should not require confirmation
+    action_5 = registry.get_action("5")
+    assert action_5 is not None, "Action 5 should exist"
+    assert not action_5.requires_confirmation, "Action 5 should not require confirmation"
+    assert not registry.requires_confirmation("5"), "Confirmation check should return False"
 
     return True
 
@@ -184,86 +202,62 @@ def test_duplicate_prevention() -> bool:
 
     # Register first action
     metadata1 = ActionMetadata(
-        choice="X",
+        id="test_1",
         name="test_action_1",
         description="Test Action 1",
-        help_text="Help",
-        requires_browser=False,
-        required_state="db_only",
-        category="test",
+        category=ActionCategory.UTILITY,
+        browser_requirement=ActionRequirement.NONE,
     )
     registry.register(metadata1)
 
-    # Try to register duplicate choice - should raise ValueError
+    # Try to register duplicate ID - should raise ValueError
     metadata2 = ActionMetadata(
-        choice="X",  # Duplicate choice
+        id="test_1",  # Duplicate ID
         name="test_action_2",
         description="Test Action 2",
-        help_text="Help",
-        requires_browser=False,
-        required_state="db_only",
-        category="test",
+        category=ActionCategory.UTILITY,
+        browser_requirement=ActionRequirement.NONE,
     )
 
     try:
         registry.register(metadata2)
-        raise AssertionError("Should have raised ValueError for duplicate choice")
+        raise AssertionError("Should have raised ValueError for duplicate ID")
     except ValueError as e:
-        assert "Duplicate" in str(e)
-
-    # Try to register duplicate name - should raise ValueError
-    metadata3 = ActionMetadata(
-        choice="Y",
-        name="test_action_1",  # Duplicate name
-        description="Test Action 3",
-        help_text="Help",
-        requires_browser=False,
-        required_state="db_only",
-        category="test",
-    )
-
-    try:
-        registry.register(metadata3)
-        raise AssertionError("Should have raised ValueError for duplicate name")
-    except ValueError as e:
-        assert "Duplicate" in str(e)
+        assert "already registered" in str(e).lower()
 
     return True
 
 
 def test_backward_compatibility_helpers() -> bool:
-    """Test helper functions exported for main.py backward compatibility."""
-    # Test get_browser_requirement (replaces _determine_browser_requirement)
-    assert not get_browser_requirement("0"), "Action 0 should not require browser"
-    assert get_browser_requirement("6"), "Action 6 should require browser"
+    """Test helper functions for backward compatibility."""
+    # Test is_browserless_action (convenience function)
+    assert is_browserless_action("0"), "Action 0 should be browserless"
+    assert not is_browserless_action("6"), "Action 6 should require browser"
 
-    # Test get_required_state (replaces _determine_required_state)
-    assert get_required_state("0") in ["db_only", "any"], "Action 0 should have db_only state"
-    assert get_required_state("6") == "ready", "Action 6 should have ready state"
+    # Test requires_browser_session (convenience function)
+    assert requires_browser_session("6"), "Action 6 should require full session"
+    assert not requires_browser_session("0"), "Action 0 should not require session"
 
-    # Test get_menu_items (replaces hardcoded print statements)
-    menu = get_menu_items()
-    assert len(menu) == 11, "Menu should have 11 items"
-    assert menu[0][0] == "0", "First item should be choice 0"
-
-    # Test get_action_metadata (new utility)
-    metadata = get_action_metadata("6")
-    assert metadata is not None, "Action 6 metadata should exist"
-    assert metadata.name == "gather_dna_matches", "Name should match"
+    # Test get_action (convenience function)
+    action = get_action("6")
+    assert action is not None, "Should get action 6"
+    assert action.name == "Gather DNA Matches", "Name should match"
 
     return True
 
 
-def test_all_actions_have_descriptions() -> bool:
-    """Test that all actions have proper descriptions."""
+def test_all_actions_have_proper_metadata() -> bool:
+    """Test that all actions have proper metadata."""
     registry = get_action_registry()
 
-    for choice in range(11):
-        metadata = registry.get_by_choice(str(choice))
-        assert metadata is not None, f"Action {choice} should exist"
-        assert len(metadata.description) > 0, f"Action {choice} should have description"
-        assert len(metadata.help_text) > 0, f"Action {choice} should have help text"
-        assert metadata.category, f"Action {choice} should have category"
+    for action_id, metadata in registry.get_all_actions().items():
+        assert metadata.id == action_id, f"ID mismatch: {action_id}"
+        assert len(metadata.name) > 0, f"Action {action_id} should have name"
+        assert len(metadata.description) > 0, f"Action {action_id} should have description"
+        assert metadata.category is not None, f"Action {action_id} should have category"
+        assert metadata.browser_requirement is not None, \
+            f"Action {action_id} should have browser_requirement"
+        assert metadata.menu_order >= 0, f"Action {action_id} should have non-negative menu_order"
 
     return True
 
@@ -279,24 +273,31 @@ def test_singleton_pattern() -> bool:
     return True
 
 
-def test_estimated_durations_reasonable() -> bool:
-    """Test that estimated durations are reasonable."""
+def test_action_action_attributes() -> bool:
+    """Test specific action attributes."""
     registry = get_action_registry()
 
-    for choice in range(11):
-        metadata = registry.get_by_choice(str(choice))
-        assert metadata is not None, f"Action {choice} should exist"
-        assert metadata.estimated_duration_sec >= 0, \
-            f"Action {choice} duration should be non-negative"
-        # Reasonable upper bound: 2 hours
-        assert metadata.estimated_duration_sec <= 7200, \
-            f"Action {choice} duration seems unreasonable: {metadata.estimated_duration_sec}s"
+    # Action 0: Delete all except first
+    action_0 = registry.get_action("0")
+    assert action_0 is not None, "Action 0 should exist"
+    assert action_0.category == ActionCategory.DATABASE
+    assert action_0.browser_requirement == ActionRequirement.NONE
+    assert action_0.requires_confirmation
+    assert action_0.menu_order == 0, "Action 0 should be first in menu"
 
-    # Action 6 (gathering) should take a while
-    action_6 = registry.get_by_choice("6")
+    # Action 6: Gather DNA Matches
+    action_6 = registry.get_action("6")
     assert action_6 is not None, "Action 6 should exist"
-    assert action_6.estimated_duration_sec >= 600, \
-        "Action 6 should take at least 10 minutes"
+    assert action_6.category == ActionCategory.BROWSER
+    assert action_6.browser_requirement == ActionRequirement.FULL_SESSION
+    assert action_6.max_args == 1, "Action 6 should allow 1 argument"
+
+    # Action 1: Full workflow
+    action_1 = registry.get_action("1")
+    assert action_1 is not None, "Action 1 should exist"
+    assert action_1.category == ActionCategory.WORKFLOW
+    assert action_1.close_session_after
+    assert action_1.enable_caching
 
     return True
 
@@ -307,18 +308,19 @@ def module_tests() -> bool:
     suite.start_suite()
 
     suite.run_test("Registry creation and population", test_registry_creation)
-    suite.run_test("O(1) lookup by choice", test_lookup_by_choice)
-    suite.run_test("Lookup by function name", test_lookup_by_name)
+    suite.run_test("Action retrieval by ID", test_action_retrieval_by_id)
     suite.run_test("Browser requirement consistency", test_browser_requirement_consistency)
-    suite.run_test("Required state consistency", test_required_state_consistency)
-    suite.run_test("Workflow action identification", test_workflow_actions)
-    suite.run_test("Menu item generation", test_menu_generation)
-    suite.run_test("Registry consistency validation", test_consistency_validation)
+    suite.run_test("Category grouping", test_category_grouping)
+    suite.run_test("Menu action generation", test_menu_actions)
+    suite.run_test("Browserless action grouping", test_browserless_actions)
+    suite.run_test("Full session requirement checking", test_requires_browser_session)
+    suite.run_test("Test and meta action identification", test_test_and_meta_actions)
+    suite.run_test("Confirmation message handling", test_confirmation_messages)
     suite.run_test("Duplicate registration prevention", test_duplicate_prevention)
     suite.run_test("Backward compatibility helpers", test_backward_compatibility_helpers)
-    suite.run_test("All actions documented", test_all_actions_have_descriptions)
+    suite.run_test("All actions have proper metadata", test_all_actions_have_proper_metadata)
     suite.run_test("Singleton pattern enforcement", test_singleton_pattern)
-    suite.run_test("Reasonable duration estimates", test_estimated_durations_reasonable)
+    suite.run_test("Specific action attributes", test_action_action_attributes)
 
     return suite.finish_suite()
 

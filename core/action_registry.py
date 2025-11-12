@@ -44,9 +44,9 @@ class ActionMetadata:
     id: str
     name: str
     description: str
-    function: Callable
     category: ActionCategory
     browser_requirement: ActionRequirement
+    function: Optional[Callable] = None
     requires_confirmation: bool = False
     confirmation_message: Optional[str] = None
     close_session_after: bool = False
@@ -432,7 +432,7 @@ def test_action_registry() -> bool:
         assert len(menu_actions) > 0, "Should have menu actions"
 
         # Test browserless actions
-        browserless_actions = registry.get_browserless_actions()
+        browserless_actions = get_browserless_actions()
         assert len(browserless_actions) > 0, "Should have browserless actions"
 
         logger.info("✅ Action registry tests passed")
