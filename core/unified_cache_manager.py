@@ -377,7 +377,7 @@ _unified_cache: Optional[UnifiedCacheManager] = None
 
 def get_unified_cache() -> UnifiedCacheManager:
     """Get or create the global unified cache instance (singleton)."""
-    global _unified_cache
+    global _unified_cache  # noqa: PLW0603 - Singleton pattern requires global
     if _unified_cache is None:
         _unified_cache = UnifiedCacheManager()
         logger.info("🚀 Unified cache manager initialized")
