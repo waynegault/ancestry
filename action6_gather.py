@@ -252,9 +252,9 @@ if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
 from api_constants import API_PATH_PROFILE_DETAILS
-from cache import cache as global_cache  # Use the initialized global cache instance
 from config import config_schema
 from core.session_manager import SessionManager
+from core.unified_cache_manager import get_unified_cache
 from database import (
     DnaMatch,
     FamilyTree,
@@ -342,34 +342,31 @@ class MaxApiFailuresExceededError(Exception):
 
 # End of MaxApiFailuresExceededError
 
-# OPTIMIZATION: Profile caching using existing global cache infrastructure
+# OPTIMIZATION: Profile caching using UnifiedCacheManager
 def _get_cached_profile(profile_id: str) -> Optional[dict]:
     """Get profile from persistent cache if available."""
-    if global_cache is None:
-        return None
-
     cache_key = f"profile_details_{profile_id}"
     try:
-        cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-        if cached_data is not ENOVAL and isinstance(cached_data, dict):
+        cache = get_unified_cache()
+        cached_data = cache.get("ancestry", "profile_details", cache_key)
+        if cached_data is not None and isinstance(cached_data, dict):
             return cached_data
     except Exception as e:
         logger.warning(f"Error reading profile cache for {profile_id}: {e}")
     return None
 
 def _cache_profile(profile_id: str, profile_data: dict) -> None:
-    """Cache profile data using the global persistent cache."""
-    if global_cache is None:
-        return
-
+    """Cache profile data using UnifiedCacheManager."""
     cache_key = f"profile_details_{profile_id}"
     try:
+        cache = get_unified_cache()
         # Cache profile data with a reasonable TTL (24 hours - profiles don't change often)
-        global_cache.set(
+        cache.set(
+            "ancestry",
+            "profile_details",
             cache_key,
             profile_data,
-            expire=86400,  # 24 hours in seconds
-            retry=True
+            ttl=86400  # 24 hours in seconds
         )
     except Exception as e:
         logger.warning(f"Error caching profile data for {profile_id}: {e}")
@@ -6460,20 +6457,18 @@ def _read_in_tree_cache(sample_ids_on_page: list[str], current_page: int) -> set
     cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
 
     try:
-        if global_cache is not None:
-            cached_in_tree = global_cache.get(
-                cache_key_tree, default=ENOVAL, retry=True
+        cache = get_unified_cache()
+        cached_in_tree = cache.get("ancestry", "tree_search", cache_key_tree)
+        if cached_in_tree is not None:
+            if isinstance(cached_in_tree, set):
+                in_tree_ids = cached_in_tree
+            logger.debug(
+                f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
             )
-            if cached_in_tree is not ENOVAL:
-                if isinstance(cached_in_tree, set):
-                    in_tree_ids = cached_in_tree
-                logger.debug(
-                    f"Loaded {len(in_tree_ids)} in-tree IDs from cache for page {current_page}."
-                )
-            else:
-                logger.debug(
-                    f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
-                )
+        else:
+            logger.debug(
+                f"Cache miss for in-tree status (Key: {cache_key_tree}). Fetching from API."
+            )
     except Exception as cache_read_err:
         logger.error(
             f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
@@ -6509,13 +6504,14 @@ def _process_in_tree_api_response(
         # Cache the result
         try:
             cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
-            if global_cache is not None:
-                global_cache.set(
-                    cache_key_tree,
-                    in_tree_ids,
-                    expire=config_schema.cache.memory_cache_ttl,
-                    retry=True,
-                )
+            cache = get_unified_cache()
+            cache.set(
+                "ancestry",
+                "tree_search",
+                cache_key_tree,
+                in_tree_ids,
+                ttl=config_schema.cache.memory_cache_ttl,
+            )
             logger.debug(
                 f"Cached in-tree status result for page {current_page}."
             )
@@ -7036,15 +7032,15 @@ def _fetch_match_details_api(
 
 def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Optional[dict[str, Any]]:
     """Check cache for combined details."""
-    if global_cache is not None:
-        cache_key = f"combined_details_{match_uuid}"
-        try:
-            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-            if cached_data is not ENOVAL and isinstance(cached_data, dict):
-                _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
-                return cached_data
-        except Exception as cache_exc:
-            logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
+    cache_key = f"combined_details_{match_uuid}"
+    try:
+        cache = get_unified_cache()
+        cached_data = cache.get("ancestry", "combined_details", cache_key)
+        if cached_data is not None and isinstance(cached_data, dict):
+            _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
+            return cached_data
+    except Exception as cache_exc:
+        logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
     return None
 
 
@@ -7174,14 +7170,16 @@ def _add_profile_details_to_combined_data(
 
 def _cache_combined_details(combined_data: dict[str, Any], match_uuid: str) -> None:
     """Cache combined details."""
-    if combined_data and global_cache is not None:
+    if combined_data:
         cache_key = f"combined_details_{match_uuid}"
         try:
-            global_cache.set(
+            cache = get_unified_cache()
+            cache.set(
+                "ancestry",
+                "combined_details",
                 cache_key,
                 combined_data,
-                expire=3600,
-                retry=True
+                ttl=3600
             )
             logger.debug(f"Cached combined details for {match_uuid}")
         except Exception as cache_exc:
@@ -7261,13 +7259,11 @@ def _fetch_combined_details(
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
 def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
     """Try to get badge details from cache."""
-    if global_cache is None:
-        return None
-
     cache_key = f"badge_details_{match_uuid}"
     try:
-        cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-        if cached_data is not ENOVAL and isinstance(cached_data, dict):
+        cache = get_unified_cache()
+        cached_data = cache.get("ancestry", "badge_details", cache_key)
+        if cached_data is not None and isinstance(cached_data, dict):
             return cached_data
     except Exception as cache_exc:
         logger.debug(f"Cache check failed for badge details {match_uuid}: {cache_exc}")
@@ -7294,12 +7290,10 @@ def _validate_badge_session(session_manager: SessionManager, match_uuid: str) ->
 
 def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
     """Cache badge details for future use."""
-    if global_cache is None:
-        return
-
     cache_key = f"badge_details_{match_uuid}"
     try:
-        global_cache.set(cache_key, result_data, expire=3600, retry=True)
+        cache = get_unified_cache()
+        cache.set("ancestry", "badge_details", cache_key, result_data, ttl=3600)
         logger.debug(f"Cached badge details for {match_uuid}")
     except Exception as cache_exc:
         logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
@@ -7595,15 +7589,15 @@ def _get_csrf_token_for_relationship_prob(
 
 def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_start_time: float) -> Optional[str]:
     """Check cache for relationship probability."""
-    if global_cache is not None:
-        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-        try:
-            cached_data = global_cache.get(cache_key, default=ENOVAL, retry=True)
-            if cached_data is not ENOVAL and isinstance(cached_data, str):
-                _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
-                return cached_data
-        except Exception as cache_exc:
-            logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
+    cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+    try:
+        cache = get_unified_cache()
+        cached_data = cache.get("ancestry", "relationship_prob", cache_key)
+        if cached_data is not None and isinstance(cached_data, str):
+            _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
+            return cached_data
+    except Exception as cache_exc:
+        logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
     return None
 
 
@@ -7787,13 +7781,13 @@ def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper:
 
 def _cache_relationship_result(match_uuid: str, max_labels_param: int, result: str) -> None:
     """Cache relationship probability result."""
-    if global_cache is not None:
-        try:
-            cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-            global_cache.set(cache_key, result, expire=7200, retry=True)
-            logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
-        except Exception as cache_exc:
-            logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
+    try:
+        cache = get_unified_cache()
+        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
+        cache.set("ancestry", "relationship_prob", cache_key, result, ttl=7200)
+        logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
+    except Exception as cache_exc:
+        logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
 
 
 def _parse_relationship_probability(
