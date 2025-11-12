@@ -604,19 +604,22 @@ def _should_skip_system_file(python_file: Path) -> bool:
 def _should_skip_cache_or_temp_file(python_file: Path) -> bool:
     """Check if file should be skipped (cache, backup, temp, venv, archive)."""
     file_path_str = str(python_file)
-    return (
-        "__pycache__" in file_path_str
-        or python_file.name.endswith("_backup.py")
-        or "backup_before_migration" in file_path_str
-        or python_file.name.startswith("temp_")
-        or python_file.name.endswith("_temp.py")
-        or "_old" in python_file.name
-        or ".venv" in file_path_str
-        or "site-packages" in file_path_str
-        or "Cache" in file_path_str
-        or "Logs" in file_path_str
-        or "archive" in file_path_str
-    )
+
+    # Check backup files
+    if python_file.name.endswith("_backup.py") or "backup_before_migration" in file_path_str:
+        return True
+
+    # Check temp files
+    if python_file.name.startswith("temp_") or python_file.name.endswith("_temp.py"):
+        return True
+
+    # Check legacy/old files
+    if "_old" in python_file.name:
+        return True
+
+    # Check system directories
+    system_dirs = ["__pycache__", ".venv", "site-packages", "Cache", "Logs", "archive"]
+    return any(d in file_path_str for d in system_dirs)
 
 
 def _should_skip_demo_file(python_file: Path) -> bool:
@@ -1448,6 +1451,38 @@ def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performa
         print(f"⚠️  Failed to save performance metrics: {e}")
 
 
+def _check_slow_tests(metrics: list[TestExecutionMetrics], suggestions: list[str]) -> None:
+    """Check for slow tests and add suggestion if found."""
+    slow_tests = [m for m in metrics if m.duration > 10.0]
+    if slow_tests:
+        slow_tests.sort(key=lambda x: x.duration, reverse=True)
+        msg = f"🐌 {len(slow_tests)} slow tests detected (>10s). Slowest: {slow_tests[0].module_name} ({slow_tests[0].duration:.1f}s)"
+        suggestions.append(msg)
+
+
+def _check_memory_usage(metrics: list[TestExecutionMetrics], suggestions: list[str]) -> None:
+    """Check for memory-intensive tests and add suggestion if found."""
+    high_memory_tests = [m for m in metrics if m.memory_usage_mb > 100.0]
+    if high_memory_tests:
+        high_memory_tests.sort(key=lambda x: x.memory_usage_mb, reverse=True)
+        msg = f"🧠 {len(high_memory_tests)} memory-intensive tests detected (>100MB). Highest: {high_memory_tests[0].module_name} ({high_memory_tests[0].memory_usage_mb:.1f}MB)"
+        suggestions.append(msg)
+
+
+def _check_cpu_usage(metrics: list[TestExecutionMetrics], suggestions: list[str]) -> None:
+    """Check for CPU-intensive tests and add suggestion if found."""
+    high_cpu_tests = [m for m in metrics if m.cpu_usage_percent > 50.0]
+    if high_cpu_tests:
+        suggestions.append(f"⚡ {len(high_cpu_tests)} CPU-intensive tests detected (>50% CPU)")
+
+
+def _check_parallel_execution(metrics: list[TestExecutionMetrics], suggestions: list[str]) -> None:
+    """Check if parallel execution would help and add suggestion if found."""
+    total_duration = sum(m.duration for m in metrics)
+    if total_duration > 60.0:
+        suggestions.append("🚀 Consider using --fast flag for parallel execution to reduce total runtime")
+
+
 def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]:
     """Analyze performance metrics and provide optimization suggestions."""
     suggestions = []
@@ -1455,27 +1490,11 @@ def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]
     if not metrics:
         return suggestions
 
-    # Analyze slow tests
-    slow_tests = [m for m in metrics if m.duration > 10.0]  # Tests taking more than 10 seconds
-    if slow_tests:
-        slow_tests.sort(key=lambda x: x.duration, reverse=True)
-        suggestions.append(f"🐌 {len(slow_tests)} slow tests detected (>10s). Slowest: {slow_tests[0].module_name} ({slow_tests[0].duration:.1f}s)")
-
-    # Analyze memory usage
-    high_memory_tests = [m for m in metrics if m.memory_usage_mb > 100.0]  # Tests using more than 100MB
-    if high_memory_tests:
-        high_memory_tests.sort(key=lambda x: x.memory_usage_mb, reverse=True)
-        suggestions.append(f"🧠 {len(high_memory_tests)} memory-intensive tests detected (>100MB). Highest: {high_memory_tests[0].module_name} ({high_memory_tests[0].memory_usage_mb:.1f}MB)")
-
-    # Analyze CPU usage
-    high_cpu_tests = [m for m in metrics if m.cpu_usage_percent > 50.0]  # Tests using more than 50% CPU
-    if high_cpu_tests:
-        suggestions.append(f"⚡ {len(high_cpu_tests)} CPU-intensive tests detected (>50% CPU)")
-
-    # Suggest parallel execution if not already used
-    total_duration = sum(m.duration for m in metrics)
-    if total_duration > 60.0:  # If total time > 1 minute
-        suggestions.append("🚀 Consider using --fast flag for parallel execution to reduce total runtime")
+    # Analyze different performance aspects
+    _check_slow_tests(metrics, suggestions)
+    _check_memory_usage(metrics, suggestions)
+    _check_cpu_usage(metrics, suggestions)
+    _check_parallel_execution(metrics, suggestions)
 
     return suggestions
 
@@ -1651,6 +1670,19 @@ def _print_basic_summary(
     print(f"📈 Success Rate: {success_rate:.1f}%")
 
 
+def _calculate_performance_stats(all_metrics: list[Any]) -> tuple[float, float, float, float]:
+    """Calculate performance statistics from metrics."""
+    if not all_metrics:
+        return 0.0, 0.0, 0.0, 0.0
+
+    avg_memory = sum(m.memory_usage_mb for m in all_metrics) / len(all_metrics)
+    peak_memory = max(m.memory_usage_mb for m in all_metrics)
+    avg_cpu = sum(m.cpu_usage_percent for m in all_metrics) / len(all_metrics)
+    peak_cpu = max(m.cpu_usage_percent for m in all_metrics)
+
+    return avg_memory, peak_memory, avg_cpu, peak_cpu
+
+
 def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
     """
     Print performance metrics and analysis.
@@ -1661,10 +1693,7 @@ def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
     if not config.all_metrics:
         return
 
-    avg_memory = sum(m.memory_usage_mb for m in config.all_metrics) / len(config.all_metrics)
-    peak_memory = max(m.memory_usage_mb for m in config.all_metrics)
-    avg_cpu = sum(m.cpu_usage_percent for m in config.all_metrics) / len(config.all_metrics)
-    peak_cpu = max(m.cpu_usage_percent for m in config.all_metrics)
+    avg_memory, peak_memory, avg_cpu, peak_cpu = _calculate_performance_stats(config.all_metrics)
 
     # Calculate parallel efficiency
     sequential_time = sum(m.duration for m in config.all_metrics)
@@ -1701,6 +1730,28 @@ def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
         save_performance_metrics(config.all_metrics, suite_performance)
 
 
+def _print_failed_modules(results: list[tuple[str, str, bool]]) -> None:
+    """Print list of failed modules."""
+    if any(not success for _, _, success in results):
+        print("\n❌ FAILED MODULES:")
+        for module_name, _, success in results:
+            if not success:
+                print(f"   • {module_name}")
+
+
+def _count_enhanced_results(results: list[tuple[str, str, bool]], module_descriptions: dict[str, str]) -> tuple[int, int]:
+    """Count enhanced modules that passed and failed."""
+    enhanced_passed = sum(
+        1 for module_name, _, success in results
+        if success and module_name in module_descriptions
+    )
+    enhanced_failed = sum(
+        1 for module_name, _, success in results
+        if not success and module_name in module_descriptions
+    )
+    return enhanced_passed, enhanced_failed
+
+
 def _print_final_results(
     results: list[tuple[str, str, bool]],
     module_descriptions: dict[str, str],
@@ -1710,30 +1761,18 @@ def _print_final_results(
 ) -> None:
     """Print final results summary by category."""
     # Show failed modules first if any
-    if failed_count > 0:
-        print("\n❌ FAILED MODULES:")
-        for module_name, _, success in results:
-            if not success:
-                print(f"   • {module_name}")
+    _print_failed_modules(results)
 
-    # Show summary by category
-    enhanced_passed = sum(
-        1
-        for module_name, _, success in results
-        if success and module_name in module_descriptions
-    )
-    enhanced_failed = sum(
-        1
-        for module_name, _, success in results
-        if not success and module_name in module_descriptions
-    )
+    # Calculate enhanced module stats
+    enhanced_passed, enhanced_failed = _count_enhanced_results(results, module_descriptions)
+    standard_passed = passed_count - enhanced_passed
+    standard_failed = failed_count - enhanced_failed
 
     print("\n📋 RESULTS BY CATEGORY:")
     print(f"   Enhanced Modules: {enhanced_passed} passed, {enhanced_failed} failed")
-    print(
-        f"   Standard Modules: {passed_count - enhanced_passed} passed, {failed_count - enhanced_failed} failed"
-    )
+    print(f"   Standard Modules: {standard_passed} passed, {standard_failed} failed")
 
+    # Print final summary
     if failed_count == 0:
         print(f"\n🎉 ALL {len(discovered_modules)} MODULES PASSED!")
         print(f"   Professional testing framework with {len(discovered_modules)} standardized modules complete.\n")
@@ -1812,6 +1851,51 @@ def analyze_application_logs(log_path: str | None = None) -> dict:
     return results
 
 
+def _format_error_summary(results: dict) -> list[str]:
+    """Format error summary section."""
+    lines = ["🚨 ERROR SUMMARY:"]
+    total_errors = sum(results["errors"].values())
+    if total_errors == 0:
+        lines.append("  ✅ NO ERRORS DETECTED")
+    else:
+        for error_type, count in results["errors"].items():
+            if count > 0:
+                lines.append(f"  ❌ {error_type}: {count}")
+    return lines
+
+
+def _format_timing_analysis(results: dict) -> list[str]:
+    """Format timing analysis section."""
+    if not results["timing"]:
+        return []
+
+    lines = ["⏱️  TIMING ANALYSIS:"]
+    avg_times = [t["avg_per_match"] for t in results["timing"]]
+    total_times = [t["total_seconds"] for t in results["timing"]]
+
+    lines.append(f"  Pages Analyzed: {len(results['timing'])}")
+    lines.append(f"  Average per match: {sum(avg_times) / len(avg_times):.2f}s")
+    lines.append(f"  Fastest: {min(avg_times):.2f}s")
+    lines.append(f"  Slowest: {max(avg_times):.2f}s")
+    lines.append(f"  Variance: {max(avg_times) - min(avg_times):.2f}s")
+    lines.append(f"  Total API time: {sum(total_times):.1f}s")
+
+    # Calculate throughput and estimate
+    total_matches = sum(t["matches"] for t in results["timing"])
+    total_seconds = sum(total_times)
+    if total_seconds > 0:
+        matches_per_hour = (total_matches / total_seconds) * 3600
+        lines.append(f"  Throughput: {matches_per_hour:.0f} matches/hour")
+
+        pages_remaining = 802 - results['highest_page']
+        if pages_remaining > 0:
+            avg_page_time = sum(total_times) / len(total_times)
+            est_hours = (pages_remaining * avg_page_time) / 3600
+            lines.append(f"  Estimated time remaining: {est_hours:.1f} hours ({pages_remaining} pages)")
+
+    return lines
+
+
 def format_log_analysis(results: dict) -> str:
     """Format log analysis results as a readable report."""
     if "error" in results:
@@ -1823,14 +1907,7 @@ def format_log_analysis(results: dict) -> str:
     report.append("=" * 70)
 
     # Error Summary
-    report.append("\n🚨 ERROR SUMMARY:")
-    total_errors = sum(results["errors"].values())
-    if total_errors == 0:
-        report.append("  ✅ NO ERRORS DETECTED")
-    else:
-        for error_type, count in results["errors"].items():
-            if count > 0:
-                report.append(f"  ❌ {error_type}: {count}")
+    report.extend(_format_error_summary(results))
 
     # Warnings
     report.append(f"\n⚠️  WARNINGS: {results['warnings']}")
@@ -1843,37 +1920,9 @@ def format_log_analysis(results: dict) -> str:
     report.append(f"  API Fetches (pages with new data): {results['api_fetches']}")
 
     # Timing Analysis
-    if results["timing"]:
-        report.append("\n⏱️  TIMING ANALYSIS:")
-
-        avg_times = [t["avg_per_match"] for t in results["timing"]]
-        total_times = [t["total_seconds"] for t in results["timing"]]
-
-        min_time = min(avg_times)
-        max_time = max(avg_times)
-        mean_time = sum(avg_times) / len(avg_times)
-
-        report.append(f"  Pages Analyzed: {len(results['timing'])}")
-        report.append(f"  Average per match: {mean_time:.2f}s")
-        report.append(f"  Fastest: {min_time:.2f}s")
-        report.append(f"  Slowest: {max_time:.2f}s")
-        report.append(f"  Variance: {max_time - min_time:.2f}s")
-        report.append(f"  Total API time: {sum(total_times):.1f}s")
-
-        # Calculate throughput
-        total_matches = sum(t["matches"] for t in results["timing"])
-        total_seconds = sum(total_times)
-        if total_seconds > 0:
-            matches_per_hour = (total_matches / total_seconds) * 3600
-            report.append(f"  Throughput: {matches_per_hour:.0f} matches/hour")
-
-            # Estimate completion time for 802 pages
-            pages_remaining = 802 - results['highest_page']
-            if pages_remaining > 0:
-                avg_page_time = sum(total_times) / len(total_times)
-                est_seconds = pages_remaining * avg_page_time
-                est_hours = est_seconds / 3600
-                report.append(f"  Estimated time remaining: {est_hours:.1f} hours ({pages_remaining} pages)")
+    timing_lines = _format_timing_analysis(results)
+    if timing_lines:
+        report.append("\n" + "\n".join(timing_lines))
 
     report.append("\n" + "=" * 70)
     report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1886,6 +1935,14 @@ def print_log_analysis(log_path: str | None = None) -> None:
     """Analyze and print application log performance metrics."""
     results = analyze_application_logs(log_path)
     print("\n" + format_log_analysis(results))
+
+
+def _calculate_quality_distribution(quality_scores: list[float]) -> tuple[int, int, int]:
+    """Calculate quality score distribution."""
+    below_70 = sum(1 for score in quality_scores if score < 70)
+    between_70_95 = sum(1 for score in quality_scores if 70 <= score < 95)
+    above_95 = sum(1 for score in quality_scores if score >= 95)
+    return below_70, between_70_95, above_95
 
 
 def _print_final_quality_summary(all_metrics: list[Any]) -> None:
@@ -1905,18 +1962,16 @@ def _print_final_quality_summary(all_metrics: list[Any]) -> None:
     avg_quality = sum(quality_scores) / len(quality_scores)
     min_quality = min(quality_scores)
     max_quality = max(quality_scores)
-    below_70_count = sum(1 for score in quality_scores if score < 70)
-    below_95_count = sum(1 for score in quality_scores if 70 <= score < 95)
-    above_95_count = sum(1 for score in quality_scores if score >= 95)
+    below_70, between_70_95, above_95 = _calculate_quality_distribution(quality_scores)
 
     print("\n" + "=" * 80)
     print("📊 Code Quality Summary")
     print("=" * 80)
     print(f"Average: {avg_quality:.1f}/100 | Min: {min_quality:.1f}/100 | Max: {max_quality:.1f}/100")
-    print(f"   ✅ Above 95%: {above_95_count} modules")
-    print(f"   📊 70-95%: {below_95_count} modules")
-    if below_70_count > 0:
-        print(f"   ⚠️  Below 70%: {below_70_count} modules (NEEDS ATTENTION)")
+    print(f"   ✅ Above 95%: {above_95} modules")
+    print(f"   📊 70-95%: {between_70_95} modules")
+    if below_70 > 0:
+        print(f"   ⚠️  Below 70%: {below_70} modules (NEEDS ATTENTION)")
     print("=" * 80)
 
 
