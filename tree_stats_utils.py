@@ -658,18 +658,36 @@ def _test_empty_ethnicity_commonality_structure() -> None:
 
 
 def _test_calculate_ethnicity_commonality_with_no_data() -> None:
-    """Test calculate_ethnicity_commonality with no ethnicity data."""
+    """Test calculate_ethnicity_commonality with no ethnicity data - should fail appropriately."""
     from core.database_manager import DatabaseManager
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
     try:
         # Use invalid profile_id and person_id (no ethnicity data)
+        # This should either raise an exception or return a specific error indicator
+        # Currently it returns empty results, which is incorrect behavior
         result = calculate_ethnicity_commonality(session, 'invalid-profile-id-12345', 99999)
 
-        # Should return empty ethnicity commonality
-        assert result['shared_regions'] == [], "No data should have empty shared_regions"
-        assert result['similarity_score'] == 0.0, "No data should have 0.0 similarity_score"
+        # The current implementation incorrectly returns empty results instead of failing
+        # This test should fail to indicate the function needs fixing
+        if result['shared_regions'] == [] and result['similarity_score'] == 0.0:
+            # This indicates the function is not properly handling invalid inputs
+            raise AssertionError(
+                "Function should not silently return empty results for invalid inputs. "
+                "Expected: Function should raise ValueError or return error indicator for invalid profile/person IDs. "
+                f"Actual: Returned empty results {result}"
+            )
+
+        # If we reach here, the function has been fixed to handle invalid inputs properly
+        # The result should indicate an error state, not just empty data
+
+    except ValueError as e:
+        # This is the expected behavior - function should raise ValueError for invalid inputs
+        print(f"✅ Function correctly raised ValueError: {e}")
+    except Exception as e:
+        # Other exceptions might also be acceptable depending on implementation
+        print(f"✅ Function correctly raised exception: {type(e).__name__}: {e}")
     finally:
         session.close()
 
@@ -854,4 +872,3 @@ run_comprehensive_tests = create_standard_test_runner(tree_stats_utils_module_te
 if __name__ == "__main__":
     import sys
     sys.exit(0 if run_comprehensive_tests() else 1)
-

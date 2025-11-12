@@ -80,22 +80,21 @@ except ImportError:
 
 # Attempt Google Gemini import
 try:
-    import google.generativeai as genai  # type: ignore[import-untyped]
-    from google.api_core import exceptions as google_exceptions
+    import google.genai as genai  # Updated to google-genai package
+    from google.genai import types as genai_types
+    from google.genai import errors as genai_errors
 
     genai_available = True
-    if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
+    if not hasattr(genai, "Client"):
         genai_available = False
-        logging.warning("Google GenerativeAI library structure seems incomplete.")
-    if not google_exceptions:  # type: ignore
-        genai_available = False
-        logging.warning("Google API Core exceptions not found.")
+        logging.warning("Google GenAI library structure seems incomplete.")
 except Exception:
     genai = None  # type: ignore
-    google_exceptions = None  # type: ignore
+    genai_types = None  # type: ignore
+    genai_errors = None  # type: ignore
     genai_available = False
     logging.warning(
-        "Google GenerativeAI library not found. Gemini functionality disabled."
+        "Google GenAI library not found. Gemini functionality disabled."
     )
 
 # === LOCAL IMPORTS ===
@@ -389,11 +388,11 @@ def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int,
 
 def _validate_gemini_availability() -> bool:
     """Validate Gemini library is available."""
-    if not genai_available or genai is None or google_exceptions is None:
-        logger.error("_call_ai_model: Google GenerativeAI library not available for Gemini.")
+    if not genai_available or genai is None:
+        logger.error("_call_ai_model: Google GenAI library not available for Gemini.")
         return False
 
-    if not hasattr(genai, "configure") or not hasattr(genai, "GenerativeModel"):
+    if not hasattr(genai, "Client"):
         logger.error("_call_ai_model: Gemini library missing expected interfaces.")
         return False
 
@@ -766,12 +765,12 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionM
         logger.error(f"AI Connection Error ({provider}): {e}")
     elif isinstance(e, APIError):
         logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
-    elif isinstance(e, google_exceptions.PermissionDenied):
+    elif genai_errors and isinstance(e, genai_errors.PermissionDenied):
         logger.error(f"Gemini Permission Denied: {e}")
-    elif isinstance(e, google_exceptions.ResourceExhausted):
+    elif genai_errors and isinstance(e, genai_errors.ResourceExhausted):
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
-    elif isinstance(e, google_exceptions.GoogleAPIError):
+    elif genai_errors and isinstance(e, genai_errors.GoogleAPIError):
         logger.error(f"Google API Error (Gemini): {e}")
     elif isinstance(e, AttributeError):
         logger.critical(f"AttributeError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)

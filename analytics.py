@@ -23,6 +23,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -235,3 +236,276 @@ def print_weekly_summary(days: int = 7) -> None:
     except Exception as e:
         logger.debug(f"analytics.print_weekly_summary failed: {e}")
 
+
+# === MODULE-LEVEL TEST FUNCTIONS ===
+# These test functions are extracted from the main test suite for better
+# modularity, maintainability, and reduced complexity. Each function tests
+# a specific aspect of the analytics functionality.
+
+
+def _test_analytics_initialization() -> bool:
+    """Test analytics module initialization and state management."""
+    # Test transient extras state
+    assert _State.extras is None, "Initial extras should be None"
+
+    test_extras = {"test": "value", "number": 42}
+    set_transient_extras(test_extras)
+    assert _State.extras == test_extras, "Extras should be set correctly"
+
+    retrieved = pop_transient_extras()
+    assert retrieved == test_extras, "Retrieved extras should match"
+    assert _State.extras is None, "Extras should be cleared after pop"
+
+    return True
+
+
+def _test_analytics_path_resolution() -> bool:
+    """Test analytics path resolution and directory creation."""
+    path = _get_analytics_path()
+    assert isinstance(path, Path), "Should return Path object"
+    assert path.name == "analytics.jsonl", "Should have correct filename"
+
+    # Test that directory exists or is created
+    logs_dir = path.parent
+    assert logs_dir.exists() or logs_dir == Path(), "Logs directory should exist or be current dir"
+
+    return True
+
+
+def _test_event_logging() -> bool:
+    """Test event logging functionality."""
+    import tempfile
+    import os
+
+    # Create temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Temporarily override the logs directory
+        original_logs_dir = None
+        if hasattr(sys.modules[__name__], '_get_analytics_path'):
+            # Mock the function to return our temp path
+            def mock_get_path():
+                return Path(temp_dir) / "analytics.jsonl"
+
+            # Store original function
+            original_func = _get_analytics_path
+            # Replace with mock
+            globals()['_get_analytics_path'] = mock_get_path
+
+            try:
+                # Test logging an event
+                log_event(
+                    action_name="test_action",
+                    choice="test_choice",
+                    success=True,
+                    duration_sec=1.5,
+                    mem_used_mb=100.5,
+                    extras={"test": "extra"}
+                )
+
+                # Verify file was created and contains data
+                analytics_path = mock_get_path()
+                assert analytics_path.exists(), "Analytics file should be created"
+
+                # Read and parse the logged event
+                with analytics_path.open('r', encoding='utf-8') as f:
+                    line = f.readline().strip()
+                    event = json.loads(line)
+
+                # Verify event structure
+                assert event["action_name"] == "test_action"
+                assert event["choice"] == "test_choice"
+                assert event["success"] is True
+                assert event["duration_sec"] == 1.5
+                assert event["mem_used_mb"] == 100.5
+                assert event["extras"]["test"] == "extra"
+                assert "ts" in event
+                assert "pid" in event
+
+                return True
+
+            finally:
+                # Restore original function
+                globals()['_get_analytics_path'] = original_func
+
+    return False
+
+
+def _test_analytics_parsing() -> bool:
+    """Test analytics line parsing and timestamp extraction."""
+    # Test valid JSON parsing
+    valid_line = '{"ts": "2023-01-01T12:00:00+00:00", "action_name": "test", "success": true}'
+    parsed = _parse_analytics_line(valid_line)
+    assert parsed is not None, "Should parse valid JSON"
+    assert parsed["action_name"] == "test", "Should extract action name"
+
+    # Test invalid JSON handling
+    invalid_line = "invalid json {"
+    parsed_invalid = _parse_analytics_line(invalid_line)
+    assert parsed_invalid is None, "Should return None for invalid JSON"
+
+    # Test empty line handling
+    empty_parsed = _parse_analytics_line("")
+    assert empty_parsed is None, "Should return None for empty line"
+
+    # Test timestamp parsing
+    test_obj = {"ts": "2023-01-01T12:00:00+00:00"}
+    timestamp = _parse_timestamp(test_obj)
+    assert timestamp is not None, "Should parse valid timestamp"
+    assert timestamp.year == 2023, "Should extract correct year"
+
+    # Test invalid timestamp handling
+    invalid_ts_obj = {"ts": "invalid-timestamp"}
+    invalid_timestamp = _parse_timestamp(invalid_ts_obj)
+    assert invalid_timestamp is None, "Should return None for invalid timestamp"
+
+    return True
+
+
+def _test_weekly_summary_generation() -> bool:
+    """Test weekly summary generation with sample data."""
+    import tempfile
+    import os
+
+    # Create temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Mock the analytics path
+        def mock_get_path():
+            return Path(temp_dir) / "analytics.jsonl"
+
+        original_func = _get_analytics_path
+        globals()['_get_analytics_path'] = mock_get_path
+
+        try:
+            # Create sample analytics data
+            sample_events = [
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "action_name": "action1",
+                    "choice": "choice1",
+                    "success": True,
+                    "duration_sec": 1.0,
+                    "mem_used_mb": 50.0,
+                    "extras": {},
+                    "pid": 1234
+                },
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "action_name": "action1",
+                    "choice": "choice2",
+                    "success": False,
+                    "duration_sec": 2.0,
+                    "mem_used_mb": 75.0,
+                    "extras": {},
+                    "pid": 1234
+                },
+                {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "action_name": "action2",
+                    "choice": "choice1",
+                    "success": True,
+                    "duration_sec": 3.0,
+                    "mem_used_mb": 100.0,
+                    "extras": {},
+                    "pid": 1234
+                }
+            ]
+
+            # Write sample data to file
+            analytics_path = mock_get_path()
+            with analytics_path.open('w', encoding='utf-8') as f:
+                for event in sample_events:
+                    f.write(json.dumps(event) + "\n")
+
+            # Generate weekly summary
+            summary = generate_weekly_summary(days=7)
+
+            # Verify summary structure
+            assert "action1" in summary, "Should include action1"
+            assert "action2" in summary, "Should include action2"
+
+            action1_stats = summary["action1"]
+            assert action1_stats["runs"] == 2, "Action1 should have 2 runs"
+            assert action1_stats["success"] == 1, "Action1 should have 1 success"
+            assert action1_stats["success_rate"] == 0.5, "Action1 should have 50% success rate"
+            assert action1_stats["avg_duration_sec"] == 1.5, "Action1 should have 1.5s average duration"
+            assert action1_stats["avg_mem_mb"] == 62.5, "Action1 should have 62.5MB average memory"
+
+            action2_stats = summary["action2"]
+            assert action2_stats["runs"] == 1, "Action2 should have 1 run"
+            assert action2_stats["success"] == 1, "Action2 should have 1 success"
+            assert action2_stats["success_rate"] == 1.0, "Action2 should have 100% success rate"
+
+            return True
+
+        finally:
+            # Restore original function
+            globals()['_get_analytics_path'] = original_func
+
+    return False
+
+
+def analytics_module_tests() -> bool:
+    """Comprehensive test suite for analytics.py"""
+    from test_framework import TestSuite
+
+    suite = TestSuite("Analytics Module", "analytics.py")
+    suite.start_suite()
+
+    # Test analytics initialization
+    suite.run_test(
+        "Analytics Initialization",
+        _test_analytics_initialization,
+        "Test analytics module initialization and state management",
+        "Test transient extras state management",
+        "Verify extras are set, retrieved, and cleared correctly"
+    )
+
+    # Test path resolution
+    suite.run_test(
+        "Analytics Path Resolution",
+        _test_analytics_path_resolution,
+        "Test analytics path resolution and directory creation",
+        "Test _get_analytics_path function",
+        "Verify correct path format and directory existence"
+    )
+
+    # Test event logging
+    suite.run_test(
+        "Event Logging",
+        _test_event_logging,
+        "Test event logging functionality with temporary file",
+        "Test log_event function with sample data",
+        "Verify events are logged with correct structure and data"
+    )
+
+    # Test parsing functions
+    suite.run_test(
+        "Analytics Parsing",
+        _test_analytics_parsing,
+        "Test analytics line parsing and timestamp extraction",
+        "Test _parse_analytics_line and _parse_timestamp functions",
+        "Verify correct parsing of valid/invalid JSON and timestamps"
+    )
+
+    # Test weekly summary generation
+    suite.run_test(
+        "Weekly Summary Generation",
+        _test_weekly_summary_generation,
+        "Test weekly summary generation with sample data",
+        "Test generate_weekly_summary function",
+        "Verify summary statistics are calculated correctly"
+    )
+
+    return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(analytics_module_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    import sys
+    sys.exit(0 if success else 1)
