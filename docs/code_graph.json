@@ -2,20 +2,8 @@
   "metadata": {
     "schemaVersion": "1.0",
     "generatedAt": "2025-11-12T18:50:00Z",
-    "phase": "Phase 5 - Sprint 2 (Cache Optimization & Metrics Dashboard)",
-    "status": "IN_PROGRESS",
-    "current_sprint_progress": "Parts A1-A3 COMPLETE (60%), Parts A4-A5 QUEUED",
-    "notes": "Knowledge graph updated for Phase 5 Sprint 2. Core UnifiedCacheManager (470 lines) and action6_gather.py cache integration (10 functions migrated) complete. 23/23 tests passing, 0 code quality issues. See review_todo.md for implementation details.",
-    "session_stats": {
-      "phase_3_modules_reviewed": 28,
-      "phase_5_sprint_1_features": 2,
-      "phase_5_sprint_2_cache_functions_migrated": 10,
-      "cache_endpoints_covered": 5,
-      "unit_tests_passing": 23,
-      "code_quality_issues": 0,
-      "linting_status": "CLEAN",
-      "test_success_rate": "100%"
-    }
+    "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
+    "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers."
   },
   "nodes": [
     {
