@@ -52,7 +52,7 @@ class APICallMetricsContext:
         """Record elapsed time on exit."""
         elapsed_seconds = time.time() - self.start_time
         metric_name = f"{self.endpoint_name}_response_time_ms"
-        self.registry.record_timer(self.service_name, metric_name, elapsed_seconds, self.labels)
+        self.registry.record_timer(self.service_name, metric_name, elapsed_seconds)
 
     def record_success(self) -> None:
         """Record successful API call."""

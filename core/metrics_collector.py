@@ -100,7 +100,7 @@ class WindowedStats:
 class ServiceMetrics:
     """Aggregated metrics for a service."""
     service_name: str
-    metrics: dict[str, list[MetricPoint]] = field(default_factory=dict)
+    metrics: dict[str, deque[MetricPoint]] = field(default_factory=dict)  # type: ignore
     windows: dict[str, dict[str, WindowedStats]] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
@@ -467,7 +467,9 @@ def run_comprehensive_tests() -> bool:
         for i in range(1, 101):  # Record 1-100
             registry.record_metric("TestService", "latency_ms", float(i))
 
-        p95 = registry.get_service_metrics("TestService").get_percentile("latency_ms", 95)
+        service_metrics = registry.get_service_metrics("TestService")
+        assert service_metrics is not None
+        p95 = service_metrics.get_percentile("latency_ms", 95)
         assert p95 is not None
         assert 90 <= p95 <= 100  # Should be close to 95th percentile
 
@@ -530,6 +532,7 @@ def run_comprehensive_tests() -> bool:
         registry.record_timer("TestService", "duration_ms", 0.1)  # 100ms
 
         service_metrics = registry.get_service_metrics("TestService")
+        assert service_metrics is not None
         values = [p.value for p in service_metrics.metrics["duration_ms"]]
         assert len(values) == 2
         assert 400 <= values[0] <= 600  # 500ms in ms
