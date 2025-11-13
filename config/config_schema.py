@@ -416,6 +416,11 @@ class APIConfig:
     lm_studio_auto_start: bool = True  # Auto-start LM Studio if not running
     lm_studio_startup_timeout: int = 60  # Max seconds to wait for API readiness
 
+    # Inception Mercury Configuration
+    inception_api_key: Optional[str] = None
+    inception_ai_model: str = "mercury"
+    inception_ai_base_url: str = "https://api.inceptionlabs.ai/v1"
+
     # Request settings
     request_timeout: int = 60  # Increased from 30 to 60 seconds for slower API responses during rate limiting
     max_retries: int = 5  # Increased from 3 to 5 for better resilience to transient rate limits
@@ -732,7 +737,7 @@ class ConfigSchema:
     ethnicity_enrichment_min_cm: int = 10  # Minimum shared DNA threshold for ethnicity enrichment API calls
 
     # AI settings
-    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", or ""
+    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", or ""
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
