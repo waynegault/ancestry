@@ -37,13 +37,14 @@ except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
 DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
-PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm")
+PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "moonshot": "Moonshot (Kimi)",
     "deepseek": "DeepSeek",
     "gemini": "Google Gemini",
     "local_llm": "Local LLM (LM Studio)",
+    "inception": "Inception Mercury",
 }
 
 
@@ -493,11 +494,62 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("local_llm", False, endpoint_ok, messages)
 
 
+def _test_inception(prompt: str, max_tokens: int) -> TestResult:
+    """Test Inception Mercury API (OpenAI-compatible endpoint)."""
+    messages: list[str] = []
+    if OpenAI is None:
+        messages.append("OpenAI library not available. Install the openai package.")
+        return TestResult("inception", False, False, messages)
+
+    api_key = os.getenv("INCEPTION_API_KEY")
+    base_url = os.getenv("INCEPTION_AI_BASE_URL", "https://api.inceptionlabs.ai/v1")
+    model_name = os.getenv("INCEPTION_AI_MODEL", "mercury")
+
+    if not api_key:
+        messages.append("INCEPTION_API_KEY not configured.")
+        return TestResult("inception", False, False, messages)
+
+    normalized_base_url, changed = _normalize_base_url(
+        base_url,
+        required_suffix="/v1",
+        drop_suffixes=("/chat/completions",),
+    )
+    endpoint_ok = normalized_base_url.endswith("/v1")
+    if changed:
+        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
+    if not endpoint_ok:
+        messages.append("Base URL is missing the required /v1 suffix.")
+
+    client = OpenAI(api_key=api_key, base_url=normalized_base_url)
+    try:
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful AI assistant."},
+                {"role": "user", "content": [{"type": "text", "text": prompt}]},
+            ],
+            stream=False,
+            temperature=0.7,
+            max_tokens=max_tokens,
+        )
+        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
+            full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
+            messages.append(_build_messages_preview(full_output))
+            return TestResult("inception", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
+        messages.append("Inception Mercury returned an empty response.")
+        return TestResult("inception", False, endpoint_ok, messages)
+    except Exception as exc:  # pylint: disable=broad-except
+        messages.append(_format_provider_error("inception", exc))
+        return TestResult("inception", False, endpoint_ok, messages)
+
+
 PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
     "moonshot": _test_moonshot,
     "deepseek": _test_deepseek,
     "gemini": _test_gemini,
     "local_llm": _test_local_llm,
+    "inception": _test_inception,
 }
 
 
