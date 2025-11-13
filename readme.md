@@ -267,6 +267,13 @@ Get-Content Logs/app.log -Wait | Select-String "cache hit|cache miss"
 python -m test_action6_cache_integration
 ```
 
+### Prometheus Monitoring
+
+- Enable `PROMETHEUS_METRICS_ENABLED=true` in your `.env` file to expose a `/metrics` endpoint on the configured host and port (default `127.0.0.1:9000`).
+- When you need a quick exporter without running the main menu, execute `python observability/metrics_exporter.py --serve`.
+- Import the starter Grafana dashboard at `docs/grafana/ancestry_overview.json` and point panels to your Prometheus data source.
+- Detailed setup steps live in `docs/monitoring.md`.
+
 ### Git Workflow
 - Commit at each phase of implementation
 - Write descriptive commit messages

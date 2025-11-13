@@ -6,6 +6,7 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 import sys
+import time
 
 # Add parent directory to path for standard_imports
 from pathlib import Path
@@ -22,7 +23,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from typing import Any, Optional, Union
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -37,6 +38,7 @@ from api_constants import (
     API_PATH_UUID_NAVHEADER,
 )
 from config import config_schema
+from observability.metrics_registry import metrics
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
@@ -94,6 +96,68 @@ class APIManager:
         self._requests_session.mount("http://", adapter)
         self._requests_session.mount("https://", adapter)
         logger.debug("Requests session configured with connection pooling (application-level retries)")
+
+    @staticmethod
+    def _status_family(status_code: Optional[int]) -> str:
+        """Return Prometheus-friendly status family label."""
+        if status_code is None or status_code < 100:
+            return "unknown"
+        family = int(status_code // 100)
+        return f"{family}xx"
+
+    @staticmethod
+    def _segment_is_variable(segment: str) -> bool:
+        """Best-effort detection of high-cardinality path segments."""
+        if not segment:
+            return False
+        if segment.isdigit():
+            return True
+        lowered = segment.lower()
+        if len(segment) >= 8 and all(ch in "0123456789abcdef-" for ch in lowered):
+            return True
+        return False
+
+    def _sanitize_endpoint_label(self, url: str) -> str:
+        """Normalize URL paths to stable metric labels."""
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return "unknown"
+
+        path = parsed.path.strip("/")
+        if not path:
+            return "root"
+
+        segments = []
+        for segment in path.split("/"):
+            clean_segment = segment.strip()
+            if not clean_segment:
+                continue
+            if self._segment_is_variable(clean_segment):
+                segments.append(":param")
+            else:
+                segments.append(clean_segment.lower())
+
+        return "/".join(segments) if segments else "root"
+
+    def _record_api_metrics(
+        self,
+        endpoint: str,
+        method: str,
+        status_code: Optional[int],
+        result: str,
+        duration_seconds: float,
+    ) -> None:
+        """Publish API latency and outcome metrics (safe when disabled)."""
+        try:
+            metrics().api_requests.inc(endpoint, method, result)
+            metrics().api_latency.observe(
+                endpoint,
+                self._status_family(status_code),
+                max(duration_seconds, 0.0),
+            )
+        except Exception:
+            logger.debug("Failed to record API metrics", exc_info=True)
 
     def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # noqa: ARG002
         """
@@ -320,15 +384,21 @@ class APIManager:
         Returns:
             API response data or None if failed
         """
+        method_upper = method.upper()
+        endpoint_label = self._sanitize_endpoint_label(url)
+        status_code: Optional[int] = None
+        result_label = "failure"
+        start_time = time.perf_counter()
+
         try:
             # Prepare headers
             request_headers = self._prepare_api_headers(headers, use_csrf_token, api_description)
 
             # Make the request
-            logger.debug(f"Making {method} request to {url} ({api_description})")
+            logger.debug(f"Making {method_upper} request to {url} ({api_description})")
 
             response = self._requests_session.request(
-                method=method,
+                method=method_upper,
                 url=url,
                 headers=request_headers,
                 data=data,
@@ -338,13 +408,20 @@ class APIManager:
             )
 
             # Check response status
+            status_code = response.status_code
             response.raise_for_status()
+            result_label = "success"
 
             # Parse response
             return self._parse_api_response(response, api_description)
 
         except RequestException as e:
             # Use debug for expected errors (like 401 during login check)
+            response_obj = getattr(e, "response", None)
+            if response_obj is not None:
+                status_code = getattr(response_obj, "status_code", status_code)
+            if status_code == 429:
+                result_label = "retry"
             if "401" in str(e) or "unauthorized" in str(e).lower():
                 logger.debug(f"{api_description} request failed (not authenticated): {e}")
             else:
@@ -355,6 +432,12 @@ class APIManager:
                 f"Unexpected error in {api_description} request: {e}", exc_info=True
             )
             return None
+        finally:
+            try:
+                duration = time.perf_counter() - start_time
+            except Exception:
+                duration = 0.0
+            self._record_api_metrics(endpoint_label, method_upper, status_code, result_label, duration)
 
     def get_csrf_token(self) -> Optional[str]:
         """
@@ -679,6 +762,24 @@ def _test_api_endpoint_constant_values() -> bool:
         return False
 
 
+def _test_endpoint_label_sanitization() -> bool:
+    """Ensure endpoint labels collapse high-cardinality segments."""
+    try:
+        api_manager = APIManager()
+        assert api_manager._sanitize_endpoint_label("https://example.com/") == "root"
+        complex_label = api_manager._sanitize_endpoint_label(
+            "https://example.com/api/person/12345/details"
+        )
+        assert complex_label == "api/person/:param/details"
+        hex_path = api_manager._sanitize_endpoint_label(
+            "https://example.com/api/match/ABCDEF1234567890/data"
+        )
+        assert hex_path == "api/match/:param/data"
+        return True
+    except Exception:
+        return False
+
+
 def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
@@ -737,6 +838,13 @@ def api_manager_module_tests() -> bool:
         "API manager handles connection errors and request exceptions gracefully",
         "Test error handling setup and exception class availability",
         "Test connection error handling and request exception management",
+    )
+    suite.run_test(
+        "Endpoint Label Sanitization",
+        _test_endpoint_label_sanitization,
+        "Endpoint labels normalize IDs for metrics",
+        "Test endpoint label sanitization",
+        "Ensure high-cardinality path segments are collapsed before metrics emission",
     )
     suite.run_test(
         "Endpoint Constant Regression Guards",
