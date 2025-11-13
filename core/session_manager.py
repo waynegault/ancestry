@@ -932,7 +932,7 @@ class SessionManager:
 
         return self._perform_final_cookie_check(cookie_names)
 
-    def _should_skip_cookie_sync(self, current_time: float) -> bool:
+    def _should_skip_cookie_sync(self, current_time: float, force: bool = False) -> bool:
         """
         Determine if cookie sync should be skipped based on various conditions.
 
@@ -948,6 +948,11 @@ class SessionManager:
         if not self.driver or not hasattr(self.api_manager, '_requests_session'):
             logger.debug("Cookie sync skipped: driver or requests_session not available")
             return True
+
+        # Forced sync bypasses cooldown and prior success checks but still
+        # requires the basic prerequisites above to be satisfied.
+        if force:
+            return False
 
         # Check 3: Cooldown period (60 seconds)
         # Cookie state rarely changes during normal operation, so we can safely wait 1 minute
@@ -969,18 +974,22 @@ class SessionManager:
 
         return False
 
-    def _sync_cookies_to_requests(self) -> None:
+    def _sync_cookies_to_requests(self, force: bool = False) -> None:
         """
         Synchronize cookies from WebDriver to requests session.
         Only syncs once per session unless forced due to auth errors.
 
         Enhanced with recursion prevention, robust error handling, and cooldown period.
         Uses _should_skip_cookie_sync() for clean separation of sync validation logic.
+
+        Args:
+            force: When True, bypass cooldown and prior-success guards while
+                still requiring prerequisite browser state.
         """
         current_time = time.time()
 
         # Check if sync should be skipped
-        if self._should_skip_cookie_sync(current_time):
+        if self._should_skip_cookie_sync(current_time, force=force):
             return
 
         try:

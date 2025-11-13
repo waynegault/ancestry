@@ -2666,12 +2666,36 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
     if not ancestry_username:
         raise ValueError("ANCESTRY_USERNAME configuration is missing.")
 
-    logger.debug("Entering username...")
-    username_input.send_keys(ancestry_username)
-    logger.debug("Username entered.")
-    print(f"  ✓ Username entered: {ancestry_username[:3]}***", flush=True)
-    time.sleep(random.uniform(0.2, 0.4))
-    return True
+    # Retry loop to ensure text is actually entered
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        logger.debug(f"Entering username (attempt {attempt}/{max_attempts})...")
+
+        # Use JavaScript to set value directly for reliability
+        driver.execute_script("arguments[0].value = arguments[1];", username_input, ancestry_username)
+        time.sleep(0.2)
+
+        # Trigger input event to ensure page JavaScript recognizes the change
+        driver.execute_script("""
+            var element = arguments[0];
+            var event = new Event('input', { bubbles: true });
+            element.dispatchEvent(event);
+        """, username_input)
+        time.sleep(0.1)
+
+        # Verify the value was set
+        current_value = username_input.get_attribute("value")
+        if current_value == ancestry_username:
+            logger.debug(f"Username successfully entered and verified (attempt {attempt}).")
+            print(f"  ✓ Username entered: {ancestry_username[:3]}***", flush=True)
+            time.sleep(random.uniform(0.2, 0.4))
+            return True
+        logger.warning(f"Username verification failed (attempt {attempt}): expected '{ancestry_username}', got '{current_value}'")
+        if attempt < max_attempts:
+            time.sleep(0.5)
+
+    logger.error(f"Failed to enter username after {max_attempts} attempts")
+    return False
 
 
 def _find_next_button_with_selectors(short_wait: WebDriverWait) -> Optional[Any]:
@@ -2774,35 +2798,132 @@ def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
     except WebDriverException as e:  # type: ignore
         logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
         return True
+def _wait_for_password_field(driver: WebDriver, element_wait: WebDriverWait) -> Optional[Any]:
+    """Wait for the password field, retrying once with a longer timeout."""
+    try:
+        logger.debug("[PASSWORD_ENTRY] Waiting for password field to appear...")
+        password_input = element_wait.until(
+            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+        )
+        logger.info("[PASSWORD_ENTRY] Password field found on first attempt")
+        return password_input
+    except TimeoutException:  # type: ignore
+        logger.warning("[PASSWORD_ENTRY] Password field did not appear with standard wait. Retrying with longer wait...")
+        try:
+            password_input = WebDriverWait(driver, 30).until(  # type: ignore
+                expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
+            )
+            logger.info("[PASSWORD_ENTRY] Password field found on retry with longer wait")
+            return password_input
+        except TimeoutException:  # type: ignore
+            logger.error("[PASSWORD_ENTRY] CRITICAL: Password field never appeared even after 30s wait!")
+            return None
+    except Exception as exc:
+        logger.error(f"[PASSWORD_ENTRY] Unexpected error waiting for password field: {exc}")
+        return None
+
+
+def _attempt_password_entry(
+    driver: WebDriver,
+    password_input: Any,
+    ancestry_password: str,
+    attempt: int,
+    max_attempts: int,
+) -> bool:
+    """Try to set and verify the password value once."""
+    logger.info(f"[PASSWORD_ENTRY] Attempt {attempt}/{max_attempts}: Entering password...")
+
+    logger.debug("[PASSWORD_ENTRY] Setting password value via JavaScript...")
+    driver.execute_script("arguments[0].value = arguments[1];", password_input, ancestry_password)
+    time.sleep(0.2)
+
+    logger.debug("[PASSWORD_ENTRY] Triggering input event...")
+    driver.execute_script(
+        """
+            var element = arguments[0];
+            var event = new Event('input', { bubbles: true });
+            element.dispatchEvent(event);
+        """,
+        password_input,
+    )
+    time.sleep(0.1)
+
+    logger.debug("[PASSWORD_ENTRY] Verifying password was set...")
+    current_value = password_input.get_attribute("value")
+    current_length = len(current_value) if current_value else 0
+    expected_length = len(ancestry_password)
+    logger.info(
+        f"[PASSWORD_ENTRY] Verification: current_length={current_length}, expected_length={expected_length}"
+    )
+
+    if current_value and current_length == expected_length:
+        logger.info(
+            f"[PASSWORD_ENTRY] ✅ Password successfully entered and verified (attempt {attempt})"
+        )
+        print("  ✓ Password entered successfully", flush=True)
+        time.sleep(random.uniform(0.3, 0.6))
+        return True
+
+    logger.warning(
+        f"[PASSWORD_ENTRY] ❌ Password verification failed (attempt {attempt}): length mismatch (expected {expected_length}, got {current_length})"
+    )
+    return False
+
+
+def _sleep_between_password_attempts(attempt: int, max_attempts: int) -> None:
+    """Sleep between password attempts when another retry is allowed."""
+    if attempt < max_attempts:
+        logger.info("[PASSWORD_ENTRY] Retrying in 0.5s...")
+        time.sleep(0.5)
 
 
 def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[bool, Any]:
     """Enter password into the login form."""
+    logger.info("[PASSWORD_ENTRY] Starting password entry process...")
     logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
-    try:
-        password_input = element_wait.until(
-            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
-        )
-    except TimeoutException:  # type: ignore
-        logger.error("Password field did not appear after clicking Next. Retrying with longer wait...")
-        password_input = WebDriverWait(driver, 30).until(  # type: ignore
-            expected_conditions.visibility_of_element_located((By.CSS_SELECTOR, PASSWORD_INPUT_SELECTOR))  # type: ignore
-        )
+
+    password_input = _wait_for_password_field(driver, element_wait)
+    if password_input is None:
+        return False, None
 
     logger.debug("Password input field found.")
-
+    logger.debug("[PASSWORD_ENTRY] Clearing password field...")
     if not _clear_input_field(driver, password_input, "password"):
+        logger.error("[PASSWORD_ENTRY] Failed to clear password field")
         return False, None
+    logger.debug("[PASSWORD_ENTRY] Password field cleared successfully")
 
     ancestry_password = config_schema.api.password
     if not ancestry_password:
+        logger.error("[PASSWORD_ENTRY] CRITICAL: Password configuration is missing!")
         raise ValueError("ANCESTRY_PASSWORD configuration is missing.")
 
-    logger.debug("Entering password: ***")
-    password_input.send_keys(ancestry_password)
-    logger.debug("Password entered.")
-    time.sleep(random.uniform(0.3, 0.6))
-    return True, password_input
+    logger.info(
+        f"[PASSWORD_ENTRY] Password loaded from config (length: {len(ancestry_password)})"
+    )
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if _attempt_password_entry(
+                driver, password_input, ancestry_password, attempt, max_attempts
+            ):
+                return True, password_input
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(
+                f"[PASSWORD_ENTRY] Exception during attempt {attempt}: {type(exc).__name__} - {exc}"
+            )
+            if attempt == max_attempts:
+                logger.error("[PASSWORD_ENTRY] All attempts exhausted due to exceptions")
+                return False, None
+            time.sleep(0.5)
+            continue
+
+        _sleep_between_password_attempts(attempt, max_attempts)
+
+    logger.error(f"[PASSWORD_ENTRY] ❌ FAILED to enter password after {max_attempts} attempts")
+    return False, None
+
 
 
 def _try_standard_click(sign_in_button: Any) -> bool:
@@ -2838,6 +2959,10 @@ def _try_return_key_fallback(password_input: Any) -> bool:
         logger.warning("Attempting fallback: Sending RETURN key to password field.")
         password_input.send_keys(Keys.RETURN)
         logger.info("Fallback RETURN key sent to password field.")
+        return True
+    except StaleElementReferenceException:  # type: ignore
+        # Stale element means page already changed (form likely submitted) - this is success!
+        logger.info("Form already submitted (stale element) - treating as successful login.")
         return True
     except (WebDriverException, ElementNotInteractableException) as key_e:  # type: ignore
         logger.error(f"Failed to send RETURN key: {key_e}")
@@ -3166,6 +3291,8 @@ def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_ur
         print("\n✓ Login successful!")
         # Save cookies after successful login
         _save_login_cookies(session_manager)
+        # CRITICAL FIX: Sync browser cookies to API requests session
+        session_manager._sync_cookies_to_requests()
         return "LOGIN_SUCCEEDED"
 
     if login_check_result is False:

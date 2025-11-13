@@ -204,7 +204,7 @@ class SessionValidator:
         """
         try:
             # Import login_status here to avoid circular imports
-            from utils import login_status
+            from utils import login_status, nav_to_page
 
             logger.debug(f"Checking login status (attempt {attempt})...")
             # Use the session manager parameter directly
@@ -212,35 +212,83 @@ class SessionValidator:
                 logger.error("No session manager provided for login status check")
                 return False, "No session manager provided"
 
-            login_ok = login_status(
+            driver = getattr(browser_manager, "driver", None)
+            base_url = config_schema.api.base_url or "https://www.ancestry.com"
+
+            self._ensure_on_base_url(driver, base_url, session_manager, nav_to_page)
+
+            # CRITICAL FIX: Sync cookies BEFORE checking login status
+            # Browser may have valid cookies, but requests session doesn't yet
+            self._sync_cookies_for_login(session_manager)
+
+            login_result = login_status(
                 session_manager, disable_ui_fallback=True
             )  # Use API-only check
 
-            if login_ok is True:
-                logger.debug("Login status check: User is logged in.")
-                return True, None
-            if login_ok is False:
-                logger.warning(
-                    "Login status check: User is NOT logged in. Attempting relogin..."
-                )
-
-                # Attempt relogin
-                relogin_success = self._attempt_relogin(browser_manager, session_manager)
-                if relogin_success:
-                    logger.info("Relogin successful.")
-                    return True, None
-                error_msg = "Relogin failed"
-                logger.error(error_msg)
-                return False, error_msg
-            # login_ok is None
-            error_msg = "Login status check returned None (critical failure)"
-            logger.error(error_msg)
-            return False, error_msg
+            return self._process_login_result(
+                login_result, browser_manager, session_manager
+            )
 
         except Exception as e:
             error_msg = f"Exception during login check: {e}"
             logger.error(error_msg, exc_info=True)
             return False, error_msg
+
+    def _ensure_on_base_url(self, driver, base_url: str, session_manager, nav_to_page) -> None:
+        """Ensure the browser is on the correct base URL before login checks."""
+        if not driver:
+            return
+
+        try:
+            current_url = driver.current_url
+        except Exception:
+            current_url = ""
+
+        if current_url and current_url.startswith(base_url):
+            return
+
+        logger.debug("Pre-auth navigation to base URL to refresh cookie context...")
+        nav_success = nav_to_page(
+            driver,
+            base_url,
+            selector="body",
+            session_manager=session_manager,
+        )
+        if not nav_success:
+            logger.warning("Pre-auth navigation failed; continuing with existing session state.")
+
+    def _sync_cookies_for_login(self, session_manager) -> None:
+        """Force a cookie sync before login verification when available."""
+        if not hasattr(session_manager, "_sync_cookies_to_requests"):
+            return
+
+        try:
+            logger.debug("Pre-syncing cookies from browser before login check (forced)...")
+            session_manager._sync_cookies_to_requests(force=True)
+        except Exception as exc:  # Pragmatic guard to keep login flow resilient
+            logger.debug(f"Cookie pre-sync failed (continuing with existing state): {exc}")
+
+    def _process_login_result(
+        self, login_result, browser_manager, session_manager
+    ) -> tuple[bool, Optional[str]]:
+        """Interpret login_status result and perform relogin if necessary."""
+        if login_result is True:
+            logger.debug("Login status check: User is logged in.")
+            return True, None
+
+        if login_result is False:
+            logger.warning(
+                "Login status check: User is NOT logged in. Attempting relogin..."
+            )
+            if self._attempt_relogin(browser_manager, session_manager):
+                return True, None
+            error_msg = "Relogin failed"
+            logger.error(error_msg)
+            return False, error_msg
+
+        error_msg = "Login status check returned None (critical failure)"
+        logger.error(error_msg)
+        return False, error_msg
 
     def _attempt_relogin(self, _browser_manager, session_manager) -> bool:
         """

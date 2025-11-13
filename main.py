@@ -2142,7 +2142,7 @@ def _toggle_log_level() -> None:
             )
             new_level_name = logging.getLevelName(new_level)
             # Re-call setup_logging to potentially update filters etc. too
-            setup_logging(log_level=new_level_name)
+            setup_logging(log_level=new_level_name, allow_env_override=False)
             logger.info(f"Console log level toggled to: {new_level_name}")
         else:
             logger.warning(
@@ -2431,6 +2431,9 @@ def _validate_ai_provider_on_startup() -> None:
     elif ai_provider == "moonshot":
         _validate_cloud_provider("Moonshot", config_schema.api.moonshot_api_key,
                                 config_schema.api.moonshot_ai_model)
+    elif ai_provider == "inception":
+        _validate_cloud_provider("Inception", config_schema.api.inception_api_key,
+                                config_schema.api.inception_ai_model)
     else:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
 
@@ -2505,16 +2508,31 @@ def _initialize_application() -> tuple["SessionManager", Any]:
 
 
 def _pre_authenticate_session() -> None:
-    """Pre-authenticate the global session."""
+    """
+    Pre-authenticate the global session with proper browser startup.
+    CRITICAL: This ensures the global session is fully authenticated and ready
+    before the menu displays, preventing authentication delays during actions.
+    """
     try:
         from session_utils import get_authenticated_session
-        _, _ = get_authenticated_session(
+
+        # Authenticate session - this will start browser if needed
+        logger.debug("Pre-authenticating global session for immediate availability...")
+        session_manager, uuid = get_authenticated_session(
             action_name="Main Menu Initialization",
             skip_csrf=False
         )
-        logger.info("✅ Session authenticated OK")
+
+        # Verify session is actually ready
+        if session_manager and session_manager.session_ready:
+            logger.info("✅ Global session authenticated and ready")
+            logger.debug(f"   UUID: {uuid}")
+        else:
+            logger.warning("⚠️ Session authentication incomplete - will retry during action")
+
     except Exception as e:
-        logger.warning(f"Session authentication failed (will authenticate during action): {e}")
+        logger.warning(f"⚠️ Session pre-authentication failed: {e}")
+        logger.warning("   Session will be authenticated when first action requires it")
 
 
 def _pre_authenticate_ms_graph() -> None:

@@ -704,7 +704,7 @@ def _handle_rate_limit_error(session_manager: SessionManager, source: str | None
             pass
 
 
-def _call_inception_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:  # noqa: ARG001
+def _call_inception_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
     """
     Call Inception Mercury model via OpenAI-compatible API.
 

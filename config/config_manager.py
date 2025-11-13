@@ -870,6 +870,10 @@ class ConfigManager:
             ("LM_STUDIO_PATH", "lm_studio_path"),
             ("LM_STUDIO_AUTO_START", "lm_studio_auto_start"),
             ("LM_STUDIO_STARTUP_TIMEOUT", "lm_studio_startup_timeout"),
+            # Inception Mercury API configuration
+            ("INCEPTION_API_KEY", "inception_api_key"),
+            ("INCEPTION_AI_MODEL", "inception_ai_model"),
+            ("INCEPTION_AI_BASE_URL", "inception_ai_base_url"),
         ]
 
         # Load all environment variables using helper method
