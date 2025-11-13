@@ -46,6 +46,7 @@ Usage:
 """
 
 import json
+import sys
 import threading
 import time
 from collections import deque
@@ -55,6 +56,10 @@ from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
 from typing import Any, Callable, Optional
+
+# Support standalone execution
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class MetricType(Enum):

@@ -23,10 +23,16 @@ Usage:
     record_cache_hit("CacheManager", "combined_details", hit=True)
 """
 
+import sys
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Optional
+
+# Support standalone execution
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.metrics_collector import get_metrics_registry
 
