@@ -41,6 +41,7 @@ optimization, and comprehensive system health management for reliable research w
 """
 
 # === CORE INFRASTRUCTURE ===
+from observability.metrics_registry import metrics
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -204,6 +205,10 @@ class PerformanceMonitor:
             # Thread count
             thread_count = threading.active_count()
             self.record_metric("thread_count", thread_count, "system")
+            try:
+                metrics().worker_thread_count.set(float(thread_count))
+            except Exception:
+                logger.debug("Failed to record worker thread count metric", exc_info=True)
 
         except Exception as e:
             logger.debug(f"Error collecting system metrics: {e}")

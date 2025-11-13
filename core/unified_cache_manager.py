@@ -22,6 +22,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from observability.metrics_registry import metrics
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -90,6 +91,37 @@ class UnifiedCacheManager:
             },
         }
 
+    def _emit_cache_operation(self, service: str, endpoint: str, operation: str) -> None:
+        """Record cache operation metrics with safe fallbacks."""
+
+        safe_service = service or "unknown"
+        safe_endpoint = endpoint or "unknown"
+        safe_operation = operation or "unknown"
+        try:
+            metrics().cache_operations.inc(safe_service, safe_endpoint, safe_operation)
+        except Exception:
+            logger.debug("Failed to record cache operation metric", exc_info=True)
+
+    def _update_cache_hit_ratio(self, service: str, endpoint: str) -> None:
+        """Update cache hit ratio gauge for provided service/endpoint."""
+
+        safe_service = service or "unknown"
+        safe_endpoint = endpoint or "unknown"
+        hits = 0
+        misses = 0
+        try:
+            service_stats = self._stats.get(safe_service)
+            if service_stats:
+                endpoint_stats = service_stats.get("endpoints", {}).get(safe_endpoint)
+                if endpoint_stats:
+                    hits = endpoint_stats.get("hits", 0)
+                    misses = endpoint_stats.get("misses", 0)
+            total = hits + misses
+            ratio = (hits / total) if total else 0.0
+            metrics().cache_hit_ratio.set(safe_service, safe_endpoint, ratio)
+        except Exception:
+            logger.debug("Failed to update cache hit ratio", exc_info=True)
+
     def get(self, service: str, endpoint: str, key: str) -> Optional[Any]:
         """
         Retrieve a cached value if it exists and hasn't expired.
@@ -103,6 +135,7 @@ class UnifiedCacheManager:
             Cached value or None if not found/expired
         """
         with self._lock:
+            self._emit_cache_operation(service, endpoint, "get")
             entry = self._entries.get(key)
 
             # Initialize service stats if needed
@@ -120,7 +153,9 @@ class UnifiedCacheManager:
                 self._stats["global"]["misses"] += 1
                 if entry and entry.is_expired:
                     del self._entries[key]  # Clean up expired entry
+                    self._emit_cache_operation(service, endpoint, "expire")
                 logger.debug(f"Cache MISS: {service}.{endpoint}.{key[:20]}")
+                self._update_cache_hit_ratio(service, endpoint)
                 return None
 
             # Cache hit
@@ -133,6 +168,8 @@ class UnifiedCacheManager:
                 f"Cache HIT: {service}.{endpoint}.{key[:20]} "
                 f"(age: {time.time() - entry.timestamp:.1f}s, hits: {entry.hit_count})"
             )
+
+            self._update_cache_hit_ratio(service, endpoint)
 
             # Return deep copy to prevent external modification
             return copy.deepcopy(entry.data)
@@ -185,6 +222,8 @@ class UnifiedCacheManager:
                 self._stats[service]["endpoints"][endpoint] = {"hits": 0, "misses": 0}
 
             logger.debug(f"Cache SET: {service}.{endpoint}.{key[:20]} (TTL: {ttl}s)")
+            self._emit_cache_operation(service, endpoint, "set")
+            self._update_cache_hit_ratio(service, endpoint)
 
     def invalidate(
         self,
@@ -208,29 +247,39 @@ class UnifiedCacheManager:
 
             if key is not None:
                 # Invalidate specific key
-                if key in self._entries:
+                entry = self._entries.get(key)
+                if entry is not None:
+                    self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
                     del self._entries[key]
+                    self._update_cache_hit_ratio(entry.service, entry.endpoint)
                     count = 1
             elif service is not None and endpoint is not None:
                 # Invalidate all entries for specific service + endpoint
                 keys_to_delete = [
-                    k for k, v in self._entries.items()
+                    (k, v) for k, v in self._entries.items()
                     if v.service == service and v.endpoint == endpoint
                 ]
-                for k in keys_to_delete:
+                for k, v in keys_to_delete:
+                    self._emit_cache_operation(v.service, v.endpoint, "invalidate")
                     del self._entries[k]
+                if keys_to_delete:
+                    self._update_cache_hit_ratio(service, endpoint)
                 count = len(keys_to_delete)
             elif service is not None:
                 # Invalidate all entries for service
                 keys_to_delete = [
-                    k for k, v in self._entries.items()
+                    (k, v) for k, v in self._entries.items()
                     if v.service == service
                 ]
-                for k in keys_to_delete:
+                for k, v in keys_to_delete:
+                    self._emit_cache_operation(v.service, v.endpoint, "invalidate")
                     del self._entries[k]
+                    self._update_cache_hit_ratio(v.service, v.endpoint)
                 count = len(keys_to_delete)
             else:
                 # Invalidate entire cache
+                for entry in self._entries.values():
+                    self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
                 count = len(self._entries)
                 self._entries.clear()
 
@@ -310,6 +359,8 @@ class UnifiedCacheManager:
     def clear(self) -> int:
         """Clear entire cache and reset statistics."""
         with self._lock:
+            for entry in self._entries.values():
+                self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
             count = len(self._entries)
             self._entries.clear()
             self._stats = {

@@ -689,6 +689,26 @@ class SecurityConfig:
 
 
 @dataclass
+class ObservabilityConfig:
+    """Observability and Prometheus exporter configuration."""
+
+    enable_prometheus_metrics: bool = False
+    metrics_export_host: str = "127.0.0.1"
+    metrics_export_port: int = 9000
+    metrics_namespace: str = "ancestry"
+
+    def __post_init__(self) -> None:
+        if not self.metrics_export_host:
+            raise ValueError("metrics_export_host must be non-empty")
+        if self.metrics_export_port <= 0 or self.metrics_export_port > 65535:
+            raise ValueError("metrics_export_port must be between 1 and 65535")
+        if not self.metrics_namespace:
+            raise ValueError("metrics_namespace must be non-empty")
+        if not all(ch.isalnum() or ch in {":", "_"} for ch in self.metrics_namespace):
+            raise ValueError("metrics_namespace must contain only alphanumeric characters, colon, or underscore")
+
+
+@dataclass
 class TestConfig:
     """Test configuration schema."""  # Test identifiers
 
@@ -836,6 +856,7 @@ class ConfigSchema:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     cache: CacheConfig = field(default_factory=CacheConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     test: TestConfig = field(default_factory=TestConfig)
 
     def __post_init__(self) -> None:
@@ -871,6 +892,7 @@ class ConfigSchema:
         logging_data = data.get("logging", {})
         cache_data = data.get("cache", {})
         security_data = data.get("security", {})
+        observability_data = data.get("observability", {})
         test_data = data.get("test", {})  # Create sub-configs
         database_config = DatabaseConfig(**database_data)
         selenium_config = SeleniumConfig(**selenium_data)
@@ -878,6 +900,7 @@ class ConfigSchema:
         logging_config = LoggingConfig(**logging_data)
         cache_config = CacheConfig(**cache_data)
         security_config = SecurityConfig(**security_data)
+        observability_config = ObservabilityConfig(**observability_data)
         test_config = TestConfig(**test_data)
 
         # Extract main config data
@@ -892,6 +915,7 @@ class ConfigSchema:
                 "logging",
                 "cache",
                 "security",
+                "observability",
                 "test",
             ]
         }
@@ -903,6 +927,7 @@ class ConfigSchema:
             logging=logging_config,
             cache=cache_config,
             security=security_config,
+            observability=observability_config,
             test=test_config,
             **main_data,
         )
@@ -924,6 +949,7 @@ class ConfigSchema:
             LoggingConfig(**self.logging.__dict__)
             CacheConfig(**self.cache.__dict__)
             SecurityConfig(**self.security.__dict__)
+            ObservabilityConfig(**self.observability.__dict__)
 
             # Validate main config
             self.__post_init__()

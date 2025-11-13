@@ -58,6 +58,7 @@ try:
         ConfigSchema,
         DatabaseConfig,
         LoggingConfig,
+        ObservabilityConfig,
         SecurityConfig,
         SeleniumConfig,
     )
@@ -69,9 +70,12 @@ except ImportError:
         ConfigSchema,
         DatabaseConfig,
         LoggingConfig,
+        ObservabilityConfig,
         SecurityConfig,
         SeleniumConfig,
     )
+
+from observability.metrics_registry import configure_metrics
 
 
 class ValidationError(Exception):
@@ -167,6 +171,11 @@ class ConfigManager:
                 raise ValidationError(
                     f"Configuration validation failed: {validation_errors}"
                 )
+
+            try:
+                configure_metrics(getattr(config, "observability", None))
+            except Exception as exc:  # pragma: no cover - defensive guard
+                logger.warning("Failed to configure Prometheus metrics: %s", exc)
 
             # Cache the configuration
             self._config_cache = config
@@ -401,6 +410,7 @@ class ConfigManager:
             "logging": {},
             "cache": {},
             "security": {},
+            "observability": {},
         }
 
         # Add basic auto-detected batch size
@@ -1129,6 +1139,37 @@ class ConfigManager:
         if security_config:
             config["security"] = security_config
 
+    def _load_observability_config_from_env(self, config: dict[str, Any]) -> None:
+        """Load observability configuration from environment variables."""
+        observability_config: dict[str, Any] = {}
+
+        enabled_value = os.getenv("PROMETHEUS_METRICS_ENABLED")
+        if enabled_value is not None:
+            observability_config["enable_prometheus_metrics"] = enabled_value.strip().lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+
+        host_value = os.getenv("PROMETHEUS_METRICS_HOST")
+        if host_value:
+            observability_config["metrics_export_host"] = host_value
+
+        port_value = os.getenv("PROMETHEUS_METRICS_PORT")
+        if port_value:
+            try:
+                observability_config["metrics_export_port"] = int(port_value)
+            except ValueError:
+                logger.warning(f"Invalid PROMETHEUS_METRICS_PORT value: {port_value}")
+
+        namespace_value = os.getenv("PROMETHEUS_METRICS_NAMESPACE")
+        if namespace_value:
+            observability_config["metrics_namespace"] = namespace_value
+
+        if observability_config:
+            config["observability"] = observability_config
+
     def _load_environment_variables(self) -> dict[str, Any]:
         """Load configuration from environment variables."""
         config = {}
@@ -1166,6 +1207,9 @@ class ConfigManager:
 
         # Load security configuration
         self._load_security_config_from_env(config)
+
+        # Load observability configuration
+        self._load_observability_config_from_env(config)
 
         return config
 
@@ -1230,6 +1274,10 @@ class ConfigManager:
     def get_security_config(self) -> SecurityConfig:
         """Get security configuration."""
         return self.get_config().security
+
+    def get_observability_config(self) -> ObservabilityConfig:
+        """Get observability configuration."""
+        return self.get_config().observability
 
 
 # ==============================================

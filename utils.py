@@ -71,6 +71,7 @@ from api_constants import (
     API_PATH_UUID_LEGACY,
 )
 from common_params import NavigationConfig, RetryContext
+from observability.metrics_registry import metrics
 
 # === TYPE ALIASES ===
 # Define type aliases
@@ -80,6 +81,88 @@ DriverType = Optional[WebDriver]
 SessionManagerType = Optional[
     "SessionManager"
 ]  # Use string literal for forward reference
+
+
+# === OBSERVABILITY HELPERS ===
+_UUID_PATH_SEGMENT_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _sanitize_metric_segment(segment: str) -> str:
+    """Reduce high-cardinality path segments for metrics labeling."""
+
+    if not segment:
+        return ""
+
+    if segment.isdigit():
+        return "{id}"
+
+    if _UUID_PATH_SEGMENT_PATTERN.match(segment):
+        return "{uuid}"
+
+    if any(char.isdigit() for char in segment):
+        return "{var}"
+
+    return segment
+
+
+def _derive_metrics_endpoint(url: str) -> str:
+    """Generate a normalized endpoint label from a URL."""
+
+    if not url:
+        return "unknown"
+
+    parsed = urlparse(url)
+    host = parsed.netloc.split(":", 1)[0] or "unknown"
+    path_parts = [
+        _sanitize_metric_segment(part)
+        for part in parsed.path.strip("/").split("/")
+        if part
+    ]
+    path_label = "/".join(path_parts) if path_parts else "root"
+    return f"{host}/{path_label}"
+
+
+def _metrics_status_family(status: Optional[int]) -> str:
+    """Convert HTTP status code to status family string."""
+
+    if status is None or status < 100:
+        return "error"
+    return f"{status // 100}xx"
+
+
+def _resolve_request_duration(
+    response: RequestsResponseTypeOptional,
+    fallback_duration: float,
+) -> float:
+    """Prefer requests' elapsed timing when available."""
+
+    if response is not None:
+        elapsed = getattr(response, "elapsed", None)
+        if elapsed is not None:
+            with contextlib.suppress(Exception):
+                elapsed_seconds = float(elapsed.total_seconds())
+                if elapsed_seconds > 0:
+                    return elapsed_seconds
+    return max(fallback_duration, 0.0)
+
+
+def _record_api_metrics(
+    endpoint: str,
+    method: str,
+    result: str,
+    status_family: str,
+    duration: float,
+) -> None:
+    """Emit API metrics via Prometheus registry helpers."""
+
+    try:
+        metrics_bundle = metrics()
+        metrics_bundle.api_requests.inc(endpoint, method, result)
+        metrics_bundle.api_latency.observe(endpoint, status_family, max(duration, 0.0))
+    except Exception:
+        logger.debug("Failed to record API metrics", exc_info=True)
 
 
 # === STANDARDIZED LOGGING HELPERS ===
@@ -1644,6 +1727,11 @@ def _apply_rate_limiting(
     wait_time = 0.0
     if hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:
         wait_time = session_manager.rate_limiter.wait(api_description)  # type: ignore[union-attr]
+        if wait_time > 0:
+            try:
+                metrics().rate_limiter_delay.observe(wait_time)
+            except Exception:
+                logger.debug("Failed to record rate limiter delay", exc_info=True)
         if wait_time > 0.1:  # Log only significant waits
             logger.debug(
                 f"[{api_description}] Rate limit wait: {wait_time:.2f}s (Attempt {attempt})"
@@ -2082,6 +2170,9 @@ def _handle_response_status(
     session_manager: SessionManager,
     force_text_response: bool,
     request_params: dict[str, Any],
+    metrics_endpoint: str,
+    metrics_method: str,
+    attempt_duration: float,
 ) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
     """
     Handle response status codes and return appropriate result.
@@ -2091,6 +2182,8 @@ def _handle_response_status(
     reason = response.reason
     retries_left = retry_ctx.retries_left or 0
     current_delay = retry_ctx.current_delay
+    duration = _resolve_request_duration(response, attempt_duration)
+    status_family = _metrics_status_family(status)
 
     # Handle retryable status codes
     if retry_ctx.retry_status_codes and status in retry_ctx.retry_status_codes:
@@ -2098,8 +2191,22 @@ def _handle_response_status(
             response, status, reason, retry_ctx, api_description, session_manager
         )
         if not should_continue:
+            _record_api_metrics(
+                metrics_endpoint,
+                metrics_method,
+                "failure",
+                status_family,
+                duration,
+            )
             return (return_response, False, retries_left, current_delay, None)
         last_exception = HTTPError(f"{status} Error", response=response)  # type: ignore
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            "retry",
+            status_family,
+            duration,
+        )
         return (None, True, retries_left, current_delay, last_exception)
 
     # Handle redirects
@@ -2107,11 +2214,25 @@ def _handle_response_status(
         response, status, reason, request_params["allow_redirects"], api_description
     )
     if redirect_response is not None:
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            "failure",
+            status_family,
+            duration,
+        )
         return (redirect_response, False, retries_left, current_delay, None)
 
     # Handle non-retryable error status codes
     if not response.ok:
         error_response = _handle_error_status(response, status, reason, api_description, session_manager)
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            "failure",
+            status_family,
+            duration,
+        )
         return (error_response, False, retries_left, current_delay, None)
 
     # Process successful response
@@ -2123,6 +2244,13 @@ def _handle_response_status(
             response=response,
             api_description=api_description,
             force_text_response=force_text_response,
+        )
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            "success",
+            status_family,
+            duration,
         )
         return (processed_response, False, retries_left, current_delay, None)
 
@@ -2141,17 +2269,26 @@ def _process_request_attempt(
     result_response = None
     result_should_continue = True
     result_exception = None
+    metrics_endpoint = _derive_metrics_endpoint(config.url)
+    metrics_method = config.method.upper()
+    attempt_start = time.perf_counter()
+    attempt_duration = 0.0
 
     try:
         # Prepare and execute the request
         request_params = _prepare_api_request(config)
+        metrics_endpoint = _derive_metrics_endpoint(request_params.get("url", config.url))
+        metrics_method = str(request_params.get("method", config.method)).upper()
 
+        attempt_start = time.perf_counter()
         response = _execute_api_request(
             session_manager=config.session_manager,
             api_description=config.api_description,
             request_params=request_params,
             attempt=config.attempt,
         )
+        attempt_duration = time.perf_counter() - attempt_start
+        attempt_duration = _resolve_request_duration(response, attempt_duration)
 
         # Handle failed request (response is None)
         if response is None:
@@ -2159,6 +2296,14 @@ def _process_request_attempt(
                 retries_left, config.max_retries, config.api_description, current_delay, config.backoff_factor, config.attempt, config.max_delay
             )
             result_should_continue = should_continue
+            result_label = "retry" if result_should_continue else "failure"
+            _record_api_metrics(
+                metrics_endpoint,
+                metrics_method,
+                result_label,
+                "error",
+                attempt_duration,
+            )
         else:
             # Handle response status
             retry_ctx = RetryContext(
@@ -2172,20 +2317,38 @@ def _process_request_attempt(
             )
             return _handle_response_status(
                 response, retry_ctx, config.api_description,
-                config.session_manager, config.force_text_response, request_params
+                config.session_manager, config.force_text_response, request_params,
+                metrics_endpoint, metrics_method, attempt_duration
             )
 
     except RequestException as e:  # type: ignore
+        attempt_duration = time.perf_counter() - attempt_start
         should_continue, retries_left, current_delay = _handle_request_exception(
             e, config.attempt, config.max_retries, retries_left, config.api_description, current_delay, config.backoff_factor, config.max_delay
         )
         result_should_continue = should_continue
         result_exception = e
+        result_label = "retry" if result_should_continue else "failure"
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            result_label,
+            "error",
+            attempt_duration,
+        )
 
     except Exception as e:
         logger.critical(
             f"{config.api_description}: CRITICAL Unexpected error during request attempt {config.attempt}: {e}",
             exc_info=True,
+        )
+        attempt_duration = time.perf_counter() - attempt_start
+        _record_api_metrics(
+            metrics_endpoint,
+            metrics_method,
+            "failure",
+            "error",
+            attempt_duration,
         )
         result_should_continue = False
 

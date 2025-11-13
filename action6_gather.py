@@ -1138,9 +1138,8 @@ def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
     session_age = time.time() - session_manager.session_start_time
     if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
         logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-        if session_manager._attempt_session_recovery():
+        if session_manager._attempt_session_recovery(reason="proactive"):
             logger.info("✅ Proactive session refresh successful")
-            session_manager.session_start_time = time.time()  # Reset session timer
         else:
             logger.error("❌ Proactive session refresh failed")
 

@@ -112,6 +112,8 @@ from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
 from core.database_manager import DatabaseManager
 from core.session_validator import SessionValidator
+from observability.metrics_exporter import start_metrics_exporter
+from observability.metrics_registry import metrics
 
 # === MODULE CONSTANTS ===
 # Use global cached config instance
@@ -204,6 +206,8 @@ class SessionManager:
         }
         self.session_health_monitor['is_alive'].set()  # Initially alive
 
+        self._metrics_exporter_started = False
+
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
@@ -222,6 +226,9 @@ class SessionManager:
         # PHASE 5.1: Only initialize database if not already cached and ready
         if not self.db_manager.is_ready:
             self.db_manager.ensure_ready()
+
+        self._update_session_metrics(force_zero=True)
+        self._ensure_metrics_exporter()
 
         init_time = time.time() - start_time
         logger.debug(
@@ -451,6 +458,7 @@ class SessionManager:
 
         # Mark session as started
         self.session_start_time = time.time()
+        self._update_session_metrics()
 
         return True
 
@@ -547,12 +555,14 @@ class SessionManager:
         # PHASE 5.1: Check cached session state first
         cached_result = self._check_cached_readiness(action_name)
         if cached_result is not None:
+            self._update_session_metrics()
             return cached_result
 
         # Ensure driver is live if browser is needed (with optimization)
         if self.browser_manager.browser_needed and not self.browser_manager.ensure_driver_live(action_name):
             logger.error("Failed to ensure driver live.")
             self.session_ready = False
+            self._update_session_metrics()
             return False
 
         # Perform readiness validation
@@ -565,6 +575,7 @@ class SessionManager:
         logger.debug(
             f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}"
         )
+        self._update_session_metrics()
         return self.session_ready
 
     def verify_sess(self) -> bool:
@@ -617,7 +628,7 @@ class SessionManager:
             # Attempt session recovery for long-running operations
             if self._should_attempt_recovery():
                 logger.info("🔄 Attempting automatic session recovery...")
-                if self._attempt_session_recovery():
+                if self._attempt_session_recovery(reason="browser_error"):
                     logger.info("✅ Session recovery successful")
                     return True
                 logger.error("❌ Session recovery failed")
@@ -635,7 +646,7 @@ class SessionManager:
         # Attempt recovery any time a session that was marked ready becomes invalid
         return bool(self.session_ready)
 
-    def _attempt_session_recovery(self) -> bool:
+    def _attempt_session_recovery(self, reason: str = "browser_error") -> bool:
         """
         Attempt to recover an invalid WebDriver session.
 
@@ -653,6 +664,9 @@ class SessionManager:
                 # Re-authenticate if needed
                 from utils import login_status
                 if login_status(self, disable_ui_fallback=False):
+                    self.session_start_time = time.time()
+                    self._update_session_metrics()
+                    self._record_session_refresh_metric(reason)
                     logger.info("Session recovery and re-authentication successful")
                     return True
                 logger.error("Re-authentication failed after browser recovery")
@@ -670,6 +684,7 @@ class SessionManager:
 
         This replaces action6-specific monitoring with universal monitoring.
         """
+        self._update_session_metrics()
         try:
             # Quick session validation first
             if not self.is_sess_valid():
@@ -1183,6 +1198,7 @@ class SessionManager:
             except Exception as e:
                 logger.warning(f"Error navigating to {url} after restart: {e}")
 
+        self._record_session_refresh_metric("browser_error")
         logger.info("Session restart completed successfully.")
         return True
 
@@ -1215,7 +1231,7 @@ class SessionManager:
         """
         if action_name:
             logger.info(f"Attempting browser recovery for: {action_name}")
-        return self._attempt_session_recovery()
+        return self._attempt_session_recovery(reason="browser_error")
 
     def validate_system_health(self, action_name: str = "Unknown") -> bool:
         """
@@ -1315,6 +1331,7 @@ class SessionManager:
         # Reset session state
         self.session_ready = False
         self.session_start_time = None
+        self._update_session_metrics(force_zero=True)
 
         logger.debug("Session closed.")
 
@@ -1366,6 +1383,7 @@ class SessionManager:
         self.session_start_time = None
         self._db_init_attempted = False
         self._db_ready = False
+        self._update_session_metrics(force_zero=True)
 
     def _force_session_restart(self, reason: str = "Watchdog timeout") -> bool:
         """
@@ -1412,6 +1430,7 @@ class SessionManager:
             self._cleanup_database()
             self._cleanup_api_caches()
             self._reset_session_state()
+            self._record_session_refresh_metric("api_forced")
 
             logger.info("Force session restart complete - session marked invalid")
 
@@ -1841,6 +1860,43 @@ class SessionManager:
         if self.session_start_time:
             return time.time() - self.session_start_time
         return None
+
+    def _update_session_metrics(self, force_zero: bool = False) -> None:
+        """Update Prometheus session uptime gauge."""
+        try:
+            if force_zero:
+                metrics().session_uptime.set(0.0)
+                return
+            session_age = self.session_age_seconds
+            metrics().session_uptime.set(float(session_age) if session_age is not None else 0.0)
+        except Exception:
+            logger.debug("Failed to update session uptime metric", exc_info=True)
+
+    def _record_session_refresh_metric(self, reason: str) -> None:
+        """Increment session refresh counter for a specific reason."""
+        try:
+            safe_reason = reason or "unknown"
+            metrics().session_refresh.inc(safe_reason)
+        except Exception:
+            logger.debug("Failed to record session refresh metric", exc_info=True)
+
+    def _ensure_metrics_exporter(self) -> None:
+        """Start Prometheus metrics exporter when metrics are enabled."""
+        if getattr(self, "_metrics_exporter_started", False):
+            return
+
+        observability_cfg = getattr(config_schema, "observability", None)
+        if not observability_cfg or not getattr(observability_cfg, "enable_prometheus_metrics", False):
+            return
+
+        try:
+            if start_metrics_exporter(
+                observability_cfg.metrics_export_host,
+                observability_cfg.metrics_export_port,
+            ):
+                self._metrics_exporter_started = True
+        except Exception:
+            logger.debug("Failed to start Prometheus metrics exporter", exc_info=True)
 
     # PHASE 5.1: Session cache management methods
     def get_session_performance_stats(self) -> dict[str, Any]:

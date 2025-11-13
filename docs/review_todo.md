@@ -63,7 +63,6 @@
 | Done | quality_regression_gate.py |
 | Done | rate_limiter.py |
 | Done | ai_prompt_utils.py |
-| Next up | Other utilities (config, database, performance monitoring) |
 
 ## Phase 4 · Opportunity Synthesis
 - [x] Analyze graph data to surface systemic risks, dead code, duplication, or modernization targets.
@@ -86,7 +85,7 @@
   - Support
   - Appendices (Chronology of Changes, Technical Specifications, Test Review Summary)
 - [x] Validate cross-references and command snippets.
-- [ ] Incorporate improvement opportunities identified in Phase 4. _(Pending Phase 4 synthesis.)_
+- [ ] Incorporate improvement opportunities identified in Phase 4. _(Pending Sprint 2B instrumentation outputs so README can reference live metrics and cache telemetry.)_
 
 ## Phase 5 · Implementation Sprints (Top 5 Opportunities)
 
@@ -144,34 +143,39 @@
 
 ### Sprint 2B: Performance Metrics Dashboard ⏳ NOT STARTED
 - [ ] Part B1: Metrics collection infrastructure
-  - Add PrometheusMet registry to core managers
-  - Track API response times, cache hit rates, session uptime, task throughput
-  - Estimated: 3-4 hours
+  - ✅ Draft unified metrics schema (API latency, cache hit rate, session uptime, task throughput) and capture decisions in `docs/metrics_plan.md` (2025-11-13).
+  - ✅ Implement shared metrics registry (`observability/metrics_registry.py`) with Prometheus client integration and dedicated unit tests (2025-11-13).
+  - Instrument `core/session_manager.py`, `core/api_manager.py`, `performance_monitor.py`, and `core/unified_cache_manager.py` to emit structured events via a Prometheus-compatible registry.
+  - Ensure metrics gating respects existing rate limiter constraints to avoid extra API load.
+  - Estimated: 4 hours
 
 - [ ] Part B2: Real-time dashboard (Grafana-style)
-  - Web interface with live metrics
-  - Historical trend analysis
-  - Estimated: 5-8 hours
+  - Expose a local `/metrics` endpoint (or exporter script) consumable by Prometheus.
+  - Build initial Grafana dashboard panels covering latency trends, cache efficacy, throughput, and circuit breaker activity.
+  - Document setup workflow (docker-compose or manual) for developers to preview the dashboard.
+  - Estimated: 6 hours
 
 - [ ] Part B3: Testing and documentation
-  - Estimated: 2-3 hours
+  - [x] Add regression coverage verifying metrics emission in module-level tests and smoke coverage via `run_all_tests.py` (observability metrics suites now co-located with their modules).
+  - Update README and `docs/` monitoring playbooks with usage, alerting, and troubleshooting guidance.
+  - Estimated: 3 hours
 
-### Sprint 3+: Remaining Opportunities ⏳ NOT STARTED
-- [ ] Opportunity #5: Comprehensive Retry Strategy (3 hours)
-- [ ] Opportunity #6: Session State Machine (4 hours)
-- [ ] Opportunity #7: Logging Standardization (2 hours)
-- [ ] Opportunity #8: AI Quality Telemetry (3 hours)
-- [ ] Opportunity #9: Workflow Replay Capability (4 hours)
-- [ ] Opportunity #10: Dead Code Cleanup (2 hours)
-- [ ] Opportunity #11: Performance Profiling Utilities (3 hours)
-- [ ] Opportunity #12: Schema Versioning (2 hours)
-- [ ] Opportunity #13: Data Integrity Checker (3 hours)
+### Sprint 3+: Remaining Opportunities ⏳ BACKLOG
+- [ ] Opportunity #5: Comprehensive Retry Strategy — unify API and Selenium retry decorators using metrics from Sprint 2B to tune thresholds. (Est. 3h)
+- [ ] Opportunity #6: Session State Machine — formalize SessionManager lifecycle states and transitions to simplify readiness checks. (Est. 4h)
+- [ ] Opportunity #7: Logging Standardization — align log levels/formatting across action modules and shared utilities. (Est. 2h)
+- [ ] Opportunity #8: AI Quality Telemetry — expand `prompt_telemetry.py` to ingest provider-side scoring signals and surface regressions automatically. (Est. 3h)
+- [ ] Opportunity #9: Workflow Replay Capability — add tooling to replay captured sessions for debugging without hitting external services. (Est. 4h)
+- [ ] Opportunity #10: Dead Code Cleanup — audit remaining legacy helpers/tests and remove unused artifacts post Phase 5 sprints. (Est. 2h)
+- [ ] Opportunity #11: Performance Profiling Utilities — package cProfile/timing helpers into reusable scripts for long-running actions. (Est. 3h)
+- [ ] Opportunity #12: Schema Versioning — introduce lightweight migrations/version stamps for SQLite schema evolution. (Est. 2h)
+- [ ] Opportunity #13: Data Integrity Checker — add scheduled audit verifying soft deletes, UUID uniqueness, and cross-table consistency. (Est. 3h)
 
 ## Phase 6 · Validation & Finalization
-- [ ] Spot-check updated comments/docstrings for tone and brevity (per instructions).
-- [ ] Run targeted tests or linting if behavioral code changed.
-- [ ] Export/commit graph artifact and README updates.
-- [ ] Summarize outcomes, open questions, and recommended next steps.
+- [ ] Spot-check updated comments/docstrings for tone and brevity (per instructions) after each sprint merge.
+- [ ] Run targeted tests or linting (`run_all_tests.py --fast`, `ruff check .`) whenever behavioral code changes land.
+- [ ] Export/commit the refreshed knowledge graph artifact and README updates once Phase 5 sprints conclude.
+- [ ] Summarize outcomes, open questions, and recommended next steps for maintainer handoff.
 
 ## Phase 7 · Codebase Cleanup
 - [x] Phase 1: Delete obsolete Phase 3 documentation (test_file, PHASE_3_COMPLETION.md, PHASE_3_INDEX.md)
@@ -256,7 +260,7 @@
 - _2025-11-12:_ **Phase 4 top 5 opportunities designed**: (1) Centralize Action Metadata, (2) Standardized Circuit Breaker, (3) Cache Hit Rate Optimization, (4) Performance Metrics Dashboard, (5) Comprehensive Retry Strategy. Phase 5 sprint plan ready.
 - _2025-11-12:_ Validated atomic persistence in `ai_prompt_utils.py` and `rate_limiter.py` module tests; all tests passing in venv (6/6 and 13/13 respectively).
 - _2025-11-12:_ Updated `docs/code_graph.json` with review completion notes for `quality_regression_gate.py`, `rate_limiter.py`, and `ai_prompt_utils.py`; updated metadata timestamp.
-- - _2025-11-12:_ Marked Phase 3 module checklist complete for 28 modules; transitioned to continuing graph population with next-phase files identified.
+- _2025-11-12:_ Marked Phase 3 module checklist complete for 28 modules; transitioned to continuing graph population with next-phase files identified.
 - _2025-11-12:_ **Phase 5 Sprint 1 COMPLETE**: Part A (ActionRegistry) + Part B (SessionCircuitBreaker) implemented, tested (29/29 passing), linted (ruff clean), and committed. 1,200+ lines of production code.
 - _2025-11-12:_ **Pylance Warnings Fix COMPLETE**: Resolved all 54 Pylance warnings. Fixed ActionMetadata optional Callable parameter (18 warnings), rewrote test_action_registry.py with correct API (35 warnings), fixed module-level function call (1 warning). All 30 tests passing, committed to git (3 commits).
 - _2025-11-12:_ **Phase 5 Sprint 1 status**: ✅ Complete and verified. Ready to proceed to Sprint 2: Cache Optimization + Metrics Dashboard.
@@ -276,5 +280,9 @@
   - Migrated ai_interface.py from google-generativeai to google-genai package successfully
   - All new test suites: 100% passing (28/33 total tests pass, 5 intentionally fail to expose real issues)
   - Enhanced test coverage across all major modules with professional-grade testing infrastructure
+- _2025-11-13:_ Refreshed `docs/review_todo.md` outstanding tasks, clarified Sprint 2B dependencies, and aligned backlog expectations with current roadmap.
+- _2025-11-13:_ Authored `docs/metrics_plan.md` defining Sprint 2B metrics schema, registry architecture, instrumentation targets, and testing/documentation deliverables.
+- _2025-11-13:_ Implemented Prometheus metrics registry (`observability/metrics_registry.py`) with inline unit tests and wired configuration support (`ObservabilityConfig`).
+- _2025-11-13:_ Inlined observability exporter/registry tests inside their modules, converted legacy test files to shims, and introduced `readme.py` for rapid CLI quickstart notes.
 
 ```

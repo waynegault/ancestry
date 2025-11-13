@@ -21,25 +21,25 @@ A standalone HTML-based interactive visualization tool for code graphs using D3.
 ## Usage
 
 1. **Open the Visualization**:
-   - Start a local web server: `python -m http.server 8000`
-   - Open your browser to: `http://localhost:8000/visualize_code_graph.html`
+    - Start a local web server: `python -m http.server 8000`
+    - Open your browser to: `http://localhost:8000/visualize_code_graph.html`
 
-2. **Load Your Data**:
-   - The visualization automatically loads `docs/code_graph.json` if it exists
-   - Or use the "Load JSON" button to load any code graph JSON file
+1. **Load Your Data**:
+    - The visualization automatically loads `docs/code_graph.json` if it exists
+    - Or use the "Load JSON" button to load any code graph JSON file
 
-3. **Interact with the Graph**:
-   - **Click nodes** to highlight their connections
-   - **Drag nodes** to reposition them
-   - **Use mouse wheel** to zoom in/out
-   - **Click and drag background** to pan the view
-  - **Use dropdown filters** to select specific quality levels (stable, monitor, needs-review, dead-code) and node types (file, function, class, method, module, workflow, config, asset)
-  - **Use text search box** to filter nodes by any characteristic (name, type, path, summary, mechanism, quality flags, concerns, opportunities, tests, notes)
-  - **Combine filters** - dropdown and text filters work together for precise filtering
-   - **Change layout** using the dropdown menu
+1. **Interact with the Graph**:
+    - **Click nodes** to highlight their connections
+    - **Drag nodes** to reposition them
+    - **Use mouse wheel** to zoom in/out
+    - **Click and drag background** to pan the view
+    - **Use dropdown filters** to select specific quality levels (stable, monitor, needs-review, dead-code) and node types (file, function, class, method, module, workflow, config, asset)
+    - **Use text search box** to filter nodes by any characteristic (name, type, path, summary, mechanism, quality flags, concerns, opportunities, tests, notes)
+    - **Combine filters** - dropdown and text filters work together for precise filtering
+    - **Change layout** using the dropdown menu
 
-4. **Export Results**:
-   - Click "Export PNG" to save the current view as an image
+1. **Export Results**:
+    - Click "Export PNG" to save the current view as an image
 
 ## Data Format
 

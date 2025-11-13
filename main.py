@@ -45,6 +45,7 @@ from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
+from observability.metrics_registry import metrics
 
 
 def _load_and_validate_config_schema() -> Optional[Any]:
@@ -636,6 +637,18 @@ def exec_actn(
             )
         except Exception as e:
             logger.debug(f"Analytics logging skipped: {e}")
+
+        try:
+            result_label = "success" if final_outcome else "failure"
+            if isinstance(action_result, str) and action_result.lower() == "skipped":
+                result_label = "skipped"
+            elif isinstance(action_result, tuple) and len(action_result) > 1:
+                label_candidate = action_result[1]
+                if isinstance(label_candidate, str) and label_candidate.lower() in {"success", "failure", "skipped"}:
+                    result_label = label_candidate.lower()
+            metrics().action_processed.inc(action_name, result_label)
+        except Exception:
+            logger.debug("Failed to record action throughput metric", exc_info=True)
 
         # Perform cleanup
         _perform_session_cleanup(session_manager, should_close, action_name)
