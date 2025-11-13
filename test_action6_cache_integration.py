@@ -34,10 +34,10 @@ def test_action6_imports():
 def test_cache_functions_work():
     """Test cache functions use UnifiedCacheManager."""
     try:
-        from core.unified_cache_manager import get_unified_cache
         from action6_gather import _cache_profile, _get_cached_profile
+        from core.unified_cache_manager import get_unified_cache
 
-        cache = get_unified_cache()
+        get_unified_cache()
         print("✅ UnifiedCacheManager initialized")
 
         # Test profile caching
@@ -49,7 +49,7 @@ def test_cache_functions_work():
 
         retrieved = _get_cached_profile(test_profile_id)
         assert retrieved is not None, "Cache lookup returned None"
-        assert retrieved["contactable"] == True, "Cache data corrupted"
+        assert retrieved["contactable"], "Cache data corrupted"
         print("✅ _get_cached_profile retrieved data successfully")
 
         return True
@@ -62,7 +62,8 @@ def test_cache_functions_work():
 def test_no_global_cache_references():
     """Verify no references to old global_cache in action6_gather."""
     try:
-        with open('action6_gather.py', 'r') as f:
+        from pathlib import Path
+        with Path('action6_gather.py').open() as f:
             content = f.read()
 
         # Check for old global_cache references
@@ -109,10 +110,9 @@ def main():
         print("✅ ALL INTEGRATION TESTS PASSED")
         print("="*60)
         return 0
-    else:
-        print("❌ SOME TESTS FAILED")
-        print("="*60)
-        return 1
+    print("❌ SOME TESTS FAILED")
+    print("="*60)
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())

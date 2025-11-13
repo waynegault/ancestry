@@ -419,7 +419,7 @@ def _test_circuit_breaker_thread_safety() -> bool:
     def worker(thread_id: int) -> None:
         try:
             # Perform multiple operations
-            for i in range(5):
+            for _i in range(5):
                 breaker.record_failure()
                 time.sleep(0.001)  # Small delay
                 breaker.record_success()
@@ -606,16 +606,16 @@ try:
         "CircuitBreakerState",
         "CircuitState",
         "IntelligentRetryHandler",
+        # Test functions
         "RetryConfig",
         "RetryStrategy",
         # Session-based (simplified)
         "SessionCircuitBreaker",
+        "circuit_breaker_module_tests",
         "create_api_circuit_breaker",
         "create_browser_circuit_breaker",
         "create_db_circuit_breaker",
         "make_circuit_breaker",
-        # Test functions
-        "circuit_breaker_module_tests",
         "run_comprehensive_tests",
     ]
 
@@ -625,11 +625,10 @@ except ImportError as e:
         "CircuitBreakerOpenError",
         "CircuitBreakerState",
         "SessionCircuitBreaker",
+        "circuit_breaker_module_tests",
         "create_api_circuit_breaker",
         "create_browser_circuit_breaker",
         "create_db_circuit_breaker",
         "make_circuit_breaker",
-        # Test functions
-        "circuit_breaker_module_tests",
         "run_comprehensive_tests",
     ]

@@ -157,10 +157,7 @@ def test_cache_hit_rate():
     total_misses = (profile_misses + combined_misses + badge_misses + rel_prob_misses + tree_misses)
     total_accesses = total_hits + total_misses
 
-    if total_accesses > 0:
-        overall_hit_rate = (total_hits / total_accesses) * 100
-    else:
-        overall_hit_rate = 0.0
+    overall_hit_rate = (total_hits / total_accesses) * 100 if total_accesses > 0 else 0.0
 
     print(f"\n  Total Accesses: {total_accesses}")
     print(f"  Total Hits: {total_hits}")
@@ -184,7 +181,6 @@ def test_cache_hit_rate():
         success = False
 
     # Check per-endpoint hit rates
-    endpoints_ok = True
     for ep_name, hit_rate in [
         ("profile_details", profile_hit_rate),
         ("combined_details", combined_hit_rate),
@@ -198,21 +194,20 @@ def test_cache_hit_rate():
             print(f"  ⚠️  {ep_name}: {hit_rate:.1f}% (no hits recorded)")
 
     # Check no regressions (all cache operations work)
-    print(f"  ✅ Cache Operations: All working correctly")
-    print(f"  ✅ Service-Aware Tracking: Enabled")
-    print(f"  ✅ TTL Management: Active")
+    print("  ✅ Cache Operations: All working correctly")
+    print("  ✅ Service-Aware Tracking: Enabled")
+    print("  ✅ TTL Management: Active")
 
     print("\n" + "="*70)
     if success:
         print("✅ PERFORMANCE VALIDATION PASSED")
         print("="*70)
         return 0
-    else:
-        print("⚠️  PERFORMANCE VALIDATION PASSED WITH NOTES")
-        print("="*70)
-        for issue in issues:
-            print(f"  • {issue}")
-        return 0  # Still pass - investigation needed but not critical
+    print("⚠️  PERFORMANCE VALIDATION PASSED WITH NOTES")
+    print("="*70)
+    for issue in issues:
+        print(f"  • {issue}")
+    return 0  # Still pass - investigation needed but not critical
 
 
 def test_regression_check():
@@ -321,10 +316,9 @@ def main():
         print("   - Zero regressions detected")
         print("   - Ready for Part A5 (documentation)")
         return 0
-    else:
-        print("❌ SOME VALIDATION TESTS FAILED")
-        print("="*70)
-        return 1
+    print("❌ SOME VALIDATION TESTS FAILED")
+    print("="*70)
+    return 1
 
 
 if __name__ == "__main__":

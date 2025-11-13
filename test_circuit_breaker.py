@@ -177,7 +177,7 @@ def test_thread_safety() -> bool:
     """Test that circuit breaker is thread-safe."""
     breaker = SessionCircuitBreaker("test_thread_safe", threshold=10)
 
-    def record_failure():
+    def record_failure() -> None:
         for _ in range(5):
             breaker.record_failure()
 

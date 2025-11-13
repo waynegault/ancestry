@@ -851,8 +851,8 @@ def _test_diagnostic_functions_available() -> bool:
 
 def _test_print_header_formatting() -> bool:
     """Test header formatting function."""
-    import io
     import contextlib
+    import io
 
     # Capture stdout to test formatting
     output = io.StringIO()
@@ -869,8 +869,7 @@ def _test_print_header_formatting() -> bool:
 def _test_chrome_version_parsing() -> bool:
     """Test Chrome version parsing from various formats."""
     # Test version extraction from executable output
-    test_output = "Google Chrome 142.0.7444.135"
-    version = _extract_version_from_executable("dummy_path")
+    _extract_version_from_executable("dummy_path")
     # Note: This will return None in test environment, but function structure is validated
 
     # Test version compatibility checking
@@ -900,9 +899,9 @@ def _test_path_validation() -> bool:
 
 def _test_preferences_validation() -> bool:
     """Test Chrome preferences file validation."""
-    from pathlib import Path
-    import tempfile
     import json
+    import tempfile
+    from pathlib import Path
 
     # Create temporary test preferences file
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -978,7 +977,7 @@ def _test_silent_diagnostic() -> bool:
         assert isinstance(message, str), "Should return string message"
         assert len(message) > 0, "Message should not be empty"
         return True
-    except Exception as e:
+    except Exception:
         # Function may fail in test environment due to missing dependencies
         # but we validate the function structure exists
         assert "run_silent_diagnostic" in globals(), "Function should exist"

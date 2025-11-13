@@ -274,16 +274,15 @@ def _test_analytics_path_resolution() -> bool:
 
 def _test_event_logging() -> bool:
     """Test event logging functionality."""
-    import tempfile
     import os
+    import tempfile
 
     # Create temporary directory for testing
     with tempfile.TemporaryDirectory() as temp_dir:
         # Temporarily override the logs directory
-        original_logs_dir = None
         if hasattr(sys.modules[__name__], '_get_analytics_path'):
             # Mock the function to return our temp path
-            def mock_get_path():
+            def mock_get_path() -> Path:
                 return Path(temp_dir) / "analytics.jsonl"
 
             # Store original function
@@ -363,13 +362,13 @@ def _test_analytics_parsing() -> bool:
 
 def _test_weekly_summary_generation() -> bool:
     """Test weekly summary generation with sample data."""
-    import tempfile
     import os
+    import tempfile
 
     # Create temporary directory for testing
     with tempfile.TemporaryDirectory() as temp_dir:
         # Mock the analytics path
-        def mock_get_path():
+        def mock_get_path() -> Path:
             return Path(temp_dir) / "analytics.jsonl"
 
         original_func = _get_analytics_path

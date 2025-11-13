@@ -80,9 +80,8 @@ except ImportError:
 
 # Attempt Google Gemini import
 try:
-    import google.genai as genai  # Updated to google-genai package
-    from google.genai import types as genai_types
-    from google.genai import errors as genai_errors
+    from google import genai  # Updated to google-genai package
+    from google.genai import errors as genai_errors, types as genai_types
 
     genai_available = True
     if not hasattr(genai, "Client"):
@@ -754,30 +753,50 @@ def _should_fallback_to_next_provider(provider: str, error: Exception) -> bool:
         return True
     return isinstance(error, APIError) and getattr(error, "status_code", None) == 401
 
-def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
-    """Handle AI API exceptions with appropriate logging and actions."""
+def _handle_authentication_errors(e: Exception, provider: str) -> None:
+    """Handle authentication-related errors."""
     if isinstance(e, AuthenticationError):
         logger.error(f"AI Authentication Error ({provider}): {e}")
-    elif isinstance(e, RateLimitError):
-        logger.error(f"AI Rate Limit Error ({provider}): {e}")
-        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
-    elif isinstance(e, APIConnectionError):
-        logger.error(f"AI Connection Error ({provider}): {e}")
-    elif isinstance(e, APIError):
-        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
     elif genai_errors and isinstance(e, genai_errors.PermissionDenied):
         logger.error(f"Gemini Permission Denied: {e}")
+
+
+def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: SessionManager) -> None:
+    """Handle rate limiting-related errors."""
+    if isinstance(e, RateLimitError):
+        logger.error(f"AI Rate Limit Error ({provider}): {e}")
+        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
     elif genai_errors and isinstance(e, genai_errors.ResourceExhausted):
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
+
+
+def _handle_api_errors(e: Exception, provider: str) -> None:
+    """Handle API-related errors."""
+    if isinstance(e, APIConnectionError):
+        logger.error(f"AI Connection Error ({provider}): {e}")
+    elif isinstance(e, APIError):
+        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
     elif genai_errors and isinstance(e, genai_errors.GoogleAPIError):
         logger.error(f"Google API Error (Gemini): {e}")
-    elif isinstance(e, AttributeError):
+
+
+def _handle_internal_errors(e: Exception, provider: str) -> None:
+    """Handle internal/unexpected errors."""
+    if isinstance(e, AttributeError):
         logger.critical(f"AttributeError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
     elif isinstance(e, NameError):
         logger.critical(f"NameError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
     else:
         logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
+
+
+def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
+    """Handle AI API exceptions with appropriate logging and actions."""
+    _handle_authentication_errors(e, provider)
+    _handle_rate_limit_errors(e, provider, session_manager)
+    _handle_api_errors(e, provider)
+    _handle_internal_errors(e, provider)
 
 @cached_api_call("ai", ttl=1800)
 def _call_ai_model(
