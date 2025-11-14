@@ -137,8 +137,7 @@ def check_regression(
     return is_regression, quality_drop
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
-    """Main entry point for quality regression gate."""
+def _build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Quality Regression Gate - Block deployments on prompt quality drops"
     )
@@ -168,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     parser.add_argument(
         "--baseline-file",
         type=Path,
-        default=Path("Logs/quality_baseline.json"),
+        default=Path("Data/quality_baseline.json"),
         help="Path to baseline JSON file"
     )
     parser.add_argument(
@@ -176,74 +175,93 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
         action="store_true",
         help="Emit a compact JSON summary to stdout (machine-readable)"
     )
+    return parser
 
-    args = parser.parse_args(argv)
 
-    # Load recent experiments
-    experiments = load_experiments(args.experiments_file, args.days)
-
-    if not experiments:
-        if args.json:
-            out = {
-                "status": "error",
-                "reason": "no_experiments",
-                "experiments_file": str(args.experiments_file),
-            }
-            print(json.dumps(out, separators=(",", ":")))
-            return 2
+def _handle_no_experiments(experiments: list[dict[str, Any]], args: argparse.Namespace) -> Optional[int]:
+    if experiments:
+        return None
+    if args.json:
+        out = {
+            "status": "error",
+            "reason": "no_experiments",
+            "experiments_file": str(args.experiments_file),
+        }
+        print(json.dumps(out, separators=(",", ":")))
+    else:
         print(f"❌ ERROR: No experiments found in {args.experiments_file}")
         print("   Cannot perform quality check without data.")
-        return 2
+    return 2
 
-    current_median = calculate_median_quality(experiments)
 
-    if current_median is None:
-        print("❌ ERROR: No valid quality scores in experiments")
-        print(f"   Found {len(experiments)} experiments but none had quality_score.")
-        return 2
+def _handle_invalid_scores(current_median: Optional[float], experiments: list[dict[str, Any]]) -> Optional[int]:
+    if current_median is not None:
+        return None
+    print("❌ ERROR: No valid quality scores in experiments")
+    print(f"   Found {len(experiments)} experiments but none had quality_score.")
+    return 2
 
-    if not args.json:
-        print(f"📊 Current Quality Metrics (last {args.days} days):")
-        print(f"   Experiments analyzed: {len(experiments)}")
-        print(f"   Median quality score: {current_median:.1f}")
+
+def _print_current_metrics(args: argparse.Namespace, experiment_count: int, current_median: float) -> None:
+    if args.json:
+        return
+    print(f"📊 Current Quality Metrics (last {args.days} days):")
+    print(f"   Experiments analyzed: {experiment_count}")
+    print(f"   Median quality score: {current_median:.1f}")
+
+
+def _emit_json(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, separators=(",", ":")))
+
+
+def _generate_baseline_flow(
+    args: argparse.Namespace,
+    current_median: float,
+    experiments: list[dict[str, Any]],
+) -> int:
+    save_baseline(args.baseline_file, current_median, len(experiments))
+    if args.json:
+        baseline_content = load_baseline(args.baseline_file)
+        out = {
+            "status": "baseline_generated",
+            "median_quality_score": round(current_median, 3),
+            "experiment_count": len(experiments),
+            "baseline_file": str(args.baseline_file),
+            "baseline_id": baseline_content.get("baseline_id"),
+            "git_ref": baseline_content.get("git_ref"),
+        }
+        _emit_json(out)
+    return 0
+
+
+def _handle_missing_baseline(
+    baseline: dict[str, Any],
+    experiments: list[dict[str, Any]],
+    args: argparse.Namespace,
+) -> Optional[int]:
+    if baseline and "median_quality_score" in baseline:
+        return None
+    if args.json:
+        out = {
+            "status": "no_baseline",
+            "baseline_file": str(args.baseline_file),
+            "allow_deploy": True,
+            "experiments_analyzed": len(experiments),
+        }
+        _emit_json(out)
     else:
-        # In JSON mode we'll emit a compact summary later; nothing to print here now
-        pass
-
-    # Generate baseline mode
-    if args.generate_baseline:
-        save_baseline(args.baseline_file, current_median, len(experiments))
-        if args.json:
-            baseline_content = load_baseline(args.baseline_file)
-            out = {
-                "status": "baseline_generated",
-                "median_quality_score": round(current_median, 3),
-                "experiment_count": len(experiments),
-                "baseline_file": str(args.baseline_file),
-                "baseline_id": baseline_content.get("baseline_id"),
-                "git_ref": baseline_content.get("git_ref"),
-            }
-            print(json.dumps(out, separators=(",", ":")))
-        return 0
-
-    # Check against baseline
-    baseline = load_baseline(args.baseline_file)
-
-    if not baseline or "median_quality_score" not in baseline:
-        if args.json:
-            out = {
-                "status": "no_baseline",
-                "baseline_file": str(args.baseline_file),
-                "allow_deploy": True,
-                "experiments_analyzed": len(experiments),
-            }
-            print(json.dumps(out, separators=(",", ":")))
-            return 0
         print(f"\n⚠️  WARNING: No baseline found at {args.baseline_file}")
         print("   Run with --generate-baseline to create one.")
         print("   Allowing deployment (no baseline to compare against).")
-        return 0
+    return 0
 
+
+def _evaluate_against_baseline(
+    args: argparse.Namespace,
+    experiments: list[dict[str, Any]],
+    current_median: float,
+    baseline: dict[str, Any],
+) -> int:
     baseline_median = baseline["median_quality_score"]
     baseline_date = baseline.get("generated_at", "unknown")
 
@@ -252,9 +270,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
         print(f"   Median quality score: {baseline_median:.1f}")
         print(f"   Generated at: {baseline_date}")
 
-    # Check for regression
     is_regression, quality_drop = check_regression(
-        current_median, baseline_median, args.threshold
+        current_median,
+        baseline_median,
+        args.threshold,
     )
 
     if args.json:
@@ -270,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
             "baseline_id": baseline.get("baseline_id"),
             "git_ref": baseline.get("git_ref"),
         }
-        print(json.dumps(out, separators=(",", ":")))
+        _emit_json(out)
         return 1 if is_regression else 0
 
     print(f"\n{'='*60}")
@@ -284,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
         print("   Run 'python prompt_telemetry.py --stats' for details")
         print(f"{'='*60}")
         return 1
+
     improvement = current_median - baseline_median
     if improvement > 0:
         print("✅ QUALITY IMPROVED!")
@@ -295,6 +315,36 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911
     print("\n✅ ALLOWING DEPLOYMENT")
     print(f"{'='*60}")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Main entry point for quality regression gate."""
+    parser = _build_argument_parser()
+    args = parser.parse_args(argv)
+
+    experiments = load_experiments(args.experiments_file, args.days)
+    status = _handle_no_experiments(experiments, args)
+    if status is not None:
+        return status
+
+    current_median = calculate_median_quality(experiments)
+    status = _handle_invalid_scores(current_median, experiments)
+    if status is not None:
+        return status
+    assert current_median is not None  # For type checkers
+
+    _print_current_metrics(args, len(experiments), current_median)
+
+    if args.generate_baseline:
+        return _generate_baseline_flow(args, current_median, experiments)
+
+    baseline = load_baseline(args.baseline_file)
+    status = _handle_missing_baseline(baseline, experiments, args)
+    if status is not None:
+        return status
+    assert baseline and "median_quality_score" in baseline
+
+    return _evaluate_against_baseline(args, experiments, current_median, baseline)
 
 
 # ==============================================

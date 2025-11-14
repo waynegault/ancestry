@@ -21,7 +21,7 @@ try:  # pragma: no cover - optional dependency
     from config.config_schema import ObservabilityConfig
 except Exception:  # pragma: no cover - fallback for environments missing config deps
     if TYPE_CHECKING:
-        from config.config_schema import ObservabilityConfig as ObservabilityConfig  # type: ignore
+        from config.config_schema import ObservabilityConfig  # type: ignore[import-error]
     else:
 
         @dataclass
@@ -198,7 +198,7 @@ def _serve_metrics_endpoint(host: str, port: int, namespace: str) -> int:
     bound_address = get_metrics_exporter_address()
     display_host, display_port = bound_address if bound_address else (host, port)
     logger.info(
-        "Serving Prometheus metrics at http://%s:%s/metrics – press Ctrl+C to stop",
+        "Serving Prometheus metrics at http://%s:%s/metrics - press Ctrl+C to stop",
         display_host,
         display_port,
     )

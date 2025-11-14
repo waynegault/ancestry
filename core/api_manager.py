@@ -113,9 +113,7 @@ class APIManager:
         if segment.isdigit():
             return True
         lowered = segment.lower()
-        if len(segment) >= 8 and all(ch in "0123456789abcdef-" for ch in lowered):
-            return True
-        return False
+        return len(segment) >= 8 and all(ch in "0123456789abcdef-" for ch in lowered)
 
     def _sanitize_endpoint_label(self, url: str) -> str:
         """Normalize URL paths to stable metric labels."""

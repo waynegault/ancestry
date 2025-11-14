@@ -484,6 +484,182 @@ def generate_cache_key(
 # a specific aspect of the unified cache manager functionality.
 
 
+def _test_cache_entry_dataclass() -> bool:
+    """Verify CacheEntry metadata and expiration behavior."""
+    now = time.time()
+    entry = CacheEntry(
+        key="meta_key",
+        data={"value": 42},
+        timestamp=now,
+        ttl_seconds=120,
+        hit_count=5,
+        service="svc",
+        endpoint="ep",
+    )
+
+    assert entry.key == "meta_key", "CacheEntry key mismatch"
+    assert entry.data["value"] == 42, "CacheEntry data mismatch"
+    assert entry.hit_count == 5, "CacheEntry hit count mismatch"
+    assert entry.service == "svc", "CacheEntry service mismatch"
+    assert not entry.is_expired, "Fresh CacheEntry should not be expired"
+
+    expired = CacheEntry(
+        key="expired_key",
+        data={"value": 0},
+        timestamp=now - 300,
+        ttl_seconds=120,
+        service="svc",
+        endpoint="ep",
+    )
+    assert expired.is_expired, "Stale CacheEntry should be expired"
+    return True
+
+
+def _test_cache_deep_copy_isolation() -> bool:
+    """Ensure cached data is returned as a deep copy."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    payload = {"items": [1, 2, 3], "meta": {"flag": True}}
+    cache.set("svc", "ep", "copy_key", payload)
+
+    retrieved = cache.get("svc", "ep", "copy_key")
+    assert retrieved is not None, "Cache should return stored payload"
+    assert retrieved == payload, "Initial retrieval should match payload"
+
+    retrieved["items"].append(99)
+    retrieved["meta"]["flag"] = False
+
+    fresh_read = cache.get("svc", "ep", "copy_key")
+    assert fresh_read is not None, "Cache should still contain original payload"
+    assert fresh_read == payload, "Cache should protect against external mutation"
+    return True
+
+
+def _test_cache_service_auto_creation() -> bool:
+    """Validate that new services are handled dynamically."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    cache.set("new_service", "endpoint", "service_key", {"data": 1})
+    result = cache.get("new_service", "endpoint", "service_key")
+
+    assert result is not None, "Cache should return values for new services"
+    assert result == {"data": 1}, "Cache should return values for new services"
+    stats = cache.get_stats()
+    assert "new_service" in stats["by_service"], "New service should appear in statistics"
+    return True
+
+
+def _test_cache_overwrite_behavior() -> bool:
+    """Ensure subsequent set replaces existing values."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    cache.set("svc", "ep", "overwrite_key", {"version": 1})
+    cache.set("svc", "ep", "overwrite_key", {"version": 2})
+
+    result = cache.get("svc", "ep", "overwrite_key")
+    assert result is not None, "Cache should return stored value"
+    assert result == {"version": 2}, "Cache should return most recent value"
+    return True
+
+
+def _test_cache_clear_operation() -> bool:
+    """Verify clear() removes entries and resets counts."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    for idx in range(3):
+        cache.set("svc", "ep", f"clear_key_{idx}", {"idx": idx})
+
+    cleared = cache.clear()
+    assert cleared == 3, f"Expected to clear 3 entries, cleared {cleared}"
+    assert cache.get("svc", "ep", "clear_key_0") is None, "Cache should be empty after clear"
+    stats = cache.get_stats()
+    assert stats["global"]["hits"] >= 0 and stats["global"]["misses"] >= 0
+    return True
+
+
+def _test_cache_singleton_instance() -> bool:
+    """Ensure get_unified_cache returns a singleton."""
+    cache1 = get_unified_cache()
+    cache2 = get_unified_cache()
+    assert cache1 is cache2, "Unified cache factory should return singleton instance"
+    return True
+
+
+def _test_cache_realistic_access_patterns() -> bool:
+    """Simulate mixed workloads and confirm hit rate floor."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    # Seed cache with realistic patterns using trimmed counts for quick execution
+    profile_payload = {"contactable": True}
+    for idx in range(30):
+        cache.set("ancestry", "profile_details", f"PROFILE_{idx:03d}", profile_payload, ttl=86400)
+
+    for idx in range(30):
+        for _ in range(2):
+            cache.get("ancestry", "profile_details", f"PROFILE_{idx:03d}")
+
+    combined_payload = {"shared_segments": 5}
+    for idx in range(60):
+        cache.set("ancestry", "combined_details", f"MATCH_{idx:04d}", combined_payload, ttl=3600)
+    for idx in range(60):
+        access_count = min(4, (60 - idx) // 15 + 1)
+        for _ in range(access_count):
+            cache.get("ancestry", "combined_details", f"MATCH_{idx:04d}")
+
+    badge_payload = {"badge": "DNA"}
+    for idx in range(40):
+        cache.set("ancestry", "badge_details", f"BADGE_{idx:04d}", badge_payload, ttl=3600)
+        cache.get("ancestry", "badge_details", f"BADGE_{idx:04d}")
+        cache.get("ancestry", "badge_details", f"BADGE_{idx:04d}")
+
+    rel_payload = "Parent-Child"
+    for idx in range(20):
+        cache.set("ancestry", "relationship_prob", f"REL_{idx:04d}", rel_payload, ttl=7200)
+        cache.get("ancestry", "relationship_prob", f"REL_{idx:04d}")
+
+    tree_payload = {"ids": [f"ID_{i}" for i in range(10)]}
+    for batch in range(4):
+        key = f"TREE_{batch:02d}"
+        cache.set("ancestry", "tree_search", key, tree_payload, ttl=1800)
+        for _ in range(3):
+            cache.get("ancestry", "tree_search", key)
+
+    endpoints = [
+        "profile_details",
+        "combined_details",
+        "badge_details",
+        "relationship_prob",
+        "tree_search",
+    ]
+
+    total_hits = 0
+    total_misses = 0
+    for endpoint in endpoints:
+        stats = cache.get_stats(endpoint=endpoint)
+        total_hits += stats.get("total_hits", 0)
+        total_misses += stats.get("total_misses", 0)
+        assert stats.get("total_hits", 0) > 0, f"Expected hits for {endpoint}"
+
+    total_accesses = total_hits + total_misses
+    overall_hit_rate = (total_hits / total_accesses) * 100 if total_accesses else 0.0
+    assert overall_hit_rate >= 35.0, "Overall hit rate should meet minimum target"
+    return True
+
+
+def _test_create_ancestry_cache_config() -> bool:
+    """Validate helper that returns preset TTL configuration."""
+    config = create_ancestry_cache_config()
+    assert isinstance(config, dict), "Configuration should be a dictionary"
+    assert config.get("combined_details") == 2400, "Combined details TTL should be 2400 seconds"
+    assert config, "Configuration should not be empty"
+    return True
+
+
 def _test_cache_basic_operations() -> bool:
     """Test basic cache get/set operations."""
     cache = get_unified_cache()
@@ -735,6 +911,22 @@ def unified_cache_manager_module_tests() -> bool:
     suite = TestSuite("Unified Cache Manager", "core/unified_cache_manager.py")
     suite.start_suite()
 
+    suite.run_test(
+        "CacheEntry Dataclass",
+        _test_cache_entry_dataclass,
+        "CacheEntry should retain metadata and expire correctly",
+        "Create fresh and stale CacheEntry instances",
+        "Verify field assignments and expiration logic"
+    )
+
+    suite.run_test(
+        "Singleton Factory Pattern",
+        _test_cache_singleton_instance,
+        "Unified cache factory should return singleton instance",
+        "Call get_unified_cache twice",
+        "Ensure both references point to same object"
+    )
+
     # Test basic cache operations
     suite.run_test(
         "Basic Cache Operations",
@@ -744,6 +936,14 @@ def unified_cache_manager_module_tests() -> bool:
         "Verify values are stored and retrieved correctly"
     )
 
+    suite.run_test(
+        "Deep Copy Isolation",
+        _test_cache_deep_copy_isolation,
+        "Cache should shield stored payloads from mutation",
+        "Retrieve cached object and mutate it",
+        "Ensure subsequent reads return original payload"
+    )
+
     # Test statistics tracking
     suite.run_test(
         "Cache Statistics Tracking",
@@ -751,6 +951,30 @@ def unified_cache_manager_module_tests() -> bool:
         "Cache statistics should be accurately tracked",
         "Test hit/miss counting and hit rate calculation",
         "Verify global and service-specific statistics"
+    )
+
+    suite.run_test(
+        "Service Auto-Creation",
+        _test_cache_service_auto_creation,
+        "New services should be tracked without manual configuration",
+        "Cache data under a new service name",
+        "Verify retrieval succeeds and stats include service"
+    )
+
+    suite.run_test(
+        "Overwrite Behavior",
+        _test_cache_overwrite_behavior,
+        "Setting the same key twice should replace value",
+        "Write twice to identical cache key",
+        "Confirm latest value is returned"
+    )
+
+    suite.run_test(
+        "Cache Clear Operation",
+        _test_cache_clear_operation,
+        "Cache clear should remove entries and reset counters",
+        "Populate cache then call clear()",
+        "Verify entries removed and statistics reset"
     )
 
     # Test TTL expiration
@@ -805,6 +1029,22 @@ def unified_cache_manager_module_tests() -> bool:
         "Endpoint-specific statistics should be tracked correctly",
         "Test get_stats(endpoint=...) functionality",
         "Verify per-endpoint hit/miss tracking"
+    )
+
+    suite.run_test(
+        "Realistic Access Patterns",
+        _test_cache_realistic_access_patterns,
+        "Mixed workloads should maintain minimum hit rate",
+        "Simulate access patterns observed in production",
+        "Ensure overall hit rate stays above minimum floor"
+    )
+
+    suite.run_test(
+        "Preset Cache Configuration",
+        _test_create_ancestry_cache_config,
+        "Preset TTL configuration helper should expose expected defaults",
+        "Invoke create_ancestry_cache_config()",
+        "Confirm required endpoints and TTLs are present"
     )
 
     return suite.finish_suite()

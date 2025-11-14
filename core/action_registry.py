@@ -8,9 +8,16 @@ for action management throughout the application.
 Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 """
 
+import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
+
+if __package__ in (None, ""):
+    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
 
 from standard_imports import setup_module
 
@@ -65,7 +72,7 @@ class ActionRegistry:
     scattered action lists throughout the codebase.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._actions: dict[str, ActionMetadata] = {}
         self._menu_actions: list[ActionMetadata] = []
         self._test_actions: list[ActionMetadata] = []
