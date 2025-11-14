@@ -85,7 +85,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Final, Optional, TypedDict
 
 try:
     import psutil
@@ -95,6 +95,9 @@ except ImportError:
     _psutil_available = False
 
 PSUTIL_AVAILABLE = _psutil_available
+
+SEPARATOR_LINE: Final[str] = "=" * 70
+SECTION_SEPARATOR: Final[str] = "\n" + SEPARATOR_LINE
 
 # Import code quality checker
 from code_quality_checker import CodeQualityChecker, QualityMetrics
@@ -163,7 +166,7 @@ def _check_and_use_venv() -> bool:
 _check_and_use_venv()
 
 
-def _invoke_ruff(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+def _invoke_ruff(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Run Ruff with the provided arguments and return the completed process."""
     command = [sys.executable, "-m", "ruff", *args]
     try:
@@ -241,13 +244,36 @@ class TestExecutionConfig:
 @dataclass
 class PerformanceMetricsConfig:
     """Configuration for performance metrics printing."""
-    all_metrics: list[Any]
+    all_metrics: list[TestExecutionMetrics]
     total_duration: float
     total_tests_run: int
     passed_count: int
     failed_count: int
     enable_fast_mode: bool
     enable_benchmark: bool
+
+
+class LogTimingEntry(TypedDict):
+    """Structured representation for timing entries in log analysis."""
+    matches: int
+    total_seconds: float
+    avg_per_match: float
+
+
+class LogAnalysisData(TypedDict):
+    """Structured log analysis results."""
+    timing: list[LogTimingEntry]
+    errors: dict[str, int]
+    warnings: int
+    pages_processed: int
+    cache_hits: int
+    api_fetches: int
+    highest_page: int
+
+
+class LogAnalysisError(TypedDict):
+    """Log analysis error payload."""
+    error: str
 
 
 # ==============================================
@@ -337,10 +363,10 @@ def optimize_test_order(modules: list[str]) -> list[str]:
             pass
 
     # Categorize modules
-    fast_modules = []
-    recently_failed = []
-    slow_modules = []
-    unknown_modules = []
+    fast_modules: list[tuple[str, float]] = []
+    recently_failed: list[tuple[str, float]] = []
+    slow_modules: list[tuple[str, float]] = []
+    unknown_modules: list[str] = []
 
     for module in modules:
         if module not in historical_data:
@@ -435,10 +461,10 @@ class PerformanceMonitor:
     """Monitor system performance during test execution."""
 
     def __init__(self) -> None:
-        self.process = psutil.Process() if PSUTIL_AVAILABLE and psutil else None
-        self.monitoring = False
-        self.metrics = []
-        self.monitor_thread = None
+        self.process: Any = psutil.Process() if PSUTIL_AVAILABLE and psutil else None
+        self.monitoring: bool = False
+        self.metrics: list[dict[str, float]] = []
+        self.monitor_thread: Optional[threading.Thread] = None
 
     def start_monitoring(self) -> None:
         """Start performance monitoring in background thread."""
@@ -562,7 +588,7 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
             "python_best_practices.py", "code_quality_checker.py"
         ]
 
-        quality_scores = []
+        quality_scores: list[tuple[str, float]] = []
         total_score = 0
         files_checked = 0
 
@@ -650,7 +676,7 @@ def discover_test_modules() -> list[str]:
     which indicates they follow the standardized testing framework.
     """
     project_root = Path(__file__).parent
-    test_modules = []
+    test_modules: list[str] = []
 
     # Get all Python files in the project
     for python_file in project_root.rglob("*.py"):
@@ -712,7 +738,7 @@ def _extract_docstring_end(stripped: str, docstring_lines: list[str]) -> bool:
 def _parse_docstring_lines(lines: list[str]) -> list[str]:
     """Parse file lines to extract docstring content."""
     in_docstring = False
-    docstring_lines = []
+    docstring_lines: list[str] = []
 
     for line in lines:
         stripped = line.strip()
@@ -740,7 +766,7 @@ def _parse_docstring_lines(lines: list[str]) -> list[str]:
 
 def _is_valid_description_line(line: str) -> bool:
     """Check if a line is a valid description (not a separator, long enough)."""
-    return line and not line.startswith('=') and len(line) > 10
+    return bool(line) and not line.startswith('=') and len(line) > 10
 
 
 def _clean_description_text(description: str, module_base: str) -> str:
@@ -932,7 +958,7 @@ def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
 def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
     """Pattern 5: Look for numbered test patterns like 'Test 1:', 'Test 2:', etc."""
     import re
-    test_numbers = set()
+    test_numbers: set[int] = set()
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         # Look for patterns like "📋 Test 1:", "Test 2:", "• Test 3:"
@@ -1058,7 +1084,7 @@ def _extract_test_count_from_output(all_output_lines: list[str]) -> str:
         return "Unknown"
 
     # Try each pattern in order
-    patterns = [
+    patterns: list[Callable[[list[str]], str]] = [
         _try_pattern_passed_failed,
         _try_pattern_tests_passed,
         _try_pattern_passed_failed_ansi,
@@ -1104,7 +1130,7 @@ def _check_for_failures_in_output(success: bool, stdout: str) -> bool:
     return success
 
 
-def _format_quality_info(quality_metrics) -> str:
+def _format_quality_info(quality_metrics: Optional[QualityMetrics]) -> str:
     """Format quality metrics into a display string."""
     if not quality_metrics:
         return ""
@@ -1138,14 +1164,14 @@ def _format_violation_message(violation: str) -> str:
     return f"• {violation}"
 
 
-def _print_quality_violations(quality_metrics) -> None:
+def _print_quality_violations(quality_metrics: Optional[QualityMetrics]) -> None:
     """Print quality violation details."""
     if not quality_metrics or quality_metrics.quality_score >= 95 or not quality_metrics.violations:
         return
 
     print("   🔍 Quality Issues:")
     # Group violations by type for better readability
-    violation_types = {}
+    violation_types: dict[str, list[str]] = {}
     for violation in quality_metrics.violations[:5]:  # Show first 5
         vtype = _categorize_violation(violation)
         violation_types.setdefault(vtype, []).append(violation)
@@ -1174,7 +1200,7 @@ def _extract_numeric_test_count(test_count: str) -> int:
     return 0
 
 
-def _print_failure_details(result, failure_indicators: list[str]) -> None:
+def _print_failure_details(result: subprocess.CompletedProcess[str], failure_indicators: list[str]) -> None:
     """Print failure details from test output."""
     print("   🚨 Failure Details:")
     if result.stderr:
@@ -1192,12 +1218,12 @@ def _print_failure_details(result, failure_indicators: list[str]) -> None:
             print(f"      {line}")
 
 
-def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], dict]:
+def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], dict[str, str]]:
     """Build the command and environment for running tests."""
     cmd = [sys.executable]
 
     # Always pass environment to subprocess to ensure SKIP_LIVE_API_TESTS is inherited
-    env = dict(os.environ)
+    env: dict[str, str] = dict(os.environ)
 
     # For modules with internal test suite, set env var to trigger test output
     suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
@@ -1227,7 +1253,7 @@ def _run_quality_analysis(module_name: str):
 
 def _create_test_metrics(
     module_name: str,
-    test_result: dict,
+    test_result: dict[str, Any],
     quality_metrics: Optional[QualityMetrics] = None
 ) -> TestExecutionMetrics:
     """
@@ -1268,7 +1294,7 @@ def _create_error_metrics(module_name: str, error_message: str) -> TestExecution
     )
 
 
-def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.CompletedProcess, float, str]:
+def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.CompletedProcess[str], float, str]:
     """Run the test subprocess and return result, duration, and timestamp."""
     start_time = time.time()
     start_datetime = datetime.now().isoformat()
@@ -1282,12 +1308,12 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
     timeout_seconds = 180 if module_name == "action8_messaging.py" else 120
 
     try:
-        result = subprocess.run(
+        result: subprocess.CompletedProcess[str] = subprocess.run(
             cmd, check=False, capture_output=True, text=True, cwd=Path.cwd(), env=env, timeout=timeout_seconds
         )
     except subprocess.TimeoutExpired:
         # Create a fake CompletedProcess to indicate timeout
-        result = subprocess.CompletedProcess(
+        result = subprocess.CompletedProcess[str](
             args=cmd,
             returncode=124,  # Standard timeout exit code
             stdout="",
@@ -1298,10 +1324,10 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
     return result, duration, start_datetime
 
 
-def _analyze_test_output(result: subprocess.CompletedProcess) -> tuple[bool, str, int]:
+def _analyze_test_output(result: subprocess.CompletedProcess[str]) -> tuple[bool, str, int]:
     """Analyze test output and return success status, test count string, and numeric count."""
     # Collect all output lines
-    all_output_lines = []
+    all_output_lines: list[str] = []
     if result.stdout:
         all_output_lines.extend(result.stdout.split("\n"))
     if result.stderr:
@@ -1316,7 +1342,13 @@ def _analyze_test_output(result: subprocess.CompletedProcess) -> tuple[bool, str
     return success, test_count, numeric_test_count
 
 
-def _print_test_result(success: bool, duration: float, test_count: str, quality_metrics, result: subprocess.CompletedProcess) -> None:
+def _print_test_result(
+    success: bool,
+    duration: float,
+    test_count: str,
+    quality_metrics: Optional[QualityMetrics],
+    result: subprocess.CompletedProcess[str]
+) -> None:
     """Print test result summary with quality info and failure details."""
     status = "✅ PASSED" if success else "❌ FAILED"
     quality_info = _format_quality_info(quality_metrics)
@@ -1361,8 +1393,8 @@ def run_module_tests(
         _print_test_result(success, duration, test_count, quality_metrics, result)
 
         # Create metrics object (always include quality metrics for final summary)
-        metrics = None
-        test_result = {
+        metrics: Optional[TestExecutionMetrics] = None
+        test_result: dict[str, Any] = {
             "duration": duration,
             "success": success,
             "test_count": numeric_test_count,
@@ -1383,7 +1415,7 @@ def run_module_tests(
 
 def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False) -> tuple[list[TestExecutionMetrics], int, int]:
     """Run tests in parallel for improved performance."""
-    all_metrics = []
+    all_metrics: list[TestExecutionMetrics] = []
     passed_count = 0
     total_test_count = 0
 
@@ -1421,7 +1453,7 @@ def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performa
         metrics_file = Path("test_performance_metrics.json")
 
         # Load existing metrics if file exists
-        existing_data = []
+        existing_data: list[dict[str, Any]] = []
         if metrics_file.exists():
             try:
                 with metrics_file.open() as f:
@@ -1430,7 +1462,7 @@ def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performa
                 existing_data = []
 
         # Add new metrics
-        new_entry = {
+        new_entry: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "suite_performance": asdict(suite_performance),
             "module_metrics": [asdict(m) for m in metrics]
@@ -1485,7 +1517,7 @@ def _check_parallel_execution(metrics: list[TestExecutionMetrics], suggestions: 
 
 def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]:
     """Analyze performance metrics and provide optimization suggestions."""
-    suggestions = []
+    suggestions: list[str] = []
 
     if not metrics:
         return suggestions
@@ -1571,7 +1603,7 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
         discovered_modules = optimize_test_order(discovered_modules)
 
     # Extract descriptions from module docstrings for enhanced reporting
-    module_descriptions = {}
+    module_descriptions: dict[str, str] = {}
     enhanced_count = 0
 
     for module_name in discovered_modules:
@@ -1589,7 +1621,7 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     print(f"{'='* 60}")
 
     # Prepare modules with descriptions
-    modules_with_descriptions = [
+    modules_with_descriptions: list[tuple[str, str]] = [
         (module, module_descriptions.get(module, ""))
         for module in discovered_modules
     ]
@@ -1597,7 +1629,7 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     return discovered_modules, module_descriptions, modules_with_descriptions
 
 
-def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[Any], int, int]:
+def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int]:
     """
     Execute tests in parallel or sequential mode.
 
@@ -1619,8 +1651,8 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
     else:
         print("🔄 Running tests sequentially...")
         sys.stdout.flush()
-        results = []
-        all_metrics = []
+        results: list[tuple[str, str, bool]] = []
+        all_metrics: list[TestExecutionMetrics] = []
         total_tests_run = 0
         passed_count = 0
 
@@ -1670,7 +1702,7 @@ def _print_basic_summary(
     print(f"📈 Success Rate: {success_rate:.1f}%")
 
 
-def _calculate_performance_stats(all_metrics: list[Any]) -> tuple[float, float, float, float]:
+def _calculate_performance_stats(all_metrics: list[TestExecutionMetrics]) -> tuple[float, float, float, float]:
     """Calculate performance statistics from metrics."""
     if not all_metrics:
         return 0.0, 0.0, 0.0, 0.0
@@ -1781,7 +1813,7 @@ def _print_final_results(
         print("   Check individual test outputs above for details.\n")
 
 
-def analyze_application_logs(log_path: str | None = None) -> dict:
+def analyze_application_logs(log_path: str | None = None) -> LogAnalysisData | LogAnalysisError:
     """
     Analyze application logs for performance metrics and errors.
     Integrated from monitor_performance.py for log analysis.
@@ -1799,7 +1831,7 @@ def analyze_application_logs(log_path: str | None = None) -> dict:
     if not log_file.exists():
         return {"error": f"Log file not found: {log_path}"}
 
-    results = {
+    results: LogAnalysisData = {
         "timing": [],
         "errors": {
             "429": 0,
@@ -1811,6 +1843,7 @@ def analyze_application_logs(log_path: str | None = None) -> dict:
         "pages_processed": 0,
         "cache_hits": 0,
         "api_fetches": 0,
+        "highest_page": 0,
     }
 
     with open(log_file, encoding='utf-8') as f:
@@ -1822,11 +1855,12 @@ def analyze_application_logs(log_path: str | None = None) -> dict:
         matches_count = int(match.group(1))
         total_time = float(match.group(2))
         avg_time = float(match.group(3))
-        results["timing"].append({
+        timing_entry: LogTimingEntry = {
             "matches": matches_count,
             "total_seconds": total_time,
-            "avg_per_match": avg_time
-        })
+            "avg_per_match": avg_time,
+        }
+        results["timing"].append(timing_entry)
         results["api_fetches"] += 1
 
     # Count errors
@@ -1851,7 +1885,7 @@ def analyze_application_logs(log_path: str | None = None) -> dict:
     return results
 
 
-def _format_error_summary(results: dict) -> list[str]:
+def _format_error_summary(results: LogAnalysisData) -> list[str]:
     """Format error summary section."""
     lines = ["🚨 ERROR SUMMARY:"]
     total_errors = sum(results["errors"].values())
@@ -1864,7 +1898,7 @@ def _format_error_summary(results: dict) -> list[str]:
     return lines
 
 
-def _format_timing_analysis(results: dict) -> list[str]:
+def _format_timing_analysis(results: LogAnalysisData) -> list[str]:
     """Format timing analysis section."""
     if not results["timing"]:
         return []
@@ -1896,37 +1930,36 @@ def _format_timing_analysis(results: dict) -> list[str]:
     return lines
 
 
-def format_log_analysis(results: dict) -> str:
+def format_log_analysis(results: LogAnalysisData) -> str:
     """Format log analysis results as a readable report."""
-    if "error" in results:
-        return f"❌ {results['error']}"
+    structured_results = results
 
-    report = []
-    report.append("=" * 70)
+    report: list[str] = []
+    report.append(SEPARATOR_LINE)
     report.append("📊 APPLICATION LOG PERFORMANCE ANALYSIS")
-    report.append("=" * 70)
+    report.append(SEPARATOR_LINE)
 
     # Error Summary
-    report.extend(_format_error_summary(results))
+    report.extend(_format_error_summary(structured_results))
 
     # Warnings
-    report.append(f"\n⚠️  WARNINGS: {results['warnings']}")
+    report.append(f"\n⚠️  WARNINGS: {structured_results['warnings']}")
 
     # Processing Stats
     report.append("\n📈 PROCESSING STATISTICS:")
-    report.append(f"  Pages Processed: {results['pages_processed']}")
-    report.append(f"  Highest Page: {results['highest_page']}")
-    report.append(f"  Cache Hits (pages skipped): {results['cache_hits']}")
-    report.append(f"  API Fetches (pages with new data): {results['api_fetches']}")
+    report.append(f"  Pages Processed: {structured_results['pages_processed']}")
+    report.append(f"  Highest Page: {structured_results['highest_page']}")
+    report.append(f"  Cache Hits (pages skipped): {structured_results['cache_hits']}")
+    report.append(f"  API Fetches (pages with new data): {structured_results['api_fetches']}")
 
     # Timing Analysis
-    timing_lines = _format_timing_analysis(results)
+    timing_lines = _format_timing_analysis(structured_results)
     if timing_lines:
         report.append("\n" + "\n".join(timing_lines))
 
-    report.append("\n" + "=" * 70)
+    report.append(SECTION_SEPARATOR)
     report.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    report.append("=" * 70)
+    report.append(SEPARATOR_LINE)
 
     return "\n".join(report)
 
@@ -1934,6 +1967,10 @@ def format_log_analysis(results: dict) -> str:
 def print_log_analysis(log_path: str | None = None) -> None:
     """Analyze and print application log performance metrics."""
     results = analyze_application_logs(log_path)
+    if "error" in results:
+        print(f"\n❌ {results['error']}")
+        return
+
     print("\n" + format_log_analysis(results))
 
 
@@ -1945,7 +1982,7 @@ def _calculate_quality_distribution(quality_scores: list[float]) -> tuple[int, i
     return below_70, between_70_95, above_95
 
 
-def _print_final_quality_summary(all_metrics: list[Any]) -> None:
+def _print_final_quality_summary(all_metrics: list[TestExecutionMetrics]) -> None:
     """
     Print comprehensive quality summary at the end of test run.
 

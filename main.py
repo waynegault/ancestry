@@ -8,6 +8,8 @@ all automation workflows including DNA match gathering, inbox processing,
 messaging, and genealogical research tools.
 """
 
+# pyright: reportGeneralTypeIssues=false
+
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
 import os
 
@@ -27,36 +29,124 @@ import logging
 # os already imported at top for SUPPRESS_CONFIG_WARNINGS
 import shutil
 import sys
+import threading
 import time
+import webbrowser
+from collections.abc import Sequence
 from datetime import datetime
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+# === LOCAL IMPORTS ===
+# Action modules
+from importlib import import_module
+from logging import StreamHandler
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, Protocol, TextIO, cast
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session as SASession
 
-# === LOCAL IMPORTS ===
-# Action modules
 from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
-from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from observability.metrics_registry import metrics
+
+ActionCallable = Callable[..., Any]
+SendMessagesAction = Callable[["SessionManager"], bool]
+MatchRecord = dict[str, Any]
+MatchList = list[MatchRecord]
+SearchAPIFunc = Callable[["SessionManager", dict[str, Any], int], MatchList]
+
+
+def _import_send_messages_action() -> SendMessagesAction:
+    """Import and return the messaging action with a precise type."""
+
+    module = import_module("action8_messaging")
+    send_messages_attr = getattr(module, "send_messages_to_matches")
+    return cast(SendMessagesAction, send_messages_attr)
+
+
+send_messages_to_matches: SendMessagesAction = _import_send_messages_action()
+
+
+class DatabaseManagerProtocol(Protocol):
+    """Protocol describing the subset of DatabaseManager used here."""
+
+    engine: Any
+    Session: Any
+
+    def ensure_ready(self) -> bool: ...
+
+    def _initialize_engine_and_session(self) -> None: ...
+
+
+class BrowserManagerProtocol(Protocol):
+    """Protocol describing the subset of BrowserManager used here."""
+
+    browser_needed: bool
+
+    def ensure_driver_live(self, action_name: str) -> bool: ...
+
+    def close_driver(self, reason: Optional[str] = None) -> None: ...
+
+
+class APIManagerProtocol(Protocol):
+    """Protocol describing the subset of APIManager used here."""
+
+    csrf_token: str
+    tree_owner_name: Optional[str]
+
+    def sync_cookies_from_browser(
+        self,
+        browser_manager: BrowserManagerProtocol,
+        *,
+        session_manager: "SessionManager",
+    ) -> bool: ...
+
+
+def _get_database_manager(session_manager: "SessionManager") -> Optional[DatabaseManagerProtocol]:
+    """Safely retrieve the session's DatabaseManager-like component."""
+
+    return cast(Optional[DatabaseManagerProtocol], getattr(session_manager, "db_manager", None))
+
+
+def _get_browser_manager(session_manager: "SessionManager") -> Optional[BrowserManagerProtocol]:
+    """Safely retrieve the session's BrowserManager-like component."""
+
+    return cast(Optional[BrowserManagerProtocol], getattr(session_manager, "browser_manager", None))
+
+
+def _get_api_manager(session_manager: "SessionManager") -> Optional[APIManagerProtocol]:
+    """Safely retrieve the session's APIManager-like component."""
+
+    return cast(Optional[APIManagerProtocol], getattr(session_manager, "api_manager", None))
+
+
+def _initialize_db_manager_engine(db_manager: DatabaseManagerProtocol) -> tuple[Any, Any]:
+    """Ensure the database manager has an initialized engine and session factory."""
+
+    initializer = getattr(db_manager, "_initialize_engine_and_session", None)
+    if callable(initializer):
+        initializer()
+
+    engine = getattr(db_manager, "engine", None)
+    session_factory = getattr(db_manager, "Session", None)
+    if engine is None or session_factory is None:
+        raise SQLAlchemyError("Database manager missing engine or session factory")
+    return engine, session_factory
 
 
 def _load_and_validate_config_schema() -> Optional[Any]:
     """Load and validate configuration schema."""
     try:
         from config import config_schema
-        if config_schema is None:
-            logger.error("config_schema is None - configuration not properly initialized")
-            return None
         logger.debug("Configuration loaded successfully")
-        return config_schema
+        return cast(Any, config_schema)
     except ImportError as e:
         logger.error(f"Could not import config_schema from config package: {e}")
         return None
@@ -173,12 +263,15 @@ def _log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: st
 
     initial_rate = None if persisted_state else desired_rate
 
-    limiter = get_rate_limiter(
+    limiter = cast(
+        Optional[Any],
+        get_rate_limiter(
         initial_fill_rate=initial_rate,
         success_threshold=success_threshold,
         min_fill_rate=min_fill_rate,
         max_fill_rate=max_fill_rate,
         capacity=bucket_capacity,
+        ),
     )
 
     if limiter is None:
@@ -276,7 +369,7 @@ from utils import (
 
 # Initialize config manager
 config_manager = ConfigManager()
-config = config_manager.get_config()
+config: Any = config_manager.get_config()
 
 
 def menu() -> str:
@@ -286,24 +379,23 @@ def menu() -> str:
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
-        console_handler = None
+        console_handler: Optional[StreamHandler[TextIO]] = None
         for handler in logger.handlers:
-            if (
-                isinstance(handler, logging.StreamHandler)
-                and handler.stream == sys.stderr
-            ):
-                console_handler = handler
-                break
-        if console_handler:
-            level_name = logging.getLevelName(console_handler.level)
+            if isinstance(handler, StreamHandler):
+                shandler = cast(StreamHandler[TextIO], handler)
+                stream: Optional[TextIO] = shandler.stream
+                if stream is sys.stderr:
+                    console_handler = shandler
+                    break
+        if console_handler is not None:
+            level_name = logging.getLevelName(int(console_handler.level))
         else:
             level_name = logging.getLevelName(logger.getEffectiveLevel())
     elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
         level_name = config.logging.log_level.upper()
 
     print(f"(Log Level: {level_name})\n")
-    print("0. Delete all rows except first person (test profile)")
-    print("1. Run Full Workflow (7, 9, 8)")
+    print("1. Delete all rows except first person (test profile)")
     print("2. Reset Database")
     print("3. Backup Database")
     print("4. Restore Database")
@@ -316,6 +408,7 @@ def menu() -> str:
     print("")
     print("analytics. View Conversation Analytics Dashboard")
     print("")
+    print("graph. Open Code Graph Visualization")
     print("test. Run Main.py Internal Tests")
     print("testall. Run All Module Tests")
     print("")
@@ -370,16 +463,20 @@ def clear_log_file() -> tuple[bool, Optional[str]]:
 # State management for caching initialization
 class _CachingState:
     """Manages caching initialization state."""
+
     initialized = False
+
 
 _caching_state = _CachingState()
 
 
-def initialize_aggressive_caching() -> None:
+def initialize_aggressive_caching() -> bool:
     """Initialize aggressive caching systems."""
+
     try:
         from core.system_cache import warm_system_caches  # type: ignore[import-not-found]
-        return warm_system_caches()
+
+        return bool(warm_system_caches())
     except ImportError:
         logger.debug("System cache module not available (non-critical)")
         return False
@@ -388,8 +485,9 @@ def initialize_aggressive_caching() -> None:
         return False
 
 
-def ensure_caching_initialized() -> None:
+def ensure_caching_initialized() -> bool:
     """Initialize aggressive caching systems if not already done."""
+
     if not _caching_state.initialized:
         logger.debug("Initializing caching systems on-demand...")
         cache_init_success = initialize_aggressive_caching()
@@ -401,6 +499,7 @@ def ensure_caching_initialized() -> None:
                 "Some caching systems failed to initialize, continuing with reduced performance"
             )
         return cache_init_success
+
     logger.debug("Caching systems already initialized")
     return True
 
@@ -421,7 +520,7 @@ def _determine_browser_requirement(choice: str) -> bool:
         True if action requires browser, False otherwise
     """
     browserless_choices = [
-        "0",   # Action 0 - Delete all except first person (database only)
+        "1",   # Action 1 - Delete all except first person (database only)
         "2",   # Action 2 - Reset database
         "3",   # Action 3 - Backup database
         "4",   # Action 4 - Restore database
@@ -453,19 +552,36 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
 
 def _ensure_required_state(session_manager: SessionManager, required_state: str, action_name: str, choice: str) -> bool:
     """Ensure the required session state is achieved."""
+
     if required_state == "db_ready":
-        return session_manager.ensure_db_ready()
+        db_manager = _get_database_manager(session_manager)
+        if db_manager is None:
+            logger.error("Database manager unavailable for action '%s'", action_name)
+            return False
+        return db_manager.ensure_ready()
+
     if required_state == "driver_ready":
-        return session_manager.browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+        browser_manager = _get_browser_manager(session_manager)
+        if browser_manager is None:
+            logger.error("Browser manager unavailable for action '%s'", action_name)
+            return False
+        return browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+
     if required_state == "session_ready":
         # Skip CSRF check for Action 10 (cookies available after navigation)
         skip_csrf = (choice in ["10"])
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
+
     return True
 
 
-def _prepare_action_arguments(action_func, session_manager: SessionManager, args: tuple) -> tuple:
+def _prepare_action_arguments(
+    action_func: ActionCallable,
+    session_manager: SessionManager,
+    args: tuple[Any, ...],
+) -> tuple[list[Any], dict[str, Any]]:
     """Prepare arguments for action function call."""
+
     func_sig = inspect.signature(action_func)
     pass_session_manager = "session_manager" in func_sig.parameters
     action_name = action_func.__name__
@@ -476,31 +592,43 @@ def _prepare_action_arguments(action_func, session_manager: SessionManager, args
         int_args = [a for a in args if isinstance(a, int)]
         if int_args:
             start_val = int_args[-1]
-        kwargs_for_action = {"start": start_val}
+        kwargs_for_action: dict[str, Any] = {"start": start_val}
 
-        coord_args = []
+        coord_args: list[Any] = []
         if pass_session_manager:
             coord_args.append(session_manager)
         if action_name == "gather_dna_matches" and "config_schema" in func_sig.parameters:
             coord_args.append(config)
 
         return coord_args, kwargs_for_action
+
     # General case
-    final_args = []
+    final_args: list[Any] = []
     if pass_session_manager:
         final_args.append(session_manager)
     final_args.extend(args)
-    return final_args, {}
+    empty_kwargs: dict[str, Any] = {}
+    return final_args, empty_kwargs
 
 
-def _execute_action_function(action_func, prepared_args: tuple, kwargs: dict) -> Any:
+def _execute_action_function(
+    action_func: ActionCallable,
+    prepared_args: Sequence[Any],
+    kwargs: dict[str, Any],
+) -> Any:
     """Execute the action function with prepared arguments."""
+
     if kwargs:
         return action_func(*prepared_args, **kwargs)
     return action_func(*prepared_args)
 
 
-def _should_close_session(action_result, action_exception, close_sess_after: bool, action_name: str) -> bool:
+def _should_close_session(
+    action_result: Any,
+    action_exception: BaseException | None,
+    close_sess_after: bool,
+    action_name: str,
+) -> bool:
     """Determine if session should be closed. Only close when explicitly requested via close_sess_after flag."""
     # Never close session on failure - let user decide when to quit
     if action_result is False or action_exception is not None:
@@ -512,7 +640,13 @@ def _should_close_session(action_result, action_exception, close_sess_after: boo
     return False
 
 
-def _log_performance_metrics(start_time: float, process, mem_before: float, choice: str, action_name: str) -> tuple[float, float | None]:
+def _log_performance_metrics(
+    start_time: float,
+    process: psutil.Process,
+    mem_before: float,
+    choice: str,
+    action_name: str,
+) -> tuple[float, float | None]:
     """Log performance metrics for the action and return (duration_sec, mem_used_mb)."""
     duration = time.time() - start_time
     hours, remainder = divmod(duration, 3600)
@@ -537,25 +671,28 @@ def _log_performance_metrics(start_time: float, process, mem_before: float, choi
 
 def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     """Perform session cleanup based on action result."""
-    if should_close and isinstance(session_manager, SessionManager):
+
+    if should_close:
         if session_manager.browser_needed and session_manager.driver_live:
             logger.debug("Closing browser session...")
             session_manager.close_browser()
             logger.debug("Browser session closed. DB connections kept.")
-        elif should_close and action_name in ["all_but_first_actn"]:
+        elif action_name in ["all_but_first_actn"]:
             logger.debug("Closing all connections including database...")
             session_manager.close_sess(keep_db=False)
             logger.debug("All connections closed.")
-    elif isinstance(session_manager, SessionManager) and session_manager.driver_live and not should_close:
+        return
+
+    if session_manager.driver_live:
         logger.debug(f"Keeping session live after '{action_name}'.")
 
 
 def exec_actn(
-    action_func,
+    action_func: ActionCallable,
     session_manager: SessionManager,
     choice: str,
     close_sess_after: bool = False,
-    *args,
+    *args: Any,
 ) -> bool:
     """
     Executes an action, ensuring the required session state
@@ -583,8 +720,8 @@ def exec_actn(
     logger.info(f"Action {choice}: Starting {action_name}...")
     logger.info(f"{'='*45}\n")
 
-    action_result = None
-    action_exception = None
+    action_result: Any = None
+    action_exception: BaseException | None = None
 
     # Determine browser requirement and required state based on user choice
     requires_browser = _determine_browser_requirement(choice)
@@ -642,10 +779,12 @@ def exec_actn(
             result_label = "success" if final_outcome else "failure"
             if isinstance(action_result, str) and action_result.lower() == "skipped":
                 result_label = "skipped"
-            elif isinstance(action_result, tuple) and len(action_result) > 1:
-                label_candidate = action_result[1]
-                if isinstance(label_candidate, str) and label_candidate.lower() in {"success", "failure", "skipped"}:
-                    result_label = label_candidate.lower()
+            elif isinstance(action_result, tuple):
+                typed_result = cast(tuple[Any, ...], action_result)
+                if len(typed_result) > 1:
+                    label_candidate: Any = typed_result[1]
+                    if isinstance(label_candidate, str) and label_candidate.lower() in {"success", "failure", "skipped"}:
+                        result_label = label_candidate.lower()
             metrics().action_processed.inc(action_name, result_label)
         except Exception:
             logger.debug("Failed to record action throughput metric", exc_info=True)
@@ -661,19 +800,25 @@ def exec_actn(
 # --- Action Functions
 
 
-# Action 0 (all_but_first_actn)
-def _delete_table_records(sess, table_class, filter_condition, table_name: str, person_id_to_keep: int) -> int:
+# Action 1 (all_but_first_actn)
+def _delete_table_records(
+    sess: SASession,
+    table_class: type[Any],
+    filter_condition: Any,
+    table_name: str,
+    person_id_to_keep: int,
+) -> int:
     """Delete records from a table based on filter condition."""
     logger.debug(f"Deleting from {table_name} where people_id != {person_id_to_keep}...")
     result = sess.query(table_class).filter(filter_condition).delete(synchronize_session=False)
-    count = result if result is not None else 0
+    count = int(result or 0)
     logger.info(f"Deleted {count} {table_name} records.")
     return count
 
 
-def _perform_deletions(sess, person_id_to_keep: int) -> dict:
+def _perform_deletions(sess: SASession, person_id_to_keep: int) -> dict[str, int]:
     """Perform all deletion operations and return counts."""
-    deleted_counts = {
+    deleted_counts: dict[str, int] = {
         "conversation_log": _delete_table_records(
             sess, ConversationLog, ConversationLog.people_id != person_id_to_keep,
             "conversation_log", person_id_to_keep
@@ -692,14 +837,14 @@ def _perform_deletions(sess, person_id_to_keep: int) -> dict:
         ),
     }
 
-    total_deleted = sum(deleted_counts.values())
+    total_deleted = int(sum(deleted_counts.values()))
     if total_deleted == 0:
         logger.info(f"No records found to delete besides Person ID {person_id_to_keep}.")
 
     return deleted_counts
 
 
-def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
+def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     """
     V1.5: Delete all records except for the test profile (Frances Milne).
     Uses TEST_PROFILE_ID from .env to identify which profile to keep.
@@ -753,10 +898,10 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
                 print("\nThe database contains no records.")
                 print("Please run Action 2 (Reset Database) first to initialize")
                 print("the database with test data.")
-                print("\nAction 0 is used to delete all records EXCEPT the test")
+                print("\nAction 1 is used to delete all records EXCEPT the test")
                 print("profile, but there are currently no records to delete.")
                 print("="*60 + "\n")
-                logger.info("Action 0: Database is empty. No records to delete.")
+                logger.info("Action 1: Database is empty. No records to delete.")
                 success = True  # Not an error - just nothing to do
                 return True  # Return to menu without closing session
 
@@ -781,7 +926,7 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
                 print("\nPlease run Action 2 (Reset Database) to initialize")
                 print("the database with the test profile.")
                 print("="*60 + "\n")
-                logger.info("Action 0 aborted: Test profile not found in database.")
+                logger.info("Action 1 aborted: Test profile not found in database.")
                 success = True  # Don't treat as error - just inform user
                 return True  # Return True to avoid closing session
 
@@ -813,12 +958,12 @@ def all_but_first_actn(session_manager: SessionManager, *_) -> bool:
     return success
 
 
-# end of action 0 (all_but_first_actn)
+# end of action 1 (all_but_first_actn)
 
 
 # Helper functions for run_core_workflow_action
 
-def _run_action6_gather(session_manager) -> bool:
+def _run_action6_gather(session_manager: SessionManager) -> bool:
     """Run Action 6: Gather Matches."""
     logger.info("--- Running Action 6: Gather Matches (Always from page 1) ---")
     gather_result = gather_dna_matches(session_manager, config, start=1)
@@ -831,15 +976,20 @@ def _run_action6_gather(session_manager) -> bool:
     return True
 
 
-def _run_action7_inbox(session_manager) -> bool:
+def _run_action7_inbox(session_manager: SessionManager) -> bool:
     """Run Action 7: Search Inbox."""
     logger.info("--- Running Action 7: Search Inbox ---")
     inbox_url = urljoin(config.api.base_url, "/messaging/")
     logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
 
     try:
+        driver = session_manager.driver
+        if driver is None:
+            logger.error("Driver not available for Action 7 navigation")
+            return False
+
         if not nav_to_page(
-            session_manager.driver,
+            driver,
             inbox_url,
             "div.messaging-container",
             session_manager,
@@ -870,14 +1020,19 @@ def _run_action7_inbox(session_manager) -> bool:
         return False
 
 
-def _run_action9_process_productive(session_manager) -> bool:
+def _run_action9_process_productive(session_manager: SessionManager) -> bool:
     """Run Action 9: Process Productive Messages."""
     logger.info("--- Running Action 9: Process Productive Messages ---")
     logger.debug("Navigating to Base URL for Action 9...")
 
     try:
+        driver = session_manager.driver
+        if driver is None:
+            logger.error("Driver not available for Action 9 navigation")
+            return False
+
         if not nav_to_page(
-            session_manager.driver,
+            driver,
             config.api.base_url,
             WAIT_FOR_PAGE_SELECTOR,
             session_manager,
@@ -906,14 +1061,19 @@ def _run_action9_process_productive(session_manager) -> bool:
         return False
 
 
-def _run_action8_send_messages(session_manager) -> bool:
+def _run_action8_send_messages(session_manager: SessionManager) -> bool:
     """Run Action 8: Send Messages."""
     logger.info("--- Running Action 8: Send Messages ---")
     logger.debug("Navigating to Base URL for Action 8...")
 
     try:
+        driver = session_manager.driver
+        if driver is None:
+            logger.error("Driver not available for Action 8 navigation")
+            return False
+
         if not nav_to_page(
-            session_manager.driver,
+            driver,
             config.api.base_url,
             WAIT_FOR_PAGE_SELECTOR,
             session_manager,
@@ -967,7 +1127,7 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
             _run_action8_send_messages(session_manager)):
 
             # Build success message
-            action_sequence = []
+            action_sequence: list[str] = []
             if run_action6:
                 action_sequence.append("6")
             action_sequence.extend(["7", "9", "8"])
@@ -1017,19 +1177,25 @@ def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
     """Re-initialize database schema by dropping and recreating all tables."""
     logger.debug("Re-initializing database schema...")
     try:
+        db_manager = _get_database_manager(temp_manager)
+        if db_manager is None:
+            logger.error("Database manager unavailable for schema reinitialization")
+            return False
+
         # This will create a new engine and session factory pointing to the file path
-        temp_manager.db_manager._initialize_engine_and_session()
-        if not temp_manager.db_manager.engine or not temp_manager.db_manager.Session:
-            raise SQLAlchemyError("Failed to initialize DB engine/session for recreation!")
+        engine = getattr(db_manager, "engine", None)
+        session_factory = getattr(db_manager, "Session", None)
+        if engine is None or session_factory is None:
+            engine, session_factory = _initialize_db_manager_engine(db_manager)
 
         # Drop all existing tables first to ensure clean schema
         logger.debug("Dropping all existing tables...")
-        Base.metadata.drop_all(temp_manager.db_manager.engine)
+        Base.metadata.drop_all(engine)
         logger.debug("All tables dropped successfully.")
 
         # Recreate all tables with current schema definitions
         logger.debug("Creating tables with current schema...")
-        Base.metadata.create_all(temp_manager.db_manager.engine)
+        Base.metadata.create_all(engine)
         logger.debug("Database schema recreated successfully.")
         return True
     except Exception as e:
@@ -1042,7 +1208,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
     logger.debug("Seeding message_templates table from database defaults...")
     try:
         # Import inside function to avoid circular imports at module import time
-        from database import MessageTemplate, _get_default_message_templates  # type: ignore
+        from database import _get_default_message_templates  # type: ignore
 
         with db_transn(recreation_session) as sess:
             existing_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
@@ -1052,8 +1218,8 @@ def _seed_message_templates(recreation_session: Any) -> bool:
                     f"Found {existing_count} existing message templates. Skipping seeding."
                 )
             else:
-                templates_data = _get_default_message_templates()
-                if not isinstance(templates_data, list) or not templates_data:
+                templates_data: list[dict[str, Any]] = _get_default_message_templates()
+                if not templates_data:
                     logger.warning("Default message templates list is empty. Nothing to seed.")
                 else:
                     for template in templates_data:
@@ -1144,7 +1310,7 @@ def _perform_database_reset_steps(temp_manager: SessionManager) -> tuple[bool, A
     return True, recreation_session
 
 
-def reset_db_actn(session_manager: SessionManager, *_) -> bool:
+def reset_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     """
     Action to COMPLETELY reset the database by deleting the file. Browserless.
     - Closes main pool.
@@ -1223,7 +1389,7 @@ def backup_db_actn(*_: Any) -> bool:
 
 
 # Action 4 (restore_db_actn)
-def restore_db_actn(session_manager: SessionManager, *_) -> bool:  # Added session_manager back
+def restore_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:  # Added session_manager back
     """
     Action to restore the database. Browserless.
     Closes the provided main session pool FIRST.
@@ -1331,8 +1497,10 @@ def _display_session_info(session_manager: SessionManager) -> None:
     if session_manager.my_tree_id:
         print(f"Tree ID:         {session_manager.my_tree_id}")
 
-    if hasattr(session_manager, 'api_manager') and session_manager.api_manager.csrf_token:
-        csrf_preview = session_manager.api_manager.csrf_token[:20] + "..." if len(session_manager.api_manager.csrf_token) > 20 else session_manager.api_manager.csrf_token
+    api_manager = _get_api_manager(session_manager)
+    if api_manager and api_manager.csrf_token:
+        token = api_manager.csrf_token
+        csrf_preview = token[:20] + "..." if len(token) > 20 else token
         print(f"CSRF Token:      {csrf_preview}")
 
 
@@ -1377,7 +1545,7 @@ def _attempt_login(session_manager: SessionManager) -> bool:
 
 
 # Action 5 (check_login_actn)
-def check_login_actn(session_manager: SessionManager, *_) -> bool:
+def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     """
     REVISED V13: Checks login status, attempts login if needed, and displays all identifiers.
     This action starts a browser session and checks login status.
@@ -1611,68 +1779,53 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 
 
 
-# Merged Action 10/11 wrapper: GEDCOM-first then API fallback
-def _import_search_modules() -> tuple[Any, ...]:
-    """Import required modules for GEDCOM and API search.
+def _perform_gedcom_search(
+    gedcom_path: Optional[Path],
+    criteria: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: Optional[dict[str, Any]],
+) -> tuple[Any, MatchList]:
+    """Perform GEDCOM search and return data and matches."""
 
-    Returns:
-        Tuple of imported functions and modules
-    """
     from action10 import (
-        _build_filter_criteria,  # type: ignore
-        _create_table_row as _create_row_gedcom,  # type: ignore
-        _normalize_id,  # type: ignore
-        analyze_top_match,  # type: ignore
+        _build_filter_criteria,  # pyright: ignore[reportPrivateUsage]
         filter_and_score_individuals,
         load_gedcom_data,
-        validate_config,
-    )
-    from api_search_core import (
-        _create_table_row_for_candidate as _create_row_api,  # type: ignore
-        _handle_supplementary_info_phase,  # type: ignore
-        search_ancestry_api_for_person,
-    )
-    from search_criteria_utils import get_unified_search_criteria
-
-    return (
-        _build_filter_criteria, _create_row_gedcom, _normalize_id, analyze_top_match,
-        filter_and_score_individuals, load_gedcom_data, validate_config,
-        _create_row_api, _handle_supplementary_info_phase, search_ancestry_api_for_person,
-        get_unified_search_criteria
     )
 
+    gedcom_data: Any = None
+    gedcom_matches: MatchList = []
 
-def _perform_gedcom_search(gedcom_path: Any, criteria: dict, scoring_weights: dict, date_flex: Any) -> tuple[Any, list]:
-    """Perform GEDCOM search and return data and matches.
-
-    Returns:
-        Tuple of (gedcom_data, gedcom_matches)
-    """
-    from action10 import _build_filter_criteria, filter_and_score_individuals, load_gedcom_data
-
-    gedcom_data = None
-    gedcom_matches: list[dict] = []
-
-    if gedcom_path:
+    if gedcom_path is not None:
         try:
             gedcom_data = load_gedcom_data(gedcom_path)
             filter_criteria = _build_filter_criteria(criteria)
+            normalized_date_flex: dict[str, Any] = date_flex or {}
             gedcom_matches = filter_and_score_individuals(
-                gedcom_data, filter_criteria, criteria, scoring_weights, date_flex
+                gedcom_data,
+                filter_criteria,
+                criteria,
+                scoring_weights,
+                normalized_date_flex,
             )
-        except Exception as e:
-            logger.error(f"GEDCOM search failed: {e}")
+        except Exception as exc:
+            logger.error(f"GEDCOM search failed: {exc}")
 
     return gedcom_data, gedcom_matches
 
 
-def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_results: int) -> list:
-    """Perform API search as fallback when GEDCOM has no matches.
+def _perform_api_search_fallback(
+    session_manager: SessionManager,
+    criteria: dict[str, Any],
+    max_results: int,
+) -> MatchList:
+    """Perform API search as fallback when GEDCOM has no matches."""
 
-    Returns:
-        List of API matches
-    """
-    from api_search_core import search_ancestry_api_for_person
+    api_module = import_module("api_search_core")
+    search_api = cast(
+        SearchAPIFunc,
+        getattr(api_module, "search_ancestry_api_for_person"),
+    )
 
     try:
         session_ok = session_manager.ensure_session_ready(
@@ -1682,33 +1835,41 @@ def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_resul
             logger.error("Could not establish browser session for API search")
             return []
 
-        # Sync cookies from browser to API session
+        api_manager = _get_api_manager(session_manager)
+        browser_manager = _get_browser_manager(session_manager)
+        if api_manager is None or browser_manager is None:
+            logger.error("Browser/API managers unavailable for API fallback search")
+            return []
+
         try:
-            synced = session_manager.api_manager.sync_cookies_from_browser(
-                session_manager.browser_manager, session_manager=session_manager
+            synced = api_manager.sync_cookies_from_browser(
+                browser_manager,
+                session_manager=session_manager,
             )
             if not synced:
                 logger.warning("Cookie sync from browser failed, but attempting API search anyway")
         except Exception as sync_err:
             logger.warning(f"Cookie sync error: {sync_err}, but attempting API search anyway")
 
-        return search_ancestry_api_for_person(session_manager, criteria, max_results=max_results)
-    except Exception as e:
-        logger.error(f"API search failed: {e}", exc_info=True)
+        return search_api(session_manager, criteria, max_results)
+    except Exception as exc:
+        logger.error(f"API search failed: {exc}", exc_info=True)
         return []
 
 
-def _format_table_row(row: list[str], widths: list[int]) -> str:
+def _format_table_row(row: Sequence[str], widths: Sequence[int]) -> str:
     """Return padded string for display rows."""
-    return " | ".join((str(col) if col is not None else "").ljust(width) for col, width in zip(row, widths))
+
+    return " | ".join(col.ljust(width) for col, width in zip(row, widths))
 
 
-def _compute_table_widths(rows: list[list[str]], headers: list[str]) -> list[int]:
+def _compute_table_widths(rows: Sequence[Sequence[str]], headers: Sequence[str]) -> list[int]:
     """Return column widths based on headers and row content."""
+
     widths = [len(header) for header in headers]
     for row in rows:
         for idx, cell in enumerate(row):
-            widths[idx] = max(widths[idx], len(str(cell)))
+            widths[idx] = max(widths[idx], len(cell))
     return widths
 
 
@@ -1729,14 +1890,19 @@ def _log_result_table(label: str, rows: list[list[str]], total: int, headers: li
         logger.debug("(no matches)")
 
 
-def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show: int) -> None:
+def _display_search_results(gedcom_matches: MatchList, api_matches: MatchList, max_to_show: int) -> None:
     """Display GEDCOM and API search results in tables."""
-    from action10 import _create_table_row as _create_row_gedcom  # type: ignore
-    from api_search_core import _create_table_row_for_candidate as _create_row_api  # type: ignore
+    from action10 import _create_table_row as _create_row_gedcom  # pyright: ignore[reportPrivateUsage]
+    from api_search_core import (
+        _create_table_row_for_candidate as _create_row_api,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
+    )
+
+    create_row_gedcom = cast(Callable[[MatchRecord], list[str]], _create_row_gedcom)
+    create_row_api = cast(Callable[[MatchRecord], list[str]], _create_row_api)
 
     headers = ["ID", "Name", "Birth", "Birth Place", "Death", "Death Place", "Total"]
-    left_rows = [_create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
-    right_rows = [_create_row_api(m) for m in api_matches[:max_to_show]]
+    left_rows: list[list[str]] = [create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
+    right_rows: list[list[str]] = [create_row_api(m) for m in api_matches[:max_to_show]]
 
     if not left_rows and not right_rows:
         print("")
@@ -1753,16 +1919,31 @@ def _display_search_results(gedcom_matches: list, api_matches: list, max_to_show
         )
 
 
-def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom_data: Any,
-                                  _reference_person_id_raw: Any, _reference_person_name: Any,
-                                  session_manager: Any) -> None:
+def _display_detailed_match_info(
+    gedcom_matches: MatchList,
+    api_matches: MatchList,
+    gedcom_data: Any,
+    _reference_person_id_raw: Optional[str],
+    _reference_person_name: Optional[str],
+    session_manager: SessionManager,
+) -> None:
     """Display detailed information for top match."""
-    from action10 import _normalize_id, analyze_top_match  # type: ignore
-    from api_search_core import _handle_supplementary_info_phase  # type: ignore
+    from action10 import (  # pyright: ignore[reportPrivateUsage]
+        _normalize_id as _normalize_gedcom_id,  # pyright: ignore[reportPrivateUsage]
+        analyze_top_match,
+    )
+    from api_search_core import (
+        _handle_supplementary_info_phase,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
+    )
+
+    handle_supplementary = cast(
+        Callable[[MatchRecord, SessionManager], None],
+        _handle_supplementary_info_phase,
+    )
 
     try:
         if gedcom_matches and gedcom_data is not None:
-            ref_norm = _normalize_id(_reference_person_id_raw) if _reference_person_id_raw else None
+            ref_norm = _normalize_gedcom_id(_reference_person_id_raw) if _reference_person_id_raw else None
             analyze_top_match(
                 gedcom_data, gedcom_matches[0], ref_norm,
                 _reference_person_name or "Reference Person"
@@ -1772,12 +1953,12 @@ def _display_detailed_match_info(gedcom_matches: list, api_matches: list, gedcom
 
     try:
         if api_matches and not gedcom_matches:
-            _handle_supplementary_info_phase(api_matches[0], session_manager)
+            handle_supplementary(api_matches[0], session_manager)
     except Exception as e:
         logger.error(f"API family/relationship display failed: {e}")
 
 
-def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
+def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bool:
     """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
     try:
         from action10 import validate_config
@@ -1801,7 +1982,7 @@ def run_gedcom_then_api_fallback(session_manager: Any, *_: Any) -> bool:
     )
 
     # API fallback if no GEDCOM matches
-    api_matches: list[dict] = []
+    api_matches: MatchList = []
     if not gedcom_matches:
         api_matches = _perform_api_search_fallback(session_manager, criteria, max_display_results)
     else:
@@ -1880,7 +2061,7 @@ def _check_action_confirmation(choice: str) -> bool:
         True if action should proceed, False if cancelled
     """
     confirm_actions = {
-        "0": "Delete all people except first person (test profile)",
+        "1": "Delete all people except first person (test profile)",
         "2": "COMPLETELY reset the database (deletes data)",
         "4": "Restore database from backup (overwrites data)",
     }
@@ -1944,6 +2125,71 @@ def _run_all_tests() -> None:
         print(f"Error running all tests: {e}")
     print("\nReturning to main menu...")
     input("Press Enter to continue...")
+
+
+def _open_graph_visualization() -> None:
+    """Launch local web server and open the code graph visualization."""
+    server: Optional[ThreadingHTTPServer] = None
+    try:
+        root_dir = Path(__file__).resolve().parent
+        preferred_port = 8765
+
+        class GraphRequestHandler(SimpleHTTPRequestHandler):
+            """Custom handler serving project files quietly."""
+
+            def __init__(self, *handler_args: Any, **handler_kwargs: Any) -> None:
+                super().__init__(*handler_args, directory=str(root_dir), **handler_kwargs)  # type: ignore[arg-type]
+
+            def log_message(self, format: str, *args: Any) -> None:
+                logger.debug("Graph server - " + (format % args))
+
+        for candidate_port in range(preferred_port, preferred_port + 20):
+            try:
+                server = ThreadingHTTPServer(("127.0.0.1", candidate_port), GraphRequestHandler)
+                preferred_port = candidate_port
+                break
+            except OSError:
+                continue
+
+        if server is None:
+            print("❌ Unable to start the graph visualization server (no open ports).")
+            logger.error("Graph visualization server failed to start: no open ports available")
+            input("\nPress Enter to continue...")
+            return
+
+        server_thread = threading.Thread(
+            target=server.serve_forever,
+            name="GraphVisualizationServer",
+            daemon=True,
+        )
+        server_thread.start()
+
+        url = f"http://127.0.0.1:{preferred_port}/visualize_code_graph.html"
+        print("\n" + "=" * 70)
+        print("CODE GRAPH VISUALIZATION")
+        print("=" * 70)
+        print(f"Serving from: {root_dir}")
+        print(f"URL: {url}")
+        print("\nPress Enter when you are finished exploring the visualization.")
+        print("=" * 70)
+
+        try:
+            webbrowser.open(url, new=1)
+        except webbrowser.Error as browser_err:
+            logger.warning(f"Unable to open browser automatically: {browser_err}")
+            print("⚠️  Please open the URL manually in your browser.")
+
+        input("\nPress Enter to stop the visualization server and return to the menu...")
+
+    except Exception as graph_error:
+        logger.error(f"Error running graph visualization: {graph_error}", exc_info=True)
+        print(f"Error running graph visualization: {graph_error}")
+        input("\nPress Enter to continue...")
+    finally:
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+            logger.info("Graph visualization server stopped")
 
 
 
@@ -2138,14 +2384,13 @@ def _toggle_log_level() -> None:
     """Toggle console log level between DEBUG and INFO."""
     os.system("cls" if os.name == "nt" else "clear")
     if logger and logger.handlers:
-        console_handler = None
+        console_handler: Optional[StreamHandler[TextIO]] = None
         for handler in logger.handlers:
-            if (
-                isinstance(handler, logging.StreamHandler)
-                and handler.stream == sys.stderr
-            ):
-                console_handler = handler
-                break
+            if isinstance(handler, logging.StreamHandler):
+                handler_typed = cast(StreamHandler[TextIO], handler)
+                if handler_typed.stream == sys.stderr:
+                    console_handler = handler_typed
+                    break
         if console_handler:
             current_level = console_handler.level
             new_level = (
@@ -2167,9 +2412,9 @@ def _toggle_log_level() -> None:
         )
 
 
-def _handle_database_actions(choice: str, session_manager: Any) -> bool:
+def _handle_database_actions(choice: str, session_manager: SessionManager) -> bool:
     """Handle database-only actions (no browser needed)."""
-    if choice == "0":
+    if choice == "1":
         exec_actn(all_but_first_actn, session_manager, choice)
     elif choice == "2":
         exec_actn(reset_db_actn, session_manager, choice)
@@ -2180,7 +2425,7 @@ def _handle_database_actions(choice: str, session_manager: Any) -> bool:
     return True
 
 
-def _handle_action6_with_start_page(choice: str, session_manager: Any, config: Any) -> bool:
+def _handle_action6_with_start_page(choice: str, session_manager: SessionManager, config: Any) -> bool:
     """Handle Action 6 (DNA match gathering) with optional start page."""
     parts = choice.split()
     start_val = 1
@@ -2196,15 +2441,11 @@ def _handle_action6_with_start_page(choice: str, session_manager: Any, config: A
     return True
 
 
-def _handle_browser_actions(choice: str, session_manager: Any, config: Any) -> bool:
+def _handle_browser_actions(choice: str, session_manager: SessionManager, config: Any) -> bool:
     """Handle browser-required actions."""
     result = False
 
-    if choice == "1":
-        ensure_caching_initialized()
-        exec_actn(run_core_workflow_action, session_manager, choice, close_sess_after=True)
-        result = True
-    elif choice == "5":
+    if choice == "5":
         exec_actn(check_login_actn, session_manager, choice)
         result = True
     elif choice.startswith("6"):
@@ -2247,11 +2488,15 @@ def _handle_meta_options(choice: str) -> bool | None:
         False to exit
         None if choice not handled
     """
-    meta_actions = {
+    def _clear_screen() -> None:
+        os.system("cls" if os.name == "nt" else "clear")
+
+    meta_actions: dict[str, Callable[[], None]] = {
         "analytics": _show_analytics_dashboard,
+        "graph": _open_graph_visualization,
         "s": _show_cache_statistics,
         "t": _toggle_log_level,
-        "c": lambda: os.system("cls" if os.name == "nt" else "clear"),
+        "c": _clear_screen,
     }
 
     if choice in meta_actions:
@@ -2266,7 +2511,7 @@ def _handle_meta_options(choice: str) -> bool | None:
     return None
 
 
-def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> bool:
+def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: Any) -> bool:
     """
     Dispatch menu action based on user choice.
 
@@ -2274,11 +2519,11 @@ def _dispatch_menu_action(choice: str, session_manager: Any, config: Any) -> boo
         True to continue menu loop, False to exit
     """
     # --- Database-only actions (no browser needed) ---
-    if choice in ["0", "2", "3", "4"]:
+    if choice in ["1", "2", "3", "4"]:
         return _handle_database_actions(choice, session_manager)
 
     # --- Browser-required actions ---
-    if choice in ["1", "5", "7", "8", "9", "10"] or choice.startswith("6"):
+    if choice in ["5", "7", "8", "9", "10"] or choice.startswith("6"):
         result = _handle_browser_actions(choice, session_manager, config)
         if result:
             return True
@@ -2305,7 +2550,8 @@ def _check_startup_status(session_manager: SessionManager) -> None:
     """
     # Check database connection
     try:
-        if session_manager.db_manager and session_manager.db_manager.ensure_ready():
+        db_manager = _get_database_manager(session_manager)
+        if db_manager and db_manager.ensure_ready():
             logger.info("✅ Database connection OK")
         else:
             logger.warning("⚠️ Database connection not available")
@@ -2316,10 +2562,12 @@ def _check_startup_status(session_manager: SessionManager) -> None:
     # Ensures fresh cookies for ALL actions before menu display
     # Prevents 303 redirects from stale cookies across all actions
     try:
-        if session_manager.is_sess_valid() and session_manager.api_manager:
+        api_manager = _get_api_manager(session_manager)
+        browser_manager = _get_browser_manager(session_manager)
+        if session_manager.is_sess_valid() and api_manager and browser_manager:
             logger.debug("Syncing browser cookies to API session during warmup...")
-            synced = session_manager.api_manager.sync_cookies_from_browser(
-                session_manager.browser_manager, session_manager=session_manager
+            synced = api_manager.sync_cookies_from_browser(
+                browser_manager, session_manager=session_manager
             )
             if synced:
                 logger.info("✅ Cookies refreshed and OK")
@@ -2355,8 +2603,6 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
     """
     from openai import OpenAI
 
-    from lm_studio_manager import create_manager_from_config
-
     api_key = config_schema.api.local_llm_api_key
     model_name = config_schema.api.local_llm_model
     base_url = config_schema.api.local_llm_base_url
@@ -2365,9 +2611,17 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         logger.warning("⚠️ Local LLM configuration incomplete - AI features may not work")
         return False
 
+    if not _check_lm_studio_running():
+        logger.debug("LM Studio process not detected; manager will attempt startup if needed")
+
     # Auto-start LM Studio if not running (or verify it's ready)
     try:
-        lm_manager = create_manager_from_config(config_schema)
+        lm_module = import_module("lm_studio_manager")
+        manager_factory = cast(
+            Callable[[Any], Any],
+            getattr(lm_module, "create_manager_from_config"),
+        )
+        lm_manager = manager_factory(config_schema)
         success, error_msg = lm_manager.ensure_ready()
 
         if not success:
@@ -2383,8 +2637,12 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
     # Check if model is loaded
     try:
         client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
-        from ai_interface import _validate_local_llm_model_loaded
-        actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
+        ai_module = import_module("ai_interface")
+        validate_llm_loaded = cast(
+            Callable[[Any, str], tuple[Optional[str], Optional[str]]],
+            getattr(ai_module, "_validate_local_llm_model_loaded"),
+        )
+        actual_model_name, error_msg = validate_llm_loaded(client, model_name)
 
         if error_msg:
             logger.warning(f"⚠️ {error_msg}")
@@ -2455,8 +2713,9 @@ def _display_tree_owner(session_manager: SessionManager) -> None:
     """Display tree owner name at the end of startup checks."""
     try:
         # Get tree owner if available - this will log it via session_manager
-        if session_manager and session_manager.api_manager:
-            owner_name = session_manager.api_manager.tree_owner_name
+        api_manager = _get_api_manager(session_manager) if session_manager else None
+        if api_manager:
+            owner_name = api_manager.tree_owner_name
             if owner_name:
                 print("")
                 logger.info(f"Tree owner name: {owner_name}\n")
@@ -2673,6 +2932,7 @@ def _test_clear_log_file_function() -> bool:
         except Exception as e:
             # Function may fail in test environment, but should not crash
             assert isinstance(e, Exception), "Should handle errors gracefully"
+        return True
 
 
 def _test_main_function_structure() -> bool:
@@ -2684,6 +2944,7 @@ def _test_main_function_structure() -> bool:
 
     sig = inspect.signature(main)
     assert len(sig.parameters) == 0, "main() should take no parameters"
+    return True
 
 
 # Removed smoke tests: _test_menu_system_components, _test_action_function_availability, _test_database_operations
@@ -2696,13 +2957,12 @@ def _test_reset_db_actn_integration() -> bool:
     try:
         # Create a test SessionManager to verify method availability
         test_sm = SessionManager()
-
-        # Verify that the required methods exist on the SessionManager and DatabaseManager
-        assert hasattr(test_sm, 'db_manager'), "SessionManager should have db_manager attribute"
-        assert hasattr(test_sm.db_manager, '_initialize_engine_and_session'), \
+        db_manager = _get_database_manager(test_sm)
+        assert db_manager is not None, "SessionManager should provide a database manager"
+        assert hasattr(db_manager, '_initialize_engine_and_session'), \
             "DatabaseManager should have _initialize_engine_and_session method"
-        assert hasattr(test_sm.db_manager, 'engine'), "DatabaseManager should have engine attribute"
-        assert hasattr(test_sm.db_manager, 'Session'), "DatabaseManager should have Session attribute"
+        assert hasattr(db_manager, 'engine'), "DatabaseManager should have engine attribute"
+        assert hasattr(db_manager, 'Session'), "DatabaseManager should have Session attribute"
 
         # Test that reset_db_actn doesn't fail with AttributeError on method calls
         # Note: We don't actually run the reset to avoid affecting the test database
@@ -2713,6 +2973,8 @@ def _test_reset_db_actn_integration() -> bool:
     except Exception as e:
         # Other exceptions are acceptable for this test (we're only checking for AttributeError)
         logger.debug(f"reset_db_actn integration test: Non-AttributeError exception (acceptable): {e}")
+        return True
+    return True
 
 
 def _test_edge_case_handling() -> bool:
@@ -2730,6 +2992,7 @@ def _test_edge_case_handling() -> bool:
         ), "action9_process_productive should be imported"
         assert "action10" in sys.modules, "action10 should be imported"
         # api_search_core is imported lazily inside run_gedcom_then_api_fallback, not at module level
+        return True
 
 
 def _test_import_error_handling() -> bool:
@@ -2750,6 +3013,7 @@ def _test_import_error_handling() -> bool:
 
     for import_name in required_imports:
         assert import_name in module_globals, f"{import_name} should be imported"
+    return True
 
 
 # Removed smoke tests: _test_session_manager_integration, _test_logging_integration, _test_configuration_integration
@@ -2770,6 +3034,7 @@ def _test_validate_action_config() -> bool:
         except Exception as e:
             # If it fails, it should be due to missing config, not function errors
             assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
+        return True
 
 
 def _test_database_integration() -> bool:
@@ -2784,12 +3049,13 @@ def _test_database_integration() -> bool:
     from database import Base
 
     assert Base is not None, "SQLAlchemy Base should be accessible"
+    return True
 
 
 def _test_action_integration() -> bool:
         """Test all actions integrate properly with main"""
         # Test that all action functions can be called (at module level)
-        actions_to_test = [
+        actions_to_test: list[tuple[str, Callable[..., Any]]] = [
             ("coord", coord),
             ("InboxProcessor", InboxProcessor),
             ("send_messages_to_matches", send_messages_to_matches),
@@ -2800,6 +3066,7 @@ def _test_action_integration() -> bool:
         for action_name, action_func in actions_to_test:
             assert callable(action_func), f"{action_name} should be callable"
             assert action_func is not None, f"{action_name} should not be None"
+        return True
 
 
 def _test_import_performance() -> bool:
@@ -2820,6 +3087,7 @@ def _test_import_performance() -> bool:
 
     duration = time.time() - start_time
     assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
+    return True
 
 
 def _test_memory_efficiency() -> bool:
@@ -2838,6 +3106,7 @@ def _test_memory_efficiency() -> bool:
     assert (
         globals_count < 160
     ), f"Global variables should be reasonable, got {globals_count}"
+    return True
 
 
 def _test_function_call_performance() -> bool:
@@ -2856,6 +3125,7 @@ def _test_function_call_performance() -> bool:
         assert (
             duration < 0.1
         ), f"1000 function checks should be fast, took {duration:.3f}s"
+        return True
 
 
 def _test_error_handling_structure() -> bool:
@@ -2872,6 +3142,7 @@ def _test_error_handling_structure() -> bool:
     assert (
         "KeyboardInterrupt" in main_source
     ), "main() should handle KeyboardInterrupt"
+    return True
 
 
 def _test_cleanup_procedures() -> bool:
@@ -2882,6 +3153,7 @@ def _test_cleanup_procedures() -> bool:
     main_source = inspect.getsource(main)
     assert "finally:" in main_source, "main() should have finally block for cleanup"
     assert "cleanup" in main_source.lower(), "main() should mention cleanup"
+    return True
 
 
 def _test_exception_handling_coverage() -> bool:
@@ -2896,6 +3168,7 @@ def _test_exception_handling_coverage() -> bool:
 
         # Should have logging for errors
         assert "logger" in main_source, "main() should use logger for error reporting"
+        return True
 
 
 # ============================================================================
@@ -2911,7 +3184,7 @@ def main_module_tests() -> bool:
         # Fall back to relative import if absolute import fails
         from .test_framework import TestSuite, suppress_logging
 
-    suite = TestSuite("Main Application Controller & Menu System", "main.py")
+    suite = cast(Any, TestSuite("Main Application Controller & Menu System", "main.py"))
     suite.start_suite()
 
     # Run all tests with suppress_logging
@@ -3038,7 +3311,7 @@ def main_module_tests() -> bool:
             expected_outcome="Exception handling covers expected scenarios with proper logging",
         )
 
-    return suite.finish_suite()
+    return bool(suite.finish_suite())
 
 
 def run_comprehensive_tests() -> bool:
@@ -3049,7 +3322,6 @@ def run_comprehensive_tests() -> bool:
 # --- Entry Point ---
 
 if __name__ == "__main__":
-    import contextlib
     import io
     import sys
 
