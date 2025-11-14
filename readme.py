@@ -17,18 +17,20 @@ README_PATH = PROJECT_ROOT / "readme.md"
 
 
 def _build_summary() -> str:
-    return textwrap.dedent(
-        """
-                Ancestry Research Automation quickstart:
-                    - Activate the virtual environment: `.venv\\Scripts\\activate`
-                    - Run the comprehensive suite: `python run_all_tests.py`
-                    - Module tests now live beside their implementations; use
-                        `run_comprehensive_tests()` from any module for focused checks.
-                    - Prometheus metrics exporter is available once `ObservabilityConfig`
-                        enables metrics; hit `/metrics` on the configured host to inspect
-                        the feed.
-        """
-    ).strip()
+    lines = [
+        "Ancestry Research Automation quickstart:",
+        "  - Activate the virtual environment: `.venv\\Scripts\\activate`",
+        "  - Run the comprehensive suite: `python run_all_tests.py`",
+        (
+            "  - Module tests live beside their implementations; call "
+            "`run_comprehensive_tests()` from any module for focused checks."
+        ),
+        (
+            "  - Prometheus metrics exporter is available once `ObservabilityConfig` "
+            "enables metrics; hit `/metrics` on the configured host to inspect the feed."
+        ),
+    ]
+    return "\n".join(lines)
 
 
 def _read_excerpt(lines: int = 25) -> str:
