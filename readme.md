@@ -73,7 +73,8 @@ GET /discoveryui-matches/parents/list/api/matchList/{test_guid}?itemsPerPage={MA
 **Configuration (.env):**
 ```bash
 # Core controls
-REQUESTS_PER_SECOND=0.3
+REQUESTS_PER_SECOND=0.6  # Conservative production setting
+THREAD_POOL_WORKERS=2    # Parallel processing threads
 MATCHES_PER_PAGE=30
 MAX_RELATIONSHIP_PROB_FETCHES=0
 
@@ -199,6 +200,25 @@ If you see thousands of errors or errors from `.git` files:
 - Add docstrings to all public functions
 - Keep functions under 50 lines when possible
 
+#### Code Quality Tools
+```bash
+# Run linter to check code quality
+ruff check .
+
+# Auto-fix safe issues
+ruff check --fix .
+
+# Format code (preserves existing style)
+ruff format .
+```
+
+#### Known Opportunities for Improvement
+- **Type Annotation Modernization**: 1,534 instances of `Optional[X]` could be updated to `X | None` syntax (Python 3.10+ style)
+- **Large Files**: Some action files are quite large and could benefit from modularization:
+  - `action6_gather.py`: 9,207 lines (335KB) - DNA match gathering with complex state management
+  - `action8_messaging.py`: 5,445 lines (212KB) - Message personalization and sending
+  - Consider extracting domain-specific logic into separate modules
+
 ### Testing
 - Write tests for all new functionality
 - Tests should fail when functionality fails (no fake passes)
@@ -280,8 +300,9 @@ python -m test_action6_cache_integration
 ### Common Issues
 
 **429 Rate Limit Errors:**
-- Check `THREAD_POOL_WORKERS=1` in `.env`
-- Check `REQUESTS_PER_SECOND=0.4` in `.env`
+- Recommended settings: `THREAD_POOL_WORKERS=2` and `REQUESTS_PER_SECOND=0.6` in `.env`
+- For template/testing: `THREAD_POOL_WORKERS=3` and `REQUESTS_PER_SECOND=1.2`
+- See `.env.example` for detailed performance guidance
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"`
 
 **Import Errors:**
