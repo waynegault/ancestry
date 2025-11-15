@@ -197,7 +197,7 @@ TEST_FUNCTIONS = {
 }
 
 
-def get_test_function(name: str) -> Callable:
+def get_test_function(name: str) -> Callable[[], None]:
     """
     Get a test function by name from the registry.
 
@@ -405,7 +405,7 @@ def create_string_validator(min_length: int = 0, max_length: Optional[int] = Non
     return validator
 
 
-def create_composite_validator(*validators: Callable) -> Callable:
+def create_composite_validator(*validators: Callable[..., bool]) -> Callable[..., bool]:
     """
     Create a composite validation function that requires all validators to pass.
 
@@ -757,7 +757,7 @@ def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
     assert count == expected_count, error_message
 
 
-def mock_api_response(status_code: int = 200, json_data: Optional[dict] = None,
+def mock_api_response(status_code: int = 200, json_data: Optional[dict[str, Any]] = None,
                      text: Optional[str] = None) -> MagicMock:
     """
     Create a mock API response object.

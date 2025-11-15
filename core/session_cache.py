@@ -491,7 +491,7 @@ def _test_cached_session_component_decorator():
     call_count = {"count": 0}
 
     @cached_session_component("test_decorator_component")
-    def create_test_component() -> dict:
+    def create_test_component() -> dict[str, Any]:
         # Sleep to make it "expensive" so it gets cached (>0.1s threshold)
         time.sleep(0.15)
         call_count["count"] += 1
@@ -563,7 +563,7 @@ def test_session_cache_performance() -> None:
 
     # Test component caching
     @cached_session_component("test_component")
-    def create_expensive_component() -> dict:
+    def create_expensive_component() -> dict[str, Any]:
         time.sleep(0.1)  # Simulate expensive operation
         return {"test": "data", "timestamp": time.time()}
 

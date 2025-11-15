@@ -2106,7 +2106,7 @@ def _extract_research_context(person: Person, family_tree: Optional[FamilyTree])
     return locations, time_periods, common_ancestors
 
 
-def _format_research_suggestions_text(collections: list) -> str:
+def _format_research_suggestions_text(collections: list[Any]) -> str:
     """Format research suggestions into message text."""
     if not collections:
         return ""
@@ -2506,7 +2506,7 @@ def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, 
         })
 
 
-def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session) -> dict:
+def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session) -> dict[str, Any]:
     """Prepare format data for message template with enhanced statistics."""
     name_to_use = _get_best_name_for_person(person, family_tree)
     formatted_name = format_name(name_to_use)
@@ -3070,7 +3070,7 @@ def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
     log_dict = _convert_log_object_to_dict(new_log_object)
     return (log_dict, "unchanged") if log_dict else (None, "error")
 
-def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list) -> int:
+def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list[dict[str, Any]]) -> int:
     """Handle sent status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
@@ -4322,7 +4322,7 @@ def _process_test_candidates(
     return db_logs_to_add, person_updates
 
 
-def _convert_logs_to_dicts(db_logs_to_add: list) -> list:
+def _convert_logs_to_dicts(db_logs_to_add: list[Any]) -> list[dict[str, Any]]:
     """Convert ConversationLog objects to dictionaries for commit."""
     return [
         {

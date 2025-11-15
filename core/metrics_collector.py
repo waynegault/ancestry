@@ -78,7 +78,7 @@ class MetricPoint:
     value: float
     labels: dict[str, str] = field(default_factory=dict)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
@@ -195,7 +195,7 @@ class ServiceMetrics:
             self.metrics.clear()
             self.windows.clear()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         with self._lock:
             return {
@@ -223,7 +223,7 @@ class MetricsSnapshot:
             return None
         return service_metrics[metric_name].get(f"p{percentile}")
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -242,7 +242,7 @@ class PerformanceAlert:
     severity: str  # "warning", "critical"
     timestamp: datetime
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "service": self.service_name,

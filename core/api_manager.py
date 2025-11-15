@@ -178,7 +178,7 @@ class APIManager:
         logger.warning("❌ Session recovery failed or not available")
         return False
 
-    def _deduplicate_cookies(self, driver_cookies: list) -> dict:
+    def _deduplicate_cookies(self, driver_cookies: list[Any]) -> dict[str, Any]:
         """
         Deduplicate cookies by (name, path), preferring more specific domains.
 

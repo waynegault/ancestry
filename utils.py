@@ -10,10 +10,6 @@ and includes login/session verification logic closely tied to SessionManager.
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import (
-    auto_register_module,  # Needed for testing
-    get_function,
-    is_function_available,
-    register_function,
     setup_module,
 )
 
@@ -25,8 +21,6 @@ logger = setup_module(globals(), __name__)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
-
     from core.session_manager import SessionManager
 else:
     # Runtime import to avoid circular dependency issues
@@ -43,7 +37,6 @@ import json
 import logging
 import random  # For retry_api, RateLimiter
 import re
-import sys
 import threading  # For thread-safe rate limiting
 import time
 import uuid  # For make_ube
@@ -54,9 +47,11 @@ from typing import (
     Any,
     Callable,
     Optional,
+    ParamSpec,
+    TypeVar,
     Union,
 )  # Consolidated typing imports
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse  # urljoin re-exported for action7_inbox.py
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -65,19 +60,21 @@ from selenium.webdriver.remote.webdriver import WebDriver
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
-from api_constants import (
-    API_PATH_CSRF_TOKEN,
-    API_PATH_PROFILE_ID,
+from api_constants import (  # type: ignore[import-not-found]
     API_PATH_UUID_LEGACY,
 )
 from common_params import NavigationConfig, RetryContext
-from observability.metrics_registry import metrics
+from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 # === TYPE ALIASES ===
 # Define type aliases
 RequestsResponseTypeOptional = Optional[RequestsResponse]
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
 DriverType = Optional[WebDriver]
+
+# Type variables for decorators
+P = ParamSpec('P')
+R = TypeVar('R')
 SessionManagerType = Optional[
     "SessionManager"
 ]  # Use string literal for forward reference
@@ -398,9 +395,9 @@ class ApiRequestConfig:
 
     # HTTP method and data
     method: str = "GET"
-    data: Optional[dict] = None
-    json_data: Optional[dict] = None
-    json: Optional[dict] = None
+    data: Optional[dict[str, Any]] = None
+    json_data: Optional[dict[str, Any]] = None
+    json: Optional[dict[str, Any]] = None
 
     # Headers and authentication
     headers: Optional[dict[str, str]] = None
@@ -502,11 +499,9 @@ try:
         NoSuchElementException,
         StaleElementReferenceException,
         TimeoutException,
-        UnexpectedAlertPresentException,
         WebDriverException,
     )
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions
     from selenium.webdriver.support.wait import WebDriverWait
@@ -514,7 +509,7 @@ try:
     # --- Local application imports ---
     # Assume these are essential or handled elsewhere if missing
     from config import config_schema
-    from core_imports import get_logger
+    from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
 
     # Initialize logger with standardized pattern
     logger = get_logger(__name__)
@@ -539,10 +534,7 @@ except ImportError as import_err:
 # --- Test framework imports ---
 import contextlib
 
-from test_framework import (
-    TestSuite,
-    suppress_logging,
-)
+# test_framework imports removed - not directly accessed in this module
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
@@ -588,7 +580,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
             logger.debug("Cannot save cookies: No driver available")
             return False
 
-        cookies = session_manager.driver.get_cookies()
+        cookies = session_manager.driver.get_cookies()  # type: ignore[misc]
         if not cookies:
             logger.debug("No cookies to save")
             return False
@@ -600,7 +592,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         with cookies_file.open("w", encoding="utf-8") as f:
             json.dump(cookies, f, indent=2)
 
-        logger.info(f"💾 Saved {len(cookies)} cookies to {cookies_file}")
+        logger.info(f"💾 Saved {len(cookies)} cookies to {cookies_file}")  # type: ignore[arg-type]
         return True
 
     except Exception as e:
@@ -608,7 +600,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:
+def _load_login_cookies(session_manager: SessionManager) -> bool:  # type: ignore[misc]
     """Load saved login cookies from file."""
     try:
         if not session_manager.driver:
@@ -639,7 +631,7 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
                     if cookie["expiry"] < time_module.time():
                         del cookie["expiry"]
 
-                session_manager.driver.add_cookie(cookie)
+                session_manager.driver.add_cookie(cookie)  # type: ignore[misc]
                 loaded_count += 1
             except Exception as cookie_err:
                 logger.debug(f"Failed to add cookie {cookie.get('name', 'unknown')}: {cookie_err}")
@@ -700,7 +692,7 @@ def ordinal_case(text: Union[str, int]) -> str:
     """
     # Handle empty/None input
     if not text and text != 0:
-        return str(text) if text is not None else ""
+        return str(text)
 
     # Try to convert to number and format as ordinal
     try:
@@ -736,7 +728,7 @@ def _format_quoted_nickname(part: str) -> Optional[str]:
 
 def _format_hyphenated_name(part: str, lowercase_particles: set[str]) -> str:
     """Format hyphenated names like Smith-Jones or van-der-Berg."""
-    hyphenated_elements = []
+    hyphenated_elements: list[str] = []
     sub_parts = part.split("-")
     for idx, sub_part in enumerate(sub_parts):
         if idx > 0 and sub_part.lower() in lowercase_particles:
@@ -820,7 +812,7 @@ def format_name(name: Optional[str]) -> str:
     Handles common name particles and prefixes like Mc/Mac/O' and quoted nicknames.
     """
     # Validate input
-    if not name or not isinstance(name, str):
+    if not name:
         return "Valued Relative"
 
     # Handle non-alphabetic input
@@ -851,10 +843,7 @@ def format_name(name: Optional[str]) -> str:
 
     except Exception as e:
         logger.error(f"Error formatting name '{name}': {e}", exc_info=False)
-        try:
-            return name.title() if isinstance(name, str) else "Valued Relative"
-        except AttributeError:
-            return "Valued Relative"
+        return name.title()
 
 # End of format_name
 
@@ -866,12 +855,12 @@ def retry(
     max_retries: Optional[int] = None,
     backoff_factor: Optional[float] = None,
     max_delay: Optional[float] = None,
-) -> Callable:
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator factory to retry a function with exponential backoff and jitter."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             cfg = config_schema  # Use new config system
             attempts = (
                 max_retries
@@ -1010,10 +999,10 @@ def retry_api(
         TimeoutError,
     ),
     retry_on_status_codes: Optional[list[int]] = None,
-) -> Callable:
+) -> Callable[..., Any]:
     """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Get configuration
@@ -1082,7 +1071,7 @@ def retry_api(
 
 # Helper functions for ensure_browser_open
 
-def _extract_driver_from_args(args: tuple) -> Optional[DriverType]:
+def _extract_driver_from_args(args: tuple[Any, ...]) -> Optional[DriverType]:
     """Extract WebDriver instance from positional arguments."""
     if not args:
         return None
@@ -1095,7 +1084,7 @@ def _extract_driver_from_args(args: tuple) -> Optional[DriverType]:
     return None
 
 
-def _extract_driver_from_kwargs(kwargs: dict) -> Optional[DriverType]:
+def _extract_driver_from_kwargs(kwargs: dict[str, Any]) -> Optional[DriverType]:
     """Extract WebDriver instance from keyword arguments."""
     # Check for direct driver argument
     if "driver" in kwargs and isinstance(kwargs["driver"], WebDriver):  # type: ignore
@@ -1108,7 +1097,7 @@ def _extract_driver_from_kwargs(kwargs: dict) -> Optional[DriverType]:
     return None
 
 
-def _find_driver_instance(args: tuple, kwargs: dict) -> Optional[DriverType]:
+def _find_driver_instance(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Optional[DriverType]:
     """Find WebDriver instance from args or kwargs."""
     driver = _extract_driver_from_args(args)
     if driver:
@@ -1130,11 +1119,11 @@ def _validate_driver_instance(driver_instance: Optional[DriverType], func_name: 
         )
 
 
-def ensure_browser_open(func: Callable) -> Callable:
+def ensure_browser_open(func: Callable[P, R]) -> Callable[P, R]:
     """Decorator to ensure browser session is valid before executing."""
 
     @wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         # Find driver instance from args or kwargs
         driver_instance = _find_driver_instance(args, kwargs)
 
@@ -1147,12 +1136,12 @@ def ensure_browser_open(func: Callable) -> Callable:
 
 # End of ensure_browser_open
 
-def time_wait(wait_description: str) -> Callable:
+def time_wait(wait_description: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator factory to time Selenium WebDriverWait calls."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             start_time = time.time()
             try:
                 result = func(*args, **kwargs)
@@ -1339,7 +1328,7 @@ class CircuitBreaker:
         """Get current circuit breaker state."""
         return self.state
 
-    def get_metrics(self) -> dict:
+    def get_metrics(self) -> dict[str, Any]:
         """Get circuit breaker metrics."""
         with self._lock:
             return self._metrics.copy()
@@ -1432,9 +1421,7 @@ def _prepare_base_headers(
         api_description, {}
     )
     if isinstance(contextual_headers, dict):
-        base_headers.update(
-            {k: v for k, v in contextual_headers.items() if v is not None}
-        )
+        base_headers.update(contextual_headers)  # type: ignore[arg-type]
     else:
         logger.warning(
             f"[{api_description}] Expected dict for contextual headers, got {type(contextual_headers)}"
@@ -1442,13 +1429,10 @@ def _prepare_base_headers(
 
     # Apply explicit overrides
     if headers:
-        filtered_overrides = {k: v for k, v in headers.items() if v is not None}
-        base_headers.update(filtered_overrides)
-        if filtered_overrides:
-            logger.debug(
-                f"[{api_description}] Applied {len(filtered_overrides)} explicit header overrides."
-            )
-        # End of if
+        base_headers.update(headers)
+        logger.debug(
+            f"[{api_description}] Applied {len(headers)} explicit header overrides."
+        )
     # End of if
 
     return base_headers
@@ -1462,7 +1446,7 @@ def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> Op
     if not driver:
         return None
     try:
-        ua = driver.execute_script("return navigator.userAgent;")
+        ua = driver.execute_script("return navigator.userAgent;")  # type: ignore[misc]
         if ua and isinstance(ua, str):
             return ua
     except WebDriverException:  # type: ignore
@@ -1488,7 +1472,7 @@ def _add_origin_header(final_headers: dict[str, str], base_headers: dict[str, st
 def _parse_csrf_token(csrf_token: str, api_description: str) -> str:
     """Parse CSRF token, handling potential JSON structure."""
     raw_token_val = csrf_token
-    if isinstance(csrf_token, str) and csrf_token.strip().startswith("{"):
+    if csrf_token.strip().startswith("{"):
         try:
             token_obj = json.loads(csrf_token)
             raw_token_val = token_obj.get("csrfToken", csrf_token)
@@ -1559,9 +1543,6 @@ def _prepare_api_headers(
     # Add User ID header conditionally
     _add_user_id_header(final_headers, session_manager, api_description)
 
-    # Remove any headers with None values
-    final_headers = {k: v for k, v in final_headers.items() if v is not None}
-
     # Remove internal _method key
     final_headers.pop("_method", None)
 
@@ -1609,7 +1590,7 @@ def _validate_driver_for_sync(
             f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). "
             "Runtime headers might be incomplete/stale."
         )
-    return driver_is_valid
+    return bool(driver_is_valid)
 
 def _perform_cookie_sync(
     session_manager: SessionManager,
@@ -1641,8 +1622,8 @@ def _perform_cookie_sync(
         )
 
     # Use the API manager's sync_cookies_from_browser method with session_manager for recovery
-    sync_success = session_manager.api_manager.sync_cookies_from_browser(
-        session_manager.browser_manager,
+    sync_success = session_manager.api_manager.sync_cookies_from_browser(  # type: ignore[misc]
+        session_manager.browser_manager,  # type: ignore[misc]
         session_manager=session_manager
     )
 
@@ -1729,7 +1710,7 @@ def _apply_rate_limiting(
         wait_time = session_manager.rate_limiter.wait(api_description)  # type: ignore[union-attr]
         if wait_time > 0:
             try:
-                metrics().rate_limiter_delay.observe(wait_time)
+                metrics().rate_limiter_delay.observe(wait_time)  # type: ignore[misc]
             except Exception:
                 logger.debug("Failed to record rate limiter delay", exc_info=True)
         if wait_time > 0.1:  # Log only significant waits
@@ -1772,9 +1753,9 @@ def _prepare_api_request(
     # This prevents indefinite hangs at both connection and response levels
     request_timeout = config.timeout if config.timeout is not None else sel_cfg.api_timeout
     # Convert single timeout to tuple for requests library
-    timeout_tuple = (30, request_timeout) if isinstance(request_timeout, (int, float)) else request_timeout
+    timeout_tuple = (30, request_timeout)
 
-    req_session = config.session_manager._requests_session
+    req_session = config.session_manager._requests_session  # type: ignore[attr-defined]  # type: ignore[attr-defined]
     effective_cookie_jar = config.cookie_jar if config.cookie_jar is not None else req_session.cookies
     http_method = config.method.upper()
 
@@ -1847,7 +1828,7 @@ def _execute_api_request(
     Returns:
         The response object from the request, or None if an error occurred
     """
-    req_session = session_manager._requests_session
+    req_session = session_manager._requests_session  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
     try:
         # Execute the request
@@ -1880,7 +1861,7 @@ def _validate_api_req_prerequisites(
     api_description: str,
 ) -> bool:
     """Validate prerequisites for API request."""
-    if not session_manager or not session_manager._requests_session:
+    if not session_manager or not session_manager._requests_session:  # type: ignore[attr-defined]
         logger.error(
             f"{api_description}: Aborting - SessionManager or internal requests_session missing."
         )
@@ -2391,14 +2372,14 @@ def _execute_request_with_retries(
     return response
 
 
-def _api_req(
+def _api_req(  # type: ignore[misc]
     url: str,
     driver: DriverType,
     session_manager: SessionManager,  # type: ignore
     method: str = "GET",
-    data: Optional[dict] = None,
-    json_data: Optional[dict] = None,
-    json: Optional[dict] = None,
+    data: Optional[dict[str, Any]] = None,
+    json_data: Optional[dict[str, Any]] = None,
+    json: Optional[dict[str, Any]] = None,
     use_csrf_token: bool = True,
     headers: Optional[dict[str, str]] = None,
     referer_url: Optional[str] = None,
@@ -2492,22 +2473,22 @@ def _get_ancsessionid_cookie(driver: DriverType) -> Optional[str]:
         return None
     try:
         # Try fetching specific cookie first
-        cookie_obj = driver.get_cookie("ANCSESSIONID")
-        if cookie_obj and isinstance(cookie_obj, dict) and "value" in cookie_obj:
-            return cookie_obj["value"]
+        cookie_obj = driver.get_cookie("ANCSESSIONID")  # type: ignore[misc]
+        if cookie_obj and "value" in cookie_obj:
+            return str(cookie_obj["value"])  # type: ignore[arg-type]
 
         # Fallback to getting all cookies
         cookies_dict = {
             c["name"]: c["value"]
-            for c in driver.get_cookies()
-            if isinstance(c, dict) and "name" in c
+            for c in driver.get_cookies()  # type: ignore[misc]
+            if "name" in c
         }
-        ancsessionid = cookies_dict.get("ANCSESSIONID")
+        ancsessionid = cookies_dict.get("ANCSESSIONID")  # type: ignore[misc]
 
         if not ancsessionid:
             logger.warning("ANCSESSIONID cookie not found. Cannot generate UBE header.")
             return None
-        return ancsessionid
+        return str(ancsessionid)  # type: ignore[arg-type]
     except (NoSuchCookieException, WebDriverException) as cookie_e:  # type: ignore
         logger.warning(f"Error getting ANCSESSIONID cookie for UBE header: {cookie_e}")
         return None
@@ -2574,7 +2555,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
 
 # Helper functions for handle_two_fa
 
-def _wait_for_2fa_header(element_wait: WebDriverWait, session_manager: SessionManager) -> bool:
+def _wait_for_2fa_header(element_wait: "WebDriverWait[WebDriver]", session_manager: SessionManager) -> bool:
     """Wait for 2FA page header to appear."""
     try:
         logger.debug(f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'")
@@ -2585,7 +2566,7 @@ def _wait_for_2fa_header(element_wait: WebDriverWait, session_manager: SessionMa
         return True
     except TimeoutException:  # type: ignore
         logger.debug("Did not detect 2FA page header within timeout.")
-        if login_status(session_manager, disable_ui_fallback=True) is True:
+        if login_status(session_manager, disable_ui_fallback=True) is True:  # type: ignore[name-defined]
             logger.info("User appears logged in after checking for 2FA page. Assuming 2FA handled/skipped.")
             return True
         logger.warning("Assuming 2FA not required or page didn't load correctly (header missing).")
@@ -2595,7 +2576,7 @@ def _wait_for_2fa_header(element_wait: WebDriverWait, session_manager: SessionMa
         return False
 
 
-def _find_sms_button_with_selectors(selector_wait: WebDriverWait) -> Optional[Any]:
+def _find_sms_button_with_selectors(selector_wait: "WebDriverWait[WebDriver]") -> Optional[Any]:
     """Try multiple selectors to find the SMS button."""
     sms_selectors = [
         "button[data-method='sms']",
@@ -2634,8 +2615,8 @@ def _debug_log_page_buttons(driver: WebDriver) -> None:
         for i, btn in enumerate(all_buttons[:10]):
             try:
                 btn_text = btn.text.strip()
-                btn_classes = btn.get_attribute("class")
-                btn_data_method = btn.get_attribute("data-method")
+                btn_classes = btn.get_attribute("class")  # type: ignore[misc]
+                btn_data_method = btn.get_attribute("data-method")  # type: ignore[misc]
                 if btn_text or btn_data_method:
                     logger.debug(f"  Button {i}: text='{btn_text}', class='{btn_classes}', data-method='{btn_data_method}'")
             except Exception:
@@ -2647,7 +2628,7 @@ def _debug_log_page_buttons(driver: WebDriver) -> None:
 def _perform_sms_button_click(driver: WebDriver, sms_button: Any) -> bool:
     """Attempt to click the SMS button with fallback strategies."""
     try:
-        driver.execute_script("arguments[0].click();", sms_button)
+        driver.execute_script("arguments[0].click();", sms_button)  # type: ignore[misc]
         logger.debug("SMS button clicked via JavaScript.")
         print("  ✓ SMS verification code requested. Check your phone!", flush=True)
         time.sleep(3)
@@ -2734,7 +2715,7 @@ def _verify_2fa_completion(session_manager: SessionManager) -> bool:
     """Verify that 2FA was completed successfully by checking login status."""
     logger.info("Re-checking login status after potential 2FA submission...")
     time.sleep(1)  # Allow page to settle
-    final_status = login_status(session_manager, disable_ui_fallback=False)
+    final_status = login_status(session_manager, disable_ui_fallback=False)  # type: ignore[name-defined]
     if final_status is True:
         logger.info("User completed 2FA successfully (login confirmed after page change).")
         # Save cookies after successful 2FA login
@@ -2763,7 +2744,7 @@ def handle_two_fa(session_manager: SessionManager) -> bool:  # type: ignore
 
         # Handle cookie consent banner if present
         logger.debug("Checking for cookie consent banner on 2FA page...")
-        if not consent(driver):
+        if not consent(driver):  # type: ignore[name-defined]
             logger.warning("Failed to handle consent banner on 2FA page, but continuing anyway.")
 
         # Try clicking SMS button (non-critical, continue if fails)
@@ -2803,7 +2784,7 @@ def _clear_input_field(driver: WebDriver, input_element: Any, field_name: str) -
         time.sleep(0.1)
         input_element.clear()
         time.sleep(0.1)
-        driver.execute_script("arguments[0].value = '';", input_element)
+        driver.execute_script("arguments[0].value = '';", input_element)  # type: ignore[misc]
         time.sleep(0.1)
         return True
     except (ElementNotInteractableException, StaleElementReferenceException) as e:  # type: ignore
@@ -2814,7 +2795,7 @@ def _clear_input_field(driver: WebDriver, input_element: Any, field_name: str) -
         return False
 
 
-def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
+def _enter_username(driver: WebDriver, element_wait: "WebDriverWait[WebDriver]") -> bool:  # type: ignore[misc]
     """Enter username into the login form."""
     logger.debug(f"Waiting for username input: '{USERNAME_INPUT_SELECTOR}'...")  # type: ignore
     username_input = element_wait.until(
@@ -2835,7 +2816,7 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
         logger.debug(f"Entering username (attempt {attempt}/{max_attempts})...")
 
         # Use JavaScript to set value directly for reliability
-        driver.execute_script("arguments[0].value = arguments[1];", username_input, ancestry_username)
+        driver.execute_script("arguments[0].value = arguments[1];", username_input, ancestry_username)  # type: ignore[misc]
         time.sleep(0.2)
 
         # Trigger input event to ensure page JavaScript recognizes the change
@@ -2843,11 +2824,11 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
             var element = arguments[0];
             var event = new Event('input', { bubbles: true });
             element.dispatchEvent(event);
-        """, username_input)
+        """, username_input)  # type: ignore[misc]
         time.sleep(0.1)
 
         # Verify the value was set
-        current_value = username_input.get_attribute("value")
+        current_value = username_input.get_attribute("value")  # type: ignore[misc]
         if current_value == ancestry_username:
             logger.debug(f"Username successfully entered and verified (attempt {attempt}).")
             print(f"  ✓ Username entered: {ancestry_username[:3]}***", flush=True)
@@ -2861,7 +2842,7 @@ def _enter_username(driver: WebDriver, element_wait: WebDriverWait) -> bool:
     return False
 
 
-def _find_next_button_with_selectors(short_wait: WebDriverWait) -> Optional[Any]:
+def _find_next_button_with_selectors(short_wait: "WebDriverWait[WebDriver]") -> Optional[Any]:
     """Try multiple selectors to find the Next button."""
     next_selectors = [
         SIGN_IN_BUTTON_SELECTOR,
@@ -2911,8 +2892,8 @@ def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
         for i, btn in enumerate(all_buttons[:5]):
             try:
                 btn_text = btn.text.strip()
-                btn_id = btn.get_attribute("id")
-                btn_class = btn.get_attribute("class")
+                btn_id = btn.get_attribute("id")  # type: ignore[misc]
+                btn_class = btn.get_attribute("class")  # type: ignore[misc]
                 if btn_text or btn_id:
                     logger.debug(f"  Button {i}: text='{btn_text}', id='{btn_id}', class='{btn_class}'")
             except Exception:
@@ -2924,7 +2905,7 @@ def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
 def _perform_next_button_click(driver: WebDriver, next_button: Any) -> bool:
     """Attempt to click the Next button with fallback strategies."""
     try:
-        driver.execute_script("arguments[0].click();", next_button)
+        driver.execute_script("arguments[0].click();", next_button)  # type: ignore[misc]
         logger.debug("Next button clicked via JavaScript.")
         logger.info("Next button clicked, waiting for password field to appear...")
         time.sleep(random.uniform(2.0, 3.0))
@@ -2942,7 +2923,7 @@ def _perform_next_button_click(driver: WebDriver, next_button: Any) -> bool:
             return True  # Continue anyway - password field might be visible
 
 
-def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
+def _click_next_button(driver: WebDriver, short_wait: "WebDriverWait[WebDriver]") -> bool:  # type: ignore[misc]
     """Click the Next button in two-step login flow."""
     logger.debug("Looking for Next/Continue button after username...")
 
@@ -2961,7 +2942,7 @@ def _click_next_button(driver: WebDriver, short_wait: WebDriverWait) -> bool:
     except WebDriverException as e:  # type: ignore
         logger.warning(f"Error finding Next button: {e}. Continuing anyway.")
         return True
-def _wait_for_password_field(driver: WebDriver, element_wait: WebDriverWait) -> Optional[Any]:
+def _wait_for_password_field(driver: WebDriver, element_wait: "WebDriverWait[WebDriver]") -> Optional[Any]:  # type: ignore[misc]
     """Wait for the password field, retrying once with a longer timeout."""
     try:
         logger.debug("[PASSWORD_ENTRY] Waiting for password field to appear...")
@@ -2986,7 +2967,7 @@ def _wait_for_password_field(driver: WebDriver, element_wait: WebDriverWait) -> 
         return None
 
 
-def _attempt_password_entry(
+def _attempt_password_entry(  # type: ignore[misc]
     driver: WebDriver,
     password_input: Any,
     ancestry_password: str,
@@ -2997,11 +2978,11 @@ def _attempt_password_entry(
     logger.info(f"[PASSWORD_ENTRY] Attempt {attempt}/{max_attempts}: Entering password...")
 
     logger.debug("[PASSWORD_ENTRY] Setting password value via JavaScript...")
-    driver.execute_script("arguments[0].value = arguments[1];", password_input, ancestry_password)
+    driver.execute_script("arguments[0].value = arguments[1];", password_input, ancestry_password)  # type: ignore[misc]
     time.sleep(0.2)
 
     logger.debug("[PASSWORD_ENTRY] Triggering input event...")
-    driver.execute_script(
+    driver.execute_script(  # type: ignore[misc]
         """
             var element = arguments[0];
             var event = new Event('input', { bubbles: true });
@@ -3012,7 +2993,7 @@ def _attempt_password_entry(
     time.sleep(0.1)
 
     logger.debug("[PASSWORD_ENTRY] Verifying password was set...")
-    current_value = password_input.get_attribute("value")
+    current_value = password_input.get_attribute("value")  # type: ignore[misc]
     current_length = len(current_value) if current_value else 0
     expected_length = len(ancestry_password)
     logger.info(
@@ -3040,7 +3021,7 @@ def _sleep_between_password_attempts(attempt: int, max_attempts: int) -> None:
         time.sleep(0.5)
 
 
-def _enter_password(driver: WebDriver, element_wait: WebDriverWait) -> tuple[bool, Any]:
+def _enter_password(driver: WebDriver, element_wait: "WebDriverWait[WebDriver]") -> tuple[bool, Any]:
     """Enter password into the login form."""
     logger.info("[PASSWORD_ENTRY] Starting password entry process...")
     logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")  # type: ignore
@@ -3108,7 +3089,7 @@ def _try_javascript_click(driver: WebDriver, sign_in_button: Any) -> bool:
     """Try JavaScript click on sign in button."""
     try:
         logger.debug("Attempting JavaScript click on sign in button...")
-        driver.execute_script("arguments[0].click();", sign_in_button)
+        driver.execute_script("arguments[0].click();", sign_in_button)  # type: ignore[misc]
         logger.info("JavaScript click executed.")
         return True
     except WebDriverException as js_click_e:  # type: ignore
@@ -3250,7 +3231,7 @@ def _click_accept_button_js(driver: WebDriver, accept_button: Any) -> bool:
     """Try JavaScript click on accept button."""
     try:
         logger.debug("Attempting JS click on accept button...")
-        driver.execute_script("arguments[0].click();", accept_button)
+        driver.execute_script("arguments[0].click();", accept_button)  # type: ignore[misc]
         logger.info("Clicked accept button via JS successfully.")
         # Reduce verification wait to 1 second for faster dismissal
         WebDriverWait(driver, 1).until_not(  # type: ignore
@@ -3789,7 +3770,7 @@ def _execute_navigation(driver: WebDriver, url: str, page_timeout: int) -> None:
     logger.debug("driver.get() completed, waiting for page ready state...")
 
     WebDriverWait(driver, page_timeout).until(  # type: ignore
-        lambda d: d.execute_script("return document.readyState") in ["complete", "interactive"]
+        lambda d: d.execute_script("return document.readyState") in ["complete", "interactive"]  # type: ignore[misc]
     )
     time.sleep(random.uniform(0.5, 1.5))
 

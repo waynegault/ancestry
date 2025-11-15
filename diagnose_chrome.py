@@ -18,6 +18,7 @@ import subprocess
 import sys
 import winreg
 from pathlib import Path
+from typing import Any
 
 
 def print_header(title: str) -> None:
@@ -148,7 +149,7 @@ def check_chrome_installation() -> tuple[bool, str | None]:
     return True, None  # Chrome exists even if we can't get version
 
 
-def check_running_processes() -> dict:
+def check_running_processes() -> dict[str, Any]:
     """Check for running Chrome/ChromeDriver processes."""
     print_header("Running Process Check")
 

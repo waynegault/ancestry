@@ -1186,7 +1186,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
     return clean_name, birth_year, death_year
 
 
-def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
+def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[dict]:
     """Convert GEDCOM relative objects to standardized dictionary format."""
     standardized = []
     for relative in relatives:

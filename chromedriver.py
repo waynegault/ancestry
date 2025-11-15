@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false
 
 """
 ChromeDriver Management & Browser Automation Engine

@@ -703,7 +703,7 @@ def explain_relationship_path(
 def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tuple[Optional[str], Optional[dict]]:
     """Extract HTML content and JSON data from API response."""
     html_content_raw: Optional[str] = None
-    json_data: Optional[dict] = None
+    json_data: Optional[dict[str, Any]] = None
 
     if isinstance(api_response_data, str):
         # Handle JSONP response format: no({...})

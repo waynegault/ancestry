@@ -14,7 +14,7 @@ user experience. Keep api_search_core focused on retrieval.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def _print_family_member(member: dict) -> None:
     print(f"   - {name}{years_display}")
 
 
-def _deduplicate_members(members: list) -> list[dict]:
+def _deduplicate_members(members: list[Any]) -> list[dict]:
     """Deduplicate family members by (name, birth_year, death_year)."""
     seen = set()
     deduped = []

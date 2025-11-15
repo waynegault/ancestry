@@ -19,7 +19,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, ParamSpec, TypeVar
+
+# Type variables for decorators
+P = ParamSpec('P')
+R = TypeVar('R')
 
 # === LOCAL IMPORTS ===
 # Module logger is set up by setup_module() above
@@ -934,7 +938,7 @@ def circuit_breaker(
     return decorator
 
 
-def timeout_protection(timeout: int = 30) -> Callable:
+def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator for timeout protection.
 
@@ -942,9 +946,9 @@ def timeout_protection(timeout: int = 30) -> Callable:
         timeout: Maximum execution time in seconds
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Use threading approach for cross-platform compatibility
             import threading
 
@@ -1017,7 +1021,7 @@ def graceful_degradation(
     return decorator
 
 
-def error_context(operation: str) -> Callable:
+def error_context(operation: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator to add comprehensive error context to function calls.
 
@@ -1025,9 +1029,9 @@ def error_context(operation: str) -> Callable:
         operation: Description of the operation being performed
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             context = ErrorContext(
                 operation=operation,
                 module=func.__module__,
@@ -1073,12 +1077,12 @@ def error_context(operation: str) -> Callable:
     return decorator
 
 
-def with_recovery(service_name: str) -> Callable:
+def with_recovery(service_name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to execute functions with recovery strategies."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             return error_recovery_manager.execute_with_recovery(
                 service_name, func, *args, **kwargs
             )

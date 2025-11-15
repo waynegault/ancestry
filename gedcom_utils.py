@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false, reportImportCycles=false
 # NOTE: Import cycle with relationship_utils.py. Both modules need each other's relationship calculation
 # functions. Already uses local import (line ~883) but type checker detects cycle at parse time.
 # Proper fix requires extracting shared types/interfaces to common module. Cycle doesn't affect runtime.
@@ -1640,7 +1639,7 @@ def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[st
     }
 
 
-def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score name matches (first name, surname, and bonus for both)."""
     first_name_matched = False
     surname_matched = False
@@ -1680,7 +1679,7 @@ def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[
         return False, False
 
 
-def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[int, float]) -> dict:
+def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[int, float]) -> dict[str, Any]:
     """Calculate date match flags for birth and death dates."""
     year_range = int(year_score_range) if isinstance(year_score_range, (int, float)) else 0
     birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_range)
@@ -1708,7 +1707,7 @@ def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[in
     }
 
 
-def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth date matches (prioritize: exact date > exact year > approx year)."""
     if date_flags["exact_birth_date_match"]:
         points_bdate = weights.get("exact_birth_date", 0)
@@ -1731,7 +1730,7 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
             match_reasons.append(f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)")
 
 
-def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score death date matches (prioritize: exact date > exact year > approx year; no points for absence)."""
     if date_flags["exact_death_date_match"]:
         points_ddate = weights.get("exact_death_date", 0)
@@ -1757,13 +1756,13 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
     # Do not award points for both death dates absent when the user did not specify death criteria.
 
 
-def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth and death date matches."""
     _score_birth_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
     _score_death_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
 
 
-def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth place match."""
     if not (t_data["pob"] and c_data["bplace"] and t_data["pob"] in c_data["bplace"]):
         return
@@ -1773,7 +1772,7 @@ def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_score
         match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
 
 
-def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score death place match (contains only; no points for absence)."""
     pod_match = bool(t_data["pod"] and c_data["dplace"] and t_data["pod"] in c_data["dplace"])
     if not pod_match:
@@ -1784,13 +1783,13 @@ def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_score
         match_reasons.append(f"Death Place Contains ({points_pod}pts)")
 
 
-def _score_places(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_places(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth place and death place matches (gender removed from scoring)."""
     _score_birth_place(t_data, c_data, weights, field_scores, match_reasons)
     _score_death_place(t_data, c_data, weights, field_scores, match_reasons)
 
 
-def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth bonus (if both birth year and birth place matched)."""
     if not (field_scores["byear"] > 0 and field_scores["bplace"] > 0):
         return
@@ -1800,7 +1799,7 @@ def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list
         match_reasons.append(f"Bonus Birth Info ({birth_bonus_points}pts)")
 
 
-def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score death bonus (only when BOTH death date and place matched)."""
     death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
     if not death_info_matched:
@@ -1811,14 +1810,14 @@ def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list
         match_reasons.append(f"Bonus Death Info ({death_bonus_points}pts)")
 
 
-def _score_bonuses(weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _score_bonuses(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Score birth and death bonuses."""
     _score_birth_bonus(weights, field_scores, match_reasons)
     _score_death_bonus(weights, field_scores, match_reasons)
 
 
 
-def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list) -> None:
+def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
     """Apply a small negative score when query implies 'alive' but candidate has death info.
 
     Alive-mode heuristic: if the user provided no death year, no death date, and no death place,
@@ -1844,7 +1843,7 @@ def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    date_flexibility: Optional[dict] = None,
+    date_flexibility: Optional[dict[str, Any]] = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """
     Calculates match score using pre-processed candidate data.
