@@ -54,7 +54,7 @@ from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
-from observability.metrics_registry import metrics
+from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 ActionCallable = Callable[..., Any]
 SendMessagesAction = Callable[["SessionManager"], bool]
@@ -347,7 +347,7 @@ def validate_action_config() -> bool:
         return False
 
 # Core modules
-from config.config_manager import ConfigManager
+from config.config_manager import ConfigManager  # type: ignore[import-not-found]
 from core.session_manager import SessionManager
 from database import (
     Base,
@@ -368,8 +368,8 @@ from utils import (
 )
 
 # Initialize config manager
-config_manager = ConfigManager()
-config: Any = config_manager.get_config()
+config_manager = ConfigManager()  # type: ignore[misc]
+config: Any = config_manager.get_config()  # type: ignore[misc]
 
 
 def menu() -> str:
@@ -785,7 +785,7 @@ def exec_actn(
                     label_candidate: Any = typed_result[1]
                     if isinstance(label_candidate, str) and label_candidate.lower() in {"success", "failure", "skipped"}:
                         result_label = label_candidate.lower()
-            metrics().action_processed.inc(action_name, result_label)
+            metrics().action_processed.inc(action_name, result_label)  # type: ignore[misc]
         except Exception:
             logger.debug("Failed to record action throughput metric", exc_info=True)
 
