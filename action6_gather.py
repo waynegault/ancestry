@@ -18,9 +18,9 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Optional
-from collections.abc import Callable
 
 from core.enhanced_error_recovery import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
@@ -216,9 +216,9 @@ import re
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal
-from collections.abc import Callable
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 # Automatically connect API performance metrics with the health monitor on import

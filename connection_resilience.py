@@ -21,8 +21,8 @@ logger = setup_module(globals(), __name__)
 
 import functools
 import time
-from typing import Any, Optional, TypeVar
 from collections.abc import Callable
+from typing import Any, Optional, TypeVar
 
 from utils import prevent_system_sleep, restore_system_sleep
 

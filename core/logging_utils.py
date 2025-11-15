@@ -25,8 +25,8 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
-from typing import Any, Optional
 from collections.abc import Callable
+from typing import Any, Optional
 
 
 # Global flag to track if logging has been initialized

@@ -27,10 +27,10 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional, cast
-from collections.abc import Callable
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException

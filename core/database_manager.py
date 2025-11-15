@@ -31,9 +31,8 @@ import contextlib
 import sqlite3
 
 # Note: sys and Path already imported at top of file
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from typing import Any, Optional, cast
-from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 # === THIRD-PARTY IMPORTS ===

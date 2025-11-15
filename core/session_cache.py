@@ -30,9 +30,9 @@ import hashlib
 import threading
 import time
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Optional
-from collections.abc import Callable
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (

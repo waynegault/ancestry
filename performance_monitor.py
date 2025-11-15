@@ -56,13 +56,13 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 # === THIRD-PARTY IMPORTS ===
 import psutil

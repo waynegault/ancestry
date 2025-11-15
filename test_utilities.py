@@ -38,8 +38,8 @@ implementation, consistent testing practices, and maintainable code organization
 for professional genealogical automation development and quality assurance.
 """
 
-from typing import Any, Optional
 from collections.abc import Callable
+from typing import Any, Optional
 from unittest.mock import MagicMock
 
 from sqlalchemy.orm import Session

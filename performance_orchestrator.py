@@ -63,10 +63,10 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
 from typing import Any, Optional
-from collections.abc import Callable
 
 # === THIRD-PARTY IMPORTS ===
 import psutil

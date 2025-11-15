@@ -19,10 +19,10 @@ if parent_dir not in sys.path:
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Optional
-from collections.abc import Callable
 
 import psutil
 from tqdm.auto import tqdm

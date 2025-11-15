@@ -33,9 +33,9 @@ import inspect
 # Note: sys already imported at top of file
 import threading
 import unittest
+from collections.abc import Callable
 from functools import wraps
 from typing import Any, ClassVar, Optional, TypeVar, Union
-from collections.abc import Callable
 
 T = TypeVar("T")
 

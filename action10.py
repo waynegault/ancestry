@@ -51,11 +51,10 @@ import os
 import re
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module  # type: ignore[import-not-found]

@@ -65,10 +65,10 @@ import shutil
 import sys
 import time
 from collections import deque
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 # --- Third-party imports ---
 from diskcache import Cache

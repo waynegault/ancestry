@@ -47,10 +47,10 @@ Phase: 9.1 - Message Template Enhancement
 """
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 # Import standard modules
 from standard_imports import *

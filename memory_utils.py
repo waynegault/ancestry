@@ -8,8 +8,8 @@ Provides ObjectPool and fast_json_loads for performance optimization.
 
 import json
 from collections import deque
-from typing import Any, Optional
 from collections.abc import Callable
+from typing import Any, Optional
 
 
 class ObjectPool:

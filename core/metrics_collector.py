@@ -49,13 +49,13 @@ import json
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
 from typing import Any, Optional
-from collections.abc import Callable
 
 
 class MetricType(Enum):

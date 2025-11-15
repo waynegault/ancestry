@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from collections.abc import Callable
 
 from api_search_utils import get_api_family_details
 from api_utils import call_discovery_relationship_api, call_treesui_list_api

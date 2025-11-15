@@ -6,9 +6,9 @@ Provides consistent user interaction for both Action 10 (GEDCOM) and Action 11 (
 to ensure identical search criteria collection and validation.
 """
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Optional
-from collections.abc import Callable
 
 from logging_config import logger
 

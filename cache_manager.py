@@ -52,10 +52,10 @@ import json
 import threading
 import time
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Optional, TypeVar
-from collections.abc import Callable
 
 from standard_imports import get_function, is_function_available, setup_module
 

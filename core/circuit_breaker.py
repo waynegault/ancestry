@@ -28,10 +28,10 @@ Usage:
 """
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Optional
-from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

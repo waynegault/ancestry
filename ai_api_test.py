@@ -15,10 +15,10 @@ import subprocess
 import sys
 import textwrap
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
-from collections.abc import Callable
 
 try:
     from openai import OpenAI

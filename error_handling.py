@@ -15,12 +15,12 @@ import contextlib
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import wraps
 from typing import Any, Optional
-from collections.abc import Callable
 
 # === LOCAL IMPORTS ===
 # Module logger is set up by setup_module() above

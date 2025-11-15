@@ -47,6 +47,7 @@ import sys
 import threading  # For thread-safe rate limiting
 import time
 import uuid  # For make_ube
+from collections.abc import Callable  # Consolidated typing imports
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path  # For cookie persistence
@@ -55,7 +56,6 @@ from typing import (
     Optional,
     Union,
 )
-from collections.abc import Callable  # Consolidated typing imports
 from urllib.parse import urljoin, urlparse, urlunparse
 
 # === THIRD-PARTY IMPORTS ===
