@@ -32,10 +32,18 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
 
+if __package__ in (None, ""):
+    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
+
 logger = logging.getLogger(__name__)
+
+from observability.metrics_registry import metrics
 
 
 class CircuitBreakerOpenError(Exception):
@@ -90,6 +98,29 @@ class SessionCircuitBreaker:
         self._trip_time: datetime | None = None
         self._lock = Lock()
 
+        self._emit_state_metric(self._state)
+
+    @staticmethod
+    def _state_value(state: str) -> float:
+        mapping = {
+            CircuitBreakerState.CLOSED: 0.0,
+            CircuitBreakerState.HALF_OPEN: 0.5,
+            CircuitBreakerState.OPEN: 1.0,
+        }
+        return mapping.get(state, -1.0)
+
+    def _emit_state_metric(self, state: str) -> None:
+        try:
+            metrics().circuit_breaker_state.set(self.name, self._state_value(state))
+        except Exception:
+            logger.debug("Failed to publish circuit breaker state metric", exc_info=True)
+
+    def _record_trip_metric(self) -> None:
+        try:
+            metrics().circuit_breaker_trips.inc(self.name)
+        except Exception:
+            logger.debug("Failed to publish circuit breaker trip metric", exc_info=True)
+
     def record_success(self) -> None:
         """Record successful call and potentially close breaker."""
         with self._lock:
@@ -101,6 +132,8 @@ class SessionCircuitBreaker:
             if self._state == CircuitBreakerState.HALF_OPEN and self._consecutive_successes >= 2:
                 self._state = CircuitBreakerState.CLOSED
                 logger.info(f"🟢 Circuit breaker '{self.name}' CLOSED (recovery successful)")
+
+            self._emit_state_metric(self._state)
 
     def record_failure(self) -> bool:
         """Record failure and trip if threshold exceeded.
@@ -122,6 +155,10 @@ class SessionCircuitBreaker:
                 )
                 just_tripped = True
 
+            self._emit_state_metric(self._state)
+            if just_tripped:
+                self._record_trip_metric()
+
             return just_tripped
 
     def is_tripped(self) -> bool:
@@ -137,9 +174,11 @@ class SessionCircuitBreaker:
                         logger.info(
                             f"🟡 Circuit breaker '{self.name}' HALF_OPEN (attempting recovery)"
                         )
+                        self._emit_state_metric(self._state)
                         return False  # Not tripped anymore
 
                 return True
+            self._emit_state_metric(self._state)
             return False
 
     def get_state(self) -> str:
@@ -160,6 +199,7 @@ class SessionCircuitBreaker:
             self._consecutive_successes = 0
             self._trip_time = None
             logger.debug(f"🔵 Circuit breaker '{self.name}' manually RESET")
+            self._emit_state_metric(self._state)
 
     def __repr__(self) -> str:
         state = self.get_state()
@@ -453,6 +493,96 @@ def _test_circuit_breaker_thread_safety() -> bool:
     return True
 
 
+def _test_circuit_breaker_threshold_tripping() -> bool:
+    """Test that the breaker trips once the configured threshold is met."""
+    breaker = SessionCircuitBreaker("trip_threshold", threshold=3)
+
+    just_tripped = False
+    for expected_failures in range(1, 4):
+        just_tripped = breaker.record_failure()
+        assert breaker.get_consecutive_failures() == expected_failures
+
+    assert just_tripped, "Breaker should trip when reaching threshold"
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+    assert breaker.is_tripped()
+    return True
+
+
+def _test_circuit_breaker_trip_only_once() -> bool:
+    """Test that the breaker only reports `just tripped` on the first trip."""
+    breaker = SessionCircuitBreaker("trip_once", threshold=2)
+
+    breaker.record_failure()
+    first_trip = breaker.record_failure()
+    assert first_trip is True, "Second failure should trip breaker"
+
+    subsequent_trip = breaker.record_failure()
+    assert subsequent_trip is False, "Further failures should not report new trip"
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+    return True
+
+
+def _test_circuit_breaker_half_open_success_path() -> bool:
+    """Test HALF_OPEN → CLOSED transition when recovery succeeds."""
+    import time
+
+    breaker = SessionCircuitBreaker("half_open_success", threshold=2, recovery_timeout_sec=0.1)
+    breaker.record_failure()
+    breaker.record_failure()
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+
+    time.sleep(0.15)
+    breaker.is_tripped()  # Trigger state evaluation; should move to HALF_OPEN
+    assert breaker.get_state() == CircuitBreakerState.HALF_OPEN
+
+    breaker.record_success()
+    breaker.record_success()
+    assert breaker.get_state() == CircuitBreakerState.CLOSED
+    assert breaker.get_consecutive_failures() == 0
+    return True
+
+
+def _test_circuit_breaker_half_open_failure_path() -> bool:
+    """Test HALF_OPEN → OPEN transition when recovery fails."""
+    import time
+
+    breaker = SessionCircuitBreaker("half_open_failure", threshold=2, recovery_timeout_sec=0.1)
+    breaker.record_failure()
+    breaker.record_failure()
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+
+    time.sleep(0.15)
+    breaker.is_tripped()  # Move to HALF_OPEN
+    assert breaker.get_state() == CircuitBreakerState.HALF_OPEN
+
+    breaker.record_failure()
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+    return True
+
+
+def _test_circuit_breaker_consecutive_successes_after_recovery() -> bool:
+    """Ensure successes after recovery reset failure counters correctly."""
+    import time
+
+    breaker = SessionCircuitBreaker("recovery_tracking", threshold=2, recovery_timeout_sec=0.1)
+    breaker.record_failure()
+    breaker.record_failure()
+    assert breaker.get_state() == CircuitBreakerState.OPEN
+
+    time.sleep(0.15)
+    breaker.is_tripped()
+    assert breaker.get_state() == CircuitBreakerState.HALF_OPEN
+
+    breaker.record_success()
+    breaker.record_success()
+    assert breaker.get_state() == CircuitBreakerState.CLOSED
+    assert breaker.get_consecutive_failures() == 0
+
+    breaker.record_failure()
+    assert breaker.get_consecutive_failures() == 1
+    return True
+
+
 def circuit_breaker_module_tests() -> bool:
     """Comprehensive test suite for core/circuit_breaker.py"""
     try:
@@ -467,6 +597,11 @@ def circuit_breaker_module_tests() -> bool:
             ("State Transitions", _test_circuit_breaker_state_transitions),
             ("Success Tracking", _test_circuit_breaker_success_tracking),
             ("Manual Reset", _test_circuit_breaker_manual_reset),
+            ("Threshold Tripping", _test_circuit_breaker_threshold_tripping),
+            ("Trip Only Once", _test_circuit_breaker_trip_only_once),
+            ("HALF_OPEN Success Path", _test_circuit_breaker_half_open_success_path),
+            ("HALF_OPEN Failure Path", _test_circuit_breaker_half_open_failure_path),
+            ("Recovery Success Tracking", _test_circuit_breaker_consecutive_successes_after_recovery),
             ("Factory Functions", _test_circuit_breaker_factory_functions),
             ("String Representation", _test_circuit_breaker_string_representation),
             ("Error Classes", _test_circuit_breaker_error_classes),
@@ -536,6 +671,23 @@ def circuit_breaker_module_tests() -> bool:
         "Verify threshold and timeout settings for each type"
     )
 
+    # Test threshold and trip reporting behaviour
+    suite.run_test(
+        "Threshold Tripping",
+        _test_circuit_breaker_threshold_tripping,
+        "Circuit breaker should trip when failure threshold is reached",
+        "Trigger record_failure() up to configured threshold",
+        "Verify OPEN state and trip reporting"
+    )
+
+    suite.run_test(
+        "Trip Only Once",
+        _test_circuit_breaker_trip_only_once,
+        "Circuit breaker should only report first trip",
+        "Continue recording failures after breaker trips",
+        "Verify only the first post-threshold failure returns True"
+    )
+
     # Test string representation
     suite.run_test(
         "String Representation",
@@ -561,6 +713,31 @@ def circuit_breaker_module_tests() -> bool:
         "Circuit breaker operations should be thread-safe",
         "Test concurrent access from multiple threads",
         "Verify no race conditions or data corruption"
+    )
+
+    # Test HALF_OPEN recovery behaviours
+    suite.run_test(
+        "HALF_OPEN Success Path",
+        _test_circuit_breaker_half_open_success_path,
+        "Successful HALF_OPEN recovery should close breaker",
+        "Allow breaker to reach HALF_OPEN and record successes",
+        "Verify state transitions to CLOSED and resets counters"
+    )
+
+    suite.run_test(
+        "HALF_OPEN Failure Path",
+        _test_circuit_breaker_half_open_failure_path,
+        "Failed HALF_OPEN recovery should reopen breaker",
+        "Allow breaker to reach HALF_OPEN then record failure",
+        "Verify breaker returns to OPEN state"
+    )
+
+    suite.run_test(
+        "Recovery Success Tracking",
+        _test_circuit_breaker_consecutive_successes_after_recovery,
+        "Successes after recovery should reset failure counters",
+        "Trip breaker, recover, and validate counter behaviour",
+        "Verify counters reset on success and increment on new failure"
     )
 
     return suite.finish_suite()

@@ -1142,9 +1142,8 @@ def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
     session_age = time.time() - session_manager.session_start_time
     if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
         logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-        if session_manager._attempt_session_recovery():
+        if session_manager._attempt_session_recovery(reason="proactive"):
             logger.info("✅ Proactive session refresh successful")
-            session_manager.session_start_time = time.time()  # Reset session timer
         else:
             logger.error("❌ Proactive session refresh failed")
 
@@ -8375,6 +8374,55 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 # ==============================================
 
 
+def _test_cache_profile_helpers() -> bool:
+    """Validate profile cache helper functions use UnifiedCacheManager."""
+    from core.unified_cache_manager import get_unified_cache
+
+    cache = get_unified_cache()
+    cache.clear()
+
+    profile_id = "TEST_PROFILE_CACHE_HELPERS"
+    payload = {
+        "last_logged_in_dt": "2024-01-01T00:00:00Z",
+        "contactable": True,
+    }
+
+    _cache_profile(profile_id, payload)
+    cached = _get_cached_profile(profile_id)
+
+    assert cached is not None, "Cached profile should be retrievable"
+    assert cached.get("contactable") is True, "Contactable flag should round-trip"
+    assert cached.get("last_logged_in_dt") == payload["last_logged_in_dt"], "Last login should persist"
+
+    cache.invalidate(service="ancestry", endpoint="profile_details")
+    return True
+
+
+def _test_combined_details_cache_helpers() -> bool:
+    """Ensure combined details cache helpers interact with UnifiedCacheManager."""
+    from core.unified_cache_manager import get_unified_cache
+
+    cache = get_unified_cache()
+    cache.clear()
+
+    match_uuid = "TEST-CACHE-MATCH-UUID"
+    combined_data = {
+        "tester_profile_id": "TEST-PROFILE-UUID",
+        "admin_profile_id": "ADMIN-UUID",
+        "shared_segments": 3,
+    }
+
+    _cache_combined_details(combined_data, match_uuid)
+    cached = _check_combined_details_cache(match_uuid, time.time())
+
+    assert cached is not None, "Cached combined details should be retrievable"
+    assert cached.get("tester_profile_id") == "TEST-PROFILE-UUID", "Tester profile ID should persist"
+    assert cached.get("shared_segments") == 3, "Shared segments should persist"
+
+    cache.invalidate(service="ancestry", endpoint="combined_details")
+    return True
+
+
 def _test_module_initialization():
     """Test module initialization and state functions with detailed verification"""
     print("📋 Testing Action 6 module initialization:")
@@ -9052,6 +9100,24 @@ def action6_gather_module_tests() -> bool:
 
     # Run all tests with suppress_logging
     with suppress_logging():
+        suite.run_test(
+            test_name="Profile cache helper round-trip",
+            test_func=_test_cache_profile_helpers,
+            test_summary="Ensures profile caching helpers use UnifiedCacheManager",
+            functions_tested="_cache_profile(), _get_cached_profile()",
+            method_description="Cache a synthetic profile payload and read it back",
+            expected_outcome="Profile data persists via UnifiedCacheManager and can be invalidated",
+        )
+
+        suite.run_test(
+            test_name="Combined details cache helper round-trip",
+            test_func=_test_combined_details_cache_helpers,
+            test_summary="Validates combined details caching and retrieval helpers",
+            functions_tested="_cache_combined_details(), _check_combined_details_cache()",
+            method_description="Cache combined match payload then read from cache",
+            expected_outcome="Combined details persist via UnifiedCacheManager and remain consistent",
+        )
+
         # INITIALIZATION TESTS
         suite.run_test(
             test_name="_initialize_gather_state(), _validate_start_page()",

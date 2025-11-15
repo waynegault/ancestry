@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false, reportImportCycles=false
 # NOTE: Three import cycles (cache.py↔gedcom_cache.py, cache.py↔cache_manager.py, and 6-file chain
 # through gedcom_utils→utils→session_manager). Cache is foundational infrastructure used everywhere.
 # Proper fix requires redesigning cache architecture with dependency inversion. Cycles don't affect runtime.
@@ -329,9 +328,9 @@ def cache_result(
         A decorator function that wraps the original function with caching logic.
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)  # Preserves original function metadata (name, docstring)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Step 1: Check if cache is available
             if cache is None:
                 logger.error("Cache is not initialized. Bypassing cache and calling function directly.")
@@ -883,9 +882,9 @@ def cache_file_based_on_mtime(
         Decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             if cache is None:
                 logger.error("Cache not available. Calling function directly.")
                 return func(*args, **kwargs)

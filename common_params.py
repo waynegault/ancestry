@@ -131,7 +131,7 @@ class ConversationProcessingContext:
     Groups lookup maps and batch data collections.
     """
     existing_persons_map: dict[str, Any]
-    existing_conv_logs: dict[tuple, Any]
+    existing_conv_logs: dict[tuple[str, str], Any]
     conv_log_upserts_dicts: list[dict[str, Any]]
     person_updates: dict[str, Any]
     comp_conv_id: str | None = None
@@ -520,4 +520,3 @@ if __name__ == "__main__":
 
 
 # End of common_params.py
-

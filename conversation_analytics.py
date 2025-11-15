@@ -1,4 +1,4 @@
-# pyright: reportConstantRedefinition=false
+#!/usr/bin/env python3
 """
 Conversation Analytics & Engagement Metrics Tracking
 
@@ -867,4 +867,3 @@ run_comprehensive_tests = create_standard_test_runner(conversation_analytics_mod
 if __name__ == "__main__":
     import sys
     sys.exit(0 if run_comprehensive_tests() else 1)
-

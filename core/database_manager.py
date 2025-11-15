@@ -167,7 +167,7 @@ class DatabaseManager:
         elif operation == "invalidation":
             self._connection_stats["pool_invalidations"] += 1
 
-    def get_performance_stats(self) -> dict:
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get comprehensive database performance statistics."""
         stats = self._connection_stats.copy()
 

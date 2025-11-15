@@ -3559,7 +3559,10 @@ if __name__ == "__main__":
         from logging_config import setup_logging  # Local import
 
         # Use unified logging configuration; LOG_FILE is taken from .env
-        standalone_logger = setup_logging(log_level="DEBUG")
+        standalone_logger = setup_logging(
+            log_level="DEBUG",
+            allow_env_override=False,
+        )
         standalone_logger.info("--- Starting database.py standalone run ---")
     except Exception as log_err:
         # Fallback basic config if setup_logging fails

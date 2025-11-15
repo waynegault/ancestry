@@ -37,7 +37,8 @@ from core.session_manager import SessionManager
 from logging_config import setup_logging
 
 # === MODULE LOGGER ===
-logger = setup_logging(log_level="INFO")
+_env_log_level = os.getenv("LOG_LEVEL", "INFO")
+logger = setup_logging(log_level=_env_log_level)
 
 # === GLOBAL SESSION CACHE ===
 # This is the SINGLE SOURCE OF TRUTH for session management

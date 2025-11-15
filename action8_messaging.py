@@ -2109,7 +2109,7 @@ def _extract_research_context(person: Person, family_tree: FamilyTree | None) ->
     return locations, time_periods, common_ancestors
 
 
-def _format_research_suggestions_text(collections: list) -> str:
+def _format_research_suggestions_text(collections: list[Any]) -> str:
     """Format research suggestions into message text."""
     if not collections:
         return ""
@@ -4325,7 +4325,7 @@ def _process_test_candidates(
     return db_logs_to_add, person_updates
 
 
-def _convert_logs_to_dicts(db_logs_to_add: list) -> list:
+def _convert_logs_to_dicts(db_logs_to_add: list[Any]) -> list[dict[str, Any]]:
     """Convert ConversationLog objects to dictionaries for commit."""
     return [
         {

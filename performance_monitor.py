@@ -207,6 +207,10 @@ class PerformanceMonitor:
             # Thread count
             thread_count = threading.active_count()
             self.record_metric("thread_count", thread_count, "system")
+            try:
+                metrics().worker_thread_count.set(float(thread_count))
+            except Exception:
+                logger.debug("Failed to record worker thread count metric", exc_info=True)
 
         except Exception as e:
             logger.debug(f"Error collecting system metrics: {e}")

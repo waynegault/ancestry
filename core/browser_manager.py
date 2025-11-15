@@ -112,6 +112,28 @@ class BrowserManager:
         except Exception as e:
             logger.warning(f"Error loading saved cookies: {e}")
 
+    def _restore_terminal_focus(self) -> None:
+        """Force focus back to the console window on Windows."""
+        if sys.platform != "win32":
+            return
+
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            hwnd = kernel32.GetConsoleWindow()
+            if not hwnd:
+                return
+
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+
+            user32.SetForegroundWindow(hwnd)
+            logger.debug("Terminal focus restored after browser minimization")
+        except Exception as exc:
+            logger.debug(f"Unable to restore terminal focus: {exc}")
+
     def _minimize_browser_window(self) -> None:
         """
         Minimize browser window after launch.
@@ -127,10 +149,25 @@ class BrowserManager:
         import time
         time.sleep(0.5)
 
+        def _safe_resize(driver: Any, width: int, height: int) -> None:
+            try:
+                current_rect = driver.get_window_rect()
+                driver.set_window_rect(
+                    x=current_rect.get("x", 0),
+                    y=current_rect.get("y", 0),
+                    width=width,
+                    height=height,
+                )
+            except Exception:
+                driver.set_window_position(0, 0)
+                driver.set_window_size(width, height)
+
         try:
             # Primary method: use WebDriver's minimize_window()
+            _safe_resize(self.driver, 1, 1)
             self.driver.minimize_window()
             logger.debug("✅ Browser window minimized successfully")
+            self._restore_terminal_focus()
             return
         except Exception as primary_error:
             logger.warning(f"Primary minimize method failed: {primary_error}")
@@ -138,8 +175,10 @@ class BrowserManager:
             # Fallback: try setting window position off-screen
             try:
                 logger.debug("Attempting fallback: moving window off-screen")
+                _safe_resize(self.driver, 1, 1)
                 self.driver.set_window_position(-2000, -2000)
                 logger.info("⚠️ Browser minimized using fallback method (off-screen positioning)")
+                self._restore_terminal_focus()
                 return
             except Exception as fallback_error:
                 logger.error(
@@ -174,16 +213,13 @@ class BrowserManager:
             if not self._verify_browser_window():
                 return False
 
-            # Navigate to base URL to stabilize
-            logger.debug(f"Navigating to Base URL ({config_schema.api.base_url}) to stabilize...")
-            if not nav_to_page(self.driver, config_schema.api.base_url):
-                logger.error(f"Failed to navigate to base URL: {config_schema.api.base_url}")
-                logger.error("Browser may have closed during navigation")
-                self.close_browser()
-                return False
+            # DON'T navigate during browser startup - let SessionManager handle navigation
+            # This prevents circular dependency issues with nav_to_page needing session_manager
+            # The browser will navigate to about:blank initially, then SessionManager will
+            # handle authentication and navigation to ancestry.co.uk
+            logger.debug("✅ Browser initialized (navigation will be handled by SessionManager)")
 
-            # Load saved cookies and minimize window
-            self._load_saved_cookies()
+            # Minimize window after small delay for stability
             self._minimize_browser_window()
 
             # Mark as live and set timing
@@ -191,7 +227,7 @@ class BrowserManager:
             self.browser_needed = True
             self.session_start_time = time.time()
 
-            logger.debug("✅ Browser initialized successfully")
+            logger.debug("✅ Browser ready for session authentication")
             return True
 
         except Exception as e:

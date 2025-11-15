@@ -48,6 +48,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 from collections import deque
@@ -58,6 +59,10 @@ from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
 from typing import Any, Optional
+
+# Support standalone execution
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 class MetricType(Enum):
@@ -76,7 +81,7 @@ class MetricPoint:
     value: float
     labels: dict[str, str] = field(default_factory=dict)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
@@ -103,7 +108,7 @@ class WindowedStats:
 class ServiceMetrics:
     """Aggregated metrics for a service."""
     service_name: str
-    metrics: dict[str, list[MetricPoint]] = field(default_factory=dict)
+    metrics: dict[str, deque[MetricPoint]] = field(default_factory=dict)  # type: ignore
     windows: dict[str, dict[str, WindowedStats]] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
@@ -193,7 +198,7 @@ class ServiceMetrics:
             self.metrics.clear()
             self.windows.clear()
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         with self._lock:
             return {
@@ -221,7 +226,7 @@ class MetricsSnapshot:
             return None
         return service_metrics[metric_name].get(f"p{percentile}")
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": self.timestamp.isoformat(),
@@ -240,7 +245,7 @@ class PerformanceAlert:
     severity: str  # "warning", "critical"
     timestamp: datetime
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "service": self.service_name,
@@ -470,7 +475,9 @@ def run_comprehensive_tests() -> bool:
         for i in range(1, 101):  # Record 1-100
             registry.record_metric("TestService", "latency_ms", float(i))
 
-        p95 = registry.get_service_metrics("TestService").get_percentile("latency_ms", 95)
+        service_metrics = registry.get_service_metrics("TestService")
+        assert service_metrics is not None
+        p95 = service_metrics.get_percentile("latency_ms", 95)
         assert p95 is not None
         assert 90 <= p95 <= 100  # Should be close to 95th percentile
 
@@ -533,6 +540,7 @@ def run_comprehensive_tests() -> bool:
         registry.record_timer("TestService", "duration_ms", 0.1)  # 100ms
 
         service_metrics = registry.get_service_metrics("TestService")
+        assert service_metrics is not None
         values = [p.value for p in service_metrics.metrics["duration_ms"]]
         assert len(values) == 2
         assert 400 <= values[0] <= 600  # 500ms in ms

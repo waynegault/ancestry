@@ -24,7 +24,6 @@
   "reportUnusedClass": "none",
   "reportUnusedFunction": "none",
   "reportUnusedVariable": "none",
-  "reportUnusedParameter": "none",
   "reportUnusedCallResult": "none",
   "reportUnusedExpression": "none",
   "reportDuplicateImport": "warning",
@@ -59,7 +58,6 @@
   "reportGeneralTypeIssues": "warning",
   "reportUnreachable": "none",
   "reportUnnecessaryTypeIgnoreComment": "none",
-  "reportUnknownImportSymbol": "warning",
   "reportMissingTypeArgument": "none",
   "reportUnknownParameterType": "none",
   "reportUnknownArgumentType": "none",
@@ -68,10 +66,7 @@
   "reportUnknownMemberType": "none",
   "reportMissingParameterType": "none",
   "reportMissingModuleSource": "warning",
-  "reportPossiblyUnbound": "warning",
   "reportImportCycles": "none",
-  "reportUnnecessaryIsInstance": "none",
-  "reportUnnecessaryComparison": "none",
   "reportUninitializedInstanceVariable": "none",
   "reportInvalidTypeVarUse": "error",
   "reportCallIssue": "warning",
@@ -86,7 +81,6 @@
   "reportPropertyTypeMismatch": "none",
   "reportFunctionMemberAccess": "error",
   "reportOverlappingOverload": "error",
-  "reportUnusedExpression": "none",
   "stubPath": "",
   "venvPath": ".",
   "venv": ".venv",
@@ -105,4 +99,3 @@
     }
   ]
 }
-

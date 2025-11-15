@@ -200,7 +200,7 @@ TEST_FUNCTIONS = {
 }
 
 
-def get_test_function(name: str) -> Callable:
+def get_test_function(name: str) -> Callable[[], None]:
     """
     Get a test function by name from the registry.
 
@@ -408,7 +408,7 @@ def create_string_validator(min_length: int = 0, max_length: int | None = None,
     return validator
 
 
-def create_composite_validator(*validators: Callable) -> Callable:
+def create_composite_validator(*validators: Callable[..., bool]) -> Callable[..., bool]:
     """
     Create a composite validation function that requires all validators to pass.
 

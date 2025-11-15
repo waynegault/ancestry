@@ -271,7 +271,12 @@ class _LoggingState:
 
 
 # --- Main Setup Function ---
-def setup_logging(log_file: str = "", log_level: str = "INFO") -> logging.Logger:
+def setup_logging(
+    log_file: str = "",
+    log_level: str = "INFO",
+    *,
+    allow_env_override: bool = True,
+) -> logging.Logger:
     """
     Configures the main application logger ('logger').
     Sets up file and console handlers with appropriate levels, formatters, and filters.
@@ -290,9 +295,19 @@ def setup_logging(log_file: str = "", log_level: str = "INFO") -> logging.Logger
     if not log_file:
         log_file = os.getenv("LOG_FILE", "app.log")
 
-    # Validate log level
-    log_level_upper = log_level.upper()
-    numeric_log_level = getattr(logging, log_level_upper, logging.INFO)
+    # Determine effective log level (environment override takes priority unless disabled)
+    env_level = os.getenv("LOG_LEVEL") if allow_env_override else None
+    candidate_level = env_level if env_level else log_level
+    log_level_upper = str(candidate_level).upper()
+    numeric_log_level = getattr(logging, log_level_upper, None)
+
+    if numeric_log_level is None:
+        logger_for_setup.warning(
+            "Invalid log level '%s'; falling back to INFO.",
+            log_level_upper,
+        )
+        log_level_upper = "INFO"
+        numeric_log_level = logging.INFO
 
     # If already initialized, just update handler levels
     if _LoggingState.initialized:
@@ -595,10 +610,19 @@ def test_setup_logging():
 
 def test_log_level_setting():
     """Test that log levels are properly set."""
-    test_logger = setup_logging("test.log", "DEBUG")
+    original_init_state = _LoggingState.initialized
+    _LoggingState.initialized = False
+
+    test_logger = setup_logging("test.log", "DEBUG", allow_env_override=False)
     # Check that handlers have the correct level
     for handler in test_logger.handlers:
         assert handler.level == logging.DEBUG
+
+    for handler in test_logger.handlers[:]:
+        handler.close()
+        test_logger.removeHandler(handler)
+
+    _LoggingState.initialized = original_init_state
 
 
 def test_handler_configuration():

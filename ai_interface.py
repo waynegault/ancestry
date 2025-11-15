@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportCallIssue=false, reportGeneralTypeIssues=false, reportConstantRedefinition=false
-
 """
 AI Intelligence & Genealogical Content Analysis Engine
 
@@ -704,6 +702,58 @@ def _handle_rate_limit_error(session_manager: SessionManager, source: str | None
             pass
 
 
+def _call_inception_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
+    """
+    Call Inception Mercury model via OpenAI-compatible API.
+
+    Inception Mercury (api.inceptionlabs.ai/v1) provides an OpenAI-compatible endpoint
+    that works with the OpenAI client library.
+
+    Note: response_format_type parameter is kept for API compatibility.
+    """
+    # Validate prerequisites
+    if not openai_available or OpenAI is None:
+        logger.error("_call_inception_model: OpenAI library not available for Inception Mercury.")
+        return None
+
+    api_key = config_schema.api.inception_api_key
+    model_name = config_schema.api.inception_ai_model
+    base_url = config_schema.api.inception_ai_base_url
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_inception_model: Inception Mercury configuration incomplete.")
+        return None
+
+    try:
+        client = OpenAI(api_key=api_key, base_url=base_url)
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ]
+
+        request_params: dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+
+        if response_format_type:
+            request_params["response_format"] = {"type": response_format_type}
+
+        response = client.chat.completions.create(**request_params)
+        if response.choices and response.choices[0].message and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
+
+        logger.error("Inception Mercury returned an empty or invalid response structure.")
+        return None
+    except Exception as e:
+        logger.error(f"Inception Mercury API call failed: {e}")
+        return None
+
+
 def _route_ai_provider_call(
     provider: str, system_prompt: str, user_content: str,
     max_tokens: int, temperature: float, response_format_type: str | None
@@ -717,6 +767,8 @@ def _route_ai_provider_call(
         return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
     if provider == "local_llm":
         return _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    if provider == "inception":
+        return _call_inception_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
     return None
 
@@ -731,6 +783,11 @@ def _provider_is_configured(provider: str) -> bool:
         return all(
             getattr(config_schema.api, attr, None)
             for attr in ("local_llm_api_key", "local_llm_model", "local_llm_base_url")
+        )
+    if provider == "inception":
+        return all(
+            getattr(config_schema.api, attr, None)
+            for attr in ("inception_api_key", "inception_ai_model", "inception_ai_base_url")
         )
     return False
 

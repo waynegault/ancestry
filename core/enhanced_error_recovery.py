@@ -54,7 +54,7 @@ class ErrorContext:
     last_error: Exception | None = None
     error_history: list[Exception] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
-    partial_results: list[Any] = field(default_factory=list)
+    partial_results: list[Any] = field(default_factory=list)  # type: ignore[misc]
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
 
     def add_error(self, error: Exception) -> None:
@@ -176,7 +176,7 @@ def _handle_partial_success(
     operation_name: str,
     partial_success_handler: Callable | None,
     context: 'ErrorContext',
-    last_exception: Exception
+    last_exception: Exception,
 ) -> Any:
     """Handle partial success scenarios."""
     if partial_success_handler and context.partial_results:
@@ -195,7 +195,7 @@ def _handle_retry_failure(
     max_attempts: int,
     partial_success_handler: Callable | None,
     context: 'ErrorContext',
-    last_exception: Exception
+    last_exception: Exception,
 ) -> Any:
     """Handle final retry failure."""
     logger.error(f"❌ {operation_name} failed after {max_attempts} attempts")
@@ -231,9 +231,9 @@ def with_enhanced_recovery(
         partial_success_handler: Function to handle partial successes
         user_guidance: Dictionary mapping exceptions to user guidance messages
     """
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             operation_name = f"{func.__module__}.{func.__name__}"
             context = ErrorContext(
                 operation_name=operation_name,
@@ -245,7 +245,7 @@ def with_enhanced_recovery(
             if error_recovery.is_circuit_open(operation_name):
                 raise RuntimeError(f"Circuit breaker is open for {operation_name}")
 
-            last_exception = None
+            last_exception: Optional[Exception] = None
 
             for attempt in range(1, max_attempts + 1):
                 context.attempt_number = attempt
@@ -274,7 +274,16 @@ def with_enhanced_recovery(
 
                     # Check if we should retry
                     if not context.should_retry():
-                        return _handle_retry_failure(operation_name, max_attempts, partial_success_handler, context, last_exception)
+                        return cast(
+                            R,
+                            _handle_retry_failure(
+                                operation_name,
+                                max_attempts,
+                                partial_success_handler,
+                                context,
+                                last_exception,
+                            ),
+                        )
 
                     # Calculate delay for next attempt
                     delay = context.get_backoff_delay(base_delay, max_delay)
@@ -282,7 +291,9 @@ def with_enhanced_recovery(
                     time.sleep(delay)
 
             # This should never be reached, but just in case
-            raise last_exception or RuntimeError(f"Unknown error in {operation_name}")
+            if last_exception:
+                raise last_exception
+            raise RuntimeError(f"Unknown error in {operation_name}")
 
         return wrapper
     return decorator
@@ -308,7 +319,7 @@ def handle_partial_success(partial_results: list[Any], error: Exception) -> Any:
     return partial_results
 
 # Convenience decorators for common patterns
-def with_api_recovery(max_attempts: int = 5, base_delay: float = 2.0):
+def with_api_recovery(max_attempts: int = 5, base_delay: float = 2.0) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator optimized for API calls"""
     return with_enhanced_recovery(
         max_attempts=max_attempts,
@@ -318,7 +329,7 @@ def with_api_recovery(max_attempts: int = 5, base_delay: float = 2.0):
         user_guidance=create_user_guidance()
     )
 
-def with_database_recovery(max_attempts: int = 3, base_delay: float = 1.0):
+def with_database_recovery(max_attempts: int = 3, base_delay: float = 1.0) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator optimized for database operations"""
     return with_enhanced_recovery(
         max_attempts=max_attempts,
@@ -328,7 +339,7 @@ def with_database_recovery(max_attempts: int = 3, base_delay: float = 1.0):
         user_guidance=create_user_guidance()
     )
 
-def with_file_recovery(max_attempts: int = 3, base_delay: float = 0.5):
+def with_file_recovery(max_attempts: int = 3, base_delay: float = 0.5) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator optimized for file operations"""
     return with_enhanced_recovery(
         max_attempts=max_attempts,
@@ -409,7 +420,7 @@ def _test_exponential_backoff_calculation() -> bool:
     delays = []
     for attempt in range(1, 4):
         delay = base_delay * (backoff_factor ** (attempt - 1))
-        delays.append(delay)
+        delays.append(delay)  # type: ignore[misc]
 
     assert delays[0] < delays[1] < delays[2], "Delays should increase exponentially"
     return True
@@ -441,7 +452,7 @@ def run_comprehensive_tests() -> bool:
     Comprehensive test suite for enhanced_error_recovery.py.
     Tests error recovery mechanisms, decorators, and recovery strategies.
     """
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging  # type: ignore[import-not-found]
 
     with suppress_logging():
         suite = TestSuite(

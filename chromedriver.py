@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# pyright: reportConstantRedefinition=false
 
 """
 ChromeDriver Management & Browser Automation Engine
@@ -93,13 +92,17 @@ from test_framework import (
 CHROME_USER_DATA_DIR = (
     config_schema.selenium.chrome_user_data_dir if config_schema.selenium else None
 )
+# Get the profile directory from config (respects PROFILE_DIR from .env)
+PROFILE_DIR = (
+    config_schema.selenium.profile_dir if config_schema.selenium else "Default"
+)
 # Handle the case where CHROME_USER_DATA_DIR might be None
 if CHROME_USER_DATA_DIR is not None:
-    DEFAULT_PROFILE_PATH = str(Path(CHROME_USER_DATA_DIR) / "Default")
+    DEFAULT_PROFILE_PATH = str(Path(CHROME_USER_DATA_DIR) / PROFILE_DIR)
     PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 else:
     # Use a default temporary directory if CHROME_USER_DATA_DIR is None
-    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / "Default")
+    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / PROFILE_DIR)
     PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 
 # --------------------------
@@ -118,14 +121,14 @@ def reset_preferences_file() -> None:
             "browser": {
                 "has_seen_welcome_page": True,
                 "window_placement": {
-                    "bottom": 1192,
-                    "left": 1409,
+                    "bottom": 1,
+                    "left": 0,
                     "maximized": False,
-                    "right": 2200,
+                    "right": 1,
                     "top": 0,
-                    "work_area_bottom": 1192,
-                    "work_area_left": 1409,
-                    "work_area_right": 2200,
+                    "work_area_bottom": 1,
+                    "work_area_left": 0,
+                    "work_area_right": 1,
                     "work_area_top": 0,
                 },
             },
@@ -208,7 +211,7 @@ def close_tabs(driver: WebDriver) -> None:
 # Helper functions for init_webdvr
 
 def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
-    """Configure Chrome options for WebDriver initialization."""
+    """Configure Chrome options for WebDriver initialization with enhanced stealth."""
     options = uc.ChromeOptions()
 
     # Headless mode configuration
@@ -238,23 +241,40 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     else:
         logger.debug("No explicit browser path specified, using system default.")
 
-    # Standard options
+    # ANTI-DETECTION: Disable automation flags that Ancestry.co.uk detects
     options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
+
+    # ANTI-DETECTION: Remove common automation indicators
+    options.add_argument("--disable-infobars")
+    options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins-discovery")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-infobars")
-    # Note: --start-minimized removed due to Chrome 142 compatibility issues
-    # Terminal focus is restored via SessionManager after initialization instead
 
-    # User agent
-    user_agent = random.choice(
-        getattr(config_schema, "USER_AGENTS", ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
-    )
+    # ANTI-DETECTION: Additional stealth flags to appear as normal browser
+    options.add_argument("--disable-automation")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--exclude-switches=enable-automation")
+    options.add_argument("--exclude-switches=enable-logging")
+
+    # Set realistic user agent (DO NOT use random - use consistent realistic one)
+    # Random user agents are a red flag for bot detection
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
     options.add_argument(f"--user-agent={user_agent}")
-    logger.debug(f"Setting User-Agent:\n{user_agent}")
-    options.add_argument("--disable-popup-blocking")
+    logger.debug(f"Setting consistent User-Agent: {user_agent}")
+
+    # ANTI-DETECTION: Set preferences to disable automation flags
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    # ANTI-DETECTION: Set realistic Chrome preferences
+    prefs = {
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False,
+        "profile.default_content_setting_values.notifications": 2
+    }
+    options.add_experimental_option("prefs", prefs)
 
     return options
 
@@ -278,12 +298,19 @@ def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> WebDr
 
         # Persist authentication state via dedicated profile
         user_data_dir = getattr(config_schema.selenium, "chrome_user_data_dir", None)
+        profile_dir = getattr(config_schema.selenium, "profile_dir", "Default")
+
         if user_data_dir:
             user_data_dir_path = Path(user_data_dir)
             user_data_dir_path.mkdir(parents=True, exist_ok=True)
             user_data_dir_str = str(user_data_dir_path)
             minimal_options.add_argument(f"--user-data-dir={user_data_dir_str}")
-            logger.debug(f"[init_webdvr] Using persistent Chrome profile: {user_data_dir_str}")
+
+            # IMPORTANT: Set the profile directory to match what reset_preferences_file() resets
+            # This ensures Chrome uses the correct profile that we've cleaned up
+            minimal_options.add_argument(f"--profile-directory={profile_dir}")
+
+            logger.debug(f"[init_webdvr] Using persistent Chrome profile: {user_data_dir_str}/{profile_dir}")
         else:
             logger.warning("[init_webdvr] chrome_user_data_dir not configured - using temporary profile")
 
@@ -702,7 +729,7 @@ def main() -> None:
     import sys  # Import here to avoid potential circular imports
 
     # Configure logging
-    setup_logging(log_level="DEBUG")
+    setup_logging(log_level="DEBUG", allow_env_override=False)
 
     # Parse command line arguments
     interactive = False

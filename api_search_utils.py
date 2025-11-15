@@ -984,7 +984,7 @@ def _find_target_person_in_list(persons: list, person_id: str) -> dict | None:
     return None
 
 
-def _create_persons_lookup(persons: list) -> dict[str, dict]:
+def _create_persons_lookup(persons: list[Any]) -> dict[str, dict]:
     """Create lookup dictionary mapping gid to person dict."""
     persons_by_gid = {}
     for person in persons:
@@ -1125,7 +1125,7 @@ def _extract_person_id_from_gid(gid_dict: dict) -> str:
     return gid.split(":")[0] if ":" in gid else "Unknown"
 
 
-def _extract_full_name_from_names(names_list: list) -> str:
+def _extract_full_name_from_names(names_list: list[Any]) -> str:
     """Extract full name from Names array."""
     if not names_list:
         return "Unknown"

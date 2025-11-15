@@ -73,6 +73,7 @@ pipdeptree==2.26.0
 platformdirs==4.3.7
 pluggy==1.5.0
 prompt_toolkit==3.0.50
+prometheus-client==0.21.1
 propcache==0.3.1
 proto-plus==1.26.1
 protobuf>=3.20.3,<6.0.0  # downgraded range: google-ai-generativelanguage 0.6.15 requires protobuf <6
