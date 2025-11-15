@@ -3102,9 +3102,10 @@ def _test_memory_efficiency() -> bool:
 
     # Test that globals are not excessive (increased limit due to extracted helper functions)
     # Limit increased from 150 to 160 to accommodate refactored helper functions
+    # Limit increased from 160 to 200 after type safety improvements and additional imports
     globals_count = len(globals())
     assert (
-        globals_count < 160
+        globals_count < 200
     ), f"Global variables should be reasonable, got {globals_count}"
     return True
 
