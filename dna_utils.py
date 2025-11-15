@@ -101,7 +101,7 @@ def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
 def _try_get_csrf_from_driver_cookies(
     driver: Any,
     cookie_names: tuple[str, ...]
-) -> Optional[str]:
+) -> str | None:
     """
     Fallback method to get CSRF token using get_driver_cookies.
 
@@ -130,7 +130,7 @@ def _try_get_csrf_from_driver_cookies(
     return None
 
 
-def get_csrf_token_for_dna_matches(driver: Any) -> Optional[str]:
+def get_csrf_token_for_dna_matches(driver: Any) -> str | None:
     """
     Retrieve CSRF token from browser cookies for DNA match list API.
 
@@ -144,7 +144,7 @@ def get_csrf_token_for_dna_matches(driver: Any) -> Optional[str]:
         "_dnamatches-matchlistui-x-csrf-token",
         "_csrf",
     )
-    specific_csrf_token: Optional[str] = None
+    specific_csrf_token: str | None = None
 
     try:
         logger.debug(f"Attempting to read CSRF cookies: {csrf_token_cookie_names}")
@@ -198,7 +198,7 @@ def get_csrf_token_for_dna_matches(driver: Any) -> Optional[str]:
 def _try_get_in_tree_from_cache(
     cache_key: str,
     current_page: int,
-) -> Optional[set[str]]:
+) -> set[str] | None:
     """
     Try to get in-tree status from cache.
 
@@ -394,7 +394,7 @@ def fetch_match_list_page(
     my_uuid: str,
     current_page: int,
     csrf_token: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetch match list data for a specific page from the API.
 

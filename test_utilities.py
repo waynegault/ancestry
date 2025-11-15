@@ -370,7 +370,7 @@ def create_type_validator(expected_type: type, allow_none: bool = False):
     return validator
 
 
-def create_string_validator(min_length: int = 0, max_length: Optional[int] = None,
+def create_string_validator(min_length: int = 0, max_length: int | None = None,
                           allow_empty: bool = True, strip_whitespace: bool = True):
     """
     Create a string validation function.
@@ -574,7 +574,7 @@ def create_test_database() -> Session:
     return SessionLocal()
 
 
-def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
+def load_test_gedcom(gedcom_path: str | None = None) -> Any:
     """
     Load a GEDCOM file for testing.
 
@@ -616,7 +616,7 @@ def create_test_person(
     person_id: int = 1,
     uuid: str = "TEST-UUID-1234",
     username: str = "Test User",
-    cm_dna: Optional[int] = None,
+    cm_dna: int | None = None,
     engagement_score: int = 50,
 ) -> MagicMock:
     """
@@ -680,7 +680,7 @@ def run_parameterized_tests(test_cases: list[tuple[str, Callable, Any, str]], su
 
 
 def assert_function_behavior(func: Callable, args: tuple, expected_result: Any,
-                            error_message: Optional[str] = None) -> None:
+                            error_message: str | None = None) -> None:
     """
     Assert that a function behaves as expected with given arguments.
 
@@ -729,7 +729,7 @@ def create_test_session() -> Session:
 
 
 def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
-                         expected_count: int, error_message: Optional[str] = None) -> None:
+                         expected_count: int, error_message: str | None = None) -> None:
     """
     Assert that the database contains the expected number of records.
 
@@ -758,8 +758,8 @@ def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
     assert count == expected_count, error_message
 
 
-def mock_api_response(status_code: int = 200, json_data: Optional[dict] = None,
-                     text: Optional[str] = None) -> MagicMock:
+def mock_api_response(status_code: int = 200, json_data: dict | None = None,
+                     text: str | None = None) -> MagicMock:
     """
     Create a mock API response object.
 

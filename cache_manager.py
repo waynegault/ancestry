@@ -164,7 +164,7 @@ class SessionComponentCache(BaseCacheModule):
             logger.warning(f"Error caching component {component_type}: {e}")
             return False
 
-    def get_cached_component(self, component_type: str) -> Optional[Any]:
+    def get_cached_component(self, component_type: str) -> Any | None:
         """Retrieve cached component using existing cache infrastructure"""
         if not cache:
             return None
@@ -243,7 +243,7 @@ class APICacheManager(BaseCacheModule):
         return f"api_{endpoint}_{params_hash}"
 
     def cache_api_response(self, service: str, method: str, params: dict[str, Any],
-                          response: Any, ttl: Optional[int] = None) -> bool:
+                          response: Any, ttl: int | None = None) -> bool:
         """Cache an API response with intelligent TTL management."""
         if not cache:
             return False
@@ -304,7 +304,7 @@ class APICacheManager(BaseCacheModule):
         # Reject everything else (objects, connections, etc.)
         return False
 
-    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Optional[Any]:
+    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Any | None:
         """Retrieve cached API response."""
         if not cache:
             return None
@@ -566,7 +566,7 @@ def cache_session_component(component_type: str, component: Any) -> bool:
     return _unified_cache_manager.session_cache.cache_component(component_type, component)
 
 
-def get_cached_session_component(component_type: str) -> Optional[Any]:
+def get_cached_session_component(component_type: str) -> Any | None:
     """Legacy function for retrieving cached session components."""
     return _unified_cache_manager.session_cache.get_cached_component(component_type)
 

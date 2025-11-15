@@ -57,7 +57,7 @@ class SessionValidator:
         browser_manager,
         api_manager,
         session_manager,
-        action_name: Optional[str],
+        action_name: str | None,
         skip_csrf: bool,
         attempt: int,
     ) -> tuple[bool, str]:
@@ -131,7 +131,7 @@ class SessionValidator:
         browser_manager,
         api_manager,
         session_manager,
-        action_name: Optional[str] = None,
+        action_name: str | None = None,
         max_attempts: int = 3,
         skip_csrf: bool = False,
     ) -> bool:
@@ -191,7 +191,7 @@ class SessionValidator:
 
     def _check_login_and_attempt_relogin(
         self, browser_manager, session_manager, attempt: int
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Check login status and attempt relogin if needed.
 
@@ -323,7 +323,7 @@ class SessionValidator:
             logger.error(f"Unexpected error checking URL: {e}", exc_info=True)
             return False
 
-    def _should_skip_cookie_check(self, action_name: Optional[str]) -> tuple[bool, Optional[str]]:
+    def _should_skip_cookie_check(self, action_name: str | None) -> tuple[bool, str | None]:
         """Determine if cookie check should be skipped for this action."""
         if not action_name:
             return False, None
@@ -358,7 +358,7 @@ class SessionValidator:
 
         return False, None
 
-    def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    def _check_essential_cookies(self, browser_manager, action_name: str | None = None) -> tuple[bool, str | None]:
         """
         Check for essential cookies.
 
@@ -392,7 +392,7 @@ class SessionValidator:
 
     def _sync_cookies_to_requests(
         self, browser_manager, api_manager, session_manager=None
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Sync cookies from browser to API requests session.
 
@@ -423,7 +423,7 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _check_csrf_token(self, api_manager) -> tuple[bool, Optional[str]]:
+    def _check_csrf_token(self, api_manager) -> tuple[bool, str | None]:
         """
         Check and retrieve CSRF token if needed.
         Uses smart caching to avoid repeated fetches.

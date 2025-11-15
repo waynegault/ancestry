@@ -85,10 +85,10 @@ logger.debug("Loaded environment variables for MS Graph utils.")
 # Step 2: Load required MS Graph configuration
 logger.debug("Loading MS Graph configuration from environment...")
 # Client ID (Application ID) registered in Azure AD/Microsoft Entra ID
-CLIENT_ID: Optional[str] = os.getenv("MS_GRAPH_CLIENT_ID")
+CLIENT_ID: str | None = os.getenv("MS_GRAPH_CLIENT_ID")
 # Tenant ID (Directory ID). Defaults to 'consumers' for multi-tenant apps / personal accounts.
 # Use 'common' for multi-tenant work/school/personal, or specific tenant ID.
-TENANT_ID: Optional[str] = os.getenv(
+TENANT_ID: str | None = os.getenv(
     "MS_GRAPH_TENANT_ID", "consumers"
 )  # Default to consumers
 
@@ -188,7 +188,7 @@ atexit.register(save_cache_on_exit)
 logger.debug("Registered MSAL cache save function with atexit.")
 
 # Step 10: Initialize Shared MSAL Public Client Application instance
-msal_app_instance: Optional[msal.PublicClientApplication] = None
+msal_app_instance: msal.PublicClientApplication | None = None
 if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
     try:
         msal_app_instance = msal.PublicClientApplication(
@@ -226,7 +226,7 @@ def _check_token_cache() -> bool:
         return False
 
 
-def _try_silent_token_acquisition(app: Any) -> Optional[str]:
+def _try_silent_token_acquisition(app: Any) -> str | None:
     """Attempt to acquire token silently from cache."""
     accounts = app.get_accounts()
     if not accounts:
@@ -244,7 +244,7 @@ def _try_silent_token_acquisition(app: Any) -> Optional[str]:
     return None
 
 
-def _initiate_device_flow(app: Any) -> Optional[dict]:
+def _initiate_device_flow(app: Any) -> dict | None:
     """Initiate device flow and return flow object."""
     logger.debug("Initiating interactive device flow...")
     try:
@@ -275,7 +275,7 @@ def _display_device_flow_instructions(flow: dict) -> None:
     logger.debug(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
 
 
-def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
+def _process_device_flow_result(result: dict | None) -> str | None:
     """Process device flow result and return access token."""
     if not result:
         logger.error("Device flow failed, timed out, or returned unexpected result: None")
@@ -305,7 +305,7 @@ def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
     return None
 
 
-def acquire_token_device_flow() -> Optional[str]:
+def acquire_token_device_flow() -> str | None:
     """
     Acquires an MS Graph API access token using the device code flow.
     Prioritizes silent acquisition from cache, falls back to interactive flow.
@@ -347,7 +347,7 @@ def acquire_token_device_flow() -> Optional[str]:
 # End of acquire_token_device_flow
 
 
-def _process_list_query_response(lists_data: dict, list_name: str) -> Optional[str]:
+def _process_list_query_response(lists_data: dict, list_name: str) -> str | None:
     """Process the list query response and extract list ID."""
     if not lists_data or "value" not in lists_data:
         logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
@@ -383,7 +383,7 @@ def _handle_list_query_http_error(http_err: requests.exceptions.HTTPError) -> No
         logger.debug(f"Error response content: {http_err.response.text[:500]}")
 
 
-def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
+def get_todo_list_id(access_token: str, list_name: str) -> str | None:
     """
     Finds the ID of a specific Microsoft To-Do list by its display name using MS Graph API.
     Includes specific handling for common HTTP errors.
@@ -449,10 +449,10 @@ def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, li
 
 def _build_task_payload(
     task_title: str,
-    task_body: Optional[str] = None,
-    importance: Optional[str] = None,
-    due_date: Optional[str] = None,
-    categories: Optional[list[str]] = None,
+    task_body: str | None = None,
+    importance: str | None = None,
+    due_date: str | None = None,
+    categories: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build task data payload for MS Graph API."""
     task_data: dict[str, Any] = {"title": task_title}
@@ -483,13 +483,13 @@ def _execute_task_creation_request(
     task_data: dict[str, Any],
     task_title: str,
     list_id: str,
-) -> Optional[str]:
+) -> str | None:
     """Execute task creation request and handle errors."""
     try:
         response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
         response.raise_for_status()
 
-        response_data: Optional[dict[str, Any]] = None
+        response_data: dict[str, Any] | None = None
         with contextlib.suppress(json.JSONDecodeError):
             response_data = response.json()
             logger.debug(f"Create task response details: {response_data}")
@@ -520,11 +520,11 @@ def create_todo_task(
     access_token: str,
     list_id: str,
     task_title: str,
-    task_body: Optional[str] = None,
-    importance: Optional[str] = None,
-    due_date: Optional[str] = None,
-    categories: Optional[list[str]] = None,
-) -> Optional[str]:
+    task_body: str | None = None,
+    importance: str | None = None,
+    due_date: str | None = None,
+    categories: list[str] | None = None,
+) -> str | None:
     """
     Creates a new task in a specified Microsoft To-Do list using MS Graph API.
     Includes specific handling for common HTTP errors.

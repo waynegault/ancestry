@@ -324,7 +324,7 @@ def _is_memory_cache_valid(cache_key: str) -> bool:
     return (time.time() - timestamp) < _CACHE_MAX_AGE
 
 
-def _get_from_memory_cache(cache_key: str) -> Optional[Any]:
+def _get_from_memory_cache(cache_key: str) -> Any | None:
     """Get data from memory cache if valid."""
     if _is_memory_cache_valid(cache_key):
         data, _ = _MEMORY_CACHE[cache_key]
@@ -353,7 +353,7 @@ def clear_memory_cache() -> int:
 # --- Enhanced GEDCOM Caching Functions ---
 
 
-def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Optional[Any], Optional[str]]:
+def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Any | None, str | None]:
     """Check disk cache for GEDCOM data. Returns (cached_data, disk_cache_key)."""
     try:
         from pathlib import Path
@@ -375,7 +375,7 @@ def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Opt
         return None, None
 
 
-def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str]) -> None:
+def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: str | None) -> None:
     """
     Store GEDCOM data in disk cache (without reader object or indi_index).
 
@@ -406,7 +406,7 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
         logger.warning(f"Error storing in disk cache: {e}")
 
 
-def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
+def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Any | None:
     """
     Load GEDCOM data with aggressive multi-level caching.
 
@@ -531,7 +531,7 @@ def _serialize_processed_data_cache(processed_data_cache: dict[str, Any]) -> dic
     return serializable_processed_data
 
 
-def _serialize_indi_index_object(value: Any) -> Optional[dict[str, Any]]:
+def _serialize_indi_index_object(value: Any) -> dict[str, Any] | None:
     """Serialize a complex object from indi_index."""
     if not hasattr(value, "__dict__"):
         return None

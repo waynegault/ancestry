@@ -258,7 +258,7 @@ class SessionHealthMonitor:
         """Check if a metric triggers any alerts, with de-duplication and cooldown."""
         metric = self.current_metrics[metric_name]
 
-        level: Optional[AlertLevel] = None
+        level: AlertLevel | None = None
         message: str = ""
         threshold: float = 0.0
 
@@ -1027,7 +1027,7 @@ class SessionHealthMonitor:
 
     # === SESSION STATE PERSISTENCE ===
 
-    def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
+    def create_session_checkpoint(self, checkpoint_name: str | None = None) -> str:
         """Create a checkpoint of the current session state for recovery."""
         try:
             if checkpoint_name is None:
@@ -1269,7 +1269,7 @@ class SessionHealthMonitor:
             logger.error(f"Failed to list checkpoints: {e}")
             return []
 
-    def persist_session_state_to_disk(self, session_data: Optional[dict[str, Any]] = None) -> str:
+    def persist_session_state_to_disk(self, session_data: dict[str, Any] | None = None) -> str:
         """Persist current session state to disk for crash recovery."""
         try:
             # Create persistent state directory
@@ -1309,7 +1309,7 @@ class SessionHealthMonitor:
             logger.error(f"Failed to persist session state: {e}")
             return ""
 
-    def recover_session_state_from_disk(self) -> Optional[dict[str, Any]]:
+    def recover_session_state_from_disk(self) -> dict[str, Any] | None:
         """Recover session state from disk after a crash."""
         try:
             state_file = Path("Cache/session_state/current_session.json")
@@ -1353,7 +1353,7 @@ class SessionHealthMonitor:
 # Global health monitor instance
 class _HealthMonitorSingleton:
     """Singleton container for health monitor instance."""
-    instance: Optional[SessionHealthMonitor] = None
+    instance: SessionHealthMonitor | None = None
 
 
 def get_health_monitor() -> SessionHealthMonitor:

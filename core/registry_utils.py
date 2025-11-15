@@ -97,9 +97,9 @@ class SmartFunctionRegistry:
     def register_module(
         self,
         module_globals: dict[str, Any],
-        include_patterns: Optional[list[str]] = None,
-        exclude_patterns: Optional[list[str]] = None,
-        module_name: Optional[str] = "unknown",
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+        module_name: str | None = "unknown",
     ) -> int:
         """
         Register all relevant functions from a module in one call.
@@ -168,7 +168,7 @@ smart_registry = SmartFunctionRegistry()
 
 
 def auto_register_module(
-    module_globals: dict[str, Any], module_name: Optional[str] = None
+    module_globals: dict[str, Any], module_name: str | None = None
 ) -> int:
     """
     One-line function to replace massive auto-registration blocks.

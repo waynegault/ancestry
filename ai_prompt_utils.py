@@ -136,7 +136,7 @@ def save_prompts(prompts_data: dict[str, Any]) -> bool:
         return False
 
 
-def get_prompt(prompt_key: str) -> Optional[str]:
+def get_prompt(prompt_key: str) -> str | None:
     """
     Get a specific prompt by key.
 
@@ -155,8 +155,8 @@ def get_prompt(prompt_key: str) -> Optional[str]:
 def update_prompt(
     prompt_key: str,
     new_prompt: str,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
 ) -> bool:
     """
     Update a specific prompt by key.
@@ -330,7 +330,7 @@ def backup_prompts_file() -> bool:
 from typing import Optional
 
 
-def cleanup_old_backups(keep_count: int = 5, logs_dir: Optional[Path] = None) -> int:
+def cleanup_old_backups(keep_count: int = 5, logs_dir: Path | None = None) -> int:
     """
     Clean up old backup files, keeping only the most recent ones.
 

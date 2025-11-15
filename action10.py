@@ -111,10 +111,10 @@ from universal_scoring import calculate_display_bonuses  # type: ignore[import-n
 # --- Module-level GEDCOM cache for tests ---
 class _GedcomCacheState:
     """Manages GEDCOM cache state for tests."""
-    cache: Optional[GedcomData] = None
+    cache: GedcomData | None = None
 
 
-def get_cached_gedcom() -> Optional[GedcomData]:
+def get_cached_gedcom() -> GedcomData | None:
     """Load GEDCOM data once and cache it for all tests"""
     if _GedcomCacheState.cache is None:
         gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
@@ -270,7 +270,7 @@ def _format_test_person_analysis(field_scores: dict[str, int], total_score: floa
 # --- Helper Functions ---
 # Import centralized string validation utility
 
-def sanitize_input(value: str) -> Optional[str]:
+def sanitize_input(value: str) -> str | None:
     """
     Sanitize user input for safe processing in genealogical searches.
 
@@ -287,7 +287,7 @@ def sanitize_input(value: str) -> Optional[str]:
 from test_utilities import is_valid_year as _is_valid_year  # type: ignore[import-not-found]
 
 
-def _try_simple_year_parsing(value: str) -> Optional[int]:
+def _try_simple_year_parsing(value: str) -> int | None:
     """Try to parse value as a simple 4-digit year."""
     if value.isdigit():
         year = int(value)
@@ -295,7 +295,7 @@ def _try_simple_year_parsing(value: str) -> Optional[int]:
     return None
 
 
-def _try_dateparser_parsing(value: str) -> Optional[int]:
+def _try_dateparser_parsing(value: str) -> int | None:
     """Try to parse value using dateparser library."""
     try:
         import dateparser
@@ -310,7 +310,7 @@ def _try_dateparser_parsing(value: str) -> Optional[int]:
     return None
 
 
-def _try_regex_year_extraction(value: str) -> Optional[int]:
+def _try_regex_year_extraction(value: str) -> int | None:
     """Try to extract year using regex as fallback."""
     year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
     if year_match:
@@ -320,8 +320,8 @@ def _try_regex_year_extraction(value: str) -> Optional[int]:
 
 
 def get_validated_year_input(
-    prompt: str, default: Optional[int] = None
-) -> Optional[int]:
+    prompt: str, default: int | None = None
+) -> int | None:
     """Get and validate a year input with optional default."""
     display_default = f" [{default}]" if default else " [YYYY]"
     value = input(f"{prompt}{display_default}: ").strip()
@@ -375,7 +375,7 @@ def _validate_gedcom_file_path() -> Path:
     return gedcom_file_path_config
 
 
-def _get_reference_person_info() -> tuple[Optional[str], str]:
+def _get_reference_person_info() -> tuple[str | None, str]:
     """Get reference person ID and name from config."""
     reference_person_id_raw = (
         config_schema.reference_person_id if config_schema else None
@@ -415,7 +415,7 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
 
 def _log_configuration(
     gedcom_file_path: Path,
-    reference_person_id: Optional[str],
+    reference_person_id: str | None,
     reference_person_name: str
 ) -> None:
     """Log configuration details."""
@@ -428,9 +428,9 @@ def _log_configuration(
 
 
 def validate_config() -> tuple[
-    Optional[Path],
-    Optional[str],
-    Optional[str],
+    Path | None,
+    str | None,
+    str | None,
     dict[str, Any],
     dict[str, Any],
     int,
@@ -452,7 +452,7 @@ def validate_config() -> tuple[
     )
 
 
-def _check_memory_cache(gedcom_path: Path) -> Optional[GedcomData]:
+def _check_memory_cache(gedcom_path: Path) -> GedcomData | None:
     """Check if GEDCOM is in module-level memory cache."""
     if _GedcomCacheState.cache is not None:
         cached_path = getattr(_GedcomCacheState.cache, 'path', None)
@@ -544,7 +544,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         raise MissingConfigError(f"Failed to load GEDCOM file {gedcom_path.name}: {e}") from e
 
 
-def _create_input_getter(args: Optional[argparse.Namespace]) -> Callable[[str], str]:
+def _create_input_getter(args: argparse.Namespace | None) -> Callable[[str], str]:
     """Create input getter function that handles automated inputs."""
     auto_inputs = getattr(args, "auto_input", None) if args else None
     auto_index = 0
@@ -589,7 +589,7 @@ def _collect_basic_criteria(get_input: Callable[[str], str]) -> dict[str, Any]:
 
 def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
     """Create date objects from year criteria."""
-    birth_date_obj_crit: Optional[datetime] = None
+    birth_date_obj_crit: datetime | None = None
     if criteria["birth_year"]:
         try:
             birth_date_obj_crit = datetime(criteria["birth_year"], 1, 1, tzinfo=timezone.utc)
@@ -599,7 +599,7 @@ def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
             )
             criteria["birth_year"] = None
 
-    death_date_obj_crit: Optional[datetime] = None
+    death_date_obj_crit: datetime | None = None
     if criteria["death_year"]:
         try:
             death_date_obj_crit = datetime(criteria["death_year"], 1, 1, tzinfo=timezone.utc)
@@ -630,7 +630,7 @@ def _build_filter_criteria(scoring_criteria: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_user_criteria(
-    args: Optional[argparse.Namespace] = None,
+    args: argparse.Namespace | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Get search criteria from user input or automated input args."""
     logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
@@ -672,7 +672,7 @@ def matches_criterion(
 def matches_year_criterion(
     criterion_name: str,
     filter_criteria: dict[str, Any],
-    candidate_value: Optional[int],
+    candidate_value: int | None,
     year_range: int,
 ) -> bool:
     """Check if a candidate year matches a year criterion within range."""
@@ -687,7 +687,7 @@ def calculate_match_score_cached(
     candidate_data: dict[str, Any],
     scoring_weights: Mapping[str, int | float],
     date_flex: dict[str, Any],
-    cache: Optional[dict[Any, Any]] = None,  # type: ignore[type-arg]
+    cache: dict[Any, Any] | None = None,  # type: ignore[type-arg]
 ) -> tuple[float, dict[str, int], list[str]]:
     """Calculate match score with caching for performance."""
     if cache is None:
@@ -818,7 +818,7 @@ def _process_individual(
     date_flex: dict[str, Any],
     year_range: int,
     score_cache: dict[str, Any],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Process a single individual for filtering and scoring."""
     try:
         extracted_data = _extract_individual_data(indi_data)
@@ -1068,7 +1068,7 @@ def _display_results_table(table_data: list[list[str]], headers: list[str]) -> N
 
 def display_top_matches(
     scored_matches: list[dict[str, Any]], max_results: int
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Display top matching results and return the top match."""
     print(f"\n=== Top {max_results} Matches Found ===")
 
@@ -1131,7 +1131,7 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
     display_family_members(family_data)
 
 
-def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
+def _extract_year_from_pattern(years_part: str, pattern: str) -> int | None:
     """Extract year from a specific regex pattern."""
     import re
     match = re.search(pattern, years_part)
@@ -1143,7 +1143,7 @@ def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
     return None
 
 
-def _extract_years_from_range(years_part: str) -> tuple[Optional[int], Optional[int]]:
+def _extract_years_from_range(years_part: str) -> tuple[int | None, int | None]:
     """Extract birth and death years from simple range format (1900-1950)."""
     if "-" not in years_part:
         return None, None
@@ -1163,7 +1163,7 @@ def _extract_years_from_range(years_part: str) -> tuple[Optional[int], Optional[
     return birth_year, death_year
 
 
-def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[int]]:
+def _extract_years_from_name(name: str) -> tuple[str, int | None, int | None]:
     """Extract birth and death years from formatted name string."""
     if "(" not in name or ")" not in name:
         return name, None, None
@@ -1216,8 +1216,8 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list) -> list[dict]:
 
 
 def _extract_years_from_name_if_missing(
-    display_name: str, birth_year: Optional[int], death_year: Optional[int]
-) -> tuple[str, Optional[int], Optional[int]]:
+    display_name: str, birth_year: int | None, death_year: int | None
+) -> tuple[str, int | None, int | None]:
     """Extract years from name if both birth and death years are missing."""
     if birth_year is None and death_year is None:
         clean_name, by, dy = _extract_years_from_name(display_name)
@@ -1227,10 +1227,10 @@ def _extract_years_from_name_if_missing(
 
 def _supplement_years_from_gedcom(
     gedcom_data: GedcomData,
-    top_match_norm_id: Optional[str],
-    birth_year: Optional[int],
-    death_year: Optional[int],
-) -> tuple[Optional[int], Optional[int]]:
+    top_match_norm_id: str | None,
+    birth_year: int | None,
+    death_year: int | None,
+) -> tuple[int | None, int | None]:
     """Supplement missing years from GEDCOM processed data."""
     if (birth_year is None or death_year is None) and isinstance(top_match_norm_id, str):
         try:
@@ -1248,8 +1248,8 @@ def _supplement_years_from_gedcom(
 def _derive_display_fields(
     gedcom_data: GedcomData,
     top_match: dict[str, Any],
-    top_match_norm_id: Optional[str],
-) -> tuple[str, Optional[int], Optional[int]]:
+    top_match_norm_id: str | None,
+) -> tuple[str, int | None, int | None]:
     """Return (display_name, birth_year, death_year) using layered fallbacks."""
     display_name = top_match.get("full_name_disp", "Unknown")
     birth_year = top_match.get("raw_data", {}).get("birth_year")
@@ -1277,9 +1277,9 @@ def _build_family_data_dict(gedcom_data: GedcomData, indi: Any) -> dict[str, lis
 
 def _compute_unified_path_if_possible(
     gedcom_data: GedcomData,
-    top_match_norm_id: Optional[str],
-    reference_person_id_norm: Optional[str],
-) -> Optional[list]:
+    top_match_norm_id: str | None,
+    reference_person_id_norm: str | None,
+) -> list | None:
     if isinstance(top_match_norm_id, str) and isinstance(reference_person_id_norm, str):
         path_ids = fast_bidirectional_bfs(
             top_match_norm_id,
@@ -1303,7 +1303,7 @@ def _compute_unified_path_if_possible(
 def analyze_top_match(
     gedcom_data: GedcomData,
     top_match: dict[str, Any],
-    reference_person_id_norm: Optional[str],
+    reference_person_id_norm: str | None,
     reference_person_name: str,
 ) -> None:
     """Analyze top match and present results with minimal branching."""
@@ -1342,7 +1342,7 @@ def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
     return args, config_data
 
 
-def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
+def _load_and_validate_gedcom(gedcom_file_path: str) -> Any | None:
     """Load and validate GEDCOM data."""
     if not gedcom_file_path:
         return None
@@ -1432,7 +1432,7 @@ def main() -> bool:
         return False
 
 
-def _setup_test_environment() -> tuple[Optional[str], Any]:
+def _setup_test_environment() -> tuple[str | None, Any]:
     """Setup test environment and return original GEDCOM path and test suite."""
     import os
     from pathlib import Path
@@ -1456,7 +1456,7 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
     return original_gedcom, suite
 
 
-def _teardown_test_environment(original_gedcom: Optional[str]) -> None:
+def _teardown_test_environment(original_gedcom: str | None) -> None:
     """Restore original test environment."""
     import os
 

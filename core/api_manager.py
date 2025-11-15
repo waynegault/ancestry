@@ -61,11 +61,11 @@ class APIManager:
     def __init__(self) -> None:
         """Initialize the APIManager."""
         # User identifiers
-        self.csrf_token: Optional[str] = None
-        self.my_profile_id: Optional[str] = None
-        self.my_uuid: Optional[str] = None
-        self.my_tree_id: Optional[str] = None
-        self.tree_owner_name: Optional[str] = None
+        self.csrf_token: str | None = None
+        self.my_profile_id: str | None = None
+        self.my_uuid: str | None = None
+        self.my_tree_id: str | None = None
+        self.tree_owner_name: str | None = None
 
         # Logging flags to prevent repeated logging
         self._profile_id_logged: bool = False
@@ -209,7 +209,7 @@ class APIManager:
             return False
 
 
-    def load_cookies_from_file(self, path: Optional[Union[str, Path]] = None) -> bool:
+    def load_cookies_from_file(self, path: Union[str, Path] | None = None) -> bool:
         """Load cookies from a JSON file into the requests session (browserless).
 
         Args:
@@ -257,7 +257,7 @@ class APIManager:
             return False
 
     def _prepare_api_headers(
-        self, headers: Optional[dict[str, str]], use_csrf_token: bool, api_description: str
+        self, headers: dict[str, str] | None, use_csrf_token: bool, api_description: str
     ) -> dict[str, str]:
         """Prepare headers for API request."""
         request_headers = {
@@ -298,9 +298,9 @@ class APIManager:
         url: str,
         method: str = "GET",
         use_csrf_token: bool = True,
-        data: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
-        headers: Optional[dict[str, str]] = None,
+        data: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: int = 30,
         api_description: str = "API Request",
     ) -> ApiResponseType:
@@ -356,7 +356,7 @@ class APIManager:
             )
             return None
 
-    def get_csrf_token(self) -> Optional[str]:
+    def get_csrf_token(self) -> str | None:
         """
         Retrieve CSRF token from the API.
 
@@ -390,7 +390,7 @@ class APIManager:
 
         return None
 
-    def get_profile_id(self) -> Optional[str]:
+    def get_profile_id(self) -> str | None:
         """
         Retrieve user profile ID (ucdmid) from the API.
 
@@ -427,7 +427,7 @@ class APIManager:
 
         return None
 
-    def get_uuid(self) -> Optional[str]:
+    def get_uuid(self) -> str | None:
         """
         Retrieve user UUID (DNA test GUID).
 
@@ -483,7 +483,7 @@ class APIManager:
             logger.warning("Some essential identifiers could not be retrieved")
         return all_ok
 
-    def verify_api_login_status(self) -> Optional[bool]:
+    def verify_api_login_status(self) -> bool | None:
         """
         Verify login status via API using comprehensive verification with fallbacks.
         Based on the original working implementation from git history.

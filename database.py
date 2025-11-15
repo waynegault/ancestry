@@ -182,12 +182,12 @@ class ConversationLog(Base):
         index=True,
         comment="Direction of the message (IN or OUT).",
     )
-    script_message_status: Mapped[Optional[str]] = mapped_column(
+    script_message_status: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Status of OUT messages sent by the script (e.g., delivered OK, typed (dry_run)).",
     )
-    latest_message_content: Mapped[Optional[str]] = mapped_column(
+    latest_message_content: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Truncated content of the message.",
@@ -204,20 +204,20 @@ class ConversationLog(Base):
         index=True,
         comment="Timestamp (UTC) of the message.",
     )
-    ai_sentiment: Mapped[Optional[str]] = mapped_column(
+    ai_sentiment: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         index=True,
         comment="AI-determined sentiment/intent (e.g., PRODUCTIVE, DESIST) for IN messages.",
     )
-    conversation_phase: Mapped[Optional[ConversationPhaseEnum]] = mapped_column(
+    conversation_phase: Mapped[ConversationPhaseEnum | None] = mapped_column(
         SQLEnum(ConversationPhaseEnum),
         nullable=True,
         index=True,
         default=None,
         comment="Priority 1 Todo #11: Conversation lifecycle phase (INITIAL_OUTREACH → RESPONSE_RECEIVED → INFORMATION_SHARED → COLLABORATION_ACTIVE → STALLED → CLOSED). Used to determine follow-up strategy and timing.",
     )
-    message_template_id: Mapped[Optional[int]] = mapped_column(
+    message_template_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("message_templates.id"),
         nullable=True,
@@ -230,18 +230,18 @@ class ConversationLog(Base):
         nullable=False,
         comment="Timestamp of the last update to this log entry.",
     )
-    custom_reply_sent_at: Mapped[Optional[datetime]] = mapped_column(
+    custom_reply_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when an automated genealogical custom reply was sent for this IN message.",
     )
-    follow_up_due_date: Mapped[Optional[datetime]] = mapped_column(
+    follow_up_due_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
         comment="Priority 1 Todo #5: Timestamp (UTC) when follow-up is due. Calculated based on urgency (7/14/30 days) for PRODUCTIVE conversations with pending questions/promises.",
     )
-    awaiting_response_from: Mapped[Optional[str]] = mapped_column(
+    awaiting_response_from: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Priority 1 Todo #5: Who needs to respond next ('me' or 'them'). Used to track conversation responsibility and trigger appropriate reminders.",
@@ -325,12 +325,12 @@ class ConversationMetrics(Base):
         default=False,
         comment="Whether we've received at least one response.",
     )
-    first_response_date: Mapped[Optional[datetime]] = mapped_column(
+    first_response_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when first response was received.",
     )
-    time_to_first_response_hours: Mapped[Optional[float]] = mapped_column(
+    time_to_first_response_hours: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Hours between first message sent and first response received.",
@@ -349,7 +349,7 @@ class ConversationMetrics(Base):
         default=0,
         comment="Maximum engagement score achieved during conversation.",
     )
-    avg_engagement_score: Mapped[Optional[float]] = mapped_column(
+    avg_engagement_score: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Average engagement score across all updates.",
@@ -362,19 +362,19 @@ class ConversationMetrics(Base):
         default="initial_outreach",
         comment="Current conversation phase from ConversationState.",
     )
-    conversation_duration_days: Mapped[Optional[float]] = mapped_column(
+    conversation_duration_days: Mapped[float | None] = mapped_column(
         Float,
         nullable=True,
         comment="Days between first message and last message.",
     )
 
     # Template effectiveness
-    initial_template_used: Mapped[Optional[str]] = mapped_column(
+    initial_template_used: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Template key used for initial outreach message.",
     )
-    templates_used: Mapped[Optional[str]] = mapped_column(
+    templates_used: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of all template keys used in conversation.",
@@ -407,24 +407,24 @@ class ConversationMetrics(Base):
         default=False,
         comment="Whether this person was added to tree during conversation.",
     )
-    added_to_tree_date: Mapped[Optional[datetime]] = mapped_column(
+    added_to_tree_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when person was added to tree.",
     )
 
     # Timestamps
-    first_message_sent: Mapped[Optional[datetime]] = mapped_column(
+    first_message_sent: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when first message was sent.",
     )
-    last_message_sent: Mapped[Optional[datetime]] = mapped_column(
+    last_message_sent: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when last message was sent.",
     )
-    last_message_received: Mapped[Optional[datetime]] = mapped_column(
+    last_message_received: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when last message was received.",
@@ -505,41 +505,41 @@ class EngagementTracking(Base):
         nullable=False,
         comment="Type of engagement event: message_sent, message_received, person_lookup, research_task, phase_change, score_update.",
     )
-    event_description: Mapped[Optional[str]] = mapped_column(
+    event_description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Detailed description of the event.",
     )
-    event_data: Mapped[Optional[str]] = mapped_column(
+    event_data: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded additional event data.",
     )
 
     # Engagement impact
-    engagement_score_before: Mapped[Optional[int]] = mapped_column(
+    engagement_score_before: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Engagement score before this event.",
     )
-    engagement_score_after: Mapped[Optional[int]] = mapped_column(
+    engagement_score_after: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Engagement score after this event.",
     )
-    engagement_score_delta: Mapped[Optional[int]] = mapped_column(
+    engagement_score_delta: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
         comment="Change in engagement score from this event.",
     )
 
     # Context
-    conversation_phase: Mapped[Optional[str]] = mapped_column(
+    conversation_phase: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Conversation phase when event occurred.",
     )
-    template_used: Mapped[Optional[str]] = mapped_column(
+    template_used: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Template key if event was a message.",
@@ -583,7 +583,7 @@ class MessageTemplate(Base):
         comment="Unique key identifying the template (e.g., 'In_Tree-Initial').",
     )
 # template_name removed - can be generated from template_key as needed
-    subject_line: Mapped[Optional[str]] = mapped_column(
+    subject_line: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Email subject line extracted from template content.",
@@ -676,7 +676,7 @@ class TreeStatisticsCache(Base):
     distant_matches: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="Number of distant matches (<20 cM)."
     )
-    ethnicity_regions: Mapped[Optional[str]] = mapped_column(
+    ethnicity_regions: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded dictionary of ethnicity regions and counts.",
@@ -731,37 +731,37 @@ class ConversationState(Base):
         default=0,
         comment="Engagement score (0-100) based on message quality and frequency.",
     )
-    last_topic: Mapped[Optional[str]] = mapped_column(
+    last_topic: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Last topic discussed in the conversation.",
     )
-    pending_questions: Mapped[Optional[str]] = mapped_column(
+    pending_questions: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of pending questions to ask.",
     )
-    ai_summary: Mapped[Optional[str]] = mapped_column(
+    ai_summary: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="AI-generated engagement summary and intent notes.",
     )
-    mentioned_people: Mapped[Optional[str]] = mapped_column(
+    mentioned_people: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of people mentioned in conversation.",
     )
-    shared_ancestors: Mapped[Optional[str]] = mapped_column(
+    shared_ancestors: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="JSON-encoded list of shared ancestors discovered.",
     )
-    next_action: Mapped[Optional[str]] = mapped_column(
+    next_action: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Next action to take: await_reply, send_follow_up, research_needed, no_action.",
     )
-    next_action_date: Mapped[Optional[datetime]] = mapped_column(
+    next_action_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp (UTC) when next action should be taken.",
@@ -823,13 +823,13 @@ class DnaMatch(Base):
         nullable=False,
         comment="Relationship prediction provided by Ancestry (e.g., '1st-2nd cousin').",
     )
-    shared_segments: Mapped[Optional[int]] = mapped_column(
+    shared_segments: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="Number of shared DNA segments."
     )
-    longest_shared_segment: Mapped[Optional[float]] = mapped_column(
+    longest_shared_segment: Mapped[float | None] = mapped_column(
         Float, nullable=True, comment="Length of the longest shared segment in cM."
     )
-    meiosis: Mapped[Optional[int]] = mapped_column(
+    meiosis: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="Meiosis count (if provided by Ancestry)."
     )
     from_my_fathers_side: Mapped[bool] = mapped_column(
@@ -862,7 +862,7 @@ class DnaMatch(Base):
 
     # --- Properties ---
     @property
-    def uuid(self) -> Optional[str]:
+    def uuid(self) -> str | None:
         """Returns the UUID of the associated Person."""
         return self.person.uuid if self.person else None
 
@@ -893,35 +893,35 @@ class FamilyTree(Base):
         index=True,
         comment="Foreign key linking to the Person record (one-to-one).",
     )
-    cfpid: Mapped[Optional[str]] = mapped_column(
+    cfpid: Mapped[str | None] = mapped_column(
         String,
         unique=True,
         nullable=True,
         index=True,  # Added index
         comment="Ancestry's internal Person ID (CFPID) within the script user's tree.",
     )
-    person_name_in_tree: Mapped[Optional[str]] = mapped_column(
+    person_name_in_tree: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Name of the person as recorded in the script user's tree.",
     )
-    facts_link: Mapped[Optional[str]] = mapped_column(
+    facts_link: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Direct URL to the person's 'Facts' page in the script user's tree.",
     )
-    view_in_tree_link: Mapped[Optional[str]] = mapped_column(
+    view_in_tree_link: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Direct URL to view the person within the script user's family tree structure.",
     )
-    actual_relationship: Mapped[Optional[str]] = mapped_column(
+    actual_relationship: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         index=True,  # Added index
         comment="Relationship determined via tree analysis (e.g., '1st cousin 1x removed').",
     )
-    relationship_path: Mapped[Optional[str]] = mapped_column(
+    relationship_path: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,  # Changed to Text for potentially long paths
         comment="Textual representation of the relationship path back to a common ancestor.",
@@ -944,7 +944,7 @@ class FamilyTree(Base):
 
     # --- Properties ---
     @property
-    def uuid(self) -> Optional[str]:
+    def uuid(self) -> str | None:
         """Returns the UUID of the associated Person."""
         return self.person.uuid if self.person else None
 
@@ -964,14 +964,14 @@ class Person(Base):
     id: Mapped[int] = mapped_column(
         Integer, primary_key=True, comment="Unique identifier for the person record."
     )
-    uuid: Mapped[Optional[str]] = mapped_column(
+    uuid: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         unique=True,
         index=True,
         comment="Ancestry DNA test Sample ID (GUID), primary identifier if profile_id absent.",
     )
-    profile_id: Mapped[Optional[str]] = mapped_column(
+    profile_id: Mapped[str | None] = mapped_column(
         String,
         unique=True,
         nullable=True,
@@ -984,16 +984,16 @@ class Person(Base):
         nullable=False,  # Usernames are not unique
         comment="Display name shown on Ancestry for the match.",
     )
-    first_name: Mapped[Optional[str]] = mapped_column(
+    first_name: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="First name extracted from username or profile."
     )
-    gender: Mapped[Optional[str]] = mapped_column(
+    gender: Mapped[str | None] = mapped_column(
         String(1), nullable=True, comment="Gender ('M' or 'F'), if known."
     )
-    birth_year: Mapped[Optional[int]] = mapped_column(
+    birth_year: Mapped[int | None] = mapped_column(
         Integer, nullable=True, comment="Birth year, if known (often from tree)."
     )
-    message_link: Mapped[Optional[str]] = mapped_column(
+    message_link: Mapped[str | None] = mapped_column(
         String, unique=False, nullable=True, comment="Direct URL to message the person."
     )
     in_my_tree: Mapped[bool] = mapped_column(
@@ -1007,19 +1007,19 @@ class Person(Base):
         default=True,  # Default to contactable unless known otherwise
         comment="Flag indicating if the user's profile allows messaging.",
     )
-    last_logged_in: Mapped[Optional[datetime]] = mapped_column(
+    last_logged_in: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
         comment="Timestamp (UTC) of the user's last login to Ancestry, if available.",
     )
-    administrator_profile_id: Mapped[Optional[str]] = mapped_column(
+    administrator_profile_id: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         index=True,
         comment="Profile ID of the person managing the DNA kit, if different.",
     )
-    administrator_username: Mapped[Optional[str]] = mapped_column(
+    administrator_username: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
         comment="Display name of the kit administrator, if different.",
@@ -1043,7 +1043,7 @@ class Person(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         index=True,
@@ -1126,7 +1126,7 @@ class ApiSearchCache(Base):
         comment="Number of results returned by the API search."
     )
 
-    api_response_cached: Mapped[Optional[str]] = mapped_column(
+    api_response_cached: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
         comment="Cached API response as JSON blob for quick retrieval."
@@ -1154,7 +1154,7 @@ class ApiSearchCache(Base):
         comment="Number of times this cached result has been used (cache hits)."
     )
 
-    last_hit_at: Mapped[Optional[datetime]] = mapped_column(
+    last_hit_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
         comment="Timestamp of the most recent cache hit (UTC)."
@@ -1363,7 +1363,7 @@ def _validate_person_required_fields(person_data: dict[str, Any]) -> bool:
     return True
 
 
-def _prepare_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], str, str]:
+def _prepare_person_identifiers(person_data: dict[str, Any]) -> tuple[str | None, str | None, str, str]:
     """Prepare and normalize person identifiers."""
     profile_id_raw = person_data.get("profile_id")
     profile_id_upper = profile_id_raw.upper() if profile_id_raw else None
@@ -1374,7 +1374,7 @@ def _prepare_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[s
     return profile_id_upper, uuid_upper, username, log_ref
 
 
-def _check_existing_person(session: Session, profile_id_upper: Optional[str], uuid_upper: Optional[str], log_ref: str) -> bool:
+def _check_existing_person(session: Session, profile_id_upper: str | None, uuid_upper: str | None, log_ref: str) -> bool:
     """Check if person already exists by profile_id or uuid. Returns True if exists."""
     if profile_id_upper:
         existing_by_profile = session.query(Person.id).filter(Person.profile_id == profile_id_upper).scalar()
@@ -1391,7 +1391,7 @@ def _check_existing_person(session: Session, profile_id_upper: Optional[str], uu
     return False
 
 
-def _prepare_person_datetime(person_data: dict[str, Any]) -> Optional[datetime]:
+def _prepare_person_datetime(person_data: dict[str, Any]) -> datetime | None:
     """Prepare datetime field with timezone awareness."""
     last_logged_in_dt = person_data.get("last_logged_in")
     if isinstance(last_logged_in_dt, datetime) and last_logged_in_dt.tzinfo is None:
@@ -1414,7 +1414,7 @@ def _prepare_person_status(person_data: dict[str, Any], log_ref: str) -> PersonS
 
 
 def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifiers,
-                       last_logged_in_dt: Optional[datetime], status_enum: PersonStatusEnum) -> dict[str, Any]:
+                       last_logged_in_dt: datetime | None, status_enum: PersonStatusEnum) -> dict[str, Any]:
     """Build arguments dictionary for Person model."""
     return {
         "uuid": identifiers.uuid,
@@ -1519,7 +1519,7 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
 
 # Helper functions for create_or_update_dna_match
 
-def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[int], str]:
+def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[int | None, str]:
     """Validate people_id from match data."""
     people_id = match_data.get("people_id")
     log_ref = f"PersonID={people_id}, KitUUID={match_data.get('uuid', 'N/A')}"
@@ -1531,7 +1531,7 @@ def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[
     return people_id, log_ref
 
 
-def _validate_optional_numeric(value: Any, allow_float: bool = False) -> Optional[Union[int, float]]:
+def _validate_optional_numeric(value: Any, allow_float: bool = False) -> Union[int, float] | None:
     """Validate optional numeric field."""
     if value is None:
         return None
@@ -1543,7 +1543,7 @@ def _validate_optional_numeric(value: Any, allow_float: bool = False) -> Optiona
         return None
 
 
-def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref: str) -> Optional[dict[str, Any]]:
+def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref: str) -> dict[str, Any] | None:
     """Validate and prepare DNA match data."""
     validated_data: dict[str, Any] = {"people_id": people_id}
 
@@ -1830,7 +1830,7 @@ def create_or_update_family_tree(
 # End of create_or_update_family_tree
 
 
-def _validate_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def _validate_person_identifiers(person_data: dict[str, Any]) -> tuple[str | None, str | None, str | None, str | None]:
     """Validate and extract mandatory person identifiers."""
     uuid_raw = person_data.get("uuid")
     uuid_val = str(uuid_raw).upper() if uuid_raw else None
@@ -1962,7 +1962,7 @@ def _compare_field_values_with_context(key: str, current_value: Any, new_value: 
     return False, current_value
 
 
-def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: Optional[str], username_val: str) -> dict[str, Any]:
+def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: str | None, username_val: str) -> dict[str, Any]:
     """
     Prepare fields to update for a person.
     Excludes None values for fields that will be updated later by additional API calls.
@@ -2014,7 +2014,7 @@ def _update_person_fields(existing_person: Person, fields_to_update: dict[str, A
 
 def create_or_update_person(
     session: Session, person_data: dict[str, Any]
-) -> tuple[Optional[Person], Literal["created", "updated", "skipped", "error"]]:
+) -> tuple[Person | None, Literal["created", "updated", "skipped", "error"]]:
     """
     Creates a new Person or updates an existing one based primarily on UUID.
     Handles data preparation, status enum conversion, and timezone awareness for dates.
@@ -2099,7 +2099,7 @@ def create_or_update_person(
 
 def get_person_by_profile_id_and_username(
     session: Session, profile_id: str, username: str, include_deleted: bool = False
-) -> Optional[Person]:
+) -> Person | None:
     """
     Retrieves a Person record matching both profile_id (case-insensitive) AND username.
 
@@ -2152,7 +2152,7 @@ def get_person_by_profile_id_and_username(
 
 def get_person_by_profile_id(
     session: Session, profile_id: str, include_deleted: bool = False
-) -> Optional[Person]:
+) -> Person | None:
     """
     Retrieves a Person record based on profile_id (case-insensitive).
 
@@ -2199,14 +2199,14 @@ def get_person_by_profile_id(
 # End of get_person_by_profile_id
 
 
-def _extract_person_identifiers(match_data: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+def _extract_person_identifiers(match_data: dict[str, Any]) -> tuple[str | None, str | None]:
     """Extract profile_id and username from match data."""
     profile_id = match_data.get("profile_id")
     username = match_data.get("username")
     return profile_id, username
 
 
-def _validate_required_identifiers(profile_id: Optional[str], username: Optional[str]) -> bool:
+def _validate_required_identifiers(profile_id: str | None, username: str | None) -> bool:
     """Validate that required identifiers are present."""
     if not profile_id or not username:
         logger.warning("get_person_and_dna_match: profile_id and username required.")
@@ -2250,7 +2250,7 @@ def _handle_person_query_error(profile_id: str, username: str, error: Exception)
 
 def get_person_and_dna_match(
     session: Session, match_data: dict[str, Any], include_deleted: bool = False
-) -> tuple[Optional[Person], Optional[DnaMatch]]:
+) -> tuple[Person | None, DnaMatch | None]:
     """
     Retrieves a Person and their associated DnaMatch record using profile_id
     (case-insensitive) and exact username. Eager loads the DnaMatch data.
@@ -2305,7 +2305,7 @@ def exclude_deleted_persons(query: Query) -> Query:
 # End of exclude_deleted_persons
 
 
-def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple[str | None, str | None, str | None, str]:
     """Extract and normalize person identifiers from data."""
     person_uuid_raw = identifier_data.get("uuid")
     person_profile_id_raw = identifier_data.get("profile_id")
@@ -2327,9 +2327,9 @@ def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple
     return person_uuid, person_profile_id, person_username, log_ref
 
 
-def _disambiguate_by_username(potential_matches: list[Person], person_username: str, person_profile_id: str, log_ref: str) -> Optional[Person]:
+def _disambiguate_by_username(potential_matches: list[Person], person_username: str, person_profile_id: str, log_ref: str) -> Person | None:
     """Disambiguate multiple profile ID matches using username."""
-    found_by_username: Optional[Person] = None
+    found_by_username: Person | None = None
     username_match_count = 0
 
     for p in potential_matches:
@@ -2349,7 +2349,7 @@ def _disambiguate_by_username(potential_matches: list[Person], person_username: 
     return None
 
 
-def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username: Optional[str], log_ref: str) -> Optional[Person]:
+def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username: str | None, log_ref: str) -> Person | None:
     """Find person by profile ID, with username disambiguation if needed."""
     potential_matches = base_query.filter(Person.profile_id == person_profile_id).all()
 
@@ -2371,7 +2371,7 @@ def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username
 
 def find_existing_person(
     session: Session, identifier_data: dict[str, Any], include_deleted: bool = False
-) -> Optional[Person]:
+) -> Person | None:
     """
     Attempts to find an existing Person record based on available identifiers
     (UUID preferred, then Profile ID, potentially disambiguated by username).
@@ -2386,7 +2386,7 @@ def find_existing_person(
     # Extract identifiers
     person_uuid, person_profile_id, person_username, log_ref = _extract_and_normalize_identifiers(identifier_data)
 
-    person: Optional[Person] = None
+    person: Person | None = None
     try:
         # Create base query
         base_query = session.query(Person)
@@ -2422,7 +2422,7 @@ def find_existing_person(
 
 def get_person_by_uuid(
     session: Session, uuid: str, include_deleted: bool = False
-) -> Optional[Person]:
+) -> Person | None:
     """
     Retrieves a Person record based on their UUID (case-insensitive), eager loading related data.
 
@@ -2874,7 +2874,7 @@ def delete_database(
     """
     db_path = _validate_db_path(db_path)
     logger.debug(f"Attempting to delete database file: {db_path}")
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
 
     for attempt in range(max_attempts):
         logger.debug(f"Delete attempt {attempt + 1}/{max_attempts} for {db_path.name}...")

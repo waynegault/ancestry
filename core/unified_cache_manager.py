@@ -90,7 +90,7 @@ class UnifiedCacheManager:
             },
         }
 
-    def get(self, service: str, endpoint: str, key: str) -> Optional[Any]:
+    def get(self, service: str, endpoint: str, key: str) -> Any | None:
         """
         Retrieve a cached value if it exists and hasn't expired.
 
@@ -143,7 +143,7 @@ class UnifiedCacheManager:
         endpoint: str,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """
         Cache a value with optional TTL override.
@@ -188,9 +188,9 @@ class UnifiedCacheManager:
 
     def invalidate(
         self,
-        service: Optional[str] = None,
-        endpoint: Optional[str] = None,
-        key: Optional[str] = None,
+        service: str | None = None,
+        endpoint: str | None = None,
+        key: str | None = None,
     ) -> int:
         """
         Invalidate cache entries by service, endpoint, or specific key.
@@ -238,7 +238,7 @@ class UnifiedCacheManager:
             logger.info(f"Cache invalidated: {count} entries")
             return count
 
-    def get_stats(self, endpoint: Optional[str] = None) -> dict[str, Any]:
+    def get_stats(self, endpoint: str | None = None) -> dict[str, Any]:
         """
         Get cache statistics.
 
@@ -372,7 +372,7 @@ class UnifiedCacheManager:
 
 
 # Global cache instance (singleton pattern)
-_unified_cache: Optional[UnifiedCacheManager] = None
+_unified_cache: UnifiedCacheManager | None = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:

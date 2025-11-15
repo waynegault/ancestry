@@ -65,7 +65,7 @@ class DatabaseManager:
     - Connection leak detection and prevention
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         """
         Initialize the Enhanced DatabaseManager.
 
@@ -85,7 +85,7 @@ class DatabaseManager:
 
         # SQLAlchemy components
         self.engine = None
-        self.Session: Optional[sessionmaker] = None
+        self.Session: sessionmaker | None = None
         self._db_init_attempted: bool = False
         self._db_ready: bool = False
 
@@ -241,7 +241,7 @@ class DatabaseManager:
             if session:
                 self.return_session(session)
 
-    def execute_query_with_timing(self, session: Session, query: Any, params: Optional[dict[str, Any]] = None) -> Any:
+    def execute_query_with_timing(self, session: Session, query: Any, params: dict[str, Any] | None = None) -> Any:
         """
         Execute a query with performance timing.
 
@@ -326,9 +326,9 @@ class DatabaseManager:
         self,
         session: Session,
         query: str,
-        params: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         fetch_results: bool = True
-    ) -> Optional[list[dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         """
         Execute a database query asynchronously.
 
@@ -564,7 +564,7 @@ class DatabaseManager:
             )
             # Don't raise the error, just log it and continue
 
-    def get_session(self) -> Optional[Session]:
+    def get_session(self) -> Session | None:
         """
         Get a database session from the pool with performance tracking.
 
@@ -620,7 +620,7 @@ class DatabaseManager:
             self._db_init_attempted = False
             return None
 
-    def return_session(self, session: Optional[Session]):
+    def return_session(self, session: Session | None):
         """
         Return a session to the pool (close it) with performance tracking.
 
@@ -661,7 +661,7 @@ class DatabaseManager:
                 f"DB Context Manager: Session {session_id} inactive after yield, skipping commit."
             )
 
-    def _rollback_session_if_active(self, session: Optional[Session], session_id: str) -> None:
+    def _rollback_session_if_active(self, session: Session | None, session_id: str) -> None:
         """Rollback session if active."""
         if session and session.is_active:
             try:
@@ -675,14 +675,14 @@ class DatabaseManager:
                 )
 
     @contextlib.contextmanager
-    def get_session_context(self) -> Generator[Optional[Session], None, None]:
+    def get_session_context(self) -> Generator[Session | None, None, None]:
         """
         Context manager for database sessions with automatic transaction handling.
 
         Yields:
             Session or None if session creation failed
         """
-        session: Optional[Session] = None
+        session: Session | None = None
         session_id_for_log = "N/A"
 
         try:

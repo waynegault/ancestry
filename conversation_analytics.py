@@ -32,12 +32,12 @@ def record_engagement_event(
     session: Session,
     people_id: int,
     event_type: str,
-    event_description: Optional[str] = None,
-    event_data: Optional[dict[str, Any]] = None,
-    engagement_score_before: Optional[int] = None,
-    engagement_score_after: Optional[int] = None,
-    conversation_phase: Optional[str] = None,
-    template_used: Optional[str] = None,
+    event_description: str | None = None,
+    event_data: dict[str, Any] | None = None,
+    engagement_score_before: int | None = None,
+    engagement_score_after: int | None = None,
+    conversation_phase: str | None = None,
+    template_used: str | None = None,
 ) -> EngagementTracking:
     """
     Record an engagement event for analytics tracking.
@@ -78,7 +78,7 @@ def record_engagement_event(
     return event
 
 
-def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Optional[str]) -> None:
+def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: str | None) -> None:
     """Update metrics when a message is sent."""
     setattr(metrics, 'messages_sent', getattr(metrics, 'messages_sent') + 1)
     now = datetime.now(timezone.utc)
@@ -155,9 +155,9 @@ def update_conversation_metrics(
     people_id: int,
     message_sent: bool = False,
     message_received: bool = False,
-    template_used: Optional[str] = None,
-    engagement_score: Optional[int] = None,
-    conversation_phase: Optional[str] = None,
+    template_used: str | None = None,
+    engagement_score: int | None = None,
+    conversation_phase: str | None = None,
     person_looked_up: bool = False,
     person_found: bool = False,
     research_task_created: bool = False,
@@ -218,7 +218,7 @@ def _update_message_metrics(
     metrics: ConversationMetrics,
     message_sent: bool,
     message_received: bool,
-    template_used: Optional[str]
+    template_used: str | None
 ) -> None:
     """Update message-related metrics."""
     if message_sent:
@@ -229,8 +229,8 @@ def _update_message_metrics(
 
 def _update_engagement_and_phase(
     metrics: ConversationMetrics,
-    engagement_score: Optional[int],
-    conversation_phase: Optional[str]
+    engagement_score: int | None,
+    conversation_phase: str | None
 ) -> None:
     """Update engagement score and conversation phase."""
     if engagement_score is not None:

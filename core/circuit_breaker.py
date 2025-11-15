@@ -65,7 +65,7 @@ class SessionCircuitBreaker:
         name: str,
         threshold: int = 5,
         recovery_timeout_sec: int | float = 60,
-        session_manager: Optional[Any] = None,
+        session_manager: Any | None = None,
     ):
         """Initialize circuit breaker.
 
@@ -83,9 +83,9 @@ class SessionCircuitBreaker:
         self._state = CircuitBreakerState.CLOSED
         self._consecutive_failures = 0
         self._consecutive_successes = 0
-        self._last_failure_time: Optional[datetime] = None
-        self._last_success_time: Optional[datetime] = None
-        self._trip_time: Optional[datetime] = None
+        self._last_failure_time: datetime | None = None
+        self._last_success_time: datetime | None = None
+        self._trip_time: datetime | None = None
         self._lock = Lock()
 
     def record_success(self) -> None:
@@ -169,7 +169,7 @@ def make_circuit_breaker(
     name: str,
     failure_threshold: int = 5,
     recovery_timeout_sec: int = 60,
-    session_manager: Optional[Any] = None,
+    session_manager: Any | None = None,
 ) -> SessionCircuitBreaker:
     """Factory function for creating circuit breakers.
 

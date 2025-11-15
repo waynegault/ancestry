@@ -495,7 +495,7 @@ class IntelligentResearchPrioritizer:
             f"Locate {surname} family in census records"
         ]
 
-    def _extract_location_context(self, gap: dict[str, Any]) -> Optional[str]:
+    def _extract_location_context(self, gap: dict[str, Any]) -> str | None:
         """Extract location context from a gap."""
         # This would analyze the gap description for location clues
         description = gap.get("description", "")
@@ -508,7 +508,7 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> Optional[str]:
+    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> str | None:
         """Extract location from research opportunity."""
         description = opportunity.get("description", "")
         # Simple implementation

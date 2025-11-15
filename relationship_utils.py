@@ -122,7 +122,7 @@ def _format_single_word(word: str) -> str:
     # Regular title case
     return word.title()
 
-def format_name(name: Optional[str]) -> str:
+def format_name(name: str | None) -> str:
     """
     Formats a person's name string to title case, preserving uppercase components
     (like initials or acronyms) and handling None/empty input gracefully.
@@ -256,7 +256,7 @@ def _has_direct_relationship(
 
 # Helper functions for fast_bidirectional_bfs
 
-def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Optional[dict[str, set[str]]], id_to_children: Optional[dict[str, set[str]]]) -> bool:
+def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: dict[str, set[str]] | None, id_to_children: dict[str, set[str]] | None) -> bool:
     """Validate inputs for BFS search."""
     if start_id == end_id:
         return False  # Special case handled by caller
@@ -445,7 +445,7 @@ class RelationshipPathCache:
         self._misses = 0
         self._total_queries = 0
 
-    def get(self, start_id: str, end_id: str) -> Optional[list[str]]:
+    def get(self, start_id: str, end_id: str) -> list[str] | None:
         """
         Get cached path result.
 
@@ -572,8 +572,8 @@ def report_cache_stats_to_performance_monitor() -> None:
 def fast_bidirectional_bfs(
     start_id: str,
     end_id: str,
-    id_to_parents: Optional[dict[str, set[str]]],
-    id_to_children: Optional[dict[str, set[str]]],
+    id_to_parents: dict[str, set[str]] | None,
+    id_to_children: dict[str, set[str]] | None,
     max_depth=25,
     node_limit=150000,
     timeout_sec=45,
@@ -700,10 +700,10 @@ def explain_relationship_path(
 
 # Helper functions for format_api_relationship_path
 
-def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tuple[Optional[str], Optional[dict]]:
+def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tuple[str | None, dict | None]:
     """Extract HTML content and JSON data from API response."""
-    html_content_raw: Optional[str] = None
-    json_data: Optional[dict] = None
+    html_content_raw: str | None = None
+    json_data: dict | None = None
 
     if isinstance(api_response_data, str):
         # Handle JSONP response format: no({...})
@@ -727,7 +727,7 @@ def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tu
     return html_content_raw, json_data
 
 
-def _format_discovery_api_path(json_data: dict, target_name: str, owner_name: str) -> Optional[str]:
+def _format_discovery_api_path(json_data: dict, target_name: str, owner_name: str) -> str | None:
     """Format relationship path from Discovery API JSON format."""
     if not json_data or "path" not in json_data:
         return None
@@ -752,7 +752,7 @@ def _format_discovery_api_path(json_data: dict, target_name: str, owner_name: st
     return "\n".join(path_steps_json)
 
 
-def _try_simple_text_relationship(html_content_raw: str, target_name: str, owner_name: str) -> Optional[str]:
+def _try_simple_text_relationship(html_content_raw: str, target_name: str, owner_name: str) -> str | None:
     """Try to extract relationship from simple text format."""
     if not html_content_raw or html_content_raw.strip().startswith("<"):
         return None
@@ -872,13 +872,13 @@ def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]
         return []
 
 
-def _try_json_api_format(json_data: Optional[dict], target_name: str, owner_name: str) -> Optional[str]:
+def _try_json_api_format(json_data: dict | None, target_name: str, owner_name: str) -> str | None:
     """Try to format relationship from Discovery API JSON format."""
     if not json_data:
         return None
     return _format_discovery_api_path(json_data, target_name, owner_name)
 
-def _try_html_formats(html_content_raw: Optional[str], target_name: str, owner_name: str, relationship_type: str) -> str:
+def _try_html_formats(html_content_raw: str | None, target_name: str, owner_name: str, relationship_type: str) -> str:
     """Try to format relationship from HTML content."""
     if not html_content_raw:
         logger.warning("No HTML content found in API response.")
@@ -947,7 +947,7 @@ def format_api_relationship_path(
     return _try_html_formats(html_content_raw, target_name, owner_name, relationship_type)
 
 
-def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
+def _extract_person_basic_info(indi: Any) -> tuple[str, str | None, str | None, str | None]:
     """Extract basic information from a GEDCOM individual."""
     name = _get_full_name(indi)
 
@@ -959,7 +959,7 @@ def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[
 
     # Get gender
     sex_tag = indi.sub_tag(TAG_SEX)
-    sex_char: Optional[str] = None
+    sex_char: str | None = None
     if sex_tag and hasattr(sex_tag, "value") and sex_tag.value is not None:
         sex_val = str(sex_tag.value).upper()
         if sex_val in ("M", "F"):
@@ -968,8 +968,8 @@ def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[
     return name, birth_year, death_year, sex_char
 
 
-def _create_person_dict(name: str, birth_year: Optional[str], death_year: Optional[str],
-                        relationship: Optional[str], gender: Optional[str]) -> dict[str, Optional[str]]:
+def _create_person_dict(name: str, birth_year: str | None, death_year: str | None,
+                        relationship: str | None, gender: str | None) -> dict[str, str | None]:
     """Create a person dictionary for unified format."""
     return {
         "name": name,
@@ -980,7 +980,7 @@ def _create_person_dict(name: str, birth_year: Optional[str], death_year: Option
     }
 
 
-def _get_gendered_term(male_term: str, female_term: str, neutral_term: str, sex_char: Optional[str]) -> str:
+def _get_gendered_term(male_term: str, female_term: str, neutral_term: str, sex_char: str | None) -> str:
     """Get gendered relationship term based on sex character."""
     if sex_char == "M":
         return male_term
@@ -992,7 +992,7 @@ def _get_gendered_term(male_term: str, female_term: str, neutral_term: str, sex_
 def _determine_gedcom_relationship(
     prev_id: str,
     current_id: str,
-    sex_char: Optional[str],
+    sex_char: str | None,
     reader: Any,
     id_to_parents: dict[str, set[str]],
     id_to_children: dict[str, set[str]],
@@ -1026,7 +1026,7 @@ def convert_gedcom_path_to_unified_format(
     id_to_parents: dict[str, set[str]],
     id_to_children: dict[str, set[str]],
     indi_index: dict[str, Any],
-) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+) -> list[dict[str, str | None]]:  # Value type changed to Optional[str]
     """
     Convert a GEDCOM relationship path to the unified format for relationship_path_unified.
 
@@ -1043,7 +1043,7 @@ def convert_gedcom_path_to_unified_format(
     if not path_ids or len(path_ids) < 2:
         return []
 
-    result: list[dict[str, Optional[str]]] = []
+    result: list[dict[str, str | None]] = []
 
     # Process the first person (no relationship)
     first_id = path_ids[0]
@@ -1078,7 +1078,7 @@ def convert_gedcom_path_to_unified_format(
     return result
 
 
-def _parse_discovery_relationship(relationship_text: str) -> tuple[str, Optional[str]]:
+def _parse_discovery_relationship(relationship_text: str) -> tuple[str, str | None]:
     """Parse Discovery API relationship text to extract relationship term and gender."""
     rel_lower = relationship_text.lower()
 
@@ -1114,7 +1114,7 @@ def _parse_discovery_relationship(relationship_text: str) -> tuple[str, Optional
 
 def convert_discovery_api_path_to_unified_format(
     discovery_data: dict, target_name: str
-) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+) -> list[dict[str, str | None]]:  # Value type changed to Optional[str]
     """
     Convert Discovery API relationship data to the unified format for relationship_path_unified.
 
@@ -1138,7 +1138,7 @@ def convert_discovery_api_path_to_unified_format(
         logger.warning("Discovery API path is not a valid list or is empty")
         return []
 
-    result: list[dict[str, Optional[str]]] = []
+    result: list[dict[str, str | None]] = []
 
     # Process the first person (target)
     target_name_display = format_name(target_name)
@@ -1164,7 +1164,7 @@ def convert_discovery_api_path_to_unified_format(
     return result
 
 
-def _infer_gender_from_name(name: str) -> Optional[str]:
+def _infer_gender_from_name(name: str) -> str | None:
     """Infer gender from name using common indicators."""
     name_lower = name.lower()
 
@@ -1191,7 +1191,7 @@ def _infer_gender_from_name(name: str) -> Optional[str]:
     return None
 
 
-def _infer_gender_from_relationship(name: str, relationship_text: str) -> Optional[str]:
+def _infer_gender_from_relationship(name: str, relationship_text: str) -> str | None:
     """Infer gender from relationship text."""
     rel_lower = relationship_text.lower()
 
@@ -1210,7 +1210,7 @@ def _infer_gender_from_relationship(name: str, relationship_text: str) -> Option
     return None
 
 
-def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional[str]]:
+def _extract_years_from_lifespan(lifespan: str) -> tuple[str | None, str | None]:
     """Extract birth and death years from lifespan string."""
     if not lifespan:
         return None, None
@@ -1229,9 +1229,9 @@ def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional
 def _determine_gender_for_person(
     person_data: dict,
     name: str,
-    relationship_data: Optional[list[dict]] = None,
+    relationship_data: list[dict] | None = None,
     index: int = 0
-) -> Optional[str]:
+) -> str | None:
     """Determine gender for a person using all available information."""
     # Check explicit gender field
     gender_raw = person_data.get("gender")
@@ -1259,7 +1259,7 @@ def _determine_gender_for_person(
     return None
 
 
-def _parse_relationship_term_and_gender(relationship_text: str, person_data: dict) -> tuple[str, Optional[str]]:
+def _parse_relationship_term_and_gender(relationship_text: str, person_data: dict) -> tuple[str, str | None]:
     """Parse relationship term and infer gender from relationship text."""
     rel_lower = relationship_text.lower()
 
@@ -1294,7 +1294,7 @@ def _parse_relationship_term_and_gender(relationship_text: str, person_data: dic
     return "relative", gender
 
 
-def _process_path_person(person_data: dict) -> dict[str, Optional[str]]:
+def _process_path_person(person_data: dict) -> dict[str, str | None]:
     """Process a single person in the relationship path."""
     # Get and clean name
     current_name = format_name(person_data.get("name", "Unknown"))
@@ -1328,7 +1328,7 @@ def _process_path_person(person_data: dict) -> dict[str, Optional[str]]:
 
 def convert_api_path_to_unified_format(
     relationship_data: list[dict], target_name: str
-) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
+) -> list[dict[str, str | None]]:  # Value type changed to Optional[str]
     """
     Convert API relationship data to the unified format for relationship_path_unified.
 
@@ -1342,7 +1342,7 @@ def convert_api_path_to_unified_format(
     if not relationship_data:
         return []
 
-    result: list[dict[str, Optional[str]]] = []  # Ensure list type
+    result: list[dict[str, str | None]] = []  # Ensure list type
 
     # Process the first person (target)
     first_person = relationship_data[0]
@@ -1373,7 +1373,7 @@ def convert_api_path_to_unified_format(
     return result
 
 
-def _format_years_display(birth_year: Optional[str], death_year: Optional[str]) -> str:
+def _format_years_display(birth_year: str | None, death_year: str | None) -> str:
     """Format birth/death years into display string."""
     if birth_year and death_year:
         return f" ({birth_year}-{death_year})"
@@ -1395,7 +1395,7 @@ def _clean_name_format(name: str) -> str:
     return re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
 
 
-def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:
+def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> str | None:
     """Check for Uncle/Aunt pattern: Target's sibling is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1409,7 +1409,7 @@ def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
+def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> str | None:
     """Check for Uncle/Aunt pattern: Through parent."""
     if len(path_data) < 3:
         return None
@@ -1427,7 +1427,7 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_grandparent_pattern(path_data: list[dict]) -> str | None:
     """Check for Grandparent pattern: Target's child is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1452,7 +1452,7 @@ def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_cousin_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_cousin_pattern(path_data: list[dict]) -> str | None:
     """Check for Cousin pattern: Target's parent's sibling's child is owner."""
     if len(path_data) < 4:
         return None
@@ -1465,7 +1465,7 @@ def _check_cousin_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_nephew_niece_pattern(path_data: list[dict]) -> str | None:
     """Check for Nephew/Niece pattern: Target's parent's child is owner."""
     if len(path_data) < 3:
         return None
@@ -1484,7 +1484,7 @@ def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _determine_relationship_type_from_path(path_data: list[dict]) -> Optional[str]:
+def _determine_relationship_type_from_path(path_data: list[dict]) -> str | None:
     """Determine relationship type by checking various patterns."""
     if len(path_data) < 3:
         return None
@@ -1559,10 +1559,10 @@ def _format_path_step(
 
 
 def format_relationship_path_unified(
-    path_data: list[dict[str, Optional[str]]],  # Value type changed to Optional[str]
+    path_data: list[dict[str, str | None]],  # Value type changed to Optional[str]
     target_name: str,
     owner_name: str,
-    relationship_type: Optional[str] = None,
+    relationship_type: str | None = None,
 ) -> str:
     """
     Format a relationship path using the unified format for both GEDCOM and API data.
@@ -1625,7 +1625,7 @@ def format_relationship_path_unified(
     return f"{header}\n" + "\n".join(path_lines)
 
 
-def _get_relationship_term(gender: Optional[str], relationship_code: str) -> str:
+def _get_relationship_term(gender: str | None, relationship_code: str) -> str:
     """
     Convert a relationship code to a human-readable term.
 

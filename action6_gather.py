@@ -345,7 +345,7 @@ class MaxApiFailuresExceededError(Exception):
 # End of MaxApiFailuresExceededError
 
 # OPTIMIZATION: Profile caching using UnifiedCacheManager
-def _get_cached_profile(profile_id: str) -> Optional[dict]:
+def _get_cached_profile(profile_id: str) -> dict | None:
     """Get profile from persistent cache if available."""
     cache_key = f"profile_details_{profile_id}"
     try:
@@ -409,7 +409,7 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     return region_keys, column_map
 
 
-def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Optional[int]]]:
+def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> dict[str, int | None] | None:
     """Fetch and parse ethnicity comparison data for a single match.
 
     Sequential processing keeps this helper simple while still respecting the
@@ -436,7 +436,7 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
         return None
 
     percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
-    payload: dict[str, Optional[int]] = {}
+    payload: dict[str, int | None] = {}
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if column_name:
@@ -446,7 +446,7 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
     return payload if payload else None
 
 
-def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
+def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: str | None) -> dict[str, int | None]:
     """Fetch ethnicity comparison data and map it to database column names."""
     if not my_uuid or not match_uuid:
         return {}
@@ -462,7 +462,7 @@ def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, matc
         return {}
 
     percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
-    payload: dict[str, Optional[int]] = {}
+    payload: dict[str, int | None] = {}
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if not column_name:
@@ -475,7 +475,7 @@ def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, matc
     return payload
 
 
-def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
+def _needs_ethnicity_refresh(existing_dna_match: Any | None) -> bool:
     """Return True if the existing DNA match record is missing ethnicity data."""
     if not existing_dna_match:
         return False
@@ -539,7 +539,7 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
-def _try_get_csrf_from_api(session_manager) -> Optional[str]:
+def _try_get_csrf_from_api(session_manager) -> str | None:
     """
     Try to get fresh CSRF token from API.
 
@@ -563,7 +563,7 @@ def _try_get_csrf_from_api(session_manager) -> Optional[str]:
     return None
 
 
-def _try_get_csrf_from_cookies(session_manager) -> Optional[str]:
+def _try_get_csrf_from_cookies(session_manager) -> str | None:
     """
     Try to get CSRF token from browser cookies.
 
@@ -590,7 +590,7 @@ def _try_get_csrf_from_cookies(session_manager) -> Optional[str]:
     return None
 
 
-def _get_csrf_token(session_manager: SessionManager, force_api_refresh: bool = False) -> Optional[str]:
+def _get_csrf_token(session_manager: SessionManager, force_api_refresh: bool = False) -> str | None:
     """
     Helper function to extract CSRF token from cookies or API.
 
@@ -645,7 +645,7 @@ def _ensure_on_match_list_page(session_manager: SessionManager) -> bool:
         return False
 
 
-def _get_db_session_with_retries(session_manager: SessionManager, max_retries: int = 3) -> Optional[SqlAlchemySession]:
+def _get_db_session_with_retries(session_manager: SessionManager, max_retries: int = 3) -> SqlAlchemySession | None:
     """
     Get database session with retry logic.
 
@@ -669,7 +669,7 @@ def _get_db_session_with_retries(session_manager: SessionManager, max_retries: i
 
 def _navigate_and_get_initial_page_data(
     session_manager: SessionManager, start_page: int
-) -> tuple[Optional[list[dict[str, Any]]], Optional[int], bool]:
+) -> tuple[list[dict[str, Any]] | None, int | None, bool]:
     """
     Ensures navigation to the match list and fetches initial page data.
 
@@ -785,7 +785,7 @@ def _process_single_page(
     session_manager: SessionManager,
     current_page_num: int,
     start_page: int,
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
+    matches_on_page_for_batch: list[dict[str, Any]] | None,
     state: dict[str, Any],
     loop_final_success: bool
 ) -> tuple[int, bool]:
@@ -865,10 +865,10 @@ def _handle_page_fetch_and_validation(
     session_manager: SessionManager,
     current_page_num: int,
     start_page: int,
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
+    matches_on_page_for_batch: list[dict[str, Any]] | None,
     state: dict[str, Any],
     loop_final_success: bool
-) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
+) -> tuple[list[dict[str, Any]] | None, bool, bool]:
     """
     Handle fetching and validating matches for a page.
 
@@ -942,7 +942,7 @@ def _update_state_and_progress(
 
 
 def _accumulate_page_metrics(
-    state: dict[str, Any], page_metrics: Optional[PageProcessingMetrics]
+    state: dict[str, Any], page_metrics: PageProcessingMetrics | None
 ) -> None:
     """Aggregate per-page metrics for final timing breakdowns."""
     if not isinstance(page_metrics, PageProcessingMetrics):
@@ -1038,7 +1038,7 @@ def _fetch_page_matches(
     db_session: SqlAlchemySession,
     current_page_num: int,
     state: dict[str, Any]
-) -> Optional[list[dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """
     Fetch matches for a specific page with error handling.
 
@@ -1092,7 +1092,7 @@ def _get_database_session_with_retry(
     current_page_num: int,
     state: dict[str, Any],
     max_retries: int = 3
-) -> Optional[SqlAlchemySession]:
+) -> SqlAlchemySession | None:
     """
     Get database session with retry logic.
 
@@ -1105,7 +1105,7 @@ def _get_database_session_with_retry(
     Returns:
         SqlAlchemySession or None if all retries failed
     """
-    db_session_for_page: Optional[SqlAlchemySession] = None
+    db_session_for_page: SqlAlchemySession | None = None
     for retry_attempt in range(max_retries):
         db_session_for_page = session_manager.get_db_conn()
         if db_session_for_page:
@@ -1200,7 +1200,7 @@ def _main_page_processing_loop(
     start_page: int,
     last_page_to_process: int,
     total_pages_in_run: int,  # Added this argument
-    initial_matches_on_page: Optional[list[dict[str, Any]]],
+    initial_matches_on_page: list[dict[str, Any]] | None,
     state: dict[str, Any],  # Pass the whole state dict
 ) -> bool:
     """Main loop for fetching and processing pages of matches."""
@@ -1242,7 +1242,7 @@ def _main_page_processing_loop(
 
     loop_final_success = True  # Success flag for this loop's execution
 
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]] = (
+    matches_on_page_for_batch: list[dict[str, Any]] | None = (
         initial_matches_on_page
     )
 
@@ -1536,7 +1536,7 @@ def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
 
 def _emit_action_status(
     state: dict[str, Any],
-    log_action_status: Callable[[str, bool, Optional[str]], None],
+    log_action_status: Callable[[str, bool, str | None], None],
 ) -> None:
     """Log final action status using shared utility helper."""
     error_message = None
@@ -2017,7 +2017,7 @@ def _limit_relationship_probability_requests(
     return combined, selected_medium, trimmed_count
 
 
-def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
+def _normalize_relationship_phrase(raw_value: str | None) -> str:
     """Clean verbose relationship phrases returned by the API."""
 
     if not raw_value:
@@ -2053,7 +2053,7 @@ def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
     return cleaned.strip().rstrip(".")
 
 
-def _extract_relationship_from_narrative(narrative: Optional[str]) -> Optional[str]:
+def _extract_relationship_from_narrative(narrative: str | None) -> str | None:
     """Parse the narrative header to derive a concise relationship label."""
 
     if not narrative:
@@ -2094,15 +2094,15 @@ def _resolve_tree_owner_name(session_manager: SessionManager) -> str:
 def _format_relationship_path_from_kinship(
     kinship_persons: list[dict[str, Any]],
     session_manager: SessionManager,
-    match_display_name: Optional[str],
-) -> tuple[str, Optional[list[dict[str, Optional[str]]]]]:
+    match_display_name: str | None,
+) -> tuple[str, list[dict[str, str | None]] | None]:
     """Convert kinshipPersons data into a narrative relationship path."""
 
     owner_name = _resolve_tree_owner_name(session_manager)
     if not kinship_persons:
         return "(No relationship path available)", None
 
-    normalized_entries: list[dict[str, Optional[str]]] = []
+    normalized_entries: list[dict[str, str | None]] = []
     for person in kinship_persons:
         normalized_entries.append(
             {
@@ -2114,7 +2114,7 @@ def _format_relationship_path_from_kinship(
         )
 
     target_name = match_display_name or normalized_entries[0].get("name") or "Relative"
-    unified_path: Optional[list[dict[str, Optional[str]]]] = None
+    unified_path: list[dict[str, str | None]] | None = None
 
     try:
         unified_path = convert_api_path_to_unified_format(normalized_entries, target_name)
@@ -2135,8 +2135,8 @@ def _format_relationship_path_from_kinship(
 def _derive_actual_relationship_label(
     kinship_persons: list[dict[str, Any]],
     cfpid: str,
-    narrative: Optional[str],
-) -> Optional[str]:
+    narrative: str | None,
+) -> str | None:
     """Determine the most useful relationship label from API data or the narrative."""
 
     for person in kinship_persons:
@@ -2183,7 +2183,7 @@ class _PrefetchPlan:
     high_priority_uuids: set[str]
     ethnicity_candidates: set[str]
     num_candidates: int
-    my_tree_id: Optional[str]
+    my_tree_id: str | None
 
 
 def _prepare_prefetch_plan(
@@ -2333,7 +2333,7 @@ def _determine_ethnicity_candidates(
 def _prefetch_combined_details(
     session_manager: SessionManager,
     uuid_val: str,
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    batch_combined_details: dict[str, dict[str, Any] | None],
     stats: _PrefetchStats,
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
@@ -2350,7 +2350,7 @@ def _prefetch_relationship_probability(
     session_manager: SessionManager,
     uuid_val: str,
     plan: _PrefetchPlan,
-    batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_relationship_prob_data: dict[str, str | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
 ) -> None:
@@ -2375,7 +2375,7 @@ def _prefetch_badge_metadata(
     session_manager: SessionManager,
     uuid_val: str,
     plan: _PrefetchPlan,
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, dict[str, Any] | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
 ) -> None:
@@ -2399,7 +2399,7 @@ def _prefetch_ethnicity_data(
     session_manager: SessionManager,
     uuid_val: str,
     plan: _PrefetchPlan,
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
 ) -> None:
@@ -2501,7 +2501,7 @@ def _raise_prefetch_threshold_if_needed(stats: _PrefetchStats, exc: Exception | 
 def _handle_combined_details_fetch(
     session_manager: SessionManager,
     uuid_val: str,
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    batch_combined_details: dict[str, dict[str, Any] | None],
     stats: _PrefetchStats,
 ) -> None:
     """Fetch mandatory combined details for a match and update counters."""
@@ -2525,7 +2525,7 @@ def _fetch_optional_relationship_data(
     uuid_val: str,
     high_priority_uuids: set[str],
     priority_uuids: set[str],
-    batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_relationship_prob_data: dict[str, str | None],
 ) -> None:
     """Fetch relationship probability when priority thresholds demand it."""
 
@@ -2548,7 +2548,7 @@ def _fetch_optional_badge_data(
     session_manager: SessionManager,
     uuid_val: str,
     badge_candidates: set[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, dict[str, Any] | None],
 ) -> None:
     """Fetch badge metadata for tree members."""
 
@@ -2569,7 +2569,7 @@ def _process_ethnicity_candidate(
     session_manager: SessionManager,
     uuid_val: str,
     ethnicity_candidates: set[str],
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None],
     stats: _PrefetchStats,
 ) -> None:
     """Fetch ethnicity data when the match qualifies."""
@@ -2589,7 +2589,7 @@ def _process_ethnicity_candidate(
 
 
 def _build_cfpid_mapping(
-    temp_badge_results: dict[str, Optional[dict[str, Any]]]
+    temp_badge_results: dict[str, dict[str, Any] | None]
 ) -> tuple[list[str], dict[str, str]]:
     """Translate badge data into CFPID lookup structures."""
 
@@ -2609,9 +2609,9 @@ def _build_cfpid_mapping(
 
 def _fetch_ladder_details_for_badges(
     session_manager: SessionManager,
-    my_tree_id: Optional[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
-) -> tuple[dict[str, Optional[dict[str, Any]]], int]:
+    my_tree_id: str | None,
+    temp_badge_results: dict[str, dict[str, Any] | None],
+) -> tuple[dict[str, dict[str, Any] | None], int]:
     """Combine badge data with ladder enrichment where available.
 
     Returns:
@@ -2697,10 +2697,10 @@ def _perform_api_prefetches(
     Raises:
         MaxApiFailuresExceededError: If critical API failure threshold is met.
     """
-    batch_combined_details: dict[str, Optional[dict[str, Any]]] = {}
-    batch_tree_data: dict[str, Optional[dict[str, Any]]] = {}
-    batch_relationship_prob_data: dict[str, Optional[str]] = {}
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]] = {}
+    batch_combined_details: dict[str, dict[str, Any] | None] = {}
+    batch_tree_data: dict[str, dict[str, Any] | None] = {}
+    batch_relationship_prob_data: dict[str, str | None] = {}
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None] = {}
 
     endpoint_durations: dict[str, float] = {
         "combined_details": 0.0,
@@ -2732,7 +2732,7 @@ def _perform_api_prefetches(
         f"--- Starting SEQUENTIAL API Pre-fetch ({plan.num_candidates} candidates) ---"
     )
 
-    temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
+    temp_badge_results: dict[str, dict[str, Any] | None] = {}
     for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
         _enforce_session_health_for_prefetch(
             session_manager,
@@ -2808,7 +2808,7 @@ def _perform_api_prefetches(
 def _get_prefetched_data_for_match(
     uuid_val: str,
     prefetched_data: dict[str, dict[str, Any]]
-) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[str], Optional[dict[str, Optional[int]]]]:
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, str | None, dict[str, int | None] | None]:
     """Get prefetched data for a match.
 
     Args:
@@ -2831,7 +2831,7 @@ def _process_single_match_for_bulk(
     match_list_data: dict[str, Any],
     existing_persons_map: dict[str, Person],
     prefetched_data: dict[str, dict[str, Any]]
-) -> tuple[Optional[dict[str, Any]], Literal["new", "updated", "skipped", "error"], Optional[str]]:
+) -> tuple[dict[str, Any] | None, Literal["new", "updated", "skipped", "error"], str | None]:
     """Process a single match and prepare bulk data.
 
     Args:
@@ -2911,9 +2911,9 @@ def _update_page_statuses(
 
 
 def _handle_match_processing_result(
-    prepared_data: Optional[dict[str, Any]],
+    prepared_data: dict[str, Any] | None,
     status: Literal["new", "updated", "skipped", "error"],
-    error_msg: Optional[str],
+    error_msg: str | None,
     log_ref_short: str,
     prepared_bulk_data: list[dict[str, Any]],
     page_statuses: dict[str, int]
@@ -3052,7 +3052,7 @@ def _get_configured_batch_size() -> int:
         logger.warning(f"Failed to get configured batch size: {e}, using default 10")
         return 10  # Fallback to match .env default
 
-def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = None) -> int:
+def _get_adaptive_batch_size(session_manager, base_batch_size: int | None = None) -> int:
     """Get dynamically adapted batch size based on current server performance."""
     if base_batch_size is None:
         base_batch_size = _get_configured_batch_size()
@@ -3278,7 +3278,7 @@ def _check_existing_records(session: SqlAlchemySession, insert_data_raw: list[di
     return existing_profile_ids, existing_uuids
 
 
-def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Optional[list[dict[str, Any]]] = None) -> bool:
+def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: list[dict[str, Any]] | None = None) -> bool:
     """
     Handle UNIQUE constraint violations by attempting individual inserts.
 
@@ -3325,12 +3325,12 @@ def _handle_integrity_error_recovery(session: SqlAlchemySession, insert_data: Op
 
 def _should_skip_person_insert(
     uuid_val: str,
-    profile_id: Optional[str],
+    profile_id: str | None,
     seen_uuids: set[str],
     existing_persons_map: dict[str, Person],
     existing_uuids: set[str],
     existing_profile_ids: set[str]
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Check if person should be skipped during insert preparation.
 
     Args:
@@ -3693,10 +3693,10 @@ def _create_master_id_map(
 
 def _resolve_person_id(  # noqa: PLR0911
     session: SqlAlchemySession,
-    person_uuid: Optional[str],
+    person_uuid: str | None,
     all_person_ids_map: dict[str, int],
     existing_persons_map: dict[str, Person]
-) -> Optional[int]:
+) -> int | None:
     """Resolve person ID from UUID using multiple strategies.
 
     Args:
@@ -4479,8 +4479,8 @@ def _update_recent_batch_history(duration: float) -> None:
 def _initialize_page_processing(
     matches_on_page: list[dict[str, Any]],
     current_page: int,
-    my_uuid: Optional[str]
-) -> tuple[dict[str, int], int, Optional[Any]]:
+    my_uuid: str | None
+) -> tuple[dict[str, int], int, Any | None]:
     """Initialize page processing with validation and memory optimization."""
     page_statuses: dict[str, int] = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
     num_matches_on_page = len(matches_on_page)
@@ -4722,7 +4722,7 @@ def _perform_memory_cleanup(current_page: int) -> None:
 def _cleanup_batch_session(
     session_manager: SessionManager,
     batch_session: SqlAlchemySession,
-    reused_session: Optional[SqlAlchemySession],
+    reused_session: SqlAlchemySession | None,
     current_page: int
 ) -> None:
     """Clean up batch session if it wasn't reused."""
@@ -4750,7 +4750,7 @@ def _log_batch_summary_if_needed(
 
 def _get_batch_session(
     session_manager: SessionManager,
-    reused_session: Optional[SqlAlchemySession],
+    reused_session: SqlAlchemySession | None,
     current_page: int
 ) -> SqlAlchemySession:
     """Get or create batch session."""
@@ -4770,7 +4770,7 @@ def _process_page_matches(
     matches_on_page: list[dict[str, Any]],
     current_page: int,
     is_batch: bool = False,
-    reused_session: Optional[SqlAlchemySession] = None,
+    reused_session: SqlAlchemySession | None = None,
 ) -> tuple[int, int, int, int, PageProcessingMetrics]:
     """
     Original batch processing logic - now used by both single page and chunked batch processing.
@@ -5017,8 +5017,8 @@ def _determine_profile_ids_when_both_exist(
     tester_profile_id_upper: str,
     admin_profile_id_upper: str,
     formatted_match_username: str,
-    formatted_admin_username: Optional[str]
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    formatted_admin_username: str | None
+) -> tuple[str | None, str | None, str | None]:
     """Determine profile IDs when both tester and admin IDs exist."""
     if tester_profile_id_upper == admin_profile_id_upper:
         if (
@@ -5034,7 +5034,7 @@ def _determine_profile_ids_when_both_exist(
 def _extract_raw_profile_data(
     details_part: dict[str, Any],
     match: dict[str, Any]
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None, str | None, str | None]:
     """Extract raw profile data from details and match."""
     raw_tester_profile_id = details_part.get("tester_profile_id") or match.get("profile_id")
     raw_admin_profile_id = details_part.get("admin_profile_id") or match.get("administrator_profile_id_hint")
@@ -5051,7 +5051,7 @@ def _extract_profile_ids(
     details_part: dict[str, Any],
     match: dict[str, Any],
     formatted_match_username: str
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None, str | None]:
     """Extract and determine profile IDs for person and administrator."""
     tester_profile_id_upper, admin_profile_id_upper, formatted_admin_username, _ = (
         _extract_raw_profile_data(details_part, match)
@@ -5070,10 +5070,10 @@ def _extract_profile_ids(
 
 
 def _build_message_link(
-    person_profile_id: Optional[str],
-    person_admin_id: Optional[str],
+    person_profile_id: str | None,
+    person_admin_id: str | None,
     config_schema_arg: "ConfigSchema"
-) -> Optional[str]:
+) -> str | None:
     """Build message link for person."""
     message_target_id = person_profile_id or person_admin_id
     if message_target_id:
@@ -5081,7 +5081,7 @@ def _build_message_link(
     return None
 
 
-def _extract_birth_year(prefetched_tree_data: Optional[dict[str, Any]]) -> Optional[int]:
+def _extract_birth_year(prefetched_tree_data: dict[str, Any] | None) -> int | None:
     """Extract birth year from tree data."""
     if prefetched_tree_data and prefetched_tree_data.get("their_birth_year"):
         with contextlib.suppress(ValueError, TypeError):
@@ -5089,7 +5089,7 @@ def _extract_birth_year(prefetched_tree_data: Optional[dict[str, Any]]) -> Optio
     return None
 
 
-def _normalize_last_logged_in(last_logged_in_val: Optional[datetime]) -> Optional[datetime]:
+def _normalize_last_logged_in(last_logged_in_val: datetime | None) -> datetime | None:
     """Normalize last logged in datetime to UTC."""
     if isinstance(last_logged_in_val, datetime):
         if last_logged_in_val.tzinfo is None:
@@ -5103,12 +5103,12 @@ def _build_incoming_person_data(
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
-    person_profile_id: Optional[str],
-    person_admin_id: Optional[str],
-    person_admin_username: Optional[str],
-    message_link: Optional[str],
-    birth_year: Optional[int],
-    last_logged_in: Optional[datetime],
+    person_profile_id: str | None,
+    person_admin_id: str | None,
+    person_admin_username: str | None,
+    message_link: str | None,
+    birth_year: int | None,
+    last_logged_in: datetime | None,
     details_part: dict[str, Any],
     profile_part: dict[str, Any]
 ) -> dict[str, Any]:
@@ -5132,16 +5132,16 @@ def _build_incoming_person_data(
 
 def _prepare_person_operation_data(
     match: dict[str, Any],
-    existing_person: Optional[Person],
-    prefetched_combined_details: Optional[dict[str, Any]],
-    prefetched_tree_data: Optional[dict[str, Any]],
+    existing_person: Person | None,
+    prefetched_combined_details: dict[str, Any] | None,
+    prefetched_tree_data: dict[str, Any] | None,
     config_schema_arg: "ConfigSchema",
     match_uuid: str,
     formatted_match_username: str,
     match_in_my_tree: bool,
     log_ref_short: str,
     logger_instance: logging.Logger,
-) -> tuple[Optional[dict[str, Any]], bool]:
+) -> tuple[dict[str, Any] | None, bool]:
     """
     Prepares Person data for create or update operations based on API data and existing records.
     """
@@ -5216,8 +5216,8 @@ def _check_basic_dna_changes(
 
 
 def _check_longest_segment_changes(
-    api_longest: Optional[float],
-    db_longest: Optional[float],
+    api_longest: float | None,
+    db_longest: float | None,
     log_ref_short: str,
     logger_instance: logging.Logger
 ) -> bool:
@@ -5308,7 +5308,7 @@ def _compare_dna_fields(
 
 
 def _check_dna_update_needed(
-    existing_dna_match: Optional[DnaMatch],
+    existing_dna_match: DnaMatch | None,
     match: dict[str, Any],
     details_part: dict[str, Any],
     api_predicted_rel_for_comp: str,
@@ -5348,7 +5348,7 @@ def _build_dna_dict_base(
 
 def _add_dna_details(
     dna_dict_base: dict[str, Any],
-    prefetched_combined_details: Optional[dict[str, Any]],
+    prefetched_combined_details: dict[str, Any] | None,
     match: dict[str, Any],
     log_ref_short: str,
     logger_instance: logging.Logger
@@ -5390,15 +5390,15 @@ def _filter_dna_dict(dna_dict_base: dict[str, Any]) -> dict[str, Any]:
 
 
 def _filter_changed_ethnicity_values(
-    existing_dna_match: Optional[DnaMatch],
-    prefetched_ethnicity: dict[str, Optional[int]],
-) -> dict[str, Optional[int]]:
+    existing_dna_match: DnaMatch | None,
+    prefetched_ethnicity: dict[str, int | None],
+) -> dict[str, int | None]:
     """Return only ethnicity values that differ from what is already stored."""
 
     if existing_dna_match is None:
         return prefetched_ethnicity
 
-    changed: dict[str, Optional[int]] = {}
+    changed: dict[str, int | None] = {}
     for column_name, new_value in prefetched_ethnicity.items():
         if not hasattr(existing_dna_match, column_name):
             changed[column_name] = new_value
@@ -5413,7 +5413,7 @@ def _filter_changed_ethnicity_values(
 
 def _add_ethnicity_data(
     dna_dict_base: dict[str, Any],
-    existing_dna_match: Optional[DnaMatch],
+    existing_dna_match: DnaMatch | None,
     match: dict[str, Any],
     match_uuid: str,
     log_ref_short: str,
@@ -5443,14 +5443,14 @@ def _add_ethnicity_data(
 
 def _prepare_dna_match_operation_data(
     match: dict[str, Any],
-    existing_dna_match: Optional[DnaMatch],
-    prefetched_combined_details: Optional[dict[str, Any]],
+    existing_dna_match: DnaMatch | None,
+    prefetched_combined_details: dict[str, Any] | None,
     match_uuid: str,
-    predicted_relationship: Optional[str],
+    predicted_relationship: str | None,
     log_ref_short: str,
     logger_instance: logging.Logger,
     session_manager: SessionManager,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Prepares DnaMatch data for create or update operations by comparing API data with existing records.
 
@@ -5499,7 +5499,7 @@ def _build_tree_links(
     their_cfpid: str,
     session_manager: SessionManager,
     config_schema_arg: "ConfigSchema"
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Build facts and view links for a person in the tree."""
     if not their_cfpid or not session_manager.my_tree_id:
         return None, None
@@ -5522,9 +5522,9 @@ def _build_tree_links(
 def _check_tree_update_needed(
     existing_family_tree: FamilyTree,
     prefetched_tree_data: dict[str, Any],
-    their_cfpid_final: Optional[str],
-    facts_link: Optional[str],
-    view_in_tree_link: Optional[str],
+    their_cfpid_final: str | None,
+    facts_link: str | None,
+    view_in_tree_link: str | None,
     log_ref_short: str,
     logger_instance: logging.Logger
 ) -> bool:
@@ -5547,12 +5547,12 @@ def _check_tree_update_needed(
 
 def _build_tree_data_dict(
     match_uuid: str,
-    their_cfpid_final: Optional[str],
+    their_cfpid_final: str | None,
     prefetched_tree_data: dict[str, Any],
-    facts_link: Optional[str],
-    view_in_tree_link: Optional[str],
+    facts_link: str | None,
+    view_in_tree_link: str | None,
     tree_operation: Literal["create", "update", "none"],
-    existing_family_tree: Optional[FamilyTree]
+    existing_family_tree: FamilyTree | None
 ) -> dict[str, Any]:
     """Build family tree data dictionary for create/update operations."""
     tree_person_name = prefetched_tree_data.get("their_firstname", "Unknown")
@@ -5581,11 +5581,11 @@ def _build_tree_data_dict(
 
 def _determine_tree_operation(
     match_in_my_tree: bool,
-    existing_family_tree: Optional[FamilyTree],
-    prefetched_tree_data: Optional[dict[str, Any]],
-    their_cfpid_final: Optional[str],
-    facts_link: Optional[str],
-    view_in_tree_link: Optional[str],
+    existing_family_tree: FamilyTree | None,
+    prefetched_tree_data: dict[str, Any] | None,
+    their_cfpid_final: str | None,
+    facts_link: str | None,
+    view_in_tree_link: str | None,
     log_ref_short: str,
     logger_instance: logging.Logger
 ) -> Literal["create", "update", "none"]:
@@ -5613,15 +5613,15 @@ def _determine_tree_operation(
 
 
 def _prepare_family_tree_operation_data(
-    existing_family_tree: Optional[FamilyTree],
-    prefetched_tree_data: Optional[dict[str, Any]],
+    existing_family_tree: FamilyTree | None,
+    prefetched_tree_data: dict[str, Any] | None,
     match_uuid: str,
     match_in_my_tree: bool,
     session_manager: SessionManager,
     config_schema_arg: "ConfigSchema",  # Config schema argument
     log_ref_short: str,
     logger_instance: logging.Logger,
-) -> tuple[Optional[dict[str, Any]], Literal["create", "update", "none"]]:
+) -> tuple[dict[str, Any] | None, Literal["create", "update", "none"]]:
     """
     Prepares FamilyTree data for create or update operations based on API data and existing records.
 
@@ -5679,12 +5679,12 @@ def _prepare_family_tree_operation_data(
 # ------------------------------------------------------------------------------
 
 
-def _extract_match_info(match: dict[str, Any]) -> tuple[Optional[str], str, Optional[str], bool, str]:
+def _extract_match_info(match: dict[str, Any]) -> tuple[str | None, str, str | None, bool, str]:
     """Extract basic information from match data."""
     match_uuid = match.get("uuid")
     match_username_raw = match.get("username")
     match_username = format_name(match_username_raw) if match_username_raw else "Unknown"
-    predicted_relationship: Optional[str] = match.get("predicted_relationship")
+    predicted_relationship: str | None = match.get("predicted_relationship")
     match_in_my_tree = match.get("in_my_tree", False)
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
     return match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short
@@ -5692,15 +5692,15 @@ def _extract_match_info(match: dict[str, Any]) -> tuple[Optional[str], str, Opti
 
 def _process_person_data_safe(
     match: dict[str, Any],
-    existing_person: Optional[Person],
-    prefetched_combined_details: Optional[dict[str, Any]],
-    prefetched_tree_data: Optional[dict[str, Any]],
+    existing_person: Person | None,
+    prefetched_combined_details: dict[str, Any] | None,
+    prefetched_tree_data: dict[str, Any] | None,
     match_uuid: str,
     match_username: str,
     match_in_my_tree: bool,
     log_ref_short: str,
     logger_instance: logging.Logger
-) -> tuple[Optional[dict[str, Any]], bool]:
+) -> tuple[dict[str, Any] | None, bool]:
     """Process person data with error handling."""
     try:
         return _prepare_person_operation_data(
@@ -5725,14 +5725,14 @@ def _process_person_data_safe(
 
 def _process_dna_data_safe(
     match: dict[str, Any],
-    dna_match_record: Optional[DnaMatch],
-    prefetched_combined_details: Optional[dict[str, Any]],
+    dna_match_record: DnaMatch | None,
+    prefetched_combined_details: dict[str, Any] | None,
     match_uuid: str,
-    predicted_relationship: Optional[str],
+    predicted_relationship: str | None,
     log_ref_short: str,
     logger_instance: logging.Logger,
     session_manager: SessionManager
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Process DNA match data with error handling."""
     try:
         return _prepare_dna_match_operation_data(
@@ -5754,14 +5754,14 @@ def _process_dna_data_safe(
 
 
 def _process_tree_data_safe(
-    family_tree_record: Optional[FamilyTree],
-    prefetched_tree_data: Optional[dict[str, Any]],
+    family_tree_record: FamilyTree | None,
+    prefetched_tree_data: dict[str, Any] | None,
     match_uuid: str,
     match_in_my_tree: bool,
     session_manager: SessionManager,
     log_ref_short: str,
     logger_instance: logging.Logger
-) -> tuple[Optional[dict[str, Any]], Literal["create", "update", "none"]]:
+) -> tuple[dict[str, Any] | None, Literal["create", "update", "none"]]:
     """Process family tree data with error handling."""
     try:
         return _prepare_family_tree_operation_data(
@@ -5784,9 +5784,9 @@ def _process_tree_data_safe(
 
 def _populate_bulk_data_dict(
     prepared_data: dict[str, Any],
-    person_op_data: Optional[dict[str, Any]],
-    dna_op_data: Optional[dict[str, Any]],
-    tree_op_data: Optional[dict[str, Any]],
+    person_op_data: dict[str, Any] | None,
+    dna_op_data: dict[str, Any] | None,
+    tree_op_data: dict[str, Any] | None,
     tree_operation_status: Literal["create", "update", "none"],
     is_new_person: bool
 ) -> None:
@@ -5805,8 +5805,8 @@ def _populate_bulk_data_dict(
 def _determine_overall_status(
     is_new_person: bool,
     person_fields_changed: bool,
-    dna_op_data: Optional[dict[str, Any]],
-    tree_op_data: Optional[dict[str, Any]],
+    dna_op_data: dict[str, Any] | None,
+    tree_op_data: dict[str, Any] | None,
     tree_operation_status: Literal["create", "update", "none"]
 ) -> Literal["new", "updated", "skipped", "error"]:
     """Determine overall status based on operation data."""
@@ -5823,9 +5823,9 @@ def _determine_overall_status(
 
 def _assemble_bulk_data(
     is_new_person: bool,
-    person_op_data: Optional[dict[str, Any]],
-    dna_op_data: Optional[dict[str, Any]],
-    tree_op_data: Optional[dict[str, Any]],
+    person_op_data: dict[str, Any] | None,
+    dna_op_data: dict[str, Any] | None,
+    tree_op_data: dict[str, Any] | None,
     tree_operation_status: Literal["create", "update", "none"],
     person_fields_changed: bool
 ) -> tuple[dict[str, Any], Literal["new", "updated", "skipped", "error"]]:
@@ -5853,15 +5853,15 @@ def _do_match(
     _session: SqlAlchemySession,
     match: dict[str, Any],
     session_manager: SessionManager,
-    existing_person_arg: Optional[Person],
-    prefetched_combined_details: Optional[dict[str, Any]],
-    prefetched_tree_data: Optional[dict[str, Any]],
+    existing_person_arg: Person | None,
+    prefetched_combined_details: dict[str, Any] | None,
+    prefetched_tree_data: dict[str, Any] | None,
     _config_schema_arg: "ConfigSchema",
     logger_instance: logging.Logger,
 ) -> tuple[
-    Optional[dict[str, Any]],
+    dict[str, Any] | None,
     Literal["new", "updated", "skipped", "error"],
-    Optional[str],
+    str | None,
 ]:
     """
     Processes a single DNA match by calling helper functions to compare incoming data
@@ -5893,9 +5893,9 @@ def _do_match(
           for this match based on all data comparisons.
         - error_msg (Optional[str]): An error message if status is 'error', otherwise None.
     """
-    existing_person: Optional[Person] = existing_person_arg
-    dna_match_record: Optional[DnaMatch] = existing_person.dna_match if existing_person else None
-    family_tree_record: Optional[FamilyTree] = existing_person.family_tree if existing_person else None
+    existing_person: Person | None = existing_person_arg
+    dna_match_record: DnaMatch | None = existing_person.dna_match if existing_person else None
+    family_tree_record: FamilyTree | None = existing_person.family_tree if existing_person else None
 
     match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short = _extract_match_info(match)
 
@@ -5961,8 +5961,8 @@ def _do_match(
 
 def _session_recovery_required(
     session_manager: SessionManager,
-    driver: Optional[Any],
-    my_uuid: Optional[str],
+    driver: Any | None,
+    my_uuid: str | None,
 ) -> bool:
     """Determine whether session recovery is needed for match retrieval."""
 
@@ -5981,9 +5981,9 @@ def _session_recovery_required(
 
 def _finalize_session_validation(
     session_manager: SessionManager,
-    driver: Optional[Any],
-    my_uuid: Optional[str],
-) -> tuple[bool, Optional[Any], Optional[str]]:
+    driver: Any | None,
+    my_uuid: str | None,
+) -> tuple[bool, Any | None, str | None]:
     """Verify driver, UUID, and session validity after optional recovery."""
 
     if not driver:
@@ -5998,7 +5998,7 @@ def _finalize_session_validation(
     return True, driver, my_uuid
 
 
-def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool, Optional[Any], Optional[str]]:
+def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool, Any | None, str | None]:
     """
     Validate session manager, driver, UUID, and session validity for get_matches.
 
@@ -6072,7 +6072,7 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
 
 
 
-def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> Optional[str]:
+def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> str | None:
     """
     Read CSRF token from driver cookies using get_cookie method.
 
@@ -6100,7 +6100,7 @@ def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[s
     return None
 
 
-def _read_csrf_from_fallback_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> Optional[str]:
+def _read_csrf_from_fallback_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> str | None:
     """
     Read CSRF token from driver cookies using get_driver_cookies fallback.
 
@@ -6135,7 +6135,7 @@ def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
     setattr(session_manager, '_cached_csrf_token', csrf_token)
     setattr(session_manager, '_cached_csrf_time', time_module.time())
 
-def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
+def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> str | None:
     """
     Get CSRF token from cache if valid, otherwise read fresh from cookies.
 
@@ -6349,7 +6349,7 @@ def _handle_non_dict_response(
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str]
-) -> Optional[dict]:
+) -> dict | None:
     """Handle non-dict API response including 303 redirects."""
     if not isinstance(api_response, requests.Response):
         logger.error(
@@ -6379,7 +6379,7 @@ def _handle_match_list_response(
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str]
-) -> Optional[dict]:
+) -> dict | None:
     """
     Handle and validate match list API response, including 303 redirect handling.
 
@@ -6398,7 +6398,7 @@ def _handle_match_list_response(
     return api_response
 
 
-def _parse_total_pages(api_response: dict, current_page: int) -> Optional[int]:  # noqa: ARG001
+def _parse_total_pages(api_response: dict, current_page: int) -> int | None:  # noqa: ARG001
     """
     Parse total pages from API response.
 
@@ -6407,7 +6407,7 @@ def _parse_total_pages(api_response: dict, current_page: int) -> Optional[int]: 
     Returns:
         Total pages as integer or None if not found/invalid
     """
-    total_pages: Optional[int] = None
+    total_pages: int | None = None
     total_pages_raw = api_response.get("totalPages")
     if total_pages_raw is not None:
         try:
@@ -6647,7 +6647,7 @@ def _refine_single_match(
     in_tree_ids: set[str],
     match_index: int,
     current_page: int
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Refine a single match from raw API data into structured format.
 
@@ -6667,7 +6667,7 @@ def _refine_single_match(
         raw_display_name = profile_info.get("displayName")
         match_username = format_name(raw_display_name)
 
-        first_name: Optional[str] = None
+        first_name: str | None = None
         if match_username and match_username != "Valued Relative":
             trimmed_username = match_username.strip()
             if trimmed_username:
@@ -6770,7 +6770,7 @@ def get_matches(
     session_manager: SessionManager,
     _db_session: SqlAlchemySession,  # Parameter name changed for clarity
     current_page: int = 1,
-) -> Optional[tuple[list[dict[str, Any]], Optional[int]]]:
+) -> tuple[list[dict[str, Any]], int | None] | None:
     """
     Fetches a single page of DNA match list data from the Ancestry API v2.
     Also fetches the 'in_my_tree' status for matches on the page via a separate API call.
@@ -6964,7 +6964,7 @@ def _ensure_action6_session_ready(
     return False
 
 
-def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
+def _parse_details_response(details_response: Any, match_uuid: str) -> dict[str, Any] | None:
     """Parse match details API response."""
     if details_response and isinstance(details_response, dict):
         relationship_part = details_response.get("relationship", {})
@@ -6994,7 +6994,7 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
 
 def _fetch_match_details_api(
     session_manager: SessionManager, my_uuid: str, match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch match details from API."""
     details_url = urljoin(
         config_schema.api.base_url,
@@ -7032,7 +7032,7 @@ def _fetch_match_details_api(
         return None
 
 
-def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Optional[dict[str, Any]]:
+def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> dict[str, Any] | None:
     """Check cache for combined details."""
     cache_key = f"combined_details_{match_uuid}"
     try:
@@ -7046,7 +7046,7 @@ def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Opt
     return None
 
 
-def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> Optional[datetime]:
+def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> datetime | None:
     """Parse last login date string."""
     try:
         if last_login_str.endswith("Z"):
@@ -7068,7 +7068,7 @@ def _fetch_profile_details_api(
     session_manager: SessionManager,
     tester_profile_id: str,
     match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch profile details from API."""
     profile_url = urljoin(
         config_schema.api.base_url,
@@ -7208,7 +7208,7 @@ def _validate_session_for_combined_details(session_manager: SessionManager, matc
 
 def _fetch_combined_details(
     session_manager: SessionManager, match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetches combined match details (DNA stats, Admin/Tester IDs) and profile details
     (login date, contactable status) for a single match using two API calls.
@@ -7259,7 +7259,7 @@ def _fetch_combined_details(
 
 
 @retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
-def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
+def _get_cached_badge_details(match_uuid: str) -> dict[str, Any] | None:
     """Try to get badge details from cache."""
     cache_key = f"badge_details_{match_uuid}"
     try:
@@ -7301,7 +7301,7 @@ def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
         logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
 
 
-def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
+def _process_badge_response(badge_response: Any, match_uuid: str) -> dict[str, Any] | None:
     """Process badge details API response."""
     if not badge_response or not isinstance(badge_response, dict):
         if isinstance(badge_response, requests.Response):
@@ -7340,7 +7340,7 @@ def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[di
 
 def _fetch_batch_badge_details(
     session_manager: SessionManager, match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetches badge details for a specific match UUID. Used primarily to get the
     match's CFPID (Person ID within the user's tree) and basic tree profile info.
@@ -7447,8 +7447,8 @@ def _fetch_batch_ladder(
     session_manager: SessionManager,
     cfpid: str,
     tree_id: str,
-    match_display_name: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+    match_display_name: str | None = None,
+) -> dict[str, Any] | None:
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
     between the user and a specific person (CFPID) within the user's tree.
@@ -7524,7 +7524,7 @@ def _fetch_batch_ladder(
         cloudscraper.exceptions.CloudflareException,  # type: ignore
     )
 )
-def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> Optional[str]:
+def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> str | None:
     """Get cached CSRF token if available."""
     if (hasattr(session_manager, '_cached_csrf_token') and
         hasattr(session_manager, '_is_csrf_token_valid') and
@@ -7539,7 +7539,7 @@ def _extract_csrf_from_cookies(
     session_manager: SessionManager,
     driver: Any,
     api_description: str
-) -> Optional[str]:
+) -> str | None:
     """Extract CSRF token from driver cookies."""
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
@@ -7572,7 +7572,7 @@ def _get_csrf_token_for_relationship_prob(
     session_manager: SessionManager,
     driver: Any,
     api_description: str
-) -> Optional[str]:
+) -> str | None:
     """Get CSRF token for relationship probability API."""
     cached_token = _get_cached_csrf_token(session_manager, api_description)
     if cached_token:
@@ -7589,7 +7589,7 @@ def _get_csrf_token_for_relationship_prob(
     return None
 
 
-def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_start_time: float) -> Optional[str]:
+def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_start_time: float) -> str | None:
     """Check cache for relationship probability."""
     cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
     try:
@@ -7614,7 +7614,7 @@ def _try_get_fallback(
     max_labels_param: int,
     sample_id_upper: str,
     api_start_time: float
-) -> Optional[str]:
+) -> str | None:
     """Try GET fallback for relationship probability."""
     get_resp = _api_req(
         url=rel_url,
@@ -7647,7 +7647,7 @@ def _try_csrf_refresh_fallback(
     max_labels_param: int,
     sample_id_upper: str,
     api_start_time: float
-) -> Optional[str]:
+) -> str | None:
     """Try CSRF refresh fallback for relationship probability."""
     try:
         fresh_csrf = session_manager.get_csrf()
@@ -7687,7 +7687,7 @@ def _try_cloudscraper_fallback(
     sample_id_upper: str,
     api_start_time: float,
     session_manager: SessionManager
-) -> Optional[str]:
+) -> str | None:
     """Try cloudscraper fallback for relationship probability."""
     try:
         logger.debug(f"{api_description}: Falling back to cloudscraper with redirects enabled...")
@@ -7722,7 +7722,7 @@ def _try_relationship_prob_fallbacks(
     max_labels_param: int,
     sample_id_upper: str,
     api_start_time: float
-) -> Optional[str]:
+) -> str | None:
     """Try fallback methods for fetching relationship probability."""
     if isinstance(api_resp, requests.Response):
         status = api_resp.status_code
@@ -7751,7 +7751,7 @@ def _try_relationship_prob_fallbacks(
     )
 
 
-def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper: str, api_description: str) -> Optional[tuple[float, list[str]]]:
+def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper: str, api_description: str) -> tuple[float, list[str]] | None:
     """Extract best prediction from predictions list."""
     valid_preds = [
         p
@@ -7800,7 +7800,7 @@ def _parse_relationship_probability(
     api_description: str,
     api_start_time: float,
     session_manager: SessionManager
-) -> Optional[str]:
+) -> str | None:
     """Parse relationship probability from API response."""
     if "matchProbabilityToSampleId" not in data_obj:
         logger.debug(
@@ -7858,7 +7858,7 @@ def _validate_relationship_prob_session(
 
 def _fetch_batch_relationship_prob(
     session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
-) -> Optional[str]:
+) -> str | None:
     """
     Fetches the predicted relationship probability distribution for a match using
     the shared cloudscraper instance to potentially bypass Cloudflare challenges.
@@ -7987,7 +7987,7 @@ def _log_page_summary(
 # End of _log_page_summary
 
 
-def _format_brief_duration(seconds: Optional[float]) -> str:
+def _format_brief_duration(seconds: float | None) -> str:
     """Return a compact human-readable duration."""
     if seconds is None:
         return "--"
@@ -8173,8 +8173,8 @@ def _log_page_completion_summary(
     page_updated: int,
     page_skipped: int,
     page_errors: int,
-    metrics: Optional[PageProcessingMetrics],
-    progress: Optional[dict[str, Any]] = None,
+    metrics: PageProcessingMetrics | None,
+    progress: dict[str, Any] | None = None,
 ) -> None:
     """Emit a structured INFO-level summary for a completed page."""
 

@@ -171,7 +171,7 @@ def _is_record(obj: Any) -> bool:
 # _is_name_rec removed - unused helper function
 
 
-def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
+def _normalize_id(xref_id: str | None) -> str | None:
     if not xref_id or not isinstance(xref_id, str):
         return None
 
@@ -196,10 +196,10 @@ def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
     return None
 
 
-def extract_and_fix_id(raw_id: Any) -> Optional[str]:
+def extract_and_fix_id(raw_id: Any) -> str | None:
     if not raw_id:
         return None
-    id_to_normalize: Optional[str] = None
+    id_to_normalize: str | None = None
     if isinstance(raw_id, str):
         id_to_normalize = raw_id
     elif isinstance(raw_id, int):
@@ -216,7 +216,7 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
 
 # Helper functions for _get_full_name
 
-def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[GedcomIndividualType], str]:
+def _validate_individual_type(indi: GedcomIndividualType) -> tuple[GedcomIndividualType | None, str]:
     """Validate and extract individual from input, handling wrapped values."""
     if not _is_individual(indi):
         if hasattr(indi, "value") and _is_individual(getattr(indi, "value", None)):
@@ -230,7 +230,7 @@ def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[Gedc
     return indi, ""
 
 
-def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> str | None:
     """Try to get name using indi.name.format() method."""
     if not indi or not hasattr(indi, "name"):
         return None
@@ -246,7 +246,7 @@ def _try_name_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Opt
         return None
 
 
-def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> str | None:
     """Try to get name using indi.sub_tag(TAG_NAME).format() method."""
     if not indi or not hasattr(indi, "sub_tag"):
         return None
@@ -262,7 +262,7 @@ def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> 
         return None
 
 
-def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -> str | None:
     """Try to manually combine GIVN and SURN tags."""
     _ = indi_id_log  # Unused but kept for API consistency
     if not indi or not hasattr(indi, "sub_tag"):
@@ -288,7 +288,7 @@ def _try_manual_name_combination(indi: GedcomIndividualType, indi_id_log: str) -
     return formatted_name
 
 
-def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> Optional[str]:
+def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> str | None:
     """Try to get name using indi.sub_tag_value(TAG_NAME) as last resort."""
     _ = indi_id_log  # Unused but kept for API consistency
     if not indi or not hasattr(indi, "sub_tag_value"):
@@ -301,7 +301,7 @@ def _try_sub_tag_value_method(indi: GedcomIndividualType, indi_id_log: str) -> O
     return name_val
 
 
-def _clean_and_format_name(formatted_name: Optional[str], name_source: str) -> str:
+def _clean_and_format_name(formatted_name: str | None, name_source: str) -> str:
     """Clean and format the extracted name."""
     if not formatted_name:
         return "Unknown (No Name Found)"
@@ -346,7 +346,7 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
 
 # Helper functions for _parse_date
 
-def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str]:
+def _validate_and_normalize_date_string(date_str: str | None) -> str | None:
     """Validate and perform initial normalization of date string."""
     if not date_str or not isinstance(date_str, str):
         return None
@@ -374,7 +374,7 @@ def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str
     return date_str
 
 
-def _clean_date_string(date_str: str) -> Optional[str]:
+def _clean_date_string(date_str: str) -> str | None:
     """Clean date string by removing keywords and normalizing format."""
     # Remove multi-word phrases first (before single keywords)
     phrases_to_remove = r"\b(?:ON\s+OR\s+BEFORE|ON\s+OR\s+AFTER|ON\s+OR\s+ABOUT)\b\.?\s*"
@@ -429,7 +429,7 @@ def _clean_date_string(date_str: str) -> Optional[str]:
     return cleaned_str
 
 
-def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
+def _try_dateparser(cleaned_str: str) -> datetime | None:
     """Try parsing with dateparser library if available."""
     if not DATEPARSER_AVAILABLE:
         return None
@@ -449,7 +449,7 @@ def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
         return None
 
 
-def _try_strptime_formats(cleaned_str: str) -> Optional[datetime]:
+def _try_strptime_formats(cleaned_str: str) -> datetime | None:
     """Try parsing with various strptime formats."""
     formats = [
         "%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y", "%Y",
@@ -474,7 +474,7 @@ def _try_strptime_formats(cleaned_str: str) -> Optional[datetime]:
     return None
 
 
-def _extract_year_fallback(cleaned_str: str) -> Optional[datetime]:
+def _extract_year_fallback(cleaned_str: str) -> datetime | None:
     """Extract year as fallback when full parsing fails."""
     logger.debug(f"Full parsing failed for '{cleaned_str}', attempting year extraction.")
 
@@ -495,7 +495,7 @@ def _extract_year_fallback(cleaned_str: str) -> Optional[datetime]:
         return None
 
 
-def _finalize_parsed_date(parsed_dt: Optional[datetime], original_date_str: str) -> Optional[datetime]:
+def _finalize_parsed_date(parsed_dt: datetime | None, original_date_str: str) -> datetime | None:
     """Finalize parsed date by validating and adding timezone."""
     if not isinstance(parsed_dt, datetime):
         logger.warning(f"All parsing attempts failed for: '{original_date_str}'")
@@ -511,7 +511,7 @@ def _finalize_parsed_date(parsed_dt: Optional[datetime], original_date_str: str)
     return parsed_dt.astimezone(timezone.utc)
 
 
-def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
+def _parse_date(date_str: str | None) -> datetime | None:
     """
     Parses various GEDCOM date formats into timezone-aware datetime objects (UTC),
     prioritizing full date parsing but falling back to extracting the first year.
@@ -544,7 +544,7 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
     return _finalize_parsed_date(parsed_dt, original_date_str)
 
 
-def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementation ...
+def _clean_display_date(raw_date_str: str | None) -> str:  # ... implementation ...
     if not raw_date_str or not isinstance(raw_date_str, str) or raw_date_str == "N/A":
         return "N/A"
     cleaned = raw_date_str.strip()
@@ -564,7 +564,7 @@ def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementati
     return cleaned if cleaned else "N/A"
 
 
-def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Optional[GedcomIndividualType]:
+def _validate_and_normalize_individual(individual: GedcomIndividualType) -> GedcomIndividualType | None:
     """Validate and normalize individual to ensure it's a valid GedcomIndividualType."""
     if not _is_individual(individual):
         if hasattr(individual, "value") and _is_individual(getattr(individual, "value", None)):
@@ -580,7 +580,7 @@ def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Opti
     return individual
 
 
-def _extract_event_record(individual: GedcomIndividualType, event_tag: str, indi_id_log: str) -> Optional[Any]:
+def _extract_event_record(individual: GedcomIndividualType, event_tag: str, indi_id_log: str) -> Any | None:
     """Extract event record from individual."""
     # Add null check before calling sub_tag
     if not individual or not hasattr(individual, "sub_tag"):
@@ -599,9 +599,9 @@ def _extract_event_record(individual: GedcomIndividualType, event_tag: str, indi
     return event_record
 
 
-def _extract_date_from_event(event_record: Any) -> tuple[Optional[datetime], str]:
+def _extract_date_from_event(event_record: Any) -> tuple[datetime | None, str]:
     """Extract date information from event record."""
-    date_obj: Optional[datetime] = None
+    date_obj: datetime | None = None
     date_str: str = "N/A"
 
     date_tag = event_record.sub_tag(TAG_DATE)
@@ -672,8 +672,8 @@ def _extract_sources_from_event(event_record: Any) -> list[str]:
 
 def _get_event_info(
     individual: GedcomIndividualType, event_tag: str
-) -> tuple[Optional[datetime], str, str]:  # ... implementation ...
-    date_obj: Optional[datetime] = None
+) -> tuple[datetime | None, str, str]:  # ... implementation ...
+    date_obj: datetime | None = None
     date_str: str = "N/A"
     place_str: str = "N/A"
 
@@ -831,7 +831,7 @@ def format_full_life_details(
 
 
 def format_relative_info(relative: Any) -> str:  # ... implementation ...
-    indi_obj: Optional[GedcomIndividualType] = None
+    indi_obj: GedcomIndividualType | None = None
     if _is_individual(relative):
         indi_obj = relative
     elif hasattr(relative, "value") and _is_individual(
@@ -1195,7 +1195,7 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
 # _are_directly_related removed - unused 24-line helper function for relationship checking
 
 
-def _get_person_name_with_birth_year(indi: Optional[GedcomIndividualType], person_id: str) -> tuple[str, str]:
+def _get_person_name_with_birth_year(indi: GedcomIndividualType | None, person_id: str) -> tuple[str, str]:
     """Get person's full name and birth year string."""
     if not indi:
         return f"Unknown ({person_id})", ""
@@ -1209,7 +1209,7 @@ def _get_person_name_with_birth_year(indi: Optional[GedcomIndividualType], perso
     return name, birth_year_str
 
 
-def _get_gender_char(indi: GedcomIndividualType) -> Optional[str]:
+def _get_gender_char(indi: GedcomIndividualType) -> str | None:
     """Get gender character (M/F) from individual."""
     sex_b = getattr(indi, TAG_SEX.lower(), None)
     if sex_b and isinstance(sex_b, str) and str(sex_b).upper() in ("M", "F"):
@@ -1217,61 +1217,61 @@ def _get_gender_char(indi: GedcomIndividualType) -> Optional[str]:
     return None
 
 
-def _determine_parent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_parent_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine parent relationship phrase based on gender."""
     parent_label = "father" if sex_char == "M" else "mother" if sex_char == "F" else "parent"
     return f"whose {parent_label} is {name}{birth_year}"
 
 
-def _determine_child_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_child_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine child relationship phrase based on gender."""
     child_label = "son" if sex_char == "M" else "daughter" if sex_char == "F" else "child"
     return f"whose {child_label} is {name}{birth_year}"
 
 
-def _determine_sibling_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_sibling_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine sibling relationship phrase based on gender."""
     sibling_label = "brother" if sex_char == "M" else "sister" if sex_char == "F" else "sibling"
     return f"whose {sibling_label} is {name}{birth_year}"
 
 
-def _determine_spouse_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_spouse_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine spouse relationship phrase based on gender."""
     spouse_label = "husband" if sex_char == "M" else "wife" if sex_char == "F" else "spouse"
     return f"whose {spouse_label} is {name}{birth_year}"
 
 
-def _determine_aunt_uncle_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_aunt_uncle_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine aunt/uncle relationship phrase based on gender."""
     relative_label = "uncle" if sex_char == "M" else "aunt" if sex_char == "F" else "aunt/uncle"
     return f"whose {relative_label} is {name}{birth_year}"
 
 
-def _determine_niece_nephew_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_niece_nephew_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine niece/nephew relationship phrase based on gender."""
     relative_label = "nephew" if sex_char == "M" else "niece" if sex_char == "F" else "niece/nephew"
     return f"whose {relative_label} is {name}{birth_year}"
 
 
-def _determine_grandparent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_grandparent_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine grandparent relationship phrase based on gender."""
     grandparent_label = "grandfather" if sex_char == "M" else "grandmother" if sex_char == "F" else "grandparent"
     return f"whose {grandparent_label} is {name}{birth_year}"
 
 
-def _determine_grandchild_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_grandchild_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine grandchild relationship phrase based on gender."""
     grandchild_label = "grandson" if sex_char == "M" else "granddaughter" if sex_char == "F" else "grandchild"
     return f"whose {grandchild_label} is {name}{birth_year}"
 
 
-def _determine_great_grandparent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_great_grandparent_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine great-grandparent relationship phrase based on gender."""
     grandparent_label = "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
     return f"whose {grandparent_label} is {name}{birth_year}"
 
 
-def _determine_great_grandchild_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
+def _determine_great_grandchild_relationship(sex_char: str | None, name: str, birth_year: str) -> str:
     """Determine great-grandchild relationship phrase based on gender."""
     grandchild_label = "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
     return f"whose {grandchild_label} is {name}{birth_year}"
@@ -1281,13 +1281,13 @@ def _check_relationship_type(
     relationship_type: str,
     id_a: str,
     id_b: str,
-    sex_char: Optional[str],
+    sex_char: str | None,
     name_b: str,
     birth_year_b: str,
     reader: GedcomReaderType,
     id_to_parents: dict[str, set[str]],
     id_to_children: dict[str, set[str]],
-) -> Optional[str]:
+) -> str | None:
     """
     Check a specific relationship type and return the relationship phrase if matched.
 
@@ -1408,7 +1408,7 @@ def _are_siblings(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> boo
     return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
 
 
-def _extract_spouse_ids_from_family(fam: Any) -> tuple[Optional[str], Optional[str]]:
+def _extract_spouse_ids_from_family(fam: Any) -> tuple[str | None, str | None]:
     """Extract husband and wife IDs from a family record. Returns (husb_id, wife_id)."""
     husb_ref = fam.sub_tag(TAG_HUSBAND)
     wife_ref = fam.sub_tag(TAG_WIFE)
@@ -1843,8 +1843,8 @@ def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, 
 def calculate_match_score(
     search_criteria: dict,
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
-    scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
-    date_flexibility: Optional[dict] = None,
+    scoring_weights: Mapping[str, Union[int, float]] | None = None,
+    date_flexibility: dict | None = None,
 ) -> tuple[float, dict[str, int], list[str]]:
     """
     Calculates match score using pre-processed candidate data.
@@ -1913,7 +1913,7 @@ class GedcomData:
             skip_cache_build: If True, skip building caches (used when loading from cache)
         """
         self.path = Path(gedcom_path).resolve()
-        self.reader: Optional[GedcomReaderType] = None
+        self.reader: GedcomReaderType | None = None
         self.indi_index: dict[str, GedcomIndividualType] = {}  # Index of INDI records
         self.processed_data_cache: dict[str, dict[str, Any]] = (
             {}
@@ -2255,7 +2255,7 @@ class GedcomData:
                 "[Pre-Process] Processed data cache is EMPTY after build attempt."
             )
 
-    def get_processed_indi_data(self, norm_id: str) -> Optional[dict[str, Any]]:
+    def get_processed_indi_data(self, norm_id: str) -> dict[str, Any] | None:
         """Retrieves pre-processed data for an individual from the cache."""
         if not self.processed_data_cache:
             logger.warning(
@@ -2265,8 +2265,8 @@ class GedcomData:
         return self.processed_data_cache.get(norm_id)
 
     def find_individual_by_id(
-        self, norm_id: Optional[str]
-    ) -> Optional[GedcomIndividualType]:
+        self, norm_id: str | None
+    ) -> GedcomIndividualType | None:
         """Finds an individual by their normalized ID using the index."""
         if not norm_id or not isinstance(norm_id, str):
             logger.warning("find_individual_by_id called with invalid norm_id")
@@ -2305,7 +2305,7 @@ class GedcomData:
                     spouse_ids.add(spouse_id)
         return spouse_ids
 
-    def _get_related_ids_by_type(self, target_id: str, relationship_type: str) -> Optional[set[str]]:
+    def _get_related_ids_by_type(self, target_id: str, relationship_type: str) -> set[str] | None:
         """Get related IDs based on relationship type. Returns None for unknown types."""
         if relationship_type == "parents":
             return self.id_to_parents.get(target_id, set())
@@ -2416,7 +2416,7 @@ class GedcomData:
                 processed_fam_ids.add(fam_id)
         return matching_families_with_role
 
-    def _ensure_maps_and_index_built(self) -> Optional[str]:
+    def _ensure_maps_and_index_built(self) -> str | None:
         """Ensure family maps and individual index are built. Returns error message or None if successful."""
         # Ensure family maps are built
         if not self.id_to_parents and not self.id_to_children:
@@ -2434,7 +2434,7 @@ class GedcomData:
 
         return None  # Success
 
-    def _validate_relationship_path_inputs(self, id1_norm: str, id2_norm: str) -> Optional[str]:
+    def _validate_relationship_path_inputs(self, id1_norm: str, id2_norm: str) -> str | None:
         """Validate inputs for relationship path calculation. Returns error message or None if valid."""
         if not self.reader:
             return "Error: GEDCOM Reader unavailable."
@@ -2988,7 +2988,7 @@ def test_source_citation_extraction():
     return True
 
 
-def _should_run_real_demo() -> tuple[bool, Optional[str], Optional[str]]:
+def _should_run_real_demo() -> tuple[bool, str | None, str | None]:
     """Determine whether the heavy GEDCOM demo should execute."""
     import os
 

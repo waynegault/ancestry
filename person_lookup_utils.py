@@ -23,27 +23,27 @@ class PersonLookupResult:
     """
 
     # Basic identification
-    person_id: Optional[str] = None  # GEDCOM ID or API person ID
+    person_id: str | None = None  # GEDCOM ID or API person ID
     name: str = ""  # Full name
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
 
     # Birth information
-    birth_year: Optional[int] = None
-    birth_place: Optional[str] = None
-    birth_date: Optional[str] = None  # Full date if available
+    birth_year: int | None = None
+    birth_place: str | None = None
+    birth_date: str | None = None  # Full date if available
 
     # Death information
-    death_year: Optional[int] = None
-    death_place: Optional[str] = None
-    death_date: Optional[str] = None  # Full date if available
+    death_year: int | None = None
+    death_place: str | None = None
+    death_date: str | None = None  # Full date if available
 
     # Gender
-    gender: Optional[str] = None  # 'M' or 'F'
+    gender: str | None = None  # 'M' or 'F'
 
     # Relationship information
-    relationship_path: Optional[str] = None  # e.g., "3rd great-grandfather"
-    relationship_description: Optional[str] = None  # Detailed path
+    relationship_path: str | None = None  # e.g., "3rd great-grandfather"
+    relationship_description: str | None = None  # Detailed path
 
     # Family details
     family_details: dict[str, Any] = field(default_factory=dict)  # Parents, spouse, children
@@ -54,10 +54,10 @@ class PersonLookupResult:
 
     # Source
     source: str = "unknown"  # 'gedcom', 'api', or 'not_found'
-    source_details: Optional[str] = None  # Additional source information
+    source_details: str | None = None  # Additional source information
 
     # Additional data
-    notes: Optional[str] = None
+    notes: str | None = None
     found: bool = False  # Whether person was found
 
     def to_dict(self) -> dict[str, Any]:
@@ -85,7 +85,7 @@ class PersonLookupResult:
             "found": self.found,
         }
 
-    def _format_birth_info(self) -> Optional[str]:
+    def _format_birth_info(self) -> str | None:
         """Format birth information."""
         if self.birth_year and self.birth_place:
             return f"born {self.birth_year} in {self.birth_place}"
@@ -95,7 +95,7 @@ class PersonLookupResult:
             return f"born in {self.birth_place}"
         return None
 
-    def _format_death_info(self) -> Optional[str]:
+    def _format_death_info(self) -> str | None:
         """Format death information."""
         if self.death_year and self.death_place:
             return f"died {self.death_year} in {self.death_place}"
@@ -166,7 +166,7 @@ class PersonLookupResult:
         )
 
 
-def create_not_found_result(name: str, reason: Optional[str] = None) -> PersonLookupResult:
+def create_not_found_result(name: str, reason: str | None = None) -> PersonLookupResult:
     """Create a PersonLookupResult for a person not found."""
     return PersonLookupResult(
         name=name,
@@ -179,7 +179,7 @@ def create_not_found_result(name: str, reason: Optional[str] = None) -> PersonLo
 
 def create_result_from_gedcom(
     person_data: dict[str, Any],
-    relationship_path: Optional[str] = None,
+    relationship_path: str | None = None,
     match_score: int = 0,
 ) -> PersonLookupResult:
     """Create PersonLookupResult from GEDCOM search result (Action 10)."""
@@ -207,7 +207,7 @@ def create_result_from_gedcom(
 
 def create_result_from_api(
     person_data: dict[str, Any],
-    relationship_path: Optional[str] = None,
+    relationship_path: str | None = None,
     match_score: int = 0,
 ) -> PersonLookupResult:
     """Create PersonLookupResult from API search result (Action 11)."""

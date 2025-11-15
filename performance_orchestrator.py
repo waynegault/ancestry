@@ -494,7 +494,7 @@ class PerformanceOptimizer:
 
 class _OptimizerSingleton:
     """Thread-safe singleton container for performance optimizer instance."""
-    instance: Optional[PerformanceOptimizer] = None
+    instance: PerformanceOptimizer | None = None
     lock = threading.Lock()
 
 

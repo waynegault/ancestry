@@ -47,9 +47,9 @@ class ActionMetadata:
     description: str
     category: ActionCategory
     browser_requirement: ActionRequirement
-    function: Optional[Callable] = None
+    function: Callable | None = None
     requires_confirmation: bool = False
-    confirmation_message: Optional[str] = None
+    confirmation_message: str | None = None
     close_session_after: bool = False
     enable_caching: bool = False
     max_args: int = 0
@@ -91,7 +91,7 @@ class ActionRegistry:
             # Sort by menu_order for consistent display
             self._menu_actions.sort(key=lambda x: x.menu_order)
 
-    def get_action(self, action_id: str) -> Optional[ActionMetadata]:
+    def get_action(self, action_id: str) -> ActionMetadata | None:
         """Get action metadata by ID."""
         return self._actions.get(action_id)
 
@@ -124,7 +124,7 @@ class ActionRegistry:
         action = self.get_action(action_id)
         return action.requires_confirmation if action else False
 
-    def get_confirmation_message(self, action_id: str) -> Optional[str]:
+    def get_confirmation_message(self, action_id: str) -> str | None:
         """Get confirmation message for action."""
         action = self.get_action(action_id)
         return action.confirmation_message if action else None
@@ -355,7 +355,7 @@ class ActionRegistry:
 
 
 # Global registry instance
-_action_registry: Optional[ActionRegistry] = None
+_action_registry: ActionRegistry | None = None
 
 
 def get_action_registry() -> ActionRegistry:
@@ -374,7 +374,7 @@ def register_action(action: ActionMetadata) -> None:
     registry.register(action)
 
 
-def get_action(action_id: str) -> Optional[ActionMetadata]:
+def get_action(action_id: str) -> ActionMetadata | None:
     """Get action metadata by ID from global registry."""
     registry = get_action_registry()
     return registry.get_action(action_id)

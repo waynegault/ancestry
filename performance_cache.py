@@ -258,7 +258,7 @@ class PerformanceCache:
 
         return invalidated
 
-    def get(self, cache_key: str) -> Optional[Any]:
+    def get(self, cache_key: str) -> Any | None:
         """Get item from cache (memory first, then disk)"""
         # Check memory cache first
         if cache_key in self._memory_cache:
@@ -290,7 +290,7 @@ class PerformanceCache:
         logger.debug(f"Cache MISS: {cache_key[:12]}...")
         return None
 
-    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: Optional[list[str]] = None):
+    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: list[str] | None = None):
         """Store item in cache with optional dependency tracking"""
         # Calculate and store entry size
         try:
@@ -413,7 +413,7 @@ def fast_test_cache(func: Callable) -> Callable:
 
 
 def progressive_processing(
-    chunk_size: int = 1000, progress_callback: Optional[Callable] = None
+    chunk_size: int = 1000, progress_callback: Callable | None = None
 ):
     """
     Process large datasets progressively with progress feedback.
@@ -482,7 +482,7 @@ def clear_performance_cache() -> None:
     logger.info("Performance cache cleared")
 
 
-def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None) -> None:
+def warm_performance_cache(gedcom_paths: list[str] | None = None, warm_strategies: list[str] | None = None) -> None:
     """
     Intelligent cache warming with multiple strategies.
 

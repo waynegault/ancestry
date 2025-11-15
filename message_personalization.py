@@ -337,7 +337,7 @@ class MessagePersonalizer:
 
         return list(set(selected_functions))
 
-    def _get_best_performing_function(self, function_list: list[str]) -> Optional[str]:
+    def _get_best_performing_function(self, function_list: list[str]) -> str | None:
         """Get the best performing function from a list based on effectiveness data."""
         best_func = None
         best_score = 0.0
@@ -372,7 +372,7 @@ class MessagePersonalizer:
         extracted_data: dict[str, Any],
         base_format_data: dict[str, str],
         _person_data: dict[str, Any],  # type: ignore
-        selected_functions: Optional[list[str]] = None
+        selected_functions: list[str] | None = None
     ) -> dict[str, str]:
         """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
@@ -443,7 +443,7 @@ class MessagePersonalizer:
             return f"{ancestor_names[0]} and {ancestor_names[1]}"
         return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
 
-    def _format_single_vital_record(self, record: Any) -> Optional[str]:
+    def _format_single_vital_record(self, record: Any) -> str | None:
         """Format a single vital record detail."""
         if not isinstance(record, dict):
             return None
@@ -768,7 +768,7 @@ class MessagePersonalizer:
 
         return "Understanding family migration patterns helps piece together our shared ancestry."
 
-    def _extract_year_from_date(self, date: str) -> Optional[int]:
+    def _extract_year_from_date(self, date: str) -> int | None:
         """Extract 4-digit year from date string."""
         for part in date.split():
             if part.isdigit() and len(part) == 4:
@@ -777,7 +777,7 @@ class MessagePersonalizer:
                     return year
         return None
 
-    def _get_historical_context_for_location(self, year: int, place: str, event_type: str) -> Optional[str]:
+    def _get_historical_context_for_location(self, year: int, place: str, event_type: str) -> str | None:
         """Get historical context based on year and location."""
         if "Scotland" in place and 1840 <= year <= 1920:
             return f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods."
@@ -787,7 +787,7 @@ class MessagePersonalizer:
             return f"The {year} timeframe was during World War I, which affected many family records."
         return None
 
-    def _analyze_vital_record_context(self, record: Any) -> Optional[str]:
+    def _analyze_vital_record_context(self, record: Any) -> str | None:
         """Analyze historical context for a single vital record."""
         if not isinstance(record, dict):
             return None
@@ -886,7 +886,7 @@ class MessagePersonalizer:
 
         return "Surname distribution patterns often reveal family migration routes and concentrations."
 
-    def _get_occupation_context(self, occupation: str, person: str) -> Optional[str]:
+    def _get_occupation_context(self, occupation: str, person: str) -> str | None:
         """Get social context for a specific occupation."""
         occupation_lower = occupation.lower()
 
@@ -962,7 +962,7 @@ class MessagePersonalizer:
 
         return birth_years, marriage_years
 
-    def _analyze_birth_year_gap(self, birth_years: list[int]) -> Optional[str]:
+    def _analyze_birth_year_gap(self, birth_years: list[int]) -> str | None:
         """Analyze gap between birth years and return interpretation."""
         if len(birth_years) >= 2:
             gap = abs(birth_years[0] - birth_years[1])

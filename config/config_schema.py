@@ -74,7 +74,7 @@ class ConfigValidator:
             self.environment_rules[env] = []
         self.environment_rules[env].append(rule)
 
-    def _validate_single_rule(self, config: Any, rule: ValidationRule) -> Optional[str]:
+    def _validate_single_rule(self, config: Any, rule: ValidationRule) -> str | None:
         """Validate a single rule against config. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -88,7 +88,7 @@ class ConfigValidator:
 
     def _validate_environment_rule(
         self, config: Any, rule: ValidationRule, environment: EnvironmentType
-    ) -> Optional[str]:
+    ) -> str | None:
         """Validate an environment-specific rule. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -150,8 +150,8 @@ from test_utilities import validate_positive_integer
 class DatabaseConfig:
     """Enhanced database configuration schema with validation."""
 
-    database_file: Optional[Path] = None  # Database file path
-    gedcom_file_path: Optional[Path] = None  # GEDCOM file path (loaded from .env)
+    database_file: Path | None = None  # Database file path
+    gedcom_file_path: Path | None = None  # GEDCOM file path (loaded from .env)
 
     # Connection pool settings
     pool_size: int = 10
@@ -181,7 +181,7 @@ class DatabaseConfig:
     enable_query_stats: bool = False
 
     # Field with default_factory must come last
-    data_dir: Optional[Path] = field(default_factory=lambda: Path("Data"))
+    data_dir: Path | None = field(default_factory=lambda: Path("Data"))
 
     def __post_init__(self) -> None:
         """Enhanced validation after initialization."""
@@ -347,9 +347,9 @@ class SeleniumConfig:
     """Selenium/WebDriver configuration schema."""
 
     # Chrome settings
-    chrome_driver_path: Optional[Path] = None
-    chrome_browser_path: Optional[Path] = None
-    chrome_user_data_dir: Optional[Path] = None
+    chrome_driver_path: Path | None = None
+    chrome_browser_path: Path | None = None
+    chrome_user_data_dir: Path | None = None
     profile_dir: str = "Default"
 
     # Browser behavior
@@ -391,26 +391,26 @@ class APIConfig:
 
     # Base URLs
     base_url: str = "https://www.ancestry.com/"
-    api_base_url: Optional[str] = None
+    api_base_url: str | None = None
 
     # Authentication
     username: str = ""
     password: str = ""
 
     # AI API Keys
-    deepseek_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    deepseek_api_key: str | None = None
+    google_api_key: str | None = None
     deepseek_ai_model: str = "deepseek-chat"
     deepseek_ai_base_url: str = "https://api.deepseek.com"
     google_ai_model: str = "gemini-1.5-flash-latest"
 
     # Moonshot (Kimi) configuration
-    moonshot_api_key: Optional[str] = None
+    moonshot_api_key: str | None = None
     moonshot_ai_model: str = "kimi-k2-thinking"
     moonshot_ai_base_url: str = "https://api.moonshot.ai/v1"
 
     # Local LLM Configuration (LM Studio)
-    local_llm_api_key: Optional[str] = None
+    local_llm_api_key: str | None = None
     local_llm_model: str = "qwen2.5-14b-instruct"
     local_llm_base_url: str = "http://localhost:1234/v1"
     lm_studio_path: str = r"C:\Program Files\LM Studio\LM Studio.exe"
@@ -458,7 +458,7 @@ class APIConfig:
     token_bucket_fill_rate: float = 2.0  # Tokens added per second
 
     # Tree settings
-    tree_name: Optional[str] = None
+    tree_name: str | None = None
     # tree_id, my_user_id, my_uuid are fetched from API endpoints, not from .env
 
     # Fields with default_factory must come last
@@ -488,7 +488,7 @@ class APIConfig:
     )
 
     # API Headers
-    api_contextual_headers: dict[str, dict[str, Optional[str]]] = field(
+    api_contextual_headers: dict[str, dict[str, str | None]] = field(
         default_factory=dict
     )
 
@@ -537,7 +537,7 @@ class APIConfig:
 
         return sanitized_profiles
 
-    def _build_sanitized_profile(self, endpoint: str, profile_data: Any) -> Optional[dict[str, float]]:
+    def _build_sanitized_profile(self, endpoint: str, profile_data: Any) -> dict[str, float] | None:
         """Convert a raw profile entry into sanitized throttle parameters."""
 
         if not isinstance(profile_data, dict):
@@ -595,8 +595,8 @@ class LoggingConfig:
     file_log_level: str = "DEBUG"
 
     # Log files
-    log_file: Optional[Path] = None
-    error_log_file: Optional[Path] = None
+    log_file: Path | None = None
+    error_log_file: Path | None = None
     max_log_size_mb: int = 10
     backup_count: int = 5
 
@@ -629,8 +629,8 @@ class CacheConfig:
     """Cache configuration schema."""
 
     # Cache directories
-    cache_dir: Optional[Path] = None
-    temp_cache_dir: Optional[Path] = None
+    cache_dir: Path | None = None
+    temp_cache_dir: Path | None = None
 
     # Memory cache settings
     memory_cache_size: int = 1000
@@ -662,11 +662,11 @@ class SecurityConfig:
 
     # Encryption
     encryption_enabled: bool = True
-    encryption_key_file: Optional[Path] = None
+    encryption_key_file: Path | None = None
 
     # Credential storage
     use_system_keyring: bool = True
-    credential_file: Optional[Path] = None
+    credential_file: Path | None = None
 
     # Session security
     session_timeout_minutes: int = 120
@@ -787,10 +787,10 @@ class ConfigSchema:
     exact_date_bonus: int = 25
 
     # Optional fields (must come after fields with default values)
-    testing_profile_id: Optional[str] = None
-    testing_uuid: Optional[str] = None
-    testing_username: Optional[str] = None
-    reference_person_id: Optional[str] = (
+    testing_profile_id: str | None = None
+    testing_uuid: str | None = None
+    testing_username: str | None = None
+    reference_person_id: str | None = (
         None  # Fields with complex defaults (must come last)
     )
     common_scoring_weights: dict[str, float] = field(

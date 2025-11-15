@@ -165,7 +165,7 @@ MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
 )
 
 
-def _calculate_days_since_login(last_logged_in: Optional[datetime], log_prefix: str) -> Optional[int]:
+def _calculate_days_since_login(last_logged_in: datetime | None, log_prefix: str) -> int | None:
     """Calculate days since last login with timezone handling."""
     if not last_logged_in:
         return None
@@ -186,7 +186,7 @@ def _calculate_days_since_login(last_logged_in: Optional[datetime], log_prefix: 
 
 def _determine_engagement_tier(
     engagement_score: int,
-    days_since_login: Optional[int],
+    days_since_login: int | None,
     thresholds: dict[str, int],
     intervals: dict[str, int]
 ) -> tuple[timedelta, str]:
@@ -208,7 +208,7 @@ def _determine_engagement_tier(
 
 def calculate_adaptive_interval(
     engagement_score: int,
-    last_logged_in: Optional[datetime],
+    last_logged_in: datetime | None,
     log_prefix: str = "",
 ) -> timedelta:
     """
@@ -702,12 +702,12 @@ from typing import Any as _Any
 
 
 class _MPState:
-    personalizer: Optional[_Any] = None
+    personalizer: _Any | None = None
 
 _MESSAGE_STATE = _MPState()
 
 
-def ensure_message_personalizer() -> Optional[_Any]:
+def ensure_message_personalizer() -> _Any | None:
     """Lazily initialize and return the MessagePersonalizer when session is ready."""
     if _MESSAGE_STATE.personalizer is None and MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
         try:
@@ -773,9 +773,9 @@ MESSAGE_TRANSITION_TABLE = {
 
 
 def determine_next_message_type(
-    last_message_details: Optional[tuple[str, datetime, str]],
+    last_message_details: tuple[str, datetime, str] | None,
     is_in_family_tree: bool,
-) -> Optional[str]:
+) -> str | None:
     """
     Determine next message type based on last message and tree status.
 
@@ -885,13 +885,13 @@ def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool
 
 # === HELPER FUNCTIONS FOR CODE DEDUPLICATION ===
 
-def _get_short_template_if_exists(base_template_key: str) -> Optional[str]:
+def _get_short_template_if_exists(base_template_key: str) -> str | None:
     """Return short template key if it exists, else None."""
     short_key = f"{base_template_key}_Short"
     return short_key if short_key in MESSAGE_TEMPLATES else None
 
 
-def _ensure_timezone_aware(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_timezone_aware(dt: datetime | None) -> datetime | None:
     """Ensure datetime has timezone info (UTC if none)."""
     if dt and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
@@ -1008,7 +1008,7 @@ def _get_template_selections(session, cutoff_date) -> list:
     ).all()
 
 
-def _extract_template_name(script_message_status: str) -> Optional[str]:
+def _extract_template_name(script_message_status: str) -> str | None:
     """Extract template name from script message status."""
     status_parts = script_message_status.split(":")
     if len(status_parts) >= 2:
@@ -1229,8 +1229,8 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
 
 def _get_simple_messaging_data(
     db_session: Session,
-    session_manager: Optional[SessionManager] = None,
-) -> tuple[Optional[dict[str, int]], Optional[list[Person]]]:
+    session_manager: SessionManager | None = None,
+) -> tuple[dict[str, int] | None, list[Person] | None]:
     """
     Simplified data fetching for messaging process.
     - Fetches MessageTemplate key-to-ID mapping.
@@ -1318,7 +1318,7 @@ def _get_simple_messaging_data(
         return None, None
 
 
-def _get_person_message_history(db_session: Session, person_id: int) -> tuple[Optional[ConversationLog], Optional[ConversationLog], Optional[str]]:
+def _get_person_message_history(db_session: Session, person_id: int) -> tuple[ConversationLog | None, ConversationLog | None, str | None]:
     """
     Get the latest IN and OUT message history for a specific person.
 
@@ -1864,7 +1864,7 @@ def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, oper
     import threading
 
     result: list[Any] = [None]
-    exception: list[Optional[Exception]] = [None]
+    exception: list[Exception | None] = [None]
     completed = [False]
 
     def target() -> None:
@@ -1953,12 +1953,12 @@ def _safe_api_call_with_validation(
 
 # === PHASE 5 RESEARCH ASSISTANT FEATURES ===
 
-def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool:
+def _validate_family_tree_for_sources(family_tree: FamilyTree | None) -> bool:
     """Validate family tree has required attributes for source extraction."""
     return family_tree is not None and hasattr(family_tree, 'gedcom_id')
 
 
-def _load_and_validate_gedcom() -> Optional[Any]:
+def _load_and_validate_gedcom() -> Any | None:
     """Load and validate GEDCOM data file using aggressive caching for performance."""
     try:
         from pathlib import Path
@@ -1999,7 +1999,7 @@ def _extract_and_format_sources(gedcom_data: Any, gedcom_id: str) -> str:
 
 def enhance_message_with_sources(
     person: Person,
-    family_tree: Optional[FamilyTree],
+    family_tree: FamilyTree | None,
     format_data: dict[str, Any]
 ) -> None:
     """
@@ -2033,7 +2033,7 @@ def enhance_message_with_sources(
 
 def enhance_message_with_relationship_diagram(
     person: Person,
-    family_tree: Optional[FamilyTree],
+    family_tree: FamilyTree | None,
     format_data: dict[str, Any]
 ) -> None:
     """
@@ -2083,7 +2083,7 @@ def enhance_message_with_relationship_diagram(
         format_data['relationship_diagram'] = ""
 
 
-def _extract_research_context(person: Person, family_tree: Optional[FamilyTree]) -> tuple[list, list, list]:
+def _extract_research_context(person: Person, family_tree: FamilyTree | None) -> tuple[list, list, list]:
     """Extract location, time period, and common ancestor information."""
     locations = []
     time_periods = []
@@ -2121,7 +2121,7 @@ def _format_research_suggestions_text(collections: list) -> str:
 
 def enhance_message_with_research_suggestions(
     person: Person,
-    family_tree: Optional[FamilyTree],
+    family_tree: FamilyTree | None,
     format_data: dict[str, Any]
 ) -> None:
     """
@@ -2159,7 +2159,7 @@ def enhance_message_with_research_suggestions(
 
 def enhance_message_format_data_phase5(
     person: Person,
-    family_tree: Optional[FamilyTree],
+    family_tree: FamilyTree | None,
     format_data: dict[str, Any],
     enable_sources: bool = True,
     enable_diagrams: bool = True,
@@ -2225,7 +2225,7 @@ def _check_person_eligibility(person: Person, log_prefix: str) -> None:
         raise StopIteration("skipped (status)")
 
 
-def _handle_desist_status(log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]) -> tuple[Optional[str], str]:
+def _handle_desist_status(log_prefix: str, latest_out_log: ConversationLog | None, message_type_map: dict[str, int]) -> tuple[str | None, str]:
     """Handle DESIST status and return message key and reason if ACK needed."""
     logger.debug(f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed.")
 
@@ -2243,7 +2243,7 @@ def _handle_desist_status(log_prefix: str, latest_out_log: Optional[Conversation
     return "User_Requested_Desist", "DESIST Acknowledgment"
 
 
-def _check_reply_received(latest_in_log: Optional[ConversationLog], latest_out_log: Optional[ConversationLog], log_prefix: str) -> None:
+def _check_reply_received(latest_in_log: ConversationLog | None, latest_out_log: ConversationLog | None, log_prefix: str) -> None:
     """Check if reply was received since last script message."""
     min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -2267,7 +2267,7 @@ def _check_reply_received(latest_in_log: Optional[ConversationLog], latest_out_l
 
 
 def _check_message_interval(
-    latest_out_log: Optional[ConversationLog],
+    latest_out_log: ConversationLog | None,
     person: Person,
     log_prefix: str
 ) -> None:
@@ -2339,7 +2339,7 @@ def _check_message_interval(
         raise StopIteration("skipped (datetime_error)") from None
 
 
-def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> Optional[tuple[str, datetime, str]]:
+def _get_last_script_message_details(latest_out_log: ConversationLog | None, latest_out_template_key: str | None, log_prefix: str) -> tuple[str, datetime, str] | None:
     """Extract details from the last script message."""
     if not latest_out_log:
         return None
@@ -2367,7 +2367,7 @@ def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], 
     return (last_type_name, out_timestamp, last_status)
 
 
-def _determine_message_to_send(person: Person, latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> tuple[str, str]:
+def _determine_message_to_send(person: Person, latest_out_log: ConversationLog | None, latest_out_template_key: str | None, log_prefix: str) -> tuple[str, str]:
     """Determine which message to send and the selection reason."""
     last_script_message_details = _get_last_script_message_details(latest_out_log, latest_out_template_key, log_prefix)
     base_message_key = determine_next_message_type(last_script_message_details, bool(person.in_my_tree))
@@ -2398,7 +2398,7 @@ def _determine_message_to_send(person: Person, latest_out_log: Optional[Conversa
     return message_to_send_key, template_selection_reason
 
 
-def _get_best_name_for_person(person: Person, family_tree: Optional[FamilyTree]) -> str:
+def _get_best_name_for_person(person: Person, family_tree: FamilyTree | None) -> str:
     """Determine the best name to use for the person (Tree Name > First Name > Username)."""
     tree_name = None
     if family_tree:
@@ -2438,7 +2438,7 @@ def _format_predicted_relationship(rel_str: str) -> str:
     return rel_str
 
 
-def _get_owner_profile_id() -> Optional[str]:
+def _get_owner_profile_id() -> str | None:
     """Get tree owner's profile ID from session manager or config."""
     from session_utils import get_global_session
 
@@ -2507,7 +2507,7 @@ def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, 
         })
 
 
-def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session) -> dict:
+def _prepare_message_format_data(person: Person, family_tree: FamilyTree | None, dna_match: DnaMatch | None, db_session: Session) -> dict:
     """Prepare format data for message template with enhanced statistics."""
     name_to_use = _get_best_name_for_person(person, family_tree)
     formatted_name = format_name(name_to_use)
@@ -2632,7 +2632,7 @@ def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
     return True, ""
 
 
-def _get_existing_conversation_id(latest_out_log: Optional[ConversationLog], latest_in_log: Optional[ConversationLog]) -> Optional[str]:
+def _get_existing_conversation_id(latest_out_log: ConversationLog | None, latest_in_log: ConversationLog | None) -> str | None:
     """Get existing conversation ID from logs (prefer OUT, fallback IN)."""
     existing_conversation_id = None
     if latest_out_log:
@@ -2649,7 +2649,7 @@ def _send_or_simulate_message(
     msg_ctx: 'MessageContext',
     conv_state: 'ConversationState',
     msg_flags: 'MessageFlags'
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Send or simulate message, return status and conversation ID."""
     if msg_flags.send_message_flag:
         log_prefix_for_api = f"{msg_ctx.person.username} #{msg_ctx.person.id}"
@@ -2709,7 +2709,7 @@ def _prepare_conversation_log_entry(
     )
 
 
-def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
+def _determine_final_status(message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str) -> tuple[str, tuple[int, PersonStatusEnum] | None]:
     """Determine final status and person update based on message outcome."""
     person_update = None
 
@@ -2729,10 +2729,10 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
 
 
 def _handle_person_status(
-    person: Person, log_prefix: str, latest_in_log: Optional[ConversationLog],
-    latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str],
+    person: Person, log_prefix: str, latest_in_log: ConversationLog | None,
+    latest_out_log: ConversationLog | None, latest_out_template_key: str | None,
     message_type_map: dict[str, int]
-) -> tuple[Optional[str], str, str, Optional[Any], Optional[Any]]:
+) -> tuple[str | None, str, str, Any | None, Any | None]:
     """Handle person status and determine message to send."""
     person_status = safe_column_value(person, "status", None)
 
@@ -2757,11 +2757,11 @@ def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
     person: Person,
-    latest_in_log: Optional[ConversationLog],
-    latest_out_log: Optional[ConversationLog],
-    latest_out_template_key: Optional[str],  # Template key from latest OUT message
+    latest_in_log: ConversationLog | None,
+    latest_out_log: ConversationLog | None,
+    latest_out_template_key: str | None,  # Template key from latest OUT message
     message_type_map: dict[str, int],
-) -> tuple[Optional[ConversationLog], Optional[tuple[int, PersonStatusEnum]], str]:
+) -> tuple[ConversationLog | None, tuple[int, PersonStatusEnum] | None, str]:
     """
     Processes a single person to determine if a message should be sent,
     formats the message, sends/simulates it, and prepares database updates.
@@ -2787,7 +2787,7 @@ def _process_single_person(
 
     # --- Step 1: Initialization and Logging ---
     log_prefix, person_id, _, _ = _initialize_person_processing(person)
-    message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
+    message_to_send_key: str | None = None  # Key from MESSAGE_TEMPLATES
     template_selection_reason = "Unknown"  # CONSOLIDATED: Track template selection reason
     status_string: Literal["sent", "acked", "skipped", "error"] = (
         "error"  # Default outcome
@@ -2796,8 +2796,8 @@ def _process_single_person(
     # Initialize variables early to prevent UnboundLocalError in exception handlers
     family_tree = None
     dna_match = None
-    new_log_entry: Optional[ConversationLog] = None  # Prepared log object
-    person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
+    new_log_entry: ConversationLog | None = None  # Prepared log object
+    person_update: tuple[int, PersonStatusEnum] | None = None  # Staged status update
 
     try:  # Main processing block for this person
         # --- Step 1: Check Person Status for Eligibility ---
@@ -2909,7 +2909,7 @@ def _initialize_resource_management() -> tuple[list[dict[str, Any]], dict[int, P
     return db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer
 
 
-def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, Optional[str]]:
+def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, str | None]:
     """Validate prerequisites for Action 8 execution."""
     # System health check
     if not _validate_system_health(session_manager):
@@ -2936,7 +2936,7 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
     return True, profile_id
 
 
-def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> tuple[Optional[dict], Optional[list], int]:
+def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> tuple[dict | None, list | None, int]:
     """Fetch message type map and candidate persons."""
     try:
         message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
@@ -3031,7 +3031,7 @@ def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_c
         )
 
 
-def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
+def _convert_log_object_to_dict(new_log_object) -> dict[str, Any] | None:
     """Convert SQLAlchemy ConversationLog object to dictionary for batch commit."""
     try:
         log_dict = {
@@ -3064,20 +3064,20 @@ def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:
         return None
 
 
-def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:
+def _prepare_log_dict(new_log_object) -> tuple[dict | None, str]:
     """Convert log object to dict."""
     if not new_log_object:
         return None, "unchanged"
     log_dict = _convert_log_object_to_dict(new_log_object)
     return (log_dict, "unchanged") if log_dict else (None, "error")
 
-def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list) -> int:
+def _handle_sent_status(sent_count: int, log_dict: dict | None, db_logs_to_add_dicts: list) -> int:
     """Handle sent status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
     return sent_count + 1
 
-def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_update_tuple, db_logs_to_add_dicts: list, person_updates: dict) -> int:
+def _handle_acked_status(acked_count: int, log_dict: dict | None, person_update_tuple, db_logs_to_add_dicts: list, person_updates: dict) -> int:
     """Handle acknowledged status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
@@ -3085,7 +3085,7 @@ def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_upda
         person_updates[person_update_tuple[0]] = person_update_tuple[1]
     return acked_count + 1
 
-def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dict: Optional[dict], batch_data: 'MessagingBatchData', error_categorizer, person, overall_success: bool) -> tuple[int, int, bool]:
+def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dict: dict | None, batch_data: 'MessagingBatchData', error_categorizer, person, overall_success: bool) -> tuple[int, int, bool]:
     """Handle error or skipped status updates."""
     category, error_type = error_categorizer.categorize_status(status)
 
@@ -3470,7 +3470,7 @@ def _perform_final_commit(
 
 
 def _perform_final_cleanup(
-    db_session: Optional[Session],
+    db_session: Session | None,
     session_manager: SessionManager,
     critical_db_error_occurred: bool,
     total_candidates: int,
@@ -3737,7 +3737,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer = _initialize_resource_management()
 
     # --- Step 2: Get DB Session and Pre-fetch Data ---
-    db_session: Optional[Session] = None
+    db_session: Session | None = None
     try:
         db_session = session_manager.get_db_conn()
         if not db_session:

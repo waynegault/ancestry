@@ -99,7 +99,7 @@ class SessionComponentCache(BaseCacheModule):
             logger.debug(f"Error generating config hash: {e}")
             return "default_config"
 
-    def get_cached_component(self, component_type: str) -> Optional[Any]:
+    def get_cached_component(self, component_type: str) -> Any | None:
         """Get cached component if available and valid"""
         if not cache:
             return None
@@ -332,7 +332,7 @@ class OptimizedSessionState:
     Reduces session validation overhead.
     """
 
-    def get_cached_session_state(self, session_id: str) -> Optional[dict]:
+    def get_cached_session_state(self, session_id: str) -> dict | None:
         """Get cached session state if valid"""
         if not cache:
             return None

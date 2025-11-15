@@ -35,7 +35,7 @@ class _CentralizedLoggingState:
     setup_complete = False
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """
     Get a properly configured logger instance.
 

@@ -466,7 +466,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, _person_record) -> Optional[int]:
+    def _extract_birth_year(self, _person_record) -> int | None:
         """Extract birth year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -475,7 +475,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_year(self, _person_record) -> Optional[int]:
+    def _extract_death_year(self, _person_record) -> int | None:
         """Extract death year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -483,7 +483,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_birth_place(self, _person_record) -> Optional[str]:
+    def _extract_birth_place(self, _person_record) -> str | None:
         """Extract birth place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -491,7 +491,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_place(self, _person_record) -> Optional[str]:
+    def _extract_death_place(self, _person_record) -> str | None:
         """Extract death place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -507,7 +507,7 @@ class GedcomIntelligenceAnalyzer:
         """Check if person has birth place."""
         return self._extract_birth_place(person_record) is not None
 
-    def _extract_country_from_place(self, place: str) -> Optional[str]:
+    def _extract_country_from_place(self, place: str) -> str | None:
         """Extract country from place string."""
         if not place:
             return None
@@ -631,11 +631,11 @@ def test_gap_detection_with_mocked_birth_year() -> None:
         'id_to_children': {}
     })()
     # Monkey patch birth year extractor
-    def _mock_birth_year(person_record: Any) -> Optional[int]:
+    def _mock_birth_year(person_record: Any) -> int | None:
         _ = person_record
         return 1865
 
-    def _mock_birth_place(person_record: Any) -> Optional[str]:
+    def _mock_birth_place(person_record: Any) -> str | None:
         _ = person_record
         return None
 

@@ -55,7 +55,7 @@ class ConnectionResilienceManager:
         self,
         session_manager: Any,
         operation_name: str,
-        retry_callback: Optional[Callable] = None
+        retry_callback: Callable | None = None
     ) -> bool:
         """
         Handle connection loss with automatic recovery.

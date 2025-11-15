@@ -67,7 +67,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 
 @safe_execute(default_return=False, log_errors=True)
-def force_user_agent(driver: Optional[WebDriver], user_agent: str):
+def force_user_agent(driver: WebDriver | None, user_agent: str):
     """
     Attempts to force the browser's User-Agent string using Chrome DevTools Protocol.
     Now with unified error handling via safe_execute decorator.

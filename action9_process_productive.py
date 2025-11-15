@@ -167,8 +167,8 @@ class NameData(BaseModel):
 
     full_name: str
     nicknames: list[str] = Field(default_factory=list)
-    maiden_name: Optional[str] = None
-    generational_suffix: Optional[str] = None
+    maiden_name: str | None = None
+    generational_suffix: str | None = None
 
 
 class VitalRecord(BaseModel):
@@ -280,10 +280,10 @@ class AIResponse(BaseModel):
 # Global variable to cache the GEDCOM data
 class _GedcomDataCache:
     """Manages cached GEDCOM data state."""
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
-def get_gedcom_data() -> Optional[Any]:
+def get_gedcom_data() -> Any | None:
     """
     Returns the cached GEDCOM data instance, loading it if necessary.
 
@@ -364,8 +364,8 @@ class ProcessingState:
 class MSGraphState:
     """Manages MS Graph authentication and configuration."""
 
-    token: Optional[str] = None
-    list_id: Optional[str] = None
+    token: str | None = None
+    list_id: str | None = None
     list_name: str = ""
     auth_attempted: bool = False
 
@@ -380,7 +380,7 @@ class EnhancedTaskPayload:
     title: str
     body: str
     importance: str
-    due_date: Optional[str]
+    due_date: str | None
     categories: list[str]
 
 
@@ -450,7 +450,7 @@ def _ensure_enhanced_task_ms_graph_state(state: MSGraphState) -> bool:
     return _ensure_task_list_id(state)
 
 
-def _merge_task_categories(categories: Optional[list[str]]) -> list[str]:
+def _merge_task_categories(categories: list[str] | None) -> list[str]:
     """Merge default and user-provided categories without duplicates."""
     default_categories = ["Genealogy Research", "DNA Matches"]
     final_categories: list[str] = []
@@ -460,7 +460,7 @@ def _merge_task_categories(categories: Optional[list[str]]) -> list[str]:
     return final_categories
 
 
-def _compute_due_date(days_until_due: Optional[int]) -> Optional[str]:
+def _compute_due_date(days_until_due: int | None) -> str | None:
     """Return an ISO date string for the suggested due date."""
     if not days_until_due or days_until_due <= 0:
         return None
@@ -469,7 +469,7 @@ def _compute_due_date(days_until_due: Optional[int]) -> Optional[str]:
     return due_dt.strftime("%Y-%m-%d")
 
 
-def _compose_task_title(person_name: str, relationship: Optional[str]) -> str:
+def _compose_task_title(person_name: str, relationship: str | None) -> str:
     """Create a descriptive task title."""
     if relationship:
         return f"Research: {person_name} ({relationship})"
@@ -478,10 +478,10 @@ def _compose_task_title(person_name: str, relationship: Optional[str]) -> str:
 
 def _compose_task_body(
     person_name: str,
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float],
+    relationship: str | None,
+    shared_dna_cm: float | None,
     importance: str,
-    due_date: Optional[str],
+    due_date: str | None,
     categories: list[str],
 ) -> str:
     """Build the task body with key research context."""
@@ -500,9 +500,9 @@ def _compose_task_body(
 
 def _build_enhanced_task_payload(
     person_name: str,
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float],
-    categories: Optional[list[str]],
+    relationship: str | None,
+    shared_dna_cm: float | None,
+    categories: list[str] | None,
 ) -> EnhancedTaskPayload:
     """Construct the payload required to submit an enhanced task."""
     importance, days_until_due = calculate_task_priority_from_relationship(
@@ -533,7 +533,7 @@ def _submit_enhanced_task(
     state: MSGraphState,
     payload: EnhancedTaskPayload,
     person_name: str,
-) -> Optional[str]:
+) -> str | None:
     """Send the enhanced task request to MS Graph."""
     if not state.token or not state.list_id:
         logger.warning("MS Graph state incomplete after initialization; skipping task creation.")
@@ -561,9 +561,9 @@ def _submit_enhanced_task(
 class DatabaseState:
     """Manages database session and batch operations."""
 
-    session: Optional[DbSession] = None
-    logs_to_add: Optional[list[dict[str, Any]]] = None
-    person_updates: Optional[dict[int, PersonStatusEnum]] = None
+    session: DbSession | None = None
+    logs_to_add: list[dict[str, Any]] | None = None
+    person_updates: dict[int, PersonStatusEnum] | None = None
     batch_size: int = 10
     commit_threshold: int = 10
 
@@ -578,9 +578,9 @@ class DatabaseState:
 class MessageConfig:
     """Manages message types and templates."""
 
-    templates: Optional[dict[str, str]] = None
-    ack_msg_type_id: Optional[int] = None
-    custom_reply_msg_type_id: Optional[int] = None
+    templates: dict[str, str] | None = None
+    ack_msg_type_id: int | None = None
+    custom_reply_msg_type_id: int | None = None
 
     def __post_init__(self) -> None:
         if self.templates is None:
@@ -677,7 +677,7 @@ class PersonProcessor:
 
     def _get_context_logs(
         self, person: Person, log_prefix: str
-    ) -> Optional[list[ConversationLog]]:
+    ) -> list[ConversationLog] | None:
         """Get message context for the person."""
         if self.db_state.session is None:
             logger.error(f"Database session is None for {log_prefix}")
@@ -691,7 +691,7 @@ class PersonProcessor:
 
     def _should_skip_person(
         self, person: Person, context_logs: list[ConversationLog], log_prefix: str
-    ) -> tuple[bool, Optional[ConversationLog]]:
+    ) -> tuple[bool, ConversationLog | None]:
         """Check if person should be skipped based on various criteria.
 
         Returns:
@@ -741,7 +741,7 @@ class PersonProcessor:
 
     def _get_latest_incoming_message(
         self, context_logs: list[ConversationLog]
-    ) -> Optional[ConversationLog]:
+    ) -> ConversationLog | None:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
             direction = safe_column_value(log, "direction", None)
@@ -785,7 +785,7 @@ class PersonProcessor:
         context_logs: list[ConversationLog],
         latest_message: ConversationLog,
         log_prefix: str,
-    ) -> Optional[tuple[dict[str, Any], list[str]]]:
+    ) -> tuple[dict[str, Any], list[str]] | None:
         """Process message content with AI and return extracted data and tasks."""
 
         # Check session validity
@@ -914,7 +914,7 @@ class PersonProcessor:
         return lookup_results
 
     def _track_person_lookup_analytics(
-        self, person: Person, person_name: str, match_score: Optional[float], source: str, found: bool
+        self, person: Person, person_name: str, match_score: float | None, source: str, found: bool
     ) -> None:
         """Track analytics for person lookup attempts."""
         try:
@@ -946,7 +946,7 @@ class PersonProcessor:
         except Exception as analytics_error:
             logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
 
-    def _load_gedcom_data(self) -> Optional[Any]:
+    def _load_gedcom_data(self) -> Any | None:
         """Load GEDCOM data from configured path."""
         from gedcom_cache import load_gedcom_with_aggressive_caching
 
@@ -962,7 +962,7 @@ class PersonProcessor:
 
         return gedcom_data
 
-    def _build_search_criteria_from_person_data(self, person_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    def _build_search_criteria_from_person_data(self, person_data: dict[str, Any]) -> dict[str, Any] | None:
         """Build search criteria from extracted person data."""
         search_criteria = {}
 
@@ -999,7 +999,7 @@ class PersonProcessor:
             date_flex,
         )
 
-    def _search_gedcom_for_person(self, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
+    def _search_gedcom_for_person(self, person_data: dict[str, Any]) -> PersonLookupResult | None:
         """
         Search for a person in GEDCOM data using Action 10 logic.
 
@@ -1050,8 +1050,8 @@ class PersonProcessor:
             return None
 
     def _get_relationship_path_for_person(
-        self, gedcom_data: Any, person_id: Optional[str]
-    ) -> Optional[str]:
+        self, gedcom_data: Any, person_id: str | None
+    ) -> str | None:
         """
         Get relationship path between found person and reference person.
 
@@ -1098,7 +1098,7 @@ class PersonProcessor:
             logger.debug(f"Error calculating relationship path: {e}")
             return None
 
-    def _search_api_for_person(self, person_name: str, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
+    def _search_api_for_person(self, person_name: str, person_data: dict[str, Any]) -> PersonLookupResult | None:
         """
         Search for a person using Ancestry API (Action 11).
 
@@ -1223,7 +1223,7 @@ class PersonProcessor:
 
     def _calculate_next_contact_date(
         self, person: Person, engagement_score: int
-    ) -> Optional[datetime]:
+    ) -> datetime | None:
         """
         Calculate next contact date based on engagement score and status transitions.
 
@@ -1402,7 +1402,7 @@ class PersonProcessor:
 
         return False
 
-    def _calculate_task_priority_and_due_date(self, person: Person) -> tuple[str, Optional[str], list[str]]:
+    def _calculate_task_priority_and_due_date(self, person: Person) -> tuple[str, str | None, list[str]]:
         """
         Calculate task priority and due date based on relationship closeness.
 
@@ -1471,7 +1471,7 @@ class PersonProcessor:
 
         return task_body_parts
 
-    def _submit_task_to_ms_graph(self, task_title: str, task_body: str, importance: str, due_date: Optional[str], categories: list[str]) -> bool:
+    def _submit_task_to_ms_graph(self, task_title: str, task_body: str, importance: str, due_date: str | None, categories: list[str]) -> bool:
         """Submit task to MS Graph and return success status."""
         if self.ms_state.token and self.ms_state.list_id:
             task_id = ms_graph_utils.create_todo_task(
@@ -1694,7 +1694,7 @@ class PersonProcessor:
         latest_message: ConversationLog,
         lookup_results: list[PersonLookupResult],
         log_prefix: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Generate contextual reply using Phase 3 dialogue engine."""
         # Get conversation state
         conversation_phase, engagement_score, last_topic, pending_questions = (
@@ -1893,7 +1893,7 @@ class PersonProcessor:
         latest_message: ConversationLog,
         lookup_results: list[PersonLookupResult],
         log_prefix: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Generate a custom genealogical reply if appropriate."""
 
         # Phase 3: Use contextual dialogue engine with lookup results
@@ -2000,7 +2000,7 @@ class PersonProcessor:
         self,
         person: Person,
         extracted_data: dict[str, Any],
-        custom_reply: Optional[str],
+        custom_reply: str | None,
         log_prefix: str,
     ) -> tuple[str, int]:
         """Compose the base message and message_type_id with minimal branching."""
@@ -2029,7 +2029,7 @@ class PersonProcessor:
         if rel_str:
             lines.append(f"\nOur relationship appears to be: {rel_str}.")
 
-    def _build_relationship_diagram_line(self, person: Person, extracted_data: dict[str, Any], log_prefix: str) -> Optional[str]:
+    def _build_relationship_diagram_line(self, person: Person, extracted_data: dict[str, Any], log_prefix: str) -> str | None:
         rel_path = extracted_data.get("relationship_path")
         if not (isinstance(rel_path, list) and rel_path):
             return None
@@ -2044,7 +2044,7 @@ class PersonProcessor:
             logger.debug(f"{log_prefix}: Relationship diagram enrichment skipped: {e}")
             return None
 
-    def _build_records_enrichment_line(self, person: Person, records: Any, log_prefix: str) -> Optional[str]:
+    def _build_records_enrichment_line(self, person: Person, records: Any, log_prefix: str) -> str | None:
         if not (isinstance(records, list) and records):
             return None
         try:
@@ -2096,7 +2096,7 @@ class PersonProcessor:
         self,
         person: Person,
         extracted_data: dict[str, Any],
-        custom_reply: Optional[str],
+        custom_reply: str | None,
         log_prefix: str,
     ) -> tuple[str, int]:
         """Format the message text and determine message type ID, with Phase 5 enrichments."""
@@ -2125,7 +2125,7 @@ class PersonProcessor:
         context_logs: list[ConversationLog],
         message_text: str,
         message_type_id: int,
-        custom_reply: Optional[str],
+        custom_reply: str | None,
         latest_message: ConversationLog,
         log_prefix: str,
     ) -> bool:
@@ -2190,7 +2190,7 @@ class PersonProcessor:
 
     def _get_conversation_id(
         self, context_logs: list[ConversationLog], log_prefix: str
-    ) -> Optional[str]:
+    ) -> str | None:
         """Get conversation ID from context logs."""
         if not context_logs:
             logger.error(
@@ -2235,7 +2235,7 @@ class PersonProcessor:
 
     def _update_custom_reply_timestamp(
         self,
-        custom_reply: Optional[str],
+        custom_reply: str | None,
         latest_message: ConversationLog,
         message_type_id: int,
         log_prefix: str,
@@ -2268,7 +2268,7 @@ class PersonProcessor:
         message_type_id: int,
         send_status: str,
         effective_conv_id: str,
-        custom_reply: Optional[str],
+        custom_reply: str | None,
         latest_message: ConversationLog,
         log_prefix: str,
     ) -> bool:
@@ -2740,7 +2740,7 @@ def _get_default_ai_response_structure() -> dict[str, Any]:
     }
 
 
-def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> Optional[dict[str, Any]]:
+def _validate_with_pydantic(ai_response: dict, log_prefix: str) -> dict[str, Any] | None:
     """Try to validate AI response with Pydantic schema."""
     try:
         validated_response = AIResponse.model_validate(ai_response)
@@ -3011,7 +3011,7 @@ def _load_templates_for_action9() -> dict[str, str]:
 
 def _identify_and_get_person_details(
     log_prefix: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Simplified version that returns None (no person details found).
     """
@@ -3073,7 +3073,7 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
 # PHASE 5 RESEARCH ASSISTANT FEATURES
 # ==============================================
 
-def _check_close_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+def _check_close_relationship(relationship_lower: str) -> tuple[str, int] | None:
     """Check if relationship is close (high priority)."""
     close_relationships = [
         "parent", "child", "sibling", "brother", "sister",
@@ -3087,7 +3087,7 @@ def _check_close_relationship(relationship_lower: str) -> Optional[tuple[str, in
     return None
 
 
-def _check_medium_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+def _check_medium_relationship(relationship_lower: str) -> tuple[str, int] | None:
     """Check if relationship is medium (normal priority)."""
     medium_relationships = [
         "3rd cousin", "third cousin",
@@ -3099,14 +3099,14 @@ def _check_medium_relationship(relationship_lower: str) -> Optional[tuple[str, i
     return None
 
 
-def _check_distant_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
+def _check_distant_relationship(relationship_lower: str) -> tuple[str, int] | None:
     """Check if relationship is distant (low priority)."""
     if "5th" in relationship_lower or "sixth" in relationship_lower or "distant" in relationship_lower:
         return "low", 30
     return None
 
 
-def _calculate_priority_from_dna(shared_dna_cm: Optional[float]) -> tuple[str, int]:
+def _calculate_priority_from_dna(shared_dna_cm: float | None) -> tuple[str, int]:
     """Calculate priority based on shared DNA."""
     if not shared_dna_cm:
         return "normal", 14
@@ -3118,8 +3118,8 @@ def _calculate_priority_from_dna(shared_dna_cm: Optional[float]) -> tuple[str, i
 
 
 def calculate_task_priority_from_relationship(
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float] = None
+    relationship: str | None,
+    shared_dna_cm: float | None = None
 ) -> tuple[str, int]:
     """
     Calculate MS To-Do task priority and due date offset based on relationship closeness.
@@ -3157,10 +3157,10 @@ def calculate_task_priority_from_relationship(
 
 def create_enhanced_research_task(
     person_name: str,
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float] = None,
-    categories: Optional[list[str]] = None
-) -> Optional[str]:
+    relationship: str | None,
+    shared_dna_cm: float | None = None,
+    categories: list[str] | None = None
+) -> str | None:
     """
     Create an enhanced MS To-Do task with intelligent priority and due date.
 
@@ -3201,8 +3201,8 @@ def create_enhanced_research_task(
 def generate_ai_response_prompt(
     person_name: str,
     their_message: str,
-    relationship_info: Optional[dict[str, Any]] = None,
-    missing_info: Optional[list[str]] = None
+    relationship_info: dict[str, Any] | None = None,
+    missing_info: list[str] | None = None
 ) -> str:
     """
     Generate an AI prompt for responding to a conversation.

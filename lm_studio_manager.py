@@ -86,7 +86,7 @@ class LMStudioManager:
                 continue
         return False
 
-    def is_api_ready(self, timeout: int = 2) -> tuple[bool, Optional[str]]:
+    def is_api_ready(self, timeout: int = 2) -> tuple[bool, str | None]:
         """
         Check if LM Studio API is responding.
 
@@ -158,7 +158,7 @@ class LMStudioManager:
         logger.info(f"⏳ Waiting for LM Studio API (timeout: {self.startup_timeout}s)...")
 
         start_time = time.time()
-        last_error: Optional[str] = None
+        last_error: str | None = None
         check_interval = 2  # seconds between checks
 
         while time.time() - start_time < self.startup_timeout:
@@ -183,7 +183,7 @@ class LMStudioManager:
         )
         return False
 
-    def ensure_ready(self) -> tuple[bool, Optional[str]]:
+    def ensure_ready(self) -> tuple[bool, str | None]:
         """
         Ensure LM Studio is running and API is ready.
 

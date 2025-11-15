@@ -40,8 +40,8 @@ logger = setup_logging(log_level="INFO")
 # === GLOBAL SESSION CACHE ===
 # This is the SINGLE SOURCE OF TRUTH for session management
 class _State:
-    session_manager: Optional[SessionManager] = None
-    session_uuid: Optional[str] = None
+    session_manager: SessionManager | None = None
+    session_uuid: str | None = None
     auth_banner_printed: bool = False
 
 GLOBAL_SESSION = _State()
@@ -72,7 +72,7 @@ def set_global_session(session_manager: SessionManager) -> None:
         logger.debug("✅ Global session registered (not yet authenticated)")
 
 
-def get_global_session() -> Optional[SessionManager]:
+def get_global_session() -> SessionManager | None:
     """
     Get the global session manager if it exists.
 
@@ -82,7 +82,7 @@ def get_global_session() -> Optional[SessionManager]:
     return GLOBAL_SESSION.session_manager
 
 
-def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+def _log_session_banner(already_auth: bool, env_uuid: str | None, action_name: str) -> None:
     """Log the session banner once per authentication attempt (pre-auth)."""
     if not already_auth:
         logger.debug(f"Authenticating session for: {action_name}")
@@ -125,7 +125,7 @@ def _assert_global_session_exists() -> None:
         )
 
 
-def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+def _pre_auth_logging(already_auth: bool, env_uuid: str | None, action_name: str) -> None:
     """Centralize pre-auth logging to reduce cyclomatic complexity."""
     if not already_auth and not GLOBAL_SESSION.auth_banner_printed:
         _log_session_banner(already_auth, env_uuid, action_name)

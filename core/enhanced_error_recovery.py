@@ -49,7 +49,7 @@ class ErrorContext:
     operation_name: str
     attempt_number: int = 1
     max_attempts: int = 3
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     error_history: list[Exception] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     partial_results: list[Any] = field(default_factory=list)
@@ -172,7 +172,7 @@ def _handle_non_retryable_error(operation_name: str, e: Exception) -> None:
 
 def _handle_partial_success(
     operation_name: str,
-    partial_success_handler: Optional[Callable],
+    partial_success_handler: Callable | None,
     context: 'ErrorContext',
     last_exception: Exception
 ) -> Any:
@@ -191,7 +191,7 @@ def _handle_partial_success(
 def _handle_retry_failure(
     operation_name: str,
     max_attempts: int,
-    partial_success_handler: Optional[Callable],
+    partial_success_handler: Callable | None,
     context: 'ErrorContext',
     last_exception: Exception
 ) -> Any:
@@ -214,8 +214,8 @@ def with_enhanced_recovery(
     max_delay: float = 60.0,
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
-    partial_success_handler: Optional[Callable] = None,
-    user_guidance: Optional[dict[type[Exception], str]] = None
+    partial_success_handler: Callable | None = None,
+    user_guidance: dict[type[Exception], str] | None = None
 ):
     """
     Decorator for enhanced error recovery with multiple strategies.

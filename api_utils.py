@@ -177,18 +177,18 @@ from dataclasses import dataclass
 class PersonSuggestResponse:
     """Dataclass model for validating Ancestry Suggest API responses."""
 
-    PersonId: Optional[str] = None
-    TreeId: Optional[str] = None
-    UserId: Optional[str] = None
-    FullName: Optional[str] = None
-    GivenName: Optional[str] = None
-    Surname: Optional[str] = None
-    BirthYear: Optional[int] = None
-    BirthPlace: Optional[str] = None
-    DeathYear: Optional[int] = None
-    DeathPlace: Optional[str] = None
-    Gender: Optional[str] = None
-    IsLiving: Optional[bool] = None
+    PersonId: str | None = None
+    TreeId: str | None = None
+    UserId: str | None = None
+    FullName: str | None = None
+    GivenName: str | None = None
+    Surname: str | None = None
+    BirthYear: int | None = None
+    BirthPlace: str | None = None
+    DeathYear: int | None = None
+    DeathPlace: str | None = None
+    Gender: str | None = None
+    IsLiving: bool | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'PersonSuggestResponse':
@@ -208,10 +208,10 @@ class ProfileDetailsResponse:
     """Model for validating Profile Details API responses."""
 
     def __init__(self, **kwargs: Any) -> None:
-        self.FirstName: Optional[str] = kwargs.get("FirstName")
-        self.displayName: Optional[str] = kwargs.get("displayName")
-        self.LastLoginDate: Optional[str] = kwargs.get("LastLoginDate")
-        self.IsContactable: Optional[bool] = kwargs.get("IsContactable")
+        self.FirstName: str | None = kwargs.get("FirstName")
+        self.displayName: str | None = kwargs.get("displayName")
+        self.LastLoginDate: str | None = kwargs.get("LastLoginDate")
+        self.IsContactable: bool | None = kwargs.get("IsContactable")
 
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
@@ -230,12 +230,12 @@ class ProfileDetailsResponse:
 class TreeOwnerResponse:
     """Dataclass model for validating Tree Owner API responses."""
 
-    owner: Optional[dict[str, Any]] = None
-    display_name: Optional[str] = None
-    id: Optional[str] = None  # Add missing 'id' field
-    people_count: Optional[int] = None
-    photo_count: Optional[int] = None
-    membership: Optional[dict[str, Any]] = None  # Add missing 'membership' field
+    owner: dict[str, Any] | None = None
+    display_name: str | None = None
+    id: str | None = None  # Add missing 'id' field
+    people_count: int | None = None
+    photo_count: int | None = None
+    membership: dict[str, Any] | None = None  # Add missing 'membership' field
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'TreeOwnerResponse':
@@ -268,12 +268,12 @@ class TreeOwnerResponse:
 class PersonFactsResponse:
     """Dataclass model for validating Person Facts API responses."""
 
-    data: Optional[dict[str, Any]] = None
-    person_research: Optional[dict[str, Any]] = None
-    person_facts: Optional[list[dict[str, Any]]] = None
-    person_full_name: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    data: dict[str, Any] | None = None
+    person_research: dict[str, Any] | None = None
+    person_facts: list[dict[str, Any]] | None = None
+    person_full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'PersonFactsResponse':
@@ -293,9 +293,9 @@ class PersonFactsResponse:
 class GetLadderResponse:
     """Dataclass model for validating GetLadder API responses."""
 
-    data: Optional[dict[str, Any]] = None
-    relationship: Optional[dict[str, Any]] = None
-    paths: Optional[list[dict[str, Any]]] = None
+    data: dict[str, Any] | None = None
+    relationship: dict[str, Any] | None = None
+    paths: list[dict[str, Any]] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'GetLadderResponse':
@@ -315,9 +315,9 @@ class DiscoveryRelationshipResponse:
     """Model for validating Discovery Relationship API responses."""
 
     def __init__(self, **kwargs: Any) -> None:
-        self.relationship: Optional[str] = kwargs.get("relationship")
-        self.paths: Optional[list[dict[str, Any]]] = kwargs.get("paths")
-        self.confidence: Optional[str] = kwargs.get("confidence")
+        self.relationship: str | None = kwargs.get("relationship")
+        self.paths: list[dict[str, Any]] | None = kwargs.get("paths")
+        self.confidence: str | None = kwargs.get("confidence")
 
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
@@ -335,9 +335,9 @@ class HeaderTreesResponse:
     """Model for validating Header Trees API responses."""
 
     def __init__(self, **kwargs: Any) -> None:
-        self.menuitems: Optional[list[dict[str, Any]]] = kwargs.get("menuitems")
-        self.url: Optional[str] = kwargs.get("url")
-        self.text: Optional[str] = kwargs.get("text")
+        self.menuitems: list[dict[str, Any]] | None = kwargs.get("menuitems")
+        self.url: str | None = kwargs.get("url")
+        self.text: str | None = kwargs.get("text")
 
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
@@ -355,10 +355,10 @@ class SendMessageResponse:
     """Model for validating Send Message API responses."""
 
     def __init__(self, **kwargs: Any) -> None:
-        self.conversation_id: Optional[str] = kwargs.get("conversation_id")
-        self.message: Optional[str] = kwargs.get("message")
-        self.author: Optional[str] = kwargs.get("author")
-        self.status: Optional[str] = kwargs.get("status")
+        self.conversation_id: str | None = kwargs.get("conversation_id")
+        self.message: str | None = kwargs.get("message")
+        self.author: str | None = kwargs.get("author")
+        self.status: str | None = kwargs.get("status")
 
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format."""
@@ -434,7 +434,7 @@ rate_limiter = ApiRateLimiter()
 
 # Sub-helpers for _extract_name_from_api_details
 
-def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> Optional[str]:
+def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> str | None:
     """Try to extract name from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
@@ -442,7 +442,7 @@ def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> Optional[s
     return None
 
 
-def _try_extract_name_from_direct_fields(facts_data: dict[str, Any]) -> Optional[str]:
+def _try_extract_name_from_direct_fields(facts_data: dict[str, Any]) -> str | None:
     """Try to extract name from direct fields in facts_data."""
     for field in ["personName", "DisplayName", "PersonFullName"]:
         name = facts_data.get(field)
@@ -451,7 +451,7 @@ def _try_extract_name_from_direct_fields(facts_data: dict[str, Any]) -> Optional
     return None
 
 
-def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> Optional[str]:
+def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> str | None:
     """Try to extract name from PersonFacts list in facts_data."""
     person_facts_list = facts_data.get("PersonFacts", [])
     if isinstance(person_facts_list, list):
@@ -464,7 +464,7 @@ def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> Optional[
     return None
 
 
-def _try_construct_name_from_parts(facts_data: dict[str, Any]) -> Optional[str]:
+def _try_construct_name_from_parts(facts_data: dict[str, Any]) -> str | None:
     """Try to construct name from FirstName/LastName in facts_data."""
     first_name = facts_data.get("FirstName")
     last_name = facts_data.get("LastName")
@@ -474,7 +474,7 @@ def _try_construct_name_from_parts(facts_data: dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _extract_name_from_facts_data(facts_data: Optional[dict[str, Any]]) -> Optional[str]:
+def _extract_name_from_facts_data(facts_data: dict[str, Any] | None) -> str | None:
     """Extract name from facts_data using multiple strategies."""
     if not facts_data or not isinstance(facts_data, dict):
         return None
@@ -495,7 +495,7 @@ def _extract_name_from_facts_data(facts_data: Optional[dict[str, Any]]) -> Optio
     return _try_construct_name_from_parts(facts_data)
 
 
-def _extract_name_from_person_card(person_card: dict[str, Any]) -> Optional[str]:
+def _extract_name_from_person_card(person_card: dict[str, Any]) -> str | None:
     """Extract name from person_card using multiple strategies."""
     if not person_card:
         return None
@@ -518,7 +518,7 @@ def _extract_name_from_person_card(person_card: dict[str, Any]) -> Optional[str]
 
 
 def _extract_name_from_api_details(
-    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]
+    person_card: dict[str, Any], facts_data: dict[str, Any] | None
 ) -> str:
     """
     Extract and format a person's name from Ancestry API response data.
@@ -568,7 +568,7 @@ def _extract_name_from_api_details(
 
 # Helper functions for _extract_gender_from_api_details
 
-def _try_extract_gender_from_person_info(facts_data: dict) -> Optional[str]:
+def _try_extract_gender_from_person_info(facts_data: dict) -> str | None:
     """Try to extract gender from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
@@ -576,7 +576,7 @@ def _try_extract_gender_from_person_info(facts_data: dict) -> Optional[str]:
     return None
 
 
-def _try_extract_gender_from_direct_fields(facts_data: dict) -> Optional[str]:
+def _try_extract_gender_from_direct_fields(facts_data: dict) -> str | None:
     """Try to extract gender from direct fields in facts_data."""
     gender_str = facts_data.get("gender")
     if gender_str:
@@ -584,7 +584,7 @@ def _try_extract_gender_from_direct_fields(facts_data: dict) -> Optional[str]:
     return facts_data.get("PersonGender")
 
 
-def _try_extract_gender_from_person_facts(facts_data: dict) -> Optional[str]:
+def _try_extract_gender_from_person_facts(facts_data: dict) -> str | None:
     """Try to extract gender from PersonFacts list in facts_data."""
     person_facts_list = facts_data.get("PersonFacts", [])
     if not isinstance(person_facts_list, list):
@@ -600,7 +600,7 @@ def _try_extract_gender_from_person_facts(facts_data: dict) -> Optional[str]:
     return None
 
 
-def _extract_gender_from_facts_data(facts_data: Optional[dict]) -> Optional[str]:
+def _extract_gender_from_facts_data(facts_data: dict | None) -> str | None:
     """Extract gender from facts_data using multiple strategies."""
     if not facts_data or not isinstance(facts_data, dict):
         return None
@@ -619,7 +619,7 @@ def _extract_gender_from_facts_data(facts_data: Optional[dict]) -> Optional[str]
     return _try_extract_gender_from_person_facts(facts_data)
 
 
-def _extract_gender_from_person_card(person_card: dict) -> Optional[str]:
+def _extract_gender_from_person_card(person_card: dict) -> str | None:
     """Extract gender from person_card."""
     gender_str = person_card.get("Gender")
     if gender_str:
@@ -627,7 +627,7 @@ def _extract_gender_from_person_card(person_card: dict) -> Optional[str]:
     return person_card.get("gender")
 
 
-def _normalize_gender_string(gender_str: Optional[str]) -> Optional[str]:
+def _normalize_gender_string(gender_str: str | None) -> str | None:
     """Normalize gender string to M or F."""
     if not gender_str or not isinstance(gender_str, str):
         return None
@@ -645,8 +645,8 @@ def _normalize_gender_string(gender_str: Optional[str]) -> Optional[str]:
 
 
 def _extract_gender_from_api_details(
-    person_card: dict, facts_data: Optional[dict]
-) -> Optional[str]:
+    person_card: dict, facts_data: dict | None
+) -> str | None:
     """
     Extract and normalize gender information from Ancestry API response data.
 
@@ -684,7 +684,7 @@ def _extract_gender_from_api_details(
 
 # Helper functions for _extract_living_status_from_api_details
 
-def _try_extract_living_from_person_info(facts_data: dict) -> Optional[bool]:
+def _try_extract_living_from_person_info(facts_data: dict) -> bool | None:
     """Try to extract living status from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
@@ -692,7 +692,7 @@ def _try_extract_living_from_person_info(facts_data: dict) -> Optional[bool]:
     return None
 
 
-def _try_extract_living_from_direct_fields(facts_data: dict) -> Optional[bool]:
+def _try_extract_living_from_direct_fields(facts_data: dict) -> bool | None:
     """Try to extract living status from direct fields in facts_data."""
     is_living = facts_data.get("isLiving")
     if is_living is not None:
@@ -700,7 +700,7 @@ def _try_extract_living_from_direct_fields(facts_data: dict) -> Optional[bool]:
     return facts_data.get("IsPersonLiving")
 
 
-def _extract_living_from_facts_data(facts_data: Optional[dict]) -> Optional[bool]:
+def _extract_living_from_facts_data(facts_data: dict | None) -> bool | None:
     """Extract living status from facts_data using multiple strategies."""
     if not facts_data or not isinstance(facts_data, dict):
         return None
@@ -714,7 +714,7 @@ def _extract_living_from_facts_data(facts_data: Optional[dict]) -> Optional[bool
     return _try_extract_living_from_direct_fields(facts_data)
 
 
-def _extract_living_from_person_card(person_card: dict) -> Optional[bool]:
+def _extract_living_from_person_card(person_card: dict) -> bool | None:
     """Extract living status from person_card."""
     is_living = person_card.get("IsLiving")
     if is_living is not None:
@@ -723,8 +723,8 @@ def _extract_living_from_person_card(person_card: dict) -> Optional[bool]:
 
 
 def _extract_living_status_from_api_details(
-    person_card: dict, facts_data: Optional[dict]
-) -> Optional[bool]:
+    person_card: dict, facts_data: dict | None
+) -> bool | None:
     """
     Extract living status information from Ancestry API response data.
 
@@ -772,7 +772,7 @@ def _build_event_keys(event_type: str) -> dict[str, str]:
     }
 
 
-def _build_date_string_from_parsed_data(parsed_date_data: dict) -> Optional[str]:
+def _build_date_string_from_parsed_data(parsed_date_data: dict) -> str | None:
     """Build a date string from parsed date components."""
     year = parsed_date_data.get("Year")
     if not year:
@@ -790,7 +790,7 @@ def _build_date_string_from_parsed_data(parsed_date_data: dict) -> Optional[str]
     return temp_date_str
 
 
-def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[datetime]:
+def _try_parse_date_object(date_str: str, parser, event_type: str) -> datetime | None:
     """Try to parse a date string into a datetime object."""
     try:
         return parser(date_str)
@@ -801,7 +801,7 @@ def _try_parse_date_object(date_str: str, parser, event_type: str) -> Optional[d
 
 def _extract_from_person_facts(
     facts_data: dict, facts_user_key: str, event_type: str, parser
-) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
+) -> tuple[str | None, str | None, datetime | None, bool]:
     """Extract event data from PersonFacts list."""
     person_facts_list = facts_data.get("PersonFacts", [])
     if not isinstance(person_facts_list, list):
@@ -843,7 +843,7 @@ def _extract_from_person_facts(
 
 def _extract_from_structured_facts(
     facts_data: dict, app_api_facts_key: str
-) -> tuple[Optional[str], Optional[str], bool]:
+) -> tuple[str | None, str | None, bool]:
     """Extract event data from structured facts."""
     fact_group_list = facts_data.get("facts", {}).get(app_api_facts_key, [])
     if not fact_group_list or not isinstance(fact_group_list, list):
@@ -869,7 +869,7 @@ def _extract_from_structured_facts(
 
 def _extract_from_alternative_facts(
     facts_data: dict, app_api_key: str
-) -> tuple[Optional[str], Optional[str], bool]:
+) -> tuple[str | None, str | None, bool]:
     """Extract event data from alternative fact formats."""
     event_fact_alt = facts_data.get(app_api_key)
 
@@ -885,7 +885,7 @@ def _extract_from_alternative_facts(
 
 def _extract_from_suggest_api(
     person_card: dict, suggest_year_key: str, suggest_place_key: str, event_type: str
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Extract event data from Suggest API fields."""
     suggest_year = person_card.get(suggest_year_key)
     suggest_place = person_card.get(suggest_place_key)
@@ -902,7 +902,7 @@ def _extract_from_suggest_api(
 
 def _extract_from_event_info_card(
     person_card: dict, event_key_lower: str
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Extract event data from concatenated event info strings."""
     event_info_card = person_card.get(event_key_lower, "")
 
@@ -920,15 +920,15 @@ def _extract_from_event_info_card(
 
 
 def _extract_from_facts_data(
-    facts_data: Optional[dict],
+    facts_data: dict | None,
     keys: dict[str, str],
     event_type: str,
     parser: Any
-) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
+) -> tuple[str | None, str | None, datetime | None, bool]:
     """Extract event data from facts_data using multiple strategies."""
-    date_str: Optional[str] = None
-    place_str: Optional[str] = None
-    date_obj: Optional[datetime] = None
+    date_str: str | None = None
+    place_str: str | None = None
+    date_obj: datetime | None = None
     found_in_facts = False
 
     if not facts_data or not isinstance(facts_data, dict):
@@ -958,9 +958,9 @@ def _extract_from_person_card(
     person_card: dict,
     keys: dict[str, str],
     event_type: str,
-    current_date_str: Optional[str],
-    current_place_str: Optional[str]
-) -> tuple[Optional[str], Optional[str]]:
+    current_date_str: str | None,
+    current_place_str: str | None
+) -> tuple[str | None, str | None]:
     """Extract event data from person_card using multiple strategies."""
     date_str = current_date_str
     place_str = current_place_str
@@ -987,8 +987,8 @@ def _extract_from_person_card(
 
 
 def _extract_event_from_api_details(
-    event_type: str, person_card: dict, facts_data: Optional[dict]
-) -> tuple[Optional[str], Optional[str], Optional[datetime]]:
+    event_type: str, person_card: dict, facts_data: dict | None
+) -> tuple[str | None, str | None, datetime | None]:
     """
     Extract event information (date, place, parsed date object) from Ancestry API data.
 
@@ -1017,9 +1017,9 @@ def _extract_event_from_api_details(
 
         Date parsing is attempted using the gedcom_utils._parse_date function.
     """
-    date_str: Optional[str] = None
-    place_str: Optional[str] = None
-    date_obj: Optional[datetime] = None
+    date_str: str | None = None
+    place_str: str | None = None
+    date_obj: datetime | None = None
     parser = _parse_date
     found_in_facts = False
 
@@ -1046,7 +1046,7 @@ def _extract_event_from_api_details(
 
 
 def _generate_person_link(
-    person_id: Optional[str], tree_id: Optional[str], base_url: str
+    person_id: str | None, tree_id: str | None, base_url: str
 ) -> str:
     """
     Generate an appropriate Ancestry.com URL for viewing a person's details.
@@ -1102,7 +1102,7 @@ def _initialize_person_details(person_card: dict[str, Any]) -> dict[str, Any]:
     return details
 
 
-def _update_details_from_facts(details: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
+def _update_details_from_facts(details: dict[str, Any], facts_data: dict[str, Any] | None) -> None:
     """Update person details from facts data if available."""
     if not facts_data or not isinstance(facts_data, dict):
         return
@@ -1117,7 +1117,7 @@ def _update_details_from_facts(details: dict[str, Any], facts_data: Optional[dic
             details["user_id"] = person_info.get("userId", details["user_id"])
 
 
-def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
+def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, Any], facts_data: dict[str, Any] | None) -> None:
     """Extract and format birth and death dates."""
     birth_date_raw, details["birth_place"], details["api_birth_obj"] = (
         _extract_event_from_api_details("Birth", person_card, facts_data)
@@ -1138,7 +1138,7 @@ def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, An
 
 
 def parse_ancestry_person_details(
-    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]] = None
+    person_card: dict[str, Any], facts_data: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     # Initialize details
     details = _initialize_person_details(person_card)
@@ -1304,7 +1304,7 @@ def _build_suggest_url(owner_tree_id: str, base_url: str, search_criteria: dict[
     return urljoin(base_url.rstrip("/") + "/", formatted_path) + f"?{suggest_params}"
 
 
-def _validate_suggest_response(suggest_response: Any, api_description: str) -> Optional[list[dict[str, Any]]]:
+def _validate_suggest_response(suggest_response: Any, api_description: str) -> list[dict[str, Any]] | None:
     """Validate and process suggest API response."""
     if isinstance(suggest_response, list):
         if PYDANTIC_AVAILABLE and suggest_response:
@@ -1406,7 +1406,7 @@ def _try_direct_suggest_fallback(
     session_manager: "SessionManager",
     owner_facts_referer: str,
     api_description: str
-) -> Optional[list[dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Try direct requests fallback for suggest API."""
     logger.warning(f"{api_description} failed via _api_req. Attempting direct requests fallback.")
     direct_response_obj = None
@@ -1465,7 +1465,7 @@ def _execute_suggest_api_with_retries(
     owner_facts_referer: str,
     timeouts_used: list[int],
     api_description: str
-) -> Optional[list[dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Execute Suggest API with retry logic."""
     max_attempts = len(timeouts_used)
     suggest_response = None
@@ -1527,8 +1527,8 @@ def call_suggest_api(
     owner_tree_id: str,
     base_url: str,
     search_criteria: dict[str, Any],
-    timeouts: Optional[list[int]] = None,
-) -> Optional[list[dict[str, Any]]]:
+    timeouts: list[int] | None = None,
+) -> list[dict[str, Any]] | None:
     # Validate inputs
     _validate_suggest_api_inputs(owner_tree_id)
 
@@ -1590,7 +1590,7 @@ def _try_direct_facts_request(
     facts_referer: str,
     direct_timeout: int,
     api_description: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Try direct facts request using requests library."""
     logger.info(f"Attempting {api_description} via direct request: {facts_api_url}")
 
@@ -1658,7 +1658,7 @@ def _try_fallback_facts_request(
     facts_referer: str,
     fallback_timeouts: list[int],
     api_description: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Try fallback facts request using _api_req."""
     logger.warning(
         f"{api_description} direct request failed. Trying _api_req fallback."
@@ -1719,10 +1719,10 @@ def _try_fallback_facts_request(
 
 
 def _validate_and_extract_facts_data(
-    facts_data_raw: Optional[dict[str, Any]],
+    facts_data_raw: dict[str, Any] | None,
     api_person_id: str,
     api_description: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Validate and extract person research data from facts API response."""
     if not isinstance(facts_data_raw, dict):
         logger.error(
@@ -1761,8 +1761,8 @@ def call_facts_user_api(
     session_manager: "SessionManager",
     api_ids: ApiIdentifiers,
     base_url: str,
-    timeouts: Optional[list[int]] = None,
-) -> Optional[dict[str, Any]]:
+    timeouts: list[int] | None = None,
+) -> dict[str, Any] | None:
     # Validate prerequisites
     if not api_ids.owner_profile_id or not api_ids.api_person_id or not api_ids.api_tree_id:
         logger.error("Facts API call failed: Missing required API identifiers")
@@ -1804,7 +1804,7 @@ def call_facts_user_api(
 # End of call_facts_user_api
 
 
-def _process_getladder_response(relationship_data: Any, api_description: str) -> Optional[str]:
+def _process_getladder_response(relationship_data: Any, api_description: str) -> str | None:
     """Process GetLadder API response."""
     if not isinstance(relationship_data, str):
         logger.warning(f"{api_description} call returned non-string or None: {type(relationship_data)}")
@@ -1833,8 +1833,8 @@ def call_getladder_api(
     owner_tree_id: str,
     target_person_id: str,
     base_url: str,
-    timeout: Optional[int] = None,
-) -> Optional[str]:
+    timeout: int | None = None,
+) -> str | None:
     if not callable(_api_req):
         logger.critical("GetLadder API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
@@ -1885,7 +1885,7 @@ def call_getladder_api(
 # End of call_getladder_api
 
 
-def _process_discovery_relationship_response(relationship_data: Any, api_description: str) -> Optional[dict[str, Any]]:
+def _process_discovery_relationship_response(relationship_data: Any, api_description: str) -> dict[str, Any] | None:
     """Process discovery relationship API response."""
     if not isinstance(relationship_data, dict):
         logger.warning(f"{api_description} call returned unexpected type: {type(relationship_data)}")
@@ -1912,8 +1912,8 @@ def call_discovery_relationship_api(
     selected_person_global_id: str,
     owner_profile_id: str,
     base_url: str,
-    timeout: Optional[int] = None,
-) -> Optional[dict[str, Any]]:
+    timeout: int | None = None,
+) -> dict[str, Any] | None:
     """
     Makes an API call to get relationship data from the Discovery API.
 
@@ -1984,7 +1984,7 @@ def call_discovery_relationship_api(
 # End of call_discovery_relationship_api
 
 
-def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> Optional[str]:
+def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> str | None:
     """Build TreesUI List API URL with search parameters."""
     # Try both key formats for compatibility (first_name/surname from unified criteria, first_name_raw/surname_raw from legacy)
     first_name = search_criteria.get("first_name") or search_criteria.get("first_name_raw", "")
@@ -2208,8 +2208,8 @@ def call_treesui_list_api(
     owner_tree_id: str,
     base_url: str,
     search_criteria: dict[str, Any],
-    timeouts: Optional[list[int]] = None,
-) -> Optional[list[dict[str, Any]]]:
+    timeouts: list[int] | None = None,
+) -> list[dict[str, Any]] | None:
     if not callable(_api_req):
         logger.critical("TreesUI List API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
@@ -2296,8 +2296,8 @@ def call_newfamilyview_api(
     tree_id: str,
     person_id: str,
     base_url: str,
-    timeout: Optional[int] = None,
-) -> Optional[dict]:
+    timeout: int | None = None,
+) -> dict | None:
     """
     Call the New Family View API to get complete family data including siblings.
 
@@ -2350,8 +2350,8 @@ def call_relation_ladder_with_labels_api(
     tree_id: str,
     person_id: str,
     base_url: str,
-    timeout: Optional[int] = None,
-) -> Optional[dict]:
+    timeout: int | None = None,
+) -> dict | None:
     """
     Call the Relation Ladder With Labels API to get relationship path with names and dates.
 
@@ -2403,10 +2403,10 @@ def call_relation_ladder_with_labels_api(
 def _validate_message_response(
     api_response: dict[str, Any],
     is_initial: bool,
-    existing_conv_id: Optional[str],
+    existing_conv_id: str | None,
     my_profile_id_upper: str,
     log_prefix: str
-) -> tuple[bool, Optional[str], str]:
+) -> tuple[bool, str | None, str]:
     """Validate message API response. Returns (post_ok, conversation_id, message_status)."""
     if is_initial:
         api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
@@ -2433,15 +2433,15 @@ def _validate_message_response(
 def _process_send_message_response(
     api_response: Any,
     is_initial: bool,
-    existing_conv_id: Optional[str],
+    existing_conv_id: str | None,
     my_profile_id_upper: str,
     person: "Person",
     send_api_desc: str,
     log_prefix: str
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     """Process send message API response and return status and conversation ID."""
     message_status = SEND_ERROR_UNKNOWN
-    new_conversation_id_from_api: Optional[str] = None
+    new_conversation_id_from_api: str | None = None
     post_ok = False
 
     if api_response is None:
@@ -2480,9 +2480,9 @@ def _prepare_send_message_request(
     message_text: str,
     my_profile_id_lower: str,
     recipient_profile_id_upper: str,
-    existing_conv_id: Optional[str],
+    existing_conv_id: str | None,
     log_prefix: str
-) -> Optional[tuple[str, dict[str, Any], str, dict[str, Any]]]:
+) -> tuple[str, dict[str, Any], str, dict[str, Any]] | None:
     """Prepare API request data for sending message. Returns (url, payload, description, headers) or None."""
     try:
         base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
@@ -2524,7 +2524,7 @@ def _validate_send_message_request(
     person: "Person",
     message_text: str,
     log_prefix: str
-) -> Optional[tuple[str, Optional[str]]]:
+) -> tuple[str, str | None] | None:
     """Validate send message request. Returns error tuple if invalid, None if valid."""
     if not session_manager or not session_manager.my_profile_id:
         logger.error(f"{log_prefix}: Cannot send message - SessionManager or own profile ID missing.")
@@ -2541,7 +2541,7 @@ def _validate_send_message_request(
     return None
 
 
-def _handle_dry_run_mode(person: "Person", existing_conv_id: Optional[str], log_prefix: str) -> tuple[str, Optional[str]]:
+def _handle_dry_run_mode(person: "Person", existing_conv_id: str | None, log_prefix: str) -> tuple[str, str | None]:
     """Handle dry run mode for message sending."""
     message_status = SEND_SUCCESS_DRY_RUN
     effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
@@ -2556,9 +2556,9 @@ def call_send_message_api(
     session_manager: "SessionManager",
     person: "Person",
     message_text: str,
-    existing_conv_id: Optional[str],
+    existing_conv_id: str | None,
     log_prefix: str,
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, str | None]:
     validation_error = _validate_send_message_request(session_manager, person, message_text, log_prefix)
     if validation_error:
         return validation_error
@@ -2608,7 +2608,7 @@ def call_send_message_api(
 # End of call_send_message_api
 
 
-def _process_profile_response(profile_response: Any, profile_id: str) -> Optional[dict[str, Any]]:
+def _process_profile_response(profile_response: Any, profile_id: str) -> dict[str, Any] | None:
     """Process and validate profile API response."""
     if not profile_response or not isinstance(profile_response, dict):
         if isinstance(profile_response, requests.Response):
@@ -2635,7 +2635,7 @@ def _process_profile_response(profile_response: Any, profile_id: str) -> Optiona
     }
 
 
-def _extract_first_name(profile_response: dict[str, Any], profile_id: str) -> Optional[str]:
+def _extract_first_name(profile_response: dict[str, Any], profile_id: str) -> str | None:
     """Extract first name from profile response."""
     first_name_raw = profile_response.get(KEY_FIRST_NAME)
     if first_name_raw and isinstance(first_name_raw, str):
@@ -2650,7 +2650,7 @@ def _extract_first_name(profile_response: dict[str, Any], profile_id: str) -> Op
     return None
 
 
-def _parse_last_login_date(profile_response: dict[str, Any], profile_id: str) -> Optional[datetime]:
+def _parse_last_login_date(profile_response: dict[str, Any], profile_id: str) -> datetime | None:
     """Parse last login date from profile response."""
     last_login_str = profile_response.get(KEY_LAST_LOGIN_DATE)
     if not last_login_str or not isinstance(last_login_str, str):
@@ -2687,7 +2687,7 @@ def _validate_profile_request(session_manager: "SessionManager", profile_id: str
 
 def call_profile_details_api(
     session_manager: "SessionManager", profile_id: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     if not _validate_profile_request(session_manager, profile_id):
         return None
 
@@ -2737,7 +2737,7 @@ def call_profile_details_api(
 # End of call_profile_details_api
 
 
-def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> Optional[str]:
+def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> str | None:
     """Parse tree ID from tree URL."""
     if not tree_url or not isinstance(tree_url, str):
         logger.warning(f"Found tree '{tree_name_config}', but '{KEY_URL}' key missing or invalid.")
@@ -2753,7 +2753,7 @@ def _parse_tree_id_from_url(tree_url: Any, tree_name_config: str) -> Optional[st
     return None
 
 
-def _validate_header_trees_response(response_data: Any, api_description: str) -> Optional[list]:
+def _validate_header_trees_response(response_data: Any, api_description: str) -> list | None:
     """Validate header trees response and return trees list if valid."""
     if not response_data or not isinstance(response_data, dict):
         if response_data is None:
@@ -2785,7 +2785,7 @@ def _validate_header_trees_response(response_data: Any, api_description: str) ->
     return None
 
 
-def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
+def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> str | None:
     """Extract tree ID from header trees API response."""
     items = _validate_header_trees_response(response_data, api_description)
     if not items:
@@ -2829,7 +2829,7 @@ def _validate_header_trees_request(session_manager: "SessionManager", tree_name_
 
 def call_header_trees_api_for_tree_id(
     session_manager: "SessionManager", tree_name_config: str
-) -> Optional[str]:
+) -> str | None:
     if not _validate_header_trees_request(session_manager, tree_name_config):
         return None
 
@@ -2872,7 +2872,7 @@ def call_header_trees_api_for_tree_id(
 # End of call_header_trees_api_for_tree_id
 
 
-def _extract_tree_owner_from_response(response_data: Any, tree_id: str, api_description: str) -> Optional[str]:
+def _extract_tree_owner_from_response(response_data: Any, tree_id: str, api_description: str) -> str | None:
     """Extract tree owner name from API response."""
     if not response_data or not isinstance(response_data, dict):
         if response_data is None:
@@ -2923,7 +2923,7 @@ def _validate_tree_owner_request(session_manager: "SessionManager", tree_id: str
 
 def call_tree_owner_api(
     session_manager: "SessionManager", tree_id: str
-) -> Optional[str]:
+) -> str | None:
     if not _validate_tree_owner_request(session_manager, tree_id):
         return None
 
@@ -2976,10 +2976,10 @@ def call_enhanced_api(
     tree_id: str,
     person_id: str,
     method: str = "GET",
-    data: Optional[dict[str, Any]] = None,
+    data: dict[str, Any] | None = None,
     api_description: str = "Enhanced API Call",
     use_csrf_token: bool = True
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Call an enhanced API endpoint with full browser-like authentication.
 
@@ -3065,7 +3065,7 @@ def call_edit_relationships_api(
     user_id: str,
     tree_id: str,
     person_id: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Call the edit relationships API endpoint to get family relationship data.
 
@@ -3095,7 +3095,7 @@ def call_relationship_ladder_api(
     user_id: str,
     tree_id: str,
     person_id: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Call the enhanced relationship ladder API endpoint to get kinship relationship data.
 
@@ -3126,7 +3126,7 @@ def call_relationship_ladder_api(
 def get_relationship_path_data(
     session_manager: "SessionManager",
     person_id: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Get comprehensive relationship path data for a person using the enhanced API.
 

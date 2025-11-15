@@ -117,7 +117,7 @@ def _generate_record_types(common_ancestors: list[dict[str, Any]]) -> list[str]:
 
 
 def _generate_strategies(
-    relationship_context: Optional[str],
+    relationship_context: str | None,
     locations: list[str],
     common_ancestors: list[dict[str, Any]],
 ) -> list[str]:
@@ -147,7 +147,7 @@ def generate_research_suggestions(
     common_ancestors: list[dict[str, Any]],
     locations: list[str],
     time_periods: list[str],
-    relationship_context: Optional[str] = None,
+    relationship_context: str | None = None,
 ) -> dict[str, Any]:
     """
     Generate relevant research suggestions based on conversation context.

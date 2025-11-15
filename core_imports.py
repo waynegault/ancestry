@@ -30,7 +30,7 @@ _lock = threading.RLock()
 class _ImportSystemState:
     """Manages import system state."""
     initialized = False
-    project_root: Optional[Path] = None
+    project_root: Path | None = None
 
 
 _registry: dict[str, Any] = {}
@@ -282,7 +282,7 @@ def get_stats() -> dict[str, Any]:
 
 
 # Smart logger setup with fallback
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """Get a properly configured logger with smart fallback."""
     try:
         from logging_config import logger
@@ -298,7 +298,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
 
 
 def safe_execute(
-    func: Optional[Callable] = None,
+    func: Callable | None = None,
     *,
     default_return: Any = None,
     suppress_errors: bool = True,
