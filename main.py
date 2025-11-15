@@ -11,6 +11,8 @@ messaging, and genealogical research tools.
 # pyright: reportGeneralTypeIssues=false
 
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
+from __future__ import annotations
+
 import os
 
 os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"
@@ -141,7 +143,7 @@ def _initialize_db_manager_engine(db_manager: DatabaseManagerProtocol) -> tuple[
     return engine, session_factory
 
 
-def _load_and_validate_config_schema() -> Optional[Any]:
+def _load_and_validate_config_schema() -> Any | None:
     """Load and validate configuration schema."""
     try:
         from config import config_schema
@@ -422,11 +424,11 @@ def menu() -> str:
 # End of menu
 
 
-def clear_log_file() -> tuple[bool, Optional[str]]:
+def clear_log_file() -> tuple[bool, str | None]:
     """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
     cleared = False
-    log_file_handler: Optional[logging.FileHandler] = None
-    log_file_path: Optional[str] = None
+    log_file_handler: logging.FileHandler | None = None
+    log_file_path: str | None = None
     try:
         # Step 1: Find the FileHandler in the logger's handlers
         for handler in logger.handlers:
@@ -1592,7 +1594,7 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
 
 
 # Action 6 (gather_dna_matches wrapper)
-def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
+def gather_dna_matches(session_manager: SessionManager, config_schema: Any | None = None, start: int = 1) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1859,8 +1861,7 @@ def _perform_api_search_fallback(
 
 def _format_table_row(row: Sequence[str], widths: Sequence[int]) -> str:
     """Return padded string for display rows."""
-
-    return " | ".join(col.ljust(width) for col, width in zip(row, widths))
+    return " | ".join((str(col) if col is not None else "").ljust(width) for col, width in zip(row, widths, strict=False))
 
 
 def _compute_table_widths(rows: Sequence[Sequence[str]], headers: Sequence[str]) -> list[int]:
@@ -2821,7 +2822,7 @@ def _pre_authenticate_ms_graph() -> None:
         logger.debug(f"MS Graph authentication failed at startup: {e}")
 
 
-def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
+def _cleanup_session_manager(session_manager: Any | None) -> None:
     """Clean up session manager on shutdown with proper resource ordering.
 
     Args:

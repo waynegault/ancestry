@@ -48,6 +48,8 @@ Created: August 6, 2025
 Phase: 12.3 - Intelligent Research Prioritization
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -495,7 +497,7 @@ class IntelligentResearchPrioritizer:
             f"Locate {surname} family in census records"
         ]
 
-    def _extract_location_context(self, gap: dict[str, Any]) -> Optional[str]:
+    def _extract_location_context(self, gap: dict[str, Any]) -> str | None:
         """Extract location context from a gap."""
         # This would analyze the gap description for location clues
         description = gap.get("description", "")
@@ -508,7 +510,7 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> Optional[str]:
+    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> str | None:
         """Extract location from research opportunity."""
         description = opportunity.get("description", "")
         # Simple implementation

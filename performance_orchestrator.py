@@ -53,6 +53,8 @@ targeted, high-impact optimizations that provide measurable improvements.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -63,9 +65,10 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -493,7 +496,7 @@ class PerformanceOptimizer:
 
 class _OptimizerSingleton:
     """Thread-safe singleton container for performance optimizer instance."""
-    instance: Optional[PerformanceOptimizer] = None
+    instance: PerformanceOptimizer | None = None
     lock = threading.Lock()
 
 

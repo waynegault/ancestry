@@ -6,15 +6,18 @@ Provides consistent user interaction for both Action 10 (GEDCOM) and Action 11 (
 to ensure identical search criteria collection and validation.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from logging_config import logger
 
 
 def get_unified_search_criteria(
-    get_input_func: Optional[Callable[[str], str]] = None,
-) -> Optional[dict[str, Any]]:
+    get_input_func: Callable[[str], str] | None = None,
+) -> dict[str, Any] | None:
     """
     Collect unified search criteria from user input.
 
@@ -77,7 +80,7 @@ def get_unified_search_criteria(
     return criteria
 
 
-def _sanitize_input(value: str) -> Optional[str]:
+def _sanitize_input(value: str) -> str | None:
     """Sanitize user input by stripping whitespace."""
     if not value:
         return None
@@ -85,12 +88,12 @@ def _sanitize_input(value: str) -> Optional[str]:
     return sanitized if sanitized else None
 
 
-def _parse_year_input(year_str: str) -> Optional[int]:
+def _parse_year_input(year_str: str) -> int | None:
     """Parse year input string to integer."""
     return int(year_str) if year_str.strip().isdigit() else None
 
 
-def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetime]:
+def _create_date_object(year: int | None, date_type: str) -> datetime | None:
     """Create datetime object from year, with error handling."""
     if not year:
         return None

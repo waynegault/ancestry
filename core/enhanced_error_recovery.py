@@ -9,6 +9,8 @@ for long-running genealogical research operations.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -19,15 +21,12 @@ if parent_dir not in sys.path:
 import logging
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
-
-P = ParamSpec("P")
-R = TypeVar("R")
-
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +51,8 @@ class ErrorContext:
     operation_name: str
     attempt_number: int = 1
     max_attempts: int = 3
-    last_error: Optional[Exception] = None
-    error_history: list[Exception] = field(default_factory=list)  # type: ignore[misc]
+    last_error: Exception | None = None
+    error_history: list[Exception] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     partial_results: list[Any] = field(default_factory=list)  # type: ignore[misc]
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
@@ -175,7 +174,7 @@ def _handle_non_retryable_error(operation_name: str, e: Exception) -> None:
 
 def _handle_partial_success(
     operation_name: str,
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    partial_success_handler: Callable | None,
     context: 'ErrorContext',
     last_exception: Exception,
 ) -> Any:
@@ -194,7 +193,7 @@ def _handle_partial_success(
 def _handle_retry_failure(
     operation_name: str,
     max_attempts: int,
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    partial_success_handler: Callable | None,
     context: 'ErrorContext',
     last_exception: Exception,
 ) -> Any:
@@ -217,9 +216,9 @@ def with_enhanced_recovery(
     max_delay: float = 60.0,
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]] = None,
-    user_guidance: Optional[dict[type[Exception], str]] = None,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    partial_success_handler: Callable | None = None,
+    user_guidance: dict[type[Exception], str] | None = None
+):
     """
     Decorator for enhanced error recovery with multiple strategies.
 

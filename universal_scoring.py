@@ -104,8 +104,8 @@ def calculate_display_bonuses(scores: dict[str, int], key_prefix: str = "") -> d
 def apply_universal_scoring(
     candidates: list[dict[str, Any]],
     search_criteria: dict[str, Any],
-    scoring_weights: Optional[dict[str, Any]] = None,
-    date_flexibility: Optional[dict[str, Any]] = None,
+    scoring_weights: dict[str, Any] | None = None,
+    date_flexibility: dict[str, Any] | None = None,
     max_results: int = 10,
     performance_timeout: float = 5.0
 ) -> list[dict[str, Any]]:

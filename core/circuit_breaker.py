@@ -27,12 +27,14 @@ Usage:
     )
 """
 
+from __future__ import annotations
+
 import logging
-import sys
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 if __package__ in (None, ""):
     _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -73,8 +75,8 @@ class SessionCircuitBreaker:
         name: str,
         threshold: int = 5,
         recovery_timeout_sec: int | float = 60,
-        session_manager: Optional[Any] = None,
-    ) -> None:
+        session_manager: Any | None = None,
+    ):
         """Initialize circuit breaker.
 
         Args:
@@ -91,9 +93,9 @@ class SessionCircuitBreaker:
         self._state = CircuitBreakerState.CLOSED
         self._consecutive_failures = 0
         self._consecutive_successes = 0
-        self._last_failure_time: Optional[datetime] = None
-        self._last_success_time: Optional[datetime] = None
-        self._trip_time: Optional[datetime] = None
+        self._last_failure_time: datetime | None = None
+        self._last_success_time: datetime | None = None
+        self._trip_time: datetime | None = None
         self._lock = Lock()
 
         self._emit_state_metric(self._state)
@@ -209,7 +211,7 @@ def make_circuit_breaker(
     name: str,
     failure_threshold: int = 5,
     recovery_timeout_sec: int = 60,
-    session_manager: Optional[Any] = None,
+    session_manager: Any | None = None,
 ) -> SessionCircuitBreaker:
     """Factory function for creating circuit breakers.
 

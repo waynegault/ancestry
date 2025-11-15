@@ -11,6 +11,8 @@ Diagnoses common Chrome/ChromeDriver issues including:
 - Auto-fixes version mismatches by downloading correct ChromeDriver
 """
 
+from __future__ import annotations
+
 import contextlib
 import json
 import os

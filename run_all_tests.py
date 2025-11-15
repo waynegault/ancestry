@@ -50,6 +50,8 @@ IMPORTANT: Always run tests in venv (virtual environment)
     Linux/Mac: source .venv/bin/activate
 """
 
+from __future__ import annotations
+
 import concurrent.futures
 import json
 import os
@@ -211,8 +213,8 @@ class TestExecutionMetrics:
     cpu_usage_percent: float
     start_time: str
     end_time: str
-    error_message: Optional[str] = None
-    quality_metrics: Optional[QualityMetrics] = None
+    error_message: str | None = None
+    quality_metrics: QualityMetrics | None = None
 
 
 @dataclass
@@ -308,7 +310,7 @@ class TestResultCache:
             pass  # Silently fail - caching is optional
 
     @classmethod
-    def get_module_hash(cls, module_name: str) -> Optional[str]:
+    def get_module_hash(cls, module_name: str) -> str | None:
         """Get hash of module file contents."""
         try:
             import hashlib
@@ -1026,7 +1028,7 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
 
 
 
-def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
+def _extract_count_from_line(line: str, keyword: str) -> int | None:
     """Extract count from line containing keyword.
 
     Args:
@@ -1046,7 +1048,7 @@ def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
         return None
 
 
-def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[Optional[int], Optional[int]]:
+def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[int | None, int | None]:
     """Find passed and failed counts in output lines.
 
     Args:
@@ -1253,8 +1255,8 @@ def _run_quality_analysis(module_name: str):
 
 def _create_test_metrics(
     module_name: str,
-    test_result: dict[str, Any],
-    quality_metrics: Optional[QualityMetrics] = None
+    test_result: dict,
+    quality_metrics: QualityMetrics | None = None
 ) -> TestExecutionMetrics:
     """
     Create TestExecutionMetrics object from test result data.
@@ -1366,7 +1368,7 @@ def _print_test_result(
 
 def run_module_tests(
     module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
-) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
+) -> tuple[bool, int, TestExecutionMetrics | None]:
     """Run tests for a specific module with optional performance monitoring."""
     # Print description
     desc = _generate_module_description(module_name, description)

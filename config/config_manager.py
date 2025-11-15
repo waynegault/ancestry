@@ -13,6 +13,8 @@ This module provides a comprehensive configuration management system with:
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import os
 import sys
 
@@ -20,15 +22,6 @@ import sys
 from pathlib import Path
 
 parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
@@ -102,8 +95,8 @@ class ConfigManager:
 
     def __init__(
         self,
-        config_file: Optional[Union[str, Path]] = None,
-        environment: Optional[str] = None,
+        config_file: Union[str, Path] | None = None,
+        environment: str | None = None,
         auto_load: bool = True,
     ):
         """
@@ -122,8 +115,8 @@ class ConfigManager:
 
         self.config_file = Path(config_file) if config_file else None
         self.environment = environment or os.getenv("ENVIRONMENT", "development")
-        self._config_cache: Optional[ConfigSchema] = None
-        self._file_modification_time: Optional[float] = None
+        self._config_cache: ConfigSchema | None = None
+        self._file_modification_time: float | None = None
 
         # Supported file formats
         self._supported_formats = {".json", ".yaml", ".yml", ".toml"}
@@ -319,7 +312,7 @@ class ConfigManager:
         return self.load_config()
 
     def validate_config(
-        self, config_data: Optional[dict[str, Any]] = None
+        self, config_data: dict[str, Any] | None = None
     ) -> list[str]:
         """
         Validate configuration data.

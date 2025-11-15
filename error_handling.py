@@ -6,6 +6,8 @@ Enhanced for Phase 4.1: Error Handling & Resilience Enhancement
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -15,15 +17,12 @@ import contextlib
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
-
-# Type variables for decorators
-P = ParamSpec('P')
-R = TypeVar('R')
+from typing import Any, Optional
 
 # === LOCAL IMPORTS ===
 # Module logger is set up by setup_module() above
@@ -57,13 +56,13 @@ class ErrorStats:
 
     total_requests: int = 0
     failed_requests: int = 0
-    last_failure_time: Optional[datetime] = None
+    last_failure_time: datetime | None = None
     failure_rate: float = 0.0
     consecutive_failures: int = 0
     consecutive_successes: int = 0
     error_types: dict[str, int] = field(default_factory=dict)
     recovery_attempts: int = 0
-    last_recovery_time: Optional[datetime] = None
+    last_recovery_time: datetime | None = None
     avg_response_time: float = 0.0
     error_patterns: list[str] = field(default_factory=list)
 
@@ -95,7 +94,7 @@ class RetryConfig:
 class IntelligentRetryHandler:
     """Advanced retry handler with multiple strategies and error pattern learning."""
 
-    def __init__(self, name: str, config: Optional[RetryConfig] = None) -> None:
+    def __init__(self, name: str, config: RetryConfig | None = None) -> None:
         self.name = name
         self.config = config or RetryConfig()
         self._error_history: list[tuple[Exception, datetime]] = []
@@ -189,15 +188,15 @@ class CircuitBreaker:
     def __init__(
         self,
         name: str,
-        config: Optional[CircuitBreakerConfig] = None,
-        retry_config: Optional[RetryConfig] = None,
+        config: CircuitBreakerConfig | None = None,
+        retry_config: RetryConfig | None = None,
     ) -> None:
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.state = CircuitState.CLOSED
         self.stats = ErrorStats()
         self._lock = threading.Lock()
-        self._last_failure_time: Optional[datetime] = None
+        self._last_failure_time: datetime | None = None
         self.retry_handler = (
             IntelligentRetryHandler(f"{name}_retry", retry_config)
             if retry_config
@@ -463,11 +462,11 @@ class AncestryException(Exception):  # noqa: N818
     def __init__(
         self,
         message: str,
-        error_code: Optional[str] = None,
-        context: Optional[dict[str, Any]] = None,
+        error_code: str | None = None,
+        context: dict[str, Any] | None = None,
         severity: str = "ERROR",
-        recovery_hint: Optional[str] = None,
-        cause: Optional[Exception] = None,
+        recovery_hint: str | None = None,
+        cause: Exception | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -551,7 +550,7 @@ class BrowserSessionError(RetryableError):
 class APIRateLimitError(RetryableError):
     """API rate limiting that requires backoff."""
 
-    def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
+    def __init__(self, message: str, retry_after: int | None = None, **kwargs: Any) -> None:
         self.retry_after = retry_after
         # Extract recovery_hint from kwargs if provided, otherwise use default
         default_hint = (
@@ -627,7 +626,7 @@ class ErrorContext:
     parameters: dict[str, Any] = field(default_factory=dict)
     environment: dict[str, Any] = field(default_factory=dict)
     timing: dict[str, float] = field(default_factory=dict)
-    stack_trace: Optional[str] = None
+    stack_trace: str | None = None
     error_id: str = field(default_factory=lambda: f"err_{int(time.time())}")
 
     def capture_environment(self) -> None:
@@ -667,7 +666,7 @@ class ErrorRecoveryManager:
         self.recovery_strategies: dict[str, Callable] = {}
 
     def get_circuit_breaker(
-        self, name: str, config: Optional[CircuitBreakerConfig] = None
+        self, name: str, config: CircuitBreakerConfig | None = None
     ) -> CircuitBreaker:
         """Get or create circuit breaker for a service."""
         if name not in self.circuit_breakers:
@@ -766,7 +765,7 @@ error_recovery_manager = ErrorRecoveryManager()
 
 
 def with_circuit_breaker(
-    service_name: str, config: Optional[CircuitBreakerConfig] = None
+    service_name: str, config: CircuitBreakerConfig | None = None
 ) -> Callable:
     """Decorator to add circuit breaker protection to functions."""
 
@@ -839,8 +838,8 @@ def _handle_retry_exception(
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
-    retry_on: Optional[list[type[Exception]]] = None,
-    stop_on: Optional[list[type[Exception]]] = None,
+    retry_on: list[type[Exception]] | None = None,
+    stop_on: list[type[Exception]] | None = None,
     jitter: bool = True,
 ) -> Callable:
     """
@@ -953,7 +952,7 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
             import threading
 
             result: list[Any] = [None]
-            exception: list[Optional[Exception]] = [None]
+            exception: list[Exception | None] = [None]
 
             def target() -> None:
                 try:
@@ -985,7 +984,7 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
 
 
 def graceful_degradation(
-    fallback_value: Optional[Any] = None, fallback_func: Optional[Callable] = None
+    fallback_value: Any | None = None, fallback_func: Callable | None = None
 ) -> Callable:
     """
     Decorator for graceful degradation when service fails.

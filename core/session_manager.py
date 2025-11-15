@@ -12,6 +12,8 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === SUPPRESS TEST WARNINGS FIRST (before any imports) ===
+from __future__ import annotations
+
 import os
 import sys
 import warnings
@@ -140,7 +142,7 @@ class SessionManager:
     - Background connection warming
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         """
         Initialize the SessionManager with optimized component creation.
 
@@ -161,14 +163,14 @@ class SessionManager:
 
         # Session state
         self.session_ready: bool = False
-        self.session_start_time: Optional[float] = None
+        self.session_start_time: float | None = None
 
         # PHASE 5.1: Session state caching for performance
-        self._last_readiness_check: Optional[float] = None
+        self._last_readiness_check: float | None = None
         self._cached_session_state: dict[str, Any] = {}
 
         # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
-        self._cached_csrf_token: Optional[str] = None
+        self._cached_csrf_token: str | None = None
         self._csrf_cache_time: float = 0.0
         self._csrf_cache_duration: float = 300.0  # 5-minute cache
 
@@ -213,7 +215,7 @@ class SessionManager:
         self.last_js_error_check: datetime = datetime.now(timezone.utc)
 
         # CSRF token caching for performance optimization
-        self._cached_csrf_token: Optional[str] = None
+        self._cached_csrf_token: str | None = None
         self._csrf_cache_time: float = 0
         self._csrf_cache_duration: float = 300  # 5 minutes
 
@@ -237,7 +239,7 @@ class SessionManager:
 
     @cached_database_manager()
     def _get_cached_database_manager(
-        self, db_path: Optional[str] = None
+        self, db_path: str | None = None
     ) -> "DatabaseManager":
         """Get cached DatabaseManager instance"""
         logger.debug("Creating/retrieving DatabaseManager from cache")
@@ -261,7 +263,7 @@ class SessionManager:
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
 
-    def _initialize_rate_limiter(self) -> Optional[Any]:
+    def _initialize_rate_limiter(self) -> Any | None:
         """Create or reuse the adaptive rate limiter configured for this session."""
 
         try:
@@ -324,10 +326,10 @@ class SessionManager:
             if isinstance(key, str) and isinstance(value, dict)
         }
 
-    def _calculate_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> Optional[float]:
+    def _calculate_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> float | None:
         """Derive the tightest rate cap from endpoint throttle definitions."""
 
-        endpoint_rate_cap: Optional[float] = None
+        endpoint_rate_cap: float | None = None
         for profile in endpoint_profiles.values():
             max_rate_val = profile.get("max_rate")
             min_interval_val = profile.get("min_interval")
@@ -414,7 +416,7 @@ class SessionManager:
         """
         return self.db_manager.ensure_ready()
 
-    def start_browser(self, action_name: Optional[str] = None) -> bool:
+    def start_browser(self, action_name: str | None = None) -> bool:
         """
         Start the browser session.
 
@@ -432,7 +434,7 @@ class SessionManager:
         """Close the browser session without affecting database."""
         self.browser_manager.close_browser()
 
-    def start_sess(self, action_name: Optional[str] = None) -> bool:
+    def start_sess(self, action_name: str | None = None) -> bool:
         """
         Start session (database and browser if needed).
 
@@ -465,7 +467,7 @@ class SessionManager:
     @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
-    def _check_cached_readiness(self, action_name: Optional[str]) -> Optional[bool]:
+    def _check_cached_readiness(self, action_name: str | None) -> bool | None:
         """Check if we can use cached readiness state.
 
         Returns:
@@ -494,7 +496,7 @@ class SessionManager:
         )
         return True
 
-    def _perform_readiness_validation(self, action_name: Optional[str], skip_csrf: bool) -> bool:
+    def _perform_readiness_validation(self, action_name: str | None, skip_csrf: bool) -> bool:
         """Perform readiness checks and identifier retrieval.
 
         Returns:
@@ -532,7 +534,7 @@ class SessionManager:
 
         return ready_checks_ok and identifiers_ok and owner_ok
 
-    def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool:
+    def ensure_session_ready(self, action_name: str | None = None, skip_csrf: bool = False) -> bool:
         """
         Ensure the session is ready for operations.
 
@@ -1155,7 +1157,7 @@ class SessionManager:
 
         return True
 
-    def restart_sess(self, url: Optional[str] = None) -> bool:
+    def restart_sess(self, url: str | None = None) -> bool:
         """
         Restart the session.
 
@@ -1219,7 +1221,7 @@ class SessionManager:
 
         return True
 
-    def attempt_browser_recovery(self, action_name: Optional[str] = None) -> bool:
+    def attempt_browser_recovery(self, action_name: str | None = None) -> bool:
         """
         Public method to attempt browser session recovery.
 
@@ -1443,7 +1445,7 @@ class SessionManager:
     # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
 
     @retry_on_failure(max_attempts=3)
-    def get_csrf(self) -> Optional[str]:
+    def get_csrf(self) -> str | None:
         """
         Retrieve CSRF token from API.
 
@@ -1493,7 +1495,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_my_profileId(self) -> Optional[str]:  # noqa: N802 - matches API field name
+    def get_my_profileId(self) -> str | None:  # noqa: N802 - matches API field name
         """
         Retrieve user's profile ID (ucdmid).
 
@@ -1545,7 +1547,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_my_uuid(self) -> Optional[str]:
+    def get_my_uuid(self) -> str | None:
         """
         Retrieve user's UUID (testId).
 
@@ -1595,7 +1597,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_my_tree_id(self) -> Optional[str]:
+    def get_my_tree_id(self) -> str | None:
         """
         Retrieve user's tree ID.
 
@@ -1636,7 +1638,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_tree_owner(self, tree_id: str) -> Optional[str]:
+    def get_tree_owner(self, tree_id: str) -> str | None:
         """
         Retrieve tree owner name.
 
@@ -1702,7 +1704,7 @@ class SessionManager:
         self._csrf_cache_time = 0
 
     @property
-    def driver(self) -> Optional[WebDriverType]:
+    def driver(self) -> WebDriverType | None:
         """Get the WebDriver instance."""
         return self.browser_manager.driver
 
@@ -1711,13 +1713,13 @@ class SessionManager:
         """Check if driver is live."""
         return self.browser_manager.driver_live
 
-    def make_tab(self) -> Optional[str]:
+    def make_tab(self) -> str | None:
         """Create a new browser tab."""
         return self.browser_manager.create_new_tab()
 
     # API delegation methods
     @property
-    def my_profile_id(self) -> Optional[str]:
+    def my_profile_id(self) -> str | None:
         """Get the user's profile ID."""
         # Try to get from API manager first, then retrieve if needed
         profile_id = self.api_manager.my_profile_id
@@ -1726,7 +1728,7 @@ class SessionManager:
         return profile_id
 
     @property
-    def my_uuid(self) -> Optional[str]:
+    def my_uuid(self) -> str | None:
         """Get the user's UUID."""
         # Try to get from API manager first, then retrieve if needed
         uuid_val = self.api_manager.my_uuid
@@ -1735,7 +1737,7 @@ class SessionManager:
         return uuid_val
 
     @property
-    def my_tree_id(self) -> Optional[str]:
+    def my_tree_id(self) -> str | None:
         """Get the user's tree ID."""
         # Try to get from API manager first, then retrieve if needed
         tree_id = self.api_manager.my_tree_id
@@ -1744,7 +1746,7 @@ class SessionManager:
         return tree_id
 
     @property
-    def csrf_token(self) -> Optional[str]:
+    def csrf_token(self) -> str | None:
         """Get the CSRF token with smart caching."""
         # ⚡ OPTIMIZATION 1: Check pre-cached CSRF token first
         if self._cached_csrf_token and self._csrf_cache_time:
@@ -1805,7 +1807,7 @@ class SessionManager:
 
     # Public properties
     @property
-    def tree_owner_name(self) -> Optional[str]:
+    def tree_owner_name(self) -> str | None:
         """Get the tree owner name."""
         return self.api_manager.tree_owner_name
 
@@ -1816,7 +1818,7 @@ class SessionManager:
 
     # Enhanced capabilities properties
     @property
-    def scraper(self) -> Optional[Any]:
+    def scraper(self) -> Any | None:
         """Get the CloudScraper instance for anti-bot protection."""
         return getattr(self, '_scraper', None)
 
@@ -1855,7 +1857,7 @@ class SessionManager:
         return db_ready and browser_ready and api_ready
 
     @property
-    def session_age_seconds(self) -> Optional[float]:
+    def session_age_seconds(self) -> float | None:
         """Get the age of the current session in seconds."""
         if self.session_start_time:
             return time.time() - self.session_start_time
@@ -1995,11 +1997,11 @@ class APICallWatchdog:
             raise ValueError(f"timeout_seconds must be > 0, got {timeout_seconds}")
 
         self.timeout_seconds = timeout_seconds
-        self.timer: Optional[threading.Timer] = None
+        self.timer: threading.Timer | None = None
         self.is_active = False
         self._lock = threading.Lock()
         self._api_name = ""
-        self._callback: Optional[Any] = None
+        self._callback: Any | None = None
 
     def start(self, api_name: str, callback: Any) -> None:
         """
@@ -2108,9 +2110,9 @@ class APICallWatchdog:
 
     def __exit__(
         self,
-        exc_type: Optional[type],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
+        exc_type: type | None,
+        exc_val: BaseException | None,
+        exc_tb: Any | None,
     ) -> bool:
         """Context manager exit (always cancel timer)."""
         self.cancel()

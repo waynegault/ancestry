@@ -8,7 +8,8 @@ Provides ObjectPool and fast_json_loads for performance optimization.
 
 import json
 from collections import deque
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 
 class ObjectPool:
@@ -38,7 +39,7 @@ class ObjectPool:
             self._pool.append(obj)
 
 
-def fast_json_loads(json_str: str) -> Optional[dict[str, Any]]:
+def fast_json_loads(json_str: str) -> dict[str, Any] | None:
     """
     Fast JSON loading with error handling.
 

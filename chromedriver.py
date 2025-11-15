@@ -45,6 +45,8 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     get_function,
     is_function_available,
@@ -277,7 +279,7 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     return options
 
 
-def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
+def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> WebDriver | None:
     """Create Chrome WebDriver instance with multiple fallback strategies."""
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
@@ -394,7 +396,7 @@ def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str,
     logger.debug(f"WebDriver instance fully configured successfully (attempt {attempt_num}).")
 
 
-def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_num: int) -> None:
+def _handle_driver_exception(e: Exception, driver: WebDriver | None, attempt_num: int) -> None:
     """Handle exceptions during driver initialization."""
     if isinstance(e, TimeoutException):
         logger.warning(f"Timeout during WebDriver init attempt {attempt_num}: {e}")
@@ -417,7 +419,7 @@ def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_
             driver.quit()
 
 
-def init_webdvr(_attach_attempt: bool = False) -> Optional[WebDriver]:
+def init_webdvr(_attach_attempt: bool = False) -> WebDriver | None:
     """
     V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
     Initializes standard Chrome WebDriver and returns focus to the terminal when complete.

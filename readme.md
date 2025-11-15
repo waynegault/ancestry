@@ -73,7 +73,8 @@ GET /discoveryui-matches/parents/list/api/matchList/{test_guid}?itemsPerPage={MA
 **Configuration (.env):**
 ```bash
 # Core controls
-REQUESTS_PER_SECOND=0.3
+REQUESTS_PER_SECOND=0.6  # Conservative production setting
+THREAD_POOL_WORKERS=2    # Parallel processing threads
 MATCHES_PER_PAGE=30
 MAX_RELATIONSHIP_PROB_FETCHES=0
 
@@ -138,7 +139,7 @@ python action10.py
 ## Testing
 
 ```bash
-# Run all tests (57 modules, 457 tests)
+# Run all tests
 python run_all_tests.py
 
 # Run with parallel execution
@@ -150,6 +151,8 @@ python run_all_tests.py --analyze-logs
 # Run specific module tests
 python -m action6_gather
 ```
+
+**Note:** Test counts vary as modules are added/updated. Run `python run_all_tests.py` to see current counts.
 
 ## Pylance Configuration
 
@@ -196,6 +199,25 @@ If you see thousands of errors or errors from `.git` files:
 - Use type hints for function signatures
 - Add docstrings to all public functions
 - Keep functions under 50 lines when possible
+
+#### Code Quality Tools
+```bash
+# Run linter to check code quality
+ruff check .
+
+# Auto-fix safe issues
+ruff check --fix .
+
+# Format code (preserves existing style)
+ruff format .
+```
+
+#### Known Opportunities for Improvement
+- **Type Annotation Modernization**: 1,534 instances of `Optional[X]` could be updated to `X | None` syntax (Python 3.10+ style)
+- **Large Files**: Some action files are quite large and could benefit from modularization:
+  - `action6_gather.py`: 9,207 lines (335KB) - DNA match gathering with complex state management
+  - `action8_messaging.py`: 5,445 lines (212KB) - Message personalization and sending
+  - Consider extracting domain-specific logic into separate modules
 
 ### Testing
 - Write tests for all new functionality
@@ -285,8 +307,9 @@ python -m test_action6_cache_integration
 ### Common Issues
 
 **429 Rate Limit Errors:**
-- Check `THREAD_POOL_WORKERS=1` in `.env`
-- Check `REQUESTS_PER_SECOND=0.4` in `.env`
+- Recommended settings: `THREAD_POOL_WORKERS=2` and `REQUESTS_PER_SECOND=0.6` in `.env`
+- For template/testing: `THREAD_POOL_WORKERS=3` and `REQUESTS_PER_SECOND=1.2`
+- See `.env.example` for detailed performance guidance
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"`
 
 **Import Errors:**
@@ -343,6 +366,8 @@ For issues or questions:
 ## Appendices
 
 ### Appendix A: Chronology of Changes
+
+**Note:** This appendix contains historical changelog entries for reference. Some features mentioned (such as Action 11) have been consolidated into other modules (e.g., `api_search_core.py`) and may no longer exist as separate files.
 
 2025-11-03
 - Action 6 Browser Death Fix (commit 4c3277a): Reverted action6_gather.py and core/session_manager.py to stable commit 793d948 (last known-good version that processed 15,000+ matches flawlessly) and cleanly re-added ethnicity enrichment

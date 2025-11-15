@@ -41,7 +41,8 @@ optimization, and comprehensive system health management for reliable research w
 """
 
 # === CORE INFRASTRUCTURE ===
-from observability.metrics_registry import metrics
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -57,12 +58,13 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -97,7 +99,7 @@ class PerformanceAlert:
     current_value: float
     threshold: float
     timestamp: datetime
-    recommendation: Optional[str] = None
+    recommendation: str | None = None
 
 
 @dataclass
@@ -113,7 +115,7 @@ class FunctionProfile:
     recent_times: deque = field(default_factory=lambda: deque(maxlen=100))
     memory_usage: list[float] = field(default_factory=list)
     error_count: int = 0
-    last_called: Optional[datetime] = None
+    last_called: datetime | None = None
 
 
 class PerformanceMonitor:
@@ -122,7 +124,7 @@ class PerformanceMonitor:
     def __init__(
         self,
         max_history: int = 10000,
-        alert_thresholds: Optional[dict[str, float]] = None,
+        alert_thresholds: dict[str, float] | None = None,
     ):
         self.max_history = max_history
         self.metrics: deque = deque(maxlen=max_history)
@@ -218,7 +220,7 @@ class PerformanceMonitor:
         name: str,
         value: float,
         category: str,
-        metadata: Optional[dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a performance metric."""
         if not self.enabled:
@@ -355,7 +357,7 @@ class PerformanceMonitor:
         metric_name: str,
         current_value: float,
         threshold: float,
-        recommendation: Optional[str] = None,
+        recommendation: str | None = None,
     ) -> None:
         """Create a performance alert."""
         alert = PerformanceAlert(
@@ -517,7 +519,7 @@ class PerformanceMonitor:
 
         return recommendations
 
-    def export_report(self, filepath: Optional[Path] = None, hours: int = 24) -> Path:
+    def export_report(self, filepath: Path | None = None, hours: int = 24) -> Path:
         """Export performance report to JSON file."""
         report = self.get_report(hours)
 
@@ -612,13 +614,13 @@ class AdvancedPerformanceMonitor:
     recommendations, configuration validation, and predictive analysis.
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str | None = None):
         self.config_path = config_path or "config/config.json"
         self.performance_history: list[dict[str, Any]] = []
         self.optimization_recommendations: list[dict[str, Any]] = []
         self.system_health_score: float = 100.0
         self.monitoring_active = False
-        self._monitor_thread: Optional[threading.Thread] = None
+        self._monitor_thread: threading.Thread | None = None
 
         # Performance thresholds
         self.thresholds = {

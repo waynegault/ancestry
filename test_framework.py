@@ -39,6 +39,8 @@ assessment, and systematic testing for professional research workflow reliabilit
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -47,9 +49,9 @@ logger = setup_module(globals(), __name__)
 import logging
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
@@ -436,7 +438,7 @@ def get_test_mode() -> bool:
     return os.getenv("ANCESTRY_TEST_MODE", "mock").lower() in ["real", "integration"]
 
 
-def create_test_data_factory(use_real_data: Optional[bool] = None) -> dict[str, Any]:
+def create_test_data_factory(use_real_data: bool | None = None) -> dict[str, Any]:
     """Create appropriate test data based on test mode."""
     if use_real_data is None:
         use_real_data = get_test_mode()
@@ -469,7 +471,7 @@ def assert_valid_function(func: Any, func_name: str) -> None:
     assert callable(func), f"Function {func_name} should be callable"
 
 
-def standardized_test_wrapper(test_func: Callable[[dict[str, Any]], Any], test_name: str, cleanup_func: Optional[Callable[[], None]] = None) -> Callable[[], Any]:
+def standardized_test_wrapper(test_func: Callable[[dict[str, Any]], Any], test_name: str, cleanup_func: Callable[[], None] | None = None) -> Callable[[], Any]:
     """Standardized test wrapper that provides consistent test execution patterns."""
     def wrapper() -> Any:
         test_data = create_test_data_factory()
@@ -777,7 +779,7 @@ class MockLogger:
         self.lines.append(msg)
         self.messages["critical"].append(msg)
 
-    def get_messages(self, level: Optional[str] = None) -> list[str]:
+    def get_messages(self, level: str | None = None) -> list[str]:
         """Get messages by level, or all messages if level is None"""
         if level:
             return self.messages.get(level, [])
@@ -890,7 +892,7 @@ def format_search_criteria(criteria: dict[str, Any]) -> str:
     return formatted
 
 
-def format_test_result(test_name: str, success: bool, duration: Optional[float] = None) -> str:
+def format_test_result(test_name: str, success: bool, duration: float | None = None) -> str:
     """
     Format a test result with consistent styling and colors.
 
@@ -1001,7 +1003,7 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     print(f"\n📊 Function Availability Summary: {passed}/{total} functions available")
 
     # Assert all functions are available
-    for func_name, available in zip(required_functions, results):
+    for func_name, available in zip(required_functions, results, strict=False):
         assert available, f"Required function '{func_name}' is not available"
 
     return results

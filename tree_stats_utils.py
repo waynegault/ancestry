@@ -8,6 +8,8 @@ and DNA ethnicity commonality for enhanced messaging in Action 8.
 Part of Phase 1: Enhanced Message Content (Foundation)
 """
 
+from __future__ import annotations
+
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -219,7 +221,7 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
         return {}
 
 
-def _get_cached_statistics(session: Session, profile_id: str) -> Optional[dict[str, Any]]:
+def _get_cached_statistics(session: Session, profile_id: str) -> dict[str, Any] | None:
     """
     Retrieve cached statistics if available and not expired.
 
@@ -387,7 +389,7 @@ def _calculate_similarity_score(region_details: dict[str, dict]) -> float:
     )
 
 
-def _find_top_shared_region(region_details: dict[str, dict]) -> Optional[str]:
+def _find_top_shared_region(region_details: dict[str, dict]) -> str | None:
     """Find the region with highest combined percentage."""
     if not region_details:
         return None

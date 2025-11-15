@@ -7,6 +7,8 @@ action modules. Replaces scattered caching logic with a single source of truth.
 Phase 5 Implementation - Cache Hit Rate Optimization (Opportunity #3)
 """
 
+from __future__ import annotations
+
 import copy
 import hashlib
 import json
@@ -91,38 +93,7 @@ class UnifiedCacheManager:
             },
         }
 
-    def _emit_cache_operation(self, service: str, endpoint: str, operation: str) -> None:
-        """Record cache operation metrics with safe fallbacks."""
-
-        safe_service = service or "unknown"
-        safe_endpoint = endpoint or "unknown"
-        safe_operation = operation or "unknown"
-        try:
-            metrics().cache_operations.inc(safe_service, safe_endpoint, safe_operation)
-        except Exception:
-            logger.debug("Failed to record cache operation metric", exc_info=True)
-
-    def _update_cache_hit_ratio(self, service: str, endpoint: str) -> None:
-        """Update cache hit ratio gauge for provided service/endpoint."""
-
-        safe_service = service or "unknown"
-        safe_endpoint = endpoint or "unknown"
-        hits = 0
-        misses = 0
-        try:
-            service_stats = self._stats.get(safe_service)
-            if service_stats:
-                endpoint_stats = service_stats.get("endpoints", {}).get(safe_endpoint)
-                if endpoint_stats:
-                    hits = endpoint_stats.get("hits", 0)
-                    misses = endpoint_stats.get("misses", 0)
-            total = hits + misses
-            ratio = (hits / total) if total else 0.0
-            metrics().cache_hit_ratio.set(safe_service, safe_endpoint, ratio)
-        except Exception:
-            logger.debug("Failed to update cache hit ratio", exc_info=True)
-
-    def get(self, service: str, endpoint: str, key: str) -> Optional[Any]:
+    def get(self, service: str, endpoint: str, key: str) -> Any | None:
         """
         Retrieve a cached value if it exists and hasn't expired.
 
@@ -180,7 +151,7 @@ class UnifiedCacheManager:
         endpoint: str,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """
         Cache a value with optional TTL override.
@@ -227,9 +198,9 @@ class UnifiedCacheManager:
 
     def invalidate(
         self,
-        service: Optional[str] = None,
-        endpoint: Optional[str] = None,
-        key: Optional[str] = None,
+        service: str | None = None,
+        endpoint: str | None = None,
+        key: str | None = None,
     ) -> int:
         """
         Invalidate cache entries by service, endpoint, or specific key.
@@ -287,7 +258,7 @@ class UnifiedCacheManager:
             logger.info(f"Cache invalidated: {count} entries")
             return count
 
-    def get_stats(self, endpoint: Optional[str] = None) -> dict[str, Any]:
+    def get_stats(self, endpoint: str | None = None) -> dict[str, Any]:
         """
         Get cache statistics.
 
@@ -423,7 +394,7 @@ class UnifiedCacheManager:
 
 
 # Global cache instance (singleton pattern)
-_unified_cache: Optional[UnifiedCacheManager] = None
+_unified_cache: UnifiedCacheManager | None = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:

@@ -15,13 +15,16 @@ Features:
 - Detailed logging and metrics
 """
 
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
 import functools
 import time
-from typing import Any, Callable, Optional, TypeVar
+from collections.abc import Callable
+from typing import Any, Optional, TypeVar
 
 from utils import prevent_system_sleep, restore_system_sleep
 
@@ -54,7 +57,7 @@ class ConnectionResilienceManager:
         self,
         session_manager: Any,
         operation_name: str,
-        retry_callback: Optional[Callable] = None
+        retry_callback: Callable | None = None
     ) -> bool:
         """
         Handle connection loss with automatic recovery.

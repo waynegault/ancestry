@@ -8,6 +8,8 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -49,7 +51,7 @@ config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
 # === TYPE ALIASES ===
-DriverType = Optional[WebDriver]
+DriverType = WebDriver | None
 
 
 class BrowserManager:
@@ -60,7 +62,7 @@ class BrowserManager:
         self.driver: DriverType = None
         self.driver_live: bool = False
         self.browser_needed: bool = False
-        self.session_start_time: Optional[float] = None
+        self.session_start_time: float | None = None
 
         logger.debug("BrowserManager initialized")
 
@@ -185,7 +187,7 @@ class BrowserManager:
                 )
                 logger.error("Browser will remain visible - this may be a WebDriver/platform limitation")
 
-    def start_browser(self, action_name: Optional[str] = None) -> bool:
+    def start_browser(self, action_name: str | None = None) -> bool:
         """
         Start the browser session.
 
@@ -293,7 +295,7 @@ class BrowserManager:
             self.driver_live = False
             return False
 
-    def ensure_driver_live(self, action_name: Optional[str] = None) -> bool:
+    def ensure_driver_live(self, action_name: str | None = None) -> bool:
         """
         Ensure that the browser session is active and valid.
 
@@ -356,7 +358,7 @@ class BrowserManager:
             logger.error(f"Error checking cookies: {e}", exc_info=True)
             return False
 
-    def create_new_tab(self) -> Optional[str]:
+    def create_new_tab(self) -> str | None:
         """
         Create a new browser tab.
 

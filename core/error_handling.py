@@ -8,6 +8,8 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports
@@ -28,14 +30,11 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
-
-# Type variables for decorators
-P = ParamSpec('P')
-R = TypeVar('R')
+from typing import Any, Optional
 
 # === ENHANCED CIRCUIT BREAKER CONFIGURATION ===
 
@@ -83,7 +82,7 @@ class CircuitBreaker:
     Opens the circuit after a threshold of failures and closes after a timeout.
     """
 
-    def __init__(self, name: str = "default", config: Optional[CircuitBreakerConfig] = None):
+    def __init__(self, name: str = "default", config: CircuitBreakerConfig | None = None):
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.failure_count = 0
@@ -295,11 +294,11 @@ class AppError(Exception):
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        user_message: Optional[str] = None,
-        technical_details: Optional[str] = None,
-        recovery_suggestion: Optional[str] = None,
-        context: Optional[dict[str, Any]] = None,
-        original_exception: Optional[Exception] = None,
+        user_message: str | None = None,
+        technical_details: str | None = None,
+        recovery_suggestion: str | None = None,
+        context: dict[str, Any] | None = None,
+        original_exception: Exception | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -428,7 +427,7 @@ class ErrorHandler(ABC):
 
     @abstractmethod
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: dict[str, Any] | None = None
     ) -> AppError:
         """Handle the error and return a standardized AppError."""
         pass
@@ -444,7 +443,7 @@ class DatabaseErrorHandler(ErrorHandler):
         return any(k in error_type or k in error_msg for k in keywords)
 
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: dict[str, Any] | None = None
     ) -> AppError:
         error_message = str(error)
 
@@ -483,7 +482,7 @@ class NetworkErrorHandler(ErrorHandler):
         )
 
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: dict[str, Any] | None = None
     ) -> AppError:
         error_message = str(error)
 
@@ -522,7 +521,7 @@ class BrowserErrorHandler(ErrorHandler):
         )
 
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: dict[str, Any] | None = None
     ) -> AppError:
         error_message = str(error)
 
@@ -576,7 +575,7 @@ class ErrorHandlerRegistry:
     def handle_error(
         self,
         error: Exception,
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
     ) -> AppError:
         """
@@ -631,7 +630,7 @@ _error_registry = ErrorHandlerRegistry()
 
 def handle_error(
     error: Exception,
-    context: Optional[dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
 ) -> AppError:
     """
@@ -708,7 +707,7 @@ def safe_execute(
     func: Callable,
     *args,
     default_return: Any = None,
-    context: Optional[dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     **kwargs,
 ) -> Any:
     """
@@ -755,7 +754,7 @@ class ErrorContext:
         logger.debug(f"Starting operation: {self.operation_name}")
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], _exc_tb: Optional[Any]) -> bool:
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, _exc_tb: Any | None) -> bool:
         duration = time.time() - self.start_time if self.start_time else 0
 
         if exc_type is not None and exc_val is not None:
@@ -794,7 +793,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
             return True  # Catch-all for unknown errors
 
         def handle(
-            self, error: Exception, context: Optional[dict[str, Any]] = None
+            self, error: Exception, context: dict[str, Any] | None = None
         ) -> AppError:
             return AppError(
                 str(error),
@@ -912,7 +911,7 @@ class ErrorRecoveryManager:
         self._lock = threading.Lock()
 
     def get_circuit_breaker(
-        self, name: str, config: Optional[CircuitBreakerConfig] = None
+        self, name: str, config: CircuitBreakerConfig | None = None
     ) -> CircuitBreaker:
         """Get or create circuit breaker for a service."""
         with self._lock:
@@ -991,8 +990,8 @@ def _handle_retry_exception(
 def retry_on_failure(
     max_attempts: int = 3,
     backoff_factor: float = 2.0,
-    retry_on: Optional[list[type[Exception]]] = None,
-    stop_on: Optional[list[type[Exception]]] = None,
+    retry_on: list[type[Exception]] | None = None,
+    stop_on: list[type[Exception]] | None = None,
     jitter: bool = True,
 ):
     """Decorator for retry logic with exponential backoff."""
@@ -1053,7 +1052,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
             if platform.system() == "Windows":
                 # Windows doesn't support SIGALRM, use threading approach
                 result: list[Any] = [None]
-                exception: list[Optional[Exception]] = [None]
+                exception: list[Exception | None] = [None]
 
                 def target() -> None:
                     try:
@@ -1095,7 +1094,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
 
 
 def graceful_degradation(
-    fallback_value: Any = None, fallback_func: Optional[Callable] = None
+    fallback_value: Any = None, fallback_func: Callable | None = None
 ):
     """Decorator for graceful degradation when service fails."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
@@ -1130,7 +1129,7 @@ def error_context(context_name: str = "", **context_data: Any) -> Callable:
 
 
 def with_circuit_breaker(
-    service_name: str, config: Optional[CircuitBreakerConfig] = None
+    service_name: str, config: CircuitBreakerConfig | None = None
 ):
     """Decorator to add circuit breaker protection to functions."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:

@@ -8,6 +8,8 @@ inconsistent logging patterns across the codebase.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports
@@ -25,7 +27,8 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 
 # Global flag to track if logging has been initialized
@@ -34,7 +37,7 @@ class _CentralizedLoggingState:
     setup_complete = False
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """
     Get a properly configured logger instance.
 

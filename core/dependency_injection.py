@@ -12,6 +12,8 @@ This module provides a comprehensive dependency injection system to:
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports
@@ -33,8 +35,9 @@ import inspect
 # Note: sys already imported at top of file
 import threading
 import unittest
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
+from typing import Any, ClassVar, Optional, TypeVar, Union
 
 T = TypeVar("T")
 
@@ -63,7 +66,7 @@ class DIContainer:
         self,
         interface: type[T],
         implementation: Union[type[T], T],
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> None:
         """
         Register a singleton service.
@@ -88,7 +91,7 @@ class DIContainer:
                 logger.debug(f"Registered singleton instance: {service_name}")
 
     def register_transient(
-        self, interface: type[T], implementation: type[T], name: Optional[str] = None
+        self, interface: type[T], implementation: type[T], name: str | None = None
     ) -> None:
         """
         Register a transient service (new instance each time).
@@ -109,7 +112,7 @@ class DIContainer:
             logger.debug(f"Registered transient service: {service_name}")
 
     def register_factory(
-        self, interface: type[T], factory: Callable[[], T], name: Optional[str] = None
+        self, interface: type[T], factory: Callable[[], T], name: str | None = None
     ) -> None:
         """
         Register a factory function.
@@ -125,7 +128,7 @@ class DIContainer:
             logger.debug(f"Registered factory: {service_name}")
 
     def register_instance(
-        self, interface: type[T], instance: T, name: Optional[str] = None
+        self, interface: type[T], instance: T, name: str | None = None
     ) -> None:
         """
         Register a specific instance.
@@ -141,7 +144,7 @@ class DIContainer:
             self._interfaces[interface] = type(instance)
             logger.debug(f"Registered instance: {service_name}")
 
-    def resolve(self, interface: type[T], name: Optional[str] = None) -> T:
+    def resolve(self, interface: type[T], name: str | None = None) -> T:
         """
         Resolve a service instance.
 
@@ -187,7 +190,7 @@ class DIContainer:
                 f"Cannot resolve service: {service_name} ({interface})"
             )
 
-    def is_registered(self, interface: type, name: Optional[str] = None) -> bool:
+    def is_registered(self, interface: type, name: str | None = None) -> bool:
         """
         Check if a service is registered.
 
@@ -318,7 +321,7 @@ class Injectable:
         logger.debug(f"Injectable subclass defined: {cls.__name__}")
 
 
-def inject(service_type: type[T], name: Optional[str] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def inject(service_type: type[T], name: str | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for dependency injection.
 
@@ -354,7 +357,7 @@ class ServiceRegistry:
     """
 
     _containers: ClassVar[dict[str, DIContainer]] = {}
-    _default_container: ClassVar[Optional[DIContainer]] = None
+    _default_container: ClassVar[DIContainer | None] = None
     _lock: ClassVar[threading.RLock] = threading.RLock()
 
     @classmethod
@@ -465,7 +468,7 @@ def configure_dependencies() -> None:
     logger.info("Dependency injection configuration completed")
 
 
-def get_service(service_type: type[T], name: Optional[str] = None) -> T:
+def get_service(service_type: type[T], name: str | None = None) -> T:
     """
     Convenience function to get a service from the default container.
 
@@ -505,7 +508,7 @@ class DIScope:
 
         return container
 
-    def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any | None) -> None:
         if self._original_registrations:
             container = get_container(self.container_name)
 

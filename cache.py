@@ -48,6 +48,8 @@ Cache directory and default settings are configurable via `config.py`.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     get_function,
     is_function_available,
@@ -64,13 +66,10 @@ import shutil
 import sys
 import time
 from collections import deque
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
-
-# Type variables for decorators
-P = ParamSpec('P')
-R = TypeVar('R')
+from typing import Any, Optional
 
 # --- Third-party imports ---
 from diskcache import Cache
@@ -111,7 +110,7 @@ except Exception as e:
 
 # Step 3: Initialize the DiskCache instance with aggressive settings
 # This instance is shared across modules that import 'cache from cache'.
-cache: Optional[Cache] = None  # Initialize as None
+cache: Cache | None = None  # Initialize as None
 try:
     # Aggressive cache settings for better performance
     # 2GB size limit for large GEDCOM files and API responses
@@ -255,7 +254,7 @@ base_cache_module = BaseCacheModule()
 # --- Cache Decorator Helper Functions ---
 
 
-def _generate_cache_key(cache_key_prefix: str, func: Callable, args: tuple, kwargs: dict, ignore_args: bool) -> Optional[str]:
+def _generate_cache_key(cache_key_prefix: str, func: Callable, args: tuple, kwargs: dict, ignore_args: bool) -> str | None:
     """Generate cache key for function call."""
     if ignore_args:
         logger.debug(f"Using ignore_args=True, cache key: '{cache_key_prefix}'")
@@ -288,7 +287,7 @@ def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
         return False, None
 
 
-def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> None:
+def _try_cache_result(cache_key: str, result: Any, expire: int | None) -> None:
     """Try to cache the result."""
     if cache is None:
         logger.warning("Cache not initialized - skipping cache write")
@@ -309,7 +308,7 @@ def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> Non
 
 def cache_result(
     cache_key_prefix: str,
-    expire: Optional[int] = None,  # Time in seconds, overrides Cache default if set
+    expire: int | None = None,  # Time in seconds, overrides Cache default if set
     ignore_args: bool = False,  # Use only prefix as key if True
 ) -> Callable:
     """
@@ -490,7 +489,7 @@ def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
 
 
 def invalidate_related_caches(
-    pattern: str, exclude_modules: Optional[list[str]] = None
+    pattern: str, exclude_modules: list[str] | None = None
 ) -> dict[str, int]:
     """
     Invalidate caches across multiple modules based on pattern.
@@ -867,7 +866,7 @@ def get_cache_stats() -> dict[str, Any]:
 def cache_file_based_on_mtime(
     cache_key_prefix: str,
     file_path: str,
-    expire: Optional[int] = None,
+    expire: int | None = None,
 ) -> Callable:
     """
     Enhanced decorator that caches based on file modification time.
@@ -929,7 +928,7 @@ def cache_file_based_on_mtime(
 
 
 def warm_cache_with_data(
-    cache_key: str, data: Any, expire: Optional[int] = None
+    cache_key: str, data: Any, expire: int | None = None
 ) -> bool:
     """
     Preloads cache with data (cache warming).
@@ -969,7 +968,7 @@ class IntelligentCacheWarmer:
         self.predictive_cache_keys: set[str] = set()
         self.dependency_graph: dict[str, list[str]] = {}
 
-    def record_cache_access(self, cache_key: str, hit: bool, access_time: Optional[float] = None):
+    def record_cache_access(self, cache_key: str, hit: bool, access_time: float | None = None):
         """Record cache access patterns for learning."""
         if access_time is None:
             access_time = time.time()

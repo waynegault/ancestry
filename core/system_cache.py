@@ -15,6 +15,8 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports
@@ -36,9 +38,10 @@ import json
 import threading
 import time
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -122,7 +125,7 @@ class APIResponseCache(BaseCacheModule):
         method: str,
         params: dict[str, Any],
         response: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> bool:
         """Cache API response with service-specific TTL"""
         if not cache:
@@ -158,7 +161,7 @@ class APIResponseCache(BaseCacheModule):
 
     def get_cached_api_response(
         self, service: str, method: str, params: dict[str, Any]
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """Retrieve cached API response if valid"""
         if not cache:
             return None
@@ -237,7 +240,7 @@ class DatabaseQueryCache(BaseCacheModule):
         return get_unified_cache_key("db_query", query_hash)
 
     def cache_query_result(
-        self, query: str, params: tuple, result: Any, ttl: Optional[int] = None
+        self, query: str, params: tuple, result: Any, ttl: int | None = None
     ) -> bool:
         """Cache database query result"""
         if not cache:
@@ -264,7 +267,7 @@ class DatabaseQueryCache(BaseCacheModule):
             logger.warning(f"Failed to cache database query: {e}")
             return False
 
-    def get_cached_query_result(self, query: str, params: tuple = ()) -> Optional[Any]:
+    def get_cached_query_result(self, query: str, params: tuple = ()) -> Any | None:
         """Retrieve cached database query result"""
         if not cache:
             return None
@@ -386,7 +389,7 @@ _memory_optimizer = MemoryOptimizer()
 # === CACHING DECORATORS ===
 
 
-def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
+def cached_api_call(service: str, ttl: int | None = None) -> Callable:
     """
     Decorator for caching API calls with intelligent TTL management.
 
@@ -433,7 +436,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
     return decorator
 
 
-def cached_database_query(ttl: Optional[int] = None) -> Callable:
+def cached_database_query(ttl: int | None = None) -> Callable:
     """
     Decorator for caching database query results.
 
@@ -468,7 +471,7 @@ def cached_database_query(ttl: Optional[int] = None) -> Callable:
     return decorator
 
 
-def memory_optimized(gc_threshold: Optional[float] = None) -> Callable:
+def memory_optimized(gc_threshold: float | None = None) -> Callable:
     """
     Decorator for functions that should trigger memory optimization.
 
