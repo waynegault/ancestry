@@ -1687,7 +1687,7 @@ def _perform_api_search_fallback(session_manager: Any, criteria: dict, max_resul
 
 def _format_table_row(row: list[str], widths: list[int]) -> str:
     """Return padded string for display rows."""
-    return " | ".join((str(col) if col is not None else "").ljust(width) for col, width in zip(row, widths))
+    return " | ".join((str(col) if col is not None else "").ljust(width) for col, width in zip(row, widths, strict=False))
 
 
 def _compute_table_widths(rows: list[list[str]], headers: list[str]) -> list[int]:

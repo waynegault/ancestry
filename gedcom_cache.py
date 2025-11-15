@@ -1012,11 +1012,11 @@ def test_multifile_cache_management():
     test_data_list = [test_data_1, test_data_2]
 
     # Store multiple items in cache
-    for test_key, test_data in zip(test_keys, test_data_list):
+    for test_key, test_data in zip(test_keys, test_data_list, strict=False):
         _store_in_memory_cache(test_key, test_data)
 
     # Verify both were cached correctly
-    for test_key, expected_data in zip(test_keys, test_data_list):
+    for test_key, expected_data in zip(test_keys, test_data_list, strict=False):
         cached = _get_from_memory_cache(test_key)
         assert cached == expected_data, f"Cached data for {test_key} should match original"
 

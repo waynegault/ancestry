@@ -1002,7 +1002,7 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     print(f"\n📊 Function Availability Summary: {passed}/{total} functions available")
 
     # Assert all functions are available
-    for func_name, available in zip(required_functions, results):
+    for func_name, available in zip(required_functions, results, strict=False):
         assert available, f"Required function '{func_name}' is not available"
 
     return results

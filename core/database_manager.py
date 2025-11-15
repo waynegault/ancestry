@@ -363,7 +363,7 @@ class DatabaseManager:
                     rows = result.fetchall()
                     if rows:
                         columns = result.keys()
-                        return [dict(zip(columns, row)) for row in rows]
+                        return [dict(zip(columns, row, strict=False)) for row in rows]
                     return []
                 return None
 
