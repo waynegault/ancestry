@@ -19,6 +19,8 @@ Date: November 7, 2025
 Status: Phase 1 - Foundation
 """
 
+from __future__ import annotations
+
 import json
 import os
 import tempfile

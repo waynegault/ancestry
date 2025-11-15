@@ -9,6 +9,8 @@ user experience during DNA gathering, inbox processing, and messaging workflows.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 

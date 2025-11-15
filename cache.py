@@ -49,6 +49,8 @@ Cache directory and default settings are configurable via `config.py`.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     get_function,
     is_function_available,

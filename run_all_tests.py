@@ -50,6 +50,8 @@ IMPORTANT: Always run tests in venv (virtual environment)
     Linux/Mac: source .venv/bin/activate
 """
 
+from __future__ import annotations
+
 import concurrent.futures
 import json
 import os

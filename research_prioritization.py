@@ -48,6 +48,8 @@ Created: August 6, 2025
 Phase: 12.3 - Intelligent Research Prioritization
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime

@@ -12,6 +12,8 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === SUPPRESS TEST WARNINGS FIRST (before any imports) ===
+from __future__ import annotations
+
 import os
 import sys
 import warnings

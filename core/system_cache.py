@@ -15,6 +15,8 @@ Building on Phase 5.1 success (1,281x session manager improvement), Phase 5.2 ta
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports

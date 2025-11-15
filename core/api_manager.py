@@ -5,6 +5,8 @@ This module extracts API management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
 
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports

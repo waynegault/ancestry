@@ -8,6 +8,8 @@ and DNA ethnicity commonality for enhanced messaging in Action 8.
 Part of Phase 1: Enhanced Message Content (Foundation)
 """
 
+from __future__ import annotations
+
 import os
 from datetime import datetime, timezone
 from typing import Any, Optional

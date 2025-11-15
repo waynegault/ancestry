@@ -45,6 +45,8 @@ Usage:
     json_data = registry.to_json()
 """
 
+from __future__ import annotations
+
 import json
 import threading
 import time

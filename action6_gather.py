@@ -18,6 +18,8 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Optional

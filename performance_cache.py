@@ -46,6 +46,8 @@ processing times and optimize memory usage for large family tree datasets.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 # === MODULE SETUP ===

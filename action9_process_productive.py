@@ -9,6 +9,8 @@ research including match scoring, family tree analysis, and research prioritizat
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 # === MODULE SETUP ===

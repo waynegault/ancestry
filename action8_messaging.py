@@ -15,6 +15,8 @@ In dry_run mode: Messages are created and saved to DB but NOT sent to Ancestry.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 # === MODULE SETUP ===

@@ -9,6 +9,8 @@ messaging, and genealogical research tools.
 """
 
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
+from __future__ import annotations
+
 import os
 
 os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"

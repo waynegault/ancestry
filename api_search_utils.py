@@ -13,6 +13,8 @@ criteria matching for genealogical research and family tree analysis.
 # All tests pass with 100% success rate.
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from core_imports import (
     auto_register_module,
     get_logger,

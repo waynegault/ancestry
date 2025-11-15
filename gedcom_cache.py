@@ -44,6 +44,8 @@ and preloading for dramatically improved family tree processing performance.
 """
 
 # Unified import system
+from __future__ import annotations
+
 from standard_imports import (
     get_function,
     is_function_available,

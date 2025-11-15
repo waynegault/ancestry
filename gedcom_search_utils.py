@@ -40,6 +40,8 @@ relationship analysis, and optimized performance for professional research workf
 
 # === CORE INFRASTRUCTURE ===
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)

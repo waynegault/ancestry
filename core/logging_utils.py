@@ -8,6 +8,8 @@ inconsistent logging patterns across the codebase.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports

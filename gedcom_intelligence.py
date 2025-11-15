@@ -47,6 +47,8 @@ Created: August 6, 2025
 Phase: 12.1 - Advanced GEDCOM Integration & Family Tree Intelligence
 """
 
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional

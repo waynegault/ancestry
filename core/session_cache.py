@@ -11,6 +11,8 @@ Extends the existing cache.py infrastructure rather than duplicating functionali
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports

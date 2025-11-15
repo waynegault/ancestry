@@ -7,6 +7,8 @@ action modules. Replaces scattered caching logic with a single source of truth.
 Phase 5 Implementation - Cache Hit Rate Optimization (Opportunity #3)
 """
 
+from __future__ import annotations
+
 import copy
 import hashlib
 import json

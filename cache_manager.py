@@ -47,6 +47,8 @@ maintaining the specialized functionality of each cache system.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import hashlib
 import json
 import threading

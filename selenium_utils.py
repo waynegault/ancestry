@@ -43,6 +43,8 @@ and element interaction, separated from general or API-specific utilities.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import safe_execute, setup_module
 
 logger = setup_module(globals(), __name__)

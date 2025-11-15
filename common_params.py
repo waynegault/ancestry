@@ -7,6 +7,8 @@ to reduce parameter counts and improve code maintainability.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 

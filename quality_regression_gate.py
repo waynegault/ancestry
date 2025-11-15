@@ -16,6 +16,8 @@ Usage:
   python quality_regression_gate.py --threshold 10     # Custom threshold
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess

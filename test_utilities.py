@@ -38,6 +38,8 @@ implementation, consistent testing practices, and maintainable code organization
 for professional genealogical automation development and quality assurance.
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Any, Optional
 from unittest.mock import MagicMock

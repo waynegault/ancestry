@@ -46,6 +46,8 @@ Created: August 6, 2025
 Phase: 9.1 - Message Template Enhancement
 """
 
+from __future__ import annotations
+
 import json
 from collections.abc import Callable
 from datetime import datetime

@@ -13,6 +13,8 @@ This module provides a comprehensive configuration management system with:
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import os
 import sys
 

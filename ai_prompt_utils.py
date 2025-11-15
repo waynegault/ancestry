@@ -9,6 +9,8 @@ AI interactions including intent classification and response generation.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     setup_module,
 )

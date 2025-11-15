@@ -6,6 +6,8 @@ Enhanced for Phase 4.1: Error Handling & Resilience Enhancement
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)

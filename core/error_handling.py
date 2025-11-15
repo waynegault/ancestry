@@ -8,6 +8,8 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 import sys
 
 # Add parent directory to path for standard_imports

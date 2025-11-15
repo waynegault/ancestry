@@ -9,6 +9,8 @@ and includes login/session verification logic closely tied to SessionManager.
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     auto_register_module,  # Needed for testing
     get_function,

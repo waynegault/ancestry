@@ -43,6 +43,8 @@ and predictive analytics for the Ancestry automation system.
 """
 
 # === STANDARD LIBRARY IMPORTS ===
+from __future__ import annotations
+
 import json
 import sys
 import threading

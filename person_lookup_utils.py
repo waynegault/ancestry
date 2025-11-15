@@ -7,6 +7,8 @@ using Action 10 (GEDCOM) and Action 11 (API).
 """
 
 # === STANDARD IMPORTS ===
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any, Optional
 

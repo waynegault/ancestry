@@ -10,6 +10,8 @@ in specific fields (status, direction). Implements a transactional context manag
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import (
     setup_module,
 )

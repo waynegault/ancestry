@@ -17,6 +17,8 @@ Created: October 22, 2025
 Phase: 6 - Production Deployment & Monitoring
 """
 
+from __future__ import annotations
+
 import json
 from datetime import datetime, timezone
 from typing import Any, Optional

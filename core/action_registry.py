@@ -8,6 +8,8 @@ for action management throughout the application.
 Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum

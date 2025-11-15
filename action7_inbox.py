@@ -18,6 +18,8 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
+from __future__ import annotations
+
 from standard_imports import setup_module
 
 # === MODULE SETUP ===
