@@ -138,7 +138,7 @@ python action10.py
 ## Testing
 
 ```bash
-# Run all tests (57 modules, 457 tests)
+# Run all tests
 python run_all_tests.py
 
 # Run with parallel execution
@@ -150,6 +150,8 @@ python run_all_tests.py --analyze-logs
 # Run specific module tests
 python -m action6_gather
 ```
+
+**Note:** Test counts vary as modules are added/updated. Run `python run_all_tests.py` to see current counts.
 
 ## Pylance Configuration
 
@@ -336,6 +338,8 @@ For issues or questions:
 ## Appendices
 
 ### Appendix A: Chronology of Changes
+
+**Note:** This appendix contains historical changelog entries for reference. Some features mentioned (such as Action 11) have been consolidated into other modules (e.g., `api_search_core.py`) and may no longer exist as separate files.
 
 2025-11-03
 - Action 6 Browser Death Fix (commit 4c3277a): Reverted action6_gather.py and core/session_manager.py to stable commit 793d948 (last known-good version that processed 15,000+ matches flawlessly) and cleanly re-added ethnicity enrichment
