@@ -322,11 +322,19 @@ grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 
 ## Contributing
 
+We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) guide for detailed instructions on:
+- Setting up your development environment
+- Making and testing changes
+- Creating pull requests
+- **Using GitHub's merge button** - [Quick Reference Guide](docs/GITHUB_MERGE_GUIDE.md)
+
+Quick start:
 1. Fork the repository
 2. Create a feature branch
 3. Make changes with tests
 4. Run `python run_all_tests.py`
 5. Submit pull request
+6. Use **squash and merge** when merging (recommended)
 
 ## License
 
