@@ -10,7 +10,8 @@ Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Optional, Protocol
+from collections.abc import Callable
 
 from standard_imports import setup_module
 

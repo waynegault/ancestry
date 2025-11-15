@@ -34,7 +34,8 @@ import inspect
 import threading
 import unittest
 from functools import wraps
-from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
+from typing import Any, ClassVar, Optional, TypeVar, Union
+from collections.abc import Callable
 
 T = TypeVar("T")
 

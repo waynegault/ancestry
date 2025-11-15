@@ -54,7 +54,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from collections.abc import Callable
 
 
 class MetricType(Enum):

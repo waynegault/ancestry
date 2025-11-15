@@ -44,7 +44,8 @@ import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
+from collections.abc import Callable
 
 if TYPE_CHECKING:
     from common_params import (

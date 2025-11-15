@@ -29,7 +29,8 @@ logger = setup_module(globals(), __name__)
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Callable
 
 
 class ConfigValidationError(Exception):

@@ -59,7 +59,8 @@ import pickle
 import time
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from collections.abc import Callable
 
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
 from memory_utils import ObjectPool

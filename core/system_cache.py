@@ -38,7 +38,8 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Callable
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (

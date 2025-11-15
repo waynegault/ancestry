@@ -66,7 +66,8 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Callable
 
 from core_imports import (
     auto_register_module,

@@ -20,7 +20,8 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional
+from typing import Any, ClassVar, Optional
+from collections.abc import Callable
 
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()

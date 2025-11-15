@@ -20,7 +20,8 @@ import sys
 
 # Add parent directory to path for standard_imports
 from pathlib import Path as PathLib
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from collections.abc import Callable
 
 parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:

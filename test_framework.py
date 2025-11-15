@@ -49,7 +49,8 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
-from typing import Any, Callable, Optional
+from typing import Any, Optional
+from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities

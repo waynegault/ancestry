@@ -52,10 +52,10 @@ from functools import wraps
 from pathlib import Path  # For cookie persistence
 from typing import (
     Any,
-    Callable,
     Optional,
     Union,
-)  # Consolidated typing imports
+)
+from collections.abc import Callable  # Consolidated typing imports
 from urllib.parse import urljoin, urlparse, urlunparse
 
 # === THIRD-PARTY IMPORTS ===
