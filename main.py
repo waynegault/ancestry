@@ -2484,14 +2484,13 @@ def _handle_test_options(choice: str) -> bool:
 
 
 def _show_metrics_report() -> None:
-    """Open Prometheus metrics in browser."""
+    """Open Grafana dashboard in browser."""
     try:
         import webbrowser
-        from observability.metrics_exporter import get_exporter_status
         from observability.metrics_registry import is_metrics_enabled
 
         print("\n" + "="*70)
-        print("📊 PROMETHEUS METRICS")
+        print("📊 GRAFANA METRICS DASHBOARD")
         print("="*70)
 
         if not is_metrics_enabled():
@@ -2503,26 +2502,22 @@ def _show_metrics_report() -> None:
             print("\n" + "="*70 + "\n")
             return
 
-        # Get exporter status
-        exporter_info = get_exporter_status()
-        if not exporter_info:
-            print("\n⚠️  Metrics Exporter: NOT RUNNING")
-            print("\n" + "="*70 + "\n")
-            return
-
-        # Open metrics endpoint in browser
-        metrics_url = f"http://{exporter_info['host']}:{exporter_info['port']}/metrics"
-        print(f"\n🌐 Opening metrics in browser: {metrics_url}")
-        print("\n💡 Tips:")
-        print("   • Raw Prometheus metrics format")
-        print("   • Use Prometheus to scrape and query this endpoint")
-        print("   • Import Grafana dashboard from docs/grafana/ancestry_overview.json")
+        # Default Grafana URL (user should have Grafana running locally)
+        grafana_url = "http://localhost:3000/d/ancestry-overview"
+        
+        print(f"\n🌐 Opening Grafana dashboard: {grafana_url}")
+        print("\n💡 Setup Instructions (if Grafana not running):")
+        print("   1. Install Grafana: https://grafana.com/grafana/download")
+        print("   2. Start Grafana (usually runs on http://localhost:3000)")
+        print("   3. Add Prometheus data source pointing to http://localhost:9000")
+        print("   4. Import dashboard from: docs/grafana/ancestry_overview.json")
+        print("   5. Set dashboard UID to 'ancestry-overview'")
         print("\n" + "="*70 + "\n")
 
-        webbrowser.open(metrics_url)
+        webbrowser.open(grafana_url)
 
     except Exception as e:
-        logger.error(f"Error opening metrics: {e}", exc_info=True)
+        logger.error(f"Error opening Grafana: {e}", exc_info=True)
         print(f"\n⚠️  Error: {e}")
         print("\n" + "="*70 + "\n")
 
