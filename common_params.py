@@ -430,7 +430,7 @@ def _test_dataclass_defaults() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def common_params_module_tests() -> bool:
     """
     Comprehensive test suite for common_params.py.
     Tests parameter dataclass initialization and defaults.
@@ -501,6 +501,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(common_params_module_tests)
 
 
 if __name__ == "__main__":

@@ -285,8 +285,7 @@ def ensure_dashboards_imported() -> bool:
     return True
 
 
-# Module-level test
-def run_comprehensive_tests() -> bool:
+def grafana_checker_module_tests() -> bool:
     """Test the Grafana checker functionality"""
     print("\n" + "="*70)
     print("GRAFANA STATUS CHECK")
@@ -305,6 +304,11 @@ def run_comprehensive_tests() -> bool:
     print("\n" + "="*70 + "\n")
 
     return True
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(grafana_checker_module_tests)
 
 
 if __name__ == "__main__":

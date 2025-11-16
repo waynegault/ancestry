@@ -315,7 +315,7 @@ def _test_resilience_manager_max_attempts() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def connection_resilience_module_tests() -> bool:
     """
     Comprehensive test suite for connection_resilience.py.
     Tests the connection resilience framework including sleep prevention and recovery.
@@ -378,6 +378,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(connection_resilience_module_tests)
 
 
 if __name__ == "__main__":
