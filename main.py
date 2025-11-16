@@ -2524,27 +2524,35 @@ def _show_metrics_report() -> None:
             webbrowser.open("http://localhost:9000/metrics")
             return
 
-        # Grafana is running - open both dashboards
+        # Grafana is running - open all three dashboards
         system_perf_url = f"{grafana_base}/d/ancestry-performance"
         genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
+        code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
         
         print(f"\n✅ Grafana is running!")
         print(f"🌐 Opening dashboards:")
         print(f"   1. System Performance & Health: {system_perf_url}")
         print(f"   2. Genealogy Research Insights: {genealogy_url}")
+        print(f"   3. Code Quality & Architecture: {code_quality_url}")
         print("\n💡 First-time setup:")
         print("   1. Import dashboards if not found:")
         print("      • docs/grafana/system_performance.json")
         print("      • docs/grafana/genealogy_insights.json")
+        print("      • docs/grafana/code_quality.json")
         print("   2. Configure data sources:")
         print("      • Prometheus → http://localhost:9090")
         print("      • SQLite → Data/ancestry.db")
+        print("   3. Install SQLite plugin (run as Administrator):")
+        print("      cd \"C:\\Program Files\\GrafanaLabs\\grafana\\bin\"")
+        print("      .\\grafana-cli plugins install frser-sqlite-datasource")
         print("\n" + "="*70 + "\n")
 
         webbrowser.open(system_perf_url)
         import time
         time.sleep(0.5)  # Small delay between opening tabs
         webbrowser.open(genealogy_url)
+        time.sleep(0.5)
+        webbrowser.open(code_quality_url)
 
     except Exception as e:
         logger.error(f"Error opening Grafana: {e}", exc_info=True)

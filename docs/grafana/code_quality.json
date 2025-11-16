@@ -1,0 +1,387 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_SQLITE",
+      "label": "SQLite",
+      "type": "datasource",
+      "pluginId": "frser-sqlite-datasource"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "nodeGraph",
+      "name": "Node Graph",
+      "version": "9.5.0"
+    },
+    {
+      "type": "datasource",
+      "id": "frser-sqlite-datasource",
+      "name": "SQLite",
+      "version": "3.5.0"
+    }
+  ],
+  "title": "Ancestry - Code Quality & Architecture",
+  "uid": "ancestry-code-quality",
+  "editable": true,
+  "tags": ["ancestry", "code-quality", "architecture", "technical-debt"],
+  "timezone": "browser",
+  "refresh": "1h",
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "title": "Code Architecture Overview",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false
+    },
+    {
+      "title": "Total Code Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 50, "color": "green"},
+              {"value": 100, "color": "yellow"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.name') as node_name,\n         json_extract(value, '$.path') as file_path\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(DISTINCT file_path) as value\nFROM code_graph\nWHERE node_type = 'file'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total Python files in codebase"
+    },
+    {
+      "title": "Total Functions",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'function'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total function definitions"
+    },
+    {
+      "title": "Total Classes",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 50, "color": "yellow"},
+              {"value": 100, "color": "orange"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'class'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total class definitions"
+    },
+    {
+      "title": "Test Coverage Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 30, "color": "yellow"},
+              {"value": 50, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'file' AND has_tests IS NOT NULL",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with documented test coverage"
+    },
+    {
+      "title": "Code Quality Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.quality') as quality_level\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  CASE \n    WHEN quality_level = 'stable' THEN 'Stable'\n    WHEN quality_level = 'review' THEN 'Needs Review'\n    WHEN quality_level = 'refactor' THEN 'Needs Refactor'\n    WHEN quality_level IS NULL THEN 'Not Assessed'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_graph\nGROUP BY quality_level\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Distribution of code quality ratings from code_graph.json"
+    },
+    {
+      "title": "Module Type Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "pie"
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  CASE \n    WHEN node_type = 'file' THEN 'Files'\n    WHEN node_type = 'function' THEN 'Functions'\n    WHEN node_type = 'class' THEN 'Classes'\n    WHEN node_type = 'module' THEN 'Modules'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_graph\nGROUP BY node_type\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Breakdown of code elements by type"
+    },
+    {
+      "title": "Technical Debt & Opportunities",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "collapsed": false
+    },
+    {
+      "title": "Modules with Concerns",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 10, "color": "yellow"},
+              {"value": 30, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.concerns') as concerns_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE concerns_json IS NOT NULL \n  AND json_array_length(concerns_json) > 0",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Code modules with documented concerns"
+    },
+    {
+      "title": "Improvement Opportunities",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.opportunities') as opps_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE opps_json IS NOT NULL \n  AND json_array_length(opps_json) > 0",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Documented optimization opportunities"
+    },
+    {
+      "title": "Untested Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 5, "color": "yellow"},
+              {"value": 15, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'file' AND has_tests IS NULL",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Files without documented test coverage"
+    },
+    {
+      "title": "Top Concerns by Module",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 20},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Concern Count", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.concerns') as concerns_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  module_name as 'Module',\n  file_path as 'File Path',\n  quality as 'Quality',\n  json_array_length(concerns_json) as 'Concern Count'\nFROM code_graph\nWHERE concerns_json IS NOT NULL \n  AND json_array_length(concerns_json) > 0\nORDER BY json_array_length(concerns_json) DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with the most documented concerns"
+    },
+    {
+      "title": "Optimization Opportunities",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 20},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Opportunity Count", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.opportunities') as opps_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  module_name as 'Module',\n  file_path as 'File Path',\n  quality as 'Quality',\n  json_array_length(opps_json) as 'Opportunity Count'\nFROM code_graph\nWHERE opps_json IS NOT NULL \n  AND json_array_length(opps_json) > 0\nORDER BY json_array_length(opps_json) DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with improvement opportunities"
+    },
+    {
+      "title": "Module Details & Documentation",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 30},
+      "collapsed": false
+    },
+    {
+      "title": "Core Architecture Files",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 31},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "File Path", "desc": false}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Summary"},
+            "properties": [{"id": "custom.width", "value": 400}]
+          }
+        ]
+      },
+      "targets": [{
+        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.summary') as summary,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  file_path as 'File Path',\n  module_name as 'Module',\n  quality as 'Quality',\n  CASE WHEN has_tests IS NOT NULL THEN '✓' ELSE '✗' END as 'Tests',\n  SUBSTR(summary, 1, 100) || '...' as 'Summary'\nFROM code_graph\nWHERE node_type = 'file'\n  AND (file_path LIKE 'core/%' OR file_path LIKE 'action%' OR file_path = 'main.py')\nORDER BY file_path\nLIMIT 30",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Key architecture files with quality and test status"
+    }
+  ]
+}
