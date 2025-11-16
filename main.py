@@ -2487,6 +2487,7 @@ def _show_metrics_report() -> None:
     """Open Grafana dashboard in browser."""
     try:
         import webbrowser
+        import urllib.request
         from observability.metrics_registry import is_metrics_enabled
 
         print("\n" + "="*70)
@@ -2502,16 +2503,37 @@ def _show_metrics_report() -> None:
             print("\n" + "="*70 + "\n")
             return
 
-        # Default Grafana URL (user should have Grafana running locally)
-        grafana_url = "http://localhost:3000/d/ancestry-overview"
+        # Check if Grafana is running
+        grafana_base = "http://localhost:3000"
+        try:
+            urllib.request.urlopen(grafana_base, timeout=1)
+            grafana_running = True
+        except Exception:
+            grafana_running = False
+
+        if not grafana_running:
+            print("\n⚠️  Grafana is NOT running on http://localhost:3000")
+            print("\n💡 Setup Instructions:")
+            print("   1. Install Grafana: https://grafana.com/grafana/download")
+            print("   2. Start Grafana service")
+            print("   3. Login at http://localhost:3000 (default: admin/admin)")
+            print("   4. Add Prometheus data source → http://localhost:9000")
+            print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
+            print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
+            print("\n" + "="*70 + "\n")
+            webbrowser.open("http://localhost:9000/metrics")
+            return
+
+        # Grafana is running - open dashboards page
+        grafana_url = f"{grafana_base}/dashboards"
         
-        print(f"\n🌐 Opening Grafana dashboard: {grafana_url}")
-        print("\n💡 Setup Instructions (if Grafana not running):")
-        print("   1. Install Grafana: https://grafana.com/grafana/download")
-        print("   2. Start Grafana (usually runs on http://localhost:3000)")
-        print("   3. Add Prometheus data source pointing to http://localhost:9000")
-        print("   4. Import dashboard from: docs/grafana/ancestry_overview.json")
-        print("   5. Set dashboard UID to 'ancestry-overview'")
+        print(f"\n✅ Grafana is running!")
+        print(f"🌐 Opening: {grafana_url}")
+        print("\n💡 Next steps:")
+        print("   • If you see 'Dashboard not found', import it:")
+        print("     1. Click '+' → Import dashboard")
+        print("     2. Upload: docs/grafana/ancestry_overview.json")
+        print("     3. Configure data source: Prometheus (http://localhost:9000)")
         print("\n" + "="*70 + "\n")
 
         webbrowser.open(grafana_url)
