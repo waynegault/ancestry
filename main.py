@@ -29,9 +29,6 @@ import logging
 
 # os already imported at top for SUPPRESS_CONFIG_WARNINGS
 import shutil
-
-# === GRAFANA INTEGRATION ===
-import grafana_checker
 import sys
 import threading
 import time
@@ -53,6 +50,12 @@ import psutil
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
+
+# === GRAFANA INTEGRATION ===
+try:
+    import grafana_checker  # type: ignore
+except ImportError:
+    grafana_checker = None  # type: ignore
 
 from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
@@ -381,12 +384,6 @@ def menu() -> str:
     """Display the main menu and return the user's choice."""
     print("\nMain Menu")
     print("=" * 17)
-    
-    # Display Grafana status
-    grafana_status = grafana_checker.get_status_message()
-    print(f"Grafana: {grafana_status}")
-    print()
-    
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
@@ -2496,8 +2493,9 @@ def _handle_test_options(choice: str) -> bool:
 def _show_metrics_report() -> None:
     """Open Grafana dashboard in browser."""
     try:
-        import webbrowser
         import urllib.request
+        import webbrowser
+
         from observability.metrics_registry import is_metrics_enabled
 
         print("\n" + "="*70)
@@ -2534,31 +2532,30 @@ def _show_metrics_report() -> None:
             webbrowser.open("http://localhost:9000/metrics")
             return
 
-        # Grafana is running - open all three dashboards
+        # Grafana is running - check and import dashboards if needed
+        print("\n✅ Grafana is running!")
+        print("🔍 Checking dashboards...")
+
+        # Try to import dashboards automatically
+        if grafana_checker:
+            try:
+                # This will attempt to import missing dashboards
+                grafana_checker.ensure_dashboards_imported()
+            except Exception as import_err:
+                logger.debug(f"Dashboard auto-import check: {import_err}")
+
         system_perf_url = f"{grafana_base}/d/ancestry-performance"
         genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
         code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
-        
-        print(f"\n✅ Grafana is running!")
-        print(f"🌐 Opening dashboards:")
+
+        print("🌐 Opening dashboards:")
         print(f"   1. System Performance & Health: {system_perf_url}")
         print(f"   2. Genealogy Research Insights: {genealogy_url}")
         print(f"   3. Code Quality & Architecture: {code_quality_url}")
-        print("\n💡 First-time setup:")
-        print("   1. Import dashboards if not found:")
-        print("      • docs/grafana/system_performance.json")
-        print("      • docs/grafana/genealogy_insights.json")
-        print("      • docs/grafana/code_quality.json")
-        print("   2. Configure data sources:")
-        print("      • Prometheus → http://localhost:9090")
-        print("      • SQLite → Data/ancestry.db")
-        print("   3. Install SQLite plugin (run as Administrator):")
-        print("      cd \"C:\\Program Files\\GrafanaLabs\\grafana\\bin\"")
-        print("      .\\grafana-cli plugins install frser-sqlite-datasource")
+        print("\n💡 If dashboards show 'Not found', run: setup-grafana")
         print("\n" + "="*70 + "\n")
 
         webbrowser.open(system_perf_url)
-        import time
         time.sleep(0.5)  # Small delay between opening tabs
         webbrowser.open(genealogy_url)
         time.sleep(0.5)
@@ -2581,10 +2578,18 @@ def _handle_meta_options(choice: str) -> bool | None:
     def _clear_screen() -> None:
         os.system("cls" if os.name == "nt" else "clear")
 
+    def _run_grafana_setup() -> None:
+        """Run Grafana setup if available."""
+        if grafana_checker:
+            grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
+        else:
+            print("\n⚠️  Grafana checker module not available")
+            print("Ensure grafana_checker.py is in the project root directory\n")
+
     meta_actions: dict[str, Callable[[], None]] = {
         "analytics": _show_analytics_dashboard,
         "metrics": _show_metrics_report,
-        "setup-grafana": lambda: grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False),
+        "setup-grafana": _run_grafana_setup,
         "graph": _open_graph_visualization,
         "s": _show_cache_statistics,
         "t": _toggle_log_level,
@@ -2860,16 +2865,17 @@ def _initialize_application() -> tuple["SessionManager", Any]:
         logger.warning(f"Chrome diagnostics failed to run: {diag_error}")
 
     # Check Grafana installation status
-    try:
-        grafana_status = grafana_checker.check_grafana_status()
-        if grafana_status["ready"]:
-            logger.info("✅ Grafana ready (http://localhost:3000)")
-        elif grafana_status["installed"]:
-            logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
-        else:
-            logger.info("ℹ️  Grafana not installed (run 'setup-grafana' from menu for automated setup)")
-    except Exception as grafana_error:
-        logger.debug(f"Grafana check skipped: {grafana_error}")
+    if grafana_checker:
+        try:
+            grafana_status = grafana_checker.check_grafana_status()
+            if grafana_status["ready"]:
+                logger.info("✅ Grafana ready (http://localhost:3000)")
+            elif grafana_status["installed"]:
+                logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+            else:
+                logger.info("ℹ️  Grafana not installed (run 'setup-grafana' from menu for automated setup)")
+        except Exception as grafana_error:
+            logger.debug(f"Grafana check skipped: {grafana_error}")
 
     if config is None:
         _print_config_error_message()
