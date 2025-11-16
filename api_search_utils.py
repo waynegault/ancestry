@@ -32,7 +32,7 @@ from typing import Any, Optional, Union
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
 # === LOCAL IMPORTS ===
-from api_utils import (
+from .api_utils import (
     call_getladder_api,
     call_suggest_api,
     call_treesui_list_api,
@@ -76,7 +76,7 @@ def _get_scoring_weights(weights: Optional[dict[str, Union[int, float]]]) -> dic
 
 def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
     """Get year range for flexible matching."""
-    if date_flex and isinstance(date_flex, dict):
+    if date_flex:
         return date_flex.get("year_match_range", 10)
     return 10
 
@@ -489,7 +489,7 @@ def _call_suggest_api_for_search(session_manager: SessionManager, search_criteri
         search_criteria=api_search_criteria,
     )
 
-    if not suggest_results or not isinstance(suggest_results, list):
+    if not suggest_results:
         logger.warning(f"No results from suggest API for query: {_build_search_query(search_criteria)}")
         return []
 
@@ -530,7 +530,7 @@ def _build_treesui_search_params(search_criteria: dict[str, Any]) -> dict[str, A
     return search_params
 
 
-def _call_treesui_api_for_search(session_manager: SessionManager, search_params: dict[str, Any], tree_id: str) -> Optional[dict[str, Any]]:
+def _call_treesui_api_for_search(session_manager: SessionManager, search_params: dict[str, Any], tree_id: str) -> Optional[list[dict[str, Any]]]:
     """Call treesui-list API and return results."""
     if not search_params:
         return None
@@ -546,19 +546,15 @@ def _call_treesui_api_for_search(session_manager: SessionManager, search_params:
     )
 
 
-def _process_treesui_results(treesui_results: Optional[dict[str, Any]], search_criteria: dict[str, Any], scored_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _process_treesui_results(treesui_results: Optional[list[dict[str, Any]]], search_criteria: dict[str, Any], scored_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Process treesui-list API results and add to scored matches."""
-    if not treesui_results or not isinstance(treesui_results, dict):
-        return scored_matches
-
-    persons = treesui_results.get("persons", [])
-    if not persons:
+    if not treesui_results:
         return scored_matches
 
     scoring_weights = config_schema.common_scoring_weights
     date_flex = {"year_match_range": config_schema.date_flexibility}
 
-    for person in persons:
+    for person in treesui_results:
         match_record = _process_treesui_person(person, search_criteria, scoring_weights, date_flex, scored_matches)
         if match_record:
             scored_matches.append(match_record)
@@ -621,7 +617,7 @@ def search_api_for_criteria(
 
 # Helper functions for get_api_family_details
 
-def _validate_api_session(session_manager: SessionManager) -> bool:
+def _validate_api_session(session_manager: SessionManager) -> bool:  # type: ignore[reportUnusedFunction]
     """Validate that session manager is active and valid (browserless capable)."""
     if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
         logger.error("Essential API identifiers not available (not logged in)")
@@ -629,7 +625,7 @@ def _validate_api_session(session_manager: SessionManager) -> bool:
     return True
 
 
-def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
+def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:  # type: ignore[reportUnusedFunction]
     """Resolve tree ID from session manager or config."""
     if tree_id:
         return tree_id
@@ -646,7 +642,7 @@ def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) ->
     return tree_id
 
 
-def _resolve_owner_profile_id(session_manager: SessionManager) -> str:
+def _resolve_owner_profile_id(session_manager: SessionManager) -> str:  # type: ignore[reportUnusedFunction]
     """Resolve owner profile ID from session manager or config."""
     owner_profile_id = session_manager.my_profile_id
     if owner_profile_id:
@@ -659,7 +655,7 @@ def _resolve_owner_profile_id(session_manager: SessionManager) -> str:
     return owner_profile_id
 
 
-def _get_facts_data_from_api(
+def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
     session_manager: SessionManager,
     person_id: str,
     tree_id: str,
@@ -678,7 +674,7 @@ def _get_facts_data_from_api(
     # Import the API function and json module
     import json
 
-    from api_utils import call_edit_relationships_api
+    from api_utils import call_edit_relationships_api  # type: ignore[import-not-found]
 
     # Call the Edit Relationships API
     api_response = call_edit_relationships_api(
@@ -903,7 +899,7 @@ def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) 
 
 
 
-def _debug_log_facts_structure(facts_data: Any) -> None:
+def _debug_log_facts_structure(facts_data: Any) -> None:  # type: ignore[reportUnusedFunction]
     """Log top-level structure of the facts data for debugging."""
     if not isinstance(facts_data, dict):
         logger.debug("Family data is not a dict; skipping structure log")
@@ -918,7 +914,7 @@ def _debug_log_facts_structure(facts_data: Any) -> None:
             logger.debug(f"  {key}: {type(value).__name__}")
 
 
-def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:
+def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:  # type: ignore[reportUnusedFunction]
     """Return the primary data section containing relationship arrays."""
     if isinstance(facts_data, dict):
         person_section = facts_data.get("person")
@@ -928,10 +924,10 @@ def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:
     return {}
 
 
-def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
     """Extract target person's own info if present."""
     try:
-        target_person = data_section.get("targetPerson") if isinstance(data_section, dict) else None
+        target_person = data_section.get("targetPerson")
         if isinstance(target_person, dict):
             _extract_person_info_from_target(target_person, result)
     except Exception:
@@ -939,30 +935,30 @@ def _extract_target_person_info_if_available(data_section: dict[str, Any], resul
         pass
 
 
-def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
     """Append parents (fathers/mothers) to result['parents']."""
-    fathers = data_section.get("fathers", []) if isinstance(data_section, dict) else []
+    fathers = data_section.get("fathers", [])
     for father in fathers:
         if isinstance(father, dict):
             result["parents"].append(_format_person_from_relationship_data(father))
 
-    mothers = data_section.get("mothers", []) if isinstance(data_section, dict) else []
+    mothers = data_section.get("mothers", [])
     for mother in mothers:
         if isinstance(mother, dict):
             result["parents"].append(_format_person_from_relationship_data(mother))
 
 
-def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
     """Append spouses to result['spouses']."""
-    spouses = data_section.get("spouses", []) if isinstance(data_section, dict) else []
+    spouses = data_section.get("spouses", [])
     for spouse in spouses:
         if isinstance(spouse, dict):
             result["spouses"].append(_format_person_from_relationship_data(spouse))
 
 
-def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
+def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
     """Append children (flattened) to result['children']."""
-    children_field = data_section.get("children", []) if isinstance(data_section, dict) else []
+    children_field = data_section.get("children", [])
     if not isinstance(children_field, list):
         return
     for item in children_field:
@@ -973,7 +969,7 @@ def _extract_children_from_data_section(data_section: dict[str, Any], result: di
         elif isinstance(item, dict):
             result["children"].append(_format_person_from_relationship_data(item))
 
-def _find_target_person_in_list(persons: list, person_id: str) -> Optional[dict]:
+def _find_target_person_in_list(persons: list[Any], person_id: str) -> Optional[dict[str, Any]]:
     """Find target person in persons list by matching person_id in gid."""
     for person in persons:
         person_gid = person.get("gid", {}).get("v", "")
@@ -982,7 +978,7 @@ def _find_target_person_in_list(persons: list, person_id: str) -> Optional[dict]
     return None
 
 
-def _create_persons_lookup(persons: list[Any]) -> dict[str, dict]:
+def _create_persons_lookup(persons: list[Any]) -> dict[str, dict[str, Any]]:
     """Create lookup dictionary mapping gid to person dict."""
     persons_by_gid = {}
     for person in persons:
@@ -993,9 +989,9 @@ def _create_persons_lookup(persons: list[Any]) -> dict[str, dict]:
 
 
 def _extract_direct_family(
-    family_relationships: list,
-    persons_by_gid: dict[str, dict],
-    result: dict[str, list],
+    family_relationships: list[Any],
+    persons_by_gid: dict[str, dict[str, Any]],
+    result: dict[str, list[dict[str, Any]]],
 ) -> None:
     """Extract parents, spouses, and children from family relationships."""
     for rel in family_relationships:
@@ -1017,10 +1013,10 @@ def _extract_direct_family(
 
 
 def _extract_siblings(
-    family_relationships: list,
-    persons_by_gid: dict[str, dict],
+    family_relationships: list[Any],
+    persons_by_gid: dict[str, dict[str, Any]],
     target_person_gid: str,
-    result: dict[str, list],
+    result: dict[str, list[dict[str, Any]]],
 ) -> None:
     """Extract siblings by finding parents and getting their children."""
     parent_gids = [
@@ -1064,7 +1060,7 @@ def get_api_family_details(
 
     Returns a dict with keys: parents, spouses, children, siblings.
     """
-    from api_utils import call_newfamilyview_api
+    from api_utils import call_newfamilyview_api  # type: ignore[import-not-found]
 
     # Validate session and resolve identifiers
     if not session_manager or not hasattr(session_manager, "driver"):
@@ -1117,7 +1113,7 @@ def get_api_family_details(
     return result
 
 
-def _extract_person_id_from_gid(gid_dict: dict) -> str:
+def _extract_person_id_from_gid(gid_dict: dict[str, Any]) -> str:
     """Extract person ID from gid dictionary."""
     gid = gid_dict.get("v", "")
     return gid.split(":")[0] if ":" in gid else "Unknown"
@@ -1132,7 +1128,7 @@ def _extract_full_name_from_names(names_list: list[Any]) -> str:
     return f"{given_name} {surname}".strip() if given_name or surname else "Unknown"
 
 
-def _extract_year_from_event_type(events: list, event_type: str) -> Optional[int]:
+def _extract_year_from_event_type(events: list[Any], event_type: str) -> Optional[int]:
     """Extract year from specific event type (Birth or Death)."""
     for event in events:
         if event.get("t") == event_type:
@@ -1145,7 +1141,7 @@ def _extract_year_from_event_type(events: list, event_type: str) -> Optional[int
     return None
 
 
-def _parse_person_from_newfamilyview(person: dict) -> dict[str, Any]:
+def _parse_person_from_newfamilyview(person: dict[str, Any]) -> dict[str, Any]:
     """Parse a person dict from New Family View API response into standard format."""
     person_id = _extract_person_id_from_gid(person.get("gid", {}))
     full_name = _extract_full_name_from_names(person.get("Names", []))

@@ -53,7 +53,7 @@ import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -78,8 +78,8 @@ except ImportError:
 
 # Attempt Google Gemini import
 try:
-    from google import genai  # Updated to google-genai package
-    from google.genai import errors as genai_errors, types as genai_types
+    from google import genai  # type: ignore  # Updated to google-genai package
+    from google.genai import errors as genai_errors, types as genai_types  # type: ignore
 
     genai_available = True
     if not hasattr(genai, "Client"):
@@ -119,9 +119,9 @@ try:
     logger.debug("AI prompt utilities loaded successfully - will use JSON prompts")
 except ImportError:
     logger.warning("ai_prompt_utils module not available, using fallback prompts")
-    USE_JSON_PROMPTS = False
+    USE_JSON_PROMPTS = False  # type: ignore
     # Provide minimal fallback stubs so later references are defined
-    from typing import Optional as _Optional
+    pass  # Optional type import not needed
     def get_prompt(prompt_key: str) -> str | None:  # type: ignore[misc]
         _ = prompt_key  # Fallback stub - parameter required for API compatibility
         return None
@@ -650,7 +650,7 @@ def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int
         return None
 
 
-def _validate_local_llm_model_loaded(client, model_name: str) -> tuple[str | None, str | None]:
+def _validate_local_llm_model_loaded(client: Any, model_name: str) -> tuple[str | None, str | None]:
     """
     Validate that the requested model is loaded in LM Studio.
 
@@ -806,35 +806,35 @@ def _should_fallback_to_next_provider(provider: str, error: Exception) -> bool:
     """Determine whether a fallback provider should be attempted after the given error."""
     if provider != "moonshot":
         return False
-    if isinstance(error, AuthenticationError):
+    if AuthenticationError and isinstance(error, AuthenticationError):
         return True
-    return isinstance(error, APIError) and getattr(error, "status_code", None) == 401
+    return bool(APIError and isinstance(error, APIError) and getattr(error, "status_code", None) == 401)
 
 def _handle_authentication_errors(e: Exception, provider: str) -> None:
     """Handle authentication-related errors."""
-    if isinstance(e, AuthenticationError):
+    if AuthenticationError and isinstance(e, AuthenticationError):
         logger.error(f"AI Authentication Error ({provider}): {e}")
-    elif genai_errors and isinstance(e, genai_errors.PermissionDenied):
+    elif genai_errors and hasattr(genai_errors, "PermissionDenied") and isinstance(e, genai_errors.PermissionDenied):  # type: ignore
         logger.error(f"Gemini Permission Denied: {e}")
 
 
 def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: SessionManager) -> None:
     """Handle rate limiting-related errors."""
-    if isinstance(e, RateLimitError):
+    if RateLimitError and isinstance(e, RateLimitError):
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
-    elif genai_errors and isinstance(e, genai_errors.ResourceExhausted):
+    elif genai_errors and hasattr(genai_errors, "ResourceExhausted") and isinstance(e, genai_errors.ResourceExhausted):  # type: ignore
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
 
 
 def _handle_api_errors(e: Exception, provider: str) -> None:
     """Handle API-related errors."""
-    if isinstance(e, APIConnectionError):
+    if APIConnectionError and isinstance(e, APIConnectionError):
         logger.error(f"AI Connection Error ({provider}): {e}")
-    elif isinstance(e, APIError):
+    elif APIError and isinstance(e, APIError):
         logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
-    elif genai_errors and isinstance(e, genai_errors.GoogleAPIError):
+    elif genai_errors and hasattr(genai_errors, "GoogleAPIError") and isinstance(e, genai_errors.GoogleAPIError):  # type: ignore
         logger.error(f"Google API Error (Gemini): {e}")
 
 
@@ -987,7 +987,7 @@ def _get_extraction_prompt(session_manager: SessionManager) -> str:
     if USE_JSON_PROMPTS:
         try:
             try:
-                from ai_prompt_utils import get_prompt_with_experiment
+                from ai_prompt_utils import get_prompt_with_experiment  # type: ignore
                 variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
                 loaded_prompt = get_prompt_with_experiment("extraction_task", variants=variants, user_id=getattr(session_manager, "user_id", None))
             except Exception:
@@ -1016,22 +1016,22 @@ def _clean_json_response(response_str: str) -> str:
 def _compute_component_coverage(parsed_json: dict[str, Any]) -> float | None:
     """Compute component coverage for extraction quality."""
     try:
-        extracted_component = parsed_json.get("extracted_data", {}) if isinstance(parsed_json, dict) else {}
+        extracted_component = parsed_json.get("extracted_data", {})
         structured_keys = [
             "structured_names", "vital_records", "relationships", "locations", "occupations",
             "research_questions", "documents_mentioned", "dna_information"
         ]
-        non_empty = sum(1 for k in structured_keys if isinstance(extracted_component.get(k), list) and len(extracted_component.get(k)) > 0)
+        non_empty = sum(1 for k in structured_keys if isinstance(extracted_component.get(k), list) and extracted_component.get(k))
         return (non_empty / len(structured_keys)) if structured_keys else 0.0
     except Exception:
         return None
 
 
-def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any], cleaned_response_str: str, session_manager: SessionManager, parse_success: bool, error: str | None = None) -> None:
+def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any] | None, cleaned_response_str: str | None, session_manager: SessionManager, parse_success: bool, error: str | None = None) -> None:
     """Record extraction telemetry event."""
     try:
-        from ai_prompt_utils import get_prompt_version
-        from prompt_telemetry import record_extraction_experiment_event
+        from ai_prompt_utils import get_prompt_version  # type: ignore
+        from prompt_telemetry import record_extraction_experiment_event  # type: ignore
 
         variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
         # Note: extraction_quality module not yet implemented, so quality_score is None
@@ -1044,19 +1044,19 @@ def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any]
 
         anomaly_summary = None
 
-        record_extraction_experiment_event(
-            variant_label=variant_label,
-            prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",
-            prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),
-            parse_success=parse_success,
-            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,
-            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,
-            raw_response_text=cleaned_response_str,
-            user_id=getattr(session_manager, "user_id", None),
-            quality_score=quality_score,
-            component_coverage=component_coverage,
-            anomaly_summary=anomaly_summary,
-            error=error,
+        record_extraction_experiment_event(  # type: ignore[call-arg]
+            variant_label=variant_label,  # type: ignore[call-arg]
+            prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",  # type: ignore[call-arg]
+            prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),  # type: ignore[call-arg]
+            parse_success=parse_success,  # type: ignore[call-arg]
+            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,  # type: ignore[call-arg]
+            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,  # type: ignore[call-arg]
+            raw_response_text=cleaned_response_str,  # type: ignore[call-arg]
+            user_id=getattr(session_manager, "user_id", None),  # type: ignore[call-arg]
+            quality_score=quality_score,  # type: ignore[call-arg]
+            component_coverage=component_coverage,  # type: ignore[call-arg]
+            anomaly_summary=anomaly_summary,  # type: ignore[call-arg]
+            error=error,  # type: ignore[call-arg]
         )
     except Exception:
         pass
@@ -1488,7 +1488,7 @@ def _format_clarification_prompt(prompt: str, user_message: str, extracted_entit
 
 def _validate_clarification_response(result: dict[str, Any]) -> bool:
     """Validate AI clarification response structure."""
-    if not isinstance(result, dict) or "clarifying_questions" not in result:
+    if "clarifying_questions" not in result:
         logger.error("generate_clarifying_questions: Invalid response structure")
         return False
 
@@ -2199,7 +2199,7 @@ def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
     logger.info("Testing genealogical data extraction...")
     extraction_result = extract_genealogical_entities(test_context, session_manager)
 
-    if not extraction_result or not isinstance(extraction_result, dict):
+    if not extraction_result:
         logger.error(f"❌ Extraction failed or returned invalid structure: {extraction_result}")
         return False
 
@@ -2239,7 +2239,7 @@ def _test_reply_generation(session_manager: SessionManager) -> bool:
         session_manager,
     )
 
-    if reply_result and isinstance(reply_result, str) and len(reply_result) > 10:
+    if reply_result and len(reply_result) > 10:
         logger.info(f"✅ Reply generation successful (length: {len(reply_result)} characters)")
         return True
     logger.warning(f"⚠️ Reply generation returned unexpected result: {reply_result}")
@@ -2254,7 +2254,7 @@ def _test_specialized_analysis_functions(session_manager: SessionManager) -> boo
     dna_test_context = "SCRIPT: Hello! I'm researching DNA matches.\nUSER: I have a DNA match showing 150 cM shared with someone named Sarah Johnson. AncestryDNA estimates we're 2nd cousins. We seem to share ancestors from Ireland in the 1800s."
     dna_result = analyze_dna_match_conversation(dna_test_context, session_manager)
 
-    if dna_result and isinstance(dna_result, dict):
+    if dna_result:
         logger.info("✅ DNA match analysis function working")
     else:
         logger.warning("⚠️ DNA match analysis returned unexpected result")
@@ -2263,7 +2263,7 @@ def _test_specialized_analysis_functions(session_manager: SessionManager) -> boo
     verification_test_context = "SCRIPT: Hello! I'm verifying family connections.\nUSER: I'm not sure if William Smith is really my great-grandfather. I have conflicting information about his birth year - some records say 1850, others say 1855."
     verification_result = verify_family_tree_connections(verification_test_context, session_manager)
 
-    if verification_result and isinstance(verification_result, dict):
+    if verification_result:
         logger.info("✅ Family tree verification function working")
     else:
         logger.warning("⚠️ Family tree verification returned unexpected result")
@@ -2272,7 +2272,7 @@ def _test_specialized_analysis_functions(session_manager: SessionManager) -> boo
     research_test_context = "SCRIPT: Hello! I need research help.\nUSER: I'm looking for birth records for my ancestor Mary O'Brien who was born around 1870 in County Cork, Ireland. She immigrated to Boston around 1890."
     research_result = generate_record_research_strategy(research_test_context, session_manager)
 
-    if research_result and isinstance(research_result, dict):
+    if research_result:
         logger.info("✅ Record research strategy function working")
     else:
         logger.warning("⚠️ Record research strategy returned unexpected result")

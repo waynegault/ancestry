@@ -50,12 +50,12 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 # Support standalone execution
 if __name__ == "__main__":
@@ -448,7 +448,7 @@ def get_metrics_registry() -> MetricRegistry:
 # Test suite
 def run_comprehensive_tests() -> bool:
     """Run comprehensive tests for metrics collection system."""
-    from test_framework import TestSuite
+    from test_framework import TestSuite  # type: ignore[import-not-found]
 
     suite = TestSuite("MetricsCollector", "core/metrics_collector.py")
     suite.start_suite()

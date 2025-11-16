@@ -67,7 +67,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-import undetected_chromedriver as uc  # Anti-bot detection bypass
+import undetected_chromedriver as uc  # type: ignore  # Anti-bot detection bypass
 from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
@@ -100,8 +100,8 @@ if CHROME_USER_DATA_DIR is not None:
     PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 else:
     # Use a default temporary directory if CHROME_USER_DATA_DIR is None
-    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / PROFILE_DIR)
-    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
+    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / PROFILE_DIR)  # type: ignore
+    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")  # type: ignore
 
 # --------------------------
 # Chrome Configuration
@@ -722,7 +722,7 @@ def run_all_tests(interactive: bool = False) -> bool:
 # ------------------------------------------------------------------------------------
 
 
-def main() -> None:
+def main() -> int:
     """Main function for standalone use (testing and debugging)."""
     import sys  # Import here to avoid potential circular imports
 
@@ -806,13 +806,14 @@ def test_chrome_options_creation() -> None:
         assert "--headless=new" in options.arguments, "Should be able to add arguments"
 
         logger.debug("undetected_chromedriver ChromeOptions creation test passed")
-        return True
+        return True  # type: ignore
     except NameError as e:
         if "'uc' is not defined" in str(e):
             raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}") from e
         raise AssertionError(f"Unexpected NameError: {e}") from e
     except Exception as e:
         raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}") from e
+    return False  # Should not reach here
 
 
 def chromedriver_module_tests() -> bool:

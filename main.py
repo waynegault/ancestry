@@ -2309,7 +2309,7 @@ def _show_tree_stats_cache() -> bool:
         True if stats were displayed, False otherwise
     """
     try:
-        from core.database_manager import DatabaseManager
+        from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
         from database import TreeStatisticsCache
         db_mgr = DatabaseManager()
         session = db_mgr.get_session()

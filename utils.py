@@ -502,6 +502,7 @@ try:
         WebDriverException,
     )
     from selenium.webdriver.common.by import By
+    from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.remote.webdriver import WebDriver
     from selenium.webdriver.support import expected_conditions
     from selenium.webdriver.support.wait import WebDriverWait
@@ -3436,7 +3437,7 @@ def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_ur
         # Save cookies after successful login
         _save_login_cookies(session_manager)
         # CRITICAL FIX: Sync browser cookies to API requests session
-        session_manager._sync_cookies_to_requests()
+        session_manager._sync_cookies_to_requests()  # type: ignore
         return "LOGIN_SUCCEEDED"
 
     if login_check_result is False:
@@ -3595,7 +3596,7 @@ def _perform_api_login_check(session_manager: SessionManager) -> Optional[bool]:
     """Perform API-based login status check."""
     logger.debug("Performing primary API-based login status check...")
     try:
-        session_manager._sync_cookies_to_requests()
+        session_manager._sync_cookies_to_requests()  # type: ignore
         api_check_result = session_manager.api_manager.verify_api_login_status()
 
         if api_check_result is True:
@@ -3975,7 +3976,7 @@ def _check_url_mismatch_and_handle(
     signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
     session_manager: SessionManagerType,
-) -> tuple[str, Optional[WebDriver]]:  # type: ignore
+) -> tuple[str | None, Optional[WebDriver]]:  # type: ignore
     """
     Check for URL mismatch and handle appropriately.
     Returns (action, driver) where action is 'success', 'fail', 'continue', or None.
@@ -4035,7 +4036,7 @@ def _validate_post_navigation(
             driver, landed_url_base, target_url_base, signin_page_url_base,
             unavailability_selectors, session_manager
         )
-        if url_check_result is not None:
+        if url_check_result:
             result_action = url_check_result
             result_driver = updated_driver if updated_driver else driver
         else:
@@ -4337,10 +4338,10 @@ def main() -> None:
 
 def _create_stubbed_session_manager() -> tuple[
     "SessionManager",
-    "MagicMock",
-    "MagicMock",
-    "MagicMock",
-    "MagicMock",
+    Any,
+    Any,
+    Any,
+    Any,
 ]:
     """Create a SessionManager instance with patched dependencies for tests."""
     from contextlib import ExitStack, nullcontext
@@ -4439,7 +4440,6 @@ def utils_module_tests() -> bool:
 
 def run_comprehensive_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
-if __name__ == "__main__":
     from test_framework import TestSuite, suppress_logging
 
     suite = TestSuite(
@@ -4470,17 +4470,15 @@ if __name__ == "__main__":
         for cookie_str, expected, description in test_cases:
             try:
                 result = parse_cookie(cookie_str)
-                is_dict = isinstance(result, dict)
                 matches_expected = result == expected
 
-                status = "✅" if is_dict and matches_expected else "❌"
+                status = "✅" if matches_expected else "❌"
                 print(f"   {status} {description}")
                 print(f"      Input: '{cookie_str}'")
                 print(f"      Output: {result}")
                 print(f"      Expected: {expected}")
 
-                results.append(is_dict and matches_expected)
-                assert is_dict, f"Should return dictionary for '{cookie_str}'"
+                results.append(matches_expected)
                 assert (
                     matches_expected
                 ), f"Should match expected result for '{cookie_str}'"
@@ -4899,7 +4897,7 @@ if __name__ == "__main__":
         )
 
     # Generate summary report
-    suite.finish_suite()
+    return suite.finish_suite()
 
 
 # End of utils.py

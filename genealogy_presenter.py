@@ -14,7 +14,7 @@ user experience. Keep api_search_core focused on retrieval.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ def _print_section_header(label: str, is_first: bool) -> None:
         print(f"\n{label}:")
 
 
-def _print_family_member(member: dict) -> None:
+def _print_family_member(member: dict[str, Any]) -> None:
     """Print a single family member's information."""
     name = member.get("name", "Unknown")
     birth_year = member.get("birth_year")
@@ -47,7 +47,7 @@ def _print_family_member(member: dict) -> None:
     print(f"   - {name}{years_display}")
 
 
-def _deduplicate_members(members: list[Any]) -> list[dict]:
+def _deduplicate_members(members: list[Any]) -> list[dict[str, Any]]:
     """Deduplicate family members by (name, birth_year, death_year)."""
     seen = set()
     deduped = []
@@ -61,7 +61,7 @@ def _deduplicate_members(members: list[Any]) -> list[dict]:
     return deduped
 
 
-def _filter_valid_members(members: list[dict]) -> list[dict]:
+def _filter_valid_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Filter out placeholder/blank names."""
     valid = []
     for m in members:
@@ -72,7 +72,7 @@ def _filter_valid_members(members: list[dict]) -> list[dict]:
 
 
 def display_family_members(
-    family_data: dict[str, list],
+    family_data: dict[str, list[dict[str, Any]]],
     relation_labels: dict[str, str] | None = None,
 ) -> None:
     """
@@ -111,10 +111,10 @@ def present_post_selection(
     display_name: str,
     birth_year: int | None,
     death_year: int | None,
-    family_data: dict[str, list],
+    family_data: dict[str, list[dict[str, Any]]],
     owner_name: str,
     relation_labels: dict[str, str] | None = None,
-    unified_path: list | None = None,
+    unified_path: list[dict[str, Any]] | None = None,
     formatted_path: str | None = None,
 ) -> None:
     """

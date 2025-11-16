@@ -396,6 +396,8 @@ def check_version_compatibility(chrome_version: str | None, chromedriver_version
             print(f"  ChromeDriver: {chromedriver_version} (major: {driver_major})")
             print(f"  Difference: {version_diff} major version{'s' if version_diff > 1 else ''}")
             return False
+        # Version difference is 0 (already handled above) - this shouldn't be reached
+        return True
     except Exception as e:
         print(f"⚠ Error checking compatibility: {e}")
         return True
@@ -417,7 +419,7 @@ def fix_chromedriver_version_mismatch(chrome_version: str) -> bool:
 
         # Import undetected_chromedriver
         try:
-            import undetected_chromedriver as uc
+            import undetected_chromedriver as uc  # type: ignore[import-untyped]
         except ImportError:
             print("✗ undetected-chromedriver not installed")
             print("  Run: pip install undetected-chromedriver")
@@ -571,7 +573,7 @@ def _build_version_guidance(
     return None, success_note
 
 
-def _build_process_issue(process_entries: list | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:
+def _build_process_issue(process_entries: list | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:  # type: ignore[type-arg]
     """Return process-related recommendation when entries are present."""
     if not process_entries:
         return None
@@ -628,7 +630,7 @@ def _build_cache_issue(cache_ok: bool) -> tuple[str, list[str]] | None:
 
 
 def provide_recommendations(
-    processes: dict,
+    processes: dict,  # type: ignore[type-arg]
     profile_ok: bool,
     disk_ok: bool,
     cache_ok: bool,
@@ -761,7 +763,7 @@ def _attempt_uc_autofix(
     try:
         from shutil import rmtree
 
-        import undetected_chromedriver as uc
+        import undetected_chromedriver as uc  # type: ignore[import-untyped]
 
         uc_dir = Path(os.environ.get("APPDATA", "")) / "undetected_chromedriver"
         if uc_dir.exists():
@@ -885,8 +887,6 @@ def _test_chrome_version_parsing() -> bool:
 
 def _test_path_validation() -> bool:
     """Test path validation functions."""
-    from pathlib import Path
-
     # Test cache directory check (should handle missing directory gracefully)
     cache_ok = check_cache_directory()
     assert isinstance(cache_ok, bool), "Should return boolean status"

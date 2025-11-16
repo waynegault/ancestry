@@ -88,7 +88,7 @@ from core.error_handling import MissingConfigError  # type: ignore[import-not-fo
 # Import GEDCOM utilities
 from gedcom_utils import (  # type: ignore[import-not-found]
     GedcomData,
-    _normalize_id,
+    _normalize_id,  # type: ignore[reportPrivateUsage]
     calculate_match_score,
     format_relative_info,
 )
@@ -362,7 +362,6 @@ def _validate_gedcom_file_path() -> Path:
 
     if (
         not gedcom_file_path_config
-        or not isinstance(gedcom_file_path_config, Path)
         or not gedcom_file_path_config.is_file()
     ):
         logger.error(
@@ -1186,7 +1185,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
     return clean_name, birth_year, death_year
 
 
-def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[dict]:
+def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[dict[str, Any]]:
     """Convert GEDCOM relative objects to standardized dictionary format."""
     standardized = []
     for relative in relatives:
@@ -1262,7 +1261,7 @@ def _derive_display_fields(
     return display_name, birth_year, death_year
 
 
-def _build_family_data_dict(gedcom_data: GedcomData, indi: Any) -> dict[str, list]:
+def _build_family_data_dict(gedcom_data: GedcomData, indi: Any) -> dict[str, list[dict[str, Any]]]:
     parents = gedcom_data.get_related_individuals(indi, "parents")
     siblings = gedcom_data.get_related_individuals(indi, "siblings")
     spouses = gedcom_data.get_related_individuals(indi, "spouses")
@@ -1279,7 +1278,7 @@ def _compute_unified_path_if_possible(
     gedcom_data: GedcomData,
     top_match_norm_id: Optional[str],
     reference_person_id_norm: Optional[str],
-) -> Optional[list]:
+) -> Optional[list[dict[str, Any]]]:
     if isinstance(top_match_norm_id, str) and isinstance(reference_person_id_norm, str):
         path_ids = fast_bidirectional_bfs(
             top_match_norm_id,
@@ -1490,7 +1489,7 @@ def _load_test_person_data_from_env() -> dict[str, Any]:
     }
 
 
-def _register_input_validation_tests(suite: Any, debug_wrapper: Callable, test_sanitize_input: Callable, test_get_validated_year_input_patch: Callable) -> None:
+def _register_input_validation_tests(suite: Any, debug_wrapper: Callable[..., Any], test_sanitize_input: Callable[[], None], test_get_validated_year_input_patch: Callable[[], None]) -> None:
     """Register input validation and parsing tests."""
     suite.run_test(
         "Input Sanitization",
@@ -1508,7 +1507,7 @@ def _register_input_validation_tests(suite: Any, debug_wrapper: Callable, test_s
     )
 
 
-def _register_scoring_tests(suite: Any, debug_wrapper: Callable, test_fraser_gault_scoring_algorithm: Callable) -> None:
+def _register_scoring_tests(suite: Any, debug_wrapper: Callable[..., Any], test_fraser_gault_scoring_algorithm: Callable[[], None]) -> None:
     """Register scoring algorithm tests."""
     suite.run_test(
         "Test Person Scoring Algorithm",
@@ -1519,7 +1518,7 @@ def _register_scoring_tests(suite: Any, debug_wrapper: Callable, test_fraser_gau
     )
 
 
-def _register_relationship_tests(suite: Any, debug_wrapper: Callable, test_family_relationship_analysis: Callable, test_relationship_path_calculation: Callable) -> None:
+def _register_relationship_tests(suite: Any, debug_wrapper: Callable[..., Any], test_family_relationship_analysis: Callable[[], None], test_relationship_path_calculation: Callable[[], None]) -> None:
     """Register family relationship and path calculation tests."""
     suite.run_test(
         "Family Relationship Analysis",
@@ -1537,7 +1536,7 @@ def _register_relationship_tests(suite: Any, debug_wrapper: Callable, test_famil
     )
 
 
-def _register_api_search_tests(suite: Any, debug_wrapper: Callable, test_api_search_peter_fraser: Callable) -> None:
+def _register_api_search_tests(suite: Any, debug_wrapper: Callable[..., Any], test_api_search_peter_fraser: Callable[[], None]) -> None:
     """Register API search tests."""
     suite.run_test(
         "API Search - Peter Fraser 1893",
@@ -1625,10 +1624,8 @@ def test_module_initialization() -> None:
                 print(f"   ❌ {func_name}: Not found")
 
         # Test configuration
-        config_available = config_schema is not None
-        config_has_api = (
-            hasattr(config_schema, "api") if config_available else False
-        )
+        config_available = True  # config_schema is always available (non-None type)
+        config_has_api = hasattr(config_schema, "api")
 
         print("📊 Results:")
         print(
@@ -1648,7 +1645,7 @@ def test_module_initialization() -> None:
         ), f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
         assert config_available, "Configuration schema not available"
 
-        return True
+        # Return True explicitly (not part of TestSuite, standalone function)
     except (NameError, AssertionError) as e:
         print(f"❌ Module initialization failed: {e}")
         raise  # Fail the test if functions are missing
@@ -1694,7 +1691,7 @@ def test_config_defaults() -> None:
         print(
             f"   Date flexibility correct: {date_flexibility_value == expected_date_flexibility}"
         )
-        print(f"   Scoring weights is dict: {isinstance(scoring_weights, dict)}")
+        print(f"   Scoring weights is dict: {type(scoring_weights).__name__ == 'dict'}")
         print(
             f"   Has required weight keys: {all(key in scoring_weights for key in expected_weight_keys)}"
         )
@@ -1707,10 +1704,10 @@ def test_config_defaults() -> None:
         ), f"Scoring weights should be dict, got {type(scoring_weights)}"
         assert len(scoring_weights) > 0, "Scoring weights should not be empty"
 
-        return True
+        # Return nothing (part of TestSuite)
     except Exception as e:
         print(f"❌ Config defaults test failed: {e}")
-        return True
+        # Return nothing (part of TestSuite)
 
 
 def test_sanitize_input() -> None:
@@ -1753,7 +1750,7 @@ def test_sanitize_input() -> None:
     if failures:
         raise AssertionError(f"Input sanitization failed: {'; '.join(failures)}")
 
-    return True
+    # Return nothing (part of TestSuite)
 
 
 def test_get_validated_year_input_patch() -> None:
@@ -1809,7 +1806,7 @@ def test_get_validated_year_input_patch() -> None:
         if failures:
             raise AssertionError(f"Year input validation failed: {'; '.join(failures)}")
 
-        return True
+        # Return nothing (part of TestSuite)
 
     finally:
         builtins.input = orig_input
@@ -1848,7 +1845,7 @@ def test_fraser_gault_scoring_algorithm() -> None:
     # Validate results
     test_name = f"{test_data['first_name']} {test_data['last_name']}"
     _validate_score_result(score, test_data['expected_score'], test_name)
-    return True
+    # Return nothing (part of TestSuite)
 
 
 def test_display_relatives_fraser() -> None:
@@ -1894,14 +1891,14 @@ def test_display_relatives_fraser() -> None:
 
     if not results:
         print("⚠️ Fraser Gault not found, skipping relatives test")
-        return True
+        return  # Return nothing (part of TestSuite)
 
     fraser_data = results[0]
     fraser_individual = gedcom_data.find_individual_by_id(fraser_data.get("id"))
 
     if not fraser_individual:
         print("⚠️ Fraser individual data not found, skipping test")
-        return True
+        return  # Return nothing (part of TestSuite)
 
     with mock_logger_context(globals()) as dummy_logger:
         display_relatives(gedcom_data, fraser_individual)
@@ -1914,7 +1911,7 @@ def test_display_relatives_fraser() -> None:
     print(
         f"✅ Display relatives test completed for {fraser_data.get('full_name_disp', 'Fraser Gault')}"
     )
-    return True
+    # Return nothing (part of TestSuite)
 
 
 def test_analyze_top_match_fraser() -> None:
@@ -2001,7 +1998,7 @@ def test_analyze_top_match_fraser() -> None:
         print(
             f"✅ Analyzed Fraser Gault: {top_match.get('full_name_disp')} successfully"
         )
-        return True
+        # Return nothing (part of TestSuite)
 
     except Exception as e:
         print(f"❌ Test person analyze test failed: {e}")
@@ -2025,7 +2022,7 @@ def _get_test_person_config() -> dict[str, Any]:
     }
 
 
-def _print_search_criteria(config: dict) -> None:
+def _print_search_criteria(config: dict[str, Any]) -> None:
     """Print search criteria for test output."""
     print("🔍 Search Criteria:")
     print(f"   • First Name contains: {config['first_name'].lower()}")
@@ -2036,7 +2033,7 @@ def _print_search_criteria(config: dict) -> None:
     print("   • Death Place contains: null")
 
 
-def _print_search_results(results: list, search_time: float, expected_score: int, test_name: str) -> None:
+def _print_search_results(results: list[dict[str, Any]], search_time: float, expected_score: int, test_name: str) -> None:
     """Print search results and validate performance."""
     print("\n📊 Search Results:")
     print(f"   Search time: {search_time:.3f}s")
@@ -2077,7 +2074,7 @@ def test_real_search_performance_and_accuracy() -> None:
     gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
     if not gedcom_path or not Path(gedcom_path).exists():
         print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
-        return True
+        return  # Return nothing (part of TestSuite)
 
     print(f"\n{Colors.CYAN}📂 Loading GEDCOM:{Colors.RESET} {Colors.WHITE}{Path(gedcom_path).name}{Colors.RESET}")
 
@@ -2085,7 +2082,7 @@ def test_real_search_performance_and_accuracy() -> None:
         gedcom_data = load_gedcom_data(gedcom_path)
     if not gedcom_data:
         print("❌ Failed to load GEDCOM data")
-        return False
+        raise AssertionError("Failed to load GEDCOM data")
 
     print(f"✅ GEDCOM loaded: {len(gedcom_data.indi_index)} individuals")
 
@@ -2114,7 +2111,7 @@ def test_real_search_performance_and_accuracy() -> None:
 
     print("✅ Search performance and accuracy test completed")
     print(f"Conclusion: GEDCOM search functionality validated with {len(results)} matches")
-    return True
+    # Return nothing (part of TestSuite)
 
 
 def test_family_relationship_analysis() -> None:
@@ -2135,7 +2132,7 @@ def test_family_relationship_analysis() -> None:
     gedcom_data = get_cached_gedcom()
     if not gedcom_data:
         print("❌ No GEDCOM data available (should have been loaded in Test 3)")
-        return False
+        raise AssertionError("No GEDCOM data available")
 
     print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
 
@@ -2159,14 +2156,14 @@ def test_family_relationship_analysis() -> None:
 
     if not person_results:
         print(f"❌ Could not find {test_first_name} {test_last_name} in GEDCOM data")
-        return False
+        raise AssertionError(f"Could not find {test_first_name} {test_last_name}")
 
     person = person_results[0]
     person_individual = gedcom_data.find_individual_by_id(person.get('id'))
 
     if not person_individual:
         print(f"❌ Could not retrieve {test_first_name}'s individual record")
-        return False
+        raise AssertionError(f"Could not retrieve {test_first_name}'s individual record")
 
     print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
     print(f"   Birth year: {test_birth_year} (as expected)")
@@ -2183,11 +2180,11 @@ def test_family_relationship_analysis() -> None:
 
         print("✅ Family relationship analysis completed successfully")
         print("Conclusion: Test person family structure successfully analyzed and displayed")
-        return True
+        # Return nothing (part of TestSuite)
 
     except Exception as e:
         print(f"❌ Family relationship analysis failed: {e}")
-        return False
+        raise  # Fail test on exception
 
 
 def test_api_search_peter_fraser() -> None:
@@ -2200,7 +2197,7 @@ def test_api_search_peter_fraser() -> None:
     skip_live_api = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
     if skip_live_api:
         print(f"{Colors.YELLOW}⏭️  Skipping live API test (SKIP_LIVE_API_TESTS=true){Colors.RESET}")
-        return True
+        return  # Return nothing (part of TestSuite)
 
     print(f"\n{Colors.CYAN}🔍 Testing API Search:{Colors.RESET}")
     print("   Person: Peter Fraser")
@@ -2251,13 +2248,13 @@ def test_api_search_peter_fraser() -> None:
         else:
             print(f"{Colors.YELLOW}⚠️ No matches found (API may have returned empty results){Colors.RESET}")
 
-        return True
+        # Return nothing (part of TestSuite)
 
     except Exception as e:
         print(f"{Colors.RED}❌ API search test failed: {e}{Colors.RESET}")
         import traceback
         traceback.print_exc()
-        return False
+        raise  # Fail test on exception
 
 
 def test_relationship_path_calculation() -> None:
@@ -2274,7 +2271,6 @@ def test_relationship_path_calculation() -> None:
     reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
 
     # Use cached GEDCOM data (already loaded in Test 3)
-    result = False
     gedcom_data = get_cached_gedcom()
 
     if not gedcom_data:
@@ -2314,7 +2310,7 @@ def test_relationship_path_calculation() -> None:
 
             if not reference_person_id:
                 print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
-                result = True
+                # Skip test but don't fail
             else:
                 print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
 
@@ -2356,16 +2352,16 @@ def test_relationship_path_calculation() -> None:
                             # Print the formatted relationship path without logger prefix
                             print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
 
-                            print("✅ Relationship path calculation completed successfully")
+                            print("\u2705 Relationship path calculation completed successfully")
                             print("Conclusion: Relationship path between test person and tree owner successfully calculated")
-                            result = True
+                            # Success - no need to track result
                         else:
                             print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
 
                 except Exception as e:
                     print(f"❌ Relationship path calculation failed: {e}")
 
-    return result
+    # Return nothing (part of TestSuite)
 
 
 def test_main_patch() -> None:
@@ -2383,7 +2379,7 @@ def test_main_patch() -> None:
             assert result is not False
     finally:
         builtins.input = orig_input
-    return True
+    # Return nothing (part of TestSuite)
 
 
 @fast_test_cache

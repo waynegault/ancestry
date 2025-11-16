@@ -173,7 +173,7 @@ class NavigationConfig:
     selector: str
     target_url_base: str
     signin_page_url_base: str
-    unavailability_selectors: dict[str, tuple]
+    unavailability_selectors: dict[str, tuple[str, int]]
     page_timeout: int
     element_timeout: int
 

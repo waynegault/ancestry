@@ -15,7 +15,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+from ..standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
@@ -32,13 +32,13 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 
 # === LOCAL IMPORTS ===
-from api_constants import (
+from ..api_constants import (
     API_PATH_CSRF_TOKEN,
     API_PATH_PROFILE_ID,
     API_PATH_UUID_NAVHEADER,
 )
-from config import config_schema
-from observability.metrics_registry import metrics
+from config import config_schema  # type: ignore[import-not-found]
+from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
@@ -157,7 +157,7 @@ class APIManager:
         except Exception:
             logger.debug("Failed to record API metrics", exc_info=True)
 
-    def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # noqa: ARG002
+    def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # type: ignore[no-untyped-def]  # noqa: ARG002
         """
         Attempt to recover browser session when cookie sync fails.
 
@@ -210,7 +210,7 @@ class APIManager:
 
         return unique_cookies
 
-    def _sync_cookies_to_session(self, unique_cookies: dict) -> None:
+    def _sync_cookies_to_session(self, unique_cookies: dict) -> None:  # type: ignore[type-arg]
         """
         Add deduplicated cookies to requests session.
 
@@ -226,7 +226,7 @@ class APIManager:
                 secure=cookie.get("secure", False),
             )
 
-    def sync_cookies_from_browser(self, browser_manager, session_manager=None) -> bool:
+    def sync_cookies_from_browser(self, browser_manager, session_manager=None) -> bool:  # type: ignore[no-untyped-def]
         """
         Sync cookies from browser to the requests session.
 
@@ -342,7 +342,7 @@ class APIManager:
 
         return request_headers
 
-    def _parse_api_response(self, response, api_description: str) -> ApiResponseType:
+    def _parse_api_response(self, response, api_description: str) -> ApiResponseType:  # type: ignore[no-untyped-def]
         """Parse API response into appropriate format."""
         try:
             json_response = response.json()
@@ -764,12 +764,12 @@ def _test_endpoint_label_sanitization() -> bool:
     """Ensure endpoint labels collapse high-cardinality segments."""
     try:
         api_manager = APIManager()
-        assert api_manager._sanitize_endpoint_label("https://example.com/") == "root"
-        complex_label = api_manager._sanitize_endpoint_label(
+        assert api_manager._sanitize_endpoint_label("https://example.com/") == "root"  # type: ignore[protected-access]
+        complex_label = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
             "https://example.com/api/person/12345/details"
         )
         assert complex_label == "api/person/:param/details"
-        hex_path = api_manager._sanitize_endpoint_label(
+        hex_path = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
             "https://example.com/api/match/ABCDEF1234567890/data"
         )
         assert hex_path == "api/match/:param/data"
@@ -782,7 +782,7 @@ def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
     """
-    from test_framework import (
+    from test_framework import (  # type: ignore[import-not-found]
         TestSuite,
     )
 
@@ -865,7 +865,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         sys.path.insert(0, str(project_root))
-        from core_imports import ensure_imports
+        from core_imports import ensure_imports  # type: ignore[import-not-found]
 
         ensure_imports()
     except ImportError:
@@ -878,6 +878,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
 
 run_comprehensive_tests = create_standard_test_runner(api_manager_module_tests)

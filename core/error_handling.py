@@ -17,7 +17,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+from standard_imports import setup_module  # type: ignore[import-not-found]
 
 logger = setup_module(globals(), __name__)
 
@@ -92,7 +92,7 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self._lock = threading.Lock()
 
-    def call(self, func: Callable, *args: Any, **kwargs: Any) -> Any:
+    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute function with circuit breaker protection."""
         with self._lock:
             if self.state == CircuitState.OPEN:
@@ -248,7 +248,7 @@ class MaxApiFailuresExceededError(FatalError):
 class ConfigurationError(FatalError):
     """Exception for configuration errors."""
 
-    def __init__(self, message: str = "Configuration error occurred", **kwargs):
+    def __init__(self, message: str = "Configuration error occurred", **kwargs: Any):
         super().__init__(message, **kwargs)
         self.config_section = kwargs.get('config_section')
 
@@ -346,7 +346,7 @@ class AppError(Exception):
 class AuthenticationError(AppError):
     """Authentication-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message,
             category=ErrorCategory.AUTHENTICATION,
@@ -358,7 +358,7 @@ class AuthenticationError(AppError):
 class ValidationError(AppError):
     """Validation-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message,
             category=ErrorCategory.VALIDATION,
@@ -370,7 +370,7 @@ class ValidationError(AppError):
 class DatabaseError(AppError):
     """Database-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message,
             category=ErrorCategory.DATABASE,
@@ -382,7 +382,7 @@ class DatabaseError(AppError):
 class NetworkError(AppError):
     """Network-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message,
             category=ErrorCategory.NETWORK,
@@ -394,7 +394,7 @@ class NetworkError(AppError):
 class BrowserError(AppError):
     """Browser/WebDriver-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message,
             category=ErrorCategory.BROWSER,
@@ -406,7 +406,7 @@ class BrowserError(AppError):
 class APIError(AppError):
     """API-related errors."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any):
         super().__init__(
             message, category=ErrorCategory.API, severity=ErrorSeverity.MEDIUM, **kwargs
         )
@@ -661,9 +661,9 @@ def error_handler(
         reraise: Whether to reraise the original exception
     """
 
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+    def decorator(func: Callable[P, R]) -> Callable[P, Optional[R]]:
         @wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Optional[R]:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -705,11 +705,11 @@ def error_handler(
 
 
 def safe_execute(
-    func: Callable,
-    *args,
+    func: Callable[..., Any],
+    *args: Any,
     default_return: Any = None,
     context: Optional[dict[str, Any]] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Any:
     """
     Safely execute a function with error handling.
@@ -829,7 +829,7 @@ def error_handling_module_tests() -> bool:
     Core Error Handling module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (
+    from test_framework import (  # type: ignore[import-not-found]
         TestSuite,
         suppress_logging,
     )
@@ -908,7 +908,7 @@ class ErrorRecoveryManager:
     def __init__(self) -> None:
         """Initialize fault tolerance manager with circuit breakers and recovery strategies."""
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
-        self.recovery_strategies: dict[str, Callable] = {}
+        self.recovery_strategies: dict[str, Callable[..., Any]] = {}
         self._lock = threading.Lock()
 
     def get_circuit_breaker(
@@ -920,7 +920,7 @@ class ErrorRecoveryManager:
                 self.circuit_breakers[name] = CircuitBreaker(name, config)
             return self.circuit_breakers[name]
 
-    def register_recovery_strategy(self, service_name: str, strategy: Callable):
+    def register_recovery_strategy(self, service_name: str, strategy: Callable[..., Any]) -> None:
         """Register a recovery strategy for a service."""
         with self._lock:
             self.recovery_strategies[service_name] = strategy
@@ -1041,7 +1041,7 @@ def circuit_breaker(
     return decorator
 
 
-def timeout_protection(timeout: int = 30) -> Callable:
+def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for timeout protection (cross-platform)."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
@@ -1052,12 +1052,12 @@ def timeout_protection(timeout: int = 30) -> Callable:
             # Use different timeout mechanisms based on platform
             if platform.system() == "Windows":
                 # Windows doesn't support SIGALRM, use threading approach
-                result: list[Any] = [None]
+                result_container: list[R] = []  # Use empty list instead of [None]
                 exception: list[Optional[Exception]] = [None]
 
                 def target() -> None:
                     try:
-                        result[0] = func(*args, **kwargs)
+                        result_container.append(func(*args, **kwargs))
                     except Exception as e:
                         exception[0] = e
 
@@ -1073,7 +1073,7 @@ def timeout_protection(timeout: int = 30) -> Callable:
                 if exception[0]:
                     raise exception[0] from None
 
-                return result[0]
+                return result_container[0]
             # Unix-like systems can use signal
             import signal
 
@@ -1095,8 +1095,8 @@ def timeout_protection(timeout: int = 30) -> Callable:
 
 
 def graceful_degradation(
-    fallback_value: Any = None, fallback_func: Optional[Callable] = None
-):
+    fallback_value: Any = None, fallback_func: Optional[Callable[..., Any]] = None
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for graceful degradation when service fails."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
@@ -1112,7 +1112,7 @@ def graceful_degradation(
     return decorator
 
 
-def error_context(context_name: str = "", **context_data: Any) -> Callable:
+def error_context(context_name: str = "", **context_data: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to add context to errors."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
@@ -1143,7 +1143,7 @@ def with_circuit_breaker(
     return decorator
 
 
-def with_recovery(recovery_strategy: Callable) -> Callable:
+def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to add recovery strategy to functions."""
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
@@ -1159,19 +1159,19 @@ def with_recovery(recovery_strategy: Callable) -> Callable:
 
 # === RECOVERY STRATEGIES ===
 
-def ancestry_session_recovery(*_args, **_kwargs) -> None:
+def ancestry_session_recovery(*_args: Any, **_kwargs: Any) -> None:
     """Recovery strategy for session-related failures."""
     logger.info("Attempting session recovery...")
     # Placeholder for session recovery logic
 
 
-def ancestry_api_recovery(*_args, **_kwargs) -> None:
+def ancestry_api_recovery(*_args: Any, **_kwargs: Any) -> None:
     """Recovery strategy for API-related failures."""
     logger.info("Attempting API recovery...")
     # Placeholder for API recovery logic
 
 
-def ancestry_database_recovery(*_args, **_kwargs) -> None:
+def ancestry_database_recovery(*_args: Any, **_kwargs: Any) -> None:
     """Recovery strategy for database-related failures."""
     logger.info("Attempting database recovery...")
     # Placeholder for database recovery logic
@@ -1394,7 +1394,7 @@ def test_error_context() -> None:
 # Standalone Test Block
 # =============================================
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
 
 run_comprehensive_tests = create_standard_test_runner(error_handling_module_tests)
 
@@ -1407,7 +1407,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         # Replaced with standardize_module_imports()
-        from core_imports import ensure_imports
+        from core_imports import ensure_imports  # type: ignore[import-not-found]
 
         ensure_imports()
     except ImportError:

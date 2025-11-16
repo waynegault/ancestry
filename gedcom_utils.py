@@ -81,13 +81,14 @@ except ImportError:
 
 try:
     import dateparser
-
-    DATEPARSER_AVAILABLE = True
+    _dateparser_available = True  # Use lowercase to avoid constant redefinition warning
 except ImportError:
-    DATEPARSER_AVAILABLE = False
+    _dateparser_available = False
     print(
         "WARNING: dateparser library not found. Date parsing will be limited. Run 'pip install dateparser'"
     )
+
+DATEPARSER_AVAILABLE = _dateparser_available
 
 # === LOCAL IMPORTS ===
 from common_params import GraphContext
@@ -171,7 +172,7 @@ def _is_record(obj: Any) -> bool:
 
 
 def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
-    if not xref_id or not isinstance(xref_id, str):
+    if not xref_id:
         return None
 
     # Try to match standard GEDCOM ID format
@@ -347,7 +348,7 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
 
 def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str]:
     """Validate and perform initial normalization of date string."""
-    if not date_str or not isinstance(date_str, str):
+    if not date_str:
         return None
 
     # Remove parentheses
@@ -544,7 +545,7 @@ def _parse_date(date_str: Optional[str]) -> Optional[datetime]:
 
 
 def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementation ...
-    if not raw_date_str or not isinstance(raw_date_str, str) or raw_date_str == "N/A":
+    if not raw_date_str or raw_date_str == "N/A":
         return "N/A"
     cleaned = raw_date_str.strip()
     if cleaned.startswith("(") and cleaned.endswith(")"):
@@ -865,7 +866,7 @@ def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Any, id_to_c
     return True
 
 
-def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
+def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple[Any, Any, dict[str, Any], dict[str, Any]]:
     """Initialize BFS queues and visited sets for bidirectional search."""
     # Initialize BFS queues and visited sets
     # Forward queue from start_id
@@ -880,7 +881,7 @@ def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple:
     return queue_fwd, queue_bwd, visited_fwd, visited_bwd
 
 
-def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:
+def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visited_fwd: dict[str, Any], queue_fwd: deque[Any]) -> None:
     """Add a node to the forward search queue if not already visited."""
     if node_id not in visited_fwd:
         new_path = [*path, node_id]
@@ -888,7 +889,7 @@ def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visite
         queue_fwd.append((node_id, depth, new_path))
 
 
-def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict, queue_fwd: deque) -> None:
+def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict[str, Any], queue_fwd: deque[Any]) -> None:
     """Expand to siblings in forward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -899,7 +900,7 @@ def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[st
 
 
 def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
-                        visited_fwd: dict, queue_fwd: deque, max_depth: int):
+                        visited_fwd: dict[str, Any], queue_fwd: deque[Any], max_depth: int):
     """Expand a node in the forward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -921,7 +922,7 @@ def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
     _expand_forward_siblings(graph, current_id, path, depth, visited_fwd, queue_fwd)
 
 
-def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:
+def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visited_bwd: dict[str, Any], queue_bwd: deque[Any]) -> None:
     """Add a node to the backward search queue if not already visited."""
     if node_id not in visited_bwd:
         new_path = [node_id, *path]
@@ -929,7 +930,7 @@ def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visit
         queue_bwd.append((node_id, depth, new_path))
 
 
-def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict, queue_bwd: deque) -> None:
+def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict[str, Any], queue_bwd: deque[Any]) -> None:
     """Expand to siblings in backward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -940,7 +941,7 @@ def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[s
 
 
 def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
-                         visited_bwd: dict, queue_bwd: deque, max_depth: int):
+                         visited_bwd: dict[str, Any], queue_bwd: deque[Any], max_depth: int):
     """Expand a node in the backward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -1000,7 +1001,7 @@ def fast_bidirectional_bfs(
     # First try to find a direct relationship (parent, child, sibling)
     # This is a quick check before running the full BFS
     # Import here to avoid circular dependency
-    from relationship_utils import _find_direct_relationship
+    from relationship_utils import _find_direct_relationship  # type: ignore
 
     # Convert lists to sets for _find_direct_relationship
     id_to_parents_set = {k: set(v) for k, v in id_to_parents.items()}
@@ -1044,9 +1045,9 @@ def fast_bidirectional_bfs(
 
 def _process_forward_queue_item(
     queue_fwd: Any,
-    visited_bwd: dict,
-    visited_fwd: dict,
-    all_paths: list,
+    visited_bwd: dict[str, Any],
+    visited_fwd: dict[str, Any],
+    all_paths: list[Any],
     id_to_parents: Any,
     id_to_children: Any,
     max_depth: int
@@ -1086,9 +1087,9 @@ def _process_forward_queue_item(
 
 def _process_backward_queue_item(
     queue_bwd: Any,
-    visited_fwd: dict,
-    visited_bwd: dict,
-    all_paths: list,
+    visited_fwd: dict[str, Any],
+    visited_bwd: dict[str, Any],
+    all_paths: list[Any],
     id_to_parents: Any,
     id_to_children: Any,
     max_depth: int
@@ -1148,7 +1149,7 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
     # If we found paths, select the best one
     if all_paths:
         # Import here to avoid circular dependency
-        from relationship_utils import _has_direct_relationship
+        from relationship_utils import _has_direct_relationship  # type: ignore
 
         # Score paths based on directness of relationships
         scored_paths = []
@@ -1610,7 +1611,7 @@ def _is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]
 
 
 # ==============================================
-def _prepare_search_data(search_criteria: dict) -> dict[str, Any]:
+def _prepare_search_data(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and normalize search criteria data."""
     return {
         "fname": (search_criteria.get("first_name") or "").lower() if isinstance(search_criteria.get("first_name"), str) else "",
@@ -1639,7 +1640,7 @@ def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[st
     }
 
 
-def _score_names(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_names(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score name matches (first name, surname, and bonus for both)."""
     first_name_matched = False
     surname_matched = False
@@ -1679,9 +1680,9 @@ def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[
         return False, False
 
 
-def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[int, float]) -> dict[str, Any]:
+def _calculate_date_flags(t_data: dict[str, Any], c_data: dict[str, Any], year_score_range: Union[int, float]) -> dict[str, Any]:
     """Calculate date match flags for birth and death dates."""
-    year_range = int(year_score_range) if isinstance(year_score_range, (int, float)) else 0
+    year_range = int(year_score_range)
     birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_range)
     death_year_match, death_year_approx = _check_year_match(t_data["d_year"], c_data["d_year"], year_range)
 
@@ -1707,7 +1708,7 @@ def _calculate_date_flags(t_data: dict, c_data: dict, year_score_range: Union[in
     }
 
 
-def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_birth_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth date matches (prioritize: exact date > exact year > approx year)."""
     if date_flags["exact_birth_date_match"]:
         points_bdate = weights.get("exact_birth_date", 0)
@@ -1730,7 +1731,7 @@ def _score_birth_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
             match_reasons.append(f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)")
 
 
-def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_death_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score death date matches (prioritize: exact date > exact year > approx year; no points for absence)."""
     if date_flags["exact_death_date_match"]:
         points_ddate = weights.get("exact_death_date", 0)
@@ -1756,13 +1757,13 @@ def _score_death_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Ma
     # Do not award points for both death dates absent when the user did not specify death criteria.
 
 
-def _score_dates(t_data: dict, c_data: dict, date_flags: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth and death date matches."""
     _score_birth_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
     _score_death_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
 
 
-def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_birth_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth place match."""
     if not (t_data["pob"] and c_data["bplace"] and t_data["pob"] in c_data["bplace"]):
         return
@@ -1772,7 +1773,7 @@ def _score_birth_place(t_data: dict, c_data: dict, weights: Mapping, field_score
         match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
 
 
-def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_death_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score death place match (contains only; no points for absence)."""
     pod_match = bool(t_data["pod"] and c_data["dplace"] and t_data["pod"] in c_data["dplace"])
     if not pod_match:
@@ -1783,13 +1784,13 @@ def _score_death_place(t_data: dict, c_data: dict, weights: Mapping, field_score
         match_reasons.append(f"Death Place Contains ({points_pod}pts)")
 
 
-def _score_places(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_places(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth place and death place matches (gender removed from scoring)."""
     _score_birth_place(t_data, c_data, weights, field_scores, match_reasons)
     _score_death_place(t_data, c_data, weights, field_scores, match_reasons)
 
 
-def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_birth_bonus(weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth bonus (if both birth year and birth place matched)."""
     if not (field_scores["byear"] > 0 and field_scores["bplace"] > 0):
         return
@@ -1799,7 +1800,7 @@ def _score_birth_bonus(weights: Mapping, field_scores: dict, match_reasons: list
         match_reasons.append(f"Bonus Birth Info ({birth_bonus_points}pts)")
 
 
-def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_death_bonus(weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score death bonus (only when BOTH death date and place matched)."""
     death_info_matched = (field_scores["dyear"] > 0 or field_scores["ddate"] > 0) and field_scores["dplace"] > 0
     if not death_info_matched:
@@ -1810,14 +1811,14 @@ def _score_death_bonus(weights: Mapping, field_scores: dict, match_reasons: list
         match_reasons.append(f"Bonus Death Info ({death_bonus_points}pts)")
 
 
-def _score_bonuses(weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _score_bonuses(weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Score birth and death bonuses."""
     _score_birth_bonus(weights, field_scores, match_reasons)
     _score_death_bonus(weights, field_scores, match_reasons)
 
 
 
-def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, field_scores: dict, match_reasons: list[str]) -> None:
+def _apply_alive_conflict_penalty(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Apply a small negative score when query implies 'alive' but candidate has death info.
 
     Alive-mode heuristic: if the user provided no death year, no death date, and no death place,
@@ -1840,11 +1841,11 @@ def _apply_alive_conflict_penalty(t_data: dict, c_data: dict, weights: Mapping, 
 # Scoring Function (V18 - Corrected Syntax)
 # ==============================================
 def calculate_match_score(
-    search_criteria: dict,
+    search_criteria: dict[str, Any],
     candidate_processed_data: dict[str, Any],  # Expects pre-processed data
     scoring_weights: Optional[Mapping[str, Union[int, float]]] = None,
     date_flexibility: Optional[dict[str, Any]] = None,
-) -> tuple[float, dict[str, int], list[str]]:
+) -> tuple[float, dict[str, float], list[str]]:
     """
     Calculates match score using pre-processed candidate data.
     Handles OR logic for death place matching (contains OR both absent).
@@ -1853,10 +1854,10 @@ def calculate_match_score(
     """
     match_reasons: list[str] = []
     field_scores = {
-        "givn": 0, "surn": 0, "byear": 0, "bdate": 0, "bplace": 0,
-        "bbonus": 0, "dyear": 0, "ddate": 0, "dplace": 0, "dbonus": 0, "bonus": 0,
+        "givn": 0.0, "surn": 0.0, "byear": 0.0, "bdate": 0.0, "bplace": 0.0,
+        "bbonus": 0.0, "dyear": 0.0, "ddate": 0.0, "dplace": 0.0, "dbonus": 0.0, "bonus": 0.0,
         # Negative adjustments (policy-based)
-        "alive_penalty": 0,
+        "alive_penalty": 0.0,
     }
     weights = scoring_weights if scoring_weights is not None else config.common_scoring_weights
     date_flex = date_flexibility if date_flexibility is not None else {"year_match_range": config.date_flexibility}
@@ -2267,7 +2268,7 @@ class GedcomData:
         self, norm_id: Optional[str]
     ) -> Optional[GedcomIndividualType]:
         """Finds an individual by their normalized ID using the index."""
-        if not norm_id or not isinstance(norm_id, str):
+        if not norm_id:
             logger.warning("find_individual_by_id called with invalid norm_id")
             return None
         if not self.indi_index:

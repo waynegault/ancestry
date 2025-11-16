@@ -17,7 +17,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+from standard_imports import setup_module  # type: ignore[import-not-found]
 
 logger = setup_module(globals(), __name__)
 
@@ -41,7 +41,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager
+from config.config_manager import ConfigManager  # type: ignore[import-not-found]
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -85,7 +85,7 @@ class DatabaseManager:
 
         # SQLAlchemy components
         self.engine = None
-        self.Session: Optional[sessionmaker] = None
+        self.Session: Optional[sessionmaker[Session]] = None
         self._db_init_attempted: bool = False
         self._db_ready: bool = False
 
@@ -353,7 +353,7 @@ class DatabaseManager:
         def _execute_query() -> Any:
             try:
                 # Convert string query to SQLAlchemy text object
-                sql_query = text(query) if isinstance(query, str) else query
+                sql_query = text(query)  # query is already str type
 
                 result = session.execute(sql_query, params) if params else session.execute(sql_query)
 
@@ -469,7 +469,7 @@ class DatabaseManager:
     def _attach_pragma_listener(self) -> None:
         """Attach event listener for SQLite PRAGMA settings."""
         @event.listens_for(self.engine, "connect")
-        def enable_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:
+        def enable_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:  # type: ignore[unused-function]
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL;")
@@ -551,7 +551,7 @@ class DatabaseManager:
             else:
                 # Import Base locally to avoid circular import issues
                 try:
-                    from database import Base
+                    from database import Base  # type: ignore[import-not-found]
                     Base.metadata.create_all(self.engine)
                     logger.debug("DB tables created successfully.")
                 except ImportError as e:
@@ -761,12 +761,9 @@ class DatabaseManager:
 # ==============================================
 
 
-def database_manager_module_tests() -> bool:
-    """
-    Database Manager module test suite.
-    Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
-    """
-    from test_framework import (
+def module_tests() -> bool:
+    """Test DatabaseManager functionality."""
+    from test_framework import (  # type: ignore[import-not-found]
         TestSuite,
         suppress_logging,
     )
@@ -872,7 +869,7 @@ def _build_stubbed_db_manager() -> tuple[DatabaseManager, MagicMock, MagicMock, 
     session_factory = MagicMock(side_effect=_make_session)
 
     def stub_initializer() -> None:
-        db_manager._db_init_attempted = True
+        db_manager._db_init_attempted = True  # type: ignore[protected-access]
         db_manager.engine = engine_mock
         db_manager.Session = session_factory
 
@@ -889,7 +886,7 @@ def test_database_manager_initialization() -> None:
     assert db_manager.engine is None, "Engine should be None before initialization"
     assert db_manager.Session is None, "Session should be None before initialization"
     assert (
-        not db_manager._db_ready
+        not db_manager._db_ready  # type: ignore[protected-access]
     ), "Database should not be ready before initialization"
 
 
@@ -932,13 +929,13 @@ def test_connection_pooling() -> None:
 
     session = db_manager.get_session()
     assert session is sessions[-1], "get_session should return a stubbed session"
-    assert db_manager._connection_stats["total_connections"] == 1
-    assert db_manager._connection_stats["active_connections"] == 1
+    assert db_manager._connection_stats["total_connections"] == 1  # type: ignore[protected-access]
+    assert db_manager._connection_stats["active_connections"] == 1  # type: ignore[protected-access]
 
     session_mock = cast(MagicMock, session)
     db_manager.return_session(session_mock)
     session_mock.close.assert_called_once()
-    assert db_manager._connection_stats["active_connections"] == 0
+    assert db_manager._connection_stats["active_connections"] == 0  # type: ignore[protected-access]
 
 
 def test_database_readiness() -> None:
@@ -1004,13 +1001,13 @@ def test_transaction_isolation() -> None:
 # Standalone Test Block
 # ==============================================
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
 
-run_comprehensive_tests = create_standard_test_runner(database_manager_module_tests)
+run_comprehensive_tests = create_standard_test_runner(module_tests)
 
 
 if __name__ == "__main__":
-    from core_imports import import_context
+    from core_imports import import_context  # type: ignore[import-not-found]
 
     # Use clean import context for testing
     with import_context():

@@ -403,7 +403,7 @@ def _test_database_models_available() -> None:
 
 def _test_record_engagement_event() -> None:
     """Test recording an engagement event."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -445,7 +445,7 @@ def _test_record_engagement_event() -> None:
 
 def _test_update_conversation_metrics_new() -> None:
     """Test updating conversation metrics for new conversation."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
     dm = DatabaseManager()
     session = dm.get_session()
@@ -490,7 +490,7 @@ def _test_update_conversation_metrics_new() -> None:
 
 def _test_update_conversation_metrics_existing() -> None:
     """Test updating existing conversation metrics."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
     dm = DatabaseManager()
     session = dm.get_session()
@@ -541,7 +541,7 @@ def _test_update_conversation_metrics_existing() -> None:
 
 def _test_get_overall_analytics_empty() -> None:
     """Test getting overall analytics with no data."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -564,7 +564,7 @@ def _test_get_overall_analytics_empty() -> None:
 
 def _test_print_analytics_dashboard() -> None:
     """Test printing analytics dashboard."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -578,7 +578,7 @@ def _test_print_analytics_dashboard() -> None:
 
 def _test_engagement_score_delta_calculation() -> None:
     """Test engagement score delta calculation."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -631,7 +631,7 @@ def _test_engagement_score_delta_calculation() -> None:
 
 def _test_template_tracking() -> None:
     """Test template usage tracking."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
     dm = DatabaseManager()
     session = dm.get_session()
@@ -681,7 +681,7 @@ def _test_template_tracking() -> None:
 
 def _test_research_outcomes_tracking() -> None:
     """Test research outcomes tracking."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
     dm = DatabaseManager()
     session = dm.get_session()
@@ -723,7 +723,7 @@ def _test_research_outcomes_tracking() -> None:
 
 def _test_tree_impact_tracking() -> None:
     """Test tree impact tracking."""
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
     dm = DatabaseManager()
     session = dm.get_session()

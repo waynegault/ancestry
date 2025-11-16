@@ -243,7 +243,7 @@ def create_property_delegator(target_attr: str, property_name: str):
             # Use:
             my_profile_id = create_property_delegator('api_manager', 'my_profile_id')
     """
-    def getter(self) -> Any:
+    def getter(self: Any) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
             return None
@@ -279,7 +279,7 @@ def create_method_delegator(target_attr: str, method_name: str):
             # Use:
             close_driver = create_method_delegator('browser_manager', 'close_driver')
     """
-    def delegator(self, *args: Any, **kwargs: Any) -> Any:
+    def delegator(self: Any, *args: Any, **kwargs: Any) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
             raise AttributeError(f"Target object '{target_attr}' not found")
@@ -487,7 +487,7 @@ validate_config_files = create_file_extension_validator(['.json', '.yaml', '.yml
 validate_data_files = create_file_extension_validator(['.csv', '.json', '.xml', '.gedcom'])
 
 
-def create_standard_test_runner(module_test_function):
+def create_standard_test_runner(module_test_function: Callable[[], bool]) -> Callable[[], bool]:
     """
     Create a standardized test runner function.
 
@@ -590,7 +590,6 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
         gedcom_data = load_test_gedcom()
         individual = gedcom_data.get_individual("@I1@")
     """
-    import sys
     from pathlib import Path
 
     try:
@@ -656,7 +655,7 @@ def create_test_person(
     return person
 
 
-def run_parameterized_tests(test_cases: list[tuple[str, Callable, Any, str]], suite: Any) -> None:
+def run_parameterized_tests(test_cases: list[tuple[str, Callable[..., Any], Any, str]], suite: Any) -> None:
     """
     Run a list of parameterized test cases.
 
@@ -678,7 +677,7 @@ def run_parameterized_tests(test_cases: list[tuple[str, Callable, Any, str]], su
         suite.run_test(test_name, test_func, expected_result, description, "parameterized")
 
 
-def assert_function_behavior(func: Callable, args: tuple, expected_result: Any,
+def assert_function_behavior(func: Callable[..., Any], args: tuple[Any, ...], expected_result: Any,
                             error_message: Optional[str] = None) -> None:
     """
     Assert that a function behaves as expected with given arguments.
@@ -722,7 +721,7 @@ def create_test_session() -> Session:
         finally:
             session.close()
     """
-    from core.database_manager import DatabaseManager
+    from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
     dm = DatabaseManager()
     return dm.get_session()
 

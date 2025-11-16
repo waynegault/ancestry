@@ -87,14 +87,14 @@ BS4_AVAILABLE = True
 # --- Test framework imports ---
 # Import specific functions from gedcom_utils
 from common_params import GraphContext
-from gedcom_utils import _are_spouses as _are_spouses_orig
+from gedcom_utils import _are_spouses as _are_spouses_orig  # type: ignore[attr-defined]
 from test_framework import (
     TestSuite,
     suppress_logging,
 )
 
 
-def _are_spouses(person1_id: str, person2_id: str, reader) -> bool:
+def _are_spouses(person1_id: str, person2_id: str, reader: Any) -> bool:
     """Wrapper to match expected parameter names."""
     return _are_spouses_orig(person1_id, person2_id, reader)
 
@@ -128,7 +128,7 @@ def format_name(name: Optional[str]) -> str:
     (like initials or acronyms) and handling None/empty input gracefully.
     Also removes GEDCOM-style slashes around surnames anywhere in the string.
     """
-    if not name or not isinstance(name, str):
+    if not name:
         return "Valued Relative"
 
     if name.isdigit() or re.fullmatch(r"[^a-zA-Z]+", name):
@@ -148,16 +148,16 @@ from gedcom_utils import (
     TAG_BIRTH,
     TAG_DEATH,
     TAG_SEX,
-    _are_cousins,
-    _are_siblings,
-    _get_event_info,
-    _get_full_name,
-    _is_aunt_or_uncle,
-    _is_grandchild,
-    _is_grandparent,
-    _is_great_grandchild,
-    _is_great_grandparent,
-    _is_niece_or_nephew,
+    _are_cousins,  # type: ignore[attr-defined]
+    _are_siblings,  # type: ignore[attr-defined]
+    _get_event_info,  # type: ignore[attr-defined]
+    _get_full_name,  # type: ignore[attr-defined]
+    _is_aunt_or_uncle,  # type: ignore[attr-defined]
+    _is_grandchild,  # type: ignore[attr-defined]
+    _is_grandparent,  # type: ignore[attr-defined]
+    _is_great_grandchild,  # type: ignore[attr-defined]
+    _is_great_grandparent,  # type: ignore[attr-defined]
+    _is_niece_or_nephew,  # type: ignore[attr-defined]
 )
 
 GEDCOM_UTILS_AVAILABLE = True
@@ -269,7 +269,7 @@ def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Optional[dic
     return True
 
 
-def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple[deque, deque, dict, dict]:
+def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple[deque[tuple[str, int, list[str]]], deque[tuple[str, int, list[str]]], dict[str, tuple[int, list[str]]], dict[str, tuple[int, list[str]]]]:
     """Initialize BFS queues and visited sets."""
     queue_fwd = deque([(start_id, 0, [start_id])])
     queue_bwd = deque([(end_id, 0, [end_id])])
@@ -289,7 +289,7 @@ def _check_search_limits(start_time: float, processed: int, timeout_sec: float, 
     return True
 
 
-def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
+def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visited: dict[str, tuple[int, list[str]]], queue: deque[tuple[str, int, list[str]]], is_forward: bool) -> None:
     """Add a relative to the search queue if not already visited."""
     if relative_id not in visited:
         new_path = [*path, relative_id] if is_forward else [relative_id, *path]
@@ -297,7 +297,7 @@ def _add_relative_to_queue(relative_id: str, path: list[str], depth: int, visite
         queue.append((relative_id, depth, new_path))
 
 
-def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
+def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited: dict[str, tuple[int, list[str]]], queue: deque[tuple[str, int, list[str]]], is_forward: bool) -> None:
     """Expand search to siblings through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -307,7 +307,7 @@ def _expand_to_siblings(graph: GraphContext, current_id: str, path: list[str], d
                 queue.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict, queue: deque, is_forward: bool) -> None:
+def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visited: dict[str, tuple[int, list[str]]], queue: deque[tuple[str, int, list[str]]], is_forward: bool) -> None:
     """Expand search to parents, children, and siblings."""
     current_id = graph.current_id
     if not current_id:
@@ -325,7 +325,7 @@ def _expand_to_relatives(graph: GraphContext, path: list[str], depth: int, visit
     _expand_to_siblings(graph, current_id, path, depth, visited, queue, is_forward)
 
 
-def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
+def _process_forward_queue(queue_fwd: deque[tuple[str, int, list[str]]], visited_fwd: dict[str, tuple[int, list[str]]], visited_bwd: dict[str, tuple[int, list[str]]], all_paths: list[list[str]], graph: GraphContext, max_depth: int) -> int:
     """Process forward queue and return number of nodes processed."""
     if not queue_fwd:
         return 0
@@ -347,7 +347,7 @@ def _process_forward_queue(queue_fwd: deque, visited_fwd: dict, visited_bwd: dic
     return 1
 
 
-def _process_backward_queue(queue_bwd: deque, visited_fwd: dict, visited_bwd: dict, all_paths: list, graph: GraphContext, max_depth: int) -> int:
+def _process_backward_queue(queue_bwd: deque[tuple[str, int, list[str]]], visited_fwd: dict[str, tuple[int, list[str]]], visited_bwd: dict[str, tuple[int, list[str]]], all_paths: list[list[str]], graph: GraphContext, max_depth: int) -> int:
     """Process backward queue and return number of nodes processed."""
     if not queue_bwd:
         return 0
@@ -391,10 +391,10 @@ def _select_best_path(all_paths: list[list[str]], id_to_parents: dict[str, set[s
 
 
 def _run_bfs_search_loop(
-    queue_fwd: deque,
-    queue_bwd: deque,
-    visited_fwd: dict,
-    visited_bwd: dict,
+    queue_fwd: deque[tuple[str, int, list[str]]],
+    queue_bwd: deque[tuple[str, int, list[str]]],
+    visited_fwd: dict[str, tuple[int, list[str]]],
+    visited_bwd: dict[str, tuple[int, list[str]]],
     graph_ctx: GraphContext,
     max_depth: int,
     timeout_sec: float,
@@ -524,7 +524,7 @@ class RelationshipPathCache:
         Ensures bidirectional queries (A→B and B→A) use the same cache entry.
         """
         # Sort IDs to create consistent key regardless of query direction
-        return tuple(sorted([start_id, end_id]))
+        return (start_id, end_id) if start_id < end_id else (end_id, start_id)
 
 
 # Global cache instance
@@ -574,9 +574,9 @@ def fast_bidirectional_bfs(
     end_id: str,
     id_to_parents: Optional[dict[str, set[str]]],
     id_to_children: Optional[dict[str, set[str]]],
-    max_depth=25,
-    node_limit=150000,
-    timeout_sec=45,
+    max_depth: int = 25,
+    node_limit: int = 150000,
+    timeout_sec: float = 45,
 ) -> list[str]:
     """
     Enhanced bidirectional BFS that finds direct paths through family trees.
@@ -700,7 +700,7 @@ def explain_relationship_path(
 
 # Helper functions for format_api_relationship_path
 
-def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tuple[Optional[str], Optional[dict]]:
+def _extract_html_from_response(api_response_data: Union[str, dict[str, Any], None]) -> tuple[Optional[str], Optional[dict[str, Any]]]:
     """Extract HTML content and JSON data from API response."""
     html_content_raw: Optional[str] = None
     json_data: Optional[dict[str, Any]] = None
@@ -722,12 +722,12 @@ def _extract_html_from_response(api_response_data: Union[str, dict, None]) -> tu
     elif isinstance(api_response_data, dict):
         # Handle direct JSON/dict response
         json_data = api_response_data
-        html_content_raw = json_data.get("html") if json_data is not None else None
+        html_content_raw = json_data.get("html") if json_data else None
 
     return html_content_raw, json_data
 
 
-def _format_discovery_api_path(json_data: dict, target_name: str, owner_name: str) -> Optional[str]:
+def _format_discovery_api_path(json_data: dict[str, Any], target_name: str, owner_name: str) -> Optional[str]:
     """Format relationship path from Discovery API JSON format."""
     if not json_data or "path" not in json_data:
         return None
@@ -780,7 +780,7 @@ def _try_simple_text_relationship(html_content_raw: str, target_name: str, owner
     return None
 
 
-def _should_skip_list_item(item) -> bool:
+def _should_skip_list_item(item: Any) -> bool:
     """Check if list item should be skipped."""
     try:
         if not isinstance(item, Tag):
@@ -795,7 +795,7 @@ def _should_skip_list_item(item) -> bool:
         logger.debug(f"Error checking item attributes: {type(item)}")
         return True
 
-def _extract_name_from_item(item) -> str:
+def _extract_name_from_item(item: Any) -> str:
     """Extract name from list item."""
     try:
         name_elem = item.find("b") if isinstance(item, Tag) else None
@@ -808,7 +808,7 @@ def _extract_name_from_item(item) -> str:
         logger.debug(f"Error extracting name: {type(item)}")
         return "Unknown"
 
-def _extract_relationship_from_item(item) -> str:
+def _extract_relationship_from_item(item: Any) -> str:
     """Extract relationship description from list item."""
     try:
         rel_elem = item.find("i") if isinstance(item, Tag) else None
@@ -819,7 +819,7 @@ def _extract_relationship_from_item(item) -> str:
         logger.debug(f"Error extracting relationship: {type(item)}")
         return ""
 
-def _extract_lifespan_from_item(item) -> str:
+def _extract_lifespan_from_item(item: Any) -> str:
     """Extract lifespan from list item."""
     try:
         text_content = item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
@@ -829,7 +829,7 @@ def _extract_lifespan_from_item(item) -> str:
         logger.debug(f"Error extracting lifespan: {type(item)}")
         return ""
 
-def _extract_person_from_list_item(item) -> dict[str, str]:
+def _extract_person_from_list_item(item: Any) -> dict[str, str]:
     """Extract name, relationship, and lifespan from a list item."""
     if _should_skip_list_item(item):
         return {}
@@ -843,7 +843,7 @@ def _extract_person_from_list_item(item) -> dict[str, str]:
 
 def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]:
     """Parse relationship data from HTML content using BeautifulSoup."""
-    if not BS4_AVAILABLE or BeautifulSoup is None:
+    if not BS4_AVAILABLE:
         logger.error("BeautifulSoup is not available. Cannot parse HTML.")
         return []
 
@@ -872,7 +872,7 @@ def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]
         return []
 
 
-def _try_json_api_format(json_data: Optional[dict], target_name: str, owner_name: str) -> Optional[str]:
+def _try_json_api_format(json_data: Optional[dict[str, Any]], target_name: str, owner_name: str) -> Optional[str]:
     """Try to format relationship from Discovery API JSON format."""
     if not json_data:
         return None
@@ -909,7 +909,7 @@ def _try_html_formats(html_content_raw: Optional[str], target_name: str, owner_n
     return format_relationship_path_unified(unified_path, target_name, owner_name, relationship_type)
 
 def format_api_relationship_path(
-    api_response_data: Union[str, dict, None],
+    api_response_data: Union[str, dict[str, Any], None],
     owner_name: str,
     target_name: str,
     relationship_type: str = "relative",
@@ -1113,7 +1113,7 @@ def _parse_discovery_relationship(relationship_text: str) -> tuple[str, Optional
 
 
 def convert_discovery_api_path_to_unified_format(
-    discovery_data: dict, target_name: str
+    discovery_data: dict[str, Any], target_name: str
 ) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert Discovery API relationship data to the unified format for relationship_path_unified.
@@ -1127,7 +1127,6 @@ def convert_discovery_api_path_to_unified_format(
     """
     if (
         not discovery_data
-        or not isinstance(discovery_data, dict)
         or "path" not in discovery_data
     ):
         logger.warning("Invalid or empty Discovery API data")
@@ -1227,9 +1226,9 @@ def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional
 
 
 def _determine_gender_for_person(
-    person_data: dict,
+    person_data: dict[str, Any],
     name: str,
-    relationship_data: Optional[list[dict]] = None,
+    relationship_data: Optional[list[dict[str, Any]]] = None,
     index: int = 0
 ) -> Optional[str]:
     """Determine gender for a person using all available information."""
@@ -1259,7 +1258,7 @@ def _determine_gender_for_person(
     return None
 
 
-def _parse_relationship_term_and_gender(relationship_text: str, person_data: dict) -> tuple[str, Optional[str]]:
+def _parse_relationship_term_and_gender(relationship_text: str, person_data: dict[str, Any]) -> tuple[str, Optional[str]]:
     """Parse relationship term and infer gender from relationship text."""
     rel_lower = relationship_text.lower()
 
@@ -1294,7 +1293,7 @@ def _parse_relationship_term_and_gender(relationship_text: str, person_data: dic
     return "relative", gender
 
 
-def _process_path_person(person_data: dict) -> dict[str, Optional[str]]:
+def _process_path_person(person_data: dict[str, Any]) -> dict[str, Optional[str]]:
     """Process a single person in the relationship path."""
     # Get and clean name
     current_name = format_name(person_data.get("name", "Unknown"))
@@ -1327,7 +1326,7 @@ def _process_path_person(person_data: dict) -> dict[str, Optional[str]]:
 
 
 def convert_api_path_to_unified_format(
-    relationship_data: list[dict], target_name: str
+    relationship_data: list[dict[str, Any]], target_name: str
 ) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert API relationship data to the unified format for relationship_path_unified.
@@ -1395,7 +1394,7 @@ def _clean_name_format(name: str) -> str:
     return re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
 
 
-def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:
+def _check_uncle_aunt_pattern_sibling(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Check for Uncle/Aunt pattern: Target's sibling is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1409,7 +1408,7 @@ def _check_uncle_aunt_pattern_sibling(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
+def _check_uncle_aunt_pattern_parent(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Check for Uncle/Aunt pattern: Through parent."""
     if len(path_data) < 3:
         return None
@@ -1427,7 +1426,7 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_grandparent_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Check for Grandparent pattern: Target's child is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1452,7 +1451,7 @@ def _check_grandparent_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_cousin_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_cousin_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Check for Cousin pattern: Target's parent's sibling's child is owner."""
     if len(path_data) < 4:
         return None
@@ -1465,7 +1464,7 @@ def _check_cousin_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
+def _check_nephew_niece_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Check for Nephew/Niece pattern: Target's parent's child is owner."""
     if len(path_data) < 3:
         return None
@@ -1484,7 +1483,7 @@ def _check_nephew_niece_pattern(path_data: list[dict]) -> Optional[str]:
     return None
 
 
-def _determine_relationship_type_from_path(path_data: list[dict]) -> Optional[str]:
+def _determine_relationship_type_from_path(path_data: list[dict[str, Any]]) -> Optional[str]:
     """Determine relationship type by checking various patterns."""
     if len(path_data) < 3:
         return None
@@ -1521,10 +1520,10 @@ def _convert_you_are_relationship(relationship: str, current_name: str, next_nam
 
 
 def _format_path_step(
-    current_person: dict,
-    next_person: dict,
-    seen_names: set,
-) -> tuple[str, set]:
+    current_person: dict[str, Any],
+    next_person: dict[str, Any],
+    seen_names: set[str],
+) -> tuple[str, set[str]]:
     """Format a single step in the relationship path using possessive format."""
     # Get names and clean them
     current_name = current_person.get("name", "Unknown")
@@ -1773,7 +1772,12 @@ def relationship_module_tests() -> None:
 
     tests.append(("Performance Validation", test_performance))
 
-    return tests
+    # Run all tests
+    suite = TestSuite("Relationship Utils", "relationship_utils.py")
+    for test_name, test_func in tests:
+        suite.run_test(test_func, test_name)
+    suite.finish_suite()
+    # Return nothing (function signature is -> None)
 
 
 # Use centralized test runner utility

@@ -204,7 +204,7 @@ class CircuitBreaker:
             else None
         )
 
-    def __call__(self, func: Callable) -> Callable:
+    def __call__(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator to wrap functions with circuit breaker and intelligent retry."""
 
         @wraps(func)
@@ -213,7 +213,7 @@ class CircuitBreaker:
 
         return wrapper
 
-    def call(self, func: Callable, *args, **kwargs) -> Any:
+    def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute function with circuit breaker protection and intelligent retry."""
         with self._lock:
             if self.state == CircuitState.OPEN:
@@ -230,7 +230,7 @@ class CircuitBreaker:
             return self._execute_with_retry(func, *args, **kwargs)
         return self._execute_once(func, *args, **kwargs)
 
-    def _execute_with_retry(self, func: Callable, *args, **kwargs) -> Any:
+    def _execute_with_retry(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute function with intelligent retry logic."""
         if not self.retry_handler:
             return self._execute_once(func, *args, **kwargs)
@@ -277,7 +277,7 @@ class CircuitBreaker:
             last_exception if last_exception else RuntimeError("Unexpected retry state")
         )
 
-    def _execute_once(self, func: Callable, *args, **kwargs) -> Any:
+    def _execute_once(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute function once with circuit breaker protection."""
         try:
             start_time = time.time()
@@ -664,7 +664,7 @@ class ErrorRecoveryManager:
 
     def __init__(self) -> None:
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
-        self.recovery_strategies: dict[str, Callable] = {}
+        self.recovery_strategies: dict[str, Callable[..., Any]] = {}
 
     def get_circuit_breaker(
         self, name: str, config: Optional[CircuitBreakerConfig] = None
@@ -674,13 +674,13 @@ class ErrorRecoveryManager:
             self.circuit_breakers[name] = CircuitBreaker(name, config)
         return self.circuit_breakers[name]
 
-    def register_recovery_strategy(self, service_name: str, strategy: Callable) -> None:
+    def register_recovery_strategy(self, service_name: str, strategy: Callable[..., Any]) -> None:
         """Register a recovery strategy for a service."""
         self.recovery_strategies[service_name] = strategy
         logger.debug(f"Registered recovery strategy for {service_name}")
 
     def execute_with_recovery(
-        self, service_name: str, operation: Callable, *args: Any, **kwargs: Any
+        self, service_name: str, operation: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Any:
         """
         Execute operation with circuit breaker protection and recovery strategies.
@@ -699,7 +699,7 @@ class ErrorRecoveryManager:
             return self._attempt_recovery(service_name, operation, e, *args, **kwargs)
 
     def _attempt_recovery(
-        self, service_name: str, operation: Callable, error: Exception, *args: Any, **kwargs: Any
+        self, service_name: str, operation: Callable[..., Any], error: Exception, *args: Any, **kwargs: Any
     ) -> Any:
         """Attempt recovery strategy when operation fails."""
         if service_name in self.recovery_strategies:
@@ -767,10 +767,10 @@ error_recovery_manager = ErrorRecoveryManager()
 
 def with_circuit_breaker(
     service_name: str, config: Optional[CircuitBreakerConfig] = None
-) -> Callable:
+) -> Callable[..., Any]:
     """Decorator to add circuit breaker protection to functions."""
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         circuit_breaker = error_recovery_manager.get_circuit_breaker(
             service_name, config
         )
@@ -842,7 +842,7 @@ def retry_on_failure(
     retry_on: Optional[list[type[Exception]]] = None,
     stop_on: Optional[list[type[Exception]]] = None,
     jitter: bool = True,
-) -> Callable:
+) -> Callable[..., Any]:
     """
     Decorator for automatic retry with exponential backoff.
 
@@ -858,7 +858,7 @@ def retry_on_failure(
     if stop_on is None:
         stop_on = [FatalError, DataValidationError]
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             context = ErrorContext(
@@ -915,7 +915,7 @@ def circuit_breaker(
     failure_threshold: int = 5,
     recovery_timeout: int = 60,
     success_threshold: int = 3,
-) -> Callable:
+) -> Callable[..., Any]:
     """
     Decorator for circuit breaker pattern.
 
@@ -925,7 +925,7 @@ def circuit_breaker(
         success_threshold: Successes needed to close circuit from half-open
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         config = CircuitBreakerConfig(
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
@@ -985,8 +985,8 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
 
 
 def graceful_degradation(
-    fallback_value: Optional[Any] = None, fallback_func: Optional[Callable] = None
-) -> Callable:
+    fallback_value: Optional[Any] = None, fallback_func: Optional[Callable[..., Any]] = None
+) -> Callable[..., Any]:
     """
     Decorator for graceful degradation when service fails.
 
@@ -995,7 +995,7 @@ def graceful_degradation(
         fallback_func: Function to call if main function fails
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:

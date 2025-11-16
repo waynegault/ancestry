@@ -73,10 +73,10 @@ P = ParamSpec('P')
 R = TypeVar('R')
 
 # --- Third-party imports ---
-from diskcache import Cache
+from diskcache import Cache  # type: ignore
 
 # Import constants used for checking cache misses vs. stored None values
-from diskcache.core import ENOVAL
+from diskcache.core import ENOVAL  # type: ignore
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
@@ -92,7 +92,7 @@ from test_framework import (
 if config_schema and getattr(config_schema.cache, "cache_dir", None):
     CACHE_DIR = Path(str(config_schema.cache.cache_dir))
 else:
-    CACHE_DIR = Path("Cache")
+    CACHE_DIR = Path("Cache")  # type: ignore
 logger.debug(f"Cache directory configured: {CACHE_DIR}")
 
 # Step 2: Ensure the cache directory exists
@@ -255,7 +255,7 @@ base_cache_module = BaseCacheModule()
 # --- Cache Decorator Helper Functions ---
 
 
-def _generate_cache_key(cache_key_prefix: str, func: Callable, args: tuple, kwargs: dict, ignore_args: bool) -> Optional[str]:
+def _generate_cache_key(cache_key_prefix: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ignore_args: bool) -> Optional[str]:
     """Generate cache key for function call."""
     if ignore_args:
         logger.debug(f"Using ignore_args=True, cache key: '{cache_key_prefix}'")
@@ -311,7 +311,7 @@ def cache_result(
     cache_key_prefix: str,
     expire: Optional[int] = None,  # Time in seconds, overrides Cache default if set
     ignore_args: bool = False,  # Use only prefix as key if True
-) -> Callable:
+) -> Callable[..., Any]:
     """
     Decorator factory to cache the result of a function using diskcache.
 
@@ -453,7 +453,7 @@ def close_cache() -> None:
 # --- Enhanced Cross-Module Cache Coordination ---
 
 
-def get_unified_cache_key(module: str, operation: str, *args, **kwargs) -> str:
+def get_unified_cache_key(module: str, operation: str, *args: Any, **kwargs: Any) -> str:
     """
     Generate unified cache keys across modules for better coordination.
 
@@ -868,7 +868,7 @@ def cache_file_based_on_mtime(
     cache_key_prefix: str,
     file_path: str,
     expire: Optional[int] = None,
-) -> Callable:
+) -> Callable[..., Any]:
     """
     Enhanced decorator that caches based on file modification time.
     Automatically invalidates cache when the source file changes.
@@ -906,7 +906,7 @@ def cache_file_based_on_mtime(
 
                 if cached_value is not ENOVAL:
                     logger.debug(f"Cache HIT for file-based key: '{final_cache_key}'")
-                    return cached_value
+                    return cached_value  # type: ignore[return-value]
                 logger.debug(f"Cache MISS for file-based key: '{final_cache_key}'")
 
                 # Execute function and cache result
@@ -1029,7 +1029,7 @@ class IntelligentCacheWarmer:
         candidates.sort(key=lambda x: x[1], reverse=True)
         return [key for key, score in candidates[:max_candidates] if score > 10]
 
-    def warm_predictive_cache(self, session_manager=None) -> int:
+    def warm_predictive_cache(self, session_manager: Optional[Any] = None) -> int:
         """Warm cache with predictively useful data."""
         warmed_count = 0
         candidates = self.get_warming_candidates()
@@ -1066,7 +1066,7 @@ class IntelligentCacheWarmer:
         pattern = self.usage_patterns.get(cache_key, {})
         return pattern.get("access_frequency", 0) > 1.0  # More than 1 access per hour
 
-    def _regenerate_cache_data(self, cache_key: str, session_manager=None) -> bool:
+    def _regenerate_cache_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
         """Regenerate cache data for a specific key."""
         try:
             # For genealogical data keys, try to regenerate
@@ -1102,7 +1102,7 @@ class IntelligentCacheWarmer:
             logger.debug(f"Could not warm GEDCOM data for {cache_key}: {e}")
         return False
 
-    def _warm_api_data(self, cache_key: str, session_manager=None) -> bool:
+    def _warm_api_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
         """Warm API-related cache data."""
         try:
             # Warm with API configuration data
