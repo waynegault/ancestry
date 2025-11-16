@@ -7,51 +7,20 @@ Comprehensive Python automation system for Ancestry.com genealogical research, f
 ## Overview
 
 This project automates genealogical research workflows on Ancestry.com, including:
-- **Action 6**: Automated page gathering and data collection
-1. **Start LM Studio** (GUI)
-   - Open LM Studio
-   - Load your chosen instruct model (e.g., qwen3-4b-2507 or Llama/Mistral)
-   - Click "Start Server"; ensure it shows Running at http://localhost:1234/v1
+- **DNA Match Collection** - Automated gathering with checkpoint resume
+- **Inbox Processing** - AI-powered message classification and analysis  
+- **Intelligent Messaging** - Context-aware automated responses
+- **Task Generation** - Convert conversations into actionable research tasks
+- **Family Tree Management** - Record sharing and relationship tracking
+- **Observability** - Real-time Prometheus metrics and Grafana dashboards
 
-2. **Validate with tests**
-   ```bash
-   python test_local_llm.py
-   ```
-   - Test 1 (Direct connection) should PASS in <5s typical
-   - Test 2 (Configuration) should PASS with AI_PROVIDER=local_llm
-   - Test 3 (Genealogical prompt) should PASS and mention at least 3 of: census, birth, marriage, death, record, search, scotland
+## Key Features
 
-3. **Use in normal actions**
-   - Keep LM Studio running
-   - Run Action 8 or 9 normally; AI calls will route to the local model
-
-### Testing Auto-Start
-
-Run the demo script to test auto-start functionality:
-```bash
-python demo_lm_studio_autostart.py
-```
-
-### Troubleshooting
-
-**LM Studio executable not found**:
-- Update `LM_STUDIO_PATH` in `.env` to match your installation location
-
-**API timeout after 60s**:
-- Increase `LM_STUDIO_STARTUP_TIMEOUT` in `.env`
-- Check firewall isn't blocking localhost:1234
-- Verify nothing else is using port 1234: `netstat -ano | findstr :1234`
-
-**Model not loaded**:
-- LM Studio starts automatically, but you must manually load a model in the UI
-- Open LM Studio → "My Models" → Load your configured model
-
-**Disable auto-start**:
-- Set `LM_STUDIO_AUTO_START=false` in `.env` to require manual startup
-
-## Future Developer Ideas
-
-Longer-term concepts are tracked in `development_plan.md`. Review that file for the prioritized backlog.
+- **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
+- **Comprehensive Testing**: 58 test modules with 100% pass rate
+- **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
+- **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
+- **Developer Tools**: Code graph visualization, test infrastructure, performance profiling
 
 ## Actions
 
@@ -267,12 +236,39 @@ Get-Content Logs/app.log -Wait | Select-String "cache hit|cache miss"
 python -m test_action6_cache_integration
 ```
 
+### Grafana Dashboards
+
+The project includes comprehensive Grafana dashboards for monitoring:
+
+**Quick Setup:**
+```powershell
+# Run automated setup (requires admin privileges)
+.\docs\grafana\setup_grafana.ps1
+
+# Reset admin password to 'ancestry'
+.\docs\grafana\reset_admin_password.ps1
+
+# Configure data sources
+.\docs\grafana\configure_datasources.ps1
+```
+
+**Available Dashboards:**
+- **Ancestry Overview** (`ancestry-overview`) - System health and performance metrics
+- **System Performance** (`ancestry-performance`) - API response times, rate limiting
+- **Genealogy Insights** (`ancestry-genealogy`) - DNA matches, conversations, research progress
+- **Code Quality** (`ancestry-code-quality`) - Test coverage, code metrics
+
+**Access:** http://localhost:3000 (credentials: admin / ancestry)
+
+**Data Sources:**
+- Prometheus (http://localhost:9090) - Real-time metrics
+- SQLite (Data/ancestry.db) - Genealogy data
+
 ### Prometheus Monitoring
 
 - Enable `PROMETHEUS_METRICS_ENABLED=true` in your `.env` file to expose a `/metrics` endpoint on the configured host and port (default `127.0.0.1:9000`).
 - When you need a quick exporter without running the main menu, execute `python observability/metrics_exporter.py --serve`.
-- Import the starter Grafana dashboard at `docs/grafana/ancestry_overview.json` and point panels to your Prometheus data source.
-- Detailed setup steps live in `docs/monitoring.md`.
+- Detailed setup steps live in the Grafana setup scripts (see above).
 
 ### Git Workflow
 - Commit at each phase of implementation
@@ -319,6 +315,27 @@ tail -f "$TAIL_TARGET"
 # Check rate limiter initialization
 grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ```
+
+## Documentation
+
+### Core Documentation
+- **README.md** (this file) - Complete project documentation
+- **`.github/copilot-instructions.md`** - AI-assisted development guidelines
+- **`docs/review_todo.md`** - Technical debt and quality improvement tasks
+
+### Code Visualization
+- **`visualize_code_graph.html`** - Interactive D3.js code graph visualization
+- **`docs/code_graph.json`** - Complete codebase structure and relationships
+
+### Test Examples
+- **`test_examples/README.md`** - Test patterns and best practices
+- **`test_examples/example_*.py`** - Example test implementations
+
+### Grafana Setup
+- **`docs/grafana/setup_grafana.ps1`** - Automated Grafana installation and configuration
+- **`docs/grafana/reset_admin_password.ps1`** - Password reset utility
+- **`docs/grafana/configure_datasources.ps1`** - Data source configuration
+- **`docs/grafana/*.json`** - Dashboard definitions (overview, performance, genealogy, code quality)
 
 ## Contributing
 
