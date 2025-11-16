@@ -345,7 +345,7 @@ def test_exporter_lifecycle() -> None:
         assert get_metrics_exporter_address() is None
 
 
-def run_comprehensive_tests() -> bool:
+def observability_metrics_exporter_module_tests() -> bool:
     suite = TestSuite("Metrics Exporter Tests", "observability/metrics_exporter.py")
     suite.start_suite()
     suite.run_test(
@@ -359,6 +359,11 @@ def run_comprehensive_tests() -> bool:
         "Exporter should start, expose metrics, and stop cleanly",
     )
     return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(observability_metrics_exporter_module_tests)
 
 
 if __name__ == "__main__":
