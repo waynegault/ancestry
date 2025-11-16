@@ -546,7 +546,7 @@ def _test_cookie_check_prevents_long_waits():
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def core_browser_manager_module_tests() -> bool:
     """
     Comprehensive test suite for browser_manager.py (decomposed).
     """
@@ -649,6 +649,11 @@ def run_comprehensive_tests() -> bool:
             "Test that cookie check doesn't wait excessively for non-existent cookies",
         )
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_browser_manager_module_tests)
 
 
 if __name__ == "__main__":
