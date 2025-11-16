@@ -135,7 +135,7 @@ def start_metrics_exporter(host: str, port: int) -> bool:
             bound_port = getattr(server, "server_port", port)
             _EXPORTER_STATE.server = server
             _EXPORTER_STATE.address = (host, bound_port)
-            logger.info("Prometheus metrics exporter listening on %s:%s", host, bound_port)
+            logger.info("✅ Prometheus metrics exporter listening on %s:%s", host, bound_port)
             return True
 
     return False
