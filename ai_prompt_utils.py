@@ -21,7 +21,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import shutil
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -106,20 +105,11 @@ def save_prompts(prompts_data: dict[str, Any]) -> bool:
         # Update the last_updated field
         prompts_data["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
-        # Save the prompts to the JSON file atomically to avoid partial writes
-        temp_path = PROMPTS_FILE.with_suffix(".tmp")
-        with temp_path.open("w", encoding="utf-8") as f:
+        # Save the prompts to the JSON file atomically using centralized helper
+        from test_utilities import atomic_write_file
+        
+        with atomic_write_file(PROMPTS_FILE) as f:
             json.dump(prompts_data, indent=2, ensure_ascii=False, fp=f)
-
-        # Atomically replace the target file using Path.replace()
-        try:
-            temp_path.replace(PROMPTS_FILE)
-        except Exception:
-            # Fallback to tempfile.NamedTemporaryFile on platforms where needed
-            with tempfile.NamedTemporaryFile("w", delete=False, dir=str(PROMPTS_FILE.parent), encoding="utf-8") as tf:
-                json.dump(prompts_data, indent=2, ensure_ascii=False, fp=tf)
-                temp_name = tf.name
-            Path(temp_name).replace(PROMPTS_FILE)
 
         logger.info(f"Saved AI prompts to {PROMPTS_FILE}")
         return True

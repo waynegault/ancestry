@@ -372,10 +372,10 @@ def _create_test_experiments_file(path: Path, scores: list[float]) -> None:
 def _test_generate_baseline_json_output() -> None:
     """Ensure --generate-baseline emits JSON with baseline metadata."""
     import io
-    import tempfile
     from contextlib import redirect_stdout
+    from test_utilities import temp_directory
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="qrg-test-"))
+    with temp_directory(prefix="qrg-test-") as tmpdir:
     experiments = tmpdir / "prompt_experiments.jsonl"
     baseline = tmpdir / "quality_baseline.json"
 
@@ -408,11 +408,11 @@ def _test_generate_baseline_json_output() -> None:
 def _test_regression_detection_json_mode() -> None:
     """Ensure JSON output reports regression status correctly."""
     import io
-    import tempfile
     from contextlib import redirect_stdout
     from datetime import datetime, timezone
+    from test_utilities import temp_directory
 
-    tmpdir = Path(tempfile.mkdtemp(prefix="qrg-test-"))
+    with temp_directory(prefix="qrg-test-") as tmpdir:
     experiments = tmpdir / "prompt_experiments.jsonl"
     baseline = tmpdir / "quality_baseline.json"
 
