@@ -477,6 +477,26 @@ def _compose_task_title(person_name: str, relationship: Optional[str]) -> str:
     return f"Research: {person_name}"
 
 
+def _add_ancestry_urls_to_body(body_lines: list[str], profile_id: Optional[str], uuid: Optional[str]) -> None:
+    """Add Ancestry URLs to task body lines."""
+    if profile_id:
+        body_lines.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={profile_id}")
+    if uuid:
+        body_lines.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{uuid}/compare")
+
+
+def _add_tree_info_to_body(body_lines: list[str], tree_info: Optional[dict[str, Any]]) -> None:
+    """Add tree information to task body lines."""
+    if not tree_info:
+        return
+    if tree_info.get('person_name_in_tree'):
+        body_lines.append(f"Name in Tree: {tree_info['person_name_in_tree']}")
+    if tree_info.get('view_in_tree_link'):
+        body_lines.append(f"View in Tree: {tree_info['view_in_tree_link']}")
+    if tree_info.get('actual_relationship'):
+        body_lines.append(f"Tree Relationship: {tree_info['actual_relationship']}")
+
+
 def _compose_task_body(
     person_name: str,
     relationship: Optional[str],
@@ -491,25 +511,14 @@ def _compose_task_body(
     """Build the task body with key research context."""
     body_lines = [f"Research target: {person_name}"]
 
-    # Add Ancestry URLs
-    if profile_id:
-        body_lines.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={profile_id}")
-    if uuid:
-        body_lines.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{uuid}/compare")
+    _add_ancestry_urls_to_body(body_lines, profile_id, uuid)
 
     if relationship:
         body_lines.append(f"Relationship: {relationship}")
     if shared_dna_cm is not None:
         body_lines.append(f"Shared DNA: {shared_dna_cm:.1f} cM")
 
-    # Add tree information if available
-    if tree_info:
-        if tree_info.get('person_name_in_tree'):
-            body_lines.append(f"Name in Tree: {tree_info['person_name_in_tree']}")
-        if tree_info.get('view_in_tree_link'):
-            body_lines.append(f"View in Tree: {tree_info['view_in_tree_link']}")
-        if tree_info.get('actual_relationship'):
-            body_lines.append(f"Tree Relationship: {tree_info['actual_relationship']}")
+    _add_tree_info_to_body(body_lines, tree_info)
 
     body_lines.append(f"Priority: {importance.title()}")
     if due_date:
@@ -1474,6 +1483,42 @@ class PersonProcessor:
 
         return importance, due_date, categories
 
+    def _add_person_urls(self, task_body_parts: list[str], person: Person) -> None:
+        """Add Ancestry profile and DNA comparison URLs to task body."""
+        if person.profile_id:
+            task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
+
+        if person.dna_match and hasattr(person.dna_match, 'compare_link'):
+            task_body_parts.append(f"DNA Comparison: {person.dna_match.compare_link}")
+        elif person.uuid:
+            task_body_parts.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{person.uuid}/compare")
+
+    def _add_relationship_info(self, task_body_parts: list[str], person: Person) -> None:
+        """Add relationship and DNA information to task body."""
+        if person.predicted_relationship:
+            task_body_parts.append(f"Relationship: {person.predicted_relationship}")
+
+        if hasattr(person, 'shared_dna_cm') and person.shared_dna_cm:
+            task_body_parts.append(f"Shared DNA: {person.shared_dna_cm} cM")
+
+        if person.tree_status:
+            status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
+            task_body_parts.append(f"Tree Status: {status_display}")
+
+    def _add_family_tree_info(self, task_body_parts: list[str], person: Person) -> None:
+        """Add family tree information to task body."""
+        if not person.family_tree:
+            return
+
+        if hasattr(person.family_tree, 'cfpid') and person.family_tree.cfpid:
+            task_body_parts.append(f"Tree Person ID: {person.family_tree.cfpid}")
+        if hasattr(person.family_tree, 'person_name_in_tree') and person.family_tree.person_name_in_tree:
+            task_body_parts.append(f"Name in Tree: {person.family_tree.person_name_in_tree}")
+        if hasattr(person.family_tree, 'view_in_tree_link') and person.family_tree.view_in_tree_link:
+            task_body_parts.append(f"View in Tree: {person.family_tree.view_in_tree_link}")
+        if hasattr(person.family_tree, 'actual_relationship') and person.family_tree.actual_relationship:
+            task_body_parts.append(f"Tree Relationship: {person.family_tree.actual_relationship}")
+
     def _build_task_body_parts(self, person: Person, task_desc: str, task_index: int, total_tasks: int) -> list[str]:
         """Build task body parts with person context."""
         task_body_parts = [
@@ -1483,39 +1528,9 @@ class PersonProcessor:
             f"Profile: {person.profile_id or 'N/A'}",
         ]
 
-        # Add Ancestry URLs
-        if person.profile_id:
-            task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
-
-        # Add DNA match comparison URL if available
-        if person.dna_match and hasattr(person.dna_match, 'compare_link'):
-            task_body_parts.append(f"DNA Comparison: {person.dna_match.compare_link}")
-        elif person.uuid:  # Fallback to constructing URL from UUID
-            task_body_parts.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{person.uuid}/compare")
-
-        # Add relationship context
-        if person.predicted_relationship:
-            task_body_parts.append(f"Relationship: {person.predicted_relationship}")
-
-        # Add DNA match info if available
-        if hasattr(person, 'shared_dna_cm') and person.shared_dna_cm:
-            task_body_parts.append(f"Shared DNA: {person.shared_dna_cm} cM")
-
-        # Add tree status and tree links
-        if person.tree_status:
-            status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
-            task_body_parts.append(f"Tree Status: {status_display}")
-
-        # Add family tree information if in tree
-        if person.family_tree:
-            if hasattr(person.family_tree, 'cfpid') and person.family_tree.cfpid:
-                task_body_parts.append(f"Tree Person ID: {person.family_tree.cfpid}")
-            if hasattr(person.family_tree, 'person_name_in_tree') and person.family_tree.person_name_in_tree:
-                task_body_parts.append(f"Name in Tree: {person.family_tree.person_name_in_tree}")
-            if hasattr(person.family_tree, 'view_in_tree_link') and person.family_tree.view_in_tree_link:
-                task_body_parts.append(f"View in Tree: {person.family_tree.view_in_tree_link}")
-            if hasattr(person.family_tree, 'actual_relationship') and person.family_tree.actual_relationship:
-                task_body_parts.append(f"Tree Relationship: {person.family_tree.actual_relationship}")
+        self._add_person_urls(task_body_parts, person)
+        self._add_relationship_info(task_body_parts, person)
+        self._add_family_tree_info(task_body_parts, person)
 
         return task_body_parts
 
