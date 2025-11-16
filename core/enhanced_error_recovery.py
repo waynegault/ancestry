@@ -448,7 +448,7 @@ def _test_file_recovery_decorator() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def core_enhanced_error_recovery_module_tests() -> bool:
     """
     Comprehensive test suite for enhanced_error_recovery.py.
     Tests error recovery mechanisms, decorators, and recovery strategies.
@@ -535,6 +535,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_enhanced_error_recovery_module_tests)
 
 
 if __name__ == "__main__":

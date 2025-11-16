@@ -446,7 +446,7 @@ def get_metrics_registry() -> MetricRegistry:
 
 
 # Test suite
-def run_comprehensive_tests() -> bool:
+def core_metrics_collector_module_tests() -> bool:
     """Run comprehensive tests for metrics collection system."""
     from test_framework import TestSuite  # type: ignore[import-not-found]
 
@@ -568,6 +568,11 @@ def run_comprehensive_tests() -> bool:
     suite.run_test("Singleton pattern", test_singleton)
 
     return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_metrics_collector_module_tests)
 
 
 if __name__ == "__main__":
