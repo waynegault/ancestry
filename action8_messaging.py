@@ -21,7 +21,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === ERROR HANDLING ===
-from core.error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -121,7 +121,7 @@ from common_params import BatchConfig, BatchCounters, MessagingBatchData, Proces
 from config import config_schema
 from connection_resilience import with_connection_resilience
 from core.enhanced_error_recovery import with_enhanced_recovery
-from core.error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     APIRateLimitError,
     AuthenticationExpiredError,
     BrowserSessionError,
@@ -4698,9 +4698,11 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
 
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
         if has_state:
-            assert conv_state.next_action == expected_action, \  # type: ignore[possibly-unbound]
-                f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
-            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"  # type: ignore[possibly-unbound]
+            # type: ignore[possibly-unbound]
+            assert conv_state.next_action == expected_action, \
+                f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"
+            # type: ignore[possibly-unbound]
+            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"
 
         logger.info(f"✓ {description}")
 
@@ -4786,10 +4788,12 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
 
         if has_state:
-            assert conv_state.next_action == 'await_reply', \  # type: ignore[possibly-unbound]
-                f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
-            assert conv_state.conversation_phase == 'active_dialogue', \  # type: ignore[possibly-unbound]
-                f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"  # type: ignore[possibly-unbound]
+            # type: ignore[possibly-unbound]
+            assert conv_state.next_action == 'await_reply', \
+                f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"
+            # type: ignore[possibly-unbound]
+            assert conv_state.conversation_phase == 'active_dialogue', \
+                f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"
 
         logger.info(f"✓ {description}")
 

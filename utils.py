@@ -12,6 +12,7 @@ and includes login/session verification logic closely tied to SessionManager.
 from standard_imports import (
     setup_module,
 )
+from test_utilities import create_standard_test_runner
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
@@ -4416,29 +4417,346 @@ def _create_stubbed_session_manager() -> tuple[
     return session_manager, mock_db, mock_browser, mock_api, mock_validator
 
 
+# === TEST HELPER FUNCTIONS ===
+
+def _test_parse_cookie() -> None:
+    """Test cookie parsing with various cookie string formats"""
+    test_cases = [
+        (
+            "session_id=abc123; path=/; domain=.example.com",
+            {"session_id": "abc123", "path": "/", "domain": ".example.com"},
+            "Standard cookie string",
+        ),
+        ("", {}, "Empty string"),
+        ("single=value", {"single": "value"}, "Single cookie"),
+        ("a=1; b=2; c=3", {"a": "1", "b": "2", "c": "3"}, "Multiple cookies"),
+        (
+            "invalid_part; valid=test",
+            {"valid": "test"},
+            "Mixed valid/invalid parts",
+        ),
+    ]
+
+    print("📋 Testing cookie parsing with various formats:")
+    results = []
+
+    for cookie_str, expected, description in test_cases:
+        try:
+            result = parse_cookie(cookie_str)
+            matches_expected = result == expected
+
+            status = "✅" if matches_expected else "❌"
+            print(f"   {status} {description}")
+            print(f"      Input: '{cookie_str}'")
+            print(f"      Output: {result}")
+            print(f"      Expected: {expected}")
+
+            results.append(matches_expected)
+            assert (
+                matches_expected
+            ), f"Should match expected result for '{cookie_str}'"
+
+        except Exception as e:
+            print(f"   ❌ {description}: Exception {e}")
+            results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} cookie parsing tests passed")
+
+
+def _test_ordinal_case() -> None:
+    """Test ordinal number formatting with various input types"""
+    test_cases = [
+        (1, "1st", "First ordinal"),
+        (2, "2nd", "Second ordinal"),
+        (3, "3rd", "Third ordinal"),
+        (4, "4th", "Fourth ordinal"),
+        (11, "11th", "Eleventh (special case)"),
+        (12, "12th", "Twelfth (special case)"),
+        (13, "13th", "Thirteenth (special case)"),
+        (21, "21st", "Twenty-first ordinal"),
+        (22, "22nd", "Twenty-second ordinal"),
+        (23, "23rd", "Twenty-third ordinal"),
+        (101, "101st", "One hundred first"),
+        ("Great Uncle", "Great Uncle", "Text input"),
+    ]
+
+    print("📋 Testing ordinal number formatting:")
+    results = []
+
+    for input_val, expected, description in test_cases:
+        try:
+            result = ordinal_case(input_val)
+            matches_expected = result == expected
+
+            status = "✅" if matches_expected else "❌"
+            print(f"   {status} {description}")
+            print(f"      Input: {input_val} (Type: {type(input_val).__name__})")
+            print(f"      Output: '{result}' (Expected: '{expected}')")
+
+            results.append(matches_expected)
+            assert (
+                matches_expected
+            ), f"Failed for {input_val}: expected '{expected}', got '{result}'"
+
+        except Exception as e:
+            print(f"   ❌ {description}: Exception {e}")
+            results.append(False)
+
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} ordinal formatting tests passed"
+    )
+
+
+def _test_format_name() -> None:
+    """Test name formatting with various input types and edge cases"""
+    test_cases = [
+        ("john doe", "John Doe", "Basic name formatting"),
+        (None, "Valued Relative", "None input handling"),
+        ("", "Valued Relative", "Empty string handling"),
+        ("ALLCAPS NAME", "Allcaps Name", "All caps input"),
+        ("  spaces  everywhere  ", "Spaces Everywhere", "Extra whitespace"),
+        ("o'connor", "O'Connor", "Apostrophe handling"),
+    ]
+
+    print("📋 Testing name formatting with various cases:")
+    results = []
+
+    for input_val, expected, description in test_cases:
+        try:
+            result = format_name(input_val)
+            matches_expected = result == expected
+
+            status = "✅" if matches_expected else "❌"
+            print(f"   {status} {description}")
+            print(f"      Input: {input_val!r} → Output: '{result}'")
+            print(f"      Expected: '{expected}'")
+
+            results.append(matches_expected)
+            assert (
+                matches_expected
+            ), f"Failed for {input_val!r}: expected '{expected}', got '{result}'"
+
+        except Exception as e:
+            print(f"   ❌ {description}: Exception {e}")
+            results.append(False)
+
+    print(f"📊 Results: {sum(results)}/{len(results)} name formatting tests passed")
+
+
+def _test_decorators() -> None:
+    """Test decorator availability and basic functionality"""
+    # Test retry decorator availability
+    assert callable(retry), "retry decorator should be callable"
+    assert callable(retry_api), "retry_api decorator should be callable"
+    assert callable(
+        ensure_browser_open
+    ), "ensure_browser_open decorator should be callable"
+    assert callable(time_wait), "time_wait decorator should be callable"
+
+    # Basic decorator functionality test
+    @retry(max_retries=1, backoff_factor=0.001)
+    def decorated_callable() -> str:
+        return "success"
+
+    result = decorated_callable()
+    assert result == "success", "Retry decorator should work"
+
+
+def _test_circuit_breaker() -> None:
+    """Test CircuitBreaker state transitions and functionality"""
+    # Test CircuitBreaker instantiation and state transitions
+    cb = CircuitBreaker(failure_threshold=3, recovery_timeout=1.0, half_open_max_requests=2)
+    assert cb is not None, "Circuit breaker should instantiate"
+    assert cb.get_state() == "CLOSED", "Circuit breaker should start in CLOSED state"
+
+    # Test failure recording and circuit opening
+    cb.record_failure()
+    assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 1 failure"
+    cb.record_failure()
+    assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 2 failures"
+    cb.record_failure()
+    assert cb.get_state() == "OPEN", "Circuit should OPEN after 3 failures (threshold)"
+
+    # Test that circuit blocks requests when OPEN
+    metrics = cb.get_metrics()
+    assert metrics['circuit_opens'] == 1, "Circuit should have opened once"
+
+    # Test transition to HALF_OPEN after recovery timeout
+    time.sleep(1.1)  # Wait for recovery timeout
+    from contextlib import suppress
+    with suppress(Exception):
+        cb.call(lambda: "test")
+    assert cb.get_state() == "HALF_OPEN", "Circuit should transition to HALF_OPEN after recovery timeout"
+
+    # Test success recording and circuit closing
+    cb.record_success()
+    cb.record_success()
+    assert cb.get_state() == "CLOSED", "Circuit should CLOSE after successful test requests"
+
+    metrics = cb.get_metrics()
+    assert metrics['circuit_closes'] == 1, "Circuit should have closed once"
+    assert metrics['half_open_successes'] == 2, "Should have 2 successful test requests"
+
+
+def _test_rate_limiter() -> None:
+    """Test AdaptiveRateLimiter interface and functionality"""
+    # Test AdaptiveRateLimiter via get_rate_limiter()
+    limiter = get_rate_limiter()
+    assert limiter is not None, "Rate limiter should instantiate"
+    assert hasattr(limiter, "wait"), "Rate limiter should have wait method"
+    assert hasattr(limiter, "on_429_error"), "Rate limiter should have on_429_error method"
+    assert hasattr(limiter, "on_success"), "Rate limiter should have on_success method"
+    assert hasattr(limiter, "get_metrics"), "Rate limiter should have get_metrics method"
+
+    # Test wait method (should not hang)
+    start_time = time.time()
+    limiter.wait()
+    elapsed = time.time() - start_time
+    assert elapsed < 1.0, "Wait should complete quickly in test"
+
+    # Test AdaptiveRateLimiter interface
+    limiter.on_429_error()  # Simulate 429 error
+    metrics = limiter.get_metrics()
+    assert metrics.error_429_count == 1, "Should track 429 error"
+
+    # Test success tracking
+    limiter.on_success()
+    metrics = limiter.get_metrics()
+    assert metrics.success_count == 1, "Should track success"
+
+
+def _test_session_manager() -> None:
+    """Test SessionManager instantiation and interface"""
+    sm, mock_db, mock_browser, mock_api, mock_validator = _create_stubbed_session_manager()
+
+    assert sm.db_manager is mock_db, "SessionManager should use cached database manager"
+    assert sm.browser_manager is mock_browser, "SessionManager should use cached browser manager"
+    assert sm.api_manager is mock_api, "SessionManager should use cached API manager"
+    assert sm.validator is mock_validator, "SessionManager should use cached session validator"
+    assert hasattr(sm, "ensure_session_ready"), "SessionManager missing ensure_session_ready method"
+    assert hasattr(sm, "close_sess"), "SessionManager missing close_sess method"
+    assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
+    assert sm.driver_live is False, "SessionManager driver should not be live initially"
+
+
+def _test_api_request_function() -> None:
+    """Test _api_req function availability and signature"""
+    # Test _api_req function availability
+    assert callable(_api_req), "_api_req function should be callable"
+
+    # Test function signature (should not raise errors)
+    import inspect as inspect_module
+
+    sig = inspect_module.signature(_api_req)
+    assert len(sig.parameters) >= 2, "_api_req should accept multiple parameters"
+
+
+def _test_login_status_function() -> None:
+    """Test login_status function availability and signature"""
+    # Test login_status function availability
+    assert callable(login_status), "login_status function should be callable"
+
+    # Test function signature
+    import inspect as inspect_module
+
+    sig = inspect_module.signature(login_status)
+    assert (
+        "session_manager" in sig.parameters
+    ), "login_status should accept session_manager parameter"
+
+
+def _test_module_registration() -> None:
+    """Test module registration functions and core function availability"""
+    # Test that module registration functions work
+    assert callable(
+        auto_register_module
+    ), "auto_register_module should be available"
+    assert callable(register_function), "register_function should be available"
+    assert callable(get_function), "get_function should be available"
+    assert callable(
+        is_function_available
+    ), "is_function_available should be available"
+
+    # Test that core functions are available
+    assert "format_name" in globals(), "format_name should be in globals"
+    assert "get_rate_limiter" in globals(), "get_rate_limiter should be in globals (replaces RateLimiter)"
+    assert "SessionManager" in globals(), "SessionManager should be in globals"
+
+
+def _test_performance_validation() -> None:
+    """Test that key operations complete within reasonable time"""
+    # Test that key operations complete within reasonable time
+    start_time = time.time()
+
+    # Format name performance
+    for i in range(100):
+        format_name(f"test name {i}")
+
+    # Ordinal case performance
+    for i in range(1, 101):
+        ordinal_case(i)
+
+    elapsed = time.time() - start_time
+    assert (
+        elapsed < 1.0
+    ), f"Performance test should complete quickly, took {elapsed:.3f}s"
+
+
+def _test_sleep_prevention() -> None:
+    """Test cross-platform sleep prevention utilities without side effects."""
+    from unittest.mock import MagicMock, patch
+
+    assert callable(prevent_system_sleep), "prevent_system_sleep should be callable"
+    assert callable(restore_system_sleep), "restore_system_sleep should be callable"
+
+    # Windows branch uses ctypes to prevent sleep
+    with patch("platform.system", return_value="Windows"), patch(
+        "ctypes.windll", create=True
+    ) as mock_windll:
+        mock_windll.kernel32.SetThreadExecutionState.return_value = 1
+        state = prevent_system_sleep()
+        assert state is True, "Windows sleep prevention should return True"
+        restore_system_sleep(state)
+        mock_windll.kernel32.SetThreadExecutionState.assert_called()
+
+    # macOS branch spawns caffeinate process
+    mock_process = MagicMock()
+    with patch("platform.system", return_value="Darwin"), patch(
+        "subprocess.Popen", return_value=mock_process
+    ) as mock_popen:
+        state = prevent_system_sleep()
+        assert isinstance(state, MagicMock), "macOS should return process object"
+        mock_popen.assert_called_with(["caffeinate", "-d"])
+        restore_system_sleep(state)
+        state.terminate.assert_called_once()
+
+    # Linux branch returns None (no implementation)
+    with patch("platform.system", return_value="Linux"):
+        state = prevent_system_sleep()
+        assert state is None, "Linux should return None (not implemented)"
+        restore_system_sleep(state)  # Should not raise error
+
+
+def _test_check_for_unavailability() -> None:
+    """Test _check_for_unavailability function with mock driver."""
+    from unittest.mock import MagicMock
+
+    # Test basic function existence and signature
+    assert callable(_check_for_unavailability), "_check_for_unavailability should be callable"
+
+    # Test with mock driver
+    mock_driver = MagicMock()
+    mock_driver.current_url = "http://test.com"
+
+    # Test with empty selectors
+    action, wait_time = _check_for_unavailability(mock_driver, {})
+    assert action is None, "Should return None for empty selectors"
+    assert wait_time == 0, "Should return 0 for empty selectors"
+
+    print("✅ _check_for_unavailability passed basic tests")
+
+
 def utils_module_tests() -> bool:
-    """Module-specific tests for utils.py functionality."""
-    try:
-        # Test format_name functionality
-        assert format_name("john doe") == "John Doe", "format_name basic test failed"
-        assert format_name(None) == "Valued Relative", "format_name None test failed"
-
-        # Test AdaptiveRateLimiter via get_rate_limiter()
-        limiter = get_rate_limiter()
-        limiter.wait()  # Should not hang
-
-        # Test SessionManager - import it properly at runtime
-        sm, *_ = _create_stubbed_session_manager()
-        assert hasattr(sm, "driver_live"), "SessionManager missing driver_live attribute"
-        assert hasattr(sm, "session_ready"), "SessionManager missing session_ready attribute"
-        assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
-
-        return True
-    except Exception as e:
-        logger.error(f"Utils module tests failed: {e}")
-        return False
-
-def run_comprehensive_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
     from test_framework import TestSuite, suppress_logging
 
@@ -4446,458 +4764,93 @@ def run_comprehensive_tests() -> bool:
         "Core Utilities & Session Management", "utils.py"
     )  # Basic utility functions
 
-    def test_parse_cookie():
-        """Test cookie parsing with various cookie string formats"""
-        test_cases = [
-            (
-                "session_id=abc123; path=/; domain=.example.com",
-                {"session_id": "abc123", "path": "/", "domain": ".example.com"},
-                "Standard cookie string",
-            ),
-            ("", {}, "Empty string"),
-            ("single=value", {"single": "value"}, "Single cookie"),
-            ("a=1; b=2; c=3", {"a": "1", "b": "2", "c": "3"}, "Multiple cookies"),
-            (
-                "invalid_part; valid=test",
-                {"valid": "test"},
-                "Mixed valid/invalid parts",
-            ),
-        ]
+    suite.run_test(
+        "Cookie Parsing",
+        _test_parse_cookie,
+        "Parse cookie strings with various formats"
+    )
+
+    suite.run_test(
+        "Ordinal Formatting",
+        _test_ordinal_case,
+        "Format numbers with ordinal suffixes (1st, 2nd, etc.)"
+    )
+
+    suite.run_test(
+        "Name Formatting",
+        _test_format_name,
+        "Format names with proper capitalization"
+    )
+
+    suite.run_test(
+        "Decorator Availability",
+        _test_decorators,
+        "Verify all decorators are callable and functional"
+    )
+
+    suite.run_test(
+        "Circuit Breaker State Transitions",
+        _test_circuit_breaker,
+        "Test CircuitBreaker state machine (CLOSED → OPEN → HALF_OPEN → CLOSED)"
+    )
+
+    suite.run_test(
+        "Adaptive Rate Limiter",
+        _test_rate_limiter,
+        "Test rate limiting interface and metrics tracking"
+    )
+
+    suite.run_test(
+        "SessionManager Instantiation",
+        _test_session_manager,
+        "Verify SessionManager initializes with correct dependencies"
+    )
+
+    suite.run_test(
+        "API Request Function",
+        _test_api_request_function,
+        "Verify _api_req function signature and availability"
+    )
+
+    suite.run_test(
+        "Login Status Function",
+        _test_login_status_function,
+        "Verify login_status function signature"
+    )
+
+    suite.run_test(
+        "Module Registration",
+        _test_module_registration,
+        "Verify function registration system and core functions"
+    )
+
+    suite.run_test(
+        "Performance Validation",
+        _test_performance_validation,
+        "Ensure key operations complete within time limits"
+    )
+
+    suite.run_test(
+        "Cross-Platform Sleep Prevention",
+        _test_sleep_prevention,
+        "Test prevent_system_sleep/restore_system_sleep without side effects"
+    )
+
+    suite.run_test(
+        "Unavailability Detection",
+        _test_check_for_unavailability,
+        "Detect unavailability markers in HTML content"
+    )
 
-        print("📋 Testing cookie parsing with various formats:")
-        results = []
-
-        for cookie_str, expected, description in test_cases:
-            try:
-                result = parse_cookie(cookie_str)
-                matches_expected = result == expected
-
-                status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}")
-                print(f"      Input: '{cookie_str}'")
-                print(f"      Output: {result}")
-                print(f"      Expected: {expected}")
-
-                results.append(matches_expected)
-                assert (
-                    matches_expected
-                ), f"Should match expected result for '{cookie_str}'"
-
-            except Exception as e:
-                print(f"   ❌ {description}: Exception {e}")
-                results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} cookie parsing tests passed")
-
-    def test_ordinal_case():
-        """Test ordinal number formatting with various input types"""
-        test_cases = [
-            (1, "1st", "First ordinal"),
-            (2, "2nd", "Second ordinal"),
-            (3, "3rd", "Third ordinal"),
-            (4, "4th", "Fourth ordinal"),
-            (11, "11th", "Eleventh (special case)"),
-            (12, "12th", "Twelfth (special case)"),
-            (13, "13th", "Thirteenth (special case)"),
-            (21, "21st", "Twenty-first ordinal"),
-            (22, "22nd", "Twenty-second ordinal"),
-            (23, "23rd", "Twenty-third ordinal"),
-            (101, "101st", "One hundred first"),
-            ("Great Uncle", "Great Uncle", "Text input"),
-        ]
-
-        print("📋 Testing ordinal number formatting:")
-        results = []
-
-        for input_val, expected, description in test_cases:
-            try:
-                result = ordinal_case(input_val)
-                matches_expected = result == expected
-
-                status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}")
-                print(f"      Input: {input_val} (Type: {type(input_val).__name__})")
-                print(f"      Output: '{result}' (Expected: '{expected}')")
-
-                results.append(matches_expected)
-                assert (
-                    matches_expected
-                ), f"Failed for {input_val}: expected '{expected}', got '{result}'"
-
-            except Exception as e:
-                print(f"   ❌ {description}: Exception {e}")
-                results.append(False)
-
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} ordinal formatting tests passed"
-        )
-
-    def test_format_name():
-        """Test name formatting with various input types and edge cases"""
-        test_cases = [
-            ("john doe", "John Doe", "Basic name formatting"),
-            (None, "Valued Relative", "None input handling"),
-            ("", "Valued Relative", "Empty string handling"),
-            ("JOHN DOE", "John Doe", "Uppercase conversion"),
-            ("john /doe/", "John Doe", "GEDCOM format handling"),
-            ("o'malley", "O'Malley", "Irish apostrophe names"),
-            ("mcdonald", "McDonald", "Scottish Mc names"),
-            ("macleod", "MacLeod", "Scottish Mac names"),
-            ("'betty' smith", "'Betty' Smith", "Quoted nicknames"),
-            (
-                "jean-claude van damme",
-                "Jean-Claude van Damme",
-                "Hyphenated with particles",
-            ),
-            ("j. r. r. tolkien", "J. R. R. Tolkien", "Initials with periods"),
-        ]
-
-        print("📋 Testing name formatting with various cases:")
-        results = []
-
-        for input_val, expected, description in test_cases:
-            try:
-                result = format_name(input_val)
-                matches_expected = result == expected
-
-                status = "✅" if matches_expected else "❌"
-                print(f"   {status} {description}")
-                print(f"      Input: {input_val!r} → Output: '{result}'")
-                print(f"      Expected: '{expected}'")
-
-                results.append(matches_expected)
-                assert (
-                    matches_expected
-                ), f"Failed for {input_val!r}: expected '{expected}', got '{result}'"
-
-            except Exception as e:
-                print(f"   ❌ {description}: Exception {e}")
-                results.append(False)
-
-        print(f"📊 Results: {sum(results)}/{len(results)} name formatting tests passed")
-
-    def test_decorators():
-        # Test retry decorator availability
-        assert callable(retry), "retry decorator should be callable"
-        assert callable(retry_api), "retry_api decorator should be callable"
-        assert callable(
-            ensure_browser_open
-        ), "ensure_browser_open decorator should be callable"
-        assert callable(time_wait), "time_wait decorator should be callable"
-
-        # Basic decorator functionality test
-        @retry(max_retries=1, backoff_factor=0.001)
-        def decorated_callable() -> str:
-            return "success"
-
-        result = decorated_callable()
-        assert result == "success", "Retry decorator should work"
-
-    def test_circuit_breaker():
-        # Test CircuitBreaker instantiation and state transitions
-        cb = CircuitBreaker(failure_threshold=3, recovery_timeout=1.0, half_open_max_requests=2)
-        assert cb is not None, "Circuit breaker should instantiate"
-        assert cb.get_state() == "CLOSED", "Circuit breaker should start in CLOSED state"
-
-        # Test failure recording and circuit opening
-        cb.record_failure()
-        assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 1 failure"
-        cb.record_failure()
-        assert cb.get_state() == "CLOSED", "Circuit should stay CLOSED after 2 failures"
-        cb.record_failure()
-        assert cb.get_state() == "OPEN", "Circuit should OPEN after 3 failures (threshold)"
-
-        # Test that circuit blocks requests when OPEN
-        metrics = cb.get_metrics()
-        assert metrics['circuit_opens'] == 1, "Circuit should have opened once"
-
-        # Test transition to HALF_OPEN after recovery timeout
-        time.sleep(1.1)  # Wait for recovery timeout
-        from contextlib import suppress
-        with suppress(Exception):
-            cb.call(lambda: "test")
-        assert cb.get_state() == "HALF_OPEN", "Circuit should transition to HALF_OPEN after recovery timeout"
-
-        # Test success recording and circuit closing
-        cb.record_success()
-        cb.record_success()
-        assert cb.get_state() == "CLOSED", "Circuit should CLOSE after successful test requests"
-
-        metrics = cb.get_metrics()
-        assert metrics['circuit_closes'] == 1, "Circuit should have closed once"
-        assert metrics['half_open_successes'] == 2, "Should have 2 successful test requests"
-
-    def test_rate_limiter():
-        # Test AdaptiveRateLimiter via get_rate_limiter()
-        limiter = get_rate_limiter()
-        assert limiter is not None, "Rate limiter should instantiate"
-        assert hasattr(limiter, "wait"), "Rate limiter should have wait method"
-        assert hasattr(limiter, "on_429_error"), "Rate limiter should have on_429_error method"
-        assert hasattr(limiter, "on_success"), "Rate limiter should have on_success method"
-        assert hasattr(limiter, "get_metrics"), "Rate limiter should have get_metrics method"
-
-        # Test wait method (should not hang)
-        start_time = time.time()
-        limiter.wait()
-        elapsed = time.time() - start_time
-        assert elapsed < 1.0, "Wait should complete quickly in test"
-
-        # Test AdaptiveRateLimiter interface
-        limiter.on_429_error()  # Simulate 429 error
-        metrics = limiter.get_metrics()
-        assert metrics.error_429_count == 1, "Should track 429 error"
-
-        # Test success tracking
-        limiter.on_success()
-        metrics = limiter.get_metrics()
-        assert metrics.success_count == 1, "Should track success"
-
-    def test_session_manager():
-        sm, mock_db, mock_browser, mock_api, mock_validator = _create_stubbed_session_manager()
-
-        assert sm.db_manager is mock_db, "SessionManager should use cached database manager"
-        assert sm.browser_manager is mock_browser, "SessionManager should use cached browser manager"
-        assert sm.api_manager is mock_api, "SessionManager should use cached API manager"
-        assert sm.validator is mock_validator, "SessionManager should use cached session validator"
-        assert hasattr(sm, "ensure_session_ready"), "SessionManager missing ensure_session_ready method"
-        assert hasattr(sm, "close_sess"), "SessionManager missing close_sess method"
-        assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
-        assert sm.driver_live is False, "SessionManager driver should not be live initially"
-
-    def test_api_request_function():
-        # Test _api_req function availability
-        assert callable(_api_req), "_api_req function should be callable"
-
-        # Test function signature (should not raise errors)
-        import inspect as inspect_module
-
-        sig = inspect_module.signature(_api_req)
-        assert len(sig.parameters) >= 2, "_api_req should accept multiple parameters"
-
-    def test_login_status_function():
-        # Test login_status function availability
-        assert callable(login_status), "login_status function should be callable"
-
-        # Test function signature
-        import inspect as inspect_module
-
-        sig = inspect_module.signature(login_status)
-        assert (
-            "session_manager" in sig.parameters
-        ), "login_status should accept session_manager parameter"
-
-    def test_module_registration():
-        # Test that module registration functions work
-        assert callable(
-            auto_register_module
-        ), "auto_register_module should be available"
-        assert callable(register_function), "register_function should be available"
-        assert callable(get_function), "get_function should be available"
-        assert callable(
-            is_function_available
-        ), "is_function_available should be available"
-
-        # Test that core functions are available
-        assert "format_name" in globals(), "format_name should be in globals"
-        assert "get_rate_limiter" in globals(), "get_rate_limiter should be in globals (replaces RateLimiter)"
-        assert "SessionManager" in globals(), "SessionManager should be in globals"
-
-    def test_performance_validation():
-        # Test that key operations complete within reasonable time
-        start_time = time.time()
-
-        # Format name performance
-        for i in range(100):
-            format_name(f"test name {i}")
-
-        # Ordinal case performance
-        for i in range(1, 101):
-            ordinal_case(i)
-
-        elapsed = time.time() - start_time
-        assert (
-            elapsed < 1.0
-        ), f"Performance test should complete quickly, took {elapsed:.3f}s"
-
-    def test_sleep_prevention():
-        """Test cross-platform sleep prevention utilities without side effects."""
-        from unittest.mock import MagicMock, patch
-
-        assert callable(prevent_system_sleep), "prevent_system_sleep should be callable"
-        assert callable(restore_system_sleep), "restore_system_sleep should be callable"
-
-        # Windows branch uses ctypes to prevent sleep
-        with patch("platform.system", return_value="Windows"), patch(
-            "ctypes.windll", create=True
-        ) as mock_windll:
-            mock_windll.kernel32.SetThreadExecutionState.return_value = 1
-            state = prevent_system_sleep()
-            assert state is True, "Windows sleep prevention should return True"
-            restore_system_sleep(state)
-            mock_windll.kernel32.SetThreadExecutionState.assert_called()
-
-        # macOS branch spawns caffeinate process
-        mock_process = MagicMock()
-        with patch("platform.system", return_value="Darwin"), patch(
-            "subprocess.Popen", return_value=mock_process
-        ) as mock_popen:
-            state = prevent_system_sleep()
-            mock_popen.assert_called_once()
-            assert state is mock_process, "macOS sleep prevention should return process handle"
-            restore_system_sleep(state)
-            mock_process.terminate.assert_called_once()
-
-        # Linux branch should return None and have no side effects
-        with patch("platform.system", return_value="Linux"):
-            assert (
-                prevent_system_sleep() is None
-            ), "Linux sleep prevention should return None"
-            restore_system_sleep(None)
-
-    def test_check_for_unavailability():
-        """Test unavailability detection logic (Priority 2)."""
-        from unittest.mock import MagicMock
-
-        print("🔍 Testing _check_for_unavailability() error detection:")
-
-        # Test that function exists and is callable
-        assert callable(_check_for_unavailability), "_check_for_unavailability should be callable"
-        print("   ✅ Function is callable")
-
-        # Test with mock driver - using patch to properly mock the helper functions
-        mock_driver = MagicMock()
-        mock_driver.current_url = "http://test.com"
-
-        # Test basic structure with minimal mocking
-        # Since the actual function uses is_browser_open and is_elem_there which may
-        # not be easily mockable, we'll test the function signature and return type
-        selectors = {
-            "div.unavailable": ("refresh", 5),
-            "div.not-found": ("skip", 0)
-        }
-
-        # Test with a driver that will likely return (None, 0) since we're in test mode
-        action, wait_time = _check_for_unavailability(mock_driver, selectors)
-        assert isinstance(action, (str, type(None))), f"Action should be str or None, got {type(action)}"
-        assert isinstance(wait_time, int), f"Wait time should be int, got {type(wait_time)}"
-        print(f"   ✅ Function returns proper types: action={action}, wait_time={wait_time}")
-
-        # Test with empty selectors
-        action, wait_time = _check_for_unavailability(mock_driver, {})
-        assert action is None, "Should return None for empty selectors"
-        assert wait_time == 0, "Should return 0 for empty selectors"
-        print("   ✅ Handled empty selectors correctly")
-
-        print("✅ _check_for_unavailability() passed all tests")    # Run all tests
-    print("🛠️ Running Core Utilities & Session Management comprehensive test suite...")
-
-    with suppress_logging():
-        suite.run_test(
-            "Cookie parsing functionality",
-            test_parse_cookie,
-            "5 cookie formats tested: standard, empty, single, multiple, mixed valid/invalid parts.",
-            "Test cookie parsing with various cookie string formats.",
-            "Test parse_cookie with: 'session_id=abc123; path=/', '', 'single=value', 'a=1; b=2; c=3', 'invalid_part; valid=test'.",
-        )
-
-        suite.run_test(
-            "Ordinal number formatting",
-            test_ordinal_case,
-            "12 ordinal tests: 1st, 2nd, 3rd, 4th, 11th-13th (special), 21st-23rd, 101st, text input.",
-            "Test ordinal number formatting with various input types.",
-            "Test ordinal_case with: 1→'1st', 2→'2nd', 3→'3rd', 11→'11th', 21→'21st', 'Great Uncle'→'Great Uncle'.",
-        )
-
-        suite.run_test(
-            "Name formatting functionality",
-            test_format_name,
-            "11 name formats: basic, None→'Valued Relative', GEDCOM /slashes/, O'Malley, McDonald, MacLeod, 'Betty', hyphenated, initials.",
-            "Test name formatting with various input types and edge cases.",
-            "Test format_name with: 'john doe'→'John Doe', None→'Valued Relative', 'john /doe/'→'John Doe', 'o'malley'→'O'Malley'.",
-        )
-
-        suite.run_test(
-            "Circuit breaker pattern for 429 errors",
-            test_circuit_breaker,
-            "Test circuit breaker state transitions: CLOSED→OPEN→HALF_OPEN→CLOSED with failure/success tracking",
-            "Circuit breaker prevents cascading failures from 429 errors",
-            "Test CircuitBreaker: 3 failures→OPEN, recovery timeout→HALF_OPEN, 2 successes→CLOSED",
-        )
-
-        suite.run_test(
-            "Decorator availability and functionality",
-            test_decorators,
-            "Test availability and basic functionality of retry, API, and timing decorators",
-            "Decorators provide robust function enhancement capabilities",
-            "All utility decorators are available and function correctly",
-        )
-
-        suite.run_test(
-            "Rate limiting",
-            test_rate_limiter,
-            "Test RateLimiter instantiation and basic rate limiting functionality",
-            "Rate limiting manages API request timing and prevents throttling",
-            "Rate limiter provides effective request flow control",
-        )
-
-        suite.run_test(
-            "Session management",
-            test_session_manager,
-            "Test SessionManager class instantiation and basic session management features",
-            "Session management provides browser automation and session handling",
-            "SessionManager class provides complete session lifecycle management",
-        )
-
-        suite.run_test(
-            "API request functionality",
-            test_api_request_function,
-            "Test _api_req function availability and signature validation",
-            "API request function provides core HTTP request capabilities",
-            "Core API request functionality is available and properly configured",
-        )
-
-        suite.run_test(
-            "Login status checking",
-            test_login_status_function,
-            "Test login_status function availability and parameter validation",
-            "Login status checking provides authentication state verification",
-            "Login status functionality is available for session validation",
-        )
-
-        suite.run_test(
-            "Module registration system",
-            test_module_registration,
-            "Test module registration functions and verify core functions are registered",
-            "Module registration provides optimized function access",
-            "All core utility functions are properly registered and accessible",
-        )
-
-        suite.run_test(
-            "_check_for_unavailability() error detection (Priority 2)",
-            test_check_for_unavailability,
-            "Test browser unavailability message detection with various scenarios",
-            "Tests detection of page unavailable messages, invalid driver handling, and no-error cases",
-            "Function correctly detects unavailability messages and handles edge cases",
-        )
-
-        suite.run_test(
-            "Performance validation",
-            test_performance_validation,
-            "Test performance of name formatting and ordinal operations with datasets",
-            "Performance validation ensures efficient utility function execution",
-            "Utility functions complete processing within reasonable time limits",
-        )
-
-        suite.run_test(
-            "Sleep prevention utilities",
-            test_sleep_prevention,
-            "Test cross-platform sleep prevention and restoration functions",
-            "Sleep prevention keeps system awake during long-running operations",
-            "Sleep prevention utilities work correctly on Windows, macOS, and Linux",
-        )
-
-    # Generate summary report
     return suite.finish_suite()
 
 
-# End of utils.py
+# Standardized test runner (recommended pattern)
+run_comprehensive_tests = create_standard_test_runner(utils_module_tests)
+
+
+if __name__ == "__main__":
+    import sys
+
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

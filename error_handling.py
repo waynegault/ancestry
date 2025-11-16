@@ -29,6 +29,7 @@ R = TypeVar('R')
 # Module logger is set up by setup_module() above
 # --- Test framework imports ---
 from test_framework import TestSuite, suppress_logging
+from test_utilities import create_standard_test_runner
 
 # --- Test framework imports ---
 
@@ -1550,9 +1551,8 @@ def error_handling_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive error handling tests using standardized TestSuite format."""
-    return error_handling_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(error_handling_module_tests)
 
 
 # === END OF error_handling.py ===

@@ -31,7 +31,8 @@ from api_constants import (
 from config import config_schema
 from core.session_manager import SessionManager
 from session_utils import ensure_session_for_tests_sm_only
-from utils import _api_req
+from test_utilities import create_standard_test_runner
+from utils import _api_req  # type: ignore[reportPrivateUsage]
 
 # === CONSTANTS ===
 ETHNICITY_METADATA_FILE = "ethnicity_regions.json"
@@ -554,7 +555,7 @@ def _test_extract_match_ethnicity_percentages() -> bool:
 
 def _setup_test_session(sm: SessionManager) -> bool:
     """Set up and authenticate a test session."""
-    from utils import _load_login_cookies, log_in, login_status
+    from utils import _load_login_cookies, log_in, login_status  # type: ignore[reportPrivateUsage]
 
     sm.browser_manager.browser_needed = True
 
@@ -601,7 +602,7 @@ def _validate_test_prerequisites(sm: SessionManager) -> tuple[bool, str]:
     return True, ""
 
 
-def _log_ethnicity_results(ethnicity_data: dict) -> None:
+def _log_ethnicity_results(ethnicity_data: dict[str, Any]) -> None:
     """Log ethnicity region results."""
     regions = ethnicity_data["regions"]
     logger.info(f"✅ Successfully fetched {len(regions)} ethnicity regions")
@@ -793,10 +794,8 @@ def _test_regression_endpoint_literals_present_in_source() -> bool:
         return False
 
 
-
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return dna_ethnicity_utils_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(dna_ethnicity_utils_module_tests)
 
 
 if __name__ == "__main__":

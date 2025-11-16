@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
@@ -84,6 +84,22 @@ class _ExporterState:
 
 
 _EXPORTER_STATE = _ExporterState()
+
+
+def get_exporter_status() -> Optional[dict[str, Any]]:
+    """Get current exporter status.
+    
+    Returns:
+        Dict with host, port if running, None otherwise
+    """
+    with _EXPORTER_LOCK:
+        if _EXPORTER_STATE.server and _EXPORTER_STATE.address:
+            return {
+                'host': _EXPORTER_STATE.address[0],
+                'port': _EXPORTER_STATE.address[1],
+                'running': True
+            }
+        return None
 
 
 def start_metrics_exporter(host: str, port: int) -> bool:

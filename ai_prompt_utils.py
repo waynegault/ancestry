@@ -20,7 +20,6 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import os
 import shutil
 import tempfile
 from datetime import datetime
@@ -28,7 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 # --- Test framework imports ---
-# Imports removed - not used in this module
+from test_utilities import create_standard_test_runner
 
 # Path to the AI prompts JSON file
 PROMPTS_FILE = Path(__file__).resolve().parent / "ai_prompts.json"
@@ -462,9 +461,8 @@ def ai_prompt_utils_module_tests() -> bool:
         return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return ai_prompt_utils_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(ai_prompt_utils_module_tests)
 
 
 def get_prompts_summary() -> dict[str, Any]:
@@ -519,7 +517,7 @@ def quick_test() -> dict[str, Any]:
     try:
         # Test 1: Load prompts
         prompts = load_prompts()
-        if isinstance(prompts, dict) and "prompts" in prompts:
+        if "prompts" in prompts:
             results["passed"] += 1
         else:
             results["failed"] += 1
@@ -535,7 +533,7 @@ def quick_test() -> dict[str, Any]:
 
         # Test 3: Get summary
         summary = get_prompts_summary()
-        if isinstance(summary, dict) and "total_prompts" in summary:
+        if "total_prompts" in summary:
             results["passed"] += 1
         else:
             results["failed"] += 1
@@ -543,7 +541,7 @@ def quick_test() -> dict[str, Any]:
 
         # Test 4: Test import functionality
         imported_count, imported_keys = import_improved_prompts()
-        if isinstance(imported_count, int) and isinstance(imported_keys, list):
+        if imported_count and imported_keys:
             results["passed"] += 1
         else:
             results["failed"] += 1

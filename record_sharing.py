@@ -9,6 +9,7 @@ when responding to DNA matches, making conversations more informative and helpfu
 """
 
 from standard_imports import *
+from test_utilities import create_standard_test_runner
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def extract_record_url(record_details: dict[str, str]) -> Optional[str]:
         URL string if available, None otherwise
     """
     url = record_details.get('url')
-    if url and isinstance(url, str) and url.startswith('http'):
+    if url and url.startswith('http'):
         return url
     return None
 
@@ -579,9 +580,8 @@ def record_sharing_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return record_sharing_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(record_sharing_module_tests)
 
 
 if __name__ == "__main__":

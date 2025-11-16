@@ -36,7 +36,6 @@ from uuid import uuid4
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     Enum as SQLEnum,
     Float,
@@ -66,7 +65,7 @@ from sqlalchemy.orm import (
 # === LOCAL IMPORTS ===
 from common_params import MatchIdentifiers
 from config import config_schema
-from core.error_handling import (
+from core.error_handling import (  # type: ignore[import-not-found]
     AncestryError,
     DatabaseConnectionError,
     DataValidationError,
@@ -2513,10 +2512,10 @@ def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum]) -> 
     person_update_mappings = []
 
     for pid, status_enum in person_updates.items():
-        if not isinstance(pid, int) or pid <= 0:
+        if pid <= 0:
             logger.warning(f"Invalid Person ID '{pid}' in updates. Skipping.")
             continue
-        if not isinstance(status_enum, PersonStatusEnum):
+        # Validate status enum (type guaranteed by function signature)
             logger.warning(f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update.")
             continue
 
@@ -4065,9 +4064,10 @@ def database_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive database tests using standardized TestSuite format."""
-    return database_module_tests()
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(database_module_tests)
 
 
 # === END OF database.py ===

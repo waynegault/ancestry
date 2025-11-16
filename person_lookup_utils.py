@@ -8,9 +8,10 @@ using Action 10 (GEDCOM) and Action 11 (API).
 
 # === STANDARD IMPORTS ===
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Optional
 
-from standard_imports import setup_module
+from standard_imports import *
+from test_utilities import create_standard_test_runner
 
 logger = setup_module(globals(), __file__)
 
@@ -309,9 +310,8 @@ def person_lookup_utils_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return person_lookup_utils_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(person_lookup_utils_module_tests)
 
 
 # ============================================================================

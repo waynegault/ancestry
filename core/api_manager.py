@@ -15,7 +15,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from ..standard_imports import setup_module
+from standard_imports import setup_module  # type: ignore[import-not-found]
 
 logger = setup_module(globals(), __name__)
 
@@ -32,7 +32,7 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 
 # === LOCAL IMPORTS ===
-from ..api_constants import (
+from api_constants import (  # type: ignore[import-not-found]
     API_PATH_CSRF_TOKEN,
     API_PATH_PROFILE_ID,
     API_PATH_UUID_NAVHEADER,

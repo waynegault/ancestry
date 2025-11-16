@@ -127,7 +127,7 @@ class PageProcessingMetrics:
 
 
 # Performance monitoring helper with session manager integration
-def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager = None) -> None:
+def _log_api_performance(api_name: str, start_time: float, response_status: str = "unknown", session_manager: Optional["SessionManager"] = None) -> None:
     """Log API performance metrics for monitoring and optimization."""
     duration = time.time() - start_time
     logger.debug(f"API Performance: {api_name} took {duration:.3f}s (status: {response_status})")
@@ -143,7 +143,7 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     _track_api_metrics(api_name, duration, response_status)
 
 
-def _update_session_performance_tracking(session_manager, duration: float, response_status: str) -> None:  # noqa: ARG001
+def _update_session_performance_tracking(session_manager: Optional["SessionManager"], duration: float, response_status: str) -> None:  # noqa: ARG001
     """Update session manager with performance tracking data.
 
     Note: response_status parameter reserved for future use.
@@ -156,25 +156,25 @@ def _update_session_performance_tracking(session_manager, duration: float, respo
     try:
         # Initialize tracking if not exists
         if not hasattr(session_manager, '_response_times'):
-            session_manager._response_times = []
-            session_manager._recent_slow_calls = 0
-            session_manager._avg_response_time = 0.0
+            session_manager._response_times = []  # type: ignore[attr-defined]
+            session_manager._recent_slow_calls = 0  # type: ignore[attr-defined]
+            session_manager._avg_response_time = 0.0  # type: ignore[attr-defined]
 
         # Add response time to tracking (keep last 20 calls)
-        session_manager._response_times.append(duration)
-        if len(session_manager._response_times) > 20:
-            session_manager._response_times.pop(0)
+        session_manager._response_times.append(duration)  # type: ignore[attr-defined]
+        if len(session_manager._response_times) > 20:  # type: ignore[attr-defined]
+            session_manager._response_times.pop(0)  # type: ignore[attr-defined]
 
         # Update average response time
-        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)
+        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)  # type: ignore[attr-defined]
 
         # Track consecutive slow calls
         if duration > 5.0:
-            session_manager._recent_slow_calls += 1
+            session_manager._recent_slow_calls += 1  # type: ignore[attr-defined]
         else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)  # type: ignore[attr-defined]
 
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)  # type: ignore[attr-defined]
 
     except Exception as e:
         logger.debug(f"Failed to update session performance tracking: {e}")
@@ -223,10 +223,10 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 integrate_with_action6(sys.modules[__name__])
 
 # === THIRD-PARTY IMPORTS ===
-import cloudscraper
+import cloudscraper  # type: ignore[import-untyped]
 import requests
 from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
-from diskcache.core import ENOVAL  # For checking cache misses
+from diskcache.core import ENOVAL  # type: ignore[import-untyped]  # For checking cache misses
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -273,8 +273,9 @@ from test_framework import (
     TestSuite,
     suppress_logging,
 )
+from test_utilities import create_standard_test_runner
 from utils import (
-    _api_req,  # API request helper
+    _api_req,  # type: ignore[reportPrivateUsage]  # API request helper
     format_name,  # Name formatting utility
     nav_to_page,  # Navigation helper
     ordinal_case,  # Ordinal case formatting
@@ -295,31 +296,31 @@ try:
             getattr(_cfg_temp, "ethnicity_enrichment_min_cm", 10) or 0
         )
     except (TypeError, ValueError):
-        ETHNICITY_ENRICHMENT_MIN_CM = 10
+        ETHNICITY_ENRICHMENT_MIN_CM = 10  # type: ignore[misc]
     _RELATIONSHIP_PROB_LIMIT_RAW = getattr(
         getattr(_cfg_temp, "api", None), "max_relationship_prob_fetches", 0
     )
 except ImportError:
-    MATCHES_PER_PAGE = 20
-    ENABLE_ETHNICITY_ENRICHMENT = True
-    ETHNICITY_ENRICHMENT_MIN_CM = 10
-    _RELATIONSHIP_PROB_LIMIT_RAW = 0
+    MATCHES_PER_PAGE = 20  # type: ignore[misc]
+    ENABLE_ETHNICITY_ENRICHMENT = True  # type: ignore[misc]
+    ETHNICITY_ENRICHMENT_MIN_CM = 10  # type: ignore[misc]
+    _RELATIONSHIP_PROB_LIMIT_RAW = 0  # type: ignore[misc]
 
-ETHNICITY_ENRICHMENT_MIN_CM = max(0, int(ETHNICITY_ENRICHMENT_MIN_CM))
+ETHNICITY_ENRICHMENT_MIN_CM = max(0, int(ETHNICITY_ENRICHMENT_MIN_CM))  # type: ignore[misc]
 
 try:
     RELATIONSHIP_PROB_MAX_PER_PAGE: int = int(_RELATIONSHIP_PROB_LIMIT_RAW or 0)
 except (TypeError, ValueError):
-    RELATIONSHIP_PROB_MAX_PER_PAGE = 0
+    RELATIONSHIP_PROB_MAX_PER_PAGE = 0  # type: ignore[misc]
 
-RELATIONSHIP_PROB_MAX_PER_PAGE = max(0, RELATIONSHIP_PROB_MAX_PER_PAGE)
+RELATIONSHIP_PROB_MAX_PER_PAGE = max(0, RELATIONSHIP_PROB_MAX_PER_PAGE)  # type: ignore[misc]
 
 # Get DNA match probability threshold from environment, fallback to 10 cM
 try:
     import os
     DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = int(os.getenv('DNA_MATCH_PROBABILITY_THRESHOLD_CM', '10'))
 except (ValueError, TypeError):
-    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10
+    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10  # type: ignore[misc]
 
 # Dynamic critical API failure threshold based on total pages to process
 def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
@@ -343,7 +344,7 @@ class MaxApiFailuresExceededError(Exception):
 # End of MaxApiFailuresExceededError
 
 # OPTIMIZATION: Profile caching using UnifiedCacheManager
-def _get_cached_profile(profile_id: str) -> Optional[dict]:
+def _get_cached_profile(profile_id: str) -> Optional[dict[str, Any]]:
     """Get profile from persistent cache if available."""
     cache_key = f"profile_details_{profile_id}"
     try:
@@ -355,7 +356,7 @@ def _get_cached_profile(profile_id: str) -> Optional[dict]:
         logger.warning(f"Error reading profile cache for {profile_id}: {e}")
     return None
 
-def _cache_profile(profile_id: str, profile_data: dict) -> None:
+def _cache_profile(profile_id: str, profile_data: dict[str, Any]) -> None:
     """Cache profile data using UnifiedCacheManager."""
     cache_key = f"profile_details_{profile_id}"
     try:
@@ -537,7 +538,7 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
-def _try_get_csrf_from_api(session_manager) -> Optional[str]:
+def _try_get_csrf_from_api(session_manager: "SessionManager") -> Optional[str]:
     """
     Try to get fresh CSRF token from API.
 
@@ -561,7 +562,7 @@ def _try_get_csrf_from_api(session_manager) -> Optional[str]:
     return None
 
 
-def _try_get_csrf_from_cookies(session_manager) -> Optional[str]:
+def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[str]:
     """
     Try to get CSRF token from browser cookies.
 
@@ -1138,7 +1139,7 @@ def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
     session_age = time.time() - session_manager.session_start_time
     if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
         logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-        if session_manager._attempt_session_recovery(reason="proactive"):
+        if session_manager._attempt_session_recovery(reason="proactive"):  # type: ignore[reportPrivateUsage]
             logger.info("✅ Proactive session refresh successful")
         else:
             logger.error("❌ Proactive session refresh failed")
@@ -1206,7 +1207,7 @@ def _main_page_processing_loop(
     global CRITICAL_API_FAILURE_THRESHOLD  # noqa: PLW0603
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
     original_threshold = CRITICAL_API_FAILURE_THRESHOLD
-    CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold
+    CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold  # type: ignore[misc]
     if dynamic_threshold != original_threshold:
         logger.info(
             "Action 6: API failure threshold adjusted to %d for %d-page run (baseline %d)",
@@ -3049,7 +3050,7 @@ def _get_configured_batch_size() -> int:
         logger.warning(f"Failed to get configured batch size: {e}, using default 10")
         return 10  # Fallback to match .env default
 
-def _get_adaptive_batch_size(session_manager, base_batch_size: Optional[int] = None) -> int:
+def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_batch_size: Optional[int] = None) -> int:
     """Get dynamically adapted batch size based on current server performance."""
     if base_batch_size is None:
         base_batch_size = _get_configured_batch_size()
@@ -9256,9 +9257,8 @@ def action6_gather_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return action6_gather_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(action6_gather_module_tests)
 
 
 # ==============================================

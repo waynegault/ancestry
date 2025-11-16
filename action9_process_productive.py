@@ -64,6 +64,7 @@ from person_lookup_utils import (
     create_not_found_result,
     create_result_from_gedcom,
 )
+from test_utilities import create_standard_test_runner
 from utils import format_name
 
 # === CONSTANTS ===
@@ -483,13 +484,33 @@ def _compose_task_body(
     importance: str,
     due_date: Optional[str],
     categories: list[str],
+    profile_id: Optional[str] = None,
+    uuid: Optional[str] = None,
+    tree_info: Optional[dict[str, Any]] = None,
 ) -> str:
     """Build the task body with key research context."""
     body_lines = [f"Research target: {person_name}"]
+    
+    # Add Ancestry URLs
+    if profile_id:
+        body_lines.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={profile_id}")
+    if uuid:
+        body_lines.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{uuid}/compare")
+    
     if relationship:
         body_lines.append(f"Relationship: {relationship}")
     if shared_dna_cm is not None:
         body_lines.append(f"Shared DNA: {shared_dna_cm:.1f} cM")
+    
+    # Add tree information if available
+    if tree_info:
+        if tree_info.get('person_name_in_tree'):
+            body_lines.append(f"Name in Tree: {tree_info['person_name_in_tree']}")
+        if tree_info.get('view_in_tree_link'):
+            body_lines.append(f"View in Tree: {tree_info['view_in_tree_link']}")
+        if tree_info.get('actual_relationship'):
+            body_lines.append(f"Tree Relationship: {tree_info['actual_relationship']}")
+    
     body_lines.append(f"Priority: {importance.title()}")
     if due_date:
         body_lines.append(f"Suggested due date: {due_date}")
@@ -503,6 +524,9 @@ def _build_enhanced_task_payload(
     relationship: Optional[str],
     shared_dna_cm: Optional[float],
     categories: Optional[list[str]],
+    profile_id: Optional[str] = None,
+    uuid: Optional[str] = None,
+    tree_info: Optional[dict[str, Any]] = None,
 ) -> EnhancedTaskPayload:
     """Construct the payload required to submit an enhanced task."""
     importance, days_until_due = calculate_task_priority_from_relationship(
@@ -519,6 +543,9 @@ def _build_enhanced_task_payload(
         importance,
         due_date,
         final_categories,
+        profile_id=profile_id,
+        uuid=uuid,
+        tree_info=tree_info,
     )
     return EnhancedTaskPayload(
         title=title,
@@ -1455,6 +1482,16 @@ class PersonProcessor:
             f"Match: {person.username or 'Unknown'} (#{person.id})",
             f"Profile: {person.profile_id or 'N/A'}",
         ]
+        
+        # Add Ancestry URLs
+        if person.profile_id:
+            task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
+        
+        # Add DNA match comparison URL if available
+        if person.dna_match and hasattr(person.dna_match, 'compare_link'):
+            task_body_parts.append(f"DNA Comparison: {person.dna_match.compare_link}")
+        elif person.uuid:  # Fallback to constructing URL from UUID
+            task_body_parts.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{person.uuid}/compare")
 
         # Add relationship context
         if person.predicted_relationship:
@@ -1464,10 +1501,21 @@ class PersonProcessor:
         if hasattr(person, 'shared_dna_cm') and person.shared_dna_cm:
             task_body_parts.append(f"Shared DNA: {person.shared_dna_cm} cM")
 
-        # Add tree status
+        # Add tree status and tree links
         if person.tree_status:
             status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
             task_body_parts.append(f"Tree Status: {status_display}")
+        
+        # Add family tree information if in tree
+        if person.family_tree:
+            if hasattr(person.family_tree, 'cfpid') and person.family_tree.cfpid:
+                task_body_parts.append(f"Tree Person ID: {person.family_tree.cfpid}")
+            if hasattr(person.family_tree, 'person_name_in_tree') and person.family_tree.person_name_in_tree:
+                task_body_parts.append(f"Name in Tree: {person.family_tree.person_name_in_tree}")
+            if hasattr(person.family_tree, 'view_in_tree_link') and person.family_tree.view_in_tree_link:
+                task_body_parts.append(f"View in Tree: {person.family_tree.view_in_tree_link}")
+            if hasattr(person.family_tree, 'actual_relationship') and person.family_tree.actual_relationship:
+                task_body_parts.append(f"Tree Relationship: {person.family_tree.actual_relationship}")
 
         return task_body_parts
 
@@ -3159,7 +3207,10 @@ def create_enhanced_research_task(
     person_name: str,
     relationship: Optional[str],
     shared_dna_cm: Optional[float] = None,
-    categories: Optional[list[str]] = None
+    categories: Optional[list[str]] = None,
+    profile_id: Optional[str] = None,
+    uuid: Optional[str] = None,
+    tree_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """
     Create an enhanced MS To-Do task with intelligent priority and due date.
@@ -3169,6 +3220,9 @@ def create_enhanced_research_task(
         relationship: Relationship to the person
         shared_dna_cm: Shared DNA in centiMorgans
         categories: Optional categories for the task
+        profile_id: Ancestry profile ID
+        uuid: DNA match UUID
+        tree_info: Dictionary with tree information (person_name_in_tree, view_in_tree_link, actual_relationship)
 
     Returns:
         Task ID if created successfully, None otherwise
@@ -3183,6 +3237,9 @@ def create_enhanced_research_task(
             relationship,
             shared_dna_cm,
             categories,
+            profile_id=profile_id,
+            uuid=uuid,
+            tree_info=tree_info,
         )
 
         if not _ensure_enhanced_task_ms_graph_state(_ENHANCED_TASK_STATE):
@@ -3954,9 +4011,8 @@ def action9_process_productive_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return action9_process_productive_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(action9_process_productive_module_tests)
 
 
 if __name__ == "__main__":

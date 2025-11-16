@@ -110,6 +110,7 @@ config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
 # --- Test framework imports ---
+from test_utilities import create_standard_test_runner
 
 # --- Constants and Prompts ---
 try:
@@ -2401,9 +2402,8 @@ def ai_interface_module_tests() -> bool:
     return suite.finish_suite()
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive tests using the unified test framework."""
-    return ai_interface_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(ai_interface_module_tests)
 
 
 def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:

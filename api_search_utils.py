@@ -32,13 +32,14 @@ from typing import Any, Optional, Union
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
 # === LOCAL IMPORTS ===
-from .api_utils import (
+from api_utils import (
     call_getladder_api,
     call_suggest_api,
     call_treesui_list_api,
 )
 from config import config_schema
 from relationship_utils import format_api_relationship_path
+from test_utilities import create_standard_test_runner
 from utils import SessionManager
 
 # === MODULE LOGGER ===
@@ -1437,10 +1438,8 @@ def api_search_utils_module_tests() -> bool:
 
     return suite.finish_suite()
 
-
-def run_comprehensive_tests() -> bool:
-    '''Run comprehensive API search utilities tests.'''
-    return api_search_utils_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(api_search_utils_module_tests)
 
 
 # ==============================================
@@ -1450,8 +1449,5 @@ def run_comprehensive_tests() -> bool:
 if __name__ == "__main__":
     import sys
 
-    print(
-        "🔎 Running API Search Utilities & Query Building comprehensive test suite..."
-    )
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

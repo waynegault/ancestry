@@ -21,6 +21,7 @@ from standard_imports import setup_module
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
+# === TEST UTILITIES ===
 # === STANDARD LIBRARY IMPORTS ===
 import gc
 import inspect
@@ -55,6 +56,7 @@ from action7_inbox import InboxProcessor
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
 from observability.metrics_registry import metrics  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 ActionCallable = Callable[..., Any]
 SendMessagesAction = Callable[["SessionManager"], bool]
@@ -407,6 +409,7 @@ def menu() -> str:
     print("10. Compare: GEDCOM vs API (Side-by-side)")
     print("")
     print("analytics. View Conversation Analytics Dashboard")
+    print("metrics. View Prometheus Metrics Report")
     print("")
     print("graph. Open Code Graph Visualization")
     print("test. Run Main.py Internal Tests")
@@ -2480,6 +2483,79 @@ def _handle_test_options(choice: str) -> bool:
     return False
 
 
+def _show_metrics_report() -> None:
+    """Display Prometheus metrics report."""
+    try:
+        from observability.metrics_registry import get_metrics_registry, is_metrics_enabled
+        from observability.metrics_exporter import get_exporter_status
+        
+        print("\n" + "="*70)
+        print("📊 PROMETHEUS METRICS REPORT")
+        print("="*70)
+        
+        if not is_metrics_enabled():
+            print("\n⚠️  Metrics collection is DISABLED")
+            print("\nTo enable metrics:")
+            print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
+            print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
+            print("  3. Restart the application")
+            print("\n" + "="*70 + "\n")
+            return
+        
+        registry = get_metrics_registry()
+        if not registry:
+            print("\n⚠️  Metrics registry not initialized")
+            print("\n" + "="*70 + "\n")
+            return
+        
+        # Get exporter status
+        exporter_info = get_exporter_status()
+        if exporter_info:
+            print(f"\n✅ Metrics Exporter: RUNNING")
+            print(f"   URL: http://{exporter_info['host']}:{exporter_info['port']}/metrics")
+        else:
+            print("\n⚠️  Metrics Exporter: NOT RUNNING")
+        
+        # Get metrics from registry
+        print("\n📈 Current Metrics:")
+        print("-" * 70)
+        
+        try:
+            from prometheus_client import generate_latest
+            metrics_output = generate_latest(registry).decode('utf-8')
+            
+            # Parse and display key metrics
+            lines = metrics_output.split('\n')
+            metric_count = 0
+            
+            for line in lines:
+                if line and not line.startswith('#'):
+                    metric_count += 1
+                    if metric_count <= 20:  # Show first 20 metrics
+                        print(f"   {line}")
+            
+            if metric_count > 20:
+                print(f"\n   ... and {metric_count - 20} more metrics")
+            elif metric_count == 0:
+                print("   (No metrics collected yet)")
+            
+            print(f"\n📊 Total Metrics: {metric_count}")
+            
+        except Exception as e:
+            print(f"\n⚠️  Error fetching metrics: {e}")
+        
+        print("\n💡 Tips:")
+        print("   • Run actions (6-10) to generate metrics")
+        print("   • Use Prometheus to scrape: http://localhost:9000/metrics")
+        print("   • Import Grafana dashboard from docs/grafana/ancestry_overview.json")
+        print("\n" + "="*70 + "\n")
+        
+    except Exception as e:
+        logger.error(f"Error displaying metrics report: {e}", exc_info=True)
+        print(f"\n⚠️  Error: {e}")
+        print("\n" + "="*70 + "\n")
+
+
 def _handle_meta_options(choice: str) -> bool | None:
     """Handle meta options (analytics, sec, s, t, c, q).
 
@@ -2493,6 +2569,7 @@ def _handle_meta_options(choice: str) -> bool | None:
 
     meta_actions: dict[str, Callable[[], None]] = {
         "analytics": _show_analytics_dashboard,
+        "metrics": _show_metrics_report,
         "graph": _open_graph_visualization,
         "s": _show_cache_statistics,
         "t": _toggle_log_level,
@@ -3315,9 +3392,8 @@ def main_module_tests() -> bool:
     return bool(suite.finish_suite())
 
 
-def run_comprehensive_tests() -> bool:
-    """Run comprehensive main module tests using standardized TestSuite format."""
-    return main_module_tests()
+# Use centralized test runner utility from test_utilities
+run_comprehensive_tests = create_standard_test_runner(main_module_tests)
 
 
 # --- Entry Point ---
