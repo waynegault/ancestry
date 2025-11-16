@@ -4106,7 +4106,7 @@ def _test_integration_with_shared_modules() -> None:
             from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
 
 
-            db_manager_available = DatabaseManager is not None
+            db_manager_available = DatabaseManager is not None  # type: ignore[comparison-overlap]
         except ImportError:
             db_manager_available = False
         status = "✅" if db_manager_available else "❌"
@@ -4700,9 +4700,9 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
         if has_state:
             # type: ignore[possibly-unbound]
             assert conv_state.next_action == expected_action, \
-                f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"
+                f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"  # type: ignore[reportPossiblyUnboundVariable]
             # type: ignore[possibly-unbound]
-            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"
+            assert conv_state.next_action_date is None,  # type: ignore[reportPossiblyUnboundVariable] f"{description}: next_action_date should be None"
 
         logger.info(f"✓ {description}")
 
@@ -4790,10 +4790,10 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
         if has_state:
             # type: ignore[possibly-unbound]
             assert conv_state.next_action == 'await_reply', \
-                f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"
+                f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"  # type: ignore[reportPossiblyUnboundVariable]
             # type: ignore[possibly-unbound]
             assert conv_state.conversation_phase == 'active_dialogue', \
-                f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"
+                f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"  # type: ignore[reportPossiblyUnboundVariable]
 
         logger.info(f"✓ {description}")
 

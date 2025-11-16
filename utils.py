@@ -4758,7 +4758,7 @@ def _test_check_for_unavailability() -> None:
 
 def utils_module_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite, suppress_logging  # noqa: F401
 
     suite = TestSuite(
         "Core Utilities & Session Management", "utils.py"

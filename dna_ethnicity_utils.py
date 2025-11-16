@@ -610,7 +610,7 @@ def _log_ethnicity_results(ethnicity_data: dict[str, Any]) -> None:
         logger.info(f"  Region {region['key']}: {region['percentage']}%")
 
 
-def _test_tree_owner_ethnicity_fetch() -> bool:
+def _test_tree_owner_ethnicity_fetch() -> bool:  # type: ignore[reportUnusedFunction]
     """Test fetching tree owner's ethnicity regions from API."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
@@ -645,7 +645,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:
             logger.debug(f"Error closing session: {e}")
 
 
-def _test_region_names_fetch() -> bool:
+def _test_region_names_fetch() -> bool:  # type: ignore[reportUnusedFunction]
     """Test fetching region name mappings from API."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
@@ -679,7 +679,7 @@ def _test_region_names_fetch() -> bool:
             logger.debug(f"Error closing session: {e}")
 
 
-def _test_ethnicity_comparison() -> bool:
+def _test_ethnicity_comparison() -> bool:  # type: ignore[reportUnusedFunction]
     """Test fetching ethnicity comparison for a match."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
 

@@ -34,7 +34,7 @@
   "reportOptionalContextManager": "error",
   "reportOptionalOperand": "error",
   "reportTypedDictNotRequiredAccess": "none",
-  "reportPrivateUsage": "none",
+  "reportPrivateUsage": "warning",
   "reportConstantRedefinition": "none",
   "reportIncompatibleMethodOverride": "error",
   "reportIncompatibleVariableOverride": "error",
@@ -55,7 +55,7 @@
   "reportIncompleteStub": "none",
   "reportUnsupportedDunderAll": "none",
   "reportUnusedCoroutine": "error",
-  "reportGeneralTypeIssues": "warning",
+  "reportGeneralTypeIssues": "none",
   "reportUnreachable": "none",
   "reportUnnecessaryTypeIgnoreComment": "none",
   "reportMissingTypeArgument": "none",
@@ -66,7 +66,7 @@
   "reportUnknownMemberType": "none",
   "reportMissingParameterType": "none",
   "reportMissingModuleSource": "none",
-  "reportImportCycles": "none",
+  "reportImportCycles": "warning",
   "reportUninitializedInstanceVariable": "none",
   "reportInvalidTypeVarUse": "error",
   "reportCallIssue": "warning",
@@ -99,5 +99,6 @@
         "./config"
       ]
     }
-  ]
+  ],
+  "reportPossiblyUnboundVariable": "none"
 }

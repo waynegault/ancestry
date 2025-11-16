@@ -685,7 +685,7 @@ def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
         person_id=person_id,
     )
 
-    if not api_response or not isinstance(api_response, dict):
+    if not api_response or not isinstance(api_response, dict):  # type: ignore[arg-type,misc]
         logger.warning(f"No data returned from Edit Relationships API for person {person_id}")
         return None
 

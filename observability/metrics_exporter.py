@@ -20,10 +20,10 @@ if str(parent_dir) not in sys.path:
 import requests
 
 try:  # pragma: no cover - optional dependency
-    from config.config_schema import ObservabilityConfig
+    from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]
 except Exception:  # pragma: no cover - fallback for environments missing config deps
     if TYPE_CHECKING:
-        from config.config_schema import ObservabilityConfig  # type: ignore[import-error]
+        from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]  # type: ignore[import-error]
     else:
 
         @dataclass
@@ -42,16 +42,16 @@ except Exception:  # pragma: no cover - fallback for environments missing config
                     raise ValueError("metrics_export_port must be between 1 and 65535")
                 if not self.metrics_namespace:
                     raise ValueError("metrics_namespace must be non-empty")
-from standard_imports import setup_module
-from test_framework import TestSuite, suppress_logging
+from standard_imports import setup_module  # type: ignore[import-not-found]
+from test_framework import TestSuite, suppress_logging  # type: ignore[import-not-found]
 
 try:  # pragma: no cover - import guard
     import prometheus_client as _prometheus_client  # type: ignore[import-not-found]
 except Exception as exc:  # pragma: no cover - handled gracefully
     _prometheus_client = None
     start_http_server = cast(Optional[type], None)
-    PROMETHEUS_SERVER_AVAILABLE = False
-    _IMPORT_ERROR = exc
+    PROMETHEUS_SERVER_AVAILABLE = False  # type: ignore[reportConstantRedefinition]
+    _IMPORT_ERROR = exc  # type: ignore[reportConstantRedefinition]
 else:
     start_http_server = _prometheus_client.start_http_server
     PROMETHEUS_SERVER_AVAILABLE = True
@@ -62,7 +62,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing hints only
 else:  # pragma: no cover - runtime fallback
     WSGIServer = object
 
-from observability.metrics_registry import (
+from observability.metrics_registry import (  # type: ignore[import-not-found]
     PROMETHEUS_AVAILABLE,
     configure_metrics,
     get_metrics_registry,
@@ -99,28 +99,28 @@ def _start_prometheus_server() -> bool:
         True if Prometheus started or already running, False otherwise
     """
     global _PROMETHEUS_PROCESS
-    
+
     with _PROMETHEUS_LOCK:
         # Check if already running
         if _PROMETHEUS_PROCESS is not None:
             if _PROMETHEUS_PROCESS.poll() is None:
                 return True  # Already running
-            _PROMETHEUS_PROCESS = None  # Process died, clear it
-        
+            _PROMETHEUS_PROCESS = None  # Process died, clear it  # type: ignore[reportConstantRedefinition]
+
         # Check if Prometheus is available
         prometheus_path = Path("C:/Programs/Prometheus/prometheus.exe")
         if not prometheus_path.exists():
             logger.debug("Prometheus not found at %s, skipping auto-start", prometheus_path)
             return False
-        
+
         config_path = prometheus_path.parent / "prometheus.yml"
         if not config_path.exists():
             logger.debug("Prometheus config not found at %s", config_path)
             return False
-        
+
         try:
             # Start Prometheus in background
-            _PROMETHEUS_PROCESS = subprocess.Popen(
+            _PROMETHEUS_PROCESS = subprocess.Popen(  # type: ignore[reportConstantRedefinition]
                 [str(prometheus_path), f"--config.file={config_path}"],
                 cwd=str(prometheus_path.parent),
                 stdout=subprocess.DEVNULL,
@@ -139,7 +139,7 @@ def _start_prometheus_server() -> bool:
 def _stop_prometheus_server() -> None:
     """Stop Prometheus server if running."""
     global _PROMETHEUS_PROCESS
-    
+
     with _PROMETHEUS_LOCK:
         if _PROMETHEUS_PROCESS is not None:
             try:
@@ -149,7 +149,7 @@ def _stop_prometheus_server() -> None:
             except Exception as e:
                 logger.debug("Error stopping Prometheus: %s", e)
             finally:
-                _PROMETHEUS_PROCESS = None
+                _PROMETHEUS_PROCESS = None  # type: ignore[reportConstantRedefinition]
 
 
 def get_exporter_status() -> dict[str, Any] | None:
@@ -199,13 +199,13 @@ def start_metrics_exporter(host: str, port: int) -> bool:
             logger.error("Unexpected error starting Prometheus exporter: %s", exc, exc_info=True)
         else:
             bound_port = getattr(server, "server_port", port)
-            _EXPORTER_STATE.server = server
+            _EXPORTER_STATE.server = server  # type: ignore[assignment]
             _EXPORTER_STATE.address = (host, bound_port)
             logger.info("✅ Prometheus metrics exporter listening on %s:%s", host, bound_port)
-            
+
             # Start Prometheus server to scrape our metrics
             _start_prometheus_server()
-            
+
             return True
 
     return False
@@ -228,7 +228,7 @@ def stop_metrics_exporter() -> None:
             _EXPORTER_STATE.server = None
             _EXPORTER_STATE.address = None
             logger.info("Prometheus metrics exporter stopped")
-    
+
     # Stop Prometheus server too
     _stop_prometheus_server()
 

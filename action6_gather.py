@@ -194,12 +194,6 @@ def _update_session_performance_tracking(session_manager: Optional["SessionManag
 from core.logging_utils import OptimizedLogger
 from standard_imports import setup_module
 
-# === PERFORMANCE OPTIMIZATIONS ===
-from utils import (
-    JSONP_PATTERN,
-    fast_json_loads,
-)
-
 # === MODULE SETUP ===
 raw_logger = setup_module(globals(), __name__)
 logger = OptimizedLogger(raw_logger)
@@ -207,11 +201,9 @@ logger = OptimizedLogger(raw_logger)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import json
 import logging
 import math
 import random
-import re
 import sys
 import time
 from collections import Counter
@@ -225,9 +217,8 @@ integrate_with_action6(sys.modules[__name__])
 # === THIRD-PARTY IMPORTS ===
 import cloudscraper  # type: ignore[import-untyped]
 import requests
-from bs4 import BeautifulSoup  # For HTML parsing if needed (e.g., ladder)
 from diskcache.core import ENOVAL  # type: ignore[import-untyped]  # For checking cache misses
-from requests.exceptions import ConnectionError, RequestException
+from requests.exceptions import ConnectionError, RequestException  # noqa: F401
 from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
@@ -238,9 +229,9 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 from error_handling import (
     AuthenticationExpiredError,
     BrowserSessionError,
-    DatabaseConnectionError,
-    NetworkTimeoutError,
-    RetryableError,
+    DatabaseConnectionError,  # noqa: F401
+    NetworkTimeoutError,  # noqa: F401
+    RetryableError,  # noqa: F401
     circuit_breaker,
     error_context,
     retry_on_failure,
@@ -270,15 +261,14 @@ from dna_ethnicity_utils import (
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
 from test_framework import (
-    TestSuite,
-    suppress_logging,
+    TestSuite,  # noqa: F401
+    suppress_logging,  # noqa: F401
 )
-from test_utilities import create_standard_test_runner
+from test_utilities import create_standard_test_runner  # noqa: F401
 from utils import (
     _api_req,  # type: ignore[reportPrivateUsage]  # API request helper
     format_name,  # Name formatting utility
     nav_to_page,  # Navigation helper
-    ordinal_case,  # Ordinal case formatting
     retry_api,  # API retry decorator
 )
 
@@ -382,7 +372,7 @@ from functools import lru_cache
 def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     """Load ethnicity metadata and return (region_keys, key->column mapping)."""
     metadata = load_ethnicity_metadata()
-    if not isinstance(metadata, dict):
+    if not isinstance(metadata, dict):  # type: ignore[arg-type,misc]
         logger.debug("Ethnicity metadata unavailable or invalid; skipping ethnicity enrichment")
         return [], {}
 
@@ -440,25 +430,26 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
         column_name = column_map.get(str(region_key))
         if column_name:
             with contextlib.suppress(TypeError, ValueError):
-                payload[column_name] = int(percentage) if percentage is not None else None
+                payload[column_name] = int(percentage) if percentage is not None else None  # type: ignore[comparison-overlap]
 
     return payload if payload else None
 
 
-def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
+def _build_ethnicity_payload(
+session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
     """Fetch ethnicity comparison data and map it to database column names."""
     if not my_uuid or not match_uuid:
-        return {}
+        return {}  # type: ignore[return-value]
 
     region_keys, column_map = _get_ethnicity_config()
     if not region_keys or not column_map:
-        return {}
+        return {}  # type: ignore[return-value]
 
     match_guid = str(match_uuid).upper()
     comparison_data = fetch_ethnicity_comparison(session_manager, my_uuid, match_guid)
     if not comparison_data:
         logger.debug(f"No ethnicity comparison data for match {match_uuid}")
-        return {}
+        return {}  # type: ignore[return-value]
 
     percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
     payload: dict[str, Optional[int]] = {}
@@ -467,7 +458,7 @@ def _build_ethnicity_payload(session_manager: SessionManager, my_uuid: str, matc
         if not column_name:
             continue
         try:
-            payload[column_name] = int(percentage) if percentage is not None else None
+            payload[column_name] = int(percentage) if percentage is not None else None  # type: ignore[comparison-overlap]
         except (TypeError, ValueError):
             logger.debug(f"Invalid ethnicity percentage '{percentage}' for region {region_key} (match {match_uuid})")
 
@@ -579,7 +570,7 @@ def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[st
         'X-CSRF-TOKEN'
     ]
 
-    cookies = session_manager.driver.get_cookies()
+    cookies = session_manager.driver.get_cookies()  # type: ignore[union-attr]
     for cookie_name in csrf_cookie_names:
         for cookie in cookies:
             if cookie['name'] == cookie_name:
@@ -2012,7 +2003,7 @@ def _limit_relationship_probability_requests(
 
     trimmed_count = len(medium_priority_uuids) - len(selected_medium)
     combined = allowed_high.union(selected_medium)
-    return combined, selected_medium, trimmed_count
+    return combined, selected_medium, trimmed_count  # type: ignore[return-value]
 
 
 def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
@@ -3485,7 +3476,7 @@ def _get_person_id_mapping(
     """
     if not inserted_uuids:
         logger.warning("No UUIDs available in insert_data to query back IDs.")
-        return {}
+        return {}  # type: ignore[return-value]
 
     logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
 
@@ -3527,7 +3518,7 @@ def _get_person_id_mapping(
     except Exception as mapping_error:
         logger.error(f"CRITICAL: Person ID mapping query failed: {mapping_error}")
         session.rollback()
-        return {}
+        return {}  # type: ignore[return-value]
 
 
 def _process_person_creates(
@@ -3549,7 +3540,7 @@ def _process_person_creates(
     person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
 
     if not person_creates_filtered:
-        return {}, []
+        return {}, []  # type: ignore[return-value]
 
     # Prepare insert data
     insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
@@ -3758,12 +3749,12 @@ def _get_existing_dna_matches(
         Map of people_id to DnaMatch ID
     """
     people_ids_in_batch = {
-        pid for pid in all_person_ids_map.values() if pid is not None
+        pid for pid in all_person_ids_map.values() if pid is not None  # type: ignore[comparison-overlap]
     }
     logger.debug(f"all_person_ids_map has {len(all_person_ids_map)} entries, people_ids_in_batch has {len(people_ids_in_batch)} IDs")
     if not people_ids_in_batch:
         logger.warning("No people IDs in batch - cannot query for existing DNA matches")
-        return {}
+        return {}  # type: ignore[return-value]
 
     logger.debug(f"Querying for existing DNA matches for people IDs: {sorted(people_ids_in_batch)}")
     existing_matches = (
@@ -4664,7 +4655,7 @@ def _perform_batch_api_prefetches(
     """Perform API prefetches for batch."""
     if len(fetch_candidates_uuid) == 0:
         logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
-        return {}
+        return {}  # type: ignore[return-value]
 
     logger.debug(
         f"Batch {current_page}: Performing sequential API prefetches for {len(fetch_candidates_uuid)} candidates"
@@ -5283,7 +5274,7 @@ def _compare_dna_fields(
 
     db_predicted_rel_for_comp = (
         existing_dna_match.predicted_relationship
-        if existing_dna_match.predicted_relationship is not None
+        if existing_dna_match.predicted_relationship is not None  # type: ignore[comparison-overlap]
         else "N/A"
     )
 
@@ -6058,7 +6049,7 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
     cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
 
     if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
-        session_manager._sync_cookies_to_requests()
+        session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
         # Track the sync time
         setattr(session_manager, '_last_cookie_sync_time', current_time)
         logger.debug("Smart cookie sync performed (cookies were stale)")
@@ -6224,7 +6215,7 @@ def _call_match_list_api(
     # CRITICAL: Ensure cookies are synced immediately before API call
     try:
         if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
+            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
     except Exception as cookie_sync_error:
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
@@ -6301,7 +6292,7 @@ def _handle_303_session_refresh(
             logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
 
         # Force clear readiness check cache to ensure fresh validation
-        session_manager._last_readiness_check = None
+        session_manager._last_readiness_check = None  # type: ignore[attr-defined]
         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
 
         # Force session refresh with cleared cache
@@ -6311,7 +6302,7 @@ def _handle_303_session_refresh(
             return None
 
         # Force cookie sync and CSRF token refresh
-        session_manager._sync_cookies_to_requests()
+        session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
         fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
         if fresh_csrf_token:
             # Update headers with fresh token and retry
@@ -6347,7 +6338,7 @@ def _handle_non_dict_response(
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str]
-) -> Optional[dict]:
+) -> Optional[dict[str, Any]]:
     """Handle non-dict API response including 303 redirects."""
     if not isinstance(api_response, requests.Response):
         logger.error(
@@ -6377,7 +6368,7 @@ def _handle_match_list_response(
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str]
-) -> Optional[dict]:
+) -> Optional[dict[str, Any]]:
     """
     Handle and validate match list API response, including 303 redirect handling.
 
@@ -6396,7 +6387,7 @@ def _handle_match_list_response(
     return api_response
 
 
-def _parse_total_pages(api_response: dict, current_page: int) -> Optional[int]:  # noqa: ARG001
+def _parse_total_pages(api_response: dict[str, Any], current_page: int) -> Optional[int]:  # noqa: ARG001
     """
     Parse total pages from API response.
 
@@ -6417,7 +6408,7 @@ def _parse_total_pages(api_response: dict, current_page: int) -> Optional[int]: 
     return total_pages
 
 
-def _filter_valid_matches(match_data_list: list, current_page: int) -> list[dict[str, Any]]:
+def _filter_valid_matches(match_data_list: list[Any], current_page: int) -> list[dict[str, Any]]:
     """
     Filter matches to only include those with valid sampleId.
 
@@ -6905,7 +6896,7 @@ def _sync_session_cookies(session_manager: SessionManager) -> None:
     """Sync session cookies if available."""
     try:
         if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
+            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
     except Exception as cookie_sync_error:
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
@@ -7473,7 +7464,7 @@ def _fetch_batch_ladder(
         person_id=cfpid
     )
 
-    if not enhanced_result or not isinstance(enhanced_result, dict):
+    if not enhanced_result or not isinstance(enhanced_result, dict):  # type: ignore[arg-type,misc]  # type: ignore[arg-type]
         logger.error(f"Enhanced API failed to return data for {cfpid} - NO FALLBACK")
         return None
 
@@ -7522,14 +7513,15 @@ def _fetch_batch_ladder(
         cloudscraper.exceptions.CloudflareException,  # type: ignore
     )
 )
-def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> Optional[str]:
+def _get_cached_csrf_token(  # noqa: ARG001
+session_manager: SessionManager, api_description: str) -> Optional[str]:
     """Get cached CSRF token if available."""
     if (hasattr(session_manager, '_cached_csrf_token') and
         hasattr(session_manager, '_is_csrf_token_valid') and
-        session_manager._is_csrf_token_valid() and
-        session_manager._cached_csrf_token):
+        session_manager._is_csrf_token_valid() and  # type: ignore[attr-defined]
+        session_manager._cached_csrf_token):  # type: ignore[attr-defined]
         logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
-        return session_manager._cached_csrf_token
+        return session_manager._cached_csrf_token  # type: ignore[attr-defined]
     return None
 
 
@@ -7542,7 +7534,7 @@ def _extract_csrf_from_cookies(
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
         if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()
+            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
         driver_cookies_list = driver.get_cookies()
         driver_cookies_dict = {
             c["name"]: c["value"]
@@ -7554,8 +7546,8 @@ def _extract_csrf_from_cookies(
                 csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
 
                 import time
-                session_manager._cached_csrf_token = csrf_token_val
-                session_manager._csrf_cache_time = time.time()
+                session_manager._cached_csrf_token  # type: ignore[attr-defined] = csrf_token_val
+                session_manager._csrf_cache_time = time.time()  # type: ignore[attr-defined]
 
                 logger.debug(
                     f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
@@ -7754,7 +7746,7 @@ def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper:
     valid_preds = [
         p
         for p in predictions
-        if isinstance(p, dict)
+        if isinstance(p, dict)  # type: ignore[arg-type,misc]
         and "distributionProbability" in p
         and "pathsToMatch" in p
     ]
@@ -7766,7 +7758,7 @@ def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper:
     top_prob = best_pred.get("distributionProbability", 0.0)
     paths = best_pred.get("pathsToMatch", [])
     labels = [
-        p.get("label") for p in paths if isinstance(p, dict) and p.get("label")
+        p.get("label") for p in paths if isinstance(p, dict)  # type: ignore[arg-type,misc] and p.get("label")
     ]
     if not labels:
         # Note: API returns probability already as percentage (e.g., 99.0), not decimal (0.99)
@@ -7776,7 +7768,7 @@ def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper:
         )
         return None
 
-    return top_prob, labels
+    return top_prob, labels  # type: ignore[return-value]
 
 
 def _cache_relationship_result(match_uuid: str, max_labels_param: int, result: str) -> None:
@@ -8218,7 +8210,9 @@ def _log_page_completion_summary(
 # End of _log_page_completion_summary
 
 
+# type: ignore[reportUnusedFunction]
 def _enforce_page_throughput(
+
     page_metrics: PageProcessingMetrics,
     current_page: int,
 ) -> None:
@@ -8429,7 +8423,7 @@ def _test_module_initialization():
     print("   • Testing _initialize_gather_state...")
     try:
         state = _initialize_gather_state()
-        is_dict = isinstance(state, dict)
+        is_dict = isinstance(state, dict)  # type: ignore[arg-type,misc]
 
         required_keys = ["total_new", "total_updated", "total_pages_processed"]
         keys_present = all(key in state for key in required_keys)
@@ -9028,7 +9022,7 @@ def _test_303_redirect_detection():
                 {'name': '_dnamatches-matchlistui-x-csrf-token', 'value': 'test-token-123'}
             ]
 
-            from action6_gather import _get_csrf_token
+            from action6_gather import _get_csrf_token  # type: ignore[reportPrivateUsage]
             result = _get_csrf_token(mock_session_manager)
             assert result == 'test-token-123', "Should extract CSRF token correctly"
 

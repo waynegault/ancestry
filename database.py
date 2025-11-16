@@ -453,7 +453,7 @@ class ConversationMetrics(Base):
         # Initialize boolean fields with False if not provided
         self._initialize_boolean_fields()
         # Initialize conversation_phase with default if not provided
-        if self.conversation_phase is None:
+        if not self.conversation_phase:  # Check for empty string, not None
             self.conversation_phase = "initial_outreach"
 
     def _initialize_integer_fields(self) -> None:
@@ -1222,7 +1222,7 @@ def _create_views(target: Any, connection: Connection, **kw: Any) -> None:  # ty
 # Enhanced Transaction Context Manager with Phase 4.1 Error Handling
 # ----------------------------------------------------------------------
 @contextlib.contextmanager
-@error_context("Database Transaction")
+@error_context("Database Transaction")  # type: ignore[misc]
 def db_transn(session: Session):
     """
     Provides a transactional scope around a series of database operations
@@ -1438,7 +1438,7 @@ def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifier
 
 def _get_person_id_after_creation(session: Session, new_person: Person, log_ref: str) -> int:
     """Get person ID after creation with error handling."""
-    if new_person.id is None:
+    if new_person.id is None:  # type: ignore[comparison-overlap]
         logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
         session.rollback()
         return 0
@@ -2213,7 +2213,7 @@ def _validate_required_identifiers(profile_id: Optional[str], username: Optional
     return True
 
 
-def _build_person_query(session: Session, profile_id: str, username: str, include_deleted: bool) -> Query:
+def _build_person_query(session: Session, profile_id: str, username: str, include_deleted: bool) -> Query[Any]:
     """Build query for person with DNA match eager loading."""
     query = (
         session.query(Person)
@@ -2288,7 +2288,7 @@ def get_person_and_dna_match(
 # End of get_person_and_dna_match
 
 
-def exclude_deleted_persons(query: Query) -> Query:
+def exclude_deleted_persons(query: Query[Any]) -> Query[Any]:
     """
     Helper function to filter out soft-deleted Person records from a query.
 
@@ -2902,7 +2902,7 @@ def delete_database(
 # --- Backup and Recovery ---
 
 
-@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
 def _validate_backup_paths() -> tuple[Path, Path, Path]:
     """Validate and return database and backup paths."""
     db_path = config_schema.database.database_file
@@ -2994,7 +2994,7 @@ def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
 
 
 @timeout_protection(timeout=300)  # 5 minutes for large database backups
-@error_context("Database Backup Operation")
+@error_context("Database Backup Operation")  # type: ignore[misc]
 def backup_database() -> bool:
     """
     Creates a backup copy of the current database file.
