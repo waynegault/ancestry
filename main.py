@@ -398,7 +398,10 @@ def menu() -> str:
         if console_handler is not None:
             level_name = logging.getLevelName(int(console_handler.level))
         else:
-            level_name = logging.getLevelName(logger.getEffectiveLevel())
+            level = logger.getEffectiveLevel()
+            # getLevelNamesMapping returns dict[str, int], we need reverse lookup
+            level_names = {v: k for k, v in logging.getLevelNamesMapping().items()}
+            level_name = level_names.get(level, str(level))
     elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
         level_name = config.logging.log_level.upper()
 

@@ -20,10 +20,10 @@ if str(parent_dir) not in sys.path:
 import requests
 
 try:  # pragma: no cover - optional dependency
-    from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]
+    from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
 except Exception:  # pragma: no cover - fallback for environments missing config deps
     if TYPE_CHECKING:
-        from config.config_schema import (
+        from config.config_schema import (  # pyright: ignore[reportMissingImports]
             ObservabilityConfig,  # type: ignore[import-not-found]  # type: ignore[import-error]
         )
     else:
