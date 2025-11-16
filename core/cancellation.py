@@ -120,7 +120,7 @@ def _test_cancel_state_thread_safety() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def cancellation_module_tests() -> bool:
     """
     Comprehensive test suite for cancellation.py.
     Tests cooperative cancellation signaling and state management.
@@ -190,6 +190,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(cancellation_module_tests)
 
 
 if __name__ == "__main__":

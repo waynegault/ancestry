@@ -97,7 +97,7 @@ def _test_core_browser_manager_availability() -> bool:
         return False
 
 
-def run_comprehensive_tests() -> bool:
+def core_main_module_tests() -> bool:
     """
     Comprehensive test suite for core/__main__.py.
     Tests core package structure and module availability.
@@ -152,6 +152,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_main_module_tests)
 
 if __name__ == "__main__":
     success = run_comprehensive_tests()
