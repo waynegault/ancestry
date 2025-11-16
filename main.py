@@ -29,6 +29,9 @@ import logging
 
 # os already imported at top for SUPPRESS_CONFIG_WARNINGS
 import shutil
+
+# === GRAFANA INTEGRATION ===
+import grafana_checker
 import sys
 import threading
 import time
@@ -378,6 +381,12 @@ def menu() -> str:
     """Display the main menu and return the user's choice."""
     print("\nMain Menu")
     print("=" * 17)
+    
+    # Display Grafana status
+    grafana_status = grafana_checker.get_status_message()
+    print(f"Grafana: {grafana_status}")
+    print()
+    
     level_name = "UNKNOWN"  # Default
 
     if logger and logger.handlers:
@@ -410,6 +419,7 @@ def menu() -> str:
     print("")
     print("analytics. View Conversation Analytics Dashboard")
     print("metrics. View Prometheus Metrics Report")
+    print("setup-grafana. Run Automated Grafana Setup")
     print("")
     print("graph. Open Code Graph Visualization")
     print("test. Run Main.py Internal Tests")
@@ -2574,6 +2584,7 @@ def _handle_meta_options(choice: str) -> bool | None:
     meta_actions: dict[str, Callable[[], None]] = {
         "analytics": _show_analytics_dashboard,
         "metrics": _show_metrics_report,
+        "setup-grafana": lambda: grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False),
         "graph": _open_graph_visualization,
         "s": _show_cache_statistics,
         "t": _toggle_log_level,
@@ -2847,6 +2858,18 @@ def _initialize_application() -> tuple["SessionManager", Any]:
             logger.warning(f"⚠️  Chrome diagnostic issue: {message}")
     except Exception as diag_error:
         logger.warning(f"Chrome diagnostics failed to run: {diag_error}")
+
+    # Check Grafana installation status
+    try:
+        grafana_status = grafana_checker.check_grafana_status()
+        if grafana_status["ready"]:
+            logger.info("✅ Grafana ready (http://localhost:3000)")
+        elif grafana_status["installed"]:
+            logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+        else:
+            logger.info("ℹ️  Grafana not installed (run 'setup-grafana' from menu for automated setup)")
+    except Exception as grafana_error:
+        logger.debug(f"Grafana check skipped: {grafana_error}")
 
     if config is None:
         _print_config_error_message()
