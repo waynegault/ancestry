@@ -15,6 +15,7 @@ Test Utility Framework:
 • Standardized test runner patterns with consistent execution and reporting
 • Reusable assertion helpers with detailed validation and error reporting
 • Common test fixtures and setup utilities for consistent test environments
+• Temporary file and directory helpers with atomic writes and automatic cleanup
 
 Validation Infrastructure:
 • Sophisticated validation factory functions with configurable validation criteria
@@ -38,7 +39,10 @@ implementation, consistent testing practices, and maintainable code organization
 for professional genealogical automation development and quality assurance.
 """
 
-from typing import Any, Callable, Optional
+import tempfile
+import contextlib
+from pathlib import Path
+from typing import Any, Callable, Optional, Iterator
 from unittest.mock import MagicMock
 
 from sqlalchemy.orm import Session
@@ -60,6 +64,135 @@ class EmptyTestService:
         class ServiceA(EmptyTestService): ...
     """
     pass
+
+
+# ==============================================================================
+# Temporary File and Directory Helpers (Task 5)
+# ==============================================================================
+
+@contextlib.contextmanager
+def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8") -> Iterator[Any]:
+    """
+    Context manager for atomic file writes using temp file + rename.
+    
+    Provides safe file writing by:
+    1. Writing to a temporary file in the same directory
+    2. On success, atomically replacing the target file
+    3. On failure, cleaning up the temporary file
+    
+    This consolidates the pattern found in rate_limiter.py, ai_prompt_utils.py,
+    and other modules that use tempfile.NamedTemporaryFile + Path.replace().
+    
+    Args:
+        target_path: Path to the final destination file
+        mode: File open mode (default: "w" for text write)
+        encoding: Text encoding (default: "utf-8")
+        
+    Yields:
+        File object for writing
+        
+    Example:
+        with atomic_write_file(Path("config.json")) as f:
+            json.dump(data, f, indent=2)
+    """
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Try modern approach first (Python 3.12+)
+    try:
+        temp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+        with open(temp_path, mode, encoding=encoding if 'b' not in mode else None) as f:
+            yield f
+        temp_path.replace(target_path)
+    except Exception:
+        # Fallback to tempfile.NamedTemporaryFile for compatibility
+        with tempfile.NamedTemporaryFile(
+            mode=mode,
+            delete=False,
+            dir=str(target_path.parent),
+            encoding=encoding if 'b' not in mode else None,
+            suffix=target_path.suffix
+        ) as tf:
+            try:
+                yield tf
+                temp_name = tf.name
+            except Exception:
+                # Clean up temp file on error
+                Path(tf.name).unlink(missing_ok=True)
+                raise
+        # Atomic rename
+        Path(temp_name).replace(target_path)
+
+
+@contextlib.contextmanager
+def temp_directory(prefix: str = "test-", cleanup: bool = True) -> Iterator[Path]:
+    """
+    Context manager for temporary directory creation with automatic cleanup.
+    
+    Consolidates the pattern of using tempfile.mkdtemp() or TemporaryDirectory()
+    found in quality_regression_gate.py, analytics.py, and other test modules.
+    
+    Args:
+        prefix: Prefix for the temporary directory name
+        cleanup: Whether to automatically clean up the directory (default: True)
+        
+    Yields:
+        Path object pointing to the temporary directory
+        
+    Example:
+        with temp_directory(prefix="qrg-test-") as tmpdir:
+            test_file = tmpdir / "data.json"
+            test_file.write_text("{}")
+    """
+    if cleanup:
+        with tempfile.TemporaryDirectory(prefix=prefix) as temp_dir:
+            yield Path(temp_dir)
+    else:
+        # Create but don't auto-cleanup
+        temp_dir = Path(tempfile.mkdtemp(prefix=prefix))
+        try:
+            yield temp_dir
+        finally:
+            pass  # Caller responsible for cleanup
+
+
+@contextlib.contextmanager
+def temp_file(suffix: str = "", prefix: str = "test-", mode: str = "w+", 
+              encoding: str = "utf-8", delete: bool = True) -> Iterator[Path]:
+    """
+    Context manager for temporary file creation with automatic cleanup.
+    
+    Provides a Path-based interface to temporary files, consolidating patterns
+    found across the codebase.
+    
+    Args:
+        suffix: File extension (e.g., ".json", ".txt")
+        prefix: Prefix for the temporary file name
+        mode: File open mode (default: "w+" for read/write)
+        encoding: Text encoding (default: "utf-8")
+        delete: Whether to automatically delete the file (default: True)
+        
+    Yields:
+        Path object pointing to the temporary file
+        
+    Example:
+        with temp_file(suffix=".json") as tmp_path:
+            tmp_path.write_text('{"test": true}')
+            data = json.loads(tmp_path.read_text())
+    """
+    with tempfile.NamedTemporaryFile(
+        mode=mode,
+        suffix=suffix,
+        prefix=prefix,
+        delete=delete,
+        encoding=encoding if 'b' not in mode else None
+    ) as tf:
+        temp_path = Path(tf.name)
+        try:
+            yield temp_path
+        finally:
+            if delete and temp_path.exists():
+                temp_path.unlink(missing_ok=True)
 
 
 def mock_func() -> str:
@@ -887,6 +1020,67 @@ def _test_create_test_person() -> None:
     assert person_with_dna.current_engagement_score == 80
 
 
+def _test_temp_directory() -> None:
+    """Test the temp_directory helper (Task 5)."""
+    import os
+    
+    # Test with cleanup
+    with temp_directory(prefix="test-task5-") as tmpdir:
+        assert tmpdir.exists()
+        assert tmpdir.is_dir()
+        assert "test-task5-" in tmpdir.name
+        
+        # Create a test file
+        test_file = tmpdir / "test.txt"
+        test_file.write_text("test content")
+        assert test_file.exists()
+    
+    # Directory should be cleaned up
+    assert not tmpdir.exists()
+
+
+def _test_temp_file() -> None:
+    """Test the temp_file helper (Task 5)."""
+    # Test with automatic cleanup
+    with temp_file(suffix=".json", prefix="test-") as tmp_path:
+        assert tmp_path.exists()
+        assert tmp_path.suffix == ".json"
+        assert "test-" in tmp_path.name
+        
+        # Write and read content
+        tmp_path.write_text('{"test": true}')
+        content = tmp_path.read_text()
+        assert "test" in content
+    
+    # File should be deleted
+    assert not tmp_path.exists()
+
+
+def _test_atomic_write_file() -> None:
+    """Test the atomic_write_file helper (Task 5)."""
+    import json
+    
+    with temp_directory() as tmpdir:
+        target = tmpdir / "test.json"
+        
+        # Test successful write
+        with atomic_write_file(target) as f:
+            json.dump({"key": "value"}, f)
+        
+        assert target.exists()
+        with open(target) as f:
+            data = json.load(f)
+        assert data == {"key": "value"}
+        
+        # Test that file is atomically replaced
+        with atomic_write_file(target) as f:
+            json.dump({"updated": "data"}, f)
+        
+        with open(target) as f:
+            data = json.load(f)
+        assert data == {"updated": "data"}
+
+
 def test_utilities_module_tests() -> bool:
     """Test the test utilities module itself."""
     from test_framework import TestSuite, suppress_logging
@@ -903,6 +1097,9 @@ def test_utilities_module_tests() -> bool:
         ("Create mock session manager (Todo #17)", _test_create_mock_session_manager, "Test session manager mock helper", "direct", "Test session manager mock helper"),
         ("Create test database (Todo #17)", _test_create_test_database, "Test database creation helper", "direct", "Test database creation helper"),
         ("Create test person (Todo #17)", _test_create_test_person, "Test person mock helper", "direct", "Test person mock helper"),
+        ("Temp directory helper (Task 5)", _test_temp_directory, "Test temp directory creation and cleanup", "direct", "Test temp directory helper"),
+        ("Temp file helper (Task 5)", _test_temp_file, "Test temp file creation and cleanup", "direct", "Test temp file helper"),
+        ("Atomic write file helper (Task 5)", _test_atomic_write_file, "Test atomic file writing", "direct", "Test atomic write helper"),
     ]
 
     with suppress_logging():
