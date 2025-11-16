@@ -176,8 +176,7 @@ def get_service_health_summary(service_name: str) -> dict[str, Any]:
     }
 
 
-# Test suite
-def run_comprehensive_tests() -> bool:
+def core_metrics_integration_module_tests() -> bool:
     """Run tests for metrics integration helpers."""
     from test_framework import TestSuite
 
@@ -242,6 +241,11 @@ def run_comprehensive_tests() -> bool:
     suite.run_test("Service health summary", test_service_health)
 
     return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_metrics_integration_module_tests)
 
 
 if __name__ == "__main__":
