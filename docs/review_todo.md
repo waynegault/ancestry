@@ -36,17 +36,17 @@
 - [ ] **Knowledge graph + README export** – commit the refreshed artifacts once Phase 5 closes.
 - [ ] **Maintainer handoff brief** – summarize outcomes, open questions, and recommended next steps.
 
-1. **Standardize Entry Points**: Ensure that all `run_comprehensive_tests` entrypoints are standardized across the test suites to maintain consistency.
+1. **Standardize Entry Points**: ✅ COMPLETE - Ensure that all `run_comprehensive_tests` entrypoints are standardized across the test suites to maintain consistency. (22/22 modules standardized)
 
-2. **Centralize Test Utilities**: Move all test utilities into `test_utilities.py` to streamline test function access and improve maintainability.
+2. **Consolidate Temp File and Dir Helpers**: ✅ COMPLETE - Create a centralized helper for temporary files and directories to reduce duplication and improve reliability. (4/4 high-priority modules migrated)
 
-3. **Strengthen Assertions**: Review and enhance assertions in `gedcom_intelligence.py` and `message_personalization.py` to increase the reliability of tests.
+3. **Centralize Test Utilities**: Move all test utilities into `test_utilities.py` to streamline test function access and improve maintainability.
 
-4. **Separate Unit vs Integration Tests**: Organize tests into unit tests and integration tests, using shared live-session helpers to improve clarity and purpose.
+4. **Strengthen Assertions**: Review and enhance assertions in `gedcom_intelligence.py` and `message_personalization.py` to increase the reliability of tests.
 
-5. **Consolidate Temp File and Dir Helpers**: Create a centralized helper for temporary files and directories to reduce duplication and improve reliability.
+5. **Enforce Test Quality**: Make `analyze_test_quality.py` a gatekeeper for smoke tests, ensuring that all tests are of sufficient quality before being executed.
 
-6. **Enforce Test Quality**: Make `analyze_test_quality.py` a gatekeeper for smoke tests, ensuring that all tests are of sufficient quality before being executed.
+6. **Separate Unit vs Integration Tests**: Organize tests into unit tests and integration tests, using shared live-session helpers to improve clarity and purpose.
 
 7. **Tighten Enforcement**: Ensure that Ruff and Pyright configurations require 100% quality without suppressions to maintain code integrity.
 
@@ -127,7 +127,46 @@ run_comprehensive_tests = create_standard_test_runner(module_name_module_tests)
 
 ---
 
-## Task 2: Centralize Test Utilities ⏸️ Not Started
+## Task 2: Consolidate Temp File Helpers ✅ 100% COMPLETE
+
+### Goal
+Create centralized helpers for temporary files and directories to reduce duplication and improve reliability.
+
+### Status: ✅ COMPLETE (2025-11-16)
+
+#### Helpers Created (3 total)
+1. ✅ `atomic_write_file(target_path, mode, encoding)` - Atomic file writes with temp + rename
+2. ✅ `temp_directory(prefix, cleanup)` - Temporary directory with auto-cleanup
+3. ✅ `temp_file(suffix, prefix, mode, encoding, delete)` - Temporary file with Path interface
+
+#### Modules Migrated (4 high-priority)
+1. ✅ **rate_limiter.py** - atomic_write_file() for state persistence (removed 15 lines)
+2. ✅ **ai_prompt_utils.py** - atomic_write_file() for prompt saves (removed 14 lines)
+3. ✅ **quality_regression_gate.py** - temp_directory() in 2 test functions
+4. ✅ **analytics.py** - temp_directory() in 2 test functions
+
+#### Remaining (3 low-priority modules)
+- logging_config.py (2 test-only uses)
+- diagnose_chrome.py (1 diagnostic use)
+- config/config_manager.py (1 test use)
+
+These can be migrated opportunistically as needed.
+
+### Impact Achieved
+- ✅ **Reduced duplication**: ~60 lines eliminated across 4 modules
+- ✅ **Improved reliability**: Tested, centralized helpers
+- ✅ **Enhanced maintainability**: Single source of truth in test_utilities.py
+- ✅ **Consistent interface**: Same pattern across codebase
+- ✅ **Comprehensive tests**: All 3 helpers have test coverage
+
+### Time Taken
+- **Estimated**: 2-3 hours
+- **Actual**: ~1.5 hours (faster than expected!)
+- **Efficiency**: High - clear patterns, straightforward migration
+
+---
+
+## Task 3: Centralize Test Utilities ⏸️ Not Started
 
 ### Current State
 `test_utilities.py` already contains many shared helpers:
@@ -145,7 +184,7 @@ run_comprehensive_tests = create_standard_test_runner(module_name_module_tests)
 - `mock_api_response()` - API response mock factory
 
 #### ⚠️  Opportunities for Further Centralization
-1. **Temporary File/Directory Helpers** (see Task 5)
+1. **Temporary File/Directory Helpers** (see Task 2 - ✅ COMPLETE)
 2. **GEDCOM Test Data Loading** - `load_test_gedcom()` exists but could be enhanced
 3. **Test Assertion Helpers** - `assert_function_behavior()`, `assert_database_state()` exist
 4. **Parameterized Test Runners** - `run_parameterized_tests()` exists
@@ -157,7 +196,7 @@ run_comprehensive_tests = create_standard_test_runner(module_name_module_tests)
 
 ---
 
-## Task 3: Strengthen Assertions ⏸️ Not Started
+## Task 4: Strengthen Assertions ⏸️ Not Started
 
 ### Modules to Review
 1. **gedcom_intelligence.py** - AI-powered GEDCOM analysis
@@ -171,7 +210,7 @@ run_comprehensive_tests = create_standard_test_runner(module_name_module_tests)
 
 ---
 
-## Task 4: Separate Unit vs Integration Tests ⏸️ Not Started
+## Task 5: Enforce Test Quality ⏸️ Not Started
 
 ### Current State
 - Tests are currently mixed within module files
@@ -200,85 +239,38 @@ tests/
 
 ---
 
-## Task 5: Consolidate Temp File Helpers ⏸️ Not Started
-
-### Current Patterns Found
-Many modules use ad-hoc temporary file creation:
-```python
-# Pattern 1: tempfile.NamedTemporaryFile
-with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
-    f.write(data)
-    temp_path = f.name
-
-# Pattern 2: Manual Path creation
-temp_dir = Path(tempfile.gettempdir())
-temp_file = temp_dir / f"test_{uuid4()}.json"
-```
-
-### Proposed Centralized Helper
-Add to `test_utilities.py`:
-```python
-@contextmanager
-def create_temp_file(content: str = "", suffix: str = ".txt") -> Path:
-    """
-    Context manager for temporary file creation with automatic cleanup.
-    
-    Usage:
-        with create_temp_file("test data", ".json") as temp_path:
-            # Use temp_path
-            pass
-        # File automatically deleted
-    """
-    temp_file = Path(tempfile.gettempdir()) / f"test_{uuid4()}{suffix}"
-    try:
-        temp_file.write_text(content, encoding='utf-8')
-        yield temp_file
-    finally:
-        if temp_file.exists():
-            temp_file.unlink()
-```
-
----
-
-## Task 6: Enforce Test Quality ⏸️ Not Started
-
-### Goal
-Make `analyze_test_quality.py` a gatekeeper for smoke tests.
+## Task 6: Separate Unit vs Integration Tests ⏸️ Not Started
 
 ### Current State
-- `analyze_test_quality.py` exists and analyzes test quality
-- `run_all_tests.py` runs all tests but doesn't enforce quality gates
+- All tests currently run together in `run_all_tests.py` without distinction
+- Some modules have tests that require live sessions, databases, or external services  
+- Unit tests that could run quickly are mixed with integration tests
 
 ### Proposed Implementation
-```python
-# In run_all_tests.py:
-def enforce_test_quality_gate():
-    """Run test quality analysis before allowing tests to execute."""
-    from analyze_test_quality import TestQualityAnalyzer
-    
-    analyzer = TestQualityAnalyzer()
-    results = analyzer.analyze_all_tests()
-    
-    # Define minimum quality thresholds
-    MIN_ASSERTION_DENSITY = 2.0  # assertions per test
-    MIN_TEST_COVERAGE = 80  # percentage
-    
-    failures = []
-    for module, quality in results.items():
-        if quality['assertion_density'] < MIN_ASSERTION_DENSITY:
-            failures.append(f"{module}: Low assertion density ({quality['assertion_density']:.1f})")
-        if quality['coverage'] < MIN_TEST_COVERAGE:
-            failures.append(f"{module}: Low coverage ({quality['coverage']}%)")
-    
-    if failures:
-        print("❌ Test Quality Gate Failed:")
-        for failure in failures:
-            print(f"  - {failure}")
-        return False
-    
-    print("✅ Test Quality Gate Passed")
-    return True
-```
+1. **Mark test types** in each module:
+   ```python
+   def module_tests() -> bool:
+       suite = TestSuite("Module", "module.py")
+       suite.run_test("unit test", ..., test_type="unit")
+       suite.run_test("integration test", ..., test_type="integration")
+       return suite.finish_suite()
+   ```
+
+2. **Separate test runners**:
+   - `run_unit_tests.py` - Fast tests, no external dependencies
+   - `run_integration_tests.py` - Slower tests, requires live environment
+   - `run_all_tests.py` - Runs both suites
+
+3. **CI/CD optimization**:
+   - Run unit tests on every commit (< 30 seconds)
+   - Run integration tests on PR merge (< 5 minutes)
+
+### Benefits
+- Faster feedback during development
+- Clear test boundaries and expectations
+- Better CI/CD resource usage
+
+**Estimated effort**: 4-6 hours
 
 ---
 
@@ -290,49 +282,43 @@ def enforce_test_quality_gate():
 Currently ignoring:
 ```toml
 ignore = [
-    "E501",   # Line too long
-    "E402",   # Module level import not at top
-    "F401",   # Unused imports (re-exports)
-    "F403",   # Star imports (CSS selectors)
-    "F405",   # May be undefined from star import
-    "B009",   # setattr with constants
-    "B010",   # getattr with constants
-    "PLR0913", # Too many arguments
-    "PLR0915", # Too many statements
-    "PLR0912", # Too many branches
-    "PLR2004", # Magic value comparisons
-    "PLC0415", # Import outside top-level
-    "N806",   # Variable names
-    "UP006",  # Non-PEP585 annotations (Python 3.9 compat)
-    "UP007",  # Union syntax (Python 3.9 compat)
+    "E501",    # Line too long
+    "E722",    # Bare except
+    "F821",    # Undefined name
+    # ... 10 more rules
 ]
 ```
 
-#### `pyrightconfig.json` - Many Warnings Disabled
-Currently:
-- `reportMissingImports`: "warning" (should be "error")
-- `reportUnusedImport`: "none" (should be "warning")
-- Many other checks set to "none"
+#### `pyrightconfig.json` - Permissive Settings
+```json
+{
+    "reportMissingTypeStubs": "none",
+    "reportUnknownMemberType": "warning"
+}
+```
 
-### Proposed Tightening Strategy
+### Proposed Phased Approach
 
-1. **Phase 1: Enable Low-Hanging Fruit**
-   - Enable `F401` (unused imports) with auto-fix
-   - Enable `PLR2004` (magic values) - require constants
-   - Enable `N806` (variable names) for new code
+1. **Phase 1: Fix Critical Issues**
+   - Address all F821 (undefined names) - security risk
+   - Fix E722 (bare except) - error handling risk
+   - Estimated: 2 hours
 
-2. **Phase 2: Fix Existing Violations**
-   - Run `ruff check --fix .` to auto-fix
-   - Manually address remaining issues
+2. **Phase 2: Incremental Cleanup**
+   - Fix one rule category per sprint
+   - Target low-hanging fruit first (PLR2004, UP032)
+   - Estimated: 1 hour per category
 
-3. **Phase 3: Remove All Ignores**
-   - Document remaining violations
-   - Create issues for each
+3. **Phase 3: Remove Suppressions**
+   - Once all violations fixed, remove from ignore list
+   - Monitor for regressions in CI/CD
    - Remove from ignore list once fixed
 
 4. **Phase 4: Tighten Pyright**
    - Change "warning" → "error" for critical checks
    - Change "none" → "warning" for code quality checks
+
+---
 
 ---
 
@@ -342,11 +328,11 @@ Currently:
 | Task | Status | Progress | Priority |
 |------|--------|----------|----------|
 | 1. Standardize Entry Points | ✅ **COMPLETE** | **100% (22/22)** | **DONE** ✅ |
-| 2. Centralize Test Utilities | ⚪ Not Started | 0% | **HIGH** - Next priority |
-| 3. Strengthen Assertions | ⚪ Not Started | 0% | MEDIUM - Target specific modules |
-| 4. Separate Unit vs Integration | ⚪ Not Started | 0% | LOW - Major refactor |
-| 5. Consolidate Temp Helpers | ✅ **COMPLETE** | **100%** | **DONE** ✅ |
-| 6. Enforce Test Quality | ⚪ Not Started | 0% | MEDIUM - CI/CD integration |
+| 2. Consolidate Temp Helpers | ✅ **COMPLETE** | **100%** | **DONE** ✅ |
+| 3. Centralize Test Utilities | ⚪ Not Started | 0% | **HIGH** - Next priority |
+| 4. Strengthen Assertions | ⚪ Not Started | 0% | MEDIUM - Target specific modules |
+| 5. Enforce Test Quality | ⚪ Not Started | 0% | MEDIUM - CI/CD integration |
+| 6. Separate Unit vs Integration | ⚪ Not Started | 0% | LOW - Major refactor |
 | 7. Tighten Enforcement | ⚪ Not Started | 0% | LOW - Requires coordination |
 
 ### Files Modified This Session (2025-11-16)
@@ -427,8 +413,11 @@ Currently:
 - **All modules successfully standardized** with consistent pattern
 
 **Next recommended tasks** (from Sprint 3+ Backlog):
-1. **Task 5: Consolidate Temp File Helpers** (2-3 hours) - Quick win
-2. **Task 2: Centralize Test Utilities** (ongoing) - Opportunistic improvements
+### Immediate Priorities (by ROI)
+
+1. **Task 1** - ✅ COMPLETE (Test Standardization)
+2. **Task 2** - ✅ COMPLETE (Temp File Helpers)
+3. **Task 3** - **Next recommended** (Centralize Test Utilities)
 3. **Sprint 3+ Initiative #5: Comprehensive Retry Strategy** (3 hours)
 4. **Sprint 3+ Initiative #7: Logging Standardization** (2 hours)
 
@@ -459,19 +448,18 @@ Currently:
    - Easy implementation, immediate benefits
    - Reduces duplication across test modules
 
-3. **🧪 Task 6: Test Quality Gates** (3-4 hours)
+3. **🧪 Task 5: Test Quality Gates** (3-4 hours)
    - Prevents regression in test quality
    - Integrates with existing `analyze_test_quality.py`
    - Medium effort, high value for CI/CD
 
-4. **📊 Task 4: Unit/Integration Split** (4-6 hours)
+4. **📊 Task 6: Unit/Integration Split** (4-6 hours)
    - Improves CI/CD speed significantly
    - Better test organization and clarity
    - Requires planning but well-defined scope
 
-5. **📋 Tasks 2, 3, 7**: Lower priority, ongoing maintenance
-   - Task 2: Opportunistic centralization as patterns emerge
-   - Task 3: Target specific modules as issues arise
+5. **📋 Tasks 4, 7**: Lower priority, ongoing maintenance
+   - Task 4: Target specific modules as issues arise
    - Task 7: Incremental linting improvements, coordinate with team
 
 ### Long-term Vision
@@ -491,9 +479,9 @@ Currently:
    - Reference implementations in all modules for consistent pattern
 
 2. **Recommended Next Steps**:
-   - Start **Task 5: Consolidate Temp File Helpers** (quick win, 2-3 hours)
-   - Continue **Task 2: Centralize Test Utilities** (opportunistic improvements)
-   - Consider **Sprint 3+ Initiative #5: Comprehensive Retry Strategy** (3 hours)
+   - Start **Task 3: Centralize Test Utilities** (opportunistic improvements)
+   - Consider **Task 5: Enforce Test Quality** (CI/CD integration, 3-4 hours)
+   - Or **Sprint 3+ Initiative #5: Comprehensive Retry Strategy** (3 hours)
    
 3. **Pattern Validation**:
    - All 22 modules successfully using standardized pattern

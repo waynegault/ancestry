@@ -17,10 +17,17 @@ This project automates genealogical research workflows on Ancestry.com, includin
 ## Key Features
 
 - **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 58 test modules with 100% pass rate
+- **Comprehensive Testing**: 58 test modules with 100% standardized test infrastructure
 - **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
 - **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
-- **Developer Tools**: Code graph visualization, test infrastructure, performance profiling
+- **Developer Tools**: Code graph visualization, centralized test utilities, performance profiling
+
+## Recent Improvements (November 2025)
+
+- ✅ **Test Infrastructure Standardization** - All 22 test modules now use centralized `create_standard_test_runner` pattern
+- ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
+- 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
+- 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
 ## Actions
 

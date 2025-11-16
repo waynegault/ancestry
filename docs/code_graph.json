@@ -1,17 +1,17 @@
 {
   "metadata": {
     "schemaVersion": "1.0",
-    "generatedAt": "2025-11-16T20:00:00Z",
+    "generatedAt": "2025-11-16T21:15:00Z",
     "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
     "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
-    "recentUpdates": "2025-11-16: Grafana setup automation, Pylance error resolution, linter fixes, documentation consolidation. Deleted obsolete files: LLMS_SETUP.md, visualization_readme.md, review_todo.md (root), docs/grafana/{QUICK_START.md,DASHBOARD_SETUP.md,install_sqlite_plugin.ps1}",
+    "recentUpdates": "2025-11-16: Test infrastructure standardization complete (22/22 modules), temp file helpers consolidated (4 modules migrated), code quality improvements. Previous: Grafana setup automation, Pylance error resolution, linter fixes, documentation consolidation.",
     "documentation": {
-      "primary": "README.md - Comprehensive project documentation",
+      "primary": "README.md - Comprehensive project documentation with recent improvements section",
       "codebase": "visualize_code_graph.html - Interactive code visualization",
       "testing": "test_examples/README.md - Test patterns and best practices", 
       "monitoring": "docs/grafana/ - Grafana dashboards and setup scripts",
       "development": ".github/copilot-instructions.md - AI development guidelines",
-      "tasks": "docs/review_todo.md - Technical debt tracking"
+      "tasks": "docs/review_todo.md - Technical debt tracking (Tasks 1 & 2 complete)"
     }
   },
   "nodes": [
