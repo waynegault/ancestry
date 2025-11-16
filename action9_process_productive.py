@@ -3706,7 +3706,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score1 = processor._score_response_quality(
+    score1 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text=high_quality_response,
         lookup_results=lookup_results,
         person=mock_person
@@ -3723,7 +3723,7 @@ def _test_response_quality_scoring() -> None:
     more details.
     """
 
-    score2 = processor._score_response_quality(
+    score2 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text=medium_quality_response,
         lookup_results=[],
         person=mock_person
@@ -3737,7 +3737,7 @@ def _test_response_quality_scoring() -> None:
     Thanks for the message. I'll check my records.
     """
 
-    score3 = processor._score_response_quality(
+    score3 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text=low_quality_response,
         lookup_results=[],
         person=mock_person
@@ -3747,7 +3747,7 @@ def _test_response_quality_scoring() -> None:
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
 
     # Test Case 4: Edge case - empty response
-    score4 = processor._score_response_quality(
+    score4 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text="",
         lookup_results=[],
         person=mock_person
@@ -3758,7 +3758,7 @@ def _test_response_quality_scoring() -> None:
 
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
-    score5 = processor._score_response_quality(
+    score5 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text=very_long_response,
         lookup_results=[],
         person=mock_person
@@ -3783,7 +3783,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score6 = processor._score_response_quality(
+    score6 = processor._score_response_quality(  # type: ignore[attr-defined]
         response_text=unused_lookup_response,
         lookup_results=rich_lookup_results,
         person=mock_person

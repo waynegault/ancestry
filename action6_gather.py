@@ -434,7 +434,7 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
 
     return payload if payload else None
 
-
+# type: ignore[reportUnusedFunction]
 def _build_ethnicity_payload(
 session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
     """Fetch ethnicity comparison data and map it to database column names."""

@@ -4698,11 +4698,8 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
 
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
         if has_state:
-            # type: ignore[possibly-unbound]
-            assert conv_state.next_action == expected_action, \
-                f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"  # type: ignore[reportPossiblyUnboundVariable]
-            # type: ignore[possibly-unbound]
-            assert conv_state.next_action_date is None,  # type: ignore[reportPossiblyUnboundVariable] f"{description}: next_action_date should be None"
+            assert conv_state.next_action == expected_action, f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
+            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"  # type: ignore[possibly-unbound]
 
         logger.info(f"✓ {description}")
 
@@ -4788,12 +4785,8 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
 
         if has_state:
-            # type: ignore[possibly-unbound]
-            assert conv_state.next_action == 'await_reply', \
-                f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"  # type: ignore[reportPossiblyUnboundVariable]
-            # type: ignore[possibly-unbound]
-            assert conv_state.conversation_phase == 'active_dialogue', \
-                f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"  # type: ignore[reportPossiblyUnboundVariable]
+            assert conv_state.next_action == 'await_reply', f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
+            assert conv_state.conversation_phase == 'active_dialogue', f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"  # type: ignore[possibly-unbound]
 
         logger.info(f"✓ {description}")
 
