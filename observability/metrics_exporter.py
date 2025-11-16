@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -85,6 +87,70 @@ class _ExporterState:
 
 _EXPORTER_STATE = _ExporterState()
 
+# Prometheus server process management
+_PROMETHEUS_PROCESS: subprocess.Popen[bytes] | None = None
+_PROMETHEUS_LOCK = threading.RLock()
+
+
+def _start_prometheus_server() -> bool:
+    """Start Prometheus server if available and not running.
+    
+    Returns:
+        True if Prometheus started or already running, False otherwise
+    """
+    global _PROMETHEUS_PROCESS
+    
+    with _PROMETHEUS_LOCK:
+        # Check if already running
+        if _PROMETHEUS_PROCESS is not None:
+            if _PROMETHEUS_PROCESS.poll() is None:
+                return True  # Already running
+            _PROMETHEUS_PROCESS = None  # Process died, clear it
+        
+        # Check if Prometheus is available
+        prometheus_path = Path("C:/Programs/Prometheus/prometheus.exe")
+        if not prometheus_path.exists():
+            logger.debug("Prometheus not found at %s, skipping auto-start", prometheus_path)
+            return False
+        
+        config_path = prometheus_path.parent / "prometheus.yml"
+        if not config_path.exists():
+            logger.debug("Prometheus config not found at %s", config_path)
+            return False
+        
+        try:
+            # Start Prometheus in background
+            _PROMETHEUS_PROCESS = subprocess.Popen(
+                [str(prometheus_path), f"--config.file={config_path}"],
+                cwd=str(prometheus_path.parent),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            logger.info("✅ Prometheus server started on http://localhost:9090")
+            # Give it a moment to start
+            time.sleep(2)
+            return True
+        except Exception as e:
+            logger.warning("Failed to start Prometheus server: %s", e)
+            return False
+
+
+def _stop_prometheus_server() -> None:
+    """Stop Prometheus server if running."""
+    global _PROMETHEUS_PROCESS
+    
+    with _PROMETHEUS_LOCK:
+        if _PROMETHEUS_PROCESS is not None:
+            try:
+                _PROMETHEUS_PROCESS.terminate()
+                _PROMETHEUS_PROCESS.wait(timeout=5)
+                logger.info("Prometheus server stopped")
+            except Exception as e:
+                logger.debug("Error stopping Prometheus: %s", e)
+            finally:
+                _PROMETHEUS_PROCESS = None
+
 
 def get_exporter_status() -> dict[str, Any] | None:
     """Get current exporter status.
@@ -136,6 +202,10 @@ def start_metrics_exporter(host: str, port: int) -> bool:
             _EXPORTER_STATE.server = server
             _EXPORTER_STATE.address = (host, bound_port)
             logger.info("✅ Prometheus metrics exporter listening on %s:%s", host, bound_port)
+            
+            # Start Prometheus server to scrape our metrics
+            _start_prometheus_server()
+            
             return True
 
     return False
@@ -158,6 +228,9 @@ def stop_metrics_exporter() -> None:
             _EXPORTER_STATE.server = None
             _EXPORTER_STATE.address = None
             logger.info("Prometheus metrics exporter stopped")
+    
+    # Stop Prometheus server too
+    _stop_prometheus_server()
 
 
 def is_metrics_exporter_running() -> bool:
