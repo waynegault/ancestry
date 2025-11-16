@@ -79,16 +79,16 @@ class _ExporterState:
     __slots__ = ("address", "server")
 
     def __init__(self) -> None:
-        self.server: Optional[WSGIServer] = None
-        self.address: Optional[tuple[str, int]] = None
+        self.server: WSGIServer | None = None
+        self.address: tuple[str, int] | None = None
 
 
 _EXPORTER_STATE = _ExporterState()
 
 
-def get_exporter_status() -> Optional[dict[str, Any]]:
+def get_exporter_status() -> dict[str, Any] | None:
     """Get current exporter status.
-    
+
     Returns:
         Dict with host, port if running, None otherwise
     """
@@ -166,7 +166,7 @@ def is_metrics_exporter_running() -> bool:
         return _EXPORTER_STATE.server is not None
 
 
-def get_metrics_exporter_address() -> Optional[tuple[str, int]]:
+def get_metrics_exporter_address() -> tuple[str, int] | None:
     """Return the exporter bind address when running."""
     with _EXPORTER_LOCK:
         return _EXPORTER_STATE.address

@@ -490,18 +490,18 @@ def _compose_task_body(
 ) -> str:
     """Build the task body with key research context."""
     body_lines = [f"Research target: {person_name}"]
-    
+
     # Add Ancestry URLs
     if profile_id:
         body_lines.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={profile_id}")
     if uuid:
         body_lines.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{uuid}/compare")
-    
+
     if relationship:
         body_lines.append(f"Relationship: {relationship}")
     if shared_dna_cm is not None:
         body_lines.append(f"Shared DNA: {shared_dna_cm:.1f} cM")
-    
+
     # Add tree information if available
     if tree_info:
         if tree_info.get('person_name_in_tree'):
@@ -510,7 +510,7 @@ def _compose_task_body(
             body_lines.append(f"View in Tree: {tree_info['view_in_tree_link']}")
         if tree_info.get('actual_relationship'):
             body_lines.append(f"Tree Relationship: {tree_info['actual_relationship']}")
-    
+
     body_lines.append(f"Priority: {importance.title()}")
     if due_date:
         body_lines.append(f"Suggested due date: {due_date}")
@@ -1482,11 +1482,11 @@ class PersonProcessor:
             f"Match: {person.username or 'Unknown'} (#{person.id})",
             f"Profile: {person.profile_id or 'N/A'}",
         ]
-        
+
         # Add Ancestry URLs
         if person.profile_id:
             task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
-        
+
         # Add DNA match comparison URL if available
         if person.dna_match and hasattr(person.dna_match, 'compare_link'):
             task_body_parts.append(f"DNA Comparison: {person.dna_match.compare_link}")
@@ -1505,7 +1505,7 @@ class PersonProcessor:
         if person.tree_status:
             status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
             task_body_parts.append(f"Tree Status: {status_display}")
-        
+
         # Add family tree information if in tree
         if person.family_tree:
             if hasattr(person.family_tree, 'cfpid') and person.family_tree.cfpid:

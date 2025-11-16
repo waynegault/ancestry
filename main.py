@@ -2486,13 +2486,13 @@ def _handle_test_options(choice: str) -> bool:
 def _show_metrics_report() -> None:
     """Display Prometheus metrics report."""
     try:
-        from observability.metrics_registry import get_metrics_registry, is_metrics_enabled
         from observability.metrics_exporter import get_exporter_status
-        
+        from observability.metrics_registry import get_metrics_registry, is_metrics_enabled
+
         print("\n" + "="*70)
         print("📊 PROMETHEUS METRICS REPORT")
         print("="*70)
-        
+
         if not is_metrics_enabled():
             print("\n⚠️  Metrics collection is DISABLED")
             print("\nTo enable metrics:")
@@ -2501,55 +2501,55 @@ def _show_metrics_report() -> None:
             print("  3. Restart the application")
             print("\n" + "="*70 + "\n")
             return
-        
+
         registry = get_metrics_registry()
         if not registry:
             print("\n⚠️  Metrics registry not initialized")
             print("\n" + "="*70 + "\n")
             return
-        
+
         # Get exporter status
         exporter_info = get_exporter_status()
         if exporter_info:
-            print(f"\n✅ Metrics Exporter: RUNNING")
+            print("\n✅ Metrics Exporter: RUNNING")
             print(f"   URL: http://{exporter_info['host']}:{exporter_info['port']}/metrics")
         else:
             print("\n⚠️  Metrics Exporter: NOT RUNNING")
-        
+
         # Get metrics from registry
         print("\n📈 Current Metrics:")
         print("-" * 70)
-        
+
         try:
             from prometheus_client import generate_latest
             metrics_output = generate_latest(registry).decode('utf-8')
-            
+
             # Parse and display key metrics
             lines = metrics_output.split('\n')
             metric_count = 0
-            
+
             for line in lines:
                 if line and not line.startswith('#'):
                     metric_count += 1
                     if metric_count <= 20:  # Show first 20 metrics
                         print(f"   {line}")
-            
+
             if metric_count > 20:
                 print(f"\n   ... and {metric_count - 20} more metrics")
             elif metric_count == 0:
                 print("   (No metrics collected yet)")
-            
+
             print(f"\n📊 Total Metrics: {metric_count}")
-            
+
         except Exception as e:
             print(f"\n⚠️  Error fetching metrics: {e}")
-        
+
         print("\n💡 Tips:")
         print("   • Run actions (6-10) to generate metrics")
         print("   • Use Prometheus to scrape: http://localhost:9000/metrics")
         print("   • Import Grafana dashboard from docs/grafana/ancestry_overview.json")
         print("\n" + "="*70 + "\n")
-        
+
     except Exception as e:
         logger.error(f"Error displaying metrics report: {e}", exc_info=True)
         print(f"\n⚠️  Error: {e}")

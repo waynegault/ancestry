@@ -1,9 +1,10 @@
 {
   "metadata": {
     "schemaVersion": "1.0",
-    "generatedAt": "2025-11-12T18:50:00Z",
+    "generatedAt": "2025-11-16T12:00:00Z",
     "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
-    "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers."
+    "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
+    "recentUpdates": "2025-11-16: Added metrics report display, enhanced ToDo task creation with URLs and tree info, test infrastructure standardization"
   },
   "nodes": [
     {
@@ -10296,12 +10297,27 @@
       "notes": "Allows quick testing from within the interactive CLI."
     },
     {
+      "id": "function:main._show_metrics_report",
+      "type": "function",
+      "name": "_show_metrics_report",
+      "path": "main.py",
+      "summary": "Displays comprehensive Prometheus metrics report with exporter status and current metrics.",
+      "mechanism": "Imports observability components, checks if metrics enabled, retrieves registry and exporter status, displays first 20 metrics with counts, and provides setup tips if disabled.",
+      "quality": "stable",
+      "concerns": [],
+      "opportunities": [
+        "Add filtering options to show specific metric categories."
+      ],
+      "tests": null,
+      "notes": "Added 2025-11-16 as new menu option 'metrics' for real-time observability visibility."
+    },
+    {
       "id": "function:main._handle_meta_options",
       "type": "function",
       "name": "_handle_meta_options",
       "path": "main.py",
-      "summary": "Handles analytics, cache, logging, clear-screen, and exit meta commands from the menu.",
-      "mechanism": "Maps supported meta choices to helper callables, executes them, and manages the exit case by clearing the screen and returning False when the user chooses to quit.",
+      "summary": "Handles analytics, metrics, cache, logging, clear-screen, and exit meta commands from the menu.",
+      "mechanism": "Maps supported meta choices to helper callables (including new metrics option), executes them, and manages the exit case by clearing the screen and returning False when the user chooses to quit.",
       "quality": "stable",
       "concerns": [
         "Meta command registry is hard-coded; dynamic registration could simplify future additions."
@@ -10310,7 +10326,7 @@
         "Provide descriptive help text listing meta commands directly in the menu."
       ],
       "tests": null,
-      "notes": "Supports 'analytics', 's', 't', 'c', and 'q' path logic."
+      "notes": "Supports 'analytics', 'metrics', 's', 't', 'c', and 'q' path logic. Updated 2025-11-16 to include metrics report."
     },
     {
       "id": "function:main._dispatch_menu_action",
@@ -12175,8 +12191,8 @@
       "type": "file",
       "name": "action9_process_productive.py",
       "path": "action9_process_productive.py",
-      "summary": "Action 9 pipeline that converts productive conversations into acknowledgements and Microsoft To-Do tasks.",
-      "mechanism": "Orchestrates candidate selection, AI-assisted reply generation, MS Graph task creation, and batched database commits for productive DNA matches.",
+      "summary": "Action 9 pipeline that converts productive conversations into acknowledgements and Microsoft To-Do tasks with enhanced context.",
+      "mechanism": "Orchestrates candidate selection, AI-assisted reply generation, MS Graph task creation with DNA match URLs and tree information, and batched database commits for productive DNA matches.",
       "quality": "stable",
       "concerns": [
         "Single module still encompasses AI, messaging, and task orchestration, making refactors risky."
@@ -12185,7 +12201,7 @@
         "Extract PersonProcessor and commit managers into dedicated modules for reusability."
       ],
       "tests": null,
-      "notes": "Key action module now represented in knowledge graph."
+      "notes": "Enhanced 2025-11-16 with comprehensive task context including Ancestry profile URLs, DNA comparison links, and tree view links."
     },
     {
       "id": "class:action9.ProcessingState",
@@ -17991,6 +18007,66 @@
       ],
       "tests": "Manual TestSuite under __main__",
       "notes": "Shared dependency for most modules; relies on config_schema, rate_limiter, session_utils, selenium, and requests."
+    },
+    {
+      "id": "function:observability/metrics_exporter.get_exporter_status",
+      "type": "function",
+      "name": "get_exporter_status",
+      "path": "observability/metrics_exporter.py",
+      "summary": "Returns current Prometheus metrics exporter status including host, port, and running state.",
+      "mechanism": "Thread-safe check of _EXPORTER_STATE to return dict with host, port, running status if server is active, None otherwise.",
+      "quality": "stable",
+      "concerns": [],
+      "opportunities": [
+        "Add uptime duration and request count statistics."
+      ],
+      "tests": null,
+      "notes": "Added 2025-11-16 to support metrics report display in main menu."
+    },
+    {
+      "id": "function:action9_process_productive._compose_task_body",
+      "type": "function",
+      "name": "_compose_task_body",
+      "path": "action9_process_productive.py",
+      "summary": "Builds Microsoft To-Do task body with comprehensive genealogical context including URLs.",
+      "mechanism": "Accepts person_name, relationship, shared_dna_cm, importance, due_date, categories, plus new profile_id, uuid, and tree_info parameters. Constructs formatted text with Ancestry profile URL, DNA comparison URL, and tree view links.",
+      "quality": "stable",
+      "concerns": [],
+      "opportunities": [
+        "Add thumbnail images or record previews if MS Graph API supports rich content."
+      ],
+      "tests": null,
+      "notes": "Enhanced 2025-11-16 with profile_id, uuid, tree_info parameters for actionable task context."
+    },
+    {
+      "id": "function:action9_process_productive.PersonProcessor._build_task_body_parts",
+      "type": "function",
+      "name": "_build_task_body_parts",
+      "path": "action9_process_productive.py",
+      "summary": "Constructs task body parts array with DNA match and tree information for PersonProcessor.",
+      "mechanism": "Builds list with match name, profile ID, Ancestry profile URL, DNA comparison URL (from person.dna_match.compare_link or constructed from UUID), relationship, shared DNA, tree status, tree person ID (CFPID), name in tree, tree view link, and tree relationship.",
+      "quality": "stable",
+      "concerns": [],
+      "opportunities": [
+        "Add validation for URL construction to handle edge cases."
+      ],
+      "tests": null,
+      "notes": "Enhanced 2025-11-16 to include comprehensive match context with direct links to Ancestry resources."
+    },
+    {
+      "id": "function:action9_process_productive.create_enhanced_research_task",
+      "type": "function",
+      "name": "create_enhanced_research_task",
+      "path": "action9_process_productive.py",
+      "summary": "Creates MS To-Do task with intelligent priority, due date, and enhanced context.",
+      "mechanism": "Accepts person_name, relationship, shared_dna_cm, categories, plus new profile_id, uuid, tree_info parameters. Builds payload via _build_enhanced_task_payload and submits via _submit_enhanced_task.",
+      "quality": "stable",
+      "concerns": [],
+      "opportunities": [
+        "Add task templates for common genealogical research scenarios."
+      ],
+      "tests": null,
+      "notes": "Enhanced 2025-11-16 with extended signature to pass profile_id, uuid, tree_info through call chain."
     }
   ],
   "edges": [
