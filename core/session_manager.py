@@ -2778,8 +2778,7 @@ def _test_proactive_session_refresh_timing() -> None:
     assert should_refresh, "Session should trigger proactive refresh at 25 minutes"
 
 
-def run_comprehensive_tests() -> bool:
-    """
+def core_session_manager_module_tests() -> bool:
     Comprehensive test suite for session_manager.py (decomposed).
     """
     from test_framework import TestSuite, suppress_logging
@@ -2979,6 +2978,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(core_session_manager_module_tests)
 
 
 def main() -> None:

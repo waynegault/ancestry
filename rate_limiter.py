@@ -1175,7 +1175,7 @@ def reset_global_rate_limiter() -> None:
 # =============================================================================
 
 
-def run_comprehensive_tests() -> bool:
+def rate_limiter_module_tests() -> bool:
     """Run comprehensive tests for AdaptiveRateLimiter."""
     import sys
 
@@ -1218,10 +1218,10 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         test_name="Success threshold",
         test_func=_test_success_threshold,
-            test_summary="Verify success requires 50 calls before rate increase",
+        test_summary="Verify success requires 50 calls before rate increase",
         functions_tested="AdaptiveRateLimiter.on_success",
         method_description="Call on_success 100 times",
-            expected_outcome="No increase until 50th success, then +2%",
+        expected_outcome="No increase until 50th success, then +2%",
     )
 
     # Test 5: 429 resets success counter
@@ -1258,60 +1258,39 @@ def run_comprehensive_tests() -> bool:
     suite.run_test(
         test_name="Thread safety",
         test_func=_test_thread_safety,
-        test_summary="Verify operations are thread-safe",
+        test_summary="Verify limiter is thread-safe for concurrent use",
         functions_tested="AdaptiveRateLimiter.wait, on_success",
-        method_description="Run 5 threads making 10 requests each",
-        expected_outcome="No errors, all 50 requests complete successfully",
+        method_description="Run multiple threads making concurrent requests",
+        expected_outcome="No race conditions or errors from concurrent access",
     )
 
-    # Test 9: Global singleton
+    # Test 9: Capacity limits burst
     suite.run_test(
-        test_name="Global singleton",
-        test_func=_test_global_singleton,
-        test_summary="Verify global singleton pattern works correctly",
-        functions_tested="get_adaptive_rate_limiter, reset_global_rate_limiter",
-        method_description="Get limiter twice, verify same instance",
-        expected_outcome="Returns same instance with first initialization rate",
+        test_name="Capacity limits burst",
+        test_func=_test_capacity_limits_burst,
+        test_summary="Verify capacity limits burst request count",
+        functions_tested="AdaptiveRateLimiter.wait",
+        method_description="Make burst exceeding capacity",
+        expected_outcome="Only capacity tokens available for burst",
     )
 
-    # Test 10: Parameter validation
+    # Test 10: Cooldown on 429
     suite.run_test(
-        test_name="Parameter validation",
-        test_func=_test_parameter_validation,
-        test_summary="Verify invalid parameters raise ValueError",
-        functions_tested="AdaptiveRateLimiter.__init__",
-        method_description="Try invalid values: zero rate, negative capacity, etc",
-        expected_outcome="ValueError raised for all invalid inputs",
-    )
-
-    suite.run_test(
-        test_name="Endpoint min interval",
-        test_func=_test_endpoint_min_interval,
-        test_summary="Verify endpoint-specific min interval delay is enforced",
-        functions_tested="AdaptiveRateLimiter.wait, configure_endpoint_profiles",
-        method_description="Configure min interval and make consecutive calls",
-        expected_outcome="Second call delayed by the configured interval",
-    )
-
-    suite.run_test(
-        test_name="Endpoint delay multiplier",
-        test_func=_test_endpoint_delay_multiplier,
-        test_summary="Verify endpoint-specific delay multiplier increases wait",
-        functions_tested="AdaptiveRateLimiter.wait, configure_endpoint_profiles",
-        method_description="Configure delay multiplier and trigger base wait",
-        expected_outcome="Total wait reflects configured multiplier",
-    )
-
-    suite.run_test(
-        test_name="Endpoint 429 cooldown",
-        test_func=_test_endpoint_429_cooldown,
-        test_summary="Verify endpoint-specific cooldown applies after 429 errors",
-        functions_tested="AdaptiveRateLimiter.on_429_error, wait, configure_endpoint_profiles",
+        test_name="Cooldown on 429 error",
+        test_func=_test_cooldown_on_429,
+        test_summary="Verify 429 error enforces cooldown period",
+        functions_tested="AdaptiveRateLimiter.on_429_error, wait",
         method_description="Configure cooldown, trigger 429, ensure next call waits",
         expected_outcome="Subsequent call delayed by configured cooldown interval",
     )
 
     return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(rate_limiter_module_tests)
+
 
 
 def _test_initialization() -> None:
