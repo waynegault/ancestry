@@ -564,7 +564,7 @@ def _test_cookie_names_for_csrf() -> bool:
     return True
 
 
-def run_comprehensive_tests() -> bool:
+def dna_utils_module_tests() -> bool:
     """
     Comprehensive test suite for dna_utils.py.
     Tests DNA match utilities including CSRF token handling, URL construction, and API integration.
@@ -635,6 +635,11 @@ def run_comprehensive_tests() -> bool:
         )
 
         return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from test_utilities import create_standard_test_runner
+run_comprehensive_tests = create_standard_test_runner(dna_utils_module_tests)
 
 
 if __name__ == "__main__":
