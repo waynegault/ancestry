@@ -75,11 +75,66 @@ TELEMETRY_FILE = LOGS_DIR / "prompt_experiments.jsonl"
 ALERTS_FILE = LOGS_DIR / "prompt_experiment_alerts.jsonl"
 QUALITY_BASELINE_FILE = LOGS_DIR / "prompt_quality_baseline.json"
 MAX_ERROR_LEN = 240
+SCORING_INPUTS_MAX_CHARS = 800
+REGRESSION_ALERT_WINDOW = 80
+REGRESSION_ALERT_MIN_EVENTS = 6
+REGRESSION_ALERT_THRESHOLD = 7.5
 
 def _stable_hash(value: str | None) -> str | None:
     if not value:
         return None
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _normalize_provider_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _prepare_scoring_inputs(value: Any) -> Any:
+    if value in (None, ""):
+        return None
+    try:
+        sanitized = json.loads(json.dumps(value, ensure_ascii=False, default=str))
+    except Exception:
+        sanitized = str(value)
+    try:
+        serialized = json.dumps(sanitized, ensure_ascii=False)
+    except Exception:
+        serialized = str(sanitized)
+    if len(serialized) > SCORING_INPUTS_MAX_CHARS:
+        return serialized[:SCORING_INPUTS_MAX_CHARS] + "..."
+    return sanitized
+
+
+def _filter_events_by_provider(events: list[dict[str, Any]], provider_filter: str | None) -> list[dict[str, Any]]:
+    if not provider_filter:
+        return events
+    target = provider_filter.strip().lower()
+    if not target:
+        return events
+    filtered: list[dict[str, Any]] = []
+    for event in events:
+        provider_value = event.get("provider") or event.get("provider_name")
+        if isinstance(provider_value, str) and provider_value.strip().lower() == target:
+            filtered.append(event)
+    return filtered
+
+
+def _collect_variant_quality_sequences(events: list[dict[str, Any]]) -> dict[str, list[float]]:
+    sequences: dict[str, list[float]] = {}
+    for ev in events:
+        q_val = ev.get("quality_score")
+        if not isinstance(q_val, (int, float)):
+            continue
+        variant = ev.get("variant_label") or "unknown"
+        provider_raw = ev.get("provider") or ev.get("provider_name") or "unknown"
+        provider = str(provider_raw).strip() or "unknown"
+        key = f"{provider}::{variant}"
+        sequences.setdefault(key, []).append(float(q_val))
+    return sequences
 
 def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) -> None:
     """Append a single telemetry event (best effort).
@@ -96,6 +151,8 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
             for k, v in event_data.extracted_data.items():
                 if isinstance(v, list):
                     counts[k] = len(v)
+        provider_value = _normalize_provider_value(event_data.provider_name)
+        provider_model = _normalize_provider_value(event_data.provider_model)
         event = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "variant_label": event_data.variant_label,
@@ -110,6 +167,9 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
             "quality_score": round(float(event_data.quality_score), 2) if isinstance(event_data.quality_score, (int, float)) else None,
             "component_coverage": round(float(event_data.component_coverage), 3) if isinstance(event_data.component_coverage, (int, float)) else None,
             "anomaly_summary": event_data.anomaly_summary or None,
+            "provider": provider_value,
+            "provider_model": provider_model,
+            "scoring_inputs": _prepare_scoring_inputs(event_data.scoring_inputs),
         }
         with Path(TELEMETRY_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -117,6 +177,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
         from contextlib import suppress
         with suppress(Exception):
             _auto_analyze_and_alert()
+            _auto_detect_regression_drop()
     except Exception:
         pass
 
@@ -185,13 +246,14 @@ def _finalize_variant_stats(variant_stats: dict[str, dict[str, Any]]) -> None:
         st.pop("_quality_count", None)
 
 
-def summarize_experiments(last_n: int = 1000) -> dict[str, Any]:
+def summarize_experiments(last_n: int = 1000, provider: str | None = None) -> dict[str, Any]:
     """Return summary of last N telemetry events (or all if smaller).
 
     Adds per-variant success_rate, avg_tasks, and average_quality (if any events include quality_score).
     """
     try:
         events = _read_recent_jsonl(TELEMETRY_FILE, last_n)
+        events = _filter_events_by_provider(events, provider)
         total = len(events)
         if not total:
             return {"events": 0, "variants": {}, "success_rate": 0.0}
@@ -212,7 +274,7 @@ def summarize_experiments(last_n: int = 1000) -> dict[str, Any]:
 
 
 # === Analysis & Alerting (Phase 11.2 Items 1 & 2) ===
-def _load_recent_events(window: int = 500) -> list[dict[str, Any]]:
+def _load_recent_events(window: int = 500, provider: str | None = None) -> list[dict[str, Any]]:
     if not TELEMETRY_FILE.exists():
         return []
     events: list[dict[str, Any]] = []
@@ -231,7 +293,7 @@ def _load_recent_events(window: int = 500) -> list[dict[str, Any]]:
                 continue
     except Exception:
         return []
-    return events
+    return _filter_events_by_provider(events, provider)
 
 def _aggregate_variant_data(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Aggregate raw per-variant data from events."""
@@ -288,13 +350,14 @@ def _compare_control_alt(result_variants: dict[str, Any], min_events_per_variant
 
 
 def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
-                        quality_margin: float = 5.0, success_margin: float = 0.05) -> dict[str, Any]:
+                        quality_margin: float = 5.0, success_margin: float = 0.05,
+                        provider: str | None = None) -> dict[str, Any]:
     """Compute comparative statistics for variants.
 
     Returns dict with per-variant metrics and potential improvement flags.
     Simple heuristic (not statistical test) identifies improved_quality and improved_success.
     """
-    events = _load_recent_events(window)
+    events = _load_recent_events(window, provider=provider)
     if not events:
         return {"events": 0, "variants": {}, "analysis": "no_data"}
 
@@ -343,9 +406,51 @@ def _auto_analyze_and_alert() -> None:
     _write_alert(alert)
 
 
+def _auto_detect_regression_drop() -> None:
+    events = _load_recent_events(window=REGRESSION_ALERT_WINDOW * 2)
+    if not events:
+        return
+    sequences = _collect_variant_quality_sequences(events)
+    for combo, scores in sequences.items():
+        if len(scores) < max(REGRESSION_ALERT_MIN_EVENTS * 2, REGRESSION_ALERT_WINDOW + REGRESSION_ALERT_MIN_EVENTS):
+            continue
+        recent = scores[-REGRESSION_ALERT_WINDOW:]
+        if len(recent) < REGRESSION_ALERT_MIN_EVENTS:
+            continue
+        previous_slice = scores[-(REGRESSION_ALERT_WINDOW * 2):-REGRESSION_ALERT_WINDOW]
+        if len(previous_slice) < REGRESSION_ALERT_MIN_EVENTS:
+            previous_slice = scores[:-REGRESSION_ALERT_WINDOW]
+        if len(previous_slice) < REGRESSION_ALERT_MIN_EVENTS:
+            continue
+        median_recent = statistics.median(recent)
+        median_previous = statistics.median(previous_slice)
+        drop = round(median_previous - median_recent, 2)
+        if drop < REGRESSION_ALERT_THRESHOLD:
+            continue
+        provider, _, variant = combo.partition("::")
+        signature = f"regression::{provider}::{variant}::{drop}"
+        if _already_alerted(signature):
+            continue
+        alert = {
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "type": "variant_median_regression",
+            "signature": signature,
+            "provider": provider,
+            "variant": variant or "unknown",
+            "drop": drop,
+            "window": REGRESSION_ALERT_WINDOW,
+            "message": (
+                f"Median quality for variant '{variant or 'unknown'}' on provider '{provider}' "
+                f"dropped by {drop} points over the last {REGRESSION_ALERT_WINDOW} events"
+            ),
+        }
+        _write_alert(alert)
+
+
 # === Quality Baseline & Regression Detection (Phase 11.2 Item 3) ===
-def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8) -> dict[str, Any] | None:
-    events = _load_recent_events(window)
+def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8,
+                           provider: str | None = None) -> dict[str, Any] | None:
+    events = _load_recent_events(window, provider=provider)
     scores: list[float] = []
     for e in events:
         if e.get("variant_label") != variant:
@@ -365,6 +470,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         "p25": statistics.quantiles(scores, n=4)[0] if len(scores) >= 4 else None,
         "p75": statistics.quantiles(scores, n=4)[2] if len(scores) >= 4 else None,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "provider": provider or "all",
     }
     try:
         with Path(QUALITY_BASELINE_FILE).open("w", encoding="utf-8") as fh:
@@ -382,11 +488,16 @@ def load_quality_baseline() -> dict[str, Any] | None:
     except Exception:
         return None
 
-def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control") -> dict[str, Any]:
+def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control",
+                              provider: str | None = None) -> dict[str, Any]:
     baseline = load_quality_baseline()
+    target_provider = provider or "all"
     if not baseline or baseline.get("variant") != variant:
         return {"status": "no_baseline"}
-    events = _load_recent_events(current_window)
+    baseline_provider = baseline.get("provider") or "all"
+    if baseline_provider != target_provider:
+        return {"status": "baseline_mismatch", "baseline_provider": baseline_provider, "requested_provider": target_provider}
+    events = _load_recent_events(current_window, provider=provider)
     scores: list[float] = []
     for e in events:
         if e.get("variant_label") != variant:
@@ -421,6 +532,7 @@ def _test_record_and_summarize() -> None:
             user_id="tester",
             quality_score=50 + i,
             component_coverage=0.8,
+            provider_name="gemini",
         )
         record_extraction_experiment_event(event)
     summary = summarize_experiments()
@@ -428,6 +540,8 @@ def _test_record_and_summarize() -> None:
     # (events may be in a separate file or cleared between test runs)
     assert isinstance(summary, dict), "Summary should be a dictionary"
     assert "events" in summary, "Summary should have 'events' key"
+    summary_filtered = summarize_experiments(provider="gemini")
+    assert isinstance(summary_filtered, dict)
 
 def _test_variant_analysis() -> None:
     """Add alt variant events then run analyze_experiments for improvement structure."""
@@ -442,9 +556,10 @@ def _test_variant_analysis() -> None:
             suggested_tasks=[],
             quality_score=60 + i,
             component_coverage=0.6,
+            provider_name="deepseek",
         )
         record_extraction_experiment_event(event)
-    analysis = analyze_experiments(window=50, min_events_per_variant=1)
+    analysis = analyze_experiments(window=50, min_events_per_variant=1, provider="deepseek")
     assert "variants" in analysis and analysis.get("events",0) > 0
 
 def _test_build_baseline_and_regression() -> None:
@@ -465,11 +580,12 @@ def _test_build_baseline_and_regression() -> None:
             suggested_tasks=[],
             quality_score=70 + (i % 5),
             component_coverage=0.9,
+            provider_name="gemini",
         )
         record_extraction_experiment_event(event)
-    baseline = build_quality_baseline(variant="control", window=300, min_events=8)
+    baseline = build_quality_baseline(variant="control", window=300, min_events=8, provider="gemini")
     assert baseline is None or baseline.get("variant") == "control"
-    reg = detect_quality_regression(current_window=120, drop_threshold=9999, variant="control")  # Force non-regression
+    reg = detect_quality_regression(current_window=120, drop_threshold=9999, variant="control", provider="gemini")  # Force non-regression
     assert "status" in reg
 
 def prompt_telemetry_module_tests() -> bool:
@@ -509,6 +625,7 @@ if __name__ == "__main__":
     parser.add_argument("--build-baseline", action="store_true", help="Build quality baseline from recent control events")
     parser.add_argument("--check-regression", action="store_true", help="Check for quality regression vs baseline")
     parser.add_argument("--variant", default="control", help="Variant key for baseline/regression (default control)")
+    parser.add_argument("--provider", default=None, help="Filter telemetry to a specific provider (optional)")
     parser.add_argument("--window", type=int, default=200, help="Event window size for analysis/baseline")
     parser.add_argument("--drop-threshold", type=float, default=15.0, help="Median quality drop threshold for regression detection")
     parser.add_argument("--min-events", type=int, default=8, help="Minimum events required to build baseline")
@@ -517,20 +634,20 @@ if __name__ == "__main__":
 
     ran_action = False
     if args.summary:
-        print(_json.dumps(summarize_experiments(last_n=args.last), indent=2))
+        print(_json.dumps(summarize_experiments(last_n=args.last, provider=args.provider), indent=2))
         ran_action = True
     if args.analyze:
-        print(_json.dumps(analyze_experiments(window=args.window), indent=2))
+        print(_json.dumps(analyze_experiments(window=args.window, provider=args.provider), indent=2))
         ran_action = True
     if args.build_baseline:
-        baseline = build_quality_baseline(variant=args.variant, window=args.window, min_events=args.min_events)
+        baseline = build_quality_baseline(variant=args.variant, window=args.window, min_events=args.min_events, provider=args.provider)
         if baseline:
             print(_json.dumps(baseline, indent=2))
         else:
             print("Baseline not built (insufficient events)")
         ran_action = True
     if args.check_regression:
-        print(_json.dumps(detect_quality_regression(current_window=args.window, drop_threshold=args.drop_threshold, variant=args.variant), indent=2))
+        print(_json.dumps(detect_quality_regression(current_window=args.window, drop_threshold=args.drop_threshold, variant=args.variant, provider=args.provider), indent=2))
         ran_action = True
 
     if args.self_test or (not ran_action) or os.environ.get("RUN_INTERNAL_TESTS"):

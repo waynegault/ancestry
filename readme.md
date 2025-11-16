@@ -8,7 +8,7 @@ Comprehensive Python automation system for Ancestry.com genealogical research, f
 
 This project automates genealogical research workflows on Ancestry.com, including:
 - **DNA Match Collection** - Automated gathering with checkpoint resume
-- **Inbox Processing** - AI-powered message classification and analysis  
+- **Inbox Processing** - AI-powered message classification and analysis
 - **Intelligent Messaging** - Context-aware automated responses
 - **Task Generation** - Convert conversations into actionable research tasks
 - **Family Tree Management** - Record sharing and relationship tracking
@@ -26,6 +26,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 - ✅ **Test Infrastructure Standardization** - All 22 test modules now use centralized `create_standard_test_runner` pattern
 - ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
+- ✅ **AI Quality Telemetry Enhancements** - Prompt telemetry now records provider metadata, scoring inputs, provider-scoped CLI filters, and automatic regression alerts
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
@@ -125,6 +126,23 @@ python run_all_tests.py --analyze-logs
 
 # Run specific module tests
 python -m action6_gather
+```
+
+## AI Quality Telemetry
+
+`prompt_telemetry.py` now captures provider-level metadata and scoring inputs for every AI extraction event. Each JSONL line in `Logs/prompt_experiments.jsonl` includes `provider`, `provider_model`, sanitized `scoring_inputs`, and the usual quality metrics so you can correlate outcomes with a specific LLM or prompt variant.
+
+- **Provider filters everywhere** – `--provider <name>` works with `--summary`, `--analyze`, `--build-baseline`, and `--check-regression` to scope stats to a single AI vendor.
+- **Automatic regression surfacing** – every event triggers a rolling-median comparison (provider + variant). Drops beyond 7.5 points emit alerts to `Logs/prompt_experiment_alerts.jsonl` with `variant_median_regression` entries.
+- **Scoring transparency** – optional `scoring_inputs` payloads (component weights, rubric scores, etc.) are stored safely (truncated at 800 chars) for later forensic review.
+
+Example workflows:
+
+```powershell
+python prompt_telemetry.py --summary --provider gemini
+python prompt_telemetry.py --analyze --provider deepseek --window 150
+python prompt_telemetry.py --build-baseline --provider gemini --variant control --min-events 12
+python prompt_telemetry.py --check-regression --provider gemini --variant control --window 120
 ```
 
 ## Pylance Configuration

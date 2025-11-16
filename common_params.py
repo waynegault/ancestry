@@ -283,6 +283,9 @@ class ExtractionExperimentEvent:
     quality_score: Optional[float] = None
     component_coverage: Optional[float] = None
     anomaly_summary: Optional[str] = None
+    provider_name: Optional[str] = None
+    provider_model: Optional[str] = None
+    scoring_inputs: Optional[Any] = None
 
 
 @dataclass
