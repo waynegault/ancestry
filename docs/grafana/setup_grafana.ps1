@@ -253,11 +253,29 @@ function Configure-DataSources {
         return $false
     }
     
-    # Default credentials
-    $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:admin"))
-    $headers = @{
-        "Authorization" = "Basic $base64Auth"
-        "Content-Type" = "application/json"
+    # Try both default and custom credentials
+    $credentials = @("admin:admin", "admin:ancestry")
+    $headers = $null
+    
+    foreach ($cred in $credentials) {
+        try {
+            $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($cred))
+            $testHeaders = @{
+                "Authorization" = "Basic $base64Auth"
+                "Content-Type" = "application/json"
+            }
+            $response = Invoke-RestMethod -Uri "http://localhost:3000/api/org" -Headers $testHeaders -ErrorAction Stop
+            $headers = $testHeaders
+            Write-Success "Authenticated with credentials: $($cred.Split(':')[0])"
+            break
+        } catch {
+            # Try next credential
+        }
+    }
+    
+    if (-not $headers) {
+        Write-Error-Custom "Could not authenticate with any credentials"
+        return $false
     }
     
     # Check if Prometheus data source exists
@@ -314,15 +332,34 @@ function Import-Dashboards {
     Write-Step "Importing dashboards"
     
     $dashboards = @(
+        @{file="ancestry_overview.json"; name="Ancestry Automation Overview"},
         @{file="system_performance.json"; name="System Performance & Health"},
         @{file="genealogy_insights.json"; name="Genealogy Research Insights"},
         @{file="code_quality.json"; name="Code Quality & Architecture"}
     )
     
-    $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:admin"))
-    $headers = @{
-        "Authorization" = "Basic $base64Auth"
-        "Content-Type" = "application/json"
+    # Try both default and custom credentials
+    $credentials = @("admin:admin", "admin:ancestry")
+    $headers = $null
+    
+    foreach ($cred in $credentials) {
+        try {
+            $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($cred))
+            $testHeaders = @{
+                "Authorization" = "Basic $base64Auth"
+                "Content-Type" = "application/json"
+            }
+            $response = Invoke-RestMethod -Uri "http://localhost:3000/api/org" -Headers $testHeaders -ErrorAction SilentlyContinue
+            $headers = $testHeaders
+            break
+        } catch {
+            # Try next credential
+        }
+    }
+    
+    if (-not $headers) {
+        Write-Info "Could not authenticate for dashboard import"
+        return $false
     }
     
     foreach ($dash in $dashboards) {
@@ -393,7 +430,9 @@ function Main {
             Write-Host "   ✅ Setup Complete!" -ForegroundColor Green
             Write-Host ("="*70) -ForegroundColor Cyan
             Write-Host "`n  Grafana is ready at: http://localhost:3000" -ForegroundColor Yellow
-            Write-Host "  Default login: admin / admin`n" -ForegroundColor Yellow
+            Write-Host "  Default login: admin / admin" -ForegroundColor Yellow
+            Write-Host "  ⚠️  Run 'reset_admin_password.ps1' to change password to 'ancestry'`n" -ForegroundColor Yellow
+            Write-Host "  ⚠️  Run 'reset_admin_password.ps1' to change password to 'ancestry'`n" -ForegroundColor Yellow
         } else {
             Write-Host "   ⚠️  Setup completed with warnings" -ForegroundColor Yellow
             Write-Host ("="*70) -ForegroundColor Cyan

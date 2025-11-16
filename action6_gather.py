@@ -218,7 +218,7 @@ integrate_with_action6(sys.modules[__name__])
 import cloudscraper  # type: ignore[import-untyped]
 import requests
 from diskcache.core import ENOVAL  # type: ignore[import-untyped]  # For checking cache misses
-from requests.exceptions import ConnectionError, RequestException  # noqa: F401
+from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
@@ -229,9 +229,9 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Ses
 from error_handling import (
     AuthenticationExpiredError,
     BrowserSessionError,
-    DatabaseConnectionError,  # noqa: F401
-    NetworkTimeoutError,  # noqa: F401
-    RetryableError,  # noqa: F401
+    DatabaseConnectionError,
+    NetworkTimeoutError,
+    RetryableError,
     circuit_breaker,
     error_context,
     retry_on_failure,
@@ -261,10 +261,10 @@ from dna_ethnicity_utils import (
 from my_selectors import *  # Import CSS selectors
 from selenium_utils import get_driver_cookies
 from test_framework import (
-    TestSuite,  # noqa: F401
-    suppress_logging,  # noqa: F401
+    TestSuite,
+    suppress_logging,
 )
-from test_utilities import create_standard_test_runner  # noqa: F401
+from test_utilities import create_standard_test_runner
 from utils import (
     _api_req,  # type: ignore[reportPrivateUsage]  # API request helper
     format_name,  # Name formatting utility
@@ -434,35 +434,6 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
 
     return payload if payload else None
 
-# type: ignore[reportUnusedFunction]
-def _build_ethnicity_payload(
-session_manager: SessionManager, my_uuid: str, match_uuid: Optional[str]) -> dict[str, Optional[int]]:
-    """Fetch ethnicity comparison data and map it to database column names."""
-    if not my_uuid or not match_uuid:
-        return {}  # type: ignore[return-value]
-
-    region_keys, column_map = _get_ethnicity_config()
-    if not region_keys or not column_map:
-        return {}  # type: ignore[return-value]
-
-    match_guid = str(match_uuid).upper()
-    comparison_data = fetch_ethnicity_comparison(session_manager, my_uuid, match_guid)
-    if not comparison_data:
-        logger.debug(f"No ethnicity comparison data for match {match_uuid}")
-        return {}  # type: ignore[return-value]
-
-    percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
-    payload: dict[str, Optional[int]] = {}
-    for region_key, percentage in percentages.items():
-        column_name = column_map.get(str(region_key))
-        if not column_name:
-            continue
-        try:
-            payload[column_name] = int(percentage) if percentage is not None else None  # type: ignore[comparison-overlap]
-        except (TypeError, ValueError):
-            logger.debug(f"Invalid ethnicity percentage '{percentage}' for region {region_key} (match {match_uuid})")
-
-    return payload
 
 
 def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
@@ -7513,7 +7484,7 @@ def _fetch_batch_ladder(
         cloudscraper.exceptions.CloudflareException,  # type: ignore
     )
 )
-def _get_cached_csrf_token(  # noqa: ARG001
+def _get_cached_csrf_token(
 session_manager: SessionManager, api_description: str) -> Optional[str]:
     """Get cached CSRF token if available."""
     if (hasattr(session_manager, '_cached_csrf_token') and
@@ -7546,7 +7517,7 @@ def _extract_csrf_from_cookies(
                 csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
 
                 import time
-                session_manager._cached_csrf_token  # type: ignore[attr-defined] = csrf_token_val
+                session_manager._cached_csrf_token = csrf_token_val  # type: ignore[attr-defined]
                 session_manager._csrf_cache_time = time.time()  # type: ignore[attr-defined]
 
                 logger.debug(
@@ -8210,50 +8181,7 @@ def _log_page_completion_summary(
 # End of _log_page_completion_summary
 
 
-# type: ignore[reportUnusedFunction]
-def _enforce_page_throughput(
-
-    page_metrics: PageProcessingMetrics,
-    current_page: int,
-) -> None:
-    """Apply pacing to maintain target throughput and record idle time."""
-
-    target_rate = getattr(getattr(config_schema, "api", object()), "target_match_throughput", 0.0)
-    if not target_rate or target_rate <= 0:
-        return
-
-    matches_on_page = max(page_metrics.total_matches, 0)
-    if matches_on_page <= 0:
-        return
-
-    elapsed = max(page_metrics.total_seconds, 0.0)
-    effective_elapsed = max(elapsed, 1e-6)
-    actual_rate = matches_on_page / effective_elapsed
-    if actual_rate <= target_rate:
-        return
-
-    target_duration = matches_on_page / target_rate
-    additional_delay = target_duration - effective_elapsed
-    if additional_delay <= 0:
-        return
-
-    max_delay = getattr(getattr(config_schema, "api", object()), "max_throughput_catchup_delay", 5.0)
-    additional_delay = min(additional_delay, max_delay)
-    if additional_delay <= 0.05:
-        return
-
-    logger.info(
-        f"⏳ Page {current_page}: pacing for throughput target {target_rate:.2f} match/s (sleep {additional_delay:.2f}s)"
-    )
-    time.sleep(additional_delay)
-    page_metrics.total_seconds += additional_delay
-    page_metrics.idle_seconds += additional_delay
-
-
-# End of _enforce_page_throughput
-
-
-# Removed unused function: _log_coord_summary
+# type: moved unused function: _log_coord_summary
 
 
 def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:

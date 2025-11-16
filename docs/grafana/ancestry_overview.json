@@ -385,7 +385,7 @@
   "timepicker": {},
   "timezone": "browser",
   "title": "Ancestry Automation Overview",
-  "uid": null,
+  "uid": "ancestry-overview",
   "version": 1,
   "weekStart": ""
 }

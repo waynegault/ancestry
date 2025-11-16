@@ -5,26 +5,24 @@ Verifies Grafana installation and triggers automated setup if needed
 
 import json
 import logging
-import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
 # Paths
-GRAFANA_INSTALL_PATH = r"C:\Program Files\GrafanaLabs\grafana"
-GRAFANA_CLI = os.path.join(GRAFANA_INSTALL_PATH, "bin", "grafana-cli.exe")
+GRAFANA_INSTALL_PATH = Path(r"C:\Program Files\GrafanaLabs\grafana")
+GRAFANA_CLI = GRAFANA_INSTALL_PATH / "bin" / "grafana-cli.exe"
 PROJECT_ROOT = Path(__file__).parent
 SETUP_SCRIPT = PROJECT_ROOT / "docs" / "grafana" / "setup_grafana.ps1"
 
 
 def is_grafana_installed() -> bool:
     """Check if Grafana is installed by looking for grafana-cli.exe"""
-    return os.path.exists(GRAFANA_CLI)
+    return GRAFANA_CLI.exists()
 
 
 def is_grafana_running() -> bool:
@@ -36,7 +34,7 @@ def is_grafana_running() -> bool:
         return False
 
 
-def are_plugins_installed() -> Tuple[bool, bool]:
+def are_plugins_installed() -> tuple[bool, bool]:
     """
     Check if required plugins are installed
     Returns: (sqlite_installed, plugins_accessible)
@@ -44,11 +42,11 @@ def are_plugins_installed() -> Tuple[bool, bool]:
     if not is_grafana_installed():
         return False, False
 
-    plugins_dir = os.path.join(GRAFANA_INSTALL_PATH, "data", "plugins")
+    plugins_dir = GRAFANA_INSTALL_PATH / "data" / "plugins"
 
     # Check for SQLite plugin
-    sqlite_plugin = os.path.join(plugins_dir, "frser-sqlite-datasource")
-    sqlite_installed = os.path.exists(sqlite_plugin)
+    sqlite_plugin = plugins_dir / "frser-sqlite-datasource"
+    sqlite_installed = sqlite_plugin.exists()
 
     return sqlite_installed, True
 
@@ -77,10 +75,10 @@ def check_grafana_status() -> dict[str, bool]:
 def run_automated_setup(silent: bool = False) -> bool:
     """
     Execute the PowerShell setup script with admin privileges
-    
+
     Args:
         silent: If True, suppress output
-    
+
     Returns:
         True if setup succeeded, False otherwise
     """
@@ -149,11 +147,11 @@ def prompt_user_for_setup() -> bool:
 def ensure_grafana_ready(auto_setup: bool = False, silent: bool = False) -> bool:
     """
     Main function to ensure Grafana is ready for use
-    
+
     Args:
         auto_setup: If True, automatically run setup without prompting
         silent: If True, suppress output during setup
-    
+
     Returns:
         True if Grafana is ready (or user declined setup), False if setup failed
     """
@@ -218,6 +216,7 @@ def ensure_dashboards_imported() -> bool:
 
     dashboards_dir = PROJECT_ROOT / "docs" / "grafana"
     required_dashboards = [
+        ("ancestry-overview", "ancestry_overview.json"),
         ("ancestry-performance", "system_performance.json"),
         ("ancestry-genealogy", "genealogy_insights.json"),
         ("ancestry-code-quality", "code_quality.json"),
@@ -226,7 +225,7 @@ def ensure_dashboards_imported() -> bool:
     import base64
 
     # Check and import each dashboard
-    base64_auth = base64.b64encode(b"admin:admin").decode("ascii")
+    base64_auth = base64.b64encode(b"admin:ancestry").decode("ascii")
     headers = {
         "Authorization": f"Basic {base64_auth}",
         "Content-Type": "application/json",
@@ -252,7 +251,7 @@ def ensure_dashboards_imported() -> bool:
                     continue
 
                 try:
-                    with open(dashboard_path, encoding="utf-8") as f:
+                    with dashboard_path.open(encoding="utf-8") as f:
                         dashboard_json = json.load(f)
 
                     import_payload = {

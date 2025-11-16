@@ -2581,7 +2581,23 @@ def _handle_meta_options(choice: str) -> bool | None:
     def _run_grafana_setup() -> None:
         """Run Grafana setup if available."""
         if grafana_checker:
-            grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
+            status = grafana_checker.check_grafana_status()
+            if status["ready"]:
+                print("\n✅ Grafana is already fully configured and running!")
+                print("   Dashboard URL: http://localhost:3000")
+                print("   Default credentials: admin / ancestry")
+                print("\n📊 Checking dashboards...")
+                grafana_checker.ensure_dashboards_imported()
+                print("\n✅ Dashboard check complete!")
+                print("\n📊 Available Dashboards:")
+                print("   • Overview:    http://localhost:3000/d/ancestry-overview")
+                print("   • Performance: http://localhost:3000/d/ancestry-performance")
+                print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
+                print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
+                print("\n💡 If dashboards are empty, configure data sources:")
+                print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
+            else:
+                grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
         else:
             print("\n⚠️  Grafana checker module not available")
             print("Ensure grafana_checker.py is in the project root directory\n")
@@ -2873,7 +2889,7 @@ def _initialize_application() -> tuple["SessionManager", Any]:
             elif grafana_status["installed"]:
                 logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
             else:
-                logger.info("ℹ️  Grafana not installed (run 'setup-grafana' from menu for automated setup)")
+                logger.info("💡 Grafana not installed (run 'setup-grafana' from menu for automated setup)")
         except Exception as grafana_error:
             logger.debug(f"Grafana check skipped: {grafana_error}")
 

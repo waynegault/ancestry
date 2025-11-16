@@ -23,7 +23,9 @@ try:  # pragma: no cover - optional dependency
     from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]
 except Exception:  # pragma: no cover - fallback for environments missing config deps
     if TYPE_CHECKING:
-        from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]  # type: ignore[import-error]
+        from config.config_schema import (
+            ObservabilityConfig,  # type: ignore[import-not-found]  # type: ignore[import-error]
+        )
     else:
 
         @dataclass
@@ -94,11 +96,11 @@ _PROMETHEUS_LOCK = threading.RLock()
 
 def _start_prometheus_server() -> bool:
     """Start Prometheus server if available and not running.
-    
+
     Returns:
         True if Prometheus started or already running, False otherwise
     """
-    global _PROMETHEUS_PROCESS
+    global _PROMETHEUS_PROCESS  # noqa: PLW0603
 
     with _PROMETHEUS_LOCK:
         # Check if already running
@@ -138,7 +140,7 @@ def _start_prometheus_server() -> bool:
 
 def _stop_prometheus_server() -> None:
     """Stop Prometheus server if running."""
-    global _PROMETHEUS_PROCESS
+    global _PROMETHEUS_PROCESS  # noqa: PLW0603
 
     with _PROMETHEUS_LOCK:
         if _PROMETHEUS_PROCESS is not None:
