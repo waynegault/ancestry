@@ -64,7 +64,7 @@ from api_constants import (  # type: ignore[import-not-found]
     API_PATH_UUID_LEGACY,
 )
 from common_params import NavigationConfig, RetryContext
-from error_handling import RetryPolicyProfile, resolve_retry_policy
+from core.error_handling import RetryPolicyProfile, resolve_retry_policy
 from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 # === TYPE ALIASES ===

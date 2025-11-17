@@ -61,6 +61,12 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
+from core.error_handling import (
+    api_retry,
+    error_context,
+    graceful_degradation,
+    timeout_protection,
+)
 from core.session_cache import (
     cached_api_manager,
     cached_browser_manager,
@@ -68,12 +74,6 @@ from core.session_cache import (
     cached_session_validator,
     clear_session_cache,
     get_session_cache_stats,
-)
-from error_handling import (
-    api_retry,
-    error_context,
-    graceful_degradation,
-    timeout_protection,
 )
 
 # === MODULE SETUP ===

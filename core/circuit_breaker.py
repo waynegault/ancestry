@@ -767,13 +767,10 @@ if __name__ == "__main__":
 # --- Re-exports from error_handling for convenience ---
 
 try:
-    from error_handling import (
+    from core.error_handling import (
         CircuitBreaker,
         CircuitBreakerConfig,
         CircuitState,
-        IntelligentRetryHandler,
-        RetryConfig,
-        RetryStrategy,
     )
 
     __all__ = [
@@ -783,10 +780,6 @@ try:
         "CircuitBreakerOpenError",
         "CircuitBreakerState",
         "CircuitState",
-        "IntelligentRetryHandler",
-        # Test functions
-        "RetryConfig",
-        "RetryStrategy",
         # Session-based (simplified)
         "SessionCircuitBreaker",
         "circuit_breaker_module_tests",

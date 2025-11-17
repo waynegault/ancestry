@@ -52,6 +52,7 @@ from core.error_handling import (
     APIError,
     AuthenticationError,
     BrowserError,
+    selenium_retry,
     with_api_recovery as _with_api_recovery,
     with_enhanced_recovery as _with_enhanced_recovery,
 )
@@ -69,7 +70,6 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
-from error_handling import selenium_retry
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
 JSONDict = dict[str, Any]

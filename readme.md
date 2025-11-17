@@ -35,6 +35,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Main.py Pylance Hardening** (Nov 19) - Added typed loader helpers for GEDCOM/API table rows, the analytics extras setter, and the Windows console focus shim so `main.py` runs without any Pyright suppressions.
 - ✅ **Action 6 Error Handling Regression Tests** (Nov 19) - Converted the timeout, duplicate profile detection, and final summary tests into assertion-backed checks with IntegrityError coverage to guard future regressions.
 - ✅ **Unified Error-Handling Stack** (Nov 19) - Merged the enhanced recovery decorators into `core/error_handling.py`, deleted `core/enhanced_error_recovery.py`, and repointed Action 6/7/8 plus archival scripts to the single source of truth.
+- ✅ **Error Handling Deduplication** (Nov 20) - Retired the legacy `error_handling.py`, moved the telemetry-driven retry policies (api/selenium) into `core/error_handling.py`, and updated all imports/tests to the consolidated helpers.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

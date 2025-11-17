@@ -23,11 +23,8 @@ All open work is captured in the single checklist below. Address items in priori
   - Estimated Impact: 30% reduction in cache-related code
   - Files: cache.py, cache_manager.py, gedcom_cache.py, performance_cache.py, core/session_cache.py, core/system_cache.py, core/unified_cache_manager.py
 
-- [ ] **Error Handling Deduplication** (High Priority)
-  Remove duplicate error handling between error_handling.py and core/error_handling.py
-  - Keep: core/error_handling.py (more comprehensive)
-  - Migrate and remove: error_handling.py
-  - Update all imports across codebase
+- [x] **Error Handling Deduplication** (High Priority)
+  ✅ Removed the legacy `error_handling.py`, folded the telemetry-driven retry helpers into `core/error_handling.py`, and repointed all imports/tests to the single module so decorators stay in sync with config.
 
 - [ ] **Database Module Consolidation** (Medium Priority)
   Complete migration from database.py to core/database_manager.py

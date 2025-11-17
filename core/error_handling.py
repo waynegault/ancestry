@@ -32,7 +32,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, Union, cast
+
+# === THIRD-PARTY IMPORTS ===
+import requests
+
+# === CONFIGURATION IMPORTS ===
+from config import config_schema
+from config.config_schema import RetryPoliciesConfig
 
 # Type variables for decorators
 P = ParamSpec('P')
@@ -75,6 +82,122 @@ class RetryConfig:
     jitter: bool = True
     retry_on: list[type[Exception]] = field(default_factory=lambda: [Exception])
     stop_on: list[type[Exception]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RetryPolicyProfile:
+    """Resolved retry policy sourced from telemetry-tuned configuration."""
+
+    name: str
+    max_attempts: int
+    initial_delay_seconds: float
+    backoff_factor: float
+    max_delay_seconds: float
+    jitter_seconds: float
+    retry_on: tuple[type[Exception], ...]
+    stop_on: tuple[type[Exception], ...]
+
+
+_DEFAULT_RETRY_BASELINE = RetryPoliciesConfig()
+_RETRY_POLICY_CACHE: dict[str, RetryPolicyProfile] = {}
+
+
+@dataclass(frozen=True)
+class RetryDecoratorSettings:
+    """Resolved retry decorator configuration."""
+
+    policy_name: Optional[str]
+    max_attempts: int
+    backoff_factor: float
+    base_delay: float
+    max_delay: float
+    jitter_seconds: float
+    retry_on: tuple[type[Exception], ...]
+    stop_on: tuple[type[Exception], ...]
+
+
+def _policy_exception_sets() -> dict[str, dict[str, tuple[type[Exception], ...]]]:
+    """Return default retry/stop exception sets per policy channel."""
+
+    return {
+        "api": {
+            "retry_on": (
+                RetryableError,
+                NetworkTimeoutError,
+                DatabaseConnectionError,
+                AuthenticationExpiredError,
+                APIRateLimitError,
+                requests.exceptions.RequestException,
+                ConnectionError,
+                TimeoutError,
+            ),
+            "stop_on": (
+                FatalError,
+                DataValidationError,
+                ConfigurationError,
+            ),
+        },
+        "selenium": {
+            "retry_on": (
+                RetryableError,
+                NetworkTimeoutError,
+                BrowserSessionError,
+                AuthenticationExpiredError,
+            ),
+            "stop_on": (
+                FatalError,
+                DataValidationError,
+                ConfigurationError,
+            ),
+        },
+    }
+
+
+def _get_channel_config(name: str) -> Any:
+    cfg = getattr(config_schema, "retry_policies", None)
+    if cfg and hasattr(cfg, name):
+        return getattr(cfg, name)
+    return getattr(_DEFAULT_RETRY_BASELINE, name, None)
+
+
+def _build_retry_policy(name: str) -> RetryPolicyProfile:
+    channel_cfg = _get_channel_config(name)
+    if channel_cfg is None:
+        raise ValueError(f"Unknown retry policy channel: {name}")
+
+    exception_sets = _policy_exception_sets().get(name)
+    if exception_sets is None:
+        raise ValueError(f"No exception mapping defined for retry policy '{name}'")
+
+    return RetryPolicyProfile(
+        name=name,
+        max_attempts=int(getattr(channel_cfg, "max_attempts", 3)),
+        initial_delay_seconds=float(getattr(channel_cfg, "initial_delay_seconds", 1.0)),
+        backoff_factor=float(getattr(channel_cfg, "backoff_factor", 2.0)),
+        max_delay_seconds=float(getattr(channel_cfg, "max_delay_seconds", 20.0)),
+        jitter_seconds=float(getattr(channel_cfg, "jitter_seconds", 0.3)),
+        retry_on=exception_sets["retry_on"],
+        stop_on=exception_sets["stop_on"],
+    )
+
+
+def resolve_retry_policy(
+    policy: Optional[Union[str, RetryPolicyProfile]],
+    default: str = "selenium",
+) -> Optional[RetryPolicyProfile]:
+    """Return resolved RetryPolicyProfile for retry decorators."""
+
+    if isinstance(policy, RetryPolicyProfile):
+        return policy
+
+    policy_name = (policy or default or "").strip().lower()
+    if not policy_name:
+        return None
+
+    if policy_name not in _RETRY_POLICY_CACHE:
+        _RETRY_POLICY_CACHE[policy_name] = _build_retry_policy(policy_name)
+
+    return _RETRY_POLICY_CACHE[policy_name]
 
 
 class RecoveryStrategy(Enum):
@@ -1236,96 +1359,264 @@ def _should_stop_retry(exception: Exception, stop_on: list[type[Exception]]) -> 
     return any(isinstance(exception, exc_type) for exc_type in stop_on)
 
 
-def _should_retry(exception: Exception, retry_on: list[type[Exception]]) -> bool:
+def _should_retry_exception(exception: Exception, retry_on: list[type[Exception]]) -> bool:
     """Check if exception should trigger a retry."""
     return any(isinstance(exception, exc_type) for exc_type in retry_on)
 
 
-def _calculate_retry_delay(attempt: int, backoff_factor: float, jitter: bool) -> float:
+def _calculate_retry_delay(
+    attempt: int,
+    base_delay: float,
+    backoff_factor: float,
+    jitter_seconds: float,
+    max_delay: float,
+) -> float:
     """Calculate delay before next retry attempt."""
-    delay = backoff_factor ** attempt
-    if jitter:
-        delay *= (0.5 + random.random() * 0.5)  # Add jitter
-    return delay
+    delay = min(base_delay * (backoff_factor ** attempt), max_delay)
+    if jitter_seconds > 0:
+        delay = min(delay + random.uniform(0, jitter_seconds), max_delay)
+    return max(0.05, delay)
 
 
 def _handle_retry_exception(
     exception: Exception,
-    stop_on: list[type[Exception]],
-    retry_on: list[type[Exception]],
+    func_name: str,
     attempt: int,
     max_attempts: int,
+    stop_on: list[type[Exception]],
+    retry_on: list[type[Exception]],
     backoff_factor: float,
-    jitter: bool,
+    base_delay: float,
+    max_delay: float,
+    jitter_seconds: float,
 ) -> None:
     """Handle exception during retry attempt."""
-    # Check if we should stop retrying
     if _should_stop_retry(exception, stop_on):
-        raise exception
+        logger.error(f"{func_name} failed with non-retryable error: {exception}")
+        raise
 
-    # Check if we should retry
-    if not _should_retry(exception, retry_on):
-        raise exception
+    if not _should_retry_exception(exception, retry_on):
+        logger.error(f"{func_name} failed with unsupported error type: {exception}")
+        raise
 
-    # Calculate and apply delay before next attempt
-    if attempt < max_attempts - 1:  # Don't sleep on last attempt
-        delay = _calculate_retry_delay(attempt, backoff_factor, jitter)
+    if attempt < max_attempts - 1:
+        delay = _calculate_retry_delay(
+            attempt,
+            base_delay,
+            backoff_factor,
+            jitter_seconds,
+            max_delay,
+        )
+        logger.warning(
+            "%s failed on attempt %d/%d, retrying in %.2fs: %s",
+            func_name,
+            attempt + 1,
+            max_attempts,
+            delay,
+            exception,
+        )
         time.sleep(delay)
 
 
+_DEFAULT_RETRY_EXCEPTIONS = (
+    RetryableError,
+    NetworkTimeoutError,
+    DatabaseConnectionError,
+)
+_DEFAULT_STOP_EXCEPTIONS = (
+    FatalError,
+    DataValidationError,
+)
+
+
+def _resolve_retry_settings(
+    max_attempts: Optional[int],
+    backoff_factor: Optional[float],
+    retry_on: Optional[list[type[Exception]]],
+    stop_on: Optional[list[type[Exception]]],
+    jitter: Optional[bool],
+    base_delay: Optional[float],
+    max_delay: Optional[float],
+    policy: Optional[Union[str, RetryPolicyProfile]],
+) -> RetryDecoratorSettings:
+    resolved_policy = resolve_retry_policy(policy, default="selenium")
+
+    def _int_value(value: Optional[int], attr: str, fallback: int) -> int:
+        if value is not None:
+            return value
+        if resolved_policy is not None:
+            return int(getattr(resolved_policy, attr))
+        return fallback
+
+    def _float_value(value: Optional[float], attr: str, fallback: float) -> float:
+        if value is not None:
+            return value
+        if resolved_policy is not None:
+            return float(getattr(resolved_policy, attr))
+        return fallback
+
+    if retry_on is not None:
+        retry_source = tuple(retry_on)
+    elif resolved_policy:
+        retry_source = tuple(resolved_policy.retry_on)
+    else:
+        retry_source = _DEFAULT_RETRY_EXCEPTIONS
+
+    if stop_on is not None:
+        stop_source = tuple(stop_on)
+    elif resolved_policy:
+        stop_source = tuple(resolved_policy.stop_on)
+    else:
+        stop_source = _DEFAULT_STOP_EXCEPTIONS
+
+    policy_jitter_value = _float_value(None, "jitter_seconds", 0.5)
+    jitter_enabled = jitter if jitter is not None else (
+        bool(policy_jitter_value) if resolved_policy else True
+    )
+    jitter_seconds = policy_jitter_value if jitter_enabled else 0.0
+
+    return RetryDecoratorSettings(
+        policy_name=resolved_policy.name if resolved_policy else None,
+        max_attempts=_int_value(max_attempts, "max_attempts", 3),
+        backoff_factor=_float_value(backoff_factor, "backoff_factor", 2.0),
+        base_delay=_float_value(base_delay, "initial_delay_seconds", 1.0),
+        max_delay=_float_value(max_delay, "max_delay_seconds", 60.0),
+        jitter_seconds=jitter_seconds,
+        retry_on=retry_source,
+        stop_on=stop_source,
+    )
+
+
+def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> Callable[P, R]:
+    stop_on = list(settings.stop_on)
+    retry_on = list(settings.retry_on)
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        context_payload = {
+            "operation": "retry_decorated_call",
+            "module": func.__module__,
+            "function": func.__name__,
+            "args_preview": str(args)[:200],
+            "kwargs_keys": list(kwargs.keys()),
+        }
+        start_time = time.time()
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(settings.max_attempts):
+            try:
+                attempt_start = time.time()
+                result = func(*args, **kwargs)
+                if attempt > 0:
+                    logger.info(
+                        "%s succeeded on attempt %d/%d after %.2fs",
+                        func.__name__,
+                        attempt + 1,
+                        settings.max_attempts,
+                        time.time() - attempt_start,
+                    )
+                return result
+            except Exception as exc:
+                last_exception = exc
+                _handle_retry_exception(
+                    exc,
+                    func.__name__,
+                    attempt,
+                    settings.max_attempts,
+                    stop_on,
+                    retry_on,
+                    settings.backoff_factor,
+                    settings.base_delay,
+                    settings.max_delay,
+                    settings.jitter_seconds,
+                )
+
+        total_time = time.time() - start_time
+        if last_exception is None:
+            last_exception = Exception(
+                f"{func.__name__} failed after {settings.max_attempts} attempts"
+            )
+
+        logger.error(
+            "%s failed after %d attempts in %.2fs: %s",
+            func.__name__,
+            settings.max_attempts,
+            total_time,
+            last_exception,
+        )
+
+        if isinstance(last_exception, AncestryError) and hasattr(last_exception, "context"):
+            last_exception.context.update(context_payload)  # type: ignore[union-attr]
+
+        raise last_exception
+
+    setattr(wrapper, "__retry_policy__", settings.policy_name)
+    setattr(
+        wrapper,
+        "__retry_settings__",
+        {
+            "max_attempts": settings.max_attempts,
+            "backoff_factor": settings.backoff_factor,
+            "base_delay": settings.base_delay,
+            "max_delay": settings.max_delay,
+        },
+    )
+    return wrapper
+
+
 def retry_on_failure(
-    max_attempts: int = 3,
-    backoff_factor: float = 2.0,
+    max_attempts: Optional[int] = None,
+    backoff_factor: Optional[float] = None,
     retry_on: Optional[list[type[Exception]]] = None,
     stop_on: Optional[list[type[Exception]]] = None,
-    jitter: bool = True,
-):
-    """Decorator for retry logic with exponential backoff."""
-    if retry_on is None:
-        retry_on = [Exception]
-    if stop_on is None:
-        stop_on = [FatalError]
+    jitter: Optional[bool] = None,
+    base_delay: Optional[float] = None,
+    max_delay: Optional[float] = None,
+    policy: Optional[Union[str, RetryPolicyProfile]] = "selenium",
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Decorator for automatic retry with telemetry-derived policies."""
+
+    settings = _resolve_retry_settings(
+        max_attempts,
+        backoff_factor,
+        retry_on,
+        stop_on,
+        jitter,
+        base_delay,
+        max_delay,
+        policy,
+    )
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            last_exception = None
-            for attempt in range(max_attempts):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    last_exception = e
-                    _handle_retry_exception(e, stop_on, retry_on, attempt, max_attempts, backoff_factor, jitter)
+        return _wrap_with_retry(func, settings)
 
-            if last_exception is not None:
-                raise last_exception
-            # This should never happen, but satisfy type checker
-            raise RuntimeError("Retry loop completed without success or exception")
-        return wrapper
     return decorator
 
 
-try:  # Prefer modern telemetry-aware helpers when available
-    from error_handling import api_retry as _enhanced_api_retry  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover - fallback handled below
-    _enhanced_api_retry = None
+def api_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Telemetry-derived retry helper for API operations."""
+
+    base_decorator = retry_on_failure(policy="api", **overrides)
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        wrapped = base_decorator(func)
+        setattr(wrapped, "__retry_helper__", "api_retry")
+        return wrapped
+
+    return decorator
 
 
-if _enhanced_api_retry is not None:
-    api_retry = _enhanced_api_retry  # type: ignore[assignment]
-else:
+def selenium_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Telemetry-derived retry helper for Selenium/browser operations."""
 
-    def api_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
-        """Fallback helper mirroring telemetry marker semantics."""
+    base_decorator = retry_on_failure(policy="selenium", **overrides)
 
-        base_decorator = retry_on_failure(**overrides)
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        wrapped = base_decorator(func)
+        setattr(wrapped, "__retry_helper__", "selenium_retry")
+        return wrapped
 
-        def decorator(func: Callable[P, R]) -> Callable[P, R]:
-            wrapped = base_decorator(func)
-            setattr(wrapped, "__retry_helper__", "api_retry")
-            return wrapped
-
-        return decorator
+    return decorator
 
 
 def circuit_breaker(

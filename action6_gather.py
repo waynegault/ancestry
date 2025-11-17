@@ -229,7 +229,7 @@ from selenium.common.exceptions import (
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 
-from error_handling import (
+from core.error_handling import (
     AuthenticationExpiredError,
     BrowserSessionError,
     DatabaseConnectionError,
@@ -8892,7 +8892,7 @@ def _test_database_transaction_rollback():
 
 def _test_all_error_class_constructors():
     """Test all error class constructors to prevent future regressions"""
-    from error_handling import (
+    from core.error_handling import (
         APIRateLimitError,
         AuthenticationExpiredError,
         BrowserSessionError,
