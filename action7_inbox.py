@@ -70,6 +70,7 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+from error_handling import selenium_retry
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
 JSONDict = dict[str, Any]
@@ -101,7 +102,6 @@ from core.error_handling import (
     circuit_breaker,
     error_context as _error_context,
     graceful_degradation as _graceful_degradation,
-    retry_on_failure,
     timeout_protection as _timeout_protection,
 )
 from utils import (
@@ -983,7 +983,7 @@ class InboxProcessor:
     # --- Main Public Methods ---
 
     @with_enhanced_recovery(max_attempts=3, base_delay=4.0, max_delay=120.0)
-    @retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased backoff from 2.0 to 4.0
+    @selenium_retry()
     @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Increased from 5 to 10 for better tolerance
     @timeout_protection(timeout=600)  # 10 minutes for inbox processing
     @graceful_degradation(fallback_value=False)
@@ -3652,6 +3652,23 @@ def _test_error_recovery() -> None:
 
 
 
+def _test_retry_helper_alignment_action7() -> None:
+    """Ensure _initialize_search_stats uses selenium_retry with telemetry config."""
+
+    method = InboxProcessor._initialize_search_stats
+    helper_name = getattr(method, "__retry_helper__", None)
+    policy_name = getattr(method, "__retry_policy__", None)
+    settings = getattr(method, "__retry_settings__", {})
+
+    selenium_policy = config_schema.retry_policies.selenium
+    assert helper_name == "selenium_retry", "Expected selenium_retry helper marker"
+    assert policy_name == "selenium", "Retry policy should resolve to selenium"
+    assert settings.get("max_attempts") == selenium_policy.max_attempts, "max_attempts should match config"
+    assert settings.get("backoff_factor") == selenium_policy.backoff_factor, "backoff_factor should match config"
+    assert settings.get("base_delay") == selenium_policy.initial_delay_seconds, "base_delay should match config"
+    assert settings.get("max_delay") == selenium_policy.max_delay_seconds, "max_delay should match config"
+
+
 def _test_clarify_ambiguous_intent() -> None:
     """Test ambiguous intent clarification (Priority 1 Todo #7)."""
     from unittest.mock import MagicMock
@@ -4099,6 +4116,14 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="_initialize_loop_state",
             method_description="Test error recovery state tracking",
             expected_outcome="State tracks session deaths and recoveries",
+        )
+        _add_test(
+            "Retry helper alignment",
+            _test_retry_helper_alignment_action7,
+            test_summary="Ensure selenium_retry helper wraps _initialize_search_stats",
+            functions_tested="_initialize_search_stats",
+            method_description="Check retry helper marker and telemetry-derived settings",
+            expected_outcome="Helper marker is selenium_retry and settings match config_schema retry policy",
         )
         _add_test(
             "Clarify ambiguous intent (Priority 1 Todo #7)",

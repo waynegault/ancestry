@@ -69,9 +69,9 @@ from core.session_cache import (
     get_session_cache_stats,
 )
 from error_handling import (
+    api_retry,
     error_context,
     graceful_degradation,
-    retry_on_failure,
     timeout_protection,
 )
 
@@ -1448,7 +1448,7 @@ class SessionManager:
 
     # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
 
-    @retry_on_failure(max_attempts=3)
+    @api_retry()
     def get_csrf(self) -> Optional[str]:
         """
         Retrieve CSRF token from API.
@@ -1498,7 +1498,7 @@ class SessionManager:
             logger.error(f"Unexpected error in get_csrf: {e}", exc_info=True)
             return None
 
-    @retry_on_failure(max_attempts=3)
+    @api_retry()
     def get_my_profileId(self) -> Optional[str]:  # noqa: N802 - matches API field name
         """
         Retrieve user's profile ID (ucdmid).
@@ -1550,7 +1550,7 @@ class SessionManager:
             logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
             return None
 
-    @retry_on_failure(max_attempts=3)
+    @api_retry()
     def get_my_uuid(self) -> Optional[str]:
         """
         Retrieve user's UUID (testId).
@@ -1600,7 +1600,7 @@ class SessionManager:
             logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
             return None
 
-    @retry_on_failure(max_attempts=3)
+    @api_retry()
     def get_my_tree_id(self) -> Optional[str]:
         """
         Retrieve user's tree ID.
@@ -1641,7 +1641,7 @@ class SessionManager:
             logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
             return None
 
-    @retry_on_failure(max_attempts=3)
+    @api_retry()
     def get_tree_owner(self, tree_id: Optional[str]) -> Optional[str]:
         """
         Retrieve tree owner name.
@@ -2780,6 +2780,31 @@ def _test_proactive_session_refresh_timing() -> None:
     assert should_refresh, "Session should trigger proactive refresh at 25 minutes"
 
 
+def _test_retry_helper_alignment_session_manager() -> None:
+    """Ensure API helper methods use api_retry with telemetry-derived settings."""
+
+    api_policy = config_schema.retry_policies.api
+    methods_to_check = [
+        ("get_csrf", SessionManager.get_csrf),
+        ("get_my_profileId", SessionManager.get_my_profileId),
+        ("get_my_uuid", SessionManager.get_my_uuid),
+        ("get_my_tree_id", SessionManager.get_my_tree_id),
+        ("get_tree_owner", SessionManager.get_tree_owner),
+    ]
+
+    for method_name, method in methods_to_check:
+        helper_name = getattr(method, "__retry_helper__", None)
+        policy_name = getattr(method, "__retry_policy__", None)
+        settings = getattr(method, "__retry_settings__", {})
+
+        assert helper_name == "api_retry", f"{method_name} should use api_retry helper"
+        assert policy_name == "api", f"{method_name} should resolve to api retry policy"
+        assert settings.get("max_attempts") == api_policy.max_attempts, f"{method_name} max_attempts mismatch"
+        assert settings.get("backoff_factor") == api_policy.backoff_factor, f"{method_name} backoff_factor mismatch"
+        assert settings.get("base_delay") == api_policy.initial_delay_seconds, f"{method_name} base_delay mismatch"
+        assert settings.get("max_delay") == api_policy.max_delay_seconds, f"{method_name} max_delay mismatch"
+
+
 def core_session_manager_module_tests() -> bool:
     """Comprehensive test suite for session_manager.py (decomposed)."""
     from test_framework import TestSuite, suppress_logging
@@ -2960,6 +2985,14 @@ def core_session_manager_module_tests() -> bool:
             "Session refresh triggered proactively at 25-minute mark",
             "Test proactive session health monitoring timing",
             "Verify refresh occurs before 40-min expiry with 15-min buffer",
+        )
+
+        suite.run_test(
+            "Retry helper alignment (API accessors)",
+            _test_retry_helper_alignment_session_manager,
+            "Ensures SessionManager API helpers use api_retry with telemetry settings",
+            "Inspect retry decorator metadata for get_csrf/get_my_* helpers",
+            "Helper marker is api_retry and settings match config_schema.retry_policies.api",
         )
 
         suite.run_test(

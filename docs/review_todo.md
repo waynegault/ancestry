@@ -6,8 +6,9 @@ All open work is captured in the single checklist below. Address items in priori
 
 - [x] **AI Quality Telemetry Enhancements** – Prompt telemetry now records provider metadata and sanitized scoring inputs, supports `--provider` filtering across all CLI modes, and emits automatic regression alerts when rolling medians drop ≥7.5 points. See `prompt_telemetry.py` for schema and alert handling details.
 
-- [ ] **Comprehensive Retry Strategy** (Est. 3h)
+- [x] **Comprehensive Retry Strategy** (Est. 3h)
    Unify the API and Selenium retry decorators so both channels share tuned attempt counts, jitter, and stop conditions derived from recent telemetry. Success = a single configuration surface plus regression coverage in `action6_gather.py`, `action7_inbox.py`, and `core/session_manager.py`.
+   *2025-11-17*: Added `api_retry`/`selenium_retry` helpers wired to `config_schema.retry_policies`, migrated Action 6/7 + SessionManager call sites, and shipped regression tests that assert helper usage and telemetry-aligned settings.
 
 - [ ] **Session State Machine** (Est. 4h)
    Formalize explicit lifecycle states for `SessionManager` (e.g., UNINITIALIZED → READY → DEGRADED) with guard methods that callers can interrogate instead of ad-hoc readiness checks. Success = state diagram in code comments and enforcement inside `exec_actn()`.

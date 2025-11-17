@@ -1092,6 +1092,32 @@ def retry_on_failure(
     return decorator
 
 
+def api_retry(**overrides: Any) -> Callable[..., Any]:
+    """Shortcut for telemetry-derived API retry configuration."""
+
+    base_decorator = retry_on_failure(policy="api", **overrides)
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        wrapped = base_decorator(func)
+        setattr(wrapped, "__retry_helper__", "api_retry")
+        return wrapped
+
+    return decorator
+
+
+def selenium_retry(**overrides: Any) -> Callable[..., Any]:
+    """Shortcut for telemetry-derived Selenium retry configuration."""
+
+    base_decorator = retry_on_failure(policy="selenium", **overrides)
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        wrapped = base_decorator(func)
+        setattr(wrapped, "__retry_helper__", "selenium_retry")
+        return wrapped
+
+    return decorator
+
+
 def circuit_breaker(
     failure_threshold: int = 5,
     recovery_timeout: int = 60,

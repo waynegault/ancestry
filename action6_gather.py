@@ -234,7 +234,7 @@ from error_handling import (
     RetryableError,
     circuit_breaker,
     error_context,
-    retry_on_failure,
+    selenium_retry,
     timeout_protection,
 )
 
@@ -1227,7 +1227,7 @@ def _main_page_processing_loop(
 
 
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
-@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@selenium_retry()
 @circuit_breaker(failure_threshold=3, recovery_timeout=60)
 @timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
 @error_context("DNA match gathering coordination")
@@ -8932,6 +8932,41 @@ def _test_regression_prevention_session_management():
     return success
 
 
+def _test_retry_policy_alignment() -> bool:
+    """Ensure Action 6 session validators use the shared Selenium retry helper."""
+
+    print("🛡️ Testing Selenium retry policy alignment for Action 6:")
+    selenium_policy = getattr(getattr(config_schema, "retry_policies", None), "selenium", None)
+    if selenium_policy is None:
+        print("   ❌ selenium retry policy missing from config_schema")
+        return False
+
+    helper_name = getattr(_validate_session_state, "__retry_helper__", None)
+    policy_name = getattr(_validate_session_state, "__retry_policy__", None)
+    settings = getattr(_validate_session_state, "__retry_settings__", {})
+
+    expected_settings = {
+        "max_attempts": selenium_policy.max_attempts,
+        "backoff_factor": selenium_policy.backoff_factor,
+        "base_delay": selenium_policy.initial_delay_seconds,
+        "max_delay": selenium_policy.max_delay_seconds,
+    }
+
+    checks = [
+        (helper_name == "selenium_retry", "Helper attribute should be 'selenium_retry'"),
+        (policy_name == "selenium", "Retry policy should resolve to 'selenium'"),
+        (all(settings.get(key) == value for key, value in expected_settings.items()),
+         "Retry settings should match telemetry-derived configuration"),
+    ]
+
+    success = True
+    for passed, message in checks:
+        print(f"   {'✅' if passed else '❌'} {message}")
+        success = success and passed
+
+    return success
+
+
 def _test_303_redirect_detection():
     """Test that would have detected the 303 redirect authentication issue."""
     from unittest.mock import Mock, patch
@@ -9142,6 +9177,15 @@ def action6_gather_module_tests() -> bool:
             functions_tested="SessionManager.__init__()",
             method_description="Testing SessionManager initialization and CSRF caching optimization implementation",
             expected_outcome="SessionManager initializes correctly with all optimization attributes present",
+        )
+
+        suite.run_test(
+            test_name="Retry helper alignment",
+            test_func=_test_retry_policy_alignment,
+            test_summary="Ensures _validate_session_state uses selenium_retry with telemetry settings",
+            functions_tested="_validate_session_state",
+            method_description="Inspect retry decorator metadata for helper marker and config parity",
+            expected_outcome="Helper marker is 'selenium_retry' and settings match config_schema.retry_policies.selenium",
         )
 
         # 303 REDIRECT DETECTION TESTS - This would have caught the authentication issue
