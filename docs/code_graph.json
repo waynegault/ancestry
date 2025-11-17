@@ -1,17 +1,18 @@
 {
   "metadata": {
     "schemaVersion": "1.0",
-    "generatedAt": "2025-11-16T21:15:00Z",
+    "generatedAt": "2025-11-17T00:00:00Z",
     "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
     "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
-    "recentUpdates": "2025-11-16: Test infrastructure standardization complete (22/22 modules), temp file helpers consolidated (4 modules migrated), code quality improvements. Previous: Grafana setup automation, Pylance error resolution, linter fixes, documentation consolidation.",
+    "recentUpdates": "2025-11-17: Documentation quality improvement - 10 modules simplified (400+ lines of verbose jargon removed), all Pylance errors resolved (genealogical_normalization.py, ms_graph_utils.py type safety improvements). Previous: Test infrastructure standardization (22/22 modules), temp file helpers consolidated (4 modules migrated), Grafana setup automation, code quality improvements.",
     "documentation": {
-      "primary": "README.md - Comprehensive project documentation with recent improvements section",
+      "primary": "README.md - Comprehensive project documentation with Phase 2 docstring improvements",
       "codebase": "visualize_code_graph.html - Interactive code visualization",
-      "testing": "test_examples/README.md - Test patterns and best practices", 
+      "testing": "test_examples/README.md - Test patterns and best practices",
       "monitoring": "docs/grafana/ - Grafana dashboards and setup scripts",
       "development": ".github/copilot-instructions.md - AI development guidelines",
-      "tasks": "docs/review_todo.md - Technical debt tracking (Tasks 1 & 2 complete)"
+      "tasks": "docs/review_todo.md - Technical debt tracking",
+      "audit": "docs/DOCUMENTATION_AUDIT.md - Documentation quality analysis and best practices"
     }
   },
   "nodes": [

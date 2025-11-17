@@ -24,6 +24,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Documentation Quality Improvements** (Nov 17) - Simplified 12 module docstrings, removed ~400 lines of verbose jargon, resolved 11 Pylance errors, updated knowledge graph
 - ✅ **Test Infrastructure Standardization** - All 22 test modules now use centralized `create_standard_test_runner` pattern
 - ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
 - ✅ **AI Quality Telemetry Enhancements** - Prompt telemetry now records provider metadata, scoring inputs, provider-scoped CLI filters, and automatic regression alerts
