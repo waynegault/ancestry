@@ -901,34 +901,28 @@ def _test_path_validation() -> bool:
 def _test_preferences_validation() -> bool:
     """Test Chrome preferences file validation."""
     import json
-    from pathlib import Path
 
     from test_utilities import temp_file
 
-    # Create temporary test preferences file
-    with temp_file(suffix='.json', mode='w+') as temp_f:
+    # Create temporary test preferences file - temp_file yields a Path object
+    with temp_file(suffix='.json', mode='w+') as temp_path:
+        # Write valid preferences
         test_prefs = {
             "profile": {
                 "exit_type": "Normal",
                 "exited_cleanly": True
             }
         }
-        json.dump(test_prefs, temp_f)
-        temp_f.flush()
-        temp_f.seek(0)  # Reset to beginning for reading
-        temp_prefs_path = Path(temp_f.name)
+        temp_path.write_text(json.dumps(test_prefs), encoding='utf-8')
 
-        # Test valid preferences (file is still open and valid)
-        is_valid = _validate_preferences_file(temp_prefs_path)
+        # Test valid preferences
+        is_valid = _validate_preferences_file(temp_path)
         assert is_valid is True, "Valid preferences should return True"
 
-        # Test corrupted preferences (simulate by writing invalid JSON)
-        temp_f.seek(0)
-        temp_f.truncate()
-        temp_f.write("invalid json {")
-        temp_f.flush()
+        # Test corrupted preferences (overwrite with invalid JSON)
+        temp_path.write_text("invalid json {", encoding='utf-8')
 
-        is_invalid = _validate_preferences_file(temp_prefs_path)
+        is_invalid = _validate_preferences_file(temp_path)
         assert is_invalid is False, "Invalid JSON should return False"
 
     return True
