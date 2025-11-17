@@ -786,6 +786,11 @@ class ConfigSchema:
     proactive_refresh_interval_seconds: int = 1320  # 22 minutes between proactive refresh checks
     # Timeout for Action 6 coord (seconds) — extend to avoid mid-run timeout/auto-retry
     action6_coord_timeout_seconds: int = 14400  # 4 hours
+    enable_action6_checkpointing: bool = True
+    action6_checkpoint_max_age_hours: int = 24
+    action6_checkpoint_file: Path = field(
+        default_factory=lambda: Path("Cache/action6_checkpoint.json")
+    )
 
     # API search settings
     name_flexibility: float = 0.8
@@ -912,6 +917,10 @@ class ConfigSchema:
         valid_environments = ["development", "testing", "production"]
         if self.environment not in valid_environments:
             raise ValueError(f"environment must be one of: {valid_environments}")
+        if self.action6_checkpoint_max_age_hours <= 0:
+            raise ValueError("action6_checkpoint_max_age_hours must be positive")
+        if isinstance(self.action6_checkpoint_file, str):
+            self.action6_checkpoint_file = Path(self.action6_checkpoint_file)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary (deep dataclass conversion)."""

@@ -34,6 +34,7 @@ import threading
 import time
 import webbrowser
 from collections.abc import Sequence
+from functools import wraps
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -611,10 +612,17 @@ def _prepare_action_arguments(
 
     # Handle keyword args specifically for coord function
     if action_name in ["coord", "gather_dna_matches"] and "start" in func_sig.parameters:
-        start_val = 1
-        int_args = [a for a in args if isinstance(a, int)]
-        if int_args:
-            start_val = int_args[-1]
+        start_val: Optional[int] = None
+        if args:
+            potential_start = args[-1]
+            if isinstance(potential_start, int):
+                start_val = potential_start if potential_start > 0 else None
+            elif potential_start is not None:
+                logger.debug(
+                    "Ignoring unexpected non-integer start argument %s for %s",
+                    potential_start,
+                    action_name,
+                )
         kwargs_for_action: dict[str, Any] = {"start": start_val}
 
         coord_args: list[Any] = []
@@ -1615,7 +1623,11 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
 
 
 # Action 6 (gather_dna_matches wrapper)
-def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[Any] = None, start: int = 1) -> bool:
+def gather_dna_matches(
+    session_manager: SessionManager,
+    config_schema: Optional[Any] = None,
+    start: Optional[int] = None,
+) -> bool:
     """
     Action wrapper for gathering matches (coord function from action6).
     Relies on exec_actn ensuring session is ready before calling.
@@ -1623,7 +1635,7 @@ def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[
     Args:
         session_manager: The SessionManager instance.
         config_schema: The configuration schema (optional, uses global config if None).
-        start: The page number to start gathering from (default is 1).
+        start: Optional page number override. When None, resume from checkpoint if available.
     """
     # Use global config if config_schema not provided
     if config_schema is None:
@@ -1649,35 +1661,51 @@ def gather_dna_matches(session_manager: SessionManager, config_schema: Optional[
 # End of gather_dna_matches
 
 
-# Action 7 (srch_inbox_actn)
-def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
-    """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
-    # Guard clause now checks session_manager exists
+def _ensure_interactive_session_ready(session_manager: Any, action_label: str) -> bool:
+    """Ensure session_manager exists and session_ready flag is true for an action."""
     if not session_manager:
-        logger.error("Cannot search inbox: SessionManager is None.")
+        logger.error(f"Cannot {action_label}: SessionManager is None.")
         return False
 
-    # Check session_ready attribute safely
     session_ready = getattr(session_manager, "session_ready", None)
     if session_ready is None:
-        # If session_ready is not set, initialize it based on driver_live
         driver_live = getattr(session_manager, "driver_live", False)
         if driver_live:
             logger.warning("session_ready not set, initializing based on driver_live")
             session_manager.session_ready = True
             session_ready = True
         else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
+            logger.warning("session_ready and driver_live not set, initializing to False")
             session_manager.session_ready = False
             session_ready = False
 
-    # Now check if session is ready
     if not session_ready:
-        logger.error("Cannot search inbox: Session not ready.")
+        logger.error(f"Cannot {action_label}: Session not ready.")
         return False
 
+    return True
+
+
+def require_interactive_session(action_label: str) -> Callable[[Callable[..., Any]], Callable[..., bool]]:
+    """Decorator that enforces session readiness before running an action."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., bool]:
+        @wraps(func)
+        def wrapper(session_manager: Any, *args: Any, **kwargs: Any) -> bool:
+            if not _ensure_interactive_session_ready(session_manager, action_label):
+                return False
+            result = func(session_manager, *args, **kwargs)
+            return bool(result)
+
+        return wrapper
+
+    return decorator
+
+
+# Action 7 (srch_inbox_actn)
+@require_interactive_session("search inbox")
+def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
+    """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     logger.debug("Starting inbox search...")
     try:
         processor = InboxProcessor(session_manager=session_manager)
@@ -1697,34 +1725,9 @@ def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
 
 
 # Action 8 (send_messages_action)
+@require_interactive_session("send messages")
 def send_messages_action(session_manager: Any, *_: Any) -> bool:
     """Action to send messages. Relies on exec_actn ensuring session is ready."""
-    # Guard clause now checks session_manager exists
-    if not session_manager:
-        logger.error("Cannot send messages: SessionManager is None.")
-        return False
-
-    # Check session_ready attribute safely
-    session_ready = getattr(session_manager, "session_ready", None)
-    if session_ready is None:
-        # If session_ready is not set, initialize it based on driver_live
-        driver_live = getattr(session_manager, "driver_live", False)
-        if driver_live:
-            logger.warning("session_ready not set, initializing based on driver_live")
-            session_manager.session_ready = True
-            session_ready = True
-        else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
-            session_manager.session_ready = False
-            session_ready = False
-
-    # Now check if session is ready
-    if not session_ready:
-        logger.error("Cannot send messages: Session not ready.")
-        return False
-
     logger.debug("Starting message sending...")
     try:
         # Navigate to Base URL first (good practice before starting message loops)
@@ -1756,34 +1759,9 @@ def send_messages_action(session_manager: Any, *_: Any) -> bool:
 
 
 # Action 9 (process_productive_messages_action)
+@require_interactive_session("process productive messages")
 def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""
-    # Guard clause now checks session_manager exists
-    if not session_manager:
-        logger.error("Cannot process productive messages: SessionManager is None.")
-        return False
-
-    # Check session_ready attribute safely
-    session_ready = getattr(session_manager, "session_ready", None)
-    if session_ready is None:
-        # If session_ready is not set, initialize it based on driver_live
-        driver_live = getattr(session_manager, "driver_live", False)
-        if driver_live:
-            logger.warning("session_ready not set, initializing based on driver_live")
-            session_manager.session_ready = True
-            session_ready = True
-        else:
-            logger.warning(
-                "session_ready and driver_live not set, initializing to False"
-            )
-            session_manager.session_ready = False
-            session_ready = False
-
-    # Now check if session is ready
-    if not session_ready:
-        logger.error("Cannot process productive messages: Session not ready.")
-        return False
-
     logger.debug("Starting productive message processing...")
     try:
         # Call the actual processing function
@@ -2451,14 +2429,18 @@ def _handle_database_actions(choice: str, session_manager: SessionManager) -> bo
 def _handle_action6_with_start_page(choice: str, session_manager: SessionManager, config: Any) -> bool:
     """Handle Action 6 (DNA match gathering) with optional start page."""
     parts = choice.split()
-    start_val = 1
+    start_val: Optional[int] = None
     if len(parts) > 1:
         try:
             start_arg = int(parts[1])
-            start_val = start_arg if start_arg > 0 else 1
+            if start_arg > 0:
+                start_val = start_arg
+            else:
+                logger.warning(f"Invalid start page '{parts[1]}'. Using checkpoint resume if available.")
+                print(f"Invalid start page '{parts[1]}'. Defaulting to checkpoint resume.")
         except ValueError:
-            logger.warning(f"Invalid start page '{parts[1]}'. Using 1.")
-            print(f"Invalid start page '{parts[1]}'. Using page 1 instead.")
+            logger.warning(f"Invalid start page '{parts[1]}'. Using checkpoint resume if available.")
+            print(f"Invalid start page '{parts[1]}'. Defaulting to checkpoint resume.")
 
     exec_actn(gather_dna_matches, session_manager, "6", False, config, start_val)
     return True

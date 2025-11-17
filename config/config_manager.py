@@ -1074,6 +1074,11 @@ class ConfigManager:
         self._load_int_env_var(config, "PARALLEL_WORKERS", "parallel_workers")
         self._load_int_env_var(config, "ETHNICITY_ENRICHMENT_MIN_CM", "ethnicity_enrichment_min_cm")
         self._load_bool_env_var(config, "ENABLE_ETHNICITY_ENRICHMENT", "enable_ethnicity_enrichment")
+        self._load_bool_env_var(config, "ENABLE_CHECKPOINTING", "enable_action6_checkpointing")
+        self._load_int_env_var(config, "CHECKPOINT_MAX_AGE_HOURS", "action6_checkpoint_max_age_hours")
+        checkpoint_path = os.getenv("ACTION6_CHECKPOINT_FILE")
+        if checkpoint_path:
+            config["action6_checkpoint_file"] = checkpoint_path
 
     def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
         """Load logging configuration from environment variables."""
@@ -1345,8 +1350,7 @@ def _test_config_file_integration():
     from test_utilities import temp_file
     # Test with temporary config file
     with temp_file(suffix='.yaml', mode='w+') as temp_f:
-        temp_f.write("test: value\n")
-        temp_f.flush()
+        temp_f.write_text("test: value\n", encoding="utf-8")
 
         manager = ConfigManager(auto_load=False)
         assert manager is not None

@@ -30,6 +30,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **AI Quality Telemetry Enhancements** - Prompt telemetry now records provider metadata, scoring inputs, provider-scoped CLI filters, and automatic regression alerts
 - ✅ **Comprehensive Retry Strategy** - New `api_retry`/`selenium_retry` helpers draw settings from `config_schema.retry_policies` and regression tests in Actions 6/7 plus SessionManager ensure decorators stay in lockstep with telemetry tuning
 - ✅ **Session State Machine Guardrails** - `SessionLifecycleState` enum, lifecycle diagnostics, and `guard_action()` enforcement ensure `exec_actn()` resets degraded sessions before work begins, preventing stale driver/API usage
+- ✅ **Interactive Session Guard Consolidation** (Nov 18) - The `require_interactive_session` decorator in `main.py` now wraps Actions 7–9 so `_ensure_interactive_session_ready()` lives in one place and menu guards never drift out of sync.
+- ✅ **Action 6 Checkpoint Regression Test** (Nov 18) - `_test_checkpoint_resume_logic` patches the checkpoint path to a temp file and asserts resume/override/cleanup flows, turning the previous print-only check into a real regression test.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

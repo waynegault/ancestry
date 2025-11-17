@@ -2,39 +2,59 @@
 
 All open work is captured in the single checklist below. Address items in priority order unless a dependency is noted.
 
-## Completed Items
+## Open Items (Identified 2025-11-17 Audit)
 
-- [x] **Comment & Docstring Spot Check** (Completed 2025-11-17)
-  Scanned all module docstrings for tone/verbosity alignment.
-  - Fixed 12 files total (gedcom_intelligence.py, message_personalization.py + 10 additional files)
-  - Removed ~400+ lines of verbose corporate jargon
-  - Replaced with concise 5-17 line professional descriptions
-  - See docs/DOCUMENTATION_AUDIT.md for full analysis
-  - All tests passing, zero Pylance errors
+- [x] **Main Menu Session Guard Helper**
+  `main.require_interactive_session` now wraps Actions 7–9 and funnels all readiness checks through `_ensure_interactive_session_ready()`, so future login/session policy tweaks only touch one decorator.
+- [x] **Action 6 Start Page Alignment**
+  ✅ `main.gather_dna_matches` and the Action 6 orchestration pipeline now treat `None` as “resume from checkpoint,” with menu parsing and coord/start-page validation wired into the new checkpoint helpers.
+- [ ] **Main.py Pylance Issues**
+  Pyright is clean again after the temp-file helper fix, but we still need typed wrappers for the ctypes console-focus helper, SQLAlchemy row helpers, and analytics logging call sites so `main.py` stays warning-free without suppressions.
+- [ ] **Action 6 Regression Tests**
+  `_test_checkpoint_resume_logic` now asserts checkpoint load/save/resume flows, but the timeout/final summary/duplicate handling tests still rely on `print` statements and need conversion to real assertions.
+- [ ] **Unified Error-Handling Stack**
+  Consolidate overlapping retry/circuit breaker logic between `core/error_handling.py` and `core/enhanced_error_recovery.py` so SessionManager and action modules share a single source of truth.
 
-- [x] **Knowledge Graph & README Export** (Completed 2025-11-17)
-  Regenerated code graph/README snapshots for downstream consumers.
-  - Updated docs/code_graph.json metadata with Nov 17 improvements
-  - README.md already reflects Phase 2 documentation cleanup
-  - Documentation references updated (added DOCUMENTATION_AUDIT.md)
-  - All artifacts committed and synchronized
+## High Priority Technical Debt
 
-- [x] **Maintainer Handoff Brief** (Completed 2025-11-17)
-  Comprehensive handoff documentation for next maintainer.
-  - Created docs/MAINTAINER_HANDOFF.md (400+ lines)
-  - Documented all recent accomplishments, system architecture, critical configuration
-  - Detailed testing infrastructure, common workflows, known issues
-  - Provided recommended next steps (high/medium/low priority)
-  - Included deployment readiness checklist, scaling considerations
-  - Emergency procedures and Q&A section for troubleshooting
-  - Project ready for transition with zero critical issues
+- [ ] **Cache Module Consolidation** (High Priority)
+  Consolidate 7 cache-related modules into unified architecture
+  - Target: Single cache manager with specialized implementations
+  - Estimated Impact: 30% reduction in cache-related code
+  - Files: cache.py, cache_manager.py, gedcom_cache.py, performance_cache.py, core/session_cache.py, core/system_cache.py, core/unified_cache_manager.py
 
-## Project Status
+- [ ] **Error Handling Deduplication** (High Priority)
+  Remove duplicate error handling between error_handling.py and core/error_handling.py
+  - Keep: core/error_handling.py (more comprehensive)
+  - Migrate and remove: error_handling.py
+  - Update all imports across codebase
 
-✅ **All planned tasks complete**
-✅ **Zero Pylance errors**
-✅ **100% test pass rate** (457 tests across 58 modules)
-✅ **Documentation comprehensive** (README, code graph, audit, handoff)
-✅ **Technical debt minimal** (tracked and managed)
+- [ ] **Database Module Consolidation** (Medium Priority)
+  Complete migration from database.py to core/database_manager.py
+  - Verify all functionality moved to core module
+  - Update remaining references
+  - Archive or remove legacy database.py
 
-**The project is production-ready and fully documented for handoff.**
+- [ ] **Function Decomposition** (Medium Priority)
+  Break down large functions with multiple responsibilities:
+  - main.exec_actn (220+ lines)
+  - main.run_gedcom_then_api_fallback (large with inline helpers)
+  - Extract common guard patterns from Actions 7/8/9
+
+- [ ] **Test Infrastructure Modernization** (Medium Priority)
+  Migrate inline tests to dedicated test directory structure
+  - Create tests/ directory mirroring source structure
+  - Maintain test framework but separate test code from production
+  - Improve test discoverability and IDE integration
+
+- [ ] **Linting Configuration Hardening** (Low Priority, High Impact)
+  Gradually enable stricter linting and type checking
+  - Phase 1: Enable reportReturnType, reportUnusedVariable, reportDuplicateImport
+  - Phase 2: Enable PLR rules (cyclomatic complexity, too many arguments)
+  - Phase 3: Enable comprehensive type checking
+  - Document exemptions with justification
+
+- [ ] **Import Standardization Audit** (Low Priority)
+  Verify all modules use standard_imports.setup_module() correctly
+  - Found duplicate in gedcom_cache.py (lines 46-76)
+  - Scan for other instances of duplicate setup_module calls

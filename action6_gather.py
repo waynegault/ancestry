@@ -201,13 +201,16 @@ logger = OptimizedLogger(raw_logger)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import json
 import logging
 import math
 import random
 import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
@@ -477,7 +480,14 @@ def _initialize_gather_state() -> dict[str, Any]:
         "aggregate_metrics": PageProcessingMetrics(),
         "pages_with_metrics": 0,
         "pages_target": 0,
+        "total_pages_in_run": 0,
+        "last_page_to_process": 0,
         "run_started_at": time.time(),
+        "resume_from_checkpoint": False,
+        "requested_start_page": None,
+        "effective_start_page": 1,
+        "last_checkpoint_written_at": None,
+        "checkpoint_metadata": None,
     }
 
 
@@ -498,6 +508,191 @@ def _validate_start_page(start_arg: Any) -> int:
 
 
 # End of _validate_start_page
+
+
+CHECKPOINT_VERSION = "1.0"
+
+
+def _checkpoint_settings() -> tuple[bool, Path, int]:
+    """Return (enabled, path, max_age_hours) for Action 6 checkpointing."""
+    enabled = bool(getattr(config_schema, "enable_action6_checkpointing", True))
+    raw_path = getattr(config_schema, "action6_checkpoint_file", Path("Cache/action6_checkpoint.json"))
+    checkpoint_path = raw_path if isinstance(raw_path, Path) else Path(str(raw_path))
+    max_age_hours = getattr(config_schema, "action6_checkpoint_max_age_hours", 24)
+    try:
+        max_age_hours_int = max(1, int(max_age_hours))
+    except (TypeError, ValueError):
+        max_age_hours_int = 24
+    return enabled, checkpoint_path, max_age_hours_int
+
+
+def _checkpoint_enabled() -> bool:
+    """Return True when checkpointing is enabled in configuration."""
+    enabled, _, _ = _checkpoint_settings()
+    return enabled
+
+
+def _clear_checkpoint_state() -> None:
+    """Remove the checkpoint file if it exists."""
+    if not _checkpoint_enabled():
+        return
+    _, checkpoint_path, _ = _checkpoint_settings()
+    try:
+        checkpoint_path.unlink()
+        logger.debug("Cleared Action 6 checkpoint at %s", checkpoint_path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:  # pragma: no cover - diagnostic only
+        logger.debug("Failed to remove Action 6 checkpoint: %s", exc)
+
+
+def _load_checkpoint_state() -> Optional[dict[str, Any]]:
+    """Load checkpoint JSON if present and not expired."""
+    if not _checkpoint_enabled():
+        return None
+    _, checkpoint_path, max_age_hours = _checkpoint_settings()
+    if not checkpoint_path.exists():
+        return None
+    try:
+        with checkpoint_path.open(encoding="utf-8") as fh:
+            checkpoint_data = json.load(fh)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("Failed to read Action 6 checkpoint at %s: %s", checkpoint_path, exc)
+        return None
+
+    timestamp = checkpoint_data.get("timestamp")
+    if isinstance(timestamp, (int, float)):
+        age_hours = max(0.0, (time.time() - float(timestamp)) / 3600)
+        if age_hours > max_age_hours:
+            logger.info(
+                "Ignoring Action 6 checkpoint because it is %.1f hours old (max %d).",
+                age_hours,
+                max_age_hours,
+            )
+            _clear_checkpoint_state()
+            return None
+    else:
+        checkpoint_data["timestamp"] = time.time()
+
+    return checkpoint_data
+
+
+def _serialize_checkpoint_snapshot(state: dict[str, Any]) -> dict[str, int]:
+    """Create a lightweight snapshot of processing counters for checkpoint storage."""
+    return {
+        "total_new": int(state.get("total_new", 0)),
+        "total_updated": int(state.get("total_updated", 0)),
+        "total_skipped": int(state.get("total_skipped", 0)),
+        "total_errors": int(state.get("total_errors", 0)),
+        "total_pages_processed": int(state.get("total_pages_processed", 0)),
+    }
+
+
+def _write_checkpoint_state(
+    next_page: int,
+    last_page_to_process: int,
+    total_pages_in_run: int,
+    state: dict[str, Any],
+) -> None:
+    """Persist checkpoint information for later resume."""
+    if not _checkpoint_enabled():
+        return
+
+    _, checkpoint_path, _ = _checkpoint_settings()
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "version": CHECKPOINT_VERSION,
+        "timestamp": time.time(),
+        "next_page": max(1, int(next_page)),
+        "last_page": max(1, int(last_page_to_process)),
+        "total_pages_in_run": max(0, int(total_pages_in_run)),
+        "start_page": int(state.get("effective_start_page", 1)),
+        "requested_start": state.get("requested_start_page"),
+        "counters": _serialize_checkpoint_snapshot(state),
+    }
+
+    tmp_path = checkpoint_path.with_suffix(".tmp")
+    try:
+        with tmp_path.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+        tmp_path.replace(checkpoint_path)
+        logger.debug(
+            "Checkpoint saved. Next page=%s (run length=%s).",
+            payload["next_page"],
+            payload["total_pages_in_run"],
+        )
+    except Exception as exc:  # pragma: no cover - diagnostics only
+        logger.debug("Failed to persist Action 6 checkpoint: %s", exc)
+
+
+def _persist_action6_checkpoint(
+    next_page: int,
+    last_page_to_process: int,
+    total_pages_in_run: int,
+    state: dict[str, Any],
+) -> None:
+    """Update checkpoint state after finishing or attempting a page."""
+    if not _checkpoint_enabled() or total_pages_in_run <= 0:
+        return
+
+    if next_page > last_page_to_process:
+        _clear_checkpoint_state()
+        return
+
+    _write_checkpoint_state(next_page, last_page_to_process, total_pages_in_run, state)
+    state["last_checkpoint_written_at"] = time.time()
+
+
+def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional[dict[str, Any]]]:
+    """Resolve the effective start page, optionally resuming from checkpoint."""
+    if start_arg is not None:
+        return _validate_start_page(start_arg), False, None
+
+    checkpoint_data = _load_checkpoint_state()
+    if not checkpoint_data:
+        return 1, False, None
+
+    resume_page = checkpoint_data.get("next_page")
+    if resume_page is None:
+        resume_page_int = 1
+    else:
+        try:
+            resume_page_int = max(1, int(resume_page))
+        except (TypeError, ValueError):
+            resume_page_int = 1
+
+    last_page = checkpoint_data.get("last_page", resume_page_int)
+    if last_page is None:
+        last_page_int = resume_page_int
+    else:
+        try:
+            last_page_int = max(1, int(last_page))
+        except (TypeError, ValueError):
+            last_page_int = resume_page_int
+
+    if resume_page_int > last_page_int:
+        logger.debug(
+            "Checkpoint requested resume page %s beyond last page %s; starting fresh.",
+            resume_page_int,
+            last_page_int,
+        )
+        return 1, False, None
+
+    logger.info(
+        "Resuming Action 6 from checkpoint page %d (planned last page %d).",
+        resume_page_int,
+        last_page_int,
+    )
+    return resume_page_int, True, checkpoint_data
+
+
+def _finalize_checkpoint_after_run(state: dict[str, Any]) -> None:
+    """Clear checkpoint file after a successful run."""
+    if not _checkpoint_enabled():
+        return
+    if state.get("final_success"):
+        _clear_checkpoint_state()
 
 
 def _try_get_csrf_from_api(session_manager: "SessionManager") -> Optional[str]:
@@ -1213,6 +1408,13 @@ def _main_page_processing_loop(
         )
         matches_on_page_for_batch = None  # Clear for next iteration
 
+        _persist_action6_checkpoint(
+            next_page=current_page_num,
+            last_page_to_process=last_page_to_process,
+            total_pages_in_run=total_pages_in_run,
+            state=state,
+        )
+
         if not loop_final_success:
             break  # Exit while loop on fatal error
 
@@ -1547,7 +1749,7 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
 
 
 def coord(
-    session_manager: SessionManager, start: int = 1
+    session_manager: SessionManager, start: Optional[int] = None
 ) -> bool:  # Uses config schema
     """
     Orchestrates the gathering of DNA matches from Ancestry.
@@ -1555,7 +1757,7 @@ def coord(
 
     Args:
         session_manager: Global SessionManager instance from main.py
-        start: Starting page number (default: 1)
+        start: Optional starting page override. None attempts checkpoint resume.
 
     Returns:
         bool: True if successful, False otherwise
@@ -1568,10 +1770,23 @@ def coord(
     # Initialize state
     state = _initialize_gather_state()
     state["run_started_at"] = action_start_time
-    start_page = _validate_start_page(start)
+    state["requested_start_page"] = start
+    start_page, resumed_from_checkpoint, checkpoint_data = _determine_start_page(start)
+    state["effective_start_page"] = start_page
+    state["resume_from_checkpoint"] = resumed_from_checkpoint
+    state["checkpoint_metadata"] = checkpoint_data
 
     # Log action start
     _log_action_start(start_page)
+    if resumed_from_checkpoint:
+        planned_total = None
+        if isinstance(checkpoint_data, dict):
+            planned_total = checkpoint_data.get("total_pages_in_run")
+        logger.info(
+            "Checkpoint resume active: starting at page %d (planned total pages: %s)",
+            start_page,
+            planned_total if planned_total is not None else "unknown",
+        )
 
     try:
         # Handle initial fetch and determine page range
@@ -1579,6 +1794,8 @@ def coord(
             _, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
                 session_manager, start_page, state
             )
+            state["last_page_to_process"] = last_page_to_process
+            state["total_pages_in_run"] = total_pages_in_run
         except RuntimeError as e:
             # No pages to process or initial fetch failed
             return str(e) == "No pages to process"  # True if no pages, False if fetch failed
@@ -1605,6 +1822,7 @@ def coord(
         state["final_success"] = False
     finally:
         # Final Summary Logging
+        _finalize_checkpoint_after_run(state)
         _log_final_results(session_manager, state, action_start_time)
 
         # Re-raise KeyboardInterrupt if that was the cause
@@ -8912,6 +9130,54 @@ def _test_dynamic_api_failure_threshold():
     return success
 
 
+def _test_checkpoint_resume_logic() -> bool:
+    """Validate checkpoint load/save, resume decisions, and explicit overrides."""
+
+    from unittest.mock import patch
+
+    print("🛡️ Testing checkpoint persistence and resume logic:")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_file = Path(tmpdir) / "action6_checkpoint.json"
+
+        def _fake_settings() -> tuple[bool, Path, int]:
+            return True, checkpoint_file, 24
+
+        sample_state = {
+            "effective_start_page": 2,
+            "requested_start_page": None,
+            "total_new": 0,
+            "total_updated": 0,
+            "total_skipped": 0,
+            "total_errors": 0,
+            "total_pages_processed": 0,
+        }
+
+        with patch("action6_gather._checkpoint_settings", side_effect=_fake_settings):
+            _clear_checkpoint_state()
+            start_page, resumed, checkpoint_data = _determine_start_page(None)
+            assert start_page == 1 and not resumed and checkpoint_data is None
+
+            _write_checkpoint_state(5, 10, 20, sample_state)
+            assert checkpoint_file.exists(), "Checkpoint should exist after write"
+
+            start_page, resumed, checkpoint_data = _determine_start_page(None)
+            assert start_page == 5 and resumed
+            assert checkpoint_data is not None and checkpoint_data.get("last_page") == 10
+
+            override_start, override_resumed, _ = _determine_start_page(3)
+            assert override_start == 3 and not override_resumed
+
+            updated_state = {**sample_state, "total_pages_processed": 1}
+            _persist_action6_checkpoint(6, 10, 20, updated_state)
+            assert json.loads(checkpoint_file.read_text())["next_page"] == 6
+
+            _persist_action6_checkpoint(11, 10, 20, updated_state)
+            assert not checkpoint_file.exists(), "Checkpoint cleared after run completion"
+
+    print("🎉 Checkpoint persistence and resume logic tests passed!")
+    return True
+
+
 def _test_regression_prevention_session_management():
     """
     🛡️ REGRESSION TEST: Session management and stability.
@@ -9188,6 +9454,15 @@ def action6_gather_module_tests() -> bool:
             functions_tested="_main_page_loop()",
             method_description="Testing threshold calculation: min 10, max 100, scales at 1 per 20 pages",
             expected_outcome="API failure threshold scales appropriately with number of pages to process",
+        )
+
+        suite.run_test(
+            test_name="Checkpoint persistence and resume logic",
+            test_func=_test_checkpoint_resume_logic,
+            test_summary="Ensure checkpoint file save/load honors overrides and cleanup",
+            functions_tested="_write_checkpoint_state(), _determine_start_page(), _persist_action6_checkpoint()",
+            method_description="Patch checkpoint path to temp file and validate resume + override flows",
+            expected_outcome="Checkpoint resume honours saved state and clears once pages complete",
         )
 
         suite.run_test(
