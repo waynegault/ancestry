@@ -210,7 +210,7 @@ def main() -> int:
         './core/progress_indicators.py',
         './core/metrics_collector.py',
         './core/metrics_integration.py',
-        './core/enhanced_error_recovery.py',
+        './core/error_handling.py',
         './dna_utils.py',
         './grafana_checker.py',
         './observability/metrics_exporter.py',

@@ -121,12 +121,12 @@ from cache import cache_result
 from common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
 from config import config_schema
 from connection_resilience import with_connection_resilience
-from core.enhanced_error_recovery import with_enhanced_recovery
 from core.error_handling import (  # type: ignore[import-not-found]
     APIRateLimitError,
     AuthenticationExpiredError,
     BrowserSessionError,
     MaxApiFailuresExceededError,
+    with_enhanced_recovery,
 )
 from core.session_manager import SessionManager
 
@@ -4125,9 +4125,9 @@ def _test_integration_with_shared_modules() -> None:
         print(f"   {status} Universal API call framework available")
         results.append(api_framework_available)
 
-        # Test error recovery patterns integration (now in core/enhanced_error_recovery.py)
+        # Test error recovery patterns integration (now in core/error_handling.py)
         try:
-            from core.enhanced_error_recovery import with_enhanced_recovery
+            from core.error_handling import with_enhanced_recovery
             error_patterns_available = with_enhanced_recovery is not None
         except ImportError:
             error_patterns_available = False

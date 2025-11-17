@@ -8,12 +8,12 @@ All open work is captured in the single checklist below. Address items in priori
   `main.require_interactive_session` now wraps Actions 7–9 and funnels all readiness checks through `_ensure_interactive_session_ready()`, so future login/session policy tweaks only touch one decorator.
 - [x] **Action 6 Start Page Alignment**
   ✅ `main.gather_dna_matches` and the Action 6 orchestration pipeline now treat `None` as “resume from checkpoint,” with menu parsing and coord/start-page validation wired into the new checkpoint helpers.
-- [ ] **Main.py Pylance Issues**
-  Pyright is clean again after the temp-file helper fix, but we still need typed wrappers for the ctypes console-focus helper, SQLAlchemy row helpers, and analytics logging call sites so `main.py` stays warning-free without suppressions.
-- [ ] **Action 6 Regression Tests**
-  `_test_checkpoint_resume_logic` now asserts checkpoint load/save/resume flows, but the timeout/final summary/duplicate handling tests still rely on `print` statements and need conversion to real assertions.
-- [ ] **Unified Error-Handling Stack**
-  Consolidate overlapping retry/circuit breaker logic between `core/error_handling.py` and `core/enhanced_error_recovery.py` so SessionManager and action modules share a single source of truth.
+- [x] **Main.py Pylance Issues**
+  Added typed helper loaders for GEDCOM/API display helpers, analytics logging, and the Windows console-focus function so `main.py` no longer needs `pyright` suppressions; `npx pyright` now reports 0 issues.
+- [x] **Action 6 Regression Tests**
+  Converted the timeout/selenium policy, duplicate handling, and final summary regression tests to use real assertions plus new IntegrityError coverage, so `_test_error_handling()` now fails fast if the critical safeguards regress.
+- [x] **Unified Error-Handling Stack**
+  Merged the enhanced recovery decorators into `core/error_handling.py`, removed `core/enhanced_error_recovery.py`, and updated Action 6/7/8 plus archival scripts to import from the unified module.
 
 ## High Priority Technical Debt
 

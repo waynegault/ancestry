@@ -996,10 +996,10 @@
       "notes": "Invoked by SessionManager restarts and shutdown routines."
     },
     {
-      "id": "module:core.enhanced_error_recovery",
+      "id": "module:core.error_handling",
       "type": "module",
-      "name": "core.enhanced_error_recovery",
-      "path": "core/enhanced_error_recovery.py",
+      "name": "core.error_handling",
+      "path": "core/error_handling.py",
       "summary": "Shared error resilience utilities supplying retry decorators, circuit breaker tracking, and user guidance helpers.",
       "mechanism": "Defines EnhancedErrorRecovery singleton with stats/circuit store, ErrorContext dataclass, and decorator factory producing retry wrappers with backoff and partial success handling.",
       "quality": "stable",
@@ -1011,14 +1011,14 @@
         "Surface metrics via analytics or telemetry to quantify recovery efficacy.",
         "Extract shared retry config presets (API/DB/File) into config schema for centralized tuning."
       ],
-      "tests": "enhanced_error_recovery_module_tests",
+      "tests": "error_handling_module_tests",
       "notes": "Imported by action modules to wrap API/database interactions with structured retry logic."
     },
     {
-      "id": "class:core.enhanced_error_recovery.ErrorSeverity",
+      "id": "class:core.error_handling.ErrorSeverity",
       "type": "class",
       "name": "ErrorSeverity",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Enum categorizing error gravity levels from low to critical.",
       "mechanism": "Provides four severity designations used for messaging or future policy decisions.",
       "quality": "stable",
@@ -1028,14 +1028,14 @@
       "opportunities": [
         "Integrate with logging or telemetry payloads to standardize severity reporting."
       ],
-      "tests": "enhanced_error_recovery_module_tests",
+      "tests": "error_handling_module_tests",
       "notes": "Enum values align with structured logging taxonomy used in ops dashboards."
     },
     {
-      "id": "class:core.enhanced_error_recovery.RecoveryStrategy",
+      "id": "class:core.error_handling.RecoveryStrategy",
       "type": "class",
       "name": "RecoveryStrategy",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Enum describing available recovery patterns such as retries, backoff, and circuit breaker.",
       "mechanism": "Enumerates strategy names consumed by ErrorContext and decorator logic to select behavior.",
       "quality": "stable",
@@ -1045,14 +1045,14 @@
       "opportunities": [
         "Implement circuit breaker and graceful degradation branches to honor enum intent."
       ],
-      "tests": "enhanced_error_recovery_module_tests",
+      "tests": "error_handling_module_tests",
       "notes": "Supports future expansion toward per-operation policy configuration."
     },
     {
-      "id": "class:core.enhanced_error_recovery.ErrorContext",
+      "id": "class:core.error_handling.ErrorContext",
       "type": "class",
       "name": "ErrorContext",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Dataclass capturing retry attempt metadata, error history, and strategy configuration.",
       "mechanism": "Tracks attempt counts, computes exponential backoff delay with jitter, and stores partial results for fallback handlers.",
       "quality": "stable",
@@ -1062,14 +1062,14 @@
       "opportunities": [
         "Expose serialization helper to persist context when long operations span process restarts."
       ],
-      "tests": "enhanced_error_recovery_module_tests",
+      "tests": "error_handling_module_tests",
       "notes": "Instances created by with_enhanced_recovery decorator to orchestrate retries."
     },
     {
-      "id": "class:core.enhanced_error_recovery.EnhancedErrorRecovery",
+      "id": "class:core.error_handling.EnhancedErrorRecovery",
       "type": "class",
       "name": "EnhancedErrorRecovery",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Manages retry statistics and circuit breaker state for operations using enhanced recovery wrappers.",
       "mechanism": "Maintains per-operation counters, success/failure tracking, and circuit breaker timers to throttle repeated failures.",
       "quality": "stable",
@@ -1083,10 +1083,10 @@
       "notes": "Global instance exported as error_recovery for module consumers."
     },
     {
-      "id": "function:core.enhanced_error_recovery.with_enhanced_recovery",
+      "id": "function:core.error_handling.with_enhanced_recovery",
       "type": "function",
       "name": "with_enhanced_recovery",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Decorator factory applying retries with backoff, circuit checks, and optional partial success handling.",
       "mechanism": "Builds wrapper using ErrorContext, consults EnhancedErrorRecovery for circuit status, logs attempts, sleeps based on jittered backoff, and delegates to optional handlers.",
       "quality": "stable",
@@ -1100,10 +1100,10 @@
       "notes": "Used across action modules to shield API and messaging workflows."
     },
     {
-      "id": "function:core.enhanced_error_recovery.with_api_recovery",
+      "id": "function:core.error_handling.with_api_recovery",
       "type": "function",
       "name": "with_api_recovery",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Convenience decorator preset tuned for API IO with higher attempt counts and network exceptions.",
       "mechanism": "Calls with_enhanced_recovery with API-specific retry parameters and default user guidance mapping.",
       "quality": "stable",
@@ -1117,10 +1117,10 @@
       "notes": "Adopted by inbox and messaging actions to harden API calls."
     },
     {
-      "id": "function:core.enhanced_error_recovery.with_database_recovery",
+      "id": "function:core.error_handling.with_database_recovery",
       "type": "function",
       "name": "with_database_recovery",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Decorator preset for database operations with modest backoff and connection-focused exceptions.",
       "mechanism": "Delegates to with_enhanced_recovery using ConnectionError/TimeoutError handling and shared guidance text.",
       "quality": "stable",
@@ -1134,10 +1134,10 @@
       "notes": "Currently unused but available for future DB resilience needs."
     },
     {
-      "id": "function:core.enhanced_error_recovery.with_file_recovery",
+      "id": "function:core.error_handling.with_file_recovery",
       "type": "function",
       "name": "with_file_recovery",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Decorator preset guarding file IO against transient permission/path issues.",
       "mechanism": "Invokes with_enhanced_recovery with file-centric exceptions and shorter delays for quick retries.",
       "quality": "stable",
@@ -1151,10 +1151,10 @@
       "notes": "Intended for backup/restore workflows interacting with local filesystem."
     },
     {
-      "id": "function:core.enhanced_error_recovery.create_user_guidance",
+      "id": "function:core.error_handling.create_user_guidance",
       "type": "function",
       "name": "create_user_guidance",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Builds default mapping of exception types to user-facing remediation tips.",
       "mechanism": "Returns dictionary for common IO, permission, and configuration failures consumed by retry decorators.",
       "quality": "stable",
@@ -1168,10 +1168,10 @@
       "notes": "Helps provide actionable hints during retry logging."
     },
     {
-      "id": "function:core.enhanced_error_recovery.handle_partial_success",
+      "id": "function:core.error_handling.handle_partial_success",
       "type": "function",
       "name": "handle_partial_success",
-      "path": "core/enhanced_error_recovery.py",
+      "path": "core/error_handling.py",
       "summary": "Default partial success handler returning accumulated results or re-raising error.",
       "mechanism": "If partial results exist, logs warning and returns them; otherwise propagates original exception.",
       "quality": "stable",
@@ -16882,10 +16882,10 @@
       "notes": "Action modules primarily resolve SessionManager directly today; DI scaffolding enables future modularization."
     },
     {
-      "id": "file:core/enhanced_error_recovery.py",
+      "id": "file:core/error_handling.py",
       "type": "file",
-      "name": "core/enhanced_error_recovery.py",
-      "path": "core/enhanced_error_recovery.py",
+      "name": "core/error_handling.py",
+      "path": "core/error_handling.py",
       "summary": "Decorator-driven recovery toolkit layering retries, circuit breaking, and partial-result handling for long Ancestry workflows.",
       "mechanism": "Uses EnhancedErrorRecovery to track failures, generates ErrorContext with jittered backoff, wraps operations via with_enhanced_recovery plus API/DB/File presets, and emits user guidance when retries exhaust.",
       "quality": "beta",
@@ -20695,62 +20695,62 @@
       "description": "Method opens additional browser tab"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "class:core.enhanced_error_recovery.ErrorSeverity",
+      "source": "module:core.error_handling",
+      "target": "class:core.error_handling.ErrorSeverity",
       "type": "defines",
       "description": "Module exposes error severity enum"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "class:core.enhanced_error_recovery.RecoveryStrategy",
+      "source": "module:core.error_handling",
+      "target": "class:core.error_handling.RecoveryStrategy",
       "type": "defines",
       "description": "Module exposes recovery strategy enum"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "class:core.enhanced_error_recovery.ErrorContext",
+      "source": "module:core.error_handling",
+      "target": "class:core.error_handling.ErrorContext",
       "type": "defines",
       "description": "Module defines retry context dataclass"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "class:core.enhanced_error_recovery.EnhancedErrorRecovery",
+      "source": "module:core.error_handling",
+      "target": "class:core.error_handling.EnhancedErrorRecovery",
       "type": "defines",
       "description": "Module provides global recovery manager"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.with_enhanced_recovery",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.with_enhanced_recovery",
       "type": "defines",
       "description": "Module exports primary retry decorator"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.with_api_recovery",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.with_api_recovery",
       "type": "defines",
       "description": "Module exports API recovery preset"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.with_database_recovery",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.with_database_recovery",
       "type": "defines",
       "description": "Module exports DB recovery preset"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.with_file_recovery",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.with_file_recovery",
       "type": "defines",
       "description": "Module exports file recovery preset"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.create_user_guidance",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.create_user_guidance",
       "type": "defines",
       "description": "Module provides user guidance mapping"
     },
     {
-      "source": "module:core.enhanced_error_recovery",
-      "target": "function:core.enhanced_error_recovery.handle_partial_success",
+      "source": "module:core.error_handling",
+      "target": "function:core.error_handling.handle_partial_success",
       "type": "defines",
       "description": "Module exposes default partial success handler"
     },
@@ -23221,44 +23221,44 @@
       "description": "Method closes connections"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_enhanced_recovery",
-      "target": "class:core.enhanced_error_recovery.ErrorContext",
+      "source": "function:core.error_handling.with_enhanced_recovery",
+      "target": "class:core.error_handling.ErrorContext",
       "type": "uses",
       "description": "Decorator instantiates ErrorContext to track attempts"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_enhanced_recovery",
-      "target": "class:core.enhanced_error_recovery.EnhancedErrorRecovery",
+      "source": "function:core.error_handling.with_enhanced_recovery",
+      "target": "class:core.error_handling.EnhancedErrorRecovery",
       "type": "uses",
       "description": "Decorator consults global EnhancedErrorRecovery for stats and circuit breaker"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_enhanced_recovery",
-      "target": "function:core.enhanced_error_recovery.handle_partial_success",
+      "source": "function:core.error_handling.with_enhanced_recovery",
+      "target": "function:core.error_handling.handle_partial_success",
       "type": "calls",
       "description": "Decorator routes to partial success handler when retries exhausted"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_enhanced_recovery",
-      "target": "function:core.enhanced_error_recovery.create_user_guidance",
+      "source": "function:core.error_handling.with_enhanced_recovery",
+      "target": "function:core.error_handling.create_user_guidance",
       "type": "relates-to",
       "description": "Presets pass guidance mapping for user tips"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_api_recovery",
-      "target": "function:core.enhanced_error_recovery.with_enhanced_recovery",
+      "source": "function:core.error_handling.with_api_recovery",
+      "target": "function:core.error_handling.with_enhanced_recovery",
       "type": "wraps",
       "description": "API decorator returns configured enhanced recovery wrapper"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_database_recovery",
-      "target": "function:core.enhanced_error_recovery.with_enhanced_recovery",
+      "source": "function:core.error_handling.with_database_recovery",
+      "target": "function:core.error_handling.with_enhanced_recovery",
       "type": "wraps",
       "description": "Database decorator returns configured enhanced recovery wrapper"
     },
     {
-      "source": "function:core.enhanced_error_recovery.with_file_recovery",
-      "target": "function:core.enhanced_error_recovery.with_enhanced_recovery",
+      "source": "function:core.error_handling.with_file_recovery",
+      "target": "function:core.error_handling.with_enhanced_recovery",
       "type": "wraps",
       "description": "File decorator returns configured enhanced recovery wrapper"
     },

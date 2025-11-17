@@ -29,9 +29,10 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
 
 # Type variables for decorators
 P = ParamSpec('P')
@@ -75,6 +76,290 @@ class RetryConfig:
     retry_on: list[type[Exception]] = field(default_factory=lambda: [Exception])
     stop_on: list[type[Exception]] = field(default_factory=list)
 
+
+class RecoveryStrategy(Enum):
+    """Recovery strategy types for enhanced retry decorators."""
+
+    RETRY = "retry"
+    EXPONENTIAL_BACKOFF = "exp_backoff"
+    CIRCUIT_BREAKER = "circuit_breaker"
+    PARTIAL_SUCCESS = "partial_success"
+    GRACEFUL_DEGRADATION = "graceful_degradation"
+
+
+@dataclass
+class RecoveryContext:
+    """Context container shared across enhanced recovery attempts."""
+
+    operation_name: str
+    attempt_number: int = 1
+    max_attempts: int = 3
+    last_error: Optional[Exception] = None
+    error_history: list[Exception] = field(default_factory=list)
+    start_time: datetime = field(default_factory=datetime.now)
+    partial_results: list[Any] = field(default_factory=list)
+    recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF
+
+    def add_error(self, error: Exception) -> None:
+        self.last_error = error
+        self.error_history.append(error)
+
+    def should_retry(self) -> bool:
+        return self.attempt_number < self.max_attempts
+
+    def get_backoff_delay(self, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
+        if self.recovery_strategy != RecoveryStrategy.EXPONENTIAL_BACKOFF:
+            return base_delay
+
+        delay = min(base_delay * (2 ** max(self.attempt_number - 1, 0)), max_delay)
+        jitter = random.uniform(0.1, 0.3) * delay
+        return delay + jitter
+
+
+class EnhancedErrorRecovery:
+    """Centralized error recovery telemetry with circuit breaker awareness."""
+
+    def __init__(self) -> None:
+        self.recovery_stats: dict[str, dict[str, int]] = {}
+        self.circuit_breakers: dict[str, dict[str, Any]] = {}
+
+    def get_recovery_stats(self, operation: str) -> dict[str, int]:
+        return self.recovery_stats.get(
+            operation,
+            {
+                "total_attempts": 0,
+                "successful_recoveries": 0,
+                "failed_recoveries": 0,
+                "partial_successes": 0,
+            },
+        )
+
+    def update_stats(self, operation: str, success: bool, partial: bool = False) -> None:
+        stats = self.recovery_stats.setdefault(
+            operation,
+            {
+                "total_attempts": 0,
+                "successful_recoveries": 0,
+                "failed_recoveries": 0,
+                "partial_successes": 0,
+            },
+        )
+
+        stats["total_attempts"] += 1
+        if success:
+            stats["successful_recoveries"] += 1
+        elif partial:
+            stats["partial_successes"] += 1
+        else:
+            stats["failed_recoveries"] += 1
+
+    def is_circuit_open(self, operation: str, failure_threshold: int = 5) -> bool:
+        breaker = self.circuit_breakers.get(operation)
+        if breaker is None:
+            return False
+
+        open_until = breaker.get("open_until", datetime.min)
+        if open_until < datetime.now():
+            self.circuit_breakers[operation] = {"failures": 0, "open_until": datetime.min}
+            return False
+
+        return breaker.get("failures", 0) >= failure_threshold
+
+    def record_failure(self, operation: str, recovery_timeout: int = 300) -> None:
+        breaker = self.circuit_breakers.setdefault(operation, {"failures": 0, "open_until": datetime.min})
+        breaker["failures"] += 1
+        if breaker["failures"] >= 5:
+            breaker["open_until"] = datetime.now() + timedelta(seconds=recovery_timeout)
+            logger.warning(
+                "Circuit breaker opened for %s - cooling down for %ss",
+                operation,
+                recovery_timeout,
+            )
+
+    def record_success(self, operation: str) -> None:
+        if operation in self.circuit_breakers:
+            self.circuit_breakers[operation] = {"failures": 0, "open_until": datetime.min}
+
+
+error_recovery = EnhancedErrorRecovery()
+
+
+def _handle_successful_attempt(operation_name: str, attempt: int) -> None:
+    error_recovery.record_success(operation_name)
+    error_recovery.update_stats(operation_name, success=True)
+
+    if attempt > 1:
+        logger.info("✅ %s succeeded after %d attempts", operation_name, attempt)
+
+
+def _handle_non_retryable_error(operation_name: str, exc: Exception) -> None:
+    logger.error("❌ Non-retryable error in %s: %s", operation_name, exc)
+    error_recovery.record_failure(operation_name)
+    error_recovery.update_stats(operation_name, success=False)
+
+
+def _handle_partial_success(
+    operation_name: str,
+    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    context: RecoveryContext,
+    last_exception: Exception,
+) -> Any:
+    if partial_success_handler and context.partial_results:
+        try:
+            partial_result = partial_success_handler(context.partial_results, last_exception)
+            error_recovery.update_stats(operation_name, success=False, partial=True)
+            logger.warning("⚠️ %s completed with partial success", operation_name)
+            return partial_result
+        except Exception as partial_error:
+            logger.error("Partial success handler failed: %s", partial_error)
+    return None
+
+
+def _handle_retry_failure(
+    operation_name: str,
+    max_attempts: int,
+    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    context: RecoveryContext,
+    last_exception: Exception,
+) -> Any:
+    logger.error("❌ %s failed after %d attempts", operation_name, max_attempts)
+    error_recovery.record_failure(operation_name)
+    error_recovery.update_stats(operation_name, success=False)
+
+    partial_result = _handle_partial_success(operation_name, partial_success_handler, context, last_exception)
+    if partial_result is not None:
+        return partial_result
+    raise last_exception
+
+
+def create_user_guidance() -> dict[type[Exception], str]:
+    """Default user guidance for common retryable exceptions."""
+
+    return {
+        ConnectionError: "Check your internet connection and try again",
+        TimeoutError: "The operation timed out - try reducing batch size or increasing timeout",
+        PermissionError: "Verify file permissions and ensure no other process is locking it",
+        FileNotFoundError: "Ensure all required files exist and paths are correct",
+        ValueError: "Check input parameters and data format",
+        KeyError: "Required configuration or data field is missing",
+        ImportError: "Install missing dependencies or check the Python environment",
+    }
+
+
+def handle_partial_success(partial_results: list[Any], error: Exception) -> Any:
+    """Return best-effort results when retries exhaust."""
+
+    if not partial_results:
+        raise error
+
+    logger.warning("Returning %d partial results due to: %s", len(partial_results), error)
+    return partial_results
+
+
+def with_enhanced_recovery(
+    max_attempts: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+    recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
+    retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
+    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]] = None,
+    user_guidance: Optional[dict[type[Exception], str]] = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Decorator that standardizes retries, jittered backoff, and guidance logging."""
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            operation_name = f"{func.__module__}.{func.__name__}"
+            context = RecoveryContext(
+                operation_name=operation_name,
+                max_attempts=max_attempts,
+                recovery_strategy=recovery_strategy,
+            )
+
+            if error_recovery.is_circuit_open(operation_name):
+                raise RuntimeError(f"Circuit breaker is open for {operation_name}")
+
+            last_exception: Optional[Exception] = None
+
+            for attempt in range(1, max_attempts + 1):
+                context.attempt_number = attempt
+                try:
+                    logger.debug("Attempting %s (%d/%d)", operation_name, attempt, max_attempts)
+                    result = func(*args, **kwargs)
+                    _handle_successful_attempt(operation_name, attempt)
+                    return result
+                except Exception as exc:
+                    last_exception = exc
+                    context.add_error(exc)
+
+                    if not isinstance(exc, retryable_exceptions):
+                        _handle_non_retryable_error(operation_name, exc)
+                        raise
+
+                    logger.warning("⚠️ %s failed (%d/%d): %s", operation_name, attempt, max_attempts, exc)
+                    if user_guidance and type(exc) in user_guidance:
+                        logger.info("💡 Suggestion: %s", user_guidance[type(exc)])
+
+                    if not context.should_retry():
+                        return cast(
+                            R,
+                            _handle_retry_failure(
+                                operation_name,
+                                max_attempts,
+                                partial_success_handler,
+                                context,
+                                last_exception,
+                            ),
+                        )
+
+                    delay = context.get_backoff_delay(base_delay, max_delay)
+                    logger.debug("Retrying %s in %.1fs", operation_name, delay)
+                    time.sleep(delay)
+
+            if last_exception is not None:
+                raise last_exception
+            raise RuntimeError(f"Unknown error in {operation_name}")
+
+        return wrapper
+
+    return decorator
+
+
+def with_api_recovery(max_attempts: int = 5, base_delay: float = 2.0) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Decorator optimized for API calls using unified recovery infrastructure."""
+
+    return with_enhanced_recovery(
+        max_attempts=max_attempts,
+        base_delay=base_delay,
+        max_delay=120.0,
+        retryable_exceptions=(ConnectionError, TimeoutError, OSError),
+        user_guidance=create_user_guidance(),
+    )
+
+
+def with_database_recovery(max_attempts: int = 3, base_delay: float = 1.0) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Decorator optimized for database operations using unified recovery infrastructure."""
+
+    return with_enhanced_recovery(
+        max_attempts=max_attempts,
+        base_delay=base_delay,
+        max_delay=30.0,
+        retryable_exceptions=(ConnectionError, TimeoutError),
+        user_guidance=create_user_guidance(),
+    )
+
+
+def with_file_recovery(max_attempts: int = 3, base_delay: float = 0.5) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Decorator optimized for filesystem operations using unified recovery infrastructure."""
+
+    return with_enhanced_recovery(
+        max_attempts=max_attempts,
+        base_delay=base_delay,
+        max_delay=10.0,
+        retryable_exceptions=(PermissionError, FileNotFoundError, OSError),
+        user_guidance=create_user_guidance(),
+    )
 
 # Enhanced CircuitBreaker implementation
 class CircuitBreaker:

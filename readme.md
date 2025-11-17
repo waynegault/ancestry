@@ -32,6 +32,9 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Session State Machine Guardrails** - `SessionLifecycleState` enum, lifecycle diagnostics, and `guard_action()` enforcement ensure `exec_actn()` resets degraded sessions before work begins, preventing stale driver/API usage
 - ✅ **Interactive Session Guard Consolidation** (Nov 18) - The `require_interactive_session` decorator in `main.py` now wraps Actions 7–9 so `_ensure_interactive_session_ready()` lives in one place and menu guards never drift out of sync.
 - ✅ **Action 6 Checkpoint Regression Test** (Nov 18) - `_test_checkpoint_resume_logic` patches the checkpoint path to a temp file and asserts resume/override/cleanup flows, turning the previous print-only check into a real regression test.
+- ✅ **Main.py Pylance Hardening** (Nov 19) - Added typed loader helpers for GEDCOM/API table rows, the analytics extras setter, and the Windows console focus shim so `main.py` runs without any Pyright suppressions.
+- ✅ **Action 6 Error Handling Regression Tests** (Nov 19) - Converted the timeout, duplicate profile detection, and final summary tests into assertion-backed checks with IntegrityError coverage to guard future regressions.
+- ✅ **Unified Error-Handling Stack** (Nov 19) - Merged the enhanced recovery decorators into `core/error_handling.py`, deleted `core/enhanced_error_recovery.py`, and repointed Action 6/7/8 plus archival scripts to the single source of truth.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

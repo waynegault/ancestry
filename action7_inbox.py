@@ -48,17 +48,15 @@ from cache_manager import (
 from common_params import ConversationProcessingContext
 from config import config_schema
 from conversation_analytics import record_engagement_event, update_conversation_metrics
-from core.enhanced_error_recovery import (
-    with_api_recovery as _with_api_recovery,
-    with_enhanced_recovery as _with_enhanced_recovery,
-)
-
-# === ACTION 7 ERROR CLASSES (Action 8 Pattern) ===
 from core.error_handling import (
     APIError,
     AuthenticationError,
     BrowserError,
+    with_api_recovery as _with_api_recovery,
+    with_enhanced_recovery as _with_enhanced_recovery,
 )
+
+# === ACTION 7 ERROR CLASSES (Action 8 Pattern)
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import (

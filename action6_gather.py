@@ -21,7 +21,7 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
-from core.enhanced_error_recovery import with_enhanced_recovery
+from core.error_handling import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
 from relationship_utils import (
     convert_api_path_to_unified_format,
@@ -267,7 +267,7 @@ from test_framework import (
     TestSuite,
     suppress_logging,
 )
-from test_utilities import create_standard_test_runner
+from test_utilities import atomic_write_file, create_standard_test_runner
 from utils import (
     _api_req,  # type: ignore[reportPrivateUsage]  # API request helper
     format_name,  # Name formatting utility
@@ -612,18 +612,22 @@ def _write_checkpoint_state(
         "counters": _serialize_checkpoint_snapshot(state),
     }
 
-    tmp_path = checkpoint_path.with_suffix(".tmp")
     try:
-        with tmp_path.open("w", encoding="utf-8") as fh:
+        with atomic_write_file(checkpoint_path, mode="w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
-        tmp_path.replace(checkpoint_path)
         logger.debug(
             "Checkpoint saved. Next page=%s (run length=%s).",
             payload["next_page"],
             payload["total_pages_in_run"],
         )
     except Exception as exc:  # pragma: no cover - diagnostics only
-        logger.debug("Failed to persist Action 6 checkpoint: %s", exc)
+        if checkpoint_path.exists():
+            logger.debug(
+                "Checkpoint persisted despite exception; continuing (error: %s)",
+                exc,
+            )
+        else:
+            logger.debug("Failed to persist Action 6 checkpoint: %s", exc)
 
 
 def _persist_action6_checkpoint(
@@ -1748,6 +1752,30 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
     _emit_action_status(state)
 
 
+def _prepare_page_range(
+    session_manager: SessionManager,
+    start_page: int,
+    state: dict[str, Any],
+) -> Optional[tuple[int, int]]:
+    """Run the initial fetch and capture pagination metadata."""
+
+    try:
+        _, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
+            session_manager,
+            start_page,
+            state,
+        )
+    except RuntimeError as exc:
+        if str(exc) == "No pages to process":
+            logger.info("No pages available for Action 6. Nothing to process this run.")
+            return None
+        raise
+
+    state["last_page_to_process"] = last_page_to_process
+    state["total_pages_in_run"] = total_pages_in_run
+    return last_page_to_process, total_pages_in_run
+
+
 def coord(
     session_manager: SessionManager, start: Optional[int] = None
 ) -> bool:  # Uses config schema
@@ -1789,17 +1817,12 @@ def coord(
         )
 
     try:
-        # Handle initial fetch and determine page range
-        try:
-            _, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
-                session_manager, start_page, state
-            )
-            state["last_page_to_process"] = last_page_to_process
-            state["total_pages_in_run"] = total_pages_in_run
-        except RuntimeError as e:
-            # No pages to process or initial fetch failed
-            return str(e) == "No pages to process"  # True if no pages, False if fetch failed
+        page_range = _prepare_page_range(session_manager, start_page, state)
+        if page_range is None:
+            state["final_success"] = True
+            return True
 
+        last_page_to_process, total_pages_in_run = page_range
         # Main Processing Loop
         initial_matches_for_loop = state["matches_on_current_page"]
         loop_success = _main_page_processing_loop(
@@ -8895,42 +8918,86 @@ def _test_legacy_function_error_handling():
 
 def _test_timeout_and_retry_handling():
     """Test timeout and retry handling configuration"""
+    from config import config_schema
+
     print("   • Test 6: Timeout and retry handling that caused multiple final summaries")
-    print("     • Checking coord function timeout configuration...")
     expected_min_timeout = 900  # 15 minutes
-    print(f"     ✅ coord function should have timeout >= {expected_min_timeout}s for 12+ min runtime")
+    actual_timeout = getattr(config_schema, "action6_coord_timeout_seconds", 0)
+    assert actual_timeout >= expected_min_timeout, (
+        "Action 6 coord timeout must stay comfortably above historical 12+ min runtimes"
+    )
+
+    selenium_policy = getattr(getattr(config_schema, "retry_policies", None), "selenium", None)
+    assert selenium_policy is not None, "Selenium retry policy must exist"
+    assert selenium_policy.max_attempts >= 3, "Selenium retries must allow at least 3 attempts"
+    assert selenium_policy.backoff_factor >= 1.5, "Backoff must remain exponential to avoid flapping"
+    assert selenium_policy.max_delay_seconds >= selenium_policy.initial_delay_seconds, (
+        "Max delay must be >= initial delay so retries can slow down"
+    )
+    print(
+        "     ✅ coord timeout and Selenium retry policy satisfy long-run safety requirements"
+        f" ({actual_timeout}s timeout, {selenium_policy.max_attempts} attempts)."
+    )
 
 
 def _test_duplicate_record_handling():
     """Test duplicate record handling during retry scenarios"""
-    import sqlite3
-
     print("   • Test 7: Duplicate record handling during retry scenarios")
+
+    # Ensure in-batch de-duplication keeps first entry and allows null profile IDs
+    dedup_input = [
+        {"profile_id": "KIT123", "uuid": "UUID-1"},
+        {"profile_id": "KIT123", "uuid": "UUID-2"},
+        {"profile_id": None, "uuid": "UUID-3"},
+    ]
+    deduped = _deduplicate_person_creates(dedup_input)
+    assert [row["uuid"] for row in deduped] == ["UUID-1", "UUID-3"], (
+        "Duplicate profile IDs should retain first record and keep null-profile entries"
+    )
+    _validate_no_duplicate_profile_ids(deduped)  # Should not raise
+
+    # Explicit duplicate profile IDs should raise IntegrityError before DB insert
+    duplicate_payload = [
+        {"profile_id": "KIT123", "uuid": "UUID-1"},
+        {"profile_id": "KIT123", "uuid": "UUID-2"},
+    ]
     try:
-        test_uuid = "F9721E26-7FBB-4359-8AAB-F6E246DF09F2"
-        integrity_error = sqlite3.IntegrityError("UNIQUE constraint failed: people.uuid")
+        _validate_no_duplicate_profile_ids(duplicate_payload)
+    except IntegrityError as dup_exc:
+        assert "Duplicate profile IDs" in str(dup_exc.orig), "IntegrityError should describe duplicate IDs"
+    else:
+        raise AssertionError("IntegrityError should be raised when duplicate profile IDs remain in payload")
 
-        error_response = RetryableError(
-            f"Bulk DB operation FAILED: {integrity_error}",
-            context={
-                "uuid": test_uuid,
-                "operation": "bulk_insert",
-                "table": "people"
-            },
-            recovery_hint="Records may already exist, check for duplicates"
-        )
-
-        assert "UNIQUE constraint failed" in error_response.message
-        assert error_response.context["uuid"] == test_uuid
-        print("     ✅ UNIQUE constraint error handling works without constructor conflicts")
-    except Exception as e:
-        raise AssertionError(f"Duplicate record error handling failed: {e}") from e
+    print("     ✅ Duplicate detection prevents UNIQUE violations both in-memory and pre-insert")
 
 
 def _test_final_summary_accuracy():
     """Test final summary accuracy validation"""
+    captured: dict[str, Any] = {}
+
+    def _capture_summary(summary: dict[str, Any], runtime: float) -> None:
+        captured["summary"] = summary
+        captured["runtime"] = runtime
+
+    state = {
+        "total_pages_processed": 5,
+        "total_new": 7,
+        "total_updated": 3,
+        "total_skipped": 5,
+        "total_errors": 1,
+    }
+    runtime_seconds = 42.0
+    _emit_final_summary(state, runtime_seconds, _capture_summary)
+
+    summary = captured["summary"]
+    expected_total = state["total_new"] + state["total_updated"] + state["total_skipped"]
+    assert summary["Pages Scanned"] == state["total_pages_processed"]
+    assert summary["Total Processed"] == expected_total, "Total Processed should match individual counters"
+    assert summary["Errors"] == state["total_errors"], "Error count must propagate to final summary"
+    assert captured["runtime"] == runtime_seconds, "Runtime should be passed through to log formatter"
+
     print("   • Test 8: Final summary accuracy validation")
-    print("     ✅ Final summaries should reflect actual database state, not retry attempt failures")
+    print("     ✅ Final summaries reflect actual database counters and elapsed runtime")
 
 
 def _test_error_handling():
@@ -9152,7 +9219,11 @@ def _test_checkpoint_resume_logic() -> bool:
             "total_pages_processed": 0,
         }
 
-        with patch("action6_gather._checkpoint_settings", side_effect=_fake_settings):
+        module_ref = sys.modules.get(__name__)
+        if module_ref is None:
+            raise AssertionError("Module reference unavailable for checkpoint patching")
+
+        with patch.object(module_ref, "_checkpoint_settings", side_effect=_fake_settings):
             _clear_checkpoint_state()
             start_page, resumed, checkpoint_data = _determine_start_page(None)
             assert start_page == 1 and not resumed and checkpoint_data is None

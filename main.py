@@ -8,8 +8,6 @@ all automation workflows including DNA match gathering, inbox processing,
 messaging, and genealogical research tools.
 """
 
-# pyright: reportGeneralTypeIssues=false
-
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
 import os
 
@@ -34,8 +32,8 @@ import threading
 import time
 import webbrowser
 from collections.abc import Sequence
-from functools import wraps
 from datetime import datetime
+from functools import wraps
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # === LOCAL IMPORTS ===
@@ -70,6 +68,11 @@ SendMessagesAction = Callable[["SessionManager"], bool]
 MatchRecord = dict[str, Any]
 MatchList = list[MatchRecord]
 SearchAPIFunc = Callable[["SessionManager", dict[str, Any], int], MatchList]
+RowBuilder = Callable[[MatchRecord], list[str]]
+MatchAnalyzer = Callable[[Any, MatchRecord, Optional[str], str], None]
+SupplementaryHandler = Callable[[MatchRecord, "SessionManager"], None]
+IDNormalizer = Callable[[Optional[str]], Optional[str]]
+AnalyticsExtrasSetter = Callable[[dict[str, Any]], None]
 
 
 def _import_send_messages_action() -> SendMessagesAction:
@@ -134,6 +137,53 @@ def _get_api_manager(session_manager: "SessionManager") -> Optional[APIManagerPr
     """Safely retrieve the session's APIManager-like component."""
 
     return cast(Optional[APIManagerProtocol], getattr(session_manager, "api_manager", None))
+
+
+def _load_result_row_builders() -> tuple[RowBuilder, RowBuilder]:
+    """Load row builder helpers from GEDCOM and API modules with type safety."""
+
+    action10_module = import_module("action10")
+    api_search_module = import_module("api_search_core")
+    gedcom_builder = cast(RowBuilder, getattr(action10_module, "_create_table_row"))
+    api_builder = cast(RowBuilder, getattr(api_search_module, "_create_table_row_for_candidate"))
+    return gedcom_builder, api_builder
+
+
+def _load_match_analysis_helpers() -> tuple[IDNormalizer, MatchAnalyzer, SupplementaryHandler]:
+    """Load helper functions used when rendering match details."""
+
+    action10_module = import_module("action10")
+    api_search_module = import_module("api_search_core")
+    normalize_id = cast(IDNormalizer, getattr(action10_module, "_normalize_id"))
+    analyze_top_match = cast(MatchAnalyzer, getattr(action10_module, "analyze_top_match"))
+    handle_supplementary = cast(
+        SupplementaryHandler,
+        getattr(api_search_module, "_handle_supplementary_info_phase"),
+    )
+    return normalize_id, analyze_top_match, handle_supplementary
+
+
+def _set_comparison_mode_analytics(gedcom_count: int, api_count: int) -> None:
+    """Record analytics metadata when comparison mode runs successfully."""
+
+    try:
+        analytics_module = import_module("analytics")
+    except Exception:
+        return
+
+    setter = getattr(analytics_module, "set_transient_extras", None)
+    if not callable(setter):
+        return
+
+    extras = {
+        "comparison_mode": True,
+        "gedcom_candidates": gedcom_count,
+        "api_candidates": api_count,
+    }
+    try:
+        cast(AnalyticsExtrasSetter, setter)(extras)
+    except Exception:
+        logger.debug("Analytics extras setter failed", exc_info=True)
 
 
 def _initialize_db_manager_engine(db_manager: DatabaseManagerProtocol) -> tuple[Any, Any]:
@@ -1788,21 +1838,20 @@ def _perform_gedcom_search(
 ) -> tuple[Any, MatchList]:
     """Perform GEDCOM search and return data and matches."""
 
-    from action10 import (
-        _build_filter_criteria,  # pyright: ignore[reportPrivateUsage]
-        filter_and_score_individuals,
-        load_gedcom_data,
-    )
+    action10_module = import_module("action10")
+    load_gedcom_data_fn = cast(Callable[[Path], Any], getattr(action10_module, "load_gedcom_data"))
+    build_filter_criteria = cast(Callable[[dict[str, Any]], Any], getattr(action10_module, "_build_filter_criteria"))
+    filter_and_score = cast(Callable[..., MatchList], getattr(action10_module, "filter_and_score_individuals"))
 
     gedcom_data: Any = None
     gedcom_matches: MatchList = []
 
     if gedcom_path is not None:
         try:
-            gedcom_data = load_gedcom_data(gedcom_path)
-            filter_criteria = _build_filter_criteria(criteria)
+            gedcom_data = load_gedcom_data_fn(gedcom_path)
+            filter_criteria = build_filter_criteria(criteria)
             normalized_date_flex: dict[str, Any] = date_flex or {}
-            gedcom_matches = filter_and_score_individuals(
+            gedcom_matches = filter_and_score(
                 gedcom_data,
                 filter_criteria,
                 criteria,
@@ -1893,13 +1942,12 @@ def _log_result_table(label: str, rows: list[list[str]], total: int, headers: li
 
 def _display_search_results(gedcom_matches: MatchList, api_matches: MatchList, max_to_show: int) -> None:
     """Display GEDCOM and API search results in tables."""
-    from action10 import _create_table_row as _create_row_gedcom  # pyright: ignore[reportPrivateUsage]
-    from api_search_core import (
-        _create_table_row_for_candidate as _create_row_api,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
-    )
-
-    create_row_gedcom = cast(Callable[[MatchRecord], list[str]], _create_row_gedcom)
-    create_row_api = cast(Callable[[MatchRecord], list[str]], _create_row_api)
+    try:
+        create_row_gedcom, create_row_api = _load_result_row_builders()
+    except Exception as exc:
+        logger.error(f"Unable to load search-result row builders: {exc}", exc_info=True)
+        print("Unable to display search results (internal helper unavailable).")
+        return
 
     headers = ["ID", "Name", "Birth", "Birth Place", "Death", "Death Place", "Total"]
     left_rows: list[list[str]] = [create_row_gedcom(m) for m in gedcom_matches[:max_to_show]]
@@ -1929,32 +1977,33 @@ def _display_detailed_match_info(
     session_manager: SessionManager,
 ) -> None:
     """Display detailed information for top match."""
-    from action10 import (  # pyright: ignore[reportPrivateUsage]
-        _normalize_id as _normalize_gedcom_id,  # pyright: ignore[reportPrivateUsage]
-        analyze_top_match,
-    )
-    from api_search_core import (
-        _handle_supplementary_info_phase,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
-    )
-
-    handle_supplementary = cast(
-        Callable[[MatchRecord, SessionManager], None],
-        _handle_supplementary_info_phase,
-    )
+    normalize_id: Optional[IDNormalizer] = None
+    analyze_top_match_fn: Optional[MatchAnalyzer] = None
+    supplementary_handler: Optional[SupplementaryHandler] = None
 
     try:
-        if gedcom_matches and gedcom_data is not None:
-            ref_norm = _normalize_gedcom_id(_reference_person_id_raw) if _reference_person_id_raw else None
-            analyze_top_match(
-                gedcom_data, gedcom_matches[0], ref_norm,
-                _reference_person_name or "Reference Person"
+        normalize_id, analyze_top_match_fn, supplementary_handler = _load_match_analysis_helpers()
+    except Exception as exc:
+        logger.error(f"Unable to load match analysis helpers: {exc}", exc_info=True)
+
+    try:
+        if gedcom_matches and gedcom_data is not None and analyze_top_match_fn is not None:
+            if _reference_person_id_raw and normalize_id is not None:
+                ref_norm = normalize_id(_reference_person_id_raw)
+            else:
+                ref_norm = _reference_person_id_raw
+            analyze_top_match_fn(
+                gedcom_data,
+                gedcom_matches[0],
+                ref_norm,
+                _reference_person_name or "Reference Person",
             )
     except Exception as e:
         logger.error(f"GEDCOM family/relationship display failed: {e}")
 
     try:
-        if api_matches and not gedcom_matches:
-            handle_supplementary(api_matches[0], session_manager)
+        if api_matches and not gedcom_matches and supplementary_handler is not None:
+            supplementary_handler(api_matches[0], session_manager)
     except Exception as e:
         logger.error(f"API family/relationship display failed: {e}")
 
@@ -1999,15 +2048,7 @@ def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bo
     )
 
     # Analytics context
-    try:
-        from analytics import set_transient_extras
-        set_transient_extras({
-            "comparison_mode": True,
-            "gedcom_candidates": len(gedcom_matches),
-            "api_candidates": len(api_matches),
-        })
-    except Exception:
-        pass
+    _set_comparison_mode_analytics(len(gedcom_matches), len(api_matches))
 
     return bool(gedcom_matches or api_matches)
 
@@ -2016,24 +2057,46 @@ def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bo
 # End of run_action11_wrapper
 
 
+def _get_windows_console_handles() -> tuple[Optional[Any], Optional[Any]]:
+    """Return kernel32/user32 handles when available on Windows."""
+
+    if os.name != "nt":
+        return None, None
+
+    try:
+        import ctypes
+    except Exception:
+        return None, None
+
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return None, None
+
+    kernel32 = getattr(windll, "kernel32", None)
+    user32 = getattr(windll, "user32", None)
+    return kernel32, user32
+
+
 def _set_windows_console_focus() -> None:
     """Ensure terminal window has focus on Windows."""
+
+    kernel32, user32 = _get_windows_console_handles()
+    if kernel32 is None or user32 is None:
+        return
+
     try:
-        if os.name == 'nt':  # Windows
-            import ctypes
-
-            # Get console window handle
-            kernel32 = ctypes.windll.kernel32
-            user32 = ctypes.windll.user32
-
-            # Get console window
-            console_window = kernel32.GetConsoleWindow()
-            if console_window:
-                # Bring console window to foreground
-                user32.SetForegroundWindow(console_window)
-                user32.ShowWindow(console_window, 9)  # SW_RESTORE
+        console_window = kernel32.GetConsoleWindow()
     except Exception:
-        pass  # Silently ignore focus errors
+        return
+
+    if not console_window:
+        return
+
+    try:
+        user32.SetForegroundWindow(console_window)
+        user32.ShowWindow(console_window, 9)  # SW_RESTORE
+    except Exception:
+        logger.debug("Unable to focus Windows console window", exc_info=True)
 
 
 def _print_config_error_message() -> None:
