@@ -37,8 +37,6 @@ R = TypeVar('R')
 from test_framework import TestSuite, suppress_logging
 from test_utilities import create_standard_test_runner
 
-# --- Test framework imports ---
-
 
 class CircuitState(Enum):
     """Circuit breaker states."""

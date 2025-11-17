@@ -71,8 +71,8 @@ from core.error_handling import (  # type: ignore[import-not-found]
     DataValidationError,
     FatalError,
     RetryableError,
+    api_retry,
     error_context,
-    retry_on_failure,
     timeout_protection,
 )
 
@@ -2902,7 +2902,7 @@ def delete_database(
 # --- Backup and Recovery ---
 
 
-@retry_on_failure(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
+@api_retry(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
 def _validate_backup_paths() -> tuple[Path, Path, Path]:
     """Validate and return database and backup paths."""
     db_path = config_schema.database.database_file

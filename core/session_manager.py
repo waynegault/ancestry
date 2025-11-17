@@ -16,6 +16,7 @@ import os
 import sys
 import warnings
 from contextlib import suppress
+from enum import Enum
 
 _original_stderr = None
 
@@ -121,6 +122,25 @@ from observability.metrics_registry import metrics
 # Use global cached config instance
 
 
+class SessionLifecycleState(Enum):
+    """Lifecycle states enforced by SessionManager.
+
+    Diagram:
+        UNINITIALIZED ──(request readiness)──▶ RECOVERING ──(success)──▶ READY
+              ▲                                                 │
+              └─────────────── (reset/close) ◀── DEGRADED ◀─────┘
+
+    READY represents a healthy browser/API session, DEGRADED captures
+    fatal readiness failures, and RECOVERING is used while rebuilding
+    state after resets or guard-triggered recoveries.
+    """
+
+    UNINITIALIZED = "UNINITIALIZED"
+    RECOVERING = "RECOVERING"
+    READY = "READY"
+    DEGRADED = "DEGRADED"
+
+
 class SessionManager:
     """
     Refactored SessionManager that orchestrates specialized managers.
@@ -140,6 +160,11 @@ class SessionManager:
     - Session state persistence across test runs
     - Lazy initialization for non-critical components
     - Background connection warming
+
+    PHASE 5.4 STATE MACHINE: Session lifecycle now follows explicit
+    states (UNINITIALIZED → RECOVERING → READY, with DEGRADED for
+    hard failures). Callers invoke guard_action() before session-level
+    work so exec_actn() can reset degraded sessions automatically.
     """
 
     def __init__(self, db_path: Optional[str] = None):
@@ -164,6 +189,12 @@ class SessionManager:
         # Session state
         self.session_ready: bool = False
         self.session_start_time: Optional[float] = None
+
+        # Lifecycle state tracking for guard enforcement
+        self._state_lock = threading.Lock()
+        self._state: SessionLifecycleState = SessionLifecycleState.UNINITIALIZED
+        self._state_reason: str = "Session not initialized"
+        self._state_changed_at: float = time.time()
 
         # PHASE 5.1: Session state caching for performance
         self._last_readiness_check: Optional[float] = None
@@ -464,6 +495,78 @@ class SessionManager:
 
         return True
 
+    # --- Lifecycle guard helpers ---
+
+    def _transition_state(self, target: SessionLifecycleState, reason: str) -> None:
+        """Internal helper to update lifecycle state with logging."""
+
+        with self._state_lock:
+            previous = self._state
+            self._state = target
+            self._state_reason = reason or previous.value
+            self._state_changed_at = time.time()
+
+            if target == SessionLifecycleState.READY:
+                self.session_ready = True
+            else:
+                self.session_ready = False
+
+        if previous != target:
+            logger.debug(
+                "Session lifecycle transition: %s → %s (%s)",
+                previous.value,
+                target.value,
+                reason,
+            )
+
+    def lifecycle_state(self) -> SessionLifecycleState:
+        """Return the current lifecycle state (thread-safe)."""
+
+        with self._state_lock:
+            return self._state
+
+    def get_state_snapshot(self) -> dict[str, Any]:
+        """Provide a snapshot of lifecycle state for diagnostics."""
+
+        with self._state_lock:
+            return {
+                "state": self._state.value,
+                "reason": self._state_reason,
+                "changed_at": self._state_changed_at,
+            }
+
+    def request_recovery(self, reason: str) -> None:
+        """Reset lifecycle state to UNINITIALIZED before rebuilding."""
+
+        self._last_readiness_check = None
+        self._transition_state(SessionLifecycleState.UNINITIALIZED, reason)
+
+    def guard_action(self, required_state: str, action_name: str) -> bool:
+        """Guard execution based on lifecycle state requirements."""
+
+        normalized_required = (required_state or "").lower()
+        if normalized_required == "db_ready":
+            return True
+
+        current_state = self.lifecycle_state()
+        if current_state == SessionLifecycleState.DEGRADED:
+            logger.warning(
+                "Action %s requires %s but session is DEGRADED; resetting lifecycle state before continuing",
+                action_name,
+                normalized_required,
+            )
+            self.request_recovery(f"{action_name} reset from DEGRADED state")
+            return True
+
+        if current_state == SessionLifecycleState.UNINITIALIZED and normalized_required in {"driver_ready", "session_ready"}:
+            logger.debug(
+                "Action %s will bootstrap session lifecycle (state=%s)",
+                action_name,
+                current_state.value,
+            )
+
+        return True
+
     @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
@@ -487,8 +590,11 @@ class SessionManager:
             logger.debug(
                 f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)"
             )
-            self.session_ready = False
             self._last_readiness_check = None
+            self._transition_state(
+                SessionLifecycleState.DEGRADED,
+                "Driver session expired during cached readiness check",
+            )
             return False
 
         logger.debug(
@@ -560,15 +666,27 @@ class SessionManager:
             self._update_session_metrics()
             return cached_result
 
+        readiness_reason = f"{action_name or 'unknown_action'} readiness validation"
+        self._transition_state(SessionLifecycleState.RECOVERING, readiness_reason)
+
         # Ensure driver is live if browser is needed (with optimization)
         if self.browser_manager.browser_needed and not self.browser_manager.ensure_driver_live(action_name):
             logger.error("Failed to ensure driver live.")
-            self.session_ready = False
+            self._transition_state(
+                SessionLifecycleState.DEGRADED,
+                "Driver live check failed",
+            )
             self._update_session_metrics()
             return False
 
         # Perform readiness validation
-        self.session_ready = self._perform_readiness_validation(action_name, skip_csrf)
+        readiness_ok = self._perform_readiness_validation(action_name, skip_csrf)
+
+        if readiness_ok:
+            self._transition_state(SessionLifecycleState.READY, readiness_reason)
+        else:
+            self._transition_state(SessionLifecycleState.DEGRADED, readiness_reason)
+        self.session_ready = readiness_ok
 
         # PHASE 5.1: Cache the readiness check result
         self._last_readiness_check = time.time()
@@ -578,7 +696,7 @@ class SessionManager:
             f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}"
         )
         self._update_session_metrics()
-        return self.session_ready
+        return readiness_ok
 
     def verify_sess(self) -> bool:
         """
@@ -1335,8 +1453,8 @@ class SessionManager:
         self.api_manager.clear_identifiers()
 
         # Reset session state
-        self.session_ready = False
         self.session_start_time = None
+        self._transition_state(SessionLifecycleState.UNINITIALIZED, "Session fully closed")
         self._update_session_metrics(force_zero=True)
 
         logger.debug("Session closed.")
@@ -1385,9 +1503,9 @@ class SessionManager:
 
     def _reset_session_state(self) -> None:
         """Reset internal session state flags."""
-        self.session_ready = False
         self.session_start_time = None
         self._db_init_attempted = False
+        self._transition_state(SessionLifecycleState.UNINITIALIZED, "Session state reset")
         self._db_ready = False
         self._update_session_metrics(force_zero=True)
 
@@ -2624,13 +2742,13 @@ def _test_force_session_restart() -> None:
     sm = SessionManager()
 
     # Set up session state
-    sm.session_ready = True
+    sm._transition_state(SessionLifecycleState.READY, "test setup")
     sm.session_start_time = time.time()
     sm._db_init_attempted = True
     sm._db_ready = True
 
     # Initial state verification
-    assert sm.session_ready is True, "Session should be ready initially"
+    assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be ready initially"
     assert sm._db_ready is True, "DB should be ready initially"
 
     # Call force_session_restart
@@ -2640,7 +2758,7 @@ def _test_force_session_restart() -> None:
     assert result is False, "Force restart should always return False"
 
     # Verify session state reset
-    assert sm.session_ready is False, "Session should be marked not ready"
+    assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset to UNINITIALIZED"
     assert sm.session_start_time is None, "Session start time should be None"
     assert sm._db_init_attempted is False, "DB init attempted should be reset"
     assert sm._db_ready is False, "DB ready should be reset"
@@ -2657,7 +2775,7 @@ def _test_watchdog_integration_with_session_restart() -> None:
         restart_called.append(result)
 
     # Set up session state
-    sm.session_ready = True
+    sm._transition_state(SessionLifecycleState.READY, "watchdog test setup")
 
     # Create watchdog with short timeout
     watchdog = APICallWatchdog(timeout_seconds=0.5)
@@ -2669,7 +2787,7 @@ def _test_watchdog_integration_with_session_restart() -> None:
     # Verify restart was called
     assert len(restart_called) == 1, "Restart callback should have been called"
     assert restart_called[0] is False, "Restart should return False"
-    assert sm.session_ready is False, "Session should be marked not ready after restart"
+    assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset after restart"
 
     # Cleanup
     watchdog.cancel()
@@ -2684,12 +2802,12 @@ def _test_session_expiry_simulation() -> None:
     sm = SessionManager()
 
     # Setup valid session state
-    sm.session_ready = True
+    sm._transition_state(SessionLifecycleState.READY, "expiry test setup")
     sm.session_start_time = time.time() - 2500  # 41+ minutes ago (expired)
     sm._db_ready = True
 
     # Verify initial state
-    assert sm.session_ready is True, "Session should be marked ready initially"
+    assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be marked ready initially"
 
     # Simulate session expiry check
     session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
@@ -2702,7 +2820,7 @@ def _test_session_expiry_simulation() -> None:
 
     # Verify session was reset
     assert result is False, "Force restart should return False"
-    assert sm.session_ready is False, "Session should be marked not ready after expiry"
+    assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset after expiry"
     assert sm.session_start_time is None, "Session start time should be cleared"
     assert sm._db_ready is False, "DB ready flag should be reset"
 
@@ -2764,7 +2882,7 @@ def _test_proactive_session_refresh_timing() -> None:
 
     # Setup session at 25 minutes old (refresh threshold with 15-min buffer)
     sm.session_start_time = time.time() - 1500  # 25 minutes
-    sm.session_ready = True
+    sm._transition_state(SessionLifecycleState.READY, "proactive refresh test")
 
     # Check age
     session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
@@ -2803,6 +2921,33 @@ def _test_retry_helper_alignment_session_manager() -> None:
         assert settings.get("backoff_factor") == api_policy.backoff_factor, f"{method_name} backoff_factor mismatch"
         assert settings.get("base_delay") == api_policy.initial_delay_seconds, f"{method_name} base_delay mismatch"
         assert settings.get("max_delay") == api_policy.max_delay_seconds, f"{method_name} max_delay mismatch"
+
+
+def _test_session_lifecycle_transitions() -> None:
+    """Validate lifecycle state machine transitions and guards."""
+
+    sm = SessionManager()
+
+    snapshot = sm.get_state_snapshot()
+    assert snapshot["state"] == SessionLifecycleState.UNINITIALIZED.value, "Initial state should be UNINITIALIZED"
+
+    sm._transition_state(SessionLifecycleState.RECOVERING, "test transition")
+    assert sm.lifecycle_state() is SessionLifecycleState.RECOVERING, "Should transition to RECOVERING"
+    assert sm.session_ready is False, "session_ready should be False when recovering"
+
+    sm._transition_state(SessionLifecycleState.READY, "ready test")
+    assert sm.lifecycle_state() is SessionLifecycleState.READY, "Should transition to READY"
+    assert sm.session_ready is True, "session_ready should mirror READY state"
+
+    sm._transition_state(SessionLifecycleState.DEGRADED, "failure simulation")
+    assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "Should transition to DEGRADED"
+    assert sm.session_ready is False, "session_ready should be False when degraded"
+
+    sm.guard_action("session_ready", "unit_test")
+    assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Guard should reset DEGRADED state for recovery"
+
+    sm.request_recovery("manual reset")
+    assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "request_recovery should reset to UNINITIALIZED"
 
 
 def core_session_manager_module_tests() -> bool:
@@ -2993,6 +3138,14 @@ def core_session_manager_module_tests() -> bool:
             "Ensures SessionManager API helpers use api_retry with telemetry settings",
             "Inspect retry decorator metadata for get_csrf/get_my_* helpers",
             "Helper marker is api_retry and settings match config_schema.retry_policies.api",
+        )
+
+        suite.run_test(
+            "Session lifecycle state machine",
+            _test_session_lifecycle_transitions,
+            "Lifecycle states transition through UNINITIALIZED→RECOVERING→READY/DEGRADED with guard resets",
+            "Validate lifecycle guard and transition helpers",
+            "Ensures guard_action resets DEGRADED state and transitions toggle session_ready consistently",
         )
 
         suite.run_test(

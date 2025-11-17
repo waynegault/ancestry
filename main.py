@@ -583,6 +583,8 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
     if required_state == "session_ready":
         # Skip CSRF check for Action 10 (cookies available after navigation)
         skip_csrf = (choice in ["10"])
+        if not session_manager.guard_action(required_state, action_name):
+            return False
         return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
 
     return True

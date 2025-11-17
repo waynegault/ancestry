@@ -28,6 +28,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
 - ✅ **AI Quality Telemetry Enhancements** - Prompt telemetry now records provider metadata, scoring inputs, provider-scoped CLI filters, and automatic regression alerts
 - ✅ **Comprehensive Retry Strategy** - New `api_retry`/`selenium_retry` helpers draw settings from `config_schema.retry_policies` and regression tests in Actions 6/7 plus SessionManager ensure decorators stay in lockstep with telemetry tuning
+- ✅ **Session State Machine Guardrails** - `SessionLifecycleState` enum, lifecycle diagnostics, and `guard_action()` enforcement ensure `exec_actn()` resets degraded sessions before work begins, preventing stale driver/API usage
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

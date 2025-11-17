@@ -10,8 +10,9 @@ All open work is captured in the single checklist below. Address items in priori
    Unify the API and Selenium retry decorators so both channels share tuned attempt counts, jitter, and stop conditions derived from recent telemetry. Success = a single configuration surface plus regression coverage in `action6_gather.py`, `action7_inbox.py`, and `core/session_manager.py`.
    *2025-11-17*: Added `api_retry`/`selenium_retry` helpers wired to `config_schema.retry_policies`, migrated Action 6/7 + SessionManager call sites, and shipped regression tests that assert helper usage and telemetry-aligned settings.
 
-- [ ] **Session State Machine** (Est. 4h)
+- [x] **Session State Machine** (Est. 4h)
    Formalize explicit lifecycle states for `SessionManager` (e.g., UNINITIALIZED → READY → DEGRADED) with guard methods that callers can interrogate instead of ad-hoc readiness checks. Success = state diagram in code comments and enforcement inside `exec_actn()`.
+   *2025-11-18*: Added `SessionLifecycleState` enum with diagram, lifecycle guard helpers, and `guard_action()` enforcement inside `exec_actn()`. Readiness now transitions through RECOVERING → READY and degrades safely, with regression coverage in `core/session_manager.py` module tests.
 
 - [ ] **Logging Standardization** (Est. 2h)
    Normalize log levels, prefixes, and emoji usage across action modules and shared utilities so operators can grep consistently. Success = shared helper in `logging_utils.py` plus updated calls in Actions 6–10.

@@ -63,10 +63,10 @@ from standard_imports import setup_module  # type: ignore[import-not-found]
 logger = setup_module(globals(), __name__)
 
 from core.error_handling import (  # type: ignore[import-not-found]
+    api_retry,
     circuit_breaker,
     error_context,
     graceful_degradation,
-    retry_on_failure,
     timeout_protection,
 )
 
@@ -1358,7 +1358,7 @@ def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
 # search criteria before loading GEDCOM data
 
 
-@retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
+@api_retry(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
 @graceful_degradation(fallback_value=None)
@@ -2382,6 +2382,14 @@ def test_main_patch() -> None:
     # Return nothing (part of TestSuite)
 
 
+def _test_retry_helper_alignment_action10() -> None:
+    """Ensure action10.main leverages the telemetry-derived API retry helper."""
+    helper_name = getattr(main, "__retry_helper__", None)
+    assert helper_name == "api_retry", (
+        f"action10.main should use api_retry helper, found: {helper_name}"
+    )
+
+
 @fast_test_cache
 @error_context("action10_module_tests")
 def action10_module_tests() -> bool:
@@ -2395,6 +2403,14 @@ def action10_module_tests() -> bool:
 
     # Register meaningful tests only
     _register_input_validation_tests(suite, debug_wrapper, test_sanitize_input, test_get_validated_year_input_patch)
+
+    suite.run_test(
+        "Retry helper alignment",
+        _test_retry_helper_alignment_action10,
+        "action10.main() uses api_retry helper derived from telemetry",
+        "Retry helper configuration",
+        "Verifies action10 main workflow is decorated with api_retry helper for consistent retry tuning",
+    )
 
     # Skip GEDCOM-dependent tests when SKIP_SLOW_TESTS is set (for run_all_tests.py)
     skip_slow_tests = os.environ.get("SKIP_SLOW_TESTS", "").lower() == "true"

@@ -68,9 +68,9 @@ from core.error_handling import (
     APIRateLimitError,
     NetworkTimeoutError,
     RetryableError,
+    api_retry,
     circuit_breaker,
     error_context,
-    retry_on_failure,
     timeout_protection,
 )
 
@@ -1258,7 +1258,7 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 # End of _get_owner_referer
 
 
-@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+@api_retry(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=5, recovery_timeout=60)
 # Helper functions for call_suggest_api
 

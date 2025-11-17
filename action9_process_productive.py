@@ -44,10 +44,10 @@ from config import config_schema
 from connection_resilience import with_connection_resilience
 from conversation_analytics import record_engagement_event, update_conversation_metrics
 from core.error_handling import (  # type: ignore[import-not-found]
+    api_retry,
     circuit_breaker,
     error_context,
     graceful_degradation,
-    retry_on_failure,
     timeout_protection,
 )
 from core.session_manager import SessionManager
@@ -2445,7 +2445,7 @@ class BatchCommitManager:
 
 
 @with_connection_resilience("Action 9: Productive Processing", max_recovery_attempts=3)
-@retry_on_failure(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better AI API handling
+@api_retry(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better AI API handling
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=2400)  # 40 minutes for productive message processing
 @graceful_degradation(fallback_value=False)
@@ -3878,6 +3878,14 @@ def _test_format_response_with_relationship_diagram() -> None:
     logger.info("✓ Response formatting with relationship diagram test passed")
 
 
+def _test_retry_helper_alignment_action9() -> None:
+    """Ensure process_productive_messages uses the centralized API retry helper."""
+    helper_name = getattr(process_productive_messages, "__retry_helper__", None)
+    assert helper_name == "api_retry", (
+        f"process_productive_messages should use api_retry helper, found: {helper_name}"
+    )
+
+
 # ==============================================
 # MAIN TEST SUITE
 # ==============================================
@@ -3916,6 +3924,7 @@ def action9_process_productive_module_tests() -> bool:
     test_ai_prompt = _test_generate_ai_response_prompt
     test_records_format = _test_format_response_with_records
     test_diagram_format = _test_format_response_with_relationship_diagram
+    test_retry_helper_alignment = _test_retry_helper_alignment_action9
 
     # Define all tests in a data structure to reduce complexity
     tests = [
@@ -3950,6 +3959,12 @@ def action9_process_productive_module_tests() -> bool:
          "Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
          "Circuit breaker decorator configuration reflects improved error handling",
          "Testing process_productive_messages() has proper circuit breaker configuration for production resilience"),
+
+        ("Retry helper alignment",
+         test_retry_helper_alignment,
+         "process_productive_messages() uses api_retry helper derived from telemetry",
+         "Retry helper configuration",
+         "Verifies process_productive_messages() is decorated with api_retry helper for consistent policy tuning"),
 
         ("Error handling for AI processing and utility functions",
          test_error_handling,

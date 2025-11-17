@@ -1020,6 +1020,29 @@ def retry_on_failure(
     return decorator
 
 
+try:  # Prefer modern telemetry-aware helpers when available
+    from error_handling import api_retry as _enhanced_api_retry  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - fallback handled below
+    _enhanced_api_retry = None
+
+
+if _enhanced_api_retry is not None:
+    api_retry = _enhanced_api_retry  # type: ignore[assignment]
+else:
+
+    def api_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
+        """Fallback helper mirroring telemetry marker semantics."""
+
+        base_decorator = retry_on_failure(**overrides)
+
+        def decorator(func: Callable[P, R]) -> Callable[P, R]:
+            wrapped = base_decorator(func)
+            setattr(wrapped, "__retry_helper__", "api_retry")
+            return wrapped
+
+        return decorator
+
+
 def circuit_breaker(
     failure_threshold: int = 5,
     recovery_timeout: int = 60,
