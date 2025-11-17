@@ -1776,6 +1776,81 @@ def _prepare_page_range(
     return last_page_to_process, total_pages_in_run
 
 
+def _build_coord_state(start: Optional[int], action_start_time: float) -> tuple[dict[str, Any], int]:
+    """Initialize gather state and determine effective start page."""
+
+    state = _initialize_gather_state()
+    state["run_started_at"] = action_start_time
+    state["requested_start_page"] = start
+    start_page, resumed_from_checkpoint, checkpoint_data = _determine_start_page(start)
+    state["effective_start_page"] = start_page
+    state["resume_from_checkpoint"] = resumed_from_checkpoint
+    state["checkpoint_metadata"] = checkpoint_data
+    return state, start_page
+
+
+def _log_resume_context(state: dict[str, Any], start_page: int) -> None:
+    """Emit consistent logging for action start and checkpoint resumes."""
+
+    _log_action_start(start_page)
+    if not state.get("resume_from_checkpoint"):
+        return
+
+    checkpoint_data = state.get("checkpoint_metadata")
+    planned_total = None
+    if isinstance(checkpoint_data, dict):
+        planned_total = checkpoint_data.get("total_pages_in_run")
+    logger.info(
+        "Checkpoint resume active: starting at page %d (planned total pages: %s)",
+        start_page,
+        planned_total if planned_total is not None else "unknown",
+    )
+
+
+def _execute_coord_run(
+    session_manager: SessionManager,
+    state: dict[str, Any],
+    start_page: int,
+) -> bool:
+    """Run the core Action 6 loop and return success flag."""
+
+    page_range = _prepare_page_range(session_manager, start_page, state)
+    if page_range is None:
+        return True
+
+    last_page_to_process, total_pages_in_run = page_range
+    initial_matches_for_loop = state["matches_on_current_page"]
+    loop_success = _main_page_processing_loop(
+        session_manager,
+        start_page,
+        last_page_to_process,
+        total_pages_in_run,
+        initial_matches_for_loop,
+        state,
+    )
+    return bool(state.get("final_success", True)) and loop_success
+
+
+def _handle_coord_failure(exc: Exception) -> None:
+    """Centralized exception logging for coord failures."""
+
+    if isinstance(exc, ConnectionError):
+        logger.critical(
+            f"ConnectionError during coord execution: {exc}",
+            exc_info=True,
+        )
+        return
+
+    if isinstance(exc, MaxApiFailuresExceededError):
+        logger.critical(
+            f"Halting run due to excessive critical API failures: {exc}",
+            exc_info=False,
+        )
+        return
+
+    logger.error(f"Critical error during coord execution: {exc}", exc_info=True)
+
+
 def coord(
     session_manager: SessionManager, start: Optional[int] = None
 ) -> bool:  # Uses config schema
@@ -1792,68 +1867,28 @@ def coord(
     """
     action_start_time = time.time()
 
-    # Validate Session State
     _validate_session_state(session_manager)
+    state, start_page = _build_coord_state(start, action_start_time)
+    _log_resume_context(state, start_page)
 
-    # Initialize state
-    state = _initialize_gather_state()
-    state["run_started_at"] = action_start_time
-    state["requested_start_page"] = start
-    start_page, resumed_from_checkpoint, checkpoint_data = _determine_start_page(start)
-    state["effective_start_page"] = start_page
-    state["resume_from_checkpoint"] = resumed_from_checkpoint
-    state["checkpoint_metadata"] = checkpoint_data
-
-    # Log action start
-    _log_action_start(start_page)
-    if resumed_from_checkpoint:
-        planned_total = None
-        if isinstance(checkpoint_data, dict):
-            planned_total = checkpoint_data.get("total_pages_in_run")
-        logger.info(
-            "Checkpoint resume active: starting at page %d (planned total pages: %s)",
-            start_page,
-            planned_total if planned_total is not None else "unknown",
-        )
+    keyboard_interrupt: Optional[KeyboardInterrupt] = None
 
     try:
-        page_range = _prepare_page_range(session_manager, start_page, state)
-        if page_range is None:
-            state["final_success"] = True
-            return True
-
-        last_page_to_process, total_pages_in_run = page_range
-        # Main Processing Loop
-        initial_matches_for_loop = state["matches_on_current_page"]
-        loop_success = _main_page_processing_loop(
-            session_manager, start_page, last_page_to_process, total_pages_in_run,
-            initial_matches_for_loop, state
-        )
-        state["final_success"] = state["final_success"] and loop_success
-
-    except KeyboardInterrupt:
+        state["final_success"] = _execute_coord_run(session_manager, state, start_page)
+    except KeyboardInterrupt as interruption:
         logger.warning("Keyboard interrupt detected. Stopping match gathering.")
         state["final_success"] = False
-    except ConnectionError as coord_conn_err:
-        logger.critical(f"ConnectionError during coord execution: {coord_conn_err}", exc_info=True)
+        keyboard_interrupt = interruption
+    except Exception as exc:
         state["final_success"] = False
-    except MaxApiFailuresExceededError as api_halt_err:
-        logger.critical(f"Halting run due to excessive critical API failures: {api_halt_err}", exc_info=False)
-        state["final_success"] = False
-    except Exception as e:
-        logger.error(f"Critical error during coord execution: {e}", exc_info=True)
-        state["final_success"] = False
+        _handle_coord_failure(exc)
     finally:
-        # Final Summary Logging
         _finalize_checkpoint_after_run(state)
         _log_final_results(session_manager, state, action_start_time)
 
-        # Re-raise KeyboardInterrupt if that was the cause
-        exc_info_tuple = sys.exc_info()
-        if exc_info_tuple[0] is KeyboardInterrupt:
+        if keyboard_interrupt is not None:
             logger.info("Re-raising KeyboardInterrupt after cleanup.")
-            if exc_info_tuple[1] is not None:
-                raise exc_info_tuple[1].with_traceback(exc_info_tuple[2])
+            raise keyboard_interrupt
 
     return state["final_success"]
 
