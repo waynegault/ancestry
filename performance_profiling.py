@@ -91,8 +91,6 @@ def configure_profiling(
         sort_by: Stat sorting key (cumulative, time, calls, etc.)
         top_n_functions: Number of functions to show in reports
     """
-    global _profile_config
-
     _profile_config.enabled = enabled
     if output_dir:
         _profile_config.output_dir = output_dir
@@ -502,9 +500,8 @@ def module_tests() -> bool:
         test_stats_path = _profile_config.output_dir / "test_report.stats"
 
         @profile_with_cprofile(output_file="test_report.stats")
-        def dummy_func():
-            total = sum(range(100))
-            return total
+        def dummy_func() -> int:
+            return sum(range(100))
 
         dummy_func()
 
