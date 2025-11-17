@@ -7,8 +7,10 @@ All open work is captured in the single checklist below. Address items in priori
   - ✅ Added `log_action_banner` helper in `core/logging_utils.py` with start/success/failure stages and detail formatting.
   - ✅ Actions 6–10 and shared `utils.log_action_status()` now emit standardized lifecycle banners with consistent emoji/prefix payloads.
 
-- [ ] **Dead Code Cleanup** (Est. 2h)
+- [x] **Dead Code Cleanup** (Est. 2h)
    Audit for legacy helpers/tests left from Phase 5 refactors and remove or quarantine them. Prioritize `connection_resilience.py`, legacy browser recovery code, and redundant cache utilities.
+  - ✅ Archived 5 standalone diagnostic scripts to `scripts/archive/`: ai_api_test.py, analyze_test_quality.py, comprehensive_auth_tests.py, lm_studio_manager.py, standardize_test_runners.py
+  - ✅ Verified connection_resilience.py, diagnose_chrome.py, grafana_checker.py, gedcom_cache.py are actively used in production
 
 - [ ] **Centralize Test Utilities** (Est. 3h)
    Finish moving duplicated helpers into `test_utilities.py`, including migrating remaining temp-file usage in `logging_config.py`, `diagnose_chrome.py`, and `config/config_manager.py`.

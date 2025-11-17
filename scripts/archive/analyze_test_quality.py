@@ -337,4 +337,3 @@ if __name__ == "__main__":
     analyzer = TestQualityAnalyzer()
     analyzer.analyze_all_modules()
     analyzer.print_report()
-
