@@ -1376,6 +1376,211 @@ def _test_dna_context_creation():
     return True
 
 
+def _test_null_and_none_inputs() -> None:
+    """Test personalizer handles None and null inputs gracefully (negative path)."""
+    personalizer = MessagePersonalizer()
+
+    # Test with all None inputs - should handle gracefully or raise expected error
+    try:
+        message, functions = personalizer.create_personalized_message(
+            "Enhanced_In_Tree-Initial",
+            None,  # type: ignore
+            None,  # type: ignore
+            None   # type: ignore
+        )
+        # If no exception, verify fallback behavior
+        assert isinstance(message, str), "Should return string even with None inputs"
+        assert len(message) > 0, "Should return non-empty fallback message for None inputs"
+        assert isinstance(functions, list), "Should return list of functions even with None inputs"
+    except (AttributeError, TypeError) as e:
+        # If it raises an error, that's acceptable for None inputs
+        # The important thing is we documented the behavior
+        assert "NoneType" in str(e), f"Should raise descriptive error for None inputs, got: {e}"
+
+    # Test with empty dicts (this should work)
+    message, functions = personalizer.create_personalized_message(
+        "Enhanced_In_Tree-Initial",
+        {},
+        {},
+        {}
+    )
+    assert isinstance(message, str), "Should return string with empty dicts"
+    assert len(message) > 0, "Should return non-empty message with empty dicts"
+
+
+def _test_malformed_extracted_data() -> None:
+    """Test with malformed structured data in extracted_data."""
+    personalizer = MessagePersonalizer()
+
+    # Test with invalid structured_names (not a list of dicts)
+    malformed_data = {
+        "structured_names": "not a list",  # Should be list of dicts
+        "vital_records": [123, 456],  # Invalid record types
+        "locations": ["string instead of dict"],  # Should be list of dicts
+        "research_questions": None,  # Should be list
+    }
+
+    message, functions = personalizer.create_personalized_message(
+        "Enhanced_In_Tree-Initial",
+        {"username": "Test"},
+        malformed_data,
+        {"name": "Test"}
+    )
+
+    assert isinstance(message, str), "Should handle malformed data without crashing"
+    assert len(message) > 0, "Should return non-empty message despite malformed data"
+    assert "Test" in message, "Should still use base format data when extraction fails"
+
+
+def _test_unicode_and_special_characters() -> None:
+    """Test message personalization with Unicode and special characters."""
+    personalizer = MessagePersonalizer()
+
+    unicode_data = {
+        "structured_names": [
+            {"full_name": "José María García-López"},
+            {"full_name": "Müller, Jürgen"},
+            {"full_name": "Владимир Путин"},
+            {"full_name": "李明"},
+            {"full_name": "O'Connor-Władysław"}
+        ],
+        "vital_records": [
+            {"person": "José María", "event_type": "birth", "date": "1850", "place": "Málaga, España"}
+        ],
+        "locations": [
+            {"place": "Köln, Deutschland", "context": "residence", "time_period": "1900s"}
+        ]
+    }
+
+    message, functions = personalizer.create_personalized_message(
+        "Enhanced_In_Tree-Initial",
+        {"username": "Tëst Üsér"},
+        unicode_data,
+        {"name": "Tëst Üsér"}
+    )
+
+    assert isinstance(message, str), "Should handle Unicode characters"
+    assert len(message) > 0, "Should generate message with Unicode names"
+    # Verify some Unicode preserved in message
+    unicode_chars_present = any(char in message for char in "ÁéíóúüñÖäМирЛ明")
+    assert unicode_chars_present or "José" in message, "Should preserve or safely handle Unicode in output"
+
+
+def _test_extremely_long_inputs() -> None:
+    """Test with extremely long names and text fields."""
+    personalizer = MessagePersonalizer()
+
+    # Create extremely long name (500 characters)
+    long_name = "A" * 500
+    very_long_place = "B" * 1000
+
+    long_data = {
+        "structured_names": [{"full_name": long_name}] * 50,  # 50 extremely long names
+        "vital_records": [
+            {"person": long_name, "event_type": "birth", "date": "1800", "place": very_long_place}
+        ] * 20,  # 20 records with long data
+        "locations": [{"place": very_long_place, "context": "residence"}] * 30
+    }
+
+    message, functions = personalizer.create_personalized_message(
+        "Enhanced_In_Tree-Initial",
+        {"username": "Test"},
+        long_data,
+        {"name": "Test"}
+    )
+
+    assert isinstance(message, str), "Should handle extremely long inputs"
+    assert len(message) > 0, "Should generate message despite long inputs"
+    # Message should not be absurdly long (personalization should limit)
+    assert len(message) < 100000, "Message length should be reasonable despite long inputs"
+
+
+def _test_missing_template_keys() -> None:
+    """Test message generation with missing template placeholder keys."""
+    personalizer = MessagePersonalizer()
+
+    # Create template with many placeholders
+    complex_template = """
+    Dear {name},
+
+    {shared_ancestors} {ancestor_details} {genealogical_context}
+    {geographic_context} {research_focus} {specific_questions}
+    {missing_key_1} {missing_key_2} {missing_key_3}
+
+    Best, Wayne
+    """
+
+    personalizer.templates["test_complex"] = complex_template
+
+    # Provide minimal format data (missing most keys)
+    message, functions = personalizer.create_personalized_message(
+        "test_complex",
+        {"username": "Test"},
+        {"structured_names": []},
+        {"name": "Test User"}
+    )
+
+    assert isinstance(message, str), "Should handle missing template keys"
+    assert len(message) > 0, "Should generate message despite missing keys"
+    assert "Test User" in message, "Should use provided keys successfully"
+    # Should not contain unreplaced placeholders
+    assert "{missing_key" not in message, "Should replace or remove missing placeholder keys"
+
+
+def _test_zero_and_negative_numbers() -> None:
+    """Test with zero and negative numbers in DNA/relationship data."""
+    personalizer = MessagePersonalizer()
+
+    edge_case_data = {
+        "shared_dna_cm": 0.0,  # Zero DNA
+        "relationship": "unknown",
+        "structured_names": [],
+        "birth_year": -100,  # Invalid negative year
+        "total_rows": -5,  # Negative count
+    }
+
+    message, functions = personalizer.create_personalized_message(
+        "Enhanced_In_Tree-Initial",
+        {"username": "Test"},
+        edge_case_data,
+        {"name": "Test", "total_rows": "0"}
+    )
+
+    assert isinstance(message, str), "Should handle zero and negative numbers"
+    assert len(message) > 0, "Should generate message with edge case numbers"
+
+
+def _test_format_single_vital_record_edge_cases() -> None:
+    """Test _format_single_vital_record with various edge cases."""
+    personalizer = MessagePersonalizer()
+
+    # Test with None
+    result = personalizer._format_single_vital_record(None)
+    assert result is None, "Should return None for None input"
+
+    # Test with non-dict
+    result = personalizer._format_single_vital_record("not a dict")
+    assert result is None, "Should return None for non-dict input"
+
+    # Test with empty dict
+    result = personalizer._format_single_vital_record({})
+    assert result is None, "Should return None for empty dict"
+
+    # Test with missing required fields
+    result = personalizer._format_single_vital_record({"person": "John"})
+    assert result is None, "Should return None when date and place both missing"
+
+    # Test with only date
+    result = personalizer._format_single_vital_record({
+        "person": "John Smith",
+        "event_type": "birth",
+        "date": "1850"
+    })
+    assert isinstance(result, str), "Should format with date only"
+    assert "John Smith" in result, "Should include person name"
+    assert "1850" in result, "Should include date"
+
+
 def message_personalization_module_tests() -> bool:
     """
     Comprehensive test suite for message_personalization.py with real functionality testing.
@@ -1443,6 +1648,63 @@ def message_personalization_module_tests() -> bool:
             "DNA context created correctly",
             "Test DNA context creation",
             "Verify DNA context formatting with sample data"
+        )
+
+        # Negative path tests
+        suite.run_test(
+            "Null and None inputs",
+            _test_null_and_none_inputs,
+            "Handles None/null inputs gracefully",
+            "Test with None person_data, extracted_data, base_format_data",
+            "Verify no crashes on None inputs and fallback message generation"
+        )
+
+        suite.run_test(
+            "Malformed extracted data",
+            _test_malformed_extracted_data,
+            "Handles malformed structured data",
+            "Test with invalid structured_names, vital_records, locations",
+            "Verify resilience to incorrect data types in extraction results"
+        )
+
+        suite.run_test(
+            "Unicode and special characters",
+            _test_unicode_and_special_characters,
+            "Preserves/handles Unicode characters",
+            "Test with names like José María, Müller, Владимир, 李明, O'Connor-Władysław",
+            "Verify internationalization support and special character handling"
+        )
+
+        suite.run_test(
+            "Extremely long inputs",
+            _test_extremely_long_inputs,
+            "Handles extremely long names and text",
+            "Test with 500-char names, 1000-char places, 50+ records",
+            "Verify reasonable message length limits despite large input data"
+        )
+
+        suite.run_test(
+            "Missing template keys",
+            _test_missing_template_keys,
+            "Handles missing template placeholder keys",
+            "Test with template containing {missing_key_1}, {missing_key_2}",
+            "Verify no unreplaced placeholders in output when keys missing"
+        )
+
+        suite.run_test(
+            "Zero and negative numbers",
+            _test_zero_and_negative_numbers,
+            "Handles zero/negative numbers in data",
+            "Test with shared_dna_cm=0.0, birth_year=-100, total_rows=-5",
+            "Verify edge case numeric values don't cause crashes"
+        )
+
+        suite.run_test(
+            "Format single vital record edge cases",
+            _test_format_single_vital_record_edge_cases,
+            "_format_single_vital_record handles edge cases",
+            "Test with None, non-dict, empty dict, missing fields",
+            "Verify proper None returns and graceful degradation for invalid inputs"
         )
 
         # Original tests

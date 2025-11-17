@@ -674,6 +674,153 @@ def test_recommendation_balance_logic() -> None:
     assert isinstance(r, list) and len(r) >= 2
 
 
+def test_invalid_gedcom_data() -> None:
+    """Test analyzer handles invalid GEDCOM data gracefully (negative path)."""
+    analyzer = GedcomIntelligenceAnalyzer()
+
+    # Test with None
+    result = analyzer.analyze_gedcom_data(None)
+    assert result is not None, "Analyzer should return result even with None input"
+    assert "error" in result, "Result should contain error field when given None"
+    assert result["individuals_analyzed"] == 0, "Should report 0 individuals analyzed for None input"
+
+    # Test with object missing required attributes
+    invalid_gedcom = type('InvalidGedcom', (), {})()
+    result = analyzer.analyze_gedcom_data(invalid_gedcom)
+    assert result is not None, "Analyzer should return result even with invalid object"
+    assert "error" in result, "Result should contain error field for invalid object"
+
+    # Test with empty indi_index
+    empty_gedcom = type('EmptyGedcom', (), {
+        'indi_index': {},
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+    result = analyzer.analyze_gedcom_data(empty_gedcom)
+    assert result is not None, "Analyzer should handle empty GEDCOM data"
+    assert result["individuals_analyzed"] == 0, "Should report 0 individuals for empty index"
+    assert len(result["gaps_identified"]) == 0, "Should find no gaps in empty dataset"
+
+
+def test_edge_case_dates() -> None:
+    """Test date conflict detection with edge cases."""
+    analyzer = GedcomIntelligenceAnalyzer()
+
+    # Test with malformed dates
+    mock_person = type('Person', (), {
+        'name': ['Test Person'],
+        'birth': [{'date': 'invalid date'}],
+        'death': [{'date': '1900'}]
+    })()
+
+    mock_gedcom = type('MockGedcom', (), {
+        'indi_index': {'I1': mock_person},
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+
+    # Should not crash on invalid dates
+    result = analyzer.analyze_gedcom_data(mock_gedcom)
+    assert result is not None, "Should handle malformed dates without crashing"
+    assert isinstance(result["conflicts_identified"], list), "Conflicts should be list even with invalid dates"
+
+
+def test_special_characters_in_names() -> None:
+    """Test analyzer handles special characters and Unicode in names."""
+    analyzer = GedcomIntelligenceAnalyzer()
+
+    # Test with various special characters
+    special_names = [
+        ['José María García'],
+        ['Müller, Johann'],
+        ['O\'Brien'],
+        ['MacLeòid'],
+        ['Władysław Żółtowski'],
+        [''],  # Empty name
+        [None],  # None name
+    ]
+
+    mock_people = {}
+    for i, name in enumerate(special_names):
+        mock_people[f'I{i}'] = type('Person', (), {'name': name})()
+
+    mock_gedcom = type('MockGedcom', (), {
+        'indi_index': mock_people,
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+
+    result = analyzer.analyze_gedcom_data(mock_gedcom)
+    assert result is not None, "Should handle special characters in names"
+    assert result["individuals_analyzed"] == len(special_names), \
+        f"Should analyze all {len(special_names)} individuals with special characters"
+
+
+def test_circular_relationships() -> None:
+    """Test analyzer handles circular relationship references."""
+    analyzer = GedcomIntelligenceAnalyzer()
+
+    # Create circular reference: I1 is parent of I2, I2 is parent of I1
+    mock_gedcom = type('MockGedcom', (), {
+        'indi_index': {
+            'I1': type('Person', (), {'name': ['Person 1']})(),
+            'I2': type('Person', (), {'name': ['Person 2']})()
+        },
+        'id_to_parents': {'I1': ['I2'], 'I2': ['I1']},
+        'id_to_children': {'I1': ['I2'], 'I2': ['I1']}
+    })()
+
+    # Should not crash or hang on circular references
+    result = analyzer.analyze_gedcom_data(mock_gedcom)
+    assert result is not None, "Should handle circular relationships without hanging"
+    assert isinstance(result["conflicts_identified"], list), "Should return conflicts list for circular refs"
+
+
+def test_empty_analysis_result_structure() -> None:
+    """Test _empty_analysis_result returns properly structured error response."""
+    analyzer = GedcomIntelligenceAnalyzer()
+    result = analyzer._empty_analysis_result()
+
+    # Verify all required keys are present
+    required_keys = [
+        "analysis_timestamp", "individuals_analyzed", "gaps_identified",
+        "conflicts_identified", "research_opportunities", "ai_insights",
+        "summary", "error"
+    ]
+    for key in required_keys:
+        assert key in result, f"Empty analysis result must include '{key}' key"
+
+    assert result["individuals_analyzed"] == 0, "Empty result should show 0 individuals analyzed"
+    assert isinstance(result["gaps_identified"], list), "gaps_identified must be a list"
+    assert isinstance(result["conflicts_identified"], list), "conflicts_identified must be a list"
+    assert len(result["gaps_identified"]) == 0, "Empty result should have no gaps"
+
+
+def test_large_dataset_performance() -> None:
+    """Test analyzer performs reasonably with larger mock datasets."""
+    analyzer = GedcomIntelligenceAnalyzer()
+    import time
+
+    # Create 1000 mock individuals
+    large_indi_index = {}
+    for i in range(1000):
+        large_indi_index[f'I{i}'] = type('Person', (), {'name': [f'Person {i}']})()
+
+    mock_gedcom = type('LargeGedcom', (), {
+        'indi_index': large_indi_index,
+        'id_to_parents': {},
+        'id_to_children': {}
+    })()
+
+    start_time = time.time()
+    result = analyzer.analyze_gedcom_data(mock_gedcom)
+    duration = time.time() - start_time
+
+    assert result is not None, "Should handle large dataset"
+    assert result["individuals_analyzed"] == 1000, "Should analyze all 1000 individuals"
+    assert duration < 5.0, f"Analysis of 1000 individuals should complete in <5s, took {duration:.2f}s"
+
+
 def gedcom_intelligence_module_tests() -> bool:
     """
     Comprehensive test suite for gedcom_intelligence.py with real functionality testing.
@@ -713,6 +860,55 @@ def gedcom_intelligence_module_tests() -> bool:
             "Recommendation list adapts based on gaps vs conflicts counts (basic smoke)",
             "Invoke _generate_ai_recommendations on empty analyzer state",
             "Validate recommendation generation logic",
+        )
+
+        # Edge case and negative-path tests
+        suite.run_test(
+            "Invalid GEDCOM data handling",
+            test_invalid_gedcom_data,
+            "Analyzer gracefully handles None, invalid objects, and empty datasets (negative path)",
+            "Test with None, missing attributes, and empty indi_index",
+            "Validate error handling returns proper structure without crashing",
+        )
+
+        suite.run_test(
+            "Edge case date handling",
+            test_edge_case_dates,
+            "Analyzer handles malformed and invalid dates without crashing",
+            "Test with invalid date strings and date conflicts",
+            "Validate date parsing robustness",
+        )
+
+        suite.run_test(
+            "Special characters in names",
+            test_special_characters_in_names,
+            "Analyzer handles Unicode, diacritics, apostrophes, and empty names",
+            "Test with José, Müller, O'Brien, MacLeòid, Władysław, empty, and None names",
+            "Validate Unicode and special character handling in person names",
+        )
+
+        suite.run_test(
+            "Circular relationship handling",
+            test_circular_relationships,
+            "Analyzer detects circular parent-child references without hanging",
+            "Test with I1 parent of I2, I2 parent of I1 circular reference",
+            "Validate circular relationship detection and conflict reporting",
+        )
+
+        suite.run_test(
+            "Empty analysis result structure",
+            test_empty_analysis_result_structure,
+            "Empty analysis result contains all required keys with proper types",
+            "Test _empty_analysis_result() returns complete error response structure",
+            "Validate error response completeness and type correctness",
+        )
+
+        suite.run_test(
+            "Large dataset performance",
+            test_large_dataset_performance,
+            "Analyzer completes analysis of 1000 individuals in <5 seconds",
+            "Test with 1000 mock individuals to validate performance",
+            "Validate scalability and performance with larger datasets",
         )
 
     return suite.finish_suite()

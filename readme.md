@@ -820,6 +820,73 @@ For issues or questions:
 - Modules without tests: `config/__init__.py` and `config/__main__.py` (acceptable)
 - Code quality metrics: now 100/100 across modules; 0 complexity warnings
 
+#### Testing Best Practices
+
+**1. Explicit Assertion Messages**
+All assertions should include descriptive error messages explaining what should happen:
+
+```python
+# Good - explicit message describing expected behavior
+assert isinstance(result, dict), "Should return dict even with None inputs"
+assert len(names) > 0, "Should return non-empty list for valid GEDCOM data"
+assert "José" in message, "Should preserve Unicode characters in output"
+
+# Bad - no context on failure
+assert isinstance(result, dict)
+assert len(names) > 0
+```
+
+**2. Edge-Case Coverage**
+Tests should cover:
+- **Null/None inputs**: `None`, empty dicts `{}`, empty lists `[]`
+- **Unicode & special characters**: José María, Müller, Владимир, 李明, O'Brien-Władysław
+- **Malformed data**: Wrong types, missing required fields, invalid structures
+- **Edge numbers**: Zero values, negative numbers, extremely large values
+- **Long inputs**: 500+ character names, 1000+ character text, 50+ records
+- **Missing template keys**: Placeholders with no data provided
+
+Example edge-case test structure:
+```python
+def _test_null_and_none_inputs() -> None:
+    """Test function handles None inputs gracefully."""
+    processor = MyProcessor()
+
+    # Test with None
+    result = processor.process(None)
+    assert result is not None, "Should return fallback for None input"
+
+    # Test with empty dict
+    result = processor.process({})
+    assert isinstance(result, dict), "Should handle empty dict without crashing"
+```
+
+**3. Negative-Path Testing**
+Test what happens when things go wrong:
+- Invalid object types passed to functions expecting specific types
+- Circular references in relational data (e.g., I1→I2→I1 parent loops)
+- Missing required configuration or environment variables
+- API errors, timeouts, and network failures
+- Database connection failures and transaction rollbacks
+
+**4. Performance Validation**
+Include tests for large datasets to catch performance regressions:
+```python
+def _test_large_dataset_performance() -> None:
+    """Test performance with 1000 records."""
+    import time
+
+    start = time.time()
+    result = process_large_batch(create_mock_records(1000))
+    duration = time.time() - start
+
+    assert duration < 5.0, f"Processing 1000 records should complete in <5s, took {duration:.2f}s"
+    assert len(result) == 1000, "Should process all records"
+```
+
+**5. Recent Examples**
+- `gedcom_intelligence.py`: Enhanced from 4 to 10 tests with explicit assertions, Unicode tests, circular relationship detection, and 1000-record performance validation
+- `message_personalization.py`: Enhanced from 11 to 18 tests with None handling, malformed data resilience, Unicode support, and edge-case number handling
+
 ### Appendix E: Test Coverage Report (how to regenerate)
 
 - To regenerate full coverage tables in your environment:
