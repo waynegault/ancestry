@@ -4,18 +4,6 @@ All open work is captured in the single checklist below. Address items in priori
 
 ## High Priority Technical Debt
 
-- [x] **Function Decomposition** (Medium Priority)
-  Completed 2025-11-17:
-  - main.exec_actn now delegates logging/analytics/cleanup to `_ActionExecutionContext` helpers
-  - main.run_gedcom_then_api_fallback orchestrates via new comparison input/execution/render helpers
-  - Actions 7/8/9 share `_ensure_navigation_ready` for driver/nav guard logic
-
-- [ ] **Test Infrastructure Modernization** (Medium Priority)
-  Migrate inline tests to dedicated test directory structure
-  - Create tests/ directory mirroring source structure
-  - Maintain test framework but separate test code from production
-  - Improve test discoverability and IDE integration
-
 - [ ] **Linting Configuration Hardening** (Low Priority, High Impact)
   Gradually enable stricter linting and type checking
   - Phase 1: Enable reportReturnType, reportUnusedVariable, reportDuplicateImport
