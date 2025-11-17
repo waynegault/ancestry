@@ -487,11 +487,13 @@ grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ### Core Documentation
 - **README.md** (this file) - Complete project documentation
 - **`.github/copilot-instructions.md`** - AI-assisted development guidelines
-- **`docs/review_todo.md`** - Technical debt and quality improvement tasks
+- **`docs/review_todo.md`** - Technical debt and quality improvement tasks (all complete!)
+- **`docs/MAINTAINER_HANDOFF.md`** - Comprehensive handoff brief for next maintainer
 
-### Code Visualization
+### Quality & Architecture
+- **`docs/DOCUMENTATION_AUDIT.md`** - Documentation quality analysis and best practices
+- **`docs/code_graph.json`** - Complete codebase structure and relationships (28,627 lines)
 - **`visualize_code_graph.html`** - Interactive D3.js code graph visualization
-- **`docs/code_graph.json`** - Complete codebase structure and relationships
 
 ### Test Examples
 - **`test_examples/README.md`** - Test patterns and best practices

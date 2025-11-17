@@ -191,7 +191,7 @@ def profile_with_cprofile(
             stats_path = _profile_config.output_dir / filename
 
             # Ensure .stats extension
-            if not stats_path.suffix == ".stats":
+            if stats_path.suffix != '.stats':
                 stats_path = stats_path.with_suffix(".stats")
 
             logger.info(
