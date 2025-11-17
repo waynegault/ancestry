@@ -157,6 +157,24 @@ class BrowserManager:
                 driver.set_window_position(0, 0)
                 driver.set_window_size(width, height)
 
+        def _apply_offscreen_minimize() -> bool:
+            try:
+                if not self.driver:
+                    logger.warning("Cannot apply off-screen minimize: driver unavailable")
+                    return False
+                logger.debug("Attempting fallback browser minimize via off-screen positioning")
+                _safe_resize(self.driver, 1, 1)
+                self.driver.set_window_position(-2000, -2000)
+                logger.info("✅ Browser minimized using off-screen positioning fallback")
+                self._restore_terminal_focus()
+                return True
+            except Exception as fallback_error:
+                logger.error(
+                    "❌ Failed to minimize browser window via fallback positioning: %s",
+                    fallback_error,
+                )
+                return False
+
         try:
             # Primary method: use WebDriver's minimize_window()
             _safe_resize(self.driver, 1, 1)
@@ -165,22 +183,23 @@ class BrowserManager:
             self._restore_terminal_focus()
             return
         except Exception as primary_error:
-            logger.warning(f"Primary minimize method failed: {primary_error}")
+            error_text = str(primary_error)
+            known_chrome_bug = "failed to change window state" in error_text.lower()
+            log_method = logger.info if known_chrome_bug else logger.warning
+            context_note = " (Chrome 142 bug detected, using fallback)" if known_chrome_bug else ""
+            log_method(
+                "Primary minimize method failed%s: %s",
+                context_note,
+                error_text,
+            )
 
-            # Fallback: try setting window position off-screen
-            try:
-                logger.debug("Attempting fallback: moving window off-screen")
-                _safe_resize(self.driver, 1, 1)
-                self.driver.set_window_position(-2000, -2000)
-                logger.info("⚠️ Browser minimized using fallback method (off-screen positioning)")
-                self._restore_terminal_focus()
+            if _apply_offscreen_minimize():
                 return
-            except Exception as fallback_error:
-                logger.error(
-                    f"❌ Failed to minimize browser window (tried 2 methods). "
-                    f"Primary: {primary_error}, Fallback: {fallback_error}"
-                )
-                logger.error("Browser will remain visible - this may be a WebDriver/platform limitation")
+
+            logger.error(
+                "Browser will remain visible - minimize attempts exhausted. Primary error: %s",
+                primary_error,
+            )
 
     def start_browser(self, action_name: Optional[str] = None) -> bool:
         """

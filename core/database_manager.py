@@ -28,6 +28,7 @@ import asyncio
 import contextlib
 import shutil
 import sqlite3
+import tempfile
 import time
 
 # Note: sys and Path already imported at top of file
@@ -37,6 +38,7 @@ from unittest.mock import MagicMock, patch
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
+from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -557,6 +559,7 @@ class DatabaseManager:
 
             if existing_tables:
                 logger.debug(f"Database already exists with tables: {existing_tables}")
+                self._apply_schema_upgrades(inspector)
             # Create tables only if the database is empty
             else:
                 # Import Base locally to avoid circular import issues
@@ -573,6 +576,89 @@ class DatabaseManager:
                 f"Non-critical error during DB table check/creation: {table_create_e}"
             )
             # Don't raise the error, just log it and continue
+
+    def _apply_schema_upgrades(self, inspector: Inspector) -> None:
+        """Apply additive schema upgrades for existing installations."""
+        if not self.engine:
+            logger.debug("Skipping schema upgrades because engine is not initialized.")
+            return
+
+        self._ensure_conversation_log_columns(inspector)
+
+    def _ensure_conversation_log_columns(self, inspector: Inspector) -> None:
+        """Ensure conversation_log table contains newly introduced columns."""
+        try:
+            current_columns = {col["name"] for col in inspector.get_columns("conversation_log")}
+        except SQLAlchemyError as inspect_err:
+            logger.warning(
+                "Unable to inspect conversation_log columns for schema upgrade: %s",
+                inspect_err,
+            )
+            return
+
+        desired_columns = [
+            ("conversation_phase", "TEXT", "INITIAL_OUTREACH"),
+            ("follow_up_due_date", "TIMESTAMP", None),
+            ("awaiting_response_from", "TEXT", None),
+        ]
+
+        for column_name, column_type, default_value in desired_columns:
+            if column_name in current_columns:
+                continue
+            self._add_column_with_default(
+                table_name="conversation_log",
+                column_name=column_name,
+                column_type=column_type,
+                default_value=default_value,
+            )
+            current_columns.add(column_name)
+
+    def _add_column_with_default(
+        self,
+        table_name: str,
+        column_name: str,
+        column_type: str,
+        default_value: Optional[str] = None,
+    ) -> None:
+        """Add a column to an existing table, optionally backfilling a default value."""
+        if not self.engine:
+            logger.debug(
+                "Cannot add column %s.%s because engine has not been initialized.",
+                table_name,
+                column_name,
+            )
+            return
+
+        logger.info(
+            "Adding missing column %s.%s (%s) as part of schema upgrade.",
+            table_name,
+            column_name,
+            column_type,
+        )
+
+        try:
+            with self.engine.begin() as connection:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+                    )
+                )
+
+                if default_value is not None:
+                    connection.execute(
+                        text(
+                            f"UPDATE {table_name} SET {column_name} = :default_value "
+                            f"WHERE {column_name} IS NULL"
+                        ),
+                        {"default_value": default_value},
+                    )
+        except SQLAlchemyError as upgrade_err:
+            logger.error(
+                "Failed to add column %s.%s during schema upgrade: %s",
+                table_name,
+                column_name,
+                upgrade_err,
+            )
 
     def get_session(self) -> Optional[Session]:
         """
@@ -1005,6 +1091,48 @@ def test_transaction_isolation() -> None:
         assert return_session_mock.call_count == 2
         session_a_mock.commit.assert_called_once()
         session_b_mock.commit.assert_called_once()
+
+
+def _create_legacy_conversation_log_table(db_file: Path) -> None:
+    """Create a legacy conversation_log table missing new lifecycle fields."""
+    conn = sqlite3.connect(db_file)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE conversation_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                people_id INTEGER NOT NULL,
+                direction TEXT NOT NULL,
+                script_message_status TEXT,
+                latest_message_content TEXT,
+                conversation_id TEXT NOT NULL,
+                latest_timestamp TEXT NOT NULL,
+                ai_sentiment TEXT,
+                message_template_id INTEGER,
+                updated_at TEXT NOT NULL,
+                custom_reply_sent_at TEXT
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_schema_upgrade_adds_conversation_log_columns() -> None:
+    """Ensure schema upgrades add new conversation_log columns for Action 7."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        db_file = Path(tmp_dir) / "legacy_inbox.db"
+        _create_legacy_conversation_log_table(db_file)
+
+        db_manager = DatabaseManager(db_path=str(db_file))
+        assert db_manager.ensure_ready() is True, "DatabaseManager should initialize successfully"
+
+        with sqlite3.connect(db_file) as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(conversation_log)")}
+
+        expected_columns = {"conversation_phase", "follow_up_due_date", "awaiting_response_from"}
+        assert expected_columns.issubset(columns), "Schema upgrade should add missing lifecycle columns"
 
 
 # ==============================================

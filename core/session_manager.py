@@ -61,6 +61,12 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
+# === STANDARD LIBRARY IMPORTS ===
+import threading
+import time
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Optional
+
 from core.error_handling import (
     api_retry,
     error_context,
@@ -75,12 +81,6 @@ from core.session_cache import (
     clear_session_cache,
     get_session_cache_stats,
 )
-
-# === STANDARD LIBRARY IMPORTS ===
-import threading
-import time
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from selenium.webdriver.remote.webdriver import WebDriver as WebDriverType
