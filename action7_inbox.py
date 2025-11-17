@@ -85,31 +85,31 @@ class MaxApiFailuresExceededError(Exception):
 
 
 if TYPE_CHECKING:
-    class BrowserErrorBase(Exception):
+    class BrowserErrorBaseError(Exception):
         """Typed BrowserError stub for static analysis."""
 
-    class APIErrorBase(Exception):
+    class APIErrorBaseError(Exception):
         """Typed APIError stub for static analysis."""
 
-    class AuthenticationErrorBase(Exception):
+    class AuthenticationErrorBaseError(Exception):
         """Typed AuthenticationError stub for static analysis."""
 else:
-    BrowserErrorBase = BrowserError  # type: ignore[assignment]
-    APIErrorBase = APIError  # type: ignore[assignment]
-    AuthenticationErrorBase = AuthenticationError  # type: ignore[assignment]
+    BrowserErrorBaseError = BrowserError  # type: ignore[assignment]
+    APIErrorBaseError = APIError  # type: ignore[assignment]
+    AuthenticationErrorBaseError = AuthenticationError  # type: ignore[assignment]
 
 
-class BrowserSessionError(BrowserErrorBase):
+class BrowserSessionError(BrowserErrorBaseError):
     """Browser session-specific errors."""
     pass
 
 
-class APIRateLimitError(APIErrorBase):
+class APIRateLimitError(APIErrorBaseError):
     """API rate limit specific errors."""
     pass
 
 
-class AuthenticationExpiredError(AuthenticationErrorBase):
+class AuthenticationExpiredError(AuthenticationErrorBaseError):
     """Authentication expiration specific errors."""
     pass
 
