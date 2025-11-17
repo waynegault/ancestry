@@ -316,7 +316,9 @@ class SessionManager:
         endpoint_profiles = self._build_endpoint_profile_config()
         endpoint_rate_cap = self._calculate_endpoint_rate_cap(endpoint_profiles)
         if endpoint_rate_cap is not None:
-            max_fill_rate = min(max_fill_rate, endpoint_rate_cap)
+            logger.debug(
+                "Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap
+            )
 
         if max_fill_rate < min_fill_rate:
             min_fill_rate = max(0.05, max_fill_rate * 0.5)
