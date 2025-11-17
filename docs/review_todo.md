@@ -2,22 +2,6 @@
 
 All open work is captured in the single checklist below. Address items in priority order unless a dependency is noted.
 
-- [x] **Performance Profiling Utilities** (Est. 3h)
-   Package reusable cProfile/timing helpers (decorators + CLI switches) for long-running actions so perf data is easy to capture without manual scripts.
-  - ✅ Created `performance_profiling.py` with cProfile integration
-  - ✅ Implemented `@profile_with_cprofile` decorator for full cProfile profiling with .stats and .txt output
-  - ✅ Implemented `@time_function` decorator for lightweight timing without profiling overhead
-  - ✅ Added `enable_profiling_from_cli()` for CLI flag support (--profile, --profile-output)
-  - ✅ Added `ProfileConfig` dataclass for centralized configuration
-  - ✅ Generated both machine-readable (.stats) and human-readable (.txt) reports
-  - ✅ All 7 comprehensive tests passing (decorators, CLI integration, report generation)
-
-- [ ] **Schema Versioning & Lightweight Migrations** (Est. 2h)
-   Introduce SQLite schema version stamps plus a minimal migration runner to unblock future columns without manual SQL.
-
-- [ ] **Data Integrity Checker** (Est. 3h)
-   Schedule periodic audits for soft deletes, UUID uniqueness, and cross-table consistency; emit alerts to Logs and Grafana.
-
 - [ ] **Strengthen Assertions** (Est. 2h)
    Deepen coverage in `gedcom_intelligence.py` and `message_personalization.py` with edge-case fixtures, explicit assertion messaging, and negative-path tests.
 
@@ -26,6 +10,12 @@ All open work is captured in the single checklist below. Address items in priori
 
 - [ ] **Comment & Docstring Spot Check** (Est. 1h per sprint)
    After each merge, scan new comments/docstrings for tone/verbosity alignment and adjust immediately.
+
+- [ ] **Schema Versioning & Lightweight Migrations** (Est. 2h)
+   Introduce SQLite schema version stamps plus a minimal migration runner to unblock future columns without manual SQL.
+
+- [ ] **Data Integrity Checker** (Est. 3h)
+   Schedule periodic audits for soft deletes, UUID uniqueness, and cross-table consistency; emit alerts to Logs and Grafana.
 
 - [ ] **Regression Guardrails** (Ongoing)
    Enforce the policy: run `python run_all_tests.py --fast` and `ruff check .` for every behavioral change before pushing.
