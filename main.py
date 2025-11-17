@@ -407,6 +407,7 @@ def validate_action_config() -> bool:
 
 # Core modules
 from config.config_manager import ConfigManager  # type: ignore[import-not-found]
+from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
 from database import (
     Base,
@@ -415,8 +416,6 @@ from database import (
     FamilyTree,
     MessageTemplate,
     Person,
-    backup_database,
-    db_transn,
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
@@ -2296,6 +2295,7 @@ _CACHE_KIND_ICONS = {
     "system": "⚙️",
     "gedcom": "🌳",
     "performance": "📊",
+    "database": "🗄️",
 }
 
 
@@ -2451,31 +2451,6 @@ def _show_unified_cache_stats() -> bool:
     return False
 
 
-def _show_tree_stats_cache() -> bool:
-    """Show tree statistics cache.
-
-    Returns:
-        True if stats were displayed, False otherwise
-    """
-    try:
-        from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
-        from database import TreeStatisticsCache
-        db_mgr = DatabaseManager()
-        session = db_mgr.get_session()
-        if session:
-            cache_count = session.query(TreeStatisticsCache).count()
-            print("🌳 TREE STATISTICS CACHE (Database)")
-            print("-" * 70)
-            print(f"  Cached Profiles: {cache_count}")
-            print("  Cache Expiration: 24 hours")
-            print()
-            db_mgr.return_session(session)
-            return True
-    except Exception as e:
-        logger.debug(f"Could not get tree statistics cache: {e}")
-    return False
-
-
 def _show_performance_cache_stats() -> bool:
     """Show performance cache (GEDCOM) statistics.
 
@@ -2507,10 +2482,7 @@ def _show_cache_statistics() -> None:
         print("CACHE STATISTICS")
         print("="*70 + "\n")
 
-        registry_shown = _show_cache_registry_stats()
-        tree_stats_shown = _show_tree_stats_cache()
-
-        stats_collected = registry_shown or tree_stats_shown
+        stats_collected = _show_cache_registry_stats()
 
         # Fallback to legacy collectors while registry adoption continues
         if not stats_collected:

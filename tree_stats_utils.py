@@ -9,7 +9,7 @@ Part of Phase 1: Enhanced Message Content (Foundation)
 """
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import func
@@ -31,6 +31,137 @@ except ImportError as e:
 
 # Cache expiration time (24 hours)
 CACHE_EXPIRATION_HOURS = 24
+
+
+def get_tree_stats_cache_stats() -> dict[str, Any]:
+    """Return aggregate statistics for the TreeStatisticsCache table."""
+
+    try:
+        from core.database_manager import DatabaseManager
+
+        db_mgr = DatabaseManager()
+        session = db_mgr.get_session()
+        if not session:
+            return {"entries": 0, "status": "unavailable"}
+
+        try:
+            total_entries = session.query(TreeStatisticsCache).count() or 0
+            distinct_profiles = session.query(func.count(func.distinct(TreeStatisticsCache.profile_id))).scalar() or 0
+            latest_calc = session.query(func.max(TreeStatisticsCache.calculated_at)).scalar()
+            oldest_calc = session.query(func.min(TreeStatisticsCache.calculated_at)).scalar()
+            expiration_cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_EXPIRATION_HOURS)
+            expired_entries = (
+                session.query(func.count(TreeStatisticsCache.id))
+                .filter(TreeStatisticsCache.calculated_at < expiration_cutoff)
+                .scalar()
+                or 0
+            )
+
+            return {
+                "entries": total_entries,
+                "profiles_cached": distinct_profiles,
+                "latest_calculated_at": latest_calc.isoformat() if latest_calc else None,
+                "oldest_calculated_at": oldest_calc.isoformat() if oldest_calc else None,
+                "expired_entries": expired_entries,
+                "cache_expiration_hours": CACHE_EXPIRATION_HOURS,
+            }
+        finally:
+            db_mgr.return_session(session)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.warning("Failed to collect tree stats cache metrics: %s", exc)
+        return {"entries": 0, "status": "error", "error": str(exc)}
+
+
+def clear_tree_stats_cache() -> bool:
+    """Clear all TreeStatisticsCache rows."""
+
+    try:
+        from core.database_manager import DatabaseManager
+
+        db_mgr = DatabaseManager()
+        session = db_mgr.get_session()
+        if not session:
+            logger.warning("Unable to clear tree stats cache: session unavailable")
+            return False
+
+        try:
+            deleted = session.query(TreeStatisticsCache).delete()
+            session.commit()
+            logger.info("Cleared %s tree statistics cache entries", deleted)
+            return True
+        except Exception as exc:
+            session.rollback()
+            logger.error("Failed to clear tree stats cache: %s", exc, exc_info=True)
+            return False
+        finally:
+            db_mgr.return_session(session)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.error("Unexpected error clearing tree stats cache: %s", exc, exc_info=True)
+        return False
+
+
+def _resolve_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
+    resolved: list[str] = []
+    if profile_ids:
+        resolved.extend(pid for pid in profile_ids if pid)
+
+    if not resolved:
+        try:
+            from session_utils import get_global_session
+
+            session_manager = get_global_session()
+            if session_manager and session_manager.my_profile_id:
+                resolved.append(session_manager.my_profile_id)
+        except Exception:
+            logger.debug("Unable to read profile from session manager", exc_info=True)
+
+    if not resolved:
+        try:
+            from config import config_schema
+
+            fallback = getattr(config_schema.test, "test_profile_id", None)
+            if fallback:
+                resolved.append(fallback)
+        except Exception:
+            logger.debug("Unable to load fallback test profile id", exc_info=True)
+
+    # Remove duplicates while preserving order
+    deduped: list[str] = []
+    for pid in resolved:
+        if pid not in deduped:
+            deduped.append(pid)
+    return deduped
+
+
+def warm_tree_stats_cache(profile_ids: Optional[list[str]] = None) -> dict[str, Any]:
+    """Warm tree statistics cache entries for the provided profile IDs."""
+
+    targets = _resolve_profile_ids(profile_ids)
+    if not targets:
+        logger.warning("No profile IDs available for tree stats warming")
+        return {"warmed": 0, "profiles": []}
+
+    try:
+        from core.database_manager import DatabaseManager
+
+        db_mgr = DatabaseManager()
+        session = db_mgr.get_session()
+        if not session:
+            logger.warning("Unable to warm tree stats cache: session unavailable")
+            return {"warmed": 0, "profiles": []}
+
+        warmed: list[str] = []
+        try:
+            for profile_id in targets:
+                stats = calculate_tree_statistics(session, profile_id, force_refresh=True)
+                if stats:
+                    warmed.append(profile_id)
+            return {"warmed": len(warmed), "profiles": warmed}
+        finally:
+            db_mgr.return_session(session)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.error("Tree stats cache warm failed: %s", exc, exc_info=True)
+        return {"warmed": 0, "profiles": []}
 
 
 def _validate_profile_owner(session: Session, profile_id: str) -> bool:
@@ -348,7 +479,7 @@ def _compare_ethnicity_regions(
     owner_dna: DnaMatch,
     match_dna: DnaMatch,
     ethnicity_columns: list[str]
-) -> tuple[list[str], dict[str, dict]]:
+) -> tuple[list[str], dict[str, dict[str, float]]]:
     """Compare ethnicity regions between owner and match."""
     shared_regions = []
     region_details = {}
@@ -376,7 +507,7 @@ def _compare_ethnicity_regions(
     return shared_regions, region_details
 
 
-def _calculate_similarity_score(region_details: dict[str, dict]) -> float:
+def _calculate_similarity_score(region_details: dict[str, dict[str, float]]) -> float:
     """Calculate ethnicity similarity score from region details."""
     if not region_details:
         return 0.0
@@ -387,7 +518,7 @@ def _calculate_similarity_score(region_details: dict[str, dict]) -> float:
     )
 
 
-def _find_top_shared_region(region_details: dict[str, dict]) -> Optional[str]:
+def _find_top_shared_region(region_details: dict[str, dict[str, float]]) -> Optional[str]:
     """Find the region with highest combined percentage."""
     if not region_details:
         return None

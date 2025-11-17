@@ -247,6 +247,7 @@ if TYPE_CHECKING:
 
 from api_constants import API_PATH_PROFILE_DETAILS
 from config import config_schema
+from core.database_manager import db_transn
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
 from database import (
@@ -254,7 +255,6 @@ from database import (
     FamilyTree,
     Person,
     PersonStatusEnum,
-    db_transn,
 )
 from dna_ethnicity_utils import (
     extract_match_ethnicity_percentages,

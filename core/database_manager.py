@@ -28,7 +28,9 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import asyncio
 import contextlib
+import shutil
 import sqlite3
+import time
 
 # Note: sys and Path already imported at top of file
 from collections.abc import AsyncGenerator, Generator
@@ -42,6 +44,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager  # type: ignore[import-not-found]
+from core.error_handling import (
+    AncestryError,
+    DatabaseConnectionError,
+    DataValidationError,
+    FatalError,
+    RetryableError,
+    api_retry,
+    error_context,
+    timeout_protection,
+)
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -1013,3 +1025,221 @@ if __name__ == "__main__":
     with import_context():
         print("🗄️ Running Database Manager comprehensive test suite...")
         run_comprehensive_tests()
+
+
+# ---------------------------------------------------------------------------
+# Transaction and Backup Helpers (migrated from legacy database.py)
+# ---------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+@error_context("Database Transaction")  # type: ignore[misc]
+def db_transn(session: Session):
+    """Context manager that wraps SQLAlchemy transactions with rich logging."""
+
+    transaction_start = time.time()
+    session_id = id(session)
+
+    try:
+        if not hasattr(session, "commit"):
+            raise DatabaseConnectionError(
+                "Invalid session object provided",
+                context={"session_id": session_id, "session_type": type(session).__name__},
+            )
+
+        logger.debug("--- Entering db_transn block (Session: %s) ---", session_id)
+        yield session
+
+        commit_start = time.time()
+        logger.debug("Attempting commit... (Session: %s)", session_id)
+        try:
+            session.commit()
+            commit_duration = time.time() - commit_start
+            total_duration = time.time() - transaction_start
+            logger.debug(
+                "Commit successful in %.3fs (total %.3fs). Session=%s",
+                commit_duration,
+                total_duration,
+                session_id,
+            )
+        except Exception as commit_error:  # pragma: no cover - defensive branch
+            raise DatabaseConnectionError(
+                f"Database commit failed: {commit_error}",
+                context={
+                    "session_id": session_id,
+                    "commit_time": time.time() - commit_start,
+                    "transaction_time": time.time() - transaction_start,
+                },
+                recovery_hint="Check database connectivity and retry transaction",
+            ) from commit_error
+
+    except DatabaseConnectionError:
+        raise
+    except Exception as exc:
+        error_type = type(exc).__name__
+        logger.error(
+            "Exception in db_transn block (%s). Rolling back... Session=%s",
+            error_type,
+            session_id,
+            exc_info=True,
+        )
+        try:
+            rollback_start = time.time()
+            session.rollback()
+            rollback_duration = time.time() - rollback_start
+            logger.warning(
+                "Rollback successful in %.3fs (Session=%s)", rollback_duration, session_id
+            )
+            transaction_elapsed = time.time() - transaction_start
+            if isinstance(exc, (sqlite3.OperationalError, sqlite3.DatabaseError)):
+                raise DatabaseConnectionError(
+                    f"Database operation failed: {exc}",
+                    context={
+                        "session_id": session_id,
+                        "transaction_time": transaction_elapsed,
+                        "original_error": str(exc),
+                    },
+                    recovery_hint="Database may be temporarily unavailable, retry after delay",
+                )
+            raise RetryableError(
+                f"Transaction failed: {exc}",
+                context={
+                    "session_id": session_id,
+                    "transaction_time": transaction_elapsed,
+                    "error_type": error_type,
+                },
+            )
+        except Exception as rollback_error:  # pragma: no cover - critical failure
+            raise FatalError(
+                f"CRITICAL: Failed during rollback: {rollback_error}",
+                context={
+                    "session_id": session_id,
+                    "original_error": str(exc),
+                    "rollback_error": str(rollback_error),
+                },
+                recovery_hint="Database may be corrupted, check database integrity",
+            ) from rollback_error
+    finally:
+        logger.debug(
+            "--- db_transn finally block reached in %.3fs (Session=%s) ---",
+            time.time() - transaction_start,
+            session_id,
+        )
+
+
+@api_retry(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
+def _validate_backup_paths() -> tuple[Path, Path, Path]:
+    """Validate and return database plus backup paths."""
+
+    db_path = config_schema.database.database_file
+    backup_dir = config_schema.database.data_dir
+
+    if db_path is None:
+        raise AncestryError("Cannot backup database: DATABASE_FILE is not configured.")
+    if backup_dir is None:
+        raise AncestryError("Cannot backup database: DATA_DIR is not configured.")
+    if not db_path.exists():
+        raise AncestryError(
+            f"Database file '{db_path.name}' not found at {db_path}."
+        )
+
+    try:
+        with db_path.open("rb") as handle:
+            handle.read(1)
+    except PermissionError as perm_err:
+        raise DatabaseConnectionError(
+            f"Permission denied accessing database file '{db_path}'",
+            context={"db_path": str(db_path)},
+            recovery_hint="Check file permissions and ensure database is not locked",
+        ) from perm_err
+
+    backup_path = backup_dir / "ancestry_backup.db"
+    return db_path, backup_dir, backup_path
+
+
+def _prepare_backup_directory(backup_dir: Path, db_path: Path) -> None:
+    """Ensure backup directory exists and has enough free space."""
+
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as perm_err:
+        raise DatabaseConnectionError(
+            f"Permission denied creating backup directory '{backup_dir}'",
+            context={"backup_dir": str(backup_dir)},
+            recovery_hint="Check directory permissions",
+        ) from perm_err
+
+    try:
+        disk_usage = shutil.disk_usage(backup_dir)
+        db_size = db_path.stat().st_size
+        if disk_usage.free < db_size * 1.1:
+            raise DatabaseConnectionError(
+                "Insufficient disk space for backup",
+                context={
+                    "db_size": db_size,
+                    "available_space": disk_usage.free,
+                    "backup_dir": str(backup_dir),
+                },
+                recovery_hint="Free disk space or choose another location",
+            )
+    except Exception as disk_error:  # pragma: no cover - best effort log
+        logger.warning("Could not verify disk space for backup: %s", disk_error)
+
+
+def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
+    """Copy the SQLite database to the backup location with verification."""
+
+    shutil.copy2(db_path, backup_path)
+    if not backup_path.exists():
+        raise DatabaseConnectionError(
+            "Backup file was not created successfully", context={"backup_path": str(backup_path)}
+        )
+
+    original_size = db_path.stat().st_size
+    backup_size = backup_path.stat().st_size
+    if backup_size != original_size:
+        raise DataValidationError(
+            "Backup size mismatch",
+            context={
+                "original_size": original_size,
+                "backup_size": backup_size,
+                "backup_path": str(backup_path),
+            },
+        )
+
+
+@timeout_protection(timeout=300)  # type: ignore[misc]
+@error_context("Database Backup Operation")  # type: ignore[misc]
+def backup_database() -> bool:
+    """Create a timestamped backup of the SQLite database file."""
+
+    backup_start = time.time()
+    try:
+        db_path, backup_dir, backup_path = _validate_backup_paths()
+        _prepare_backup_directory(backup_dir, db_path)
+        logger.debug(
+            "Starting database backup: '%s' -> '%s' (%.1f MB)",
+            db_path.name,
+            backup_path,
+            db_path.stat().st_size / 1024 / 1024,
+        )
+        _perform_backup_copy(db_path, backup_path)
+        elapsed = time.time() - backup_start
+        logger.debug(
+            "Database backup completed in %.2fs (%s)",
+            elapsed,
+            backup_path,
+        )
+        return True
+    except AncestryError:
+        raise
+    except Exception as unexpected_error:
+        elapsed = time.time() - backup_start
+        raise RetryableError(
+            f"Unexpected error during database backup: {unexpected_error}",
+            context={
+                "backup_time": elapsed,
+                "error_type": type(unexpected_error).__name__,
+            },
+            recovery_hint="Check system resources and retry",
+        ) from unexpected_error

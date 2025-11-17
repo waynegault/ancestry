@@ -401,7 +401,8 @@ cache.invalidate_by_key("person_12345")  # Specific entry
 
 #### Cache Registry
 
-- `core/cache_registry.CacheRegistry` now provides a single entry point for every cache subsystem (disk, unified, session, system, GEDCOM, performance).
+- `core/cache_registry.CacheRegistry` now provides a single entry point for every cache subsystem (disk, unified, session, system, GEDCOM, performance, tree stats).
+- Tree statistics cache metrics (row counts, freshness, expiration counts) now surface alongside disk/memory caches, and you can warm or clear them through the registry just like other caches.
 - Call `get_cache_registry().summary()` to power dashboards, health checks, or CLI tooling without importing each cache module manually.
 - The main menu's **Cache Statistics** screen and `performance_monitor` pull from the registry so new caches stay visible automatically.
 
@@ -412,6 +413,7 @@ registry = get_cache_registry()
 summary = registry.summary()
 print(summary["disk_cache"].get("hit_rate"))
 registry.clear("performance_cache")  # Targeted clear
+registry.warm("tree_stats_cache")  # Refresh DB-backed cache rows
 ```
 
 Monitor in logs:
@@ -421,6 +423,24 @@ Get-Content Logs/app.log -Wait | Select-String "cache hit|cache miss"
 
 # Review integration test results
 python -m test_action6_cache_integration
+```
+
+#### Database Utilities
+
+- `core/database_manager.DatabaseManager` now owns the transactional context manager (`db_transn`) and `backup_database()` helper; `database.py` simply re-exports those symbols to keep ORM imports stable.
+- Always import `db_transn` from `core.database_manager` (or via the `database` shim) so transaction logging, retries, and error context stay centralized.
+- Menu Option 3 (Backup Database) and Action 6 bulk inserts now call the shared helpers, so any resilience upgrades land in one place.
+
+```python
+from core.database_manager import DatabaseManager, db_transn, backup_database
+
+db = DatabaseManager()
+session = db.get_session()
+if session:
+  with db_transn(session) as tx:
+    tx.execute("DELETE FROM tree_statistics_cache")
+
+backup_database()  # Creates Data/ancestry_backup.db with validation
 ```
 
 ### Grafana Dashboards

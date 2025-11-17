@@ -4,12 +4,16 @@ All open work is captured in the single checklist below. Address items in priori
 
 ## High Priority Technical Debt
 
+- [x] **Cache Module Consolidation** (High Priority)
+  Consolidate 7 cache-related modules into unified architecture
+  - Completed Nov 20, 2025: Added `core/cache_registry.py`, onboarded tree statistics cache, exposed performance cache stats, and switched menu/performance dashboards to the registry output for one-click warm/clear operations.
 
-- [ ] **Database Module Consolidation** (Medium Priority)
+- [x] **Database Module Consolidation** (Medium Priority)
   Complete migration from database.py to core/database_manager.py
   - Verify all functionality moved to core module
   - Update remaining references
   - Archive or remove legacy database.py
+  - Completed Nov 20, 2025: Moved `db_transn` and backup pipelines into `core/database_manager.py`, updated action/main imports, and left `database.py` as an ORM-focused shim that simply re-exports those helpers for backward compatibility.
 
 - [ ] **Function Decomposition** (Medium Priority)
   Break down large functions with multiple responsibilities:

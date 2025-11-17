@@ -180,6 +180,16 @@ class CacheRegistry:
 
         self.register(
             CacheComponent(
+                name="tree_stats_cache",
+                kind="database",
+                stats_fn=self._lazy_call("tree_stats_utils", "get_tree_stats_cache_stats"),
+                clear_fn=self._lazy_call("tree_stats_utils", "clear_tree_stats_cache"),
+                warm_fn=self._lazy_call("tree_stats_utils", "warm_tree_stats_cache"),
+            )
+        )
+
+        self.register(
+            CacheComponent(
                 name="performance_cache",
                 kind="performance",
                 stats_fn=self._lazy_call("performance_cache", "get_performance_cache_stats"),
@@ -220,3 +230,121 @@ def get_cache_registry() -> CacheRegistry:
 
 
 __all__ = ["CacheComponent", "CacheRegistry", "get_cache_registry"]
+
+
+# === Module Tests ===
+
+
+def _build_stub_registry() -> tuple[CacheRegistry, dict[str, int]]:
+    """Create a CacheRegistry populated with a single stub component for tests."""
+
+    registry = CacheRegistry()
+    registry._components = {}
+    call_counts: dict[str, int] = {"stats": 0, "clear": 0, "warm": 0, "health": 0}
+
+    def stats_fn() -> dict[str, Any]:
+        call_counts["stats"] += 1
+        return {"hits": 1}
+
+    def clear_fn() -> None:
+        call_counts["clear"] += 1
+
+    def warm_fn() -> None:
+        call_counts["warm"] += 1
+
+    def health_fn() -> dict[str, Any]:
+        call_counts["health"] += 1
+        return {"overall_score": 97.5}
+
+    registry.register(
+        CacheComponent(
+            name="stub_cache",
+            kind="memory",
+            stats_fn=stats_fn,
+            clear_fn=clear_fn,
+            warm_fn=warm_fn,
+            health_fn=health_fn,
+        )
+    )
+    return registry, call_counts
+
+
+def _test_registry_summary_includes_health() -> None:
+    registry, call_counts = _build_stub_registry()
+    summary = registry.summary()
+
+    assert "stub_cache" in summary, "Summary should include registered component"
+    component_stats = summary["stub_cache"]
+    assert component_stats["kind"] == "memory"
+    assert component_stats["health"]["overall_score"] == 97.5
+    assert summary["registry"]["components"] == 1
+    assert call_counts["stats"] == 1, "Stats function should be invoked once"
+    assert call_counts["health"] == 1, "Health function should be invoked once"
+
+
+def _test_registry_clear_and_warm_routing() -> None:
+    registry, call_counts = _build_stub_registry()
+    clear_result = registry.clear()
+    warm_result = registry.warm()
+
+    assert clear_result.get("stub_cache") is True, "Clear should succeed for stub cache"
+    assert warm_result.get("stub_cache") is True, "Warm should succeed for stub cache"
+    assert call_counts["clear"] == 1, "Clear function should be called exactly once"
+    assert call_counts["warm"] == 1, "Warm function should be called exactly once"
+
+
+def _test_registry_component_names_sorted() -> None:
+    registry, _ = _build_stub_registry()
+    registry.register(
+        CacheComponent(
+            name="alpha_cache",
+            kind="disk",
+            stats_fn=lambda: {},
+        )
+    )
+    names = registry.component_names()
+    assert names == sorted(names), "Component names should be returned in sorted order"
+    assert "alpha_cache" in names and "stub_cache" in names
+
+
+def cache_registry_module_tests() -> bool:
+    """Test suite for cache registry orchestration helpers."""
+
+    from test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite("Cache Registry", __name__)
+        suite.start_suite()
+        suite.run_test(
+            "Summary includes health",
+            _test_registry_summary_includes_health,
+            "CacheRegistry.summary aggregates stats and health information",
+            "summary",
+            "Ensure summary contains component stats and registry metadata",
+        )
+        suite.run_test(
+            "Clear and warm routing",
+            _test_registry_clear_and_warm_routing,
+            "CacheRegistry proxies clear/warm requests to components",
+            "clear/warm",
+            "Invoke registry clear/warm and verify underlying functions run",
+        )
+        suite.run_test(
+            "Component names sorted",
+            _test_registry_component_names_sorted,
+            "component_names returns sorted list",
+            "component_names",
+            "Verify alphabetical ordering of registry component names",
+        )
+        return suite.finish_suite()
+
+
+from test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(cache_registry_module_tests)
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(0 if run_comprehensive_tests() else 1)
