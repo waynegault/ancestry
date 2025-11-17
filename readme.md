@@ -399,6 +399,21 @@ cache.invalidate_by_endpoint("combined_details")  # Endpoint-specific
 cache.invalidate_by_key("person_12345")  # Specific entry
 ```
 
+#### Cache Registry
+
+- `core/cache_registry.CacheRegistry` now provides a single entry point for every cache subsystem (disk, unified, session, system, GEDCOM, performance).
+- Call `get_cache_registry().summary()` to power dashboards, health checks, or CLI tooling without importing each cache module manually.
+- The main menu's **Cache Statistics** screen and `performance_monitor` pull from the registry so new caches stay visible automatically.
+
+```python
+from core.cache_registry import get_cache_registry
+
+registry = get_cache_registry()
+summary = registry.summary()
+print(summary["disk_cache"].get("hit_rate"))
+registry.clear("performance_cache")  # Targeted clear
+```
+
 Monitor in logs:
 ```bash
 # Watch cache performance in real-time

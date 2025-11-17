@@ -807,11 +807,26 @@ class AdvancedPerformanceMonitor:
     def _get_cache_statistics(self) -> dict[str, Any]:
         """Get cache performance statistics."""
         try:
-            # Try to get cache stats from cache module
-            from cache import get_cache_stats
-            return get_cache_stats()
+            from core.cache_registry import get_cache_registry
+
+            registry = get_cache_registry()
+            summary = registry.summary()
+            disk_stats = summary.get("disk_cache", {})
+            perf_stats = summary.get("performance_cache", {})
+            total_requests = disk_stats.get("hits", 0) + disk_stats.get("misses", 0)
+            return {
+                "hit_rate": disk_stats.get("hit_rate", perf_stats.get("hit_rate", 0)),
+                "total_requests": total_requests,
+                "cache_size": perf_stats.get("memory_usage_mb", disk_stats.get("entries", 0)),
+                "components": summary.get("registry", {}).get("components", 0),
+            }
         except Exception:
-            pass
+            try:
+                from cache import get_cache_stats
+
+                return get_cache_stats()
+            except Exception:
+                pass
 
         return {"hit_rate": 75, "total_requests": 0, "cache_size": 0}
 

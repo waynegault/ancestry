@@ -2289,6 +2289,91 @@ def _show_analytics_dashboard() -> None:
     input("Press Enter to continue...")
 
 
+_CACHE_KIND_ICONS = {
+    "disk": "📁",
+    "memory": "🧠",
+    "session": "🔐",
+    "system": "⚙️",
+    "gedcom": "🌳",
+    "performance": "📊",
+}
+
+
+def _format_cache_stat_value(value: Any) -> str:
+    """Format cache stat values for console display."""
+
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, (list, tuple, set)):
+        return f"{len(value)} items"
+    if isinstance(value, dict):
+        preview_items = list(value.items())[:3]
+        preview = ", ".join(f"{k}={v}" for k, v in preview_items)
+        if len(value) > 3:
+            preview += ", ..."
+        return f"{{{preview}}}"
+    return str(value)
+
+
+def _show_cache_registry_stats() -> bool:
+    """Display consolidated cache stats through CacheRegistry."""
+
+    try:
+        from core.cache_registry import get_cache_registry
+
+        registry = get_cache_registry()
+        summary = registry.summary()
+        component_names = summary.get("registry", {}).get("names", [])
+        if not component_names:
+            return False
+
+        for component_name in component_names:
+            stats = summary.get(component_name, {})
+            icon = _CACHE_KIND_ICONS.get(stats.get("kind", ""), "🗃️")
+            display_name = stats.get("name", component_name).upper()
+            kind = stats.get("kind", "unknown")
+            print(f"{icon} {display_name} [{kind}]")
+            print("-" * 70)
+
+            shown_any = False
+            for key in sorted(stats.keys()):
+                if key in {"name", "kind", "health"}:
+                    continue
+                value = stats[key]
+                if value in (None, "", [], {}):
+                    continue
+                print(f"  {key.replace('_', ' ').title()}: {_format_cache_stat_value(value)}")
+                shown_any = True
+
+            health = stats.get("health")
+            if isinstance(health, dict) and health:
+                score = health.get("overall_score")
+                score_str = f"{score:.1f}" if isinstance(score, (int, float)) else str(score)
+                print(f"  Health Score: {score_str}")
+                recommendations = health.get("recommendations")
+                if recommendations:
+                    print(f"  Recommendations: {len(recommendations)}")
+                shown_any = True
+
+            if not shown_any:
+                print("  No statistics available for this component.")
+
+            print()
+
+        registry_info = summary.get("registry", {})
+        print("REGISTRY OVERVIEW")
+        print("-" * 70)
+        print(f"  Components: {registry_info.get('components', len(component_names))}")
+        print(f"  Registered: {', '.join(component_names)}")
+        print()
+        return True
+    except Exception as exc:
+        logger.error("Failed to display cache registry stats: %s", exc, exc_info=True)
+        return False
+
+
 def _show_base_cache_stats() -> bool:
     """Show base disk cache statistics.
 
@@ -2422,13 +2507,18 @@ def _show_cache_statistics() -> None:
         print("CACHE STATISTICS")
         print("="*70 + "\n")
 
-        # Collect statistics from all cache systems
-        stats_collected = any([
-            _show_base_cache_stats(),
-            _show_unified_cache_stats(),
-            _show_tree_stats_cache(),
-            _show_performance_cache_stats()
-        ])
+        registry_shown = _show_cache_registry_stats()
+        tree_stats_shown = _show_tree_stats_cache()
+
+        stats_collected = registry_shown or tree_stats_shown
+
+        # Fallback to legacy collectors while registry adoption continues
+        if not stats_collected:
+            stats_collected = any([
+                _show_base_cache_stats(),
+                _show_unified_cache_stats(),
+                _show_performance_cache_stats(),
+            ])
 
         if not stats_collected:
             print("No cache statistics available.")

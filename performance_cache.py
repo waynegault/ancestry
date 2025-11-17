@@ -481,6 +481,19 @@ def clear_performance_cache() -> None:
     logger.info("Performance cache cleared")
 
 
+def get_performance_cache_stats() -> dict[str, Any]:
+    """Return performance cache metrics for registry consumers."""
+    stats = _performance_cache.cache_stats.copy()
+    stats.update(_performance_cache._cache_stats)
+    stats.update(
+        {
+            "cache_entries": len(_performance_cache._memory_cache),
+            "disk_cache_dir": str(_performance_cache._disk_cache_dir),
+        }
+    )
+    return stats
+
+
 def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None) -> None:
     """
     Intelligent cache warming with multiple strategies.
@@ -733,7 +746,7 @@ class FastMockDataFactory:
 
 # --- Individual Test Functions ---
 
-def test_performance_cache_initialization() -> None:
+def test_performance_cache_initialization() -> bool:
     """Test PerformanceCache module initialization."""
     try:
         cache = PerformanceCache(max_memory_cache_size=10)
@@ -745,7 +758,7 @@ def test_performance_cache_initialization() -> None:
     except Exception:
         return False
 
-def test_memory_cache_operations() -> None:
+def test_memory_cache_operations() -> bool:
     """Test basic memory cache operations."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -754,7 +767,7 @@ def test_memory_cache_operations() -> None:
     except Exception:
         return False
 
-def test_cache_key_generation() -> None:
+def test_cache_key_generation() -> bool:
     """Test cache key generation consistency."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -764,7 +777,7 @@ def test_cache_key_generation() -> None:
     except Exception:
         return False
 
-def test_cache_expiration() -> None:
+def test_cache_expiration() -> bool:
     """Test cache miss handling."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -772,7 +785,7 @@ def test_cache_expiration() -> None:
     except Exception:
         return False
 
-def test_cache_statistics_collection():
+def test_cache_statistics_collection() -> bool:
     """Test cache statistics collection."""
     try:
         cache = PerformanceCache(max_memory_cache_size=10)
@@ -782,7 +795,7 @@ def test_cache_statistics_collection():
     except Exception:
         return False
 
-def test_cache_health_status():
+def test_cache_health_status() -> bool:
     """Test cache health status check."""
     try:
         stats = get_cache_stats()
@@ -791,7 +804,7 @@ def test_cache_health_status():
     except Exception:
         return False
 
-def test_cache_performance_metrics():
+def test_cache_performance_metrics() -> bool:
     """Test cache performance metrics collection."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
@@ -800,7 +813,7 @@ def test_cache_performance_metrics():
     except Exception:
         return False
 
-def test_memory_management_cleanup():
+def test_memory_management_cleanup() -> bool:
     """Test memory management and cleanup."""
     try:
         cache = PerformanceCache(max_memory_cache_size=2)
