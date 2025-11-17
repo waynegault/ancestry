@@ -39,6 +39,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Action Orchestrator Context (Nov 20)** - `exec_actn()` now uses `_ActionExecutionContext` plus `_finalize_action_execution()` so setup, analytics, and cleanup are decomposed into reusable helpers instead of a 200-line monolith.
 - ✅ **Action 10 Comparison Pipeline (Nov 20)** - Added `_ComparisonConfig`, `_ComparisonResults`, and helper trio (collect → execute → render) so GEDCOM/API fallback runs through a typed pipeline with a single rendering surface.
 - ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
+- ✅ **Pyright Warning Gate (Nov 20)** - Phase 1 of linting hardening enables `reportReturnType` + `reportUnusedVariable`; repo now runs `npx pyright` with zero warnings so regressions break CI early.
+- ✅ **Import Standardization Audit (Nov 20)** - Cleared duplicate `setup_module` calls in config/session modules so there’s a single logger registration per file and `standard_imports` becomes the authoritative entry point.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

@@ -114,6 +114,8 @@ def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: Sessi
             GLOBAL_SESSION.auth_banner_printed = True
         else:
             logger.debug(f"Global session ready (UUID={GLOBAL_SESSION.session_uuid})")
+    if GLOBAL_SESSION.session_uuid is None:
+        raise AssertionError("UUID not cached after session authentication")
     return GLOBAL_SESSION.session_uuid
 
 
@@ -161,9 +163,10 @@ def get_authenticated_session(
     _ensure_session_ready_or_raise(sm, action_name, skip_csrf)
 
     # 4) Finalize first-time auth (cache UUID and print banner once)
-    GLOBAL_SESSION.session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
+    session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
+    GLOBAL_SESSION.session_uuid = session_uuid
 
-    return GLOBAL_SESSION.session_manager, GLOBAL_SESSION.session_uuid
+    return sm, session_uuid
 
 
 def clear_cached_session() -> None:

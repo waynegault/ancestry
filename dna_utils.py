@@ -432,7 +432,7 @@ def fetch_match_list_page(
     _sync_cookies_to_session(driver, session_manager)
 
     # Call the API
-    return _api_req(
+    api_result = _api_req(
         url=match_list_url,
         driver=driver,
         session_manager=session_manager,
@@ -442,6 +442,15 @@ def fetch_match_list_page(
         api_description="Match List API",
         allow_redirects=True,
     )
+
+    if isinstance(api_result, dict):
+        return api_result
+
+    logger.warning(
+        "Match List API returned unexpected payload type %s",
+        type(api_result).__name__,
+    )
+    return None
 
 
 # ============================================================================

@@ -76,9 +76,6 @@ from core.session_cache import (
     get_session_cache_stats,
 )
 
-# === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
-
 # === STANDARD LIBRARY IMPORTS ===
 import threading
 import time

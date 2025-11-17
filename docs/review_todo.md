@@ -4,14 +4,13 @@ All open work is captured in the single checklist below. Address items in priori
 
 ## High Priority Technical Debt
 
-- [ ] **Linting Configuration Hardening** (Low Priority, High Impact)
-  Gradually enable stricter linting and type checking
-  - Phase 1: Enable reportReturnType, reportUnusedVariable, reportDuplicateImport
-  - Phase 2: Enable PLR rules (cyclomatic complexity, too many arguments)
-  - Phase 3: Enable comprehensive type checking
-  - Document exemptions with justification
+- [x] **Linting Configuration Hardening** (Low Priority, High Impact)
+  Completed 2025-11-17:
+  - Phase 1 enabled `reportReturnType` and `reportUnusedVariable` inside `pyrightconfig.json`
+  - Repository is clean under the stricter settings (`npx pyright` reports 0 warnings)
+  - Phase 2+ (PLR rules, comprehensive type checking) remain open for future tightening
 
-- [ ] **Import Standardization Audit** (Low Priority)
-  Verify all modules use standard_imports.setup_module() correctly
-  - Found duplicate in gedcom_cache.py (lines 46-76)
-  - Scan for other instances of duplicate setup_module calls
+- [x] **Import Standardization Audit** (Low Priority)
+  Completed 2025-11-17:
+  - Removed duplicate `setup_module` invocations from `gedcom_cache.py`, `utils.py`, `config/config_manager.py`, `core/browser_manager.py`, `core/database_manager.py`, and `core/session_manager.py`
+  - Verified remaining modules reference `standard_imports.setup_module()` exactly once (examples in `standard_imports.py` are documentation/tests)

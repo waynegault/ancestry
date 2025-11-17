@@ -54,8 +54,6 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
-logger = setup_module(globals(), __name__)
-
 # --- Standard library imports ---
 import hashlib
 import sys

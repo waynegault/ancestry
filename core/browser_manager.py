@@ -22,8 +22,6 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
-logger = setup_module(globals(), __name__)
-
 # === STANDARD LIBRARY IMPORTS ===
 import time
 from pathlib import Path
