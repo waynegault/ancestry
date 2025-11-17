@@ -100,37 +100,48 @@ def clear_tree_stats_cache() -> bool:
         return False
 
 
-def _resolve_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
-    resolved: list[str] = []
-    if profile_ids:
-        resolved.extend(pid for pid in profile_ids if pid)
+def _collect_explicit_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
+    return [pid for pid in profile_ids or [] if pid]
 
-    if not resolved:
-        try:
-            from session_utils import get_global_session
 
-            session_manager = get_global_session()
-            if session_manager and session_manager.my_profile_id:
-                resolved.append(session_manager.my_profile_id)
-        except Exception:
-            logger.debug("Unable to read profile from session manager", exc_info=True)
+def _get_session_profile_id() -> Optional[str]:
+    try:
+        from session_utils import get_global_session
 
-    if not resolved:
-        try:
-            from config import config_schema
+        session_manager = get_global_session()
+        if session_manager and session_manager.my_profile_id:
+            return session_manager.my_profile_id
+    except Exception:
+        logger.debug("Unable to read profile from session manager", exc_info=True)
+    return None
 
-            fallback = getattr(config_schema.test, "test_profile_id", None)
-            if fallback:
-                resolved.append(fallback)
-        except Exception:
-            logger.debug("Unable to load fallback test profile id", exc_info=True)
 
-    # Remove duplicates while preserving order
+def _get_test_profile_id() -> Optional[str]:
+    try:
+        from config import config_schema
+
+        return getattr(config_schema.test, "test_profile_id", None)
+    except Exception:
+        logger.debug("Unable to load fallback test profile id", exc_info=True)
+        return None
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
     deduped: list[str] = []
-    for pid in resolved:
-        if pid not in deduped:
-            deduped.append(pid)
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            deduped.append(value)
     return deduped
+
+
+def _resolve_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
+    resolved = _collect_explicit_profile_ids(profile_ids)
+    if not resolved:
+        fallbacks = [pid for pid in (_get_session_profile_id(), _get_test_profile_id()) if pid]
+        resolved.extend(fallbacks)
+    return _dedupe_preserve_order(resolved)
 
 
 def warm_tree_stats_cache(profile_ids: Optional[list[str]] = None) -> dict[str, Any]:

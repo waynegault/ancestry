@@ -17,7 +17,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -230,7 +230,7 @@ class LMStudioManager:
             return False, f"Unexpected error: {type(e).__name__}: {e}"
 
 
-def create_manager_from_config(config_schema) -> LMStudioManager:
+def create_manager_from_config(config_schema: Any) -> LMStudioManager:
     """
     Create LMStudioManager from application config.
 

@@ -12,7 +12,7 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional, Protocol
+from typing import Callable, Optional
 
 if __package__ in (None, ""):
     _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -53,7 +53,7 @@ class ActionMetadata:
     description: str
     category: ActionCategory
     browser_requirement: ActionRequirement
-    function: Optional[Callable] = None
+    function: Optional[Callable[..., object]] = None
     requires_confirmation: bool = False
     confirmation_message: Optional[str] = None
     close_session_after: bool = False

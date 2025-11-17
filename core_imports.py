@@ -167,7 +167,7 @@ def import_context() -> Any:
         sys.path[:] = original_path
 
 
-def register_function(name: str, func: Callable) -> None:
+def register_function(name: str, func: Callable[..., Any]) -> None:
     """Register a function in the unified registry with performance tracking."""
     if callable(func):
         _registry[name] = func
@@ -176,7 +176,7 @@ def register_function(name: str, func: Callable) -> None:
         _import_cache.clear()
 
 
-def register_many(**functions) -> None:
+def register_many(**functions: Callable[..., Any]) -> None:
     """Register multiple functions efficiently."""
     for name, func in functions.items():
         if callable(func):
@@ -201,7 +201,7 @@ def is_function_available(name: str) -> bool:
     return result
 
 
-def call_function(name: str, *args, **kwargs) -> Any:
+def call_function(name: str, *args: Any, **kwargs: Any) -> Any:
     """Safely call a function from the registry."""
     if is_function_available(name):
         return _registry[name](*args, **kwargs)
@@ -297,12 +297,12 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
 
 
 def safe_execute(
-    func: Optional[Callable] = None,
+    func: Optional[Callable[..., Any]] = None,
     *,
     default_return: Any = None,
     suppress_errors: bool = True,
     log_errors: bool = True,
-):
+) -> Callable[..., Any]:
     """
     Unified safe execution decorator that consolidates error handling patterns.
     Replaces scattered try/catch blocks throughout the codebase.

@@ -46,9 +46,10 @@ from typing import Any, Optional
 
 # Import standard modules
 from standard_imports import *
+from standard_imports import setup_module
 
 # Set up logging
-logger = get_logger(__name__)
+logger = setup_module(globals(), __name__)
 
 
 @dataclass
@@ -440,7 +441,7 @@ class DNAGedcomCrossReferencer:
                 self.verification_opportunities.append(opportunity)
 
     # Helper methods
-    def _extract_person_name(self, person_record) -> str:
+    def _extract_person_name(self, person_record: Any) -> str:
         """Extract person's name from GEDCOM record."""
         try:
             if hasattr(person_record, 'name') and person_record.name:
@@ -449,22 +450,22 @@ class DNAGedcomCrossReferencer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, _person_record) -> Optional[int]:
+    def _extract_birth_year(self, _person_record: Any) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_year(self, _person_record) -> Optional[int]:
+    def _extract_death_year(self, _person_record: Any) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_birth_place(self, _person_record) -> Optional[str]:
+    def _extract_birth_place(self, _person_record: Any) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_place(self, _person_record) -> Optional[str]:
+    def _extract_death_place(self, _person_record: Any) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         # Placeholder implementation
         return None

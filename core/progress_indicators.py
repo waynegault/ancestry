@@ -91,18 +91,18 @@ class ProgressIndicator:
         config: Optional['ProgressIndicatorConfig'] = None,
     ):
         from common_params import ProgressIndicatorConfig
-        if config is None:
-            config = ProgressIndicatorConfig()
+
+        resolved_config = config if config is not None else ProgressIndicatorConfig()
 
         self.description = description
-        self.unit = config.unit
-        self.show_memory = config.show_memory
-        self.show_rate = config.show_rate
-        self.update_interval = config.update_interval
-        self.show_bar = config.show_bar
-        self.log_start = config.log_start
-        self.log_finish = config.log_finish
-        self.leave = config.leave
+        self.unit = resolved_config.unit
+        self.show_memory = resolved_config.show_memory
+        self.show_rate = resolved_config.show_rate
+        self.update_interval = resolved_config.update_interval
+        self.show_bar = resolved_config.show_bar
+        self.log_start = resolved_config.log_start
+        self.log_finish = resolved_config.log_finish
+        self.leave = resolved_config.leave
 
         self.stats = ProgressStats(total_items=total)
         self.progress_bar: Optional[tqdm] = None
@@ -267,7 +267,7 @@ def create_progress_indicator(
     description: str,
     total: Optional[int] = None,
     unit: str = "items",
-    **kwargs
+    **kwargs: Any
 ) -> ProgressIndicator:
     """Factory function to create progress indicators"""
     from common_params import ProgressIndicatorConfig
@@ -294,8 +294,8 @@ def create_progress_indicator(
 def with_progress(
     description: str,
     unit: str = "items",
-    extract_total: Optional[Callable] = None
-):
+    extract_total: Optional[Callable[..., Optional[int]]] = None
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to automatically add progress tracking to functions.
 
@@ -304,8 +304,8 @@ def with_progress(
         unit: Unit of measurement
         extract_total: Function to extract total from function arguments
     """
-    def decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs) -> Any:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Extract total if function provided
             total = None
             if extract_total:

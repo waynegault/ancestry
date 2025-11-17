@@ -134,23 +134,23 @@ class SessionHealthMonitor:
     """
 
     def __init__(self) -> None:
-        self.metrics_history: dict[str, deque] = {}
+        self.metrics_history: dict[str, deque[tuple[float, float]]] = {}
         self.current_metrics: dict[str, HealthMetric] = {}
         self.alerts: list[HealthAlert] = []
-        self.health_score_history: deque = deque(maxlen=100)
+        self.health_score_history: deque[tuple[float, float]] = deque(maxlen=100)
         self.session_start_time = time.time()
         self.last_health_check = time.time()
         self.monitoring_active = False
         self.lock = threading.Lock()
 
         # Performance tracking
-        self.api_response_times: deque = deque(maxlen=50)
+        self.api_response_times: deque[float] = deque(maxlen=50)
         self.error_counts: dict[str, int] = {}
-        self.page_processing_times: deque = deque(maxlen=20)
-        self.memory_usage_history: deque = deque(maxlen=30)
+        self.page_processing_times: deque[float] = deque(maxlen=20)
+        self.memory_usage_history: deque[float] = deque(maxlen=30)
 
         # Enhanced error rate monitoring - PERFORMANCE OPTIMIZED
-        self.error_timestamps: deque = deque(maxlen=2000)  # Increased for 20+ hour sessions
+        self.error_timestamps: deque[float] = deque(maxlen=2000)  # Increased for 20+ hour sessions
         self.error_rate_warnings_sent: dict[str, float] = {}  # Track when warnings were sent
         self.last_error_rate_check: float = time.time()
 
@@ -1472,7 +1472,10 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
 
 # === SESSION STATE PERSISTENCE INTEGRATION ===
 
-def enable_session_state_persistence(session_manager=None, auto_checkpoint_interval: int = 30):
+def enable_session_state_persistence(
+    session_manager: Optional[Any] = None,
+    auto_checkpoint_interval: int = 30,
+) -> SessionHealthMonitor:
     """Enable session state persistence with automatic checkpointing."""
     monitor = get_health_monitor()
 
@@ -1503,13 +1506,16 @@ def enable_session_state_persistence(session_manager=None, auto_checkpoint_inter
         return monitor
 
 
-def create_recovery_checkpoint(session_manager=None, checkpoint_name: str = "recovery_checkpoint"):
+def create_recovery_checkpoint(
+    session_manager: Optional[Any] = None,
+    checkpoint_name: str = "recovery_checkpoint",
+) -> str:
     """Create a recovery checkpoint with session manager state."""
     monitor = get_health_monitor()
 
     try:
         # Gather session manager state if available
-        session_data = {}
+        session_data: dict[str, Any] = {}
         if session_manager:
             try:
                 # Capture session manager state
@@ -1579,7 +1585,10 @@ def get_session_recovery_status() -> dict[str, Any]:
         return {"error": str(e)}
 
 
-def _get_recovery_recommendations(checkpoints: list[dict], crash_recovery: bool) -> list[str]:
+def _get_recovery_recommendations(
+    checkpoints: list[dict[str, Any]],
+    crash_recovery: bool,
+) -> list[str]:
     """Get recovery recommendations based on available data."""
     recommendations = []
 

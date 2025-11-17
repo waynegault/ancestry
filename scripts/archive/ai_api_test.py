@@ -8,7 +8,6 @@ Currently supports Moonshot, DeepSeek, Google Gemini, and Local LLM.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
@@ -17,19 +16,19 @@ import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 try:
     from openai import OpenAI
 except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None  # type: ignore[assignment]
 
+genai_import_error: str | None = None
 try:
     import google.generativeai as genai  # type: ignore[import-untyped]
-    GENAI_IMPORT_ERROR: str | None = None
 except Exception as import_error:  # pragma: no cover - optional dependency
     genai = None  # type: ignore[assignment]
-    GENAI_IMPORT_ERROR = str(import_error)
+    genai_import_error = str(import_error)
 
 try:
     from dotenv import load_dotenv
@@ -280,7 +279,7 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
 def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if genai is None:
-        detail = GENAI_IMPORT_ERROR or "Install google-generativeai."
+        detail = genai_import_error or "Install google-generativeai."
         messages.append(f"google-generativeai package not available ({detail}).")
         return TestResult("gemini", False, False, messages)
 

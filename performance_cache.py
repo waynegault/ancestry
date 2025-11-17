@@ -74,6 +74,8 @@ class CacheableObject:
 
 cacheable_pool = ObjectPool(lambda: CacheableObject(), max_size=50)
 
+ProgressCallback = Callable[[float], None]
+
 
 class PerformanceCache:
     """
@@ -174,7 +176,7 @@ class PerformanceCache:
                 # Trigger cleanup to match new size
                 self._cleanup_old_entries()
 
-    def _generate_cache_key(self, *args, **kwargs) -> str:
+    def _generate_cache_key(self, *args: Any, **kwargs: Any) -> str:
         """Generate a unique cache key from function arguments"""
         key_data = str(args) + str(sorted(kwargs.items()))
         return hashlib.md5(key_data.encode()).hexdigest()
@@ -337,13 +339,13 @@ _performance_cache = PerformanceCache()
 # === PERFORMANCE DECORATORS ===
 
 
-def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True):
+def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Cache GEDCOM analysis results for dramatic performance improvement.
     Target: Reduce action10 from 98.64s to ~20s through intelligent caching.
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key
@@ -381,7 +383,7 @@ def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True):
     return decorator
 
 
-def fast_test_cache(func: Callable) -> Callable:
+def fast_test_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     """
     Ultra-fast caching for test functions to eliminate repeated computations.
     Target: Reduce test execution time by 70-80% through smart mocking.
@@ -412,14 +414,15 @@ def fast_test_cache(func: Callable) -> Callable:
 
 
 def progressive_processing(
-    chunk_size: int = 1000, progress_callback: Optional[Callable] = None
-):
+    chunk_size: int = 1000,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Process large datasets progressively with progress feedback.
     Addresses user experience during long GEDCOM analysis operations.
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # If data is large enough, process in chunks

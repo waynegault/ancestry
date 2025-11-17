@@ -57,6 +57,7 @@ import sys
 import threading
 import time
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -110,7 +111,7 @@ class FunctionProfile:
     min_time: float = float("inf")
     max_time: float = 0.0
     avg_time: float = 0.0
-    recent_times: deque = field(default_factory=lambda: deque(maxlen=100))
+    recent_times: deque[float] = field(default_factory=lambda: deque(maxlen=100))
     memory_usage: list[float] = field(default_factory=list)
     error_count: int = 0
     last_called: Optional[datetime] = None
@@ -125,7 +126,7 @@ class PerformanceMonitor:
         alert_thresholds: Optional[dict[str, float]] = None,
     ):
         self.max_history = max_history
-        self.metrics: deque = deque(maxlen=max_history)
+        self.metrics: deque[PerformanceMetric] = deque(maxlen=max_history)
         self.function_profiles: dict[str, FunctionProfile] = {}
         self.alerts: list[PerformanceAlert] = []
         self.alert_thresholds = alert_thresholds or self._default_thresholds()
@@ -234,7 +235,7 @@ class PerformanceMonitor:
             )
             self.metrics.append(metric)
 
-    def profile_function(self, func: Callable) -> Callable:
+    def profile_function(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator to profile function performance."""
         if not self.enabled:
             return func
@@ -321,7 +322,7 @@ class PerformanceMonitor:
         recent_metrics = [m for m in self.metrics if m.timestamp >= cutoff_time]
 
         # Group by metric name
-        metric_groups = defaultdict(list)
+        metric_groups: defaultdict[str, list[float]] = defaultdict(list)
         for metric in recent_metrics:
             metric_groups[metric.name].append(metric.value)
 
@@ -402,11 +403,11 @@ class PerformanceMonitor:
         recent_alerts = [a for a in self.alerts if a.timestamp >= cutoff_time]
 
         # Calculate statistics
-        metric_stats = defaultdict(list)
+        metric_stats: defaultdict[str, list[float]] = defaultdict(list)
         for metric in recent_metrics:
             metric_stats[metric.name].append(metric.value)
 
-        stats_summary = {}
+        stats_summary: dict[str, dict[str, float]] = {}
         for name, values in metric_stats.items():
             if values:
                 stats_summary[name] = {
@@ -419,7 +420,7 @@ class PerformanceMonitor:
                 }
 
         # Function performance summary
-        function_summary = {}
+        function_summary: dict[str, dict[str, Any]] = {}
         for name, profile in self.function_profiles.items():
             function_summary[name] = {
                 "call_count": profile.call_count,
@@ -484,7 +485,9 @@ class PerformanceMonitor:
         }
 
     def _generate_recommendations(
-        self, stats_summary: dict, function_summary: dict
+        self,
+        stats_summary: Mapping[str, Mapping[str, Any]],
+        function_summary: Mapping[str, Mapping[str, Any]],
     ) -> list[str]:
         """Generate performance recommendations based on collected data."""
         recommendations = []
@@ -585,12 +588,12 @@ performance_monitor = PerformanceMonitor()
 
 
 # Convenience decorators
-def profile(func: Callable) -> Callable:
+def profile(func: Callable[..., Any]) -> Callable[..., Any]:
     """Convenient decorator for function profiling."""
     return performance_monitor.profile_function(func)
 
 
-def monitor_performance(func: Callable) -> Callable:
+def monitor_performance(func: Callable[..., Any]) -> Callable[..., Any]:
     """Alias for profile decorator."""
     return performance_monitor.profile_function(func)
 

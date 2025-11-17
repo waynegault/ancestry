@@ -16,8 +16,6 @@ Test Coverage:
 import sys
 import time
 from contextlib import suppress
-from datetime import datetime, timedelta, timezone
-from typing import Optional
 from unittest.mock import MagicMock, patch
 
 from test_framework import TestSuite, suppress_logging

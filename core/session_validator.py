@@ -25,7 +25,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -54,54 +54,79 @@ class SessionValidator:
 
     def _perform_all_checks(
         self,
-        browser_manager,
-        api_manager,
-        session_manager,
+        browser_manager: Any,
+        api_manager: Any,
+        session_manager: Any,
         action_name: Optional[str],
         skip_csrf: bool,
         attempt: int,
     ) -> tuple[bool, str]:
         """Perform all readiness checks. Returns (success, error_message)."""
-        # Check login status and attempt relogin if needed
+        ok, error = self._verify_login_and_url(browser_manager, session_manager, attempt)
+        if not ok:
+            return False, error
+
+        ok, error = self._verify_cookies_and_sync(browser_manager, api_manager, session_manager, action_name)
+        if not ok:
+            return False, error
+
+        ok, error = self._verify_csrf_if_needed(api_manager, skip_csrf)
+        if not ok:
+            return False, error
+
+        return True, ""
+
+    def _verify_login_and_url(self, browser_manager: Any, session_manager: Any, attempt: int) -> tuple[bool, str]:
+        """Ensure login is valid and URL state is acceptable."""
         login_success, login_error = self._check_login_and_attempt_relogin(
             browser_manager, session_manager, attempt
         )
         if not login_success:
-            return False, login_error
+            return False, login_error or "Login validation failed"
 
-        # Check and handle current URL
         if not self._check_and_handle_url(browser_manager):
             logger.error("URL check/handling failed.")
             return False, "URL check/handling failed"
 
         logger.debug("URL check/handling OK.")
+        return True, ""
 
-        # Check essential cookies
+    def _verify_cookies_and_sync(
+        self,
+        browser_manager: Any,
+        api_manager: Any,
+        session_manager: Any,
+        action_name: Optional[str],
+    ) -> tuple[bool, str]:
+        """Validate browser cookies and synchronize them to API sessions."""
         cookies_success, cookies_error = self._check_essential_cookies(
             browser_manager, action_name
         )
         if not cookies_success:
-            return False, cookies_error
+            return False, cookies_error or "Essential cookies missing"
 
-        # Sync cookies to requests session (with session_manager for recovery support)
         sync_success, sync_error = self._sync_cookies_to_requests(
             browser_manager, api_manager, session_manager=session_manager
         )
         if not sync_success:
-            return False, sync_error
+            return False, sync_error or "Cookie synchronization failed"
 
-        # Check CSRF token (skip if not needed)
-        if not skip_csrf:
-            csrf_success, csrf_error = self._check_csrf_token(api_manager)
-            if not csrf_success:
-                return False, csrf_error
-        else:
+        return True, ""
+
+    def _verify_csrf_if_needed(self, api_manager: Any, skip_csrf: bool) -> tuple[bool, str]:
+        """Optionally validate CSRF tokens when required."""
+        if skip_csrf:
             logger.debug("Skipping CSRF token check as requested")
+            return True, ""
+
+        csrf_success, csrf_error = self._check_csrf_token(api_manager)
+        if not csrf_success:
+            return False, csrf_error or "CSRF validation failed"
 
         return True, ""
 
     def _handle_check_exception(
-        self, exception: Exception, attempt: int, browser_manager
+        self, exception: Exception, attempt: int, browser_manager: Any
     ) -> tuple[bool, str]:
         """Handle exceptions during checks. Returns (should_abort, error_message)."""
         if isinstance(exception, WebDriverException):
@@ -128,9 +153,9 @@ class SessionValidator:
 
     def perform_readiness_checks(
         self,
-        browser_manager,
-        api_manager,
-        session_manager,
+        browser_manager: Any,
+        api_manager: Any,
+        session_manager: Any,
         action_name: Optional[str] = None,
         max_attempts: int = 3,
         skip_csrf: bool = False,
@@ -190,7 +215,7 @@ class SessionValidator:
         return False
 
     def _check_login_and_attempt_relogin(
-        self, browser_manager, session_manager, attempt: int
+        self, browser_manager: Any, session_manager: Any, attempt: int
     ) -> tuple[bool, Optional[str]]:
         """
         Check login status and attempt relogin if needed.
@@ -234,7 +259,13 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _ensure_on_base_url(self, driver, base_url: str, session_manager, nav_to_page) -> None:
+    def _ensure_on_base_url(
+        self,
+        driver: Any,
+        base_url: str,
+        session_manager: Any,
+        nav_to_page: Callable[..., bool],
+    ) -> None:
         """Ensure the browser is on the correct base URL before login checks."""
         if not driver:
             return
@@ -257,7 +288,7 @@ class SessionValidator:
         if not nav_success:
             logger.warning("Pre-auth navigation failed; continuing with existing session state.")
 
-    def _sync_cookies_for_login(self, session_manager) -> None:
+    def _sync_cookies_for_login(self, session_manager: Any) -> None:
         """Force a cookie sync before login verification when available."""
         if not hasattr(session_manager, "_sync_cookies_to_requests"):
             return
@@ -269,7 +300,7 @@ class SessionValidator:
             logger.debug(f"Cookie pre-sync failed (continuing with existing state): {exc}")
 
     def _process_login_result(
-        self, login_result, browser_manager, session_manager
+        self, login_result: Any, browser_manager: Any, session_manager: Any
     ) -> tuple[bool, Optional[str]]:
         """Interpret login_status result and perform relogin if necessary."""
         if login_result is True:
@@ -290,7 +321,7 @@ class SessionValidator:
         logger.error(error_msg)
         return False, error_msg
 
-    def _attempt_relogin(self, _browser_manager, session_manager) -> bool:
+    def _attempt_relogin(self, _browser_manager: Any, session_manager: Any) -> bool:
         """
         Attempt to relogin the user.
 
@@ -323,7 +354,7 @@ class SessionValidator:
             logger.error(f"Exception during relogin attempt: {e}", exc_info=True)
             return False
 
-    def _check_and_handle_url(self, browser_manager) -> bool:
+    def _check_and_handle_url(self, browser_manager: Any) -> bool:
         """
         Check and handle the current URL.
 
@@ -406,7 +437,11 @@ class SessionValidator:
 
         return False, None
 
-    def _check_essential_cookies(self, browser_manager, action_name: Optional[str] = None) -> tuple[bool, Optional[str]]:
+    def _check_essential_cookies(
+        self,
+        browser_manager: Any,
+        action_name: Optional[str] = None,
+    ) -> tuple[bool, Optional[str]]:
         """
         Check for essential cookies.
 
@@ -439,7 +474,10 @@ class SessionValidator:
             return False, error_msg
 
     def _sync_cookies_to_requests(
-        self, browser_manager, api_manager, session_manager=None
+        self,
+        browser_manager: Any,
+        api_manager: Any,
+        session_manager: Optional[Any] = None,
     ) -> tuple[bool, Optional[str]]:
         """
         Sync cookies from browser to API requests session.
@@ -471,7 +509,7 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _check_csrf_token(self, api_manager) -> tuple[bool, Optional[str]]:
+    def _check_csrf_token(self, api_manager: Any) -> tuple[bool, Optional[str]]:
         """
         Check and retrieve CSRF token if needed.
         Uses smart caching to avoid repeated fetches.
@@ -504,7 +542,7 @@ class SessionValidator:
             return True, None
 
     def validate_session_cookies(
-        self, browser_manager, required_cookies: list[str]
+        self, browser_manager: Any, required_cookies: list[str]
     ) -> bool:
         """
         Validate that required cookies are present.
@@ -525,7 +563,11 @@ class SessionValidator:
             logger.error(f"Error validating session cookies: {e}", exc_info=True)
             return False
 
-    def verify_login_status(self, api_manager, session_manager=None) -> bool:
+    def verify_login_status(
+        self,
+        api_manager: Any,
+        session_manager: Optional[Any] = None,
+    ) -> bool:
         """
         Verify login status using multiple methods.
 

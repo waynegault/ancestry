@@ -63,10 +63,23 @@ def extract_attribute(element: Any, attribute: str) -> str:  # type: ignore[misc
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_elem_there(driver: Any, selector: str, by: str = By.CSS_SELECTOR) -> bool:  # type: ignore[misc]
-    """Check if element exists with unified error handling."""
+def is_elem_there(
+    driver: Any,
+    selector: str,
+    by: str = By.CSS_SELECTOR,
+    *,
+    wait: float | int = 0,
+) -> bool:  # type: ignore[misc]
+    """Check if element exists with optional wait for presence."""
     if not driver:
         return False
+
+    if wait and wait > 0:
+        WebDriverWait(driver, wait).until(
+            expected_conditions.presence_of_element_located((by, selector))
+        )
+        return True
+
     driver.find_element(by, selector)
     return True
 

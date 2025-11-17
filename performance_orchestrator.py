@@ -531,9 +531,9 @@ def monitor_memory_pressure() -> bool:
 # PERFORMANCE OPTIMIZATION DECORATOR
 # ==============================================
 
-def optimize_on_high_usage(memory_threshold: float = 85.0):
+def optimize_on_high_usage(memory_threshold: float = 85.0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to automatically optimize performance when resource usage is high."""
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check memory pressure before execution

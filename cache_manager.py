@@ -54,7 +54,7 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
 
 from standard_imports import get_function, is_function_available, setup_module
 
@@ -122,7 +122,7 @@ class SessionComponentCache(BaseCacheModule):
     """
 
     def __init__(self) -> None:
-        self._active_sessions: dict[str, weakref.ReferenceType] = {}
+        self._active_sessions: dict[str, weakref.ReferenceType[Any]] = {}
         self._session_lock = threading.Lock()
         self._stats = {
             "cache_hits": 0,
@@ -512,13 +512,14 @@ def warm_all_caches() -> bool:
 # CACHE DECORATORS AND UTILITIES
 # ==============================================
 
-F = TypeVar("F", bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
-def cached_session_component(component_type: str) -> Callable[[F], F]:
+def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to cache expensive session components."""
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Try to get cached component
             cached = _unified_cache_manager.session_cache.get_cached_component(component_type)
             if cached is not None:
@@ -528,15 +529,15 @@ def cached_session_component(component_type: str) -> Callable[[F], F]:
             result = func(*args, **kwargs)
             _unified_cache_manager.session_cache.cache_component(component_type, result)
             return result
-        return wrapper
+        return cast(Callable[P, R], wrapper)
     return decorator
 
 
-def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[F], F]:
+def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to cache API calls with TTL."""
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Split endpoint into service and method (e.g., "ancestry.search" -> "ancestry", "search")
             parts = endpoint.split(".", 1)
             service = parts[0] if len(parts) > 0 else "unknown"
@@ -551,7 +552,7 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[F], F]:
             result = func(*args, **kwargs)
             _unified_cache_manager.api_cache.cache_api_response(service, method, kwargs, result, ttl)
             return result
-        return wrapper
+        return cast(Callable[P, R], wrapper)
     return decorator
 
 

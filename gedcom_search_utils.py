@@ -48,7 +48,7 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from config.config_manager import ConfigManager
 from gedcom_utils import GedcomData, _normalize_id, calculate_match_score
@@ -301,13 +301,13 @@ def _load_or_get_gedcom_data(
     gedcom_path: Optional[str],
 ) -> GedcomData:
     """Load or retrieve GEDCOM data from cache or file."""
-    if gedcom_data:
+    if gedcom_data is not None:
         return gedcom_data
 
     # Try cached data first
     if _GedcomDataCache.data is not None:
         logger.info("Using cached GEDCOM data from _GedcomDataCache")
-        return _GedcomDataCache.data
+        return cast(GedcomData, _GedcomDataCache.data)
 
     # Determine GEDCOM path
     if not gedcom_path:
@@ -321,7 +321,10 @@ def _load_or_get_gedcom_data(
         raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
 
     # Load GEDCOM data
-    return load_gedcom_data(Path(str(gedcom_path)))
+    loaded_data = load_gedcom_data(Path(str(gedcom_path)))
+    if loaded_data is None:
+        raise MissingConfigError("Failed to load GEDCOM data from provided path")
+    return loaded_data
 
 
 def _validate_gedcom_data(gedcom_data: Optional[GedcomData]) -> None:
@@ -362,27 +365,19 @@ def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
         scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
 
     # Get date flexibility
-    date_flex_value = (
-        config_schema.date_flexibility
-        if config_schema
-        else DEFAULT_CONFIG["DATE_FLEXIBILITY"]["year_match_range"]
-    )
+    if config_schema:
+        date_flex_value: Any = getattr(config_schema, "date_flexibility", None)
+    else:
+        date_flex_value = DEFAULT_CONFIG["DATE_FLEXIBILITY"]
 
     # Convert to dict format expected by calculate_match_score
-    if isinstance(date_flex_value, (int, float)):
-        date_flex = {"year_match_range": int(date_flex_value)}
-    elif isinstance(date_flex_value, dict):
+    if isinstance(date_flex_value, dict):
         date_flex = date_flex_value
     else:
-        date_flex = {"year_match_range": 10}
+        date_flex = {"year_match_range": int(date_flex_value) if isinstance(date_flex_value, (int, float)) else 10}
 
     # Extract year range
-    if isinstance(date_flex, (int, float)):
-        year_range = int(date_flex)
-    elif isinstance(date_flex, dict):
-        year_range = date_flex.get("year_match_range", 10)
-    else:
-        year_range = 10
+    year_range = int(date_flex.get("year_match_range", 10))
 
     return scoring_weights, date_flex, year_range
 
@@ -475,7 +470,7 @@ def _calculate_cached_score(
     indi_data: dict[str, Any],
     scoring_weights: dict[str, Any],
     date_flex: dict[str, Any],
-    score_cache: dict[tuple, tuple],
+    score_cache: dict[tuple[int, int], tuple[float, dict[str, Any], list[str]]],
 ) -> tuple[float, dict[str, Any], list[str]]:
     """Calculate match score with caching."""
     criterion_hash = hash(json.dumps(scoring_criteria, sort_keys=True))
@@ -761,8 +756,9 @@ def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str
 
 def _validate_gedcom_data_for_family(gedcom_data: GedcomData) -> bool:
     """Validate that gedcom_data has required attributes for family processing."""
-    return (hasattr(gedcom_data, "reader") and gedcom_data.reader and
-            hasattr(gedcom_data, "indi_index") and gedcom_data.indi_index)
+    has_reader = bool(getattr(gedcom_data, "reader", None))
+    has_index = bool(getattr(gedcom_data, "indi_index", None))
+    return has_reader and has_index
 
 
 def _get_family_record(gedcom_data: GedcomData, fam_id: str) -> Any:
@@ -894,7 +890,7 @@ def get_gedcom_family_details(
             if hasattr(gedcom_data, "id_to_parents")
             else set()
         )
-        parent_ids = list(parent_ids_raw) if isinstance(parent_ids_raw, set) else parent_ids_raw
+        parent_ids = list(parent_ids_raw)
         result["parents"] = _get_parents(gedcom_data, individual_id_norm)
 
         # Get siblings

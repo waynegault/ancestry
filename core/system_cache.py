@@ -89,7 +89,7 @@ SYSTEM_CACHE_CONFIG = SystemCacheConfig()
 # === API RESPONSE CACHING SYSTEM ===
 
 
-class APIResponseCache(BaseCacheModule):
+class APIResponseCache(BaseCacheModule):  # type: ignore[misc]
     """
     High-performance API response caching system.
     Optimizes external API calls with intelligent TTL management.
@@ -209,7 +209,7 @@ class APIResponseCache(BaseCacheModule):
 # === DATABASE QUERY CACHING SYSTEM ===
 
 
-class DatabaseQueryCache(BaseCacheModule):
+class DatabaseQueryCache(BaseCacheModule):  # type: ignore[misc]
     """
     High-performance database query result caching.
     Optimizes database operations with intelligent invalidation.
@@ -225,7 +225,7 @@ class DatabaseQueryCache(BaseCacheModule):
         self._lock = threading.Lock()
         logger.debug("DatabaseQueryCache initialized for Phase 5.2")
 
-    def _get_query_cache_key(self, query: str, params: tuple = ()) -> str:
+    def _get_query_cache_key(self, query: str, params: tuple[Any, ...] = ()) -> str:
         """Generate cache key for database queries"""
         # Normalize query (remove extra whitespace, convert to lowercase)
         normalized_query = " ".join(query.strip().lower().split())
@@ -237,7 +237,7 @@ class DatabaseQueryCache(BaseCacheModule):
         return get_unified_cache_key("db_query", query_hash)
 
     def cache_query_result(
-        self, query: str, params: tuple, result: Any, ttl: Optional[int] = None
+        self, query: str, params: tuple[Any, ...], result: Any, ttl: Optional[int] = None
     ) -> bool:
         """Cache database query result"""
         if not cache:
@@ -264,7 +264,7 @@ class DatabaseQueryCache(BaseCacheModule):
             logger.warning(f"Failed to cache database query: {e}")
             return False
 
-    def get_cached_query_result(self, query: str, params: tuple = ()) -> Optional[Any]:
+    def get_cached_query_result(self, query: str, params: tuple[Any, ...] = ()) -> Optional[Any]:
         """Retrieve cached database query result"""
         if not cache:
             return None
@@ -294,7 +294,7 @@ class DatabaseQueryCache(BaseCacheModule):
 # === MEMORY OPTIMIZATION SYSTEM ===
 
 
-class MemoryOptimizer(BaseCacheModule):
+class MemoryOptimizer(BaseCacheModule):  # type: ignore[misc]
     """
     Intelligent memory optimization and garbage collection management.
     """
@@ -386,7 +386,7 @@ _memory_optimizer = MemoryOptimizer()
 # === CACHING DECORATORS ===
 
 
-def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
+def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for caching API calls with intelligent TTL management.
 
@@ -396,7 +396,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
         return ai_service.analyze(message_content)
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function name and parameters
@@ -433,7 +433,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable:
     return decorator
 
 
-def cached_database_query(ttl: Optional[int] = None) -> Callable:
+def cached_database_query(ttl: Optional[int] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for caching database query results.
 
@@ -443,7 +443,7 @@ def cached_database_query(ttl: Optional[int] = None) -> Callable:
         return session.query(ConversationLog).filter_by(people_id=person_id).all()
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Create cache key from function and parameters
@@ -468,7 +468,7 @@ def cached_database_query(ttl: Optional[int] = None) -> Callable:
     return decorator
 
 
-def memory_optimized(gc_threshold: Optional[float] = None) -> Callable:
+def memory_optimized(gc_threshold: Optional[float] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for functions that should trigger memory optimization.
 
@@ -479,7 +479,7 @@ def memory_optimized(gc_threshold: Optional[float] = None) -> Callable:
         return result
     """
 
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check memory before execution
@@ -840,7 +840,7 @@ if __name__ == "__main__":
     print("\n📋 Test 2: Cache Statistics & Monitoring")
     try:
         stats = get_system_cache_stats()
-        success2 = isinstance(stats, dict) and len(stats) > 0
+        success2 = len(stats) > 0
         print(f"System cache stats collected: {len(stats)} categories")
         print(f"Result: {'✅ PASS' if success2 else '❌ FAIL'}")
     except Exception as e:
@@ -853,7 +853,7 @@ if __name__ == "__main__":
     try:
         warm_success = warm_system_caches()
         clear_results = clear_system_caches()
-        success3 = warm_success and isinstance(clear_results, dict)
+        success3 = warm_success and bool(clear_results)
         print(f"Cache warming: {'✅ SUCCESS' if warm_success else '❌ FAILED'}")
         print(f"Cache clearing: {clear_results}")
         print(f"Result: {'✅ PASS' if success3 else '❌ FAIL'}")

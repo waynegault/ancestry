@@ -36,6 +36,8 @@ import unittest
 from functools import wraps
 from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
 
+from test_utilities import EmptyTestService
+
 T = TypeVar("T")
 
 
@@ -53,7 +55,7 @@ class DIContainer:
 
     def __init__(self) -> None:
         self._services: dict[str, Any] = {}
-        self._factories: dict[str, Callable] = {}
+        self._factories: dict[str, Callable[..., Any]] = {}
         self._singletons: dict[str, Any] = {}
         self._interfaces: dict[type, type] = {}
         self._lock = threading.RLock()
@@ -521,9 +523,7 @@ class TestDIContainer(unittest.TestCase):
         self.container = DIContainer()
 
     def test_register_singleton(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceA(EmptyTestService): ...
+        class ServiceA(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_singleton(ServiceA, ServiceA)
         instance1 = self.container.resolve(ServiceA)
@@ -531,9 +531,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(instance1, instance2)
 
     def test_register_transient(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceB(EmptyTestService): ...
+        class ServiceB(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_transient(ServiceB, ServiceB)
         instance1 = self.container.resolve(ServiceB)
@@ -553,9 +551,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertEqual(instance.value, "factory_value")
 
     def test_register_instance(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceD(EmptyTestService): ...
+        class ServiceD(EmptyTestService): ...  # type: ignore[misc]
 
         instance = ServiceD()
         self.container.register_instance(ServiceD, instance)
@@ -563,18 +559,14 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(resolved_instance, instance)
 
     def test_resolve_singleton(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceE(EmptyTestService): ...
+        class ServiceE(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_singleton(ServiceE, ServiceE)
         instance = self.container.resolve(ServiceE)
         self.assertIsInstance(instance, ServiceE)
 
     def test_resolve_transient(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceF(EmptyTestService): ...
+        class ServiceF(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_transient(ServiceF, ServiceF)
         instance = self.container.resolve(ServiceF)
@@ -594,9 +586,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertEqual(instance.value, "factory_value")
 
     def test_resolve_instance(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceH(EmptyTestService): ...
+        class ServiceH(EmptyTestService): ...  # type: ignore[misc]
 
         instance = ServiceH()
         self.container.register_instance(ServiceH, instance)
@@ -605,27 +595,21 @@ class TestDIContainer(unittest.TestCase):
         self.assertIs(resolved_instance, instance)
 
     def test_is_registered(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceI(EmptyTestService): ...
+        class ServiceI(EmptyTestService): ...  # type: ignore[misc]
 
         self.assertFalse(self.container.is_registered(ServiceI))
         self.container.register_singleton(ServiceI, ServiceI)
         self.assertTrue(self.container.is_registered(ServiceI))
 
     def test_clear(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceJ(EmptyTestService): ...
+        class ServiceJ(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_singleton(ServiceJ, ServiceJ)
         self.container.clear()
         self.assertFalse(self.container.is_registered(ServiceJ))
 
     def test_get_registration_info(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceK(EmptyTestService): ...
+        class ServiceK(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_singleton(ServiceK, ServiceK, "service_k")
         info = self.container.get_registration_info()
@@ -637,9 +621,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertIn("service_k", info["singleton_instances"])
 
     def test_create_instance(self):
-        from test_utilities import EmptyTestService
-
-        class ServiceL(EmptyTestService):
+        class ServiceL(EmptyTestService):  # type: ignore[misc]
             def __init__(self) -> None:
                 super().__init__()
                 self.created = True
@@ -650,9 +632,7 @@ class TestDIContainer(unittest.TestCase):
         self.assertTrue(instance.created)
 
     def test_di_resolution_error(self):
-        from test_utilities import EmptyTestService
-
-        class UnregisteredService(EmptyTestService): ...
+        class UnregisteredService(EmptyTestService): ...  # type: ignore[misc]
 
         with self.assertRaises(DIResolutionError):
             self.container.resolve(UnregisteredService)

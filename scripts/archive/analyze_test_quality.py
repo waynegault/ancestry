@@ -91,9 +91,9 @@ class TestQualityAnalyzer:
         except Exception as e:
             self.issues["analysis_errors"].append(f"{filepath}: {e}")
 
-    def _find_test_functions(self, tree: ast.AST, content: str) -> list[dict]:
+    def _find_test_functions(self, tree: ast.AST, content: str) -> list[dict[str, Any]]:
         """Find all test functions in the AST."""
-        test_functions = []
+        test_functions: list[dict[str, Any]] = []
         content_lines = content.split("\n")
 
         for node in ast.walk(tree):
@@ -117,7 +117,7 @@ class TestQualityAnalyzer:
         return test_functions
 
     def _analyze_test_function(
-        self, test_func: dict, _content: str, _filepath: str
+        self, test_func: dict[str, Any], _content: str, _filepath: str
     ) -> list[str]:
         """Analyze a single test function for quality issues."""
         issues = []

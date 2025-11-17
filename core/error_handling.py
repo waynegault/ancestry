@@ -1389,15 +1389,18 @@ def _handle_retry_exception(
     base_delay: float,
     max_delay: float,
     jitter_seconds: float,
-) -> None:
-    """Handle exception during retry attempt."""
+) -> bool:
+    """Handle exception during retry attempt.
+
+    Returns True if the caller should stop retrying and re-raise the exception.
+    """
     if _should_stop_retry(exception, stop_on):
         logger.error(f"{func_name} failed with non-retryable error: {exception}")
-        raise
+        return True
 
     if not _should_retry_exception(exception, retry_on):
         logger.error(f"{func_name} failed with unsupported error type: {exception}")
-        raise
+        return True
 
     if attempt < max_attempts - 1:
         delay = _calculate_retry_delay(
@@ -1416,6 +1419,8 @@ def _handle_retry_exception(
             exception,
         )
         time.sleep(delay)
+
+    return False
 
 
 _DEFAULT_RETRY_EXCEPTIONS = (
@@ -1518,7 +1523,7 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
                 return result
             except Exception as exc:
                 last_exception = exc
-                _handle_retry_exception(
+                should_raise = _handle_retry_exception(
                     exc,
                     func.__name__,
                     attempt,
@@ -1530,6 +1535,8 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
                     settings.max_delay,
                     settings.jitter_seconds,
                 )
+                if should_raise:
+                    raise
 
         total_time = time.time() - start_time
         if last_exception is None:

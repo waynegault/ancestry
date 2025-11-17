@@ -41,7 +41,6 @@ from chromedriver import init_webdvr
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
-from utils import nav_to_page
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -241,7 +240,6 @@ class BrowserManager:
                 # (OSError: [WinError 6] The handle is invalid)
                 import contextlib
                 import io
-                import sys
 
                 # Store driver reference and clear it immediately to prevent gc issues
                 driver_to_close = self.driver
@@ -314,7 +312,7 @@ class BrowserManager:
         logger.debug(f"Starting browser session for action: {action_name}")
         return self.start_browser(action_name)
 
-    def get_cookies(self, cookie_names: list, timeout: int = 10) -> bool:
+    def get_cookies(self, cookie_names: list[str], timeout: int = 10) -> bool:
         """
         Check if specified cookies are present in browser session.
 
@@ -332,17 +330,18 @@ class BrowserManager:
         try:
             start_time = time.time()
             required_lower = {name.lower() for name in cookie_names}
+            missing_lower: set[str] = required_lower.copy()
 
             while time.time() - start_time < timeout:
                 if not self.driver:  # Additional safety check
                     logger.error("WebDriver became None during cookie check")
                     return False
 
-                cookies = self.driver.get_cookies()
+                cookies: list[dict[str, Any]] = self.driver.get_cookies()
                 current_cookies_lower = {
-                    c["name"].lower()
-                    for c in cookies
-                    if isinstance(c, dict) and "name" in c
+                    cookie["name"].lower()
+                    for cookie in cookies
+                    if "name" in cookie
                 }
                 missing_lower = required_lower - current_cookies_lower
                 if not missing_lower:

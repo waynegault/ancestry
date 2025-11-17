@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, TypeAlias
 
 from api_search_utils import get_api_family_details
 from api_utils import call_discovery_relationship_api, call_treesui_list_api
@@ -23,6 +23,10 @@ from genealogy_presenter import present_post_selection
 from logging_config import logger
 from relationship_utils import convert_discovery_api_path_to_unified_format
 from universal_scoring import calculate_display_bonuses
+
+CandidateDict: TypeAlias = dict[str, Any]
+CandidateList: TypeAlias = list[CandidateDict]
+FieldScoreDict: TypeAlias = dict[str, Any]
 
 # -----------------------------
 # Scoring helpers (minimal port)
@@ -98,7 +102,7 @@ def _generate_cache_key(criteria: dict[str, Any]) -> str:
     return hashlib.sha256(criteria_json.encode('utf-8')).hexdigest()
 
 
-def _get_cached_search_results(cache_key: str, db_session: Any) -> list[dict] | None:
+def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList | None:
     """
     Retrieve cached search results if available and not expired.
 
@@ -152,8 +156,8 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> list[dict] | 
 def _store_search_results_in_cache(
     cache_key: str,
     criteria: dict[str, Any],
-    results: list[dict],
-    db_session: Any
+    results: CandidateList,
+    db_session: Any,
 ) -> None:
     """
     Store API search results in cache for 7 days.
@@ -339,7 +343,7 @@ def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
 # Scoring helpers (minimal port)
 # -----------------------------
 
-def _extract_candidate_data(raw: dict, idx: int, clean: Callable[[Any], str | None]) -> dict[str, Any]:
+def _extract_candidate_data(raw: CandidateDict, idx: int, clean: Callable[[Any], str | None]) -> CandidateDict:
     # Extract name - TreesUI parser returns FullName, GivenName, Surname
     full_name = raw.get("FullName") or (f"{raw.get('GivenName','')} {raw.get('Surname','')}").strip() or "Unknown"
     pid = raw.get("PersonId", f"Unknown_{idx}")
@@ -373,16 +377,26 @@ def _extract_candidate_data(raw: dict, idx: int, clean: Callable[[Any], str | No
     }
 
 
-def _calculate_candidate_score(cand: dict[str, Any], criteria: dict[str, Any]) -> tuple[float, dict[str, Any], list[str]]:
+def _calculate_candidate_score(
+    cand: CandidateDict,
+    criteria: dict[str, Any],
+) -> tuple[float, FieldScoreDict, list[str]]:
     try:
         score, field_scores, reasons = calculate_match_score(criteria, cand, None, None)
-        return float(score or 0), dict(field_scores or {}), list(reasons or [])
+        normalized_field_scores: FieldScoreDict = dict(field_scores or {})
+        return float(score or 0), normalized_field_scores, list(reasons or [])
     except Exception as e:
         logger.error(f"Scoring error for {cand.get('norm_id')}: {e}", exc_info=True)
         return 0.0, {}, []
 
 
-def _build_processed_candidate(raw: dict, cand: dict[str, Any], score: float, field_scores: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
+def _build_processed_candidate(
+    raw: CandidateDict,
+    cand: CandidateDict,
+    score: float,
+    field_scores: FieldScoreDict,
+    reasons: list[str],
+) -> CandidateDict:
     bstr, dstr = raw.get("BirthDate"), raw.get("DeathDate")
     return {
         "id": cand.get("norm_id", "Unknown"),
@@ -401,13 +415,11 @@ def _build_processed_candidate(raw: dict, cand: dict[str, Any], score: float, fi
     }
 
 
-def _process_and_score_suggestions(suggestions: list[dict], criteria: dict[str, Any]) -> list[dict]:
+def _process_and_score_suggestions(suggestions: CandidateList, criteria: dict[str, Any]) -> CandidateList:
     def clean_param(p: Any) -> str | None:
         return (p.strip().lower() if p and isinstance(p, str) else None)
-    processed: list[dict] = []
+    processed: CandidateList = []
     for idx, raw in enumerate(suggestions or []):
-        if not isinstance(raw, dict):
-            continue
         cand = _extract_candidate_data(raw, idx, clean_param)
         score, field_scores, reasons = _calculate_candidate_score(cand, criteria)
         processed.append(_build_processed_candidate(raw, cand, score, field_scores, reasons))
@@ -421,7 +433,7 @@ def _process_and_score_suggestions(suggestions: list[dict], criteria: dict[str, 
 # Display helpers (Action 10 compatible)
 # -----------------------------
 
-def _extract_field_scores_for_display(candidate: dict) -> dict[str, int]:
+def _extract_field_scores_for_display(candidate: CandidateDict) -> FieldScoreDict:
     fs = candidate.get("field_scores", {}) or {}
     return {
         "givn_s": int(fs.get("givn", 0)),
@@ -437,7 +449,7 @@ def _extract_field_scores_for_display(candidate: dict) -> dict[str, int]:
     }
 
 
-def _calc_display_bonuses_wrap(scores: dict[str, int]) -> dict[str, int]:
+def _calc_display_bonuses_wrap(scores: FieldScoreDict) -> FieldScoreDict:
     b = calculate_display_bonuses(scores, key_prefix="_s")
     return {
         "birth_date_score_component": b["birth_date_component"],
@@ -447,7 +459,7 @@ def _calc_display_bonuses_wrap(scores: dict[str, int]) -> dict[str, int]:
     }
 
 
-def _create_table_row_for_candidate(candidate: dict) -> list[str]:
+def _create_table_row_for_candidate(candidate: CandidateDict) -> list[str]:
     s = _extract_field_scores_for_display(candidate)
     b = _calc_display_bonuses_wrap(s)
     name = candidate.get("name", "N/A")
@@ -468,6 +480,35 @@ def _create_table_row_for_candidate(candidate: dict) -> list[str]:
 # Search and post-selection
 # -----------------------------
 
+
+def _get_db_session_for_cache(session_manager: Any) -> Any | None:
+    """Best-effort database session retrieval for cache operations."""
+    try:
+        db_manager = getattr(session_manager, "database_manager", None)
+        if db_manager:
+            return db_manager.get_session()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("Could not get database session for caching: %s", exc)
+    return None
+
+
+def _fetch_cached_results(
+    search_criteria: dict[str, Any],
+    max_results: int,
+    db_session: Any,
+) -> tuple[str | None, CandidateList | None]:
+    """Return cache key and cached results (if available)."""
+    if not db_session:
+        return None, None
+
+    cache_key = _generate_cache_key(search_criteria)
+    cached_results = _get_cached_search_results(cache_key, db_session)
+    if cached_results is None:
+        return cache_key, None
+
+    limited = cached_results[: max(1, max_results)]
+    return cache_key, limited
+
 def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
     """
     Resolve base_url and tree_id for API calls.
@@ -484,7 +525,11 @@ def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
     return base_url, str(tree_id) if tree_id else None
 
 
-def search_ancestry_api_for_person(session_manager: Any, search_criteria: dict[str, Any], max_results: int = 20) -> list[dict]:
+def search_ancestry_api_for_person(
+    session_manager: Any,
+    search_criteria: dict[str, Any],
+    max_results: int = 20,
+) -> CandidateList:
     """
     Search Ancestry API for matching persons with caching to prevent duplicate API calls.
 
@@ -505,37 +550,29 @@ def search_ancestry_api_for_person(session_manager: Any, search_criteria: dict[s
         logger.error("Missing base_url or tree_id for API search")
         return []
 
-    # Step 2: Get database session for cache operations
-    db_session = None
-    try:
-        if hasattr(session_manager, 'database_manager') and session_manager.database_manager:
-            db_session = session_manager.database_manager.get_session()
-    except Exception as e:
-        logger.warning(f"Could not get database session for caching: {e}")
-
-    # Step 3: Check cache for recent search results (if database available)
-    if db_session:
-        cache_key = _generate_cache_key(search_criteria)
-        cached_results = _get_cached_search_results(cache_key, db_session)
-
-        if cached_results is not None:
-            # Cache HIT - return cached results without API call
-            # Limit to max_results (cache stores full result set)
-            return cached_results[: max(1, max_results)]
+    # Step 2: Get database session for cache operations and check cache
+    db_session = _get_db_session_for_cache(session_manager)
+    cache_key, cached_results = _fetch_cached_results(search_criteria, max_results, db_session)
+    if cached_results is not None:
+        return cached_results
 
     # Step 4: Cache MISS - make API call to get fresh results
     suggestions = call_treesui_list_api(session_manager, tree_id, base_url, search_criteria) or []
     processed = _process_and_score_suggestions(suggestions, search_criteria)
 
     # Step 5: Store results in cache for future queries (if database available)
-    if db_session:
+    if db_session and cache_key:
         _store_search_results_in_cache(cache_key, search_criteria, processed, db_session)
 
     # Step 6: Return limited results to caller
     return processed[: max(1, max_results)]
 
 
-def _extract_year_from_candidate(selected_candidate_processed: dict, field_key: str, fallback_key: str) -> int | None:
+def _extract_year_from_candidate(
+    selected_candidate_processed: CandidateDict,
+    field_key: str,
+    fallback_key: str,
+) -> int | None:
     """Extract and convert year value from candidate data."""
     val = selected_candidate_processed.get("field_scores", {}).get(field_key) or selected_candidate_processed.get(fallback_key)
     try:
@@ -551,7 +588,7 @@ def _get_relationship_paths(
     base_url: str,
     owner_name: str,
     target_name: str,
-) -> tuple[str | None, list | None]:
+) -> tuple[str | None, list[dict[str, Any]] | None]:
     """Retrieve relationship paths using relation ladder with labels API."""
     from api_utils import call_relation_ladder_with_labels_api
 
@@ -580,7 +617,7 @@ def _get_relationship_paths(
     return formatted_path, unified_path
 
 
-def _format_kinship_persons_path(kinship_persons: list[dict], owner_name: str) -> str:
+def _format_kinship_persons_path(kinship_persons: CandidateList, owner_name: str) -> str:
     """Format kinshipPersons array from relation ladder API into readable path."""
     if not kinship_persons or len(kinship_persons) < 2:
         return "(No relationship path available)"
@@ -640,7 +677,7 @@ def _format_kinship_persons_path(kinship_persons: list[dict], owner_name: str) -
     return f"{header}\n" + "\n".join(path_lines)
 
 
-def _handle_supplementary_info_phase(selected_candidate_processed: dict, session_manager_local: Any) -> None:
+def _handle_supplementary_info_phase(selected_candidate_processed: CandidateDict, session_manager_local: Any) -> None:
     try:
         person_id = str(selected_candidate_processed.get("id"))
         base_url, owner_tree_id = _resolve_base_and_tree(session_manager_local)
@@ -727,9 +764,14 @@ def _api_search_core_module_tests() -> bool:
 
     def _test_search_empty_suggestions() -> None:
         """Test that search gracefully handles empty suggestions and invalid criteria."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
-        def fake_list_api(sm: Any, tree_id: str, base: str, criteria: dict[str, Any]) -> list[dict]:
+        def fake_list_api(
+            sm: Any,
+            tree_id: str,
+            base: str,
+            criteria: dict[str, Any],
+        ) -> CandidateList:
             # Unused parameters are intentional for API compatibility
             _ = (sm, tree_id, base, criteria)
             # API gracefully returns empty list for invalid criteria

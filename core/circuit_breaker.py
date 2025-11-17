@@ -29,10 +29,10 @@ Usage:
 
 import logging
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 if __package__ in (None, ""):
     _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -768,10 +768,15 @@ if __name__ == "__main__":
 
 try:
     from core.error_handling import (
-        CircuitBreaker,
-        CircuitBreakerConfig,
-        CircuitState,
+        CircuitBreaker as _CircuitBreaker,
+        CircuitBreakerConfig as _CircuitBreakerConfig,
+        CircuitState as _CircuitState,
     )
+
+    # Re-export advanced circuit breaker APIs while keeping imports "used" for linters
+    CircuitBreaker = _CircuitBreaker
+    CircuitBreakerConfig = _CircuitBreakerConfig
+    CircuitState = _CircuitState
 
     __all__ = [
         # Advanced (re-exported from error_handling)

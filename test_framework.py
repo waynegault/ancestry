@@ -216,7 +216,7 @@ class TestSuite:
     def run_test(
         self,
         test_name: str,
-        test_func: Callable,
+        test_func: Callable[[], Any],
         test_summary: str = "",
         functions_tested: str = "",
         method_description: str = "",
@@ -575,7 +575,7 @@ def _test_icons() -> None:
     assert Icons.MAGNIFY == "🔍"
 
 
-def _test_mock_data(test_data: Any) -> None:
+def _test_mock_data(test_data: Any) -> bool:
     """Test mock data creation functionality."""
     data = test_data["mock_data"]
     assert isinstance(data, dict)
@@ -586,7 +586,7 @@ def _test_mock_data(test_data: Any) -> None:
     return True
 
 
-def _test_standardized_data_factory(test_data: Any) -> None:
+def _test_standardized_data_factory(test_data: Any) -> bool:
     """Test standardized test data factory."""
     assert "test_person" in test_data
     assert "test_environment" in test_data
@@ -595,7 +595,7 @@ def _test_standardized_data_factory(test_data: Any) -> None:
     return True
 
 
-def _test_function_behavior_utility() -> None:
+def _test_function_behavior_utility() -> bool:
     """Test the test_function_behavior utility function."""
     # Define a simple test function
     def sample_add(a: int, b: int) -> int:

@@ -3709,7 +3709,7 @@ def _check_ui_login_indicators(driver: Any) -> Optional[bool]:
     # Check for logged-in element
     logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR
     logger.debug(f"Checking for logged-in indicator: '{logged_in_selector}'")
-    ui_element_present = is_elem_there(driver, By.CSS_SELECTOR, logged_in_selector, wait=3)
+    ui_element_present = is_elem_there(driver, logged_in_selector, By.CSS_SELECTOR, wait=3)
 
     if ui_element_present:
         logger.debug("UI check: Logged-in indicator found. User is logged in.")
@@ -3718,7 +3718,7 @@ def _check_ui_login_indicators(driver: Any) -> Optional[bool]:
     # Check for login button
     login_button_selector = LOG_IN_BUTTON_SELECTOR
     logger.debug(f"Checking for login button: '{login_button_selector}'")
-    login_button_present = is_elem_there(driver, By.CSS_SELECTOR, login_button_selector, wait=3)
+    login_button_present = is_elem_there(driver, login_button_selector, By.CSS_SELECTOR, wait=3)
 
     if login_button_present:
         logger.debug("UI check: Login button found. User is NOT logged in.")
@@ -4287,7 +4287,7 @@ def _check_for_unavailability(
     for msg_selector, (action, wait_time) in selectors.items():
         # Use selenium_utils helper 'is_elem_there' with a very short wait
         # Assume is_elem_there is imported
-        if is_elem_there(driver, By.CSS_SELECTOR, msg_selector, wait=1):  # type: ignore
+        if is_elem_there(driver, msg_selector, By.CSS_SELECTOR, wait=1):  # type: ignore
             logger.warning(
                 f"Unavailability message found matching selector: '{msg_selector}'. Action: {action}, Wait: {wait_time}s"
             )
