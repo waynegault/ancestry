@@ -88,11 +88,14 @@ logger_for_setup.setLevel(logging.DEBUG)  # Log setup details at DEBUG level
 
 # --- Determine Log Directory ---
 # Use environment variable or fallback to avoid circular import with config
-LOG_DIRECTORY = Path(os.getenv("LOG_DIR", "Logs"))
+log_directory = Path(os.getenv("LOG_DIR", "Logs"))
 
-# Ensure LOG_DIRECTORY is absolute
-if not LOG_DIRECTORY.is_absolute():
-    LOG_DIRECTORY = (Path(__file__).parent.resolve() / LOG_DIRECTORY).resolve()
+# Ensure log_directory is absolute
+if not log_directory.is_absolute():
+    log_directory = (Path(__file__).parent.resolve() / log_directory).resolve()
+
+# Set module constant after resolution
+LOG_DIRECTORY = log_directory
 
 # Suppress INFO and lower logs during startup
 # Note: logging import moved to top of file to avoid duplicate import warning

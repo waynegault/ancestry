@@ -457,7 +457,7 @@ class GedcomIntelligenceAnalyzer:
         return recommendations
 
     # Helper methods for data extraction and analysis
-    def _extract_person_name(self, person_record) -> str:
+    def _extract_person_name(self, person_record: Any) -> str:
         """Extract person's name from GEDCOM record."""
         try:
             if hasattr(person_record, 'name') and person_record.name:
@@ -466,7 +466,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, _person_record) -> Optional[int]:
+    def _extract_birth_year(self, _person_record: Any) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -475,7 +475,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_year(self, _person_record) -> Optional[int]:
+    def _extract_death_year(self, _person_record: Any) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -483,7 +483,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_birth_place(self, _person_record) -> Optional[str]:
+    def _extract_birth_place(self, _person_record: Any) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -491,7 +491,7 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_place(self, _person_record) -> Optional[str]:
+    def _extract_death_place(self, _person_record: Any) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -499,11 +499,11 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _has_birth_date(self, person_record) -> bool:
+    def _has_birth_date(self, person_record: Any) -> bool:
         """Check if person has birth date."""
         return self._extract_birth_year(person_record) is not None
 
-    def _has_birth_place(self, person_record) -> bool:
+    def _has_birth_place(self, person_record: Any) -> bool:
         """Check if person has birth place."""
         return self._extract_birth_place(person_record) is not None
 

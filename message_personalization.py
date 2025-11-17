@@ -1382,7 +1382,7 @@ def _test_null_and_none_inputs() -> None:
 
     # Test with all None inputs - should handle gracefully or raise expected error
     try:
-        message, functions = personalizer.create_personalized_message(
+        message, _functions = personalizer.create_personalized_message(
             "Enhanced_In_Tree-Initial",
             None,  # type: ignore
             None,  # type: ignore
@@ -1391,14 +1391,14 @@ def _test_null_and_none_inputs() -> None:
         # If no exception, verify fallback behavior
         assert isinstance(message, str), "Should return string even with None inputs"
         assert len(message) > 0, "Should return non-empty fallback message for None inputs"
-        assert isinstance(functions, list), "Should return list of functions even with None inputs"
+        assert isinstance(_functions, list), "Should return list of functions even with None inputs"
     except (AttributeError, TypeError) as e:
         # If it raises an error, that's acceptable for None inputs
         # The important thing is we documented the behavior
         assert "NoneType" in str(e), f"Should raise descriptive error for None inputs, got: {e}"
 
     # Test with empty dicts (this should work)
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {},
         {},
@@ -1420,7 +1420,7 @@ def _test_malformed_extracted_data() -> None:
         "research_questions": None,  # Should be list
     }
 
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         malformed_data,
@@ -1452,7 +1452,7 @@ def _test_unicode_and_special_characters() -> None:
         ]
     }
 
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Tëst Üsér"},
         unicode_data,
@@ -1482,7 +1482,7 @@ def _test_extremely_long_inputs() -> None:
         "locations": [{"place": very_long_place, "context": "residence"}] * 30
     }
 
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         long_data,
@@ -1513,7 +1513,7 @@ def _test_missing_template_keys() -> None:
     personalizer.templates["test_complex"] = complex_template
 
     # Provide minimal format data (missing most keys)
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "test_complex",
         {"username": "Test"},
         {"structured_names": []},
@@ -1539,7 +1539,7 @@ def _test_zero_and_negative_numbers() -> None:
         "total_rows": -5,  # Negative count
     }
 
-    message, functions = personalizer.create_personalized_message(
+    message, _functions = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         edge_case_data,
