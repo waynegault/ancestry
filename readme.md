@@ -231,6 +231,87 @@ If you see thousands of errors or errors from `.git` files:
 - Use `.env` test data for automated tests
 - Maintain 100% test pass rate
 
+### Performance Profiling
+
+The project provides comprehensive profiling utilities for analyzing long-running actions without manual cProfile setup.
+
+**Profiling Decorators** (`performance_profiling.py`):
+
+1. **@profile_with_cprofile** - Full cProfile profiling with detailed reports:
+   ```python
+   from performance_profiling import profile_with_cprofile
+
+   @profile_with_cprofile(output_file="action6_profile.stats")
+   def coord(session_manager, start=None):
+       # ... action implementation
+       pass
+   ```
+   Generates both `.stats` (machine-readable) and `.txt` (human-readable) files in `Logs/profiles/`.
+
+2. **@time_function** - Lightweight execution timing (no profiling overhead):
+   ```python
+   from performance_profiling import time_function
+
+   @time_function
+   def process_batch(items):
+       # ... processing logic
+       pass
+   ```
+   Logs execution time at INFO level: "⏱️ process_batch completed in 2.34s"
+
+**CLI Profiling** - Enable profiling from command line without code changes:
+
+```bash
+# Enable profiling for entire session
+python main.py --profile
+
+# Specify custom output file
+python main.py --profile --profile-output=custom_profile.stats
+
+# Analyze results
+python -c "from performance_profiling import generate_report_from_stats; print(generate_report_from_stats('Logs/profiles/profile.stats'))"
+```
+
+**Configuration** - Customize profiling behavior:
+
+```python
+from performance_profiling import configure_profiling
+
+configure_profiling(
+    enabled=True,
+    output_dir=Path("Logs/profiles"),
+    sort_by="cumulative",  # or "time", "calls", etc.
+    top_n_functions=50     # Show top 50 functions in reports
+)
+```
+
+**Report Analysis** - Generate custom reports from existing .stats files:
+
+```python
+from performance_profiling import generate_report_from_stats
+from pathlib import Path
+
+# Generate report sorted by time
+report = generate_report_from_stats(
+    Path("Logs/profiles/action6_profile.stats"),
+    sort_by="time"
+)
+print(report)
+
+# Or save to file
+output_path = Path("Logs/profiles/custom_report.txt")
+generate_report_from_stats(
+    Path("Logs/profiles/action6_profile.stats"),
+    output_file=output_path
+)
+```
+
+**Best Practices**:
+- Use `@profile_with_cprofile` for detailed bottleneck analysis (adds ~5-10% overhead)
+- Use `@time_function` for production monitoring (minimal overhead)
+- Profile in isolation (single-threaded, no parallel workers) for accurate results
+- Compare baseline runs before/after optimizations to validate improvements
+
 ### Rate Limiting
 - Never bypass the rate limiter
 - All API calls must go through `session_manager.rate_limiter`

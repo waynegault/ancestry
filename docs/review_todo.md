@@ -1,26 +1,16 @@
-# Codebase Review Master Todo *(Updated 2025-11-16)*
+# Codebase Review Master Todo *(Updated 2025-11-17)*
 
 All open work is captured in the single checklist below. Address items in priority order unless a dependency is noted.
 
-- [x] **Logging Standardization** (Est. 2h)
-   Normalize log levels, prefixes, and emoji usage across action modules and shared utilities so operators can grep consistently. Success = shared helper in `logging_utils.py` plus updated calls in Actions 6–10.
-  - ✅ Added `log_action_banner` helper in `core/logging_utils.py` with start/success/failure stages and detail formatting.
-  - ✅ Actions 6–10 and shared `utils.log_action_status()` now emit standardized lifecycle banners with consistent emoji/prefix payloads.
-
-- [x] **Dead Code Cleanup** (Est. 2h)
-   Audit for legacy helpers/tests left from Phase 5 refactors and remove or quarantine them. Prioritize `connection_resilience.py`, legacy browser recovery code, and redundant cache utilities.
-  - ✅ Archived 5 standalone diagnostic scripts to `scripts/archive/`: ai_api_test.py, analyze_test_quality.py, comprehensive_auth_tests.py, lm_studio_manager.py, standardize_test_runners.py
-  - ✅ Verified connection_resilience.py, diagnose_chrome.py, grafana_checker.py, gedcom_cache.py are actively used in production
-
-- [x] **Centralize Test Utilities** (Est. 3h)
-   Finish moving duplicated helpers into `test_utilities.py`, including migrating remaining temp-file usage in `logging_config.py`, `diagnose_chrome.py`, and `config/config_manager.py`.
-  - ✅ Migrated `logging_config.py` to use `test_utilities.temp_directory()` instead of `tempfile.TemporaryDirectory()`
-  - ✅ Migrated `diagnose_chrome.py` to use `test_utilities.temp_file()` instead of `tempfile.NamedTemporaryFile()`
-  - ✅ Migrated `config/config_manager.py` to use `test_utilities.temp_file()` instead of `tempfile.NamedTemporaryFile()`
-  - ✅ All temporary file operations now use centralized helpers with automatic cleanup
-
-- [ ] **Performance Profiling Utilities** (Est. 3h)
+- [x] **Performance Profiling Utilities** (Est. 3h)
    Package reusable cProfile/timing helpers (decorators + CLI switches) for long-running actions so perf data is easy to capture without manual scripts.
+  - ✅ Created `performance_profiling.py` with cProfile integration
+  - ✅ Implemented `@profile_with_cprofile` decorator for full cProfile profiling with .stats and .txt output
+  - ✅ Implemented `@time_function` decorator for lightweight timing without profiling overhead
+  - ✅ Added `enable_profiling_from_cli()` for CLI flag support (--profile, --profile-output)
+  - ✅ Added `ProfileConfig` dataclass for centralized configuration
+  - ✅ Generated both machine-readable (.stats) and human-readable (.txt) reports
+  - ✅ All 7 comprehensive tests passing (decorators, CLI integration, report generation)
 
 - [ ] **Schema Versioning & Lightweight Migrations** (Est. 2h)
    Introduce SQLite schema version stamps plus a minimal migration runner to unblock future columns without manual SQL.
