@@ -36,6 +36,9 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Action 6 Error Handling Regression Tests** (Nov 19) - Converted the timeout, duplicate profile detection, and final summary tests into assertion-backed checks with IntegrityError coverage to guard future regressions.
 - ✅ **Unified Error-Handling Stack** (Nov 19) - Merged the enhanced recovery decorators into `core/error_handling.py`, deleted `core/enhanced_error_recovery.py`, and repointed Action 6/7/8 plus archival scripts to the single source of truth.
 - ✅ **Error Handling Deduplication** (Nov 20) - Retired the legacy `error_handling.py`, moved the telemetry-driven retry policies (api/selenium) into `core/error_handling.py`, and updated all imports/tests to the consolidated helpers.
+- ✅ **Action Orchestrator Context (Nov 20)** - `exec_actn()` now uses `_ActionExecutionContext` plus `_finalize_action_execution()` so setup, analytics, and cleanup are decomposed into reusable helpers instead of a 200-line monolith.
+- ✅ **Action 10 Comparison Pipeline (Nov 20)** - Added `_ComparisonConfig`, `_ComparisonResults`, and helper trio (collect → execute → render) so GEDCOM/API fallback runs through a typed pipeline with a single rendering surface.
+- ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

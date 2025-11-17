@@ -33,6 +33,7 @@ import time
 import webbrowser
 from collections.abc import Sequence
 from datetime import datetime
+from dataclasses import dataclass
 from functools import wraps
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -703,6 +704,142 @@ def _execute_action_function(
     return action_func(*prepared_args)
 
 
+@dataclass
+class _ActionExecutionContext:
+    """Holds execution state for exec_actn orchestration."""
+
+    choice: str
+    action_name: str
+    start_time: float
+    process: psutil.Process
+    mem_before: float
+    result: Any = None
+    exception: BaseException | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        """Return True when the action finished without explicit failure."""
+
+        return self.result is not False and self.exception is None
+
+
+def _initialize_action_context(action_func: ActionCallable, choice: str) -> _ActionExecutionContext:
+    """Create an execution context and emit banner logging."""
+
+    action_name = action_func.__name__
+    start_time = time.time()
+    process = psutil.Process(os.getpid())
+    mem_before = process.memory_info().rss / (1024 * 1024)
+
+    logger.info(f"{'='*45}")
+    logger.info(f"Action {choice}: Starting {action_name}...")
+    logger.info(f"{'='*45}\n")
+
+    return _ActionExecutionContext(
+        choice=choice,
+        action_name=action_name,
+        start_time=start_time,
+        process=process,
+        mem_before=mem_before,
+    )
+
+
+def _determine_metrics_label(action_result: Any, final_outcome: bool) -> str:
+    """Map action results to analytics labels (success/failure/skipped)."""
+
+    result_label = "success" if final_outcome else "failure"
+
+    if isinstance(action_result, str):
+        candidate = action_result.lower()
+        if candidate == "skipped":
+            return candidate
+
+    if isinstance(action_result, tuple):
+        typed_result = cast(tuple[Any, ...], action_result)
+        if len(typed_result) > 1:
+            label_candidate = typed_result[1]
+            if isinstance(label_candidate, str):
+                normalized = label_candidate.lower()
+                if normalized in {"success", "failure", "skipped"}:
+                    return normalized
+
+    return result_label
+
+
+def _record_action_analytics(
+    context: _ActionExecutionContext,
+    *,
+    duration_sec: float,
+    mem_used_mb: float | None,
+) -> None:
+    """Send analytics + metrics for a completed action."""
+
+    final_outcome = context.succeeded
+
+    try:
+        from analytics import log_event, pop_transient_extras
+
+        extras = pop_transient_extras()
+        log_event(
+            action_name=context.action_name,
+            choice=context.choice,
+            success=bool(final_outcome),
+            duration_sec=duration_sec,
+            mem_used_mb=mem_used_mb,
+            extras=extras,
+        )
+    except Exception as exc:
+        logger.debug(f"Analytics logging skipped: {exc}")
+
+    try:
+        result_label = _determine_metrics_label(context.result, final_outcome)
+        metrics().action_processed.inc(context.action_name, result_label)  # type: ignore[misc]
+    except Exception:
+        logger.debug("Failed to record action throughput metric", exc_info=True)
+
+
+def _finalize_action_execution(
+    context: _ActionExecutionContext,
+    session_manager: SessionManager,
+    close_sess_after: bool,
+) -> bool:
+    """Centralize exec_actn finalization (logging, analytics, cleanup)."""
+
+    should_close = _should_close_session(
+        context.result,
+        context.exception,
+        close_sess_after,
+        context.action_name,
+    )
+
+    print(" ")  # Spacer for console readability
+
+    if context.result is False:
+        logger.debug(f"Action {context.choice} ({context.action_name}) reported failure.")
+    elif context.exception is not None:
+        logger.debug(
+            f"Action {context.choice} ({context.action_name}) failed due to exception: "
+            f"{type(context.exception).__name__}."
+        )
+
+    logger.debug(
+        f"Final outcome for Action {context.choice} ('{context.action_name}'): {context.succeeded}\n"
+    )
+
+    duration_sec, mem_used_mb = _log_performance_metrics(
+        context.start_time,
+        context.process,
+        context.mem_before,
+        context.choice,
+        context.action_name,
+    )
+
+    _record_action_analytics(context, duration_sec=duration_sec, mem_used_mb=mem_used_mb)
+    _perform_session_cleanup(session_manager, should_close, context.action_name)
+
+    return context.succeeded
+
+
 def _should_close_session(
     action_result: Any,
     action_exception: BaseException | None,
@@ -789,19 +926,8 @@ def exec_actn(
     Returns:
         True if action completed successfully, False otherwise.
     """
-    start_time = time.time()
-    action_name = action_func.__name__
-
-    # Performance Logging Setup
-    process = psutil.Process(os.getpid())
-    mem_before = process.memory_info().rss / (1024 * 1024)
-
-    logger.info(f"{'='*45}")
-    logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info(f"{'='*45}\n")
-
-    action_result: Any = None
-    action_exception: BaseException | None = None
+    context = _initialize_action_context(action_func, choice)
+    final_outcome = False
 
     # Determine browser requirement and required state based on user choice
     requires_browser = _determine_browser_requirement(choice)
@@ -810,67 +936,22 @@ def exec_actn(
 
     try:
         # Ensure Required State
-        state_ok = _ensure_required_state(session_manager, required_state, action_name, choice)
+        state_ok = _ensure_required_state(session_manager, required_state, context.action_name, choice)
         if not state_ok:
-            logger.error(f"Failed to achieve required state '{required_state}' for action '{action_name}'.")
+            logger.error(f"Failed to achieve required state '{required_state}' for action '{context.action_name}'.")
             raise Exception(f"Setup failed: Could not achieve state '{required_state}'.")
 
         # Execute Action
         prepared_args, kwargs = _prepare_action_arguments(action_func, session_manager, args)
-        action_result = _execute_action_function(action_func, prepared_args, kwargs)
+        context.result = _execute_action_function(action_func, prepared_args, kwargs)
 
-    except Exception as e:
-        logger.error(f"Exception during action {action_name}: {e}", exc_info=True)
-        action_result = False
-        action_exception = e
+    except Exception as exc:
+        logger.error(f"Exception during action {context.action_name}: {exc}", exc_info=True)
+        context.result = False
+        context.exception = exc
 
     finally:
-        # Session Closing Logic
-        should_close = _should_close_session(action_result, action_exception, close_sess_after, action_name)
-
-        # Performance Logging
-        print(" ")  # Spacer
-        if action_result is False:
-            logger.debug(f"Action {choice} ({action_name}) reported failure.")
-        elif action_exception is not None:
-            logger.debug(f"Action {choice} ({action_name}) failed due to exception: {type(action_exception).__name__}.")
-
-        final_outcome = action_result is not False and action_exception is None
-        logger.debug(f"Final outcome for Action {choice} ('{action_name}'): {final_outcome}\n")
-
-        duration_sec, mem_used_mb = _log_performance_metrics(start_time, process, mem_before, choice, action_name)
-
-        # Analytics rollup (non-fatal if missing)
-        try:
-            from analytics import log_event, pop_transient_extras
-            extras = pop_transient_extras()
-            log_event(
-                action_name=action_name,
-                choice=choice,
-                success=bool(final_outcome),
-                duration_sec=duration_sec,
-                mem_used_mb=mem_used_mb,
-                extras=extras,
-            )
-        except Exception as e:
-            logger.debug(f"Analytics logging skipped: {e}")
-
-        try:
-            result_label = "success" if final_outcome else "failure"
-            if isinstance(action_result, str) and action_result.lower() == "skipped":
-                result_label = "skipped"
-            elif isinstance(action_result, tuple):
-                typed_result = cast(tuple[Any, ...], action_result)
-                if len(typed_result) > 1:
-                    label_candidate: Any = typed_result[1]
-                    if isinstance(label_candidate, str) and label_candidate.lower() in {"success", "failure", "skipped"}:
-                        result_label = label_candidate.lower()
-            metrics().action_processed.inc(action_name, result_label)  # type: ignore[misc]
-        except Exception:
-            logger.debug("Failed to record action throughput metric", exc_info=True)
-
-        # Perform cleanup
-        _perform_session_cleanup(session_manager, should_close, action_name)
+        final_outcome = _finalize_action_execution(context, session_manager, close_sess_after)
 
     return final_outcome
 
@@ -1056,6 +1137,34 @@ def _run_action6_gather(session_manager: SessionManager) -> bool:
     return True
 
 
+def _ensure_navigation_ready(
+    session_manager: SessionManager,
+    *,
+    action_label: str,
+    target_url: str,
+    wait_selector: str,
+    failure_reason: str,
+) -> bool:
+    """Shared guard that ensures driver availability and page navigation."""
+
+    driver = session_manager.driver
+    if driver is None:
+        logger.error(f"Driver not available for {action_label} navigation")
+        print("ERROR: Browser session not available. Please rerun login (Action 5).")
+        return False
+
+    if not nav_to_page(driver, target_url, wait_selector, session_manager):
+        logger.error(f"{action_label} nav FAILED - {failure_reason}")
+        print(f"ERROR: {failure_reason} Check network connection.")
+        return False
+
+    logger.debug(
+        f"Navigation to {target_url} successful for {action_label}. Waiting briefly before continuing..."
+    )
+    time.sleep(2)
+    return True
+
+
 def _run_action7_inbox(session_manager: SessionManager) -> bool:
     """Run Action 7: Search Inbox."""
     logger.info("--- Running Action 7: Search Inbox ---")
@@ -1063,23 +1172,14 @@ def _run_action7_inbox(session_manager: SessionManager) -> bool:
     logger.debug(f"Navigating to Inbox ({inbox_url}) for Action 7...")
 
     try:
-        driver = session_manager.driver
-        if driver is None:
-            logger.error("Driver not available for Action 7 navigation")
-            return False
-
-        if not nav_to_page(
-            driver,
-            inbox_url,
-            "div.messaging-container",
+        if not _ensure_navigation_ready(
             session_manager,
+            action_label="Action 7",
+            target_url=inbox_url,
+            wait_selector="div.messaging-container",
+            failure_reason="Could not navigate to inbox page.",
         ):
-            logger.error("Action 7 nav FAILED - Could not navigate to inbox page.")
-            print("ERROR: Could not navigate to inbox page. Check network connection.")
             return False
-
-        logger.debug("Navigation to inbox page successful.")
-        time.sleep(2)
 
         logger.debug("Running inbox search...")
         inbox_processor = InboxProcessor(session_manager=session_manager)
@@ -1106,23 +1206,16 @@ def _run_action9_process_productive(session_manager: SessionManager) -> bool:
     logger.debug("Navigating to Base URL for Action 9...")
 
     try:
-        driver = session_manager.driver
-        if driver is None:
-            logger.error("Driver not available for Action 9 navigation")
-            return False
-
-        if not nav_to_page(
-            driver,
-            config.api.base_url,
-            WAIT_FOR_PAGE_SELECTOR,
+        if not _ensure_navigation_ready(
             session_manager,
+            action_label="Action 9",
+            target_url=config.api.base_url,
+            wait_selector=WAIT_FOR_PAGE_SELECTOR,
+            failure_reason="Could not navigate to base URL.",
         ):
-            logger.error("Action 9 nav FAILED - Could not navigate to base URL.")
-            print("ERROR: Could not navigate to base URL. Check network connection.")
             return False
 
-        logger.debug("Navigation to base URL successful. Processing productive messages...")
-        time.sleep(2)
+        logger.debug("Processing productive messages after navigation guard passed...")
 
         process_result = process_productive_messages(session_manager)
 
@@ -1147,23 +1240,16 @@ def _run_action8_send_messages(session_manager: SessionManager) -> bool:
     logger.debug("Navigating to Base URL for Action 8...")
 
     try:
-        driver = session_manager.driver
-        if driver is None:
-            logger.error("Driver not available for Action 8 navigation")
-            return False
-
-        if not nav_to_page(
-            driver,
-            config.api.base_url,
-            WAIT_FOR_PAGE_SELECTOR,
+        if not _ensure_navigation_ready(
             session_manager,
+            action_label="Action 8",
+            target_url=config.api.base_url,
+            wait_selector=WAIT_FOR_PAGE_SELECTOR,
+            failure_reason="Could not navigate to base URL.",
         ):
-            logger.error("Action 8 nav FAILED - Could not navigate to base URL.")
-            print("ERROR: Could not navigate to base URL. Check network connection.")
             return False
 
-        logger.debug("Navigation to base URL successful. Sending messages...")
-        time.sleep(2)
+        logger.debug("Navigation guard passed. Sending messages...")
 
         send_result = send_messages_to_matches(session_manager)
 
@@ -1829,6 +1915,27 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 
 
 
+@dataclass
+class _ComparisonConfig:
+    """Configuration inputs needed for the GEDCOM/API comparison run."""
+
+    gedcom_path: Optional[Path]
+    reference_person_id_raw: Optional[str]
+    reference_person_name: Optional[str]
+    date_flex: Optional[dict[str, Any]]
+    scoring_weights: dict[str, Any]
+    max_display_results: int
+
+
+@dataclass
+class _ComparisonResults:
+    """Container for search results spanning GEDCOM and API sources."""
+
+    gedcom_data: Any
+    gedcom_matches: MatchList
+    api_matches: MatchList
+
+
 def _perform_gedcom_search(
     gedcom_path: Optional[Path],
     criteria: dict[str, Any],
@@ -2007,49 +2114,123 @@ def _display_detailed_match_info(
         logger.error(f"API family/relationship display failed: {e}")
 
 
-def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bool:
-    """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
+def _collect_comparison_inputs() -> Optional[tuple[_ComparisonConfig, dict[str, Any]]]:
+    """Load search criteria plus configuration needed for comparison mode."""
+
     try:
         from action10 import validate_config
         from search_criteria_utils import get_unified_search_criteria
-    except Exception as e:
-        logger.error(f"Side-by-side setup failed: {e}", exc_info=True)
-        return False
+    except Exception as exc:
+        logger.error(f"Side-by-side setup failed: {exc}", exc_info=True)
+        return None
 
-    # Collect unified criteria
     criteria = get_unified_search_criteria()
     if not criteria:
-        return False
+        return None
 
-    # Validate configuration
-    (gedcom_path, _reference_person_id_raw, _reference_person_name,
-     date_flex, scoring_weights, max_display_results) = validate_config()
+    (
+        gedcom_path,
+        reference_person_id_raw,
+        reference_person_name,
+        date_flex,
+        scoring_weights,
+        max_display_results,
+    ) = validate_config()
 
-    # Perform GEDCOM search
+    config = _ComparisonConfig(
+        gedcom_path=gedcom_path,
+        reference_person_id_raw=reference_person_id_raw,
+        reference_person_name=reference_person_name,
+        date_flex=date_flex,
+        scoring_weights=scoring_weights,
+        max_display_results=max_display_results,
+    )
+    return config, criteria
+
+
+def _execute_comparison_search(
+    session_manager: SessionManager,
+    *,
+    comparison_config: _ComparisonConfig,
+    criteria: dict[str, Any],
+) -> _ComparisonResults:
+    """Run GEDCOM search followed by API fallback when needed."""
+
     gedcom_data, gedcom_matches = _perform_gedcom_search(
-        gedcom_path, criteria, scoring_weights, date_flex
+        comparison_config.gedcom_path,
+        criteria,
+        comparison_config.scoring_weights,
+        comparison_config.date_flex,
     )
 
-    # API fallback if no GEDCOM matches
     api_matches: MatchList = []
     if not gedcom_matches:
-        api_matches = _perform_api_search_fallback(session_manager, criteria, max_display_results)
+        api_matches = _perform_api_search_fallback(
+            session_manager,
+            criteria,
+            comparison_config.max_display_results,
+        )
     else:
         logger.debug("Skipping API search because GEDCOM returned matches.")
 
-    # Display results
-    _display_search_results(gedcom_matches, api_matches, max_to_show=1)
-
-    # Display detailed match info
-    _display_detailed_match_info(
-        gedcom_matches, api_matches, gedcom_data,
-        _reference_person_id_raw, _reference_person_name, session_manager
+    return _ComparisonResults(
+        gedcom_data=gedcom_data,
+        gedcom_matches=gedcom_matches,
+        api_matches=api_matches,
     )
 
-    # Analytics context
-    _set_comparison_mode_analytics(len(gedcom_matches), len(api_matches))
 
-    return bool(gedcom_matches or api_matches)
+def _render_comparison_results(
+    session_manager: SessionManager,
+    *,
+    comparison_config: _ComparisonConfig,
+    comparison_results: _ComparisonResults,
+) -> None:
+    """Display summary tables, detail view, and analytics for comparison mode."""
+
+    _display_search_results(
+        comparison_results.gedcom_matches,
+        comparison_results.api_matches,
+        max_to_show=1,
+    )
+
+    _display_detailed_match_info(
+        comparison_results.gedcom_matches,
+        comparison_results.api_matches,
+        comparison_results.gedcom_data,
+        comparison_config.reference_person_id_raw,
+        comparison_config.reference_person_name,
+        session_manager,
+    )
+
+    _set_comparison_mode_analytics(
+        len(comparison_results.gedcom_matches),
+        len(comparison_results.api_matches),
+    )
+
+
+def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bool:
+    """Action 10: GEDCOM-first search with API fallback; unified presentation (header → family → relationship)."""
+    collected = _collect_comparison_inputs()
+    if not collected:
+        return False
+
+    comparison_config, criteria = collected
+    comparison_results = _execute_comparison_search(
+        session_manager,
+        comparison_config=comparison_config,
+        criteria=criteria,
+    )
+
+    _render_comparison_results(
+        session_manager,
+        comparison_config=comparison_config,
+        comparison_results=comparison_results,
+    )
+
+    return bool(
+        comparison_results.gedcom_matches or comparison_results.api_matches
+    )
 
 
 
@@ -2122,6 +2303,7 @@ def _check_action_confirmation(choice: str) -> bool:
 
     Returns:
         True if action should proceed, False if cancelled
+
     """
     confirm_actions = {
         "1": "Delete all people except first person (test profile)",

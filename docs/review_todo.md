@@ -4,11 +4,11 @@ All open work is captured in the single checklist below. Address items in priori
 
 ## High Priority Technical Debt
 
-- [ ] **Function Decomposition** (Medium Priority)
-  Break down large functions with multiple responsibilities:
-  - main.exec_actn (220+ lines)
-  - main.run_gedcom_then_api_fallback (large with inline helpers)
-  - Extract common guard patterns from Actions 7/8/9
+- [x] **Function Decomposition** (Medium Priority)
+  Completed 2025-11-17:
+  - main.exec_actn now delegates logging/analytics/cleanup to `_ActionExecutionContext` helpers
+  - main.run_gedcom_then_api_fallback orchestrates via new comparison input/execution/render helpers
+  - Actions 7/8/9 share `_ensure_navigation_ready` for driver/nav guard logic
 
 - [ ] **Test Infrastructure Modernization** (Medium Priority)
   Migrate inline tests to dedicated test directory structure
