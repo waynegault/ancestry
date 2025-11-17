@@ -49,6 +49,7 @@ class RetryContext:
     current_delay: float = 0.10   # Matches .env INITIAL_DELAY (faster initial retry)
     retries_left: Optional[int] = None
     retry_status_codes: Optional[Union[list[int], set[int]]] = None
+    jitter_seconds: float = 0.2
 
 
 @dataclass
@@ -508,6 +509,7 @@ def common_params_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(common_params_module_tests)
 
 

@@ -103,11 +103,13 @@ def save_baseline(baseline_file: Path, median_score: float, experiment_count: in
     except Exception:
         git_sha = None
 
+    timestamp = datetime.now(timezone.utc)
+
     baseline = {
         "median_quality_score": median_score,
         "experiment_count": experiment_count,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "baseline_id": f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{git_sha or 'nogit'}",
+        "generated_at": timestamp.isoformat().replace("+00:00", "Z"),
+        "baseline_id": f"{timestamp.strftime('%Y%m%d%H%M%S')}-{git_sha or 'nogit'}",
         "git_ref": git_sha,
         "description": "Baseline quality score for regression detection",
     }
@@ -373,36 +375,37 @@ def _test_generate_baseline_json_output() -> None:
     """Ensure --generate-baseline emits JSON with baseline metadata."""
     import io
     from contextlib import redirect_stdout
+
     from test_utilities import temp_directory
 
     with temp_directory(prefix="qrg-test-") as tmpdir:
-    experiments = tmpdir / "prompt_experiments.jsonl"
-    baseline = tmpdir / "quality_baseline.json"
+        experiments = tmpdir / "prompt_experiments.jsonl"
+        baseline = tmpdir / "quality_baseline.json"
 
-    _create_test_experiments_file(experiments, [80.0, 85.0, 90.0])
+        _create_test_experiments_file(experiments, [80.0, 85.0, 90.0])
 
-    capture = io.StringIO()
-    with redirect_stdout(capture):
-        rc = main([
-            "--experiments-file",
-            str(experiments),
-            "--baseline-file",
-            str(baseline),
-            "--generate-baseline",
-            "--json",
-        ])
+        capture = io.StringIO()
+        with redirect_stdout(capture):
+            rc = main([
+                "--experiments-file",
+                str(experiments),
+                "--baseline-file",
+                str(baseline),
+                "--generate-baseline",
+                "--json",
+            ])
 
-    assert rc == 0, "Baseline generation should exit successfully"
-    assert baseline.exists(), "Baseline file should be created"
+        assert rc == 0, "Baseline generation should exit successfully"
+        assert baseline.exists(), "Baseline file should be created"
 
-    baseline_content = load_baseline(baseline)
-    assert "median_quality_score" in baseline_content, "Baseline should record median score"
-    assert "baseline_id" in baseline_content, "Baseline should include baseline_id"
+        baseline_content = load_baseline(baseline)
+        assert "median_quality_score" in baseline_content, "Baseline should record median score"
+        assert "baseline_id" in baseline_content, "Baseline should include baseline_id"
 
-    output = capture.getvalue().strip()
-    if output:
-        parsed = json.loads(output)
-        assert parsed.get("status") == "baseline_generated"
+        output = capture.getvalue().strip()
+        if output:
+            parsed = json.loads(output)
+            assert parsed.get("status") == "baseline_generated"
 
 
 def _test_regression_detection_json_mode() -> None:
@@ -410,38 +413,39 @@ def _test_regression_detection_json_mode() -> None:
     import io
     from contextlib import redirect_stdout
     from datetime import datetime, timezone
+
     from test_utilities import temp_directory
 
     with temp_directory(prefix="qrg-test-") as tmpdir:
-    experiments = tmpdir / "prompt_experiments.jsonl"
-    baseline = tmpdir / "quality_baseline.json"
+        experiments = tmpdir / "prompt_experiments.jsonl"
+        baseline = tmpdir / "quality_baseline.json"
 
-    baseline_payload = {
-        "median_quality_score": 90.0,
-        "baseline_id": "test-1",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    baseline.write_text(json.dumps(baseline_payload), encoding="utf-8")
+        baseline_payload = {
+            "median_quality_score": 90.0,
+            "baseline_id": "test-1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        baseline.write_text(json.dumps(baseline_payload), encoding="utf-8")
 
-    _create_test_experiments_file(experiments, [78.0, 80.0, 82.0])
+        _create_test_experiments_file(experiments, [78.0, 80.0, 82.0])
 
-    capture = io.StringIO()
-    with redirect_stdout(capture):
-        rc = main([
-            "--experiments-file",
-            str(experiments),
-            "--baseline-file",
-            str(baseline),
-            "--json",
-        ])
+        capture = io.StringIO()
+        with redirect_stdout(capture):
+            rc = main([
+                "--experiments-file",
+                str(experiments),
+                "--baseline-file",
+                str(baseline),
+                "--json",
+            ])
 
-    assert rc == 1, "Regression should exit with status code 1"
+        assert rc == 1, "Regression should exit with status code 1"
 
-    output = capture.getvalue().strip()
-    parsed = json.loads(output)
-    assert parsed.get("status") == "regression", f"Unexpected JSON status: {parsed}"
-    assert parsed.get("is_regression") is True
-    assert parsed.get("quality_drop", 0) > 0
+        output = capture.getvalue().strip()
+        parsed = json.loads(output)
+        assert parsed.get("status") == "regression", f"Unexpected JSON status: {parsed}"
+        assert parsed.get("is_regression") is True
+        assert parsed.get("quality_drop", 0) > 0
 
 
 def quality_regression_gate_module_tests() -> bool:

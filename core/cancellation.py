@@ -9,7 +9,13 @@ inside their main loops and exit cleanly when True.
 """
 from __future__ import annotations
 
+import sys
 import threading
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class _CancellationState:
@@ -194,6 +200,7 @@ def cancellation_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(cancellation_module_tests)
 
 
@@ -201,4 +208,3 @@ if __name__ == "__main__":
     import sys
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-

@@ -300,7 +300,10 @@ def _aggregate_variant_data(events: list[dict[str, Any]]) -> dict[str, dict[str,
     variants: dict[str, dict[str, Any]] = {}
     for ev in events:
         v = ev.get("variant_label") or "unknown"
-        data = variants.setdefault(v, {"quality_scores": [], "successes": 0, "count": 0, "tasks": []})
+        data = variants.setdefault(
+            v,
+            {"quality_scores": [], "successes": 0, "count": 0, "tasks": []},
+        )
         data["count"] += 1
         if ev.get("parse_success"):
             data["successes"] += 1
@@ -406,44 +409,56 @@ def _auto_analyze_and_alert() -> None:
     _write_alert(alert)
 
 
+def _calculate_quality_drop(scores: list[float]) -> float | None:
+    window = REGRESSION_ALERT_WINDOW
+    min_events = REGRESSION_ALERT_MIN_EVENTS
+    required = max(min_events * 2, window + min_events)
+    if len(scores) < required:
+        return None
+    recent = scores[-window:]
+    if len(recent) < min_events:
+        return None
+    previous_slice = scores[-(window * 2):-window]
+    if len(previous_slice) < min_events:
+        previous_slice = scores[:-window]
+    if len(previous_slice) < min_events:
+        return None
+    drop = round(statistics.median(previous_slice) - statistics.median(recent), 2)
+    if drop < REGRESSION_ALERT_THRESHOLD:
+        return None
+    return drop
+
+
+def _build_regression_alert(provider: str, variant: str, drop: float) -> dict[str, Any]:
+    clean_variant = variant or "unknown"
+    return {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "type": "variant_median_regression",
+        "signature": f"regression::{provider}::{clean_variant}::{drop}",
+        "provider": provider,
+        "variant": clean_variant,
+        "drop": drop,
+        "window": REGRESSION_ALERT_WINDOW,
+        "message": (
+            f"Median quality for variant '{clean_variant}' on provider '{provider}' "
+            f"dropped by {drop} points over the last {REGRESSION_ALERT_WINDOW} events"
+        ),
+    }
+
+
 def _auto_detect_regression_drop() -> None:
     events = _load_recent_events(window=REGRESSION_ALERT_WINDOW * 2)
     if not events:
         return
     sequences = _collect_variant_quality_sequences(events)
     for combo, scores in sequences.items():
-        if len(scores) < max(REGRESSION_ALERT_MIN_EVENTS * 2, REGRESSION_ALERT_WINDOW + REGRESSION_ALERT_MIN_EVENTS):
-            continue
-        recent = scores[-REGRESSION_ALERT_WINDOW:]
-        if len(recent) < REGRESSION_ALERT_MIN_EVENTS:
-            continue
-        previous_slice = scores[-(REGRESSION_ALERT_WINDOW * 2):-REGRESSION_ALERT_WINDOW]
-        if len(previous_slice) < REGRESSION_ALERT_MIN_EVENTS:
-            previous_slice = scores[:-REGRESSION_ALERT_WINDOW]
-        if len(previous_slice) < REGRESSION_ALERT_MIN_EVENTS:
-            continue
-        median_recent = statistics.median(recent)
-        median_previous = statistics.median(previous_slice)
-        drop = round(median_previous - median_recent, 2)
-        if drop < REGRESSION_ALERT_THRESHOLD:
+        drop = _calculate_quality_drop(scores)
+        if drop is None:
             continue
         provider, _, variant = combo.partition("::")
-        signature = f"regression::{provider}::{variant}::{drop}"
-        if _already_alerted(signature):
+        alert = _build_regression_alert(provider, variant, drop)
+        if _already_alerted(alert["signature"]):
             continue
-        alert = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "type": "variant_median_regression",
-            "signature": signature,
-            "provider": provider,
-            "variant": variant or "unknown",
-            "drop": drop,
-            "window": REGRESSION_ALERT_WINDOW,
-            "message": (
-                f"Median quality for variant '{variant or 'unknown'}' on provider '{provider}' "
-                f"dropped by {drop} points over the last {REGRESSION_ALERT_WINDOW} events"
-            ),
-        }
         _write_alert(alert)
 
 
@@ -488,33 +503,50 @@ def load_quality_baseline() -> dict[str, Any] | None:
     except Exception:
         return None
 
-def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control",
-                              provider: str | None = None) -> dict[str, Any]:
+def _get_matching_baseline(variant: str, provider: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     baseline = load_quality_baseline()
-    target_provider = provider or "all"
     if not baseline or baseline.get("variant") != variant:
-        return {"status": "no_baseline"}
+        return None, {"status": "no_baseline"}
+    target_provider = provider or "all"
     baseline_provider = baseline.get("provider") or "all"
     if baseline_provider != target_provider:
-        return {"status": "baseline_mismatch", "baseline_provider": baseline_provider, "requested_provider": target_provider}
-    events = _load_recent_events(current_window, provider=provider)
+        return None, {
+            "status": "baseline_mismatch",
+            "baseline_provider": baseline_provider,
+            "requested_provider": target_provider,
+        }
+    return baseline, None
+
+
+def _collect_variant_scores(events: list[dict[str, Any]], variant: str) -> list[float]:
     scores: list[float] = []
-    for e in events:
-        if e.get("variant_label") != variant:
+    for event in events:
+        if event.get("variant_label") != variant:
             continue
-        qv = e.get("quality_score")
-        if isinstance(qv, (int, float)):
+        value = event.get("quality_score")
+        if isinstance(value, (int, float)):
             try:
-                scores.append(float(qv))
+                scores.append(float(value))
             except Exception:
                 continue
+    return scores
+
+
+def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control",
+                              provider: str | None = None) -> dict[str, Any]:
+    baseline, error = _get_matching_baseline(variant, provider)
+    if error:
+        return error
+    assert baseline is not None
+    events = _load_recent_events(current_window, provider=provider)
+    scores = _collect_variant_scores(events, variant)
     if not scores:
         return {"status": "no_data"}
     median_now = statistics.median(scores)
     median_then = baseline.get("median_quality") or 0
     drop = median_then - median_now
     regression = drop >= drop_threshold
-    return {"status": "ok", "median_now": median_now, "baseline_median": median_then, "drop": round(drop,2), "regression": regression}
+    return {"status": "ok", "median_now": median_now, "baseline_median": median_then, "drop": round(drop, 2), "regression": regression}
 
 ## === Internal Test Suite (for run_all_tests detection & coverage) ===
 def _test_record_and_summarize() -> None:

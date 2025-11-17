@@ -20,7 +20,9 @@ if str(parent_dir) not in sys.path:
 import requests
 
 try:  # pragma: no cover - optional dependency
-    from config.config_schema import ObservabilityConfig  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+    from config.config_schema import (
+        ObservabilityConfig,  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+    )
 except Exception:  # pragma: no cover - fallback for environments missing config deps
     if TYPE_CHECKING:
         from config.config_schema import (  # pyright: ignore[reportMissingImports]
@@ -363,6 +365,7 @@ def observability_metrics_exporter_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(observability_metrics_exporter_module_tests)
 
 

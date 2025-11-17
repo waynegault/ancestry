@@ -275,6 +275,7 @@ def _test_analytics_path_resolution() -> bool:
 def _test_event_logging() -> bool:
     """Test event logging functionality."""
     import os
+
     from test_utilities import temp_directory
 
     # Create temporary directory for testing
@@ -363,6 +364,7 @@ def _test_analytics_parsing() -> bool:
 def _test_weekly_summary_generation() -> bool:
     """Test weekly summary generation with sample data."""
     import os
+
     from test_utilities import temp_directory
 
     # Create temporary directory for testing

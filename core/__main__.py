@@ -156,6 +156,7 @@ def core_main_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(core_main_module_tests)
 
 if __name__ == "__main__":

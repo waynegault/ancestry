@@ -46,10 +46,13 @@ from typing import Any, Optional, Union
 # === THIRD-PARTY IMPORTS ===
 try:
     from dotenv import load_dotenv
-
-    DOTENV_AVAILABLE = True
 except ImportError:
-    DOTENV_AVAILABLE = False
+    load_dotenv = None  # type: ignore[assignment]
+    _dotenv_imported = False
+else:
+    _dotenv_imported = True
+
+DOTENV_AVAILABLE = _dotenv_imported
 
 try:
     from .config_schema import (
@@ -115,7 +118,7 @@ class ConfigManager:
             auto_load: Whether to automatically load configuration
         """
         # Load .env file if available (unless explicitly skipped for tests)
-        if DOTENV_AVAILABLE:
+        if DOTENV_AVAILABLE and load_dotenv is not None:
             skip_dotenv = os.getenv("CONFIG_SKIP_DOTENV", "").strip().lower()
             if skip_dotenv not in {"1", "true", "yes", "on"}:
                 load_dotenv()

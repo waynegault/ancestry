@@ -26,7 +26,7 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
@@ -526,7 +526,7 @@ class APIConfig:
     def _sanitize_endpoint_profiles(self) -> dict[str, dict[str, float]]:
         """Normalize endpoint throttling profiles defined in configuration."""
 
-        raw_profiles = self.endpoint_throttle_profiles or {}
+        raw_profiles = getattr(self, "endpoint_throttle_profiles", {}) or {}
         if not isinstance(raw_profiles, dict):
             logger.warning("endpoint_throttle_profiles must be a dict; ignoring invalid value")
             return {}
@@ -721,6 +721,53 @@ class TestConfig:
 
 
 @dataclass
+class RetryChannelConfig:
+    """Per-channel retry tuning derived from telemetry baselines."""
+
+    max_attempts: int = 3
+    initial_delay_seconds: float = 1.0
+    backoff_factor: float = 2.0
+    max_delay_seconds: float = 20.0
+    jitter_seconds: float = 0.3
+
+    def __post_init__(self) -> None:
+        if self.max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        if self.initial_delay_seconds <= 0:
+            raise ValueError("initial_delay_seconds must be positive")
+        if self.backoff_factor < 1.0:
+            raise ValueError("backoff_factor must be >= 1.0")
+        if self.max_delay_seconds <= 0:
+            raise ValueError("max_delay_seconds must be positive")
+        if self.jitter_seconds < 0:
+            raise ValueError("jitter_seconds cannot be negative")
+
+
+@dataclass
+class RetryPoliciesConfig:
+    """Telemetry-derived retry policies for API and Selenium flows."""
+
+    api: RetryChannelConfig = field(
+        default_factory=lambda: RetryChannelConfig(
+            max_attempts=4,
+            initial_delay_seconds=1.25,
+            backoff_factor=1.7,
+            max_delay_seconds=24.0,
+            jitter_seconds=0.35,
+        )
+    )
+    selenium: RetryChannelConfig = field(
+        default_factory=lambda: RetryChannelConfig(
+            max_attempts=3,
+            initial_delay_seconds=0.85,
+            backoff_factor=2.3,
+            max_delay_seconds=18.0,
+            jitter_seconds=0.45,
+        )
+    )
+
+
+@dataclass
 class ConfigSchema:
     """Main configuration schema that combines all sub-schemas."""
 
@@ -858,6 +905,7 @@ class ConfigSchema:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     test: TestConfig = field(default_factory=TestConfig)
+    retry_policies: RetryPoliciesConfig = field(default_factory=RetryPoliciesConfig)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -866,22 +914,8 @@ class ConfigSchema:
             raise ValueError(f"environment must be one of: {valid_environments}")
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert configuration to dictionary."""
-        result = {}
-
-        # Convert each sub-config to dict
-        for field_name in self.__dataclass_fields__:
-            value = getattr(self, field_name)
-            if hasattr(value, "__dataclass_fields__"):
-                # Convert dataclass to dict
-                result[field_name] = {
-                    sub_field: getattr(value, sub_field)
-                    for sub_field in value.__dataclass_fields__
-                }
-            else:
-                result[field_name] = value
-
-        return result
+        """Convert configuration to dictionary (deep dataclass conversion)."""
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConfigSchema":
@@ -893,7 +927,8 @@ class ConfigSchema:
         cache_data = data.get("cache", {})
         security_data = data.get("security", {})
         observability_data = data.get("observability", {})
-        test_data = data.get("test", {})  # Create sub-configs
+        test_data = data.get("test", {})
+        retry_policy_data = data.get("retry_policies", {})
         database_config = DatabaseConfig(**database_data)
         selenium_config = SeleniumConfig(**selenium_data)
         api_config = APIConfig(**api_data)
@@ -902,6 +937,10 @@ class ConfigSchema:
         security_config = SecurityConfig(**security_data)
         observability_config = ObservabilityConfig(**observability_data)
         test_config = TestConfig(**test_data)
+        retry_policy_config = RetryPoliciesConfig(
+            api=RetryChannelConfig(**retry_policy_data.get("api", {})),
+            selenium=RetryChannelConfig(**retry_policy_data.get("selenium", {})),
+        )
 
         # Extract main config data
         main_data = {
@@ -917,6 +956,7 @@ class ConfigSchema:
                 "security",
                 "observability",
                 "test",
+                "retry_policies",
             ]
         }
 
@@ -929,6 +969,7 @@ class ConfigSchema:
             security=security_config,
             observability=observability_config,
             test=test_config,
+            retry_policies=retry_policy_config,
             **main_data,
         )
 
@@ -943,13 +984,17 @@ class ConfigSchema:
 
         try:
             # Validate each sub-config by triggering __post_init__
-            DatabaseConfig(**self.database.__dict__)
-            SeleniumConfig(**self.selenium.__dict__)
-            APIConfig(**self.api.__dict__)
-            LoggingConfig(**self.logging.__dict__)
-            CacheConfig(**self.cache.__dict__)
-            SecurityConfig(**self.security.__dict__)
-            ObservabilityConfig(**self.observability.__dict__)
+            DatabaseConfig(**asdict(self.database))
+            SeleniumConfig(**asdict(self.selenium))
+            APIConfig(**asdict(self.api))
+            LoggingConfig(**asdict(self.logging))
+            CacheConfig(**asdict(self.cache))
+            SecurityConfig(**asdict(self.security))
+            ObservabilityConfig(**asdict(self.observability))
+            RetryPoliciesConfig(
+                api=RetryChannelConfig(**asdict(self.retry_policies.api)),
+                selenium=RetryChannelConfig(**asdict(self.retry_policies.selenium)),
+            )
 
             # Validate main config
             self.__post_init__()
@@ -1087,6 +1132,20 @@ def _test_logging_config() -> None:
             raise AssertionError("Should have raised ValueError for negative max_log_size_mb")
         except ValueError:
             pass  # Expected
+
+
+def _test_retry_policy_config() -> None:
+    """Test RetryPoliciesConfig defaults and overrides."""
+    default_config = RetryPoliciesConfig()
+    assert default_config.api.max_attempts == 4
+    assert default_config.selenium.max_attempts == 3
+    assert default_config.api.backoff_factor > 1.0
+    # Override API policy to ensure custom values stick
+    custom = RetryPoliciesConfig(
+        api=RetryChannelConfig(max_attempts=2, initial_delay_seconds=0.5, backoff_factor=1.5, max_delay_seconds=10.0, jitter_seconds=0.1)
+    )
+    assert custom.api.max_attempts == 2
+    assert custom.api.initial_delay_seconds == 0.5
 
 
 def _test_cache_config() -> None:
@@ -1457,6 +1516,7 @@ def config_schema_module_tests() -> bool:
         ("Selenium Config Validation", _test_selenium_config),
         ("API Config Validation", _test_api_config),
         ("Logging Config Validation", _test_logging_config),
+        ("Retry Policy Config Validation", _test_retry_policy_config),
         ("Cache Config Validation", _test_cache_config),
         ("Security Config Validation", _test_security_config),
         ("Config Schema Creation", _test_config_schema_creation),

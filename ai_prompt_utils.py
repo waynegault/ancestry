@@ -107,7 +107,7 @@ def save_prompts(prompts_data: dict[str, Any]) -> bool:
 
         # Save the prompts to the JSON file atomically using centralized helper
         from test_utilities import atomic_write_file
-        
+
         with atomic_write_file(PROMPTS_FILE) as f:
             json.dump(prompts_data, indent=2, ensure_ascii=False, fp=f)
 

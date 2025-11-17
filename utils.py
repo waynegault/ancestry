@@ -65,6 +65,7 @@ from api_constants import (  # type: ignore[import-not-found]
     API_PATH_UUID_LEGACY,
 )
 from common_params import NavigationConfig, RetryContext
+from error_handling import RetryPolicyProfile, resolve_retry_policy
 from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 # === TYPE ALIASES ===
@@ -418,6 +419,8 @@ class ApiRequestConfig:
     backoff_factor: float = 2.0
     max_delay: float = 60.0
     retry_status_codes: Union[list[int], set[int]] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+    retry_policy: Optional[Union[str, "RetryPolicyProfile"]] = "api"
+    jitter_seconds: float = 0.2
 
     # Metadata
     api_description: str = "API Call"
@@ -919,21 +922,36 @@ def _get_retry_config(
     initial_delay: Optional[float],
     backoff_factor: Optional[float],
     retry_on_status_codes: Optional[list[int]],
+    policy: Optional["RetryPolicyProfile"] = None,
 ) -> dict[str, Any]:
     """Get retry configuration with defaults from config_schema."""
     cfg = config_schema
+    policy_attempts = policy.max_attempts if policy else None
+    policy_initial = policy.initial_delay_seconds if policy else None
+    policy_backoff = policy.backoff_factor if policy else None
+    policy_max_delay = policy.max_delay_seconds if policy else None
+    policy_jitter = policy.jitter_seconds if policy else 0.2
     return {
-        "max_retries": max_retries if max_retries is not None else getattr(cfg, "MAX_RETRIES", 3),
-        "initial_delay": initial_delay if initial_delay is not None else getattr(cfg, "INITIAL_DELAY", 0.5),
-        "backoff_factor": backoff_factor if backoff_factor is not None else getattr(cfg, "BACKOFF_FACTOR", 1.5),
+        "max_retries": max_retries if max_retries is not None else (policy_attempts if policy_attempts is not None else getattr(cfg, "MAX_RETRIES", 3)),
+        "initial_delay": initial_delay if initial_delay is not None else (policy_initial if policy_initial is not None else getattr(cfg, "INITIAL_DELAY", 0.5)),
+        "backoff_factor": backoff_factor if backoff_factor is not None else (policy_backoff if policy_backoff is not None else getattr(cfg, "BACKOFF_FACTOR", 1.5)),
         "retry_codes": set(retry_on_status_codes if retry_on_status_codes is not None else getattr(cfg, "RETRY_STATUS_CODES", [429, 500, 502, 503, 504])),
-        "max_delay": getattr(cfg, "MAX_DELAY", 60.0),
+        "max_delay": policy_max_delay if policy_max_delay is not None else getattr(cfg, "MAX_DELAY", 60.0),
+        "jitter_seconds": float(policy_jitter),
     }
 
 
-def _calculate_sleep_time(delay: float, backoff_factor: float, attempt: int, max_delay: float) -> float:
+def _calculate_sleep_time(
+    delay: float,
+    backoff_factor: float,
+    attempt: int,
+    max_delay: float,
+    jitter_seconds: float,
+) -> float:
     """Calculate sleep time with exponential backoff and jitter."""
-    sleep_time = min(delay * (backoff_factor ** (attempt - 1)), max_delay) + random.uniform(0, 0.2)
+    base = min(delay * (backoff_factor ** (attempt - 1)), max_delay)
+    jitter = random.uniform(0, jitter_seconds) if jitter_seconds > 0 else 0.0
+    sleep_time = min(base + jitter, max_delay)
     return max(0.1, sleep_time)
 
 
@@ -954,6 +972,7 @@ def _handle_status_code_retry(
     delay: float,
     backoff_factor: float,
     max_delay: float,
+    jitter_seconds: float,
     func_name: str,
 ) -> tuple[bool, float]:
     """Handle retry logic for status code errors. Returns (should_continue, new_delay)."""
@@ -961,7 +980,7 @@ def _handle_status_code_retry(
         logger.error(f"API Call failed after {max_retries} retries for '{func_name}' (Final Status {status_code}).")
         return False, delay
 
-    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay)
+    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay, jitter_seconds)
     logger.warning(f"API Call status {status_code} (Attempt {attempt}/{max_retries}) for '{func_name}'. Retrying in {sleep_time:.2f}s...")
     time.sleep(sleep_time)
     return True, delay * backoff_factor
@@ -975,6 +994,7 @@ def _handle_exception_retry(
     delay: float,
     backoff_factor: float,
     max_delay: float,
+    jitter_seconds: float,
     func_name: str,
 ) -> tuple[bool, float]:
     """Handle retry logic for exceptions. Returns (should_continue, new_delay)."""
@@ -985,7 +1005,7 @@ def _handle_exception_retry(
         )
         raise exception
 
-    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay)
+    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay, jitter_seconds)
     logger.warning(f"API Call exception '{type(exception).__name__}' (Attempt {attempt}/{max_retries}) for '{func_name}', retrying in {sleep_time:.2f}s...")
     time.sleep(sleep_time)
     return True, delay * backoff_factor
@@ -995,20 +1015,35 @@ def retry_api(
     max_retries: Optional[int] = None,
     initial_delay: Optional[float] = None,
     backoff_factor: Optional[float] = None,
-    retry_on_exceptions: tuple[type[Exception], ...] = (
-        requests.exceptions.RequestException,  # type: ignore
-        ConnectionError,
-        TimeoutError,
-    ),
+    retry_on_exceptions: Optional[tuple[type[Exception], ...]] = None,
     retry_on_status_codes: Optional[list[int]] = None,
+    policy: Optional[str | RetryPolicyProfile] = "api",
 ) -> Callable[..., Any]:
     """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        resolved_policy = resolve_retry_policy(policy, default="api")
+        default_retry_exceptions: tuple[type[Exception], ...] = (
+            requests.exceptions.RequestException,  # type: ignore
+            ConnectionError,
+            TimeoutError,
+        )
+        effective_retry_exceptions = (
+            retry_on_exceptions
+            if retry_on_exceptions is not None
+            else (resolved_policy.retry_on if resolved_policy else default_retry_exceptions)
+        )
+
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Get configuration
-            config = _get_retry_config(max_retries, initial_delay, backoff_factor, retry_on_status_codes)
+            config = _get_retry_config(
+                max_retries,
+                initial_delay,
+                backoff_factor,
+                retry_on_status_codes,
+                policy=resolved_policy,
+            )
 
             # Initialize retry state
             retries = config["max_retries"]
@@ -1034,8 +1069,15 @@ def retry_api(
 
                         # Handle status code retry
                         should_continue, delay = _handle_status_code_retry(
-                            status_code, retries, config["max_retries"],
-                            attempt, delay, config["backoff_factor"], config["max_delay"], func.__name__
+                            status_code,
+                            retries,
+                            config["max_retries"],
+                            attempt,
+                            delay,
+                            config["backoff_factor"],
+                            config["max_delay"],
+                            config["jitter_seconds"],
+                            func.__name__,
                         )
                         if not should_continue:
                             return response
@@ -1044,14 +1086,21 @@ def retry_api(
                     # Success - return response
                     return response
 
-                except retry_on_exceptions as e:
+                except effective_retry_exceptions as e:
                     last_exception = e
                     retries -= 1
 
                     # Handle exception retry
                     should_continue, delay = _handle_exception_retry(
-                        e, retries, config["max_retries"], attempt, delay,
-                        config["backoff_factor"], config["max_delay"], func.__name__
+                        e,
+                        retries,
+                        config["max_retries"],
+                        attempt,
+                        delay,
+                        config["backoff_factor"],
+                        config["max_delay"],
+                        config["jitter_seconds"],
+                        func.__name__,
                     )
                     continue
 
@@ -1875,30 +1924,21 @@ def _validate_api_req_prerequisites(
 
     return True
 
-
-def _get_retry_configuration() -> tuple[int, float, float, float, set[int]]:
-    """Get retry configuration from config schema."""
-    cfg = config_schema.api
-    max_retries = cfg.max_retries
-    initial_delay = cfg.initial_delay
-    backoff_factor = cfg.retry_backoff_factor
-    max_delay = cfg.max_delay
-    retry_status_codes = set(cfg.retry_status_codes)
-
-    return max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes
-
-
 def _calculate_retry_sleep_time(
     current_delay: float,
     backoff_factor: float,
     attempt: int,
     max_delay: float,
+    jitter_seconds: float,
 ) -> float:
     """Calculate sleep time for retry with exponential backoff and jitter."""
-    sleep_time = min(
-        current_delay * (backoff_factor ** (attempt - 1)), max_delay
-    ) + random.uniform(0, 0.2)
-    return max(0.1, sleep_time)
+    return _calculate_sleep_time(
+        current_delay,
+        backoff_factor,
+        attempt,
+        max_delay,
+        jitter_seconds,
+    )
 
 
 def _handle_failed_request_response(
@@ -1909,6 +1949,7 @@ def _handle_failed_request_response(
     backoff_factor: float,
     attempt: int,
     max_delay: float,
+    jitter_seconds: float,
 ) -> tuple[bool, int, float]:
     """
     Handle failed request response (None).
@@ -1923,7 +1964,13 @@ def _handle_failed_request_response(
         )
         return False, retries_left, current_delay
 
-    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+    sleep_time = _calculate_retry_sleep_time(
+        current_delay,
+        backoff_factor,
+        attempt,
+        max_delay,
+        jitter_seconds,
+    )
     logger.warning(
         f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
     )
@@ -1961,7 +2008,13 @@ def _handle_retryable_status(
                 logger.debug(f"   << Final Response Text (Retry Fail): {response.text[:500]}...")
         return False, response, retries_left, current_delay
 
-    sleep_time = _calculate_sleep_time(current_delay, retry_ctx.backoff_factor, retry_ctx.attempt, retry_ctx.max_delay)
+    sleep_time = _calculate_sleep_time(
+        current_delay,
+        retry_ctx.backoff_factor,
+        retry_ctx.attempt,
+        retry_ctx.max_delay,
+        getattr(retry_ctx, "jitter_seconds", 0.2),
+    )
 
     if status == 429 and hasattr(session_manager, 'rate_limiter') and session_manager.rate_limiter:  # Too Many Requests
         session_manager.rate_limiter.on_429_error(api_description)  # type: ignore[union-attr]
@@ -2120,6 +2173,7 @@ def _handle_request_exception(
     current_delay: float,
     backoff_factor: float,
     max_delay: float,
+    jitter_seconds: float,
 ) -> tuple[bool, int, float]:
     """
     Handle exception during request attempt.
@@ -2137,7 +2191,13 @@ def _handle_request_exception(
         )
         return (False, retries_left, current_delay)
 
-    sleep_time = _calculate_retry_sleep_time(current_delay, backoff_factor, attempt, max_delay)
+    sleep_time = _calculate_retry_sleep_time(
+        current_delay,
+        backoff_factor,
+        attempt,
+        max_delay,
+        jitter_seconds,
+    )
     logger.warning(
         f"{api_description}: {type(e).__name__} (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s... Error: {e}"
     )
@@ -2276,7 +2336,14 @@ def _process_request_attempt(
         # Handle failed request (response is None)
         if response is None:
             should_continue, retries_left, current_delay = _handle_failed_request_response(
-                retries_left, config.max_retries, config.api_description, current_delay, config.backoff_factor, config.attempt, config.max_delay
+                retries_left,
+                config.max_retries,
+                config.api_description,
+                current_delay,
+                config.backoff_factor,
+                config.attempt,
+                config.max_delay,
+                config.jitter_seconds,
             )
             result_should_continue = should_continue
             result_label = "retry" if result_should_continue else "failure"
@@ -2296,7 +2363,8 @@ def _process_request_attempt(
                 backoff_factor=config.backoff_factor,
                 current_delay=current_delay,
                 retries_left=retries_left,
-                retry_status_codes=config.retry_status_codes
+                retry_status_codes=config.retry_status_codes,
+                jitter_seconds=config.jitter_seconds,
             )
             return _handle_response_status(
                 response, retry_ctx, config.api_description,
@@ -2307,7 +2375,15 @@ def _process_request_attempt(
     except RequestException as e:  # type: ignore
         attempt_duration = time.perf_counter() - attempt_start
         should_continue, retries_left, current_delay = _handle_request_exception(
-            e, config.attempt, config.max_retries, retries_left, config.api_description, current_delay, config.backoff_factor, config.max_delay
+            e,
+            config.attempt,
+            config.max_retries,
+            retries_left,
+            config.api_description,
+            current_delay,
+            config.backoff_factor,
+            config.max_delay,
+            config.jitter_seconds,
         )
         result_should_continue = should_continue
         result_exception = e
@@ -2439,15 +2515,25 @@ def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsRe
     if not _validate_api_req_prerequisites(config.session_manager, config.api_description):
         return None
 
-    # Get retry configuration
-    max_retries, initial_delay, backoff_factor, max_delay, retry_status_codes = _get_retry_configuration()
+    # Get retry configuration using shared retry policy profiles
+    resolved_policy = resolve_retry_policy(getattr(config, "retry_policy", None), default="api")
+    retry_settings = _get_retry_config(
+        max_retries=None,
+        initial_delay=None,
+        backoff_factor=None,
+        retry_on_status_codes=None,
+        policy=resolved_policy,
+    )
 
     # Update config with retry parameters
-    config.max_retries = max_retries
-    config.initial_delay = initial_delay
-    config.backoff_factor = backoff_factor
-    config.max_delay = max_delay
-    config.retry_status_codes = retry_status_codes
+    config.max_retries = retry_settings["max_retries"]
+    config.initial_delay = retry_settings["initial_delay"]
+    config.backoff_factor = retry_settings["backoff_factor"]
+    config.max_delay = retry_settings["max_delay"]
+    config.retry_status_codes = retry_settings["retry_codes"]
+    config.jitter_seconds = retry_settings["jitter_seconds"]
+    if resolved_policy is not None:
+        config.retry_policy = resolved_policy.name
 
     # Execute request with retry loop
     return _execute_request_with_retries(config)
@@ -4562,6 +4648,34 @@ def _test_decorators() -> None:
     assert result == "success", "Retry decorator should work"
 
 
+def _test_retry_policy_resolution() -> None:
+    """Test that retry configurations honor resolved policy profiles."""
+    policy = RetryPolicyProfile(
+        name="test-policy",
+        max_attempts=5,
+        initial_delay_seconds=1.75,
+        backoff_factor=1.6,
+        max_delay_seconds=12.0,
+        jitter_seconds=0.4,
+        retry_on=(RuntimeError,),
+        stop_on=(ValueError,),
+    )
+
+    config = _get_retry_config(
+        max_retries=None,
+        initial_delay=None,
+        backoff_factor=None,
+        retry_on_status_codes=None,
+        policy=policy,
+    )
+
+    assert config["max_retries"] == policy.max_attempts, "Policy max_attempts should win"
+    assert config["initial_delay"] == policy.initial_delay_seconds, "Policy initial delay should win"
+    assert config["backoff_factor"] == policy.backoff_factor, "Policy backoff should win"
+    assert config["max_delay"] == policy.max_delay_seconds, "Policy max delay should win"
+    assert config["jitter_seconds"] == policy.jitter_seconds, "Policy jitter should win"
+
+
 def _test_circuit_breaker() -> None:
     """Test CircuitBreaker state transitions and functionality"""
     # Test CircuitBreaker instantiation and state transitions
@@ -4786,6 +4900,12 @@ def utils_module_tests() -> bool:
         "Decorator Availability",
         _test_decorators,
         "Verify all decorators are callable and functional"
+    )
+
+    suite.run_test(
+        "Retry Policy Resolution",
+        _test_retry_policy_resolution,
+        "Ensure policy profiles drive retry configuration"
     )
 
     suite.run_test(

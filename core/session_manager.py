@@ -17,6 +17,8 @@ import sys
 import warnings
 from contextlib import suppress
 
+_original_stderr = None
+
 # NOTE: These warning suppressions are OBSOLETE but kept for defense-in-depth.
 # PREFERRED APPROACH: Run as script (`python core\session_manager.py`) NOT as module (`python -m core.session_manager`)
 # See test execution block at bottom of file for full explanation.
@@ -49,7 +51,9 @@ if str(parent_dir) not in sys.path:
 from standard_imports import setup_module
 
 # Restore stderr after critical imports
-if __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv):
+if (
+    __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv)
+) and _original_stderr is not None:
     sys.stderr = _original_stderr
 
 logger = setup_module(globals(), __name__)
@@ -98,10 +102,8 @@ except ImportError:
 # === SELENIUM IMPORTS ===
 try:
     from selenium.common.exceptions import WebDriverException
-    from selenium.webdriver.remote.webdriver import WebDriver
 except ImportError:
     WebDriverException = Exception
-    WebDriver = None  # type: ignore
 
 # === LOCAL IMPORTS ===
 import contextlib
@@ -827,9 +829,9 @@ class SessionManager:
         try:
             cookies = self.driver.get_cookies()
             return {
-                c["name"].lower()
-                for c in cookies
-                if isinstance(c, dict) and "name" in c
+                cookie["name"].lower()
+                for cookie in cookies
+                if "name" in cookie
             }
         except Exception:
             return set()
@@ -1059,17 +1061,21 @@ class SessionManager:
         synced_count = 0
 
         for cookie in driver_cookies:
-            if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
-                try:
-                    self.api_manager._requests_session.cookies.set(
-                        cookie["name"],
-                        cookie["value"],
-                        domain=cookie.get("domain"),
-                        path=cookie.get("path", "/")
-                    )
-                    synced_count += 1
-                except Exception:
-                    continue  # Skip problematic cookies silently
+            name = cookie.get("name")
+            value = cookie.get("value")
+            if not isinstance(name, str) or value is None:
+                continue
+
+            try:
+                self.api_manager._requests_session.cookies.set(
+                    name,
+                    value,
+                    domain=cookie.get("domain"),
+                    path=cookie.get("path", "/"),
+                )
+                synced_count += 1
+            except Exception:
+                continue  # Skip problematic cookies silently
 
         return synced_count
 
@@ -1636,7 +1642,7 @@ class SessionManager:
             return None
 
     @retry_on_failure(max_attempts=3)
-    def get_tree_owner(self, tree_id: str) -> Optional[str]:
+    def get_tree_owner(self, tree_id: Optional[str]) -> Optional[str]:
         """
         Retrieve tree owner name.
 
@@ -1654,10 +1660,6 @@ class SessionManager:
 
         if not tree_id:
             logger.warning("Cannot get tree owner: tree_id is missing.")
-            return None
-
-        if not isinstance(tree_id, str):
-            logger.warning(f"Invalid tree_id type provided: {type(tree_id)}. Expected string.")
             return None
 
         if not self.is_sess_valid():
@@ -2222,7 +2224,7 @@ def _test_database_operations():
             try:
                 if operation_name == "ensure_db_ready":
                     result = session_manager.ensure_db_ready()
-                    is_bool = isinstance(result, bool)
+                    is_bool = isinstance(result, bool)  # pyright: ignore[reportUnnecessaryIsInstance]
 
                     status = "✅" if is_bool else "❌"
                     print(f"   {status} {operation_name}: {description}")
@@ -2376,7 +2378,7 @@ def _test_regression_prevention_csrf_optimization():
             # Test that it returns a boolean
             try:
                 is_valid = session_manager._is_csrf_token_valid()
-                if isinstance(is_valid, bool):
+                if isinstance(is_valid, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
                     print("   ✅ _is_csrf_token_valid returns boolean")
                     results.append(True)
                 else:
@@ -2779,8 +2781,7 @@ def _test_proactive_session_refresh_timing() -> None:
 
 
 def core_session_manager_module_tests() -> bool:
-    Comprehensive test suite for session_manager.py (decomposed).
-    """
+    """Comprehensive test suite for session_manager.py (decomposed)."""
     from test_framework import TestSuite, suppress_logging
 
     # Warnings already suppressed at module level when __name__ == "__main__"
@@ -2982,6 +2983,7 @@ def core_session_manager_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(core_session_manager_module_tests)
 
 

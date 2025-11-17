@@ -595,6 +595,7 @@ def observability_metrics_registry_module_tests() -> bool:
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(observability_metrics_registry_module_tests)
 
 

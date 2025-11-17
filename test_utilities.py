@@ -39,10 +39,11 @@ implementation, consistent testing practices, and maintainable code organization
 for professional genealogical automation development and quality assurance.
 """
 
-import tempfile
 import contextlib
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Callable, Optional, Iterator
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock
 
 from sqlalchemy.orm import Session
@@ -72,36 +73,14 @@ class EmptyTestService:
 
 @contextlib.contextmanager
 def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8") -> Iterator[Any]:
-    """
-    Context manager for atomic file writes using temp file + rename.
-    
-    Provides safe file writing by:
-    1. Writing to a temporary file in the same directory
-    2. On success, atomically replacing the target file
-    3. On failure, cleaning up the temporary file
-    
-    This consolidates the pattern found in rate_limiter.py, ai_prompt_utils.py,
-    and other modules that use tempfile.NamedTemporaryFile + Path.replace().
-    
-    Args:
-        target_path: Path to the final destination file
-        mode: File open mode (default: "w" for text write)
-        encoding: Text encoding (default: "utf-8")
-        
-    Yields:
-        File object for writing
-        
-    Example:
-        with atomic_write_file(Path("config.json")) as f:
-            json.dump(data, f, indent=2)
-    """
+    """Context manager for atomic file writes using temp file + rename."""
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     # Try modern approach first (Python 3.12+)
     try:
         temp_path = target_path.with_suffix(target_path.suffix + ".tmp")
-        with open(temp_path, mode, encoding=encoding if 'b' not in mode else None) as f:
+        with temp_path.open(mode, encoding=encoding if 'b' not in mode else None) as f:
             yield f
         temp_path.replace(target_path)
     except Exception:
@@ -126,24 +105,7 @@ def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8
 
 @contextlib.contextmanager
 def temp_directory(prefix: str = "test-", cleanup: bool = True) -> Iterator[Path]:
-    """
-    Context manager for temporary directory creation with automatic cleanup.
-    
-    Consolidates the pattern of using tempfile.mkdtemp() or TemporaryDirectory()
-    found in quality_regression_gate.py, analytics.py, and other test modules.
-    
-    Args:
-        prefix: Prefix for the temporary directory name
-        cleanup: Whether to automatically clean up the directory (default: True)
-        
-    Yields:
-        Path object pointing to the temporary directory
-        
-    Example:
-        with temp_directory(prefix="qrg-test-") as tmpdir:
-            test_file = tmpdir / "data.json"
-            test_file.write_text("{}")
-    """
+    """Context manager for temporary directory creation with optional cleanup."""
     if cleanup:
         with tempfile.TemporaryDirectory(prefix=prefix) as temp_dir:
             yield Path(temp_dir)
@@ -157,42 +119,23 @@ def temp_directory(prefix: str = "test-", cleanup: bool = True) -> Iterator[Path
 
 
 @contextlib.contextmanager
-def temp_file(suffix: str = "", prefix: str = "test-", mode: str = "w+", 
+def temp_file(suffix: str = "", prefix: str = "test-", mode: str = "w+",
               encoding: str = "utf-8", delete: bool = True) -> Iterator[Path]:
-    """
-    Context manager for temporary file creation with automatic cleanup.
-    
-    Provides a Path-based interface to temporary files, consolidating patterns
-    found across the codebase.
-    
-    Args:
-        suffix: File extension (e.g., ".json", ".txt")
-        prefix: Prefix for the temporary file name
-        mode: File open mode (default: "w+" for read/write)
-        encoding: Text encoding (default: "utf-8")
-        delete: Whether to automatically delete the file (default: True)
-        
-    Yields:
-        Path object pointing to the temporary file
-        
-    Example:
-        with temp_file(suffix=".json") as tmp_path:
-            tmp_path.write_text('{"test": true}')
-            data = json.loads(tmp_path.read_text())
-    """
+    """Context manager for temporary file creation with optional cleanup."""
     with tempfile.NamedTemporaryFile(
         mode=mode,
         suffix=suffix,
         prefix=prefix,
-        delete=delete,
-        encoding=encoding if 'b' not in mode else None
-    ) as tf:
-        temp_path = Path(tf.name)
-        try:
-            yield temp_path
-        finally:
-            if delete and temp_path.exists():
-                temp_path.unlink(missing_ok=True)
+        delete=False,
+        encoding=encoding if 'b' not in mode else None,
+    ) as temp_file_handle:
+        temp_path = Path(temp_file_handle.name)
+
+    try:
+        yield temp_path
+    finally:
+        if delete and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
 
 
 def mock_func() -> str:
@@ -855,8 +798,12 @@ def create_test_session() -> Session:
             session.close()
     """
     from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
+
     dm = DatabaseManager()
-    return dm.get_session()
+    session = dm.get_session()
+    if session is None:
+        raise RuntimeError("Failed to create a test database session")
+    return session
 
 
 def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
@@ -1022,19 +969,17 @@ def _test_create_test_person() -> None:
 
 def _test_temp_directory() -> None:
     """Test the temp_directory helper (Task 5)."""
-    import os
-    
     # Test with cleanup
     with temp_directory(prefix="test-task5-") as tmpdir:
         assert tmpdir.exists()
         assert tmpdir.is_dir()
         assert "test-task5-" in tmpdir.name
-        
+
         # Create a test file
         test_file = tmpdir / "test.txt"
         test_file.write_text("test content")
         assert test_file.exists()
-    
+
     # Directory should be cleaned up
     assert not tmpdir.exists()
 
@@ -1046,12 +991,12 @@ def _test_temp_file() -> None:
         assert tmp_path.exists()
         assert tmp_path.suffix == ".json"
         assert "test-" in tmp_path.name
-        
+
         # Write and read content
         tmp_path.write_text('{"test": true}')
         content = tmp_path.read_text()
         assert "test" in content
-    
+
     # File should be deleted
     assert not tmp_path.exists()
 
@@ -1059,24 +1004,24 @@ def _test_temp_file() -> None:
 def _test_atomic_write_file() -> None:
     """Test the atomic_write_file helper (Task 5)."""
     import json
-    
+
     with temp_directory() as tmpdir:
         target = tmpdir / "test.json"
-        
+
         # Test successful write
         with atomic_write_file(target) as f:
             json.dump({"key": "value"}, f)
-        
+
         assert target.exists()
-        with open(target) as f:
+        with target.open(encoding="utf-8") as f:
             data = json.load(f)
         assert data == {"key": "value"}
-        
+
         # Test that file is atomically replaced
         with atomic_write_file(target) as f:
             json.dump({"updated": "data"}, f)
-        
-        with open(target) as f:
+
+        with target.open(encoding="utf-8") as f:
             data = json.load(f)
         assert data == {"updated": "data"}
 

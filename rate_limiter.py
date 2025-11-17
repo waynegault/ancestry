@@ -20,7 +20,6 @@ Status: Phase 1 - Foundation
 """
 
 import json
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -659,9 +658,6 @@ class AdaptiveRateLimiter:
 
         rate_caps: list[float] = []
         for endpoint, raw_profile in profiles.items():
-            if not isinstance(endpoint, str):
-                continue
-
             normalized = self._normalize_endpoint_profile(endpoint, raw_profile)
             if not normalized:
                 continue
@@ -1017,10 +1013,10 @@ def _persist_state(payload: dict[str, Any]) -> None:
     try:
         # Use centralized atomic_write_file helper from test_utilities
         from test_utilities import atomic_write_file
-        
+
         with atomic_write_file(state_path) as f:
             json.dump(payload, f, indent=2)
-        
+
         _persisted_state_cache = payload
     except Exception as exc:  # pragma: no cover - diagnostics only
         logger.debug(f"Failed to persist rate limiter state: {exc}")
@@ -1170,7 +1166,6 @@ def reset_global_rate_limiter() -> None:
 
 def rate_limiter_module_tests() -> bool:
     """Run comprehensive tests for AdaptiveRateLimiter."""
-    import sys
 
     from test_framework import TestSuite
 
@@ -1277,11 +1272,62 @@ def rate_limiter_module_tests() -> bool:
         expected_outcome="Subsequent call delayed by configured cooldown interval",
     )
 
+    # Test 11: Global singleton reuse
+    suite.run_test(
+        test_name="Global singleton reuse",
+        test_func=_test_global_singleton,
+        test_summary="Verify global adaptive limiter is reused after initialization",
+        functions_tested="get_adaptive_rate_limiter, reset_global_rate_limiter",
+        method_description="Initialize limiter twice and confirm same instance is returned",
+        expected_outcome="Second call returns first instance without reinitializing",
+    )
+
+    # Test 12: Parameter validation
+    suite.run_test(
+        test_name="Parameter validation guards",
+        test_func=_test_parameter_validation,
+        test_summary="Ensure invalid constructor arguments raise ValueError",
+        functions_tested="AdaptiveRateLimiter.__init__",
+        method_description="Attempt to create limiter with invalid fill rate and capacity",
+        expected_outcome="ValueError raised for zero fill rate, negative capacity, or min>max",
+    )
+
+    # Test 13: Endpoint min interval enforcement
+    suite.run_test(
+        test_name="Endpoint min interval",
+        test_func=_test_endpoint_min_interval,
+        test_summary="Verify per-endpoint min intervals slow down consecutive calls",
+        functions_tested="AdaptiveRateLimiter.configure_endpoint_profiles, wait",
+        method_description="Set endpoint min_interval and measure delay between calls",
+        expected_outcome="Second call delayed to respect configured min_interval",
+    )
+
+    # Test 14: Endpoint delay multiplier application
+    suite.run_test(
+        test_name="Endpoint delay multiplier",
+        test_func=_test_endpoint_delay_multiplier,
+        test_summary="Ensure endpoint delay multiplier increases wait duration",
+        functions_tested="AdaptiveRateLimiter.configure_endpoint_profiles, wait",
+        method_description="Apply delay multiplier and verify wait time is increased",
+        expected_outcome="wait() respects multiplier and slows down requests",
+    )
+
+    # Test 15: Endpoint cooldown after 429
+    suite.run_test(
+        test_name="Endpoint cooldown enforcement",
+        test_func=_test_endpoint_429_cooldown,
+        test_summary="Ensure cooldown_after_429 prevents immediate reuse",
+        functions_tested="AdaptiveRateLimiter.on_429_error, wait",
+        method_description="Trigger 429 and ensure subsequent wait obeys cooldown",
+        expected_outcome="Next request delayed by configured cooldown_after_429",
+    )
+
     return suite.finish_suite()
 
 
 # Use centralized test runner utility from test_utilities
 from test_utilities import create_standard_test_runner
+
 run_comprehensive_tests = create_standard_test_runner(rate_limiter_module_tests)
 
 
@@ -1423,6 +1469,43 @@ def _test_thread_safety() -> None:
 
     metrics = limiter.get_metrics()
     assert metrics.total_requests == 50, f"Expected 50 requests, got {metrics.total_requests}"
+
+
+def _test_capacity_limits_burst() -> None:
+    """Ensure bursty usage can only consume up to the configured capacity."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, capacity=3.0)
+
+    start = time.monotonic()
+    for _ in range(3):
+        limiter.wait()
+    burst_time = time.monotonic() - start
+
+    assert burst_time < 0.3, f"Burst of 3 tokens should be instant, took {burst_time:.3f}s"
+
+    start = time.monotonic()
+    limiter.wait()  # Fourth request should require refill
+    refill_time = time.monotonic() - start
+
+    assert refill_time >= 0.9, f"Expected ~1s refill wait, got {refill_time:.3f}s"
+
+
+def _test_cooldown_on_429() -> None:
+    """Ensure endpoint cooldown after 429 enforces additional delay."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=5.0, capacity=5.0)
+    limiter.configure_endpoint_profiles({
+        "cooldown-endpoint": {
+            "cooldown_after_429": 0.5,
+        }
+    })
+
+    limiter.wait("cooldown-endpoint")
+    limiter.on_429_error("cooldown-endpoint")
+
+    start = time.monotonic()
+    limiter.wait("cooldown-endpoint")
+    elapsed = time.monotonic() - start
+
+    assert elapsed >= 0.45, f"Cooldown should enforce ~0.5s wait, got {elapsed:.3f}s"
 
 
 def _test_global_singleton() -> None:
