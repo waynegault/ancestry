@@ -1,50 +1,19 @@
-"""
-Gedcom Intelligence & Advanced System Intelligence Engine
+"""GEDCOM Intelligence Analysis System.
 
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
+Analyzes GEDCOM family tree data to identify research gaps, data conflicts,
+and opportunities for genealogical investigation. Uses AI to generate insights
+and prioritized recommendations for improving family tree completeness.
 
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
-
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
-
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
-AI-Enhanced GEDCOM Intelligence System for Ancestry Project
-
-This module provides intelligent analysis of GEDCOM family tree data using AI
-to identify gaps, conflicts, and research opportunities. Transforms raw family
-tree data into actionable genealogical insights and research recommendations.
+Key Features:
+- Gap detection (missing parents, dates, places)
+- Conflict identification (date/location inconsistencies)
+- Research opportunity discovery
+- AI-powered genealogical insights
+- Prioritized recommendations
 
 Author: Ancestry Automation System
 Created: August 6, 2025
-Phase: 12.1 - Advanced GEDCOM Integration & Family Tree Intelligence
+Phase: 12.1 - GEDCOM Integration & Family Tree Intelligence
 """
 
 from dataclasses import asdict, dataclass, field
