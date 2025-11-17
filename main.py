@@ -566,28 +566,36 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
 def _ensure_required_state(session_manager: SessionManager, required_state: str, action_name: str, choice: str) -> bool:
     """Ensure the required session state is achieved."""
 
+    result = True
+
     if required_state == "db_ready":
         db_manager = _get_database_manager(session_manager)
         if db_manager is None:
             logger.error("Database manager unavailable for action '%s'", action_name)
-            return False
-        return db_manager.ensure_ready()
+            result = False
+        else:
+            result = db_manager.ensure_ready()
 
-    if required_state == "driver_ready":
+    elif required_state == "driver_ready":
         browser_manager = _get_browser_manager(session_manager)
         if browser_manager is None:
             logger.error("Browser manager unavailable for action '%s'", action_name)
-            return False
-        return browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+            result = False
+        else:
+            result = browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
 
-    if required_state == "session_ready":
+    elif required_state == "session_ready":
         # Skip CSRF check for Action 10 (cookies available after navigation)
         skip_csrf = (choice in ["10"])
         if not session_manager.guard_action(required_state, action_name):
-            return False
-        return session_manager.ensure_session_ready(action_name=f"{action_name} - Setup", skip_csrf=skip_csrf)
+            result = False
+        else:
+            result = session_manager.ensure_session_ready(
+                action_name=f"{action_name} - Setup",
+                skip_csrf=skip_csrf,
+            )
 
-    return True
+    return result
 
 
 def _prepare_action_arguments(

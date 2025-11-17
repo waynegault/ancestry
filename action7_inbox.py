@@ -30,7 +30,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Literal, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -82,17 +82,34 @@ ApiResponseType = Any
 # Define Action 6/8-style error types for inbox processing
 class MaxApiFailuresExceededError(Exception):
     """Custom exception for exceeding API failure threshold in inbox processing."""
-    pass
 
-class BrowserSessionError(BrowserError):
+
+if TYPE_CHECKING:
+    class BrowserErrorBase(Exception):
+        """Typed BrowserError stub for static analysis."""
+
+    class APIErrorBase(Exception):
+        """Typed APIError stub for static analysis."""
+
+    class AuthenticationErrorBase(Exception):
+        """Typed AuthenticationError stub for static analysis."""
+else:
+    BrowserErrorBase = BrowserError  # type: ignore[assignment]
+    APIErrorBase = APIError  # type: ignore[assignment]
+    AuthenticationErrorBase = AuthenticationError  # type: ignore[assignment]
+
+
+class BrowserSessionError(BrowserErrorBase):
     """Browser session-specific errors."""
     pass
 
-class APIRateLimitError(APIError):
+
+class APIRateLimitError(APIErrorBase):
     """API rate limit specific errors."""
     pass
 
-class AuthenticationExpiredError(AuthenticationError):
+
+class AuthenticationExpiredError(AuthenticationErrorBase):
     """Authentication expiration specific errors."""
     pass
 

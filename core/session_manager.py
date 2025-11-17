@@ -2536,7 +2536,8 @@ def _test_regression_prevention_property_access():
     we encountered.
     """
     print("🛡️ Testing SessionManager property access regression prevention:")
-    results = []
+    results: list[bool] = []
+    failure_details: list[str] = []
 
     try:
         session_manager = SessionManager()
@@ -2559,17 +2560,26 @@ def _test_regression_prevention_property_access():
                 print(f"   ⚠️  Property '{prop}' not found (may be intended)")
                 results.append(True)  # Not finding is OK, crashing is not
             except Exception as prop_error:
-                print(f"   ❌ Property '{prop}' error: {prop_error}")
+                detail = f"Property '{prop}' error: {prop_error}"
+                print(f"   ❌ {detail}")
+                failure_details.append(detail)
                 results.append(False)
 
     except Exception as e:
-        print(f"   ❌ SessionManager property access test failed: {e}")
+        detail = f"SessionManager property access test failed: {e}"
+        print(f"   ❌ {detail}")
+        failure_details.append(detail)
         results.append(False)
 
     success = all(results)
-    if success:
-        print("🎉 SessionManager property access regression test passed!")
-    return success
+    if not success:
+        failure_summary = " | ".join(failure_details) or "Unknown property failures"
+        raise AssertionError(
+            f"SessionManager property regression test failures: {failure_summary}"
+        )
+
+    print("🎉 SessionManager property access regression test passed!")
+    return True
 
 
 def _test_regression_prevention_initialization_stability():
