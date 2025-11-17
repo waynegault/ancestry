@@ -32,8 +32,8 @@ import threading
 import time
 import webbrowser
 from collections.abc import Sequence
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from functools import wraps
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -301,11 +301,10 @@ def _log_persisted_rate_state(persisted_state: dict[str, Any]) -> None:
 
 
 def _log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: str) -> None:
-    """Log the adaptive rate limiter configuration and persisted state."""
+    """Log the adaptive rate limiter plan without instantiating it early."""
 
     try:
-        from rate_limiter import get_persisted_rate_state, get_rate_limiter_state_source
-        from utils import get_rate_limiter
+        from rate_limiter import get_persisted_rate_state
     except ImportError:
         logger.debug("Rate limiter module unavailable during configuration summary")
         return
@@ -315,52 +314,22 @@ def _log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: st
     safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
     desired_rate = getattr(config.api, "token_bucket_fill_rate", None) or safe_rps
     allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-    # Allow the adaptive limiter to back off further before hitting the floor.
     min_fill_rate = max(0.05, safe_rps * 0.25)
     max_fill_rate = desired_rate if allow_aggressive else safe_rps
     max_fill_rate = max(max_fill_rate, min_fill_rate)
     bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
 
-    initial_rate = None if persisted_state else desired_rate
-
-    limiter = cast(
-        Optional[Any],
-        get_rate_limiter(
-        initial_fill_rate=initial_rate,
-        success_threshold=success_threshold,
-        min_fill_rate=min_fill_rate,
-        max_fill_rate=max_fill_rate,
-        capacity=bucket_capacity,
-        ),
-    )
-
-    if limiter is None:
-        logger.debug("Rate limiter unavailable during configuration summary")
-        return
-
-    source = get_rate_limiter_state_source()
-    source_labels = {
-        "previous_run": "previous run",
-        "config": "config",
-        "default": "default",
-    }
-    source_label = source_labels.get(source, source)
-
     logger.info(
-        "  Rate Limiter: start=%.3f req/s (source=%s) | success_threshold=%d",
-        limiter.fill_rate,
-        source_label,
-        limiter.success_threshold,
+        "  Rate Limiter (planned): target=%.3f req/s | success_threshold=%d | bounds=%.3f-%.3f | capacity=%.1f",
+        desired_rate,
+        success_threshold,
+        min_fill_rate,
+        max_fill_rate,
+        bucket_capacity,
     )
 
     if persisted_state:
         _log_persisted_rate_state(persisted_state)
-
-    endpoint_summary = getattr(limiter, "get_endpoint_summary", None)
-    if callable(endpoint_summary):
-        summary_value = endpoint_summary()
-        if summary_value:
-            logger.info("    %s", summary_value)
 
 
 def _log_configuration_summary(config: Any) -> None:
