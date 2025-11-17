@@ -1,48 +1,16 @@
 #!/usr/bin/env python3
 
-"""
-Advanced Utility & Intelligent Service Engine
-
-Sophisticated utility platform providing comprehensive service automation,
-intelligent utility functions, and advanced operational capabilities with
-optimized algorithms, professional-grade utilities, and comprehensive
-service management for genealogical automation and research workflows.
-
-Utility Intelligence:
-• Advanced utility functions with intelligent automation and optimization protocols
-• Sophisticated service management with comprehensive operational capabilities
-• Intelligent utility coordination with multi-system integration and synchronization
-• Comprehensive utility analytics with detailed performance metrics and insights
-• Advanced utility validation with quality assessment and verification protocols
-• Integration with service platforms for comprehensive utility management and automation
-
-Service Automation:
-• Sophisticated service automation with intelligent workflow generation and execution
-• Advanced utility optimization with performance monitoring and enhancement protocols
-• Intelligent service coordination with automated management and orchestration
-• Comprehensive service validation with quality assessment and reliability protocols
-• Advanced service analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive service management workflows
-
-Professional Services:
-• Advanced professional utilities with enterprise-grade functionality and reliability
-• Sophisticated service protocols with professional standards and best practices
-• Intelligent service optimization with performance monitoring and enhancement
-• Comprehensive service documentation with detailed operational guides and analysis
-• Advanced service security with secure protocols and data protection measures
-• Integration with professional service systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential utility infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive service management,
-and professional utilities for genealogical automation and research workflows.
-
-Technical Implementation:
-Microsoft Graph Integration - Office 365 Task Management
+"""Microsoft Graph Integration - Office 365 Task Management.
 
 Provides Microsoft Graph API integration for task management with MSAL authentication,
 persistent token caching, To-Do list management, and automated task creation for
 genealogical research workflow integration with Office 365 productivity tools.
+
+Key Features:
+- MSAL authentication with token caching
+- To-Do list management
+- Automated task creation
+- Office 365 integration
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -98,12 +66,12 @@ if not CLIENT_ID:
         "CRITICAL ERROR: MS_GRAPH_CLIENT_ID not found in environment variables (.env). MS Graph functionality disabled."
     )
     msal_app_instance = None  # Ensure dependent vars are None
-    AUTHORITY = None
+    authority = None
 else:
     # Step 3: Construct Authority URL based on Tenant ID
-    AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
+    authority = f"https://login.microsoftonline.com/{TENANT_ID}"
     logger.debug(f"MS Graph Config: Client ID = {CLIENT_ID}")
-    logger.debug(f"MS Graph Config: Authority URL = {AUTHORITY}")
+    logger.debug(f"MS Graph Config: Authority URL = {authority}")
 
 # Step 4: Define required API scopes (permissions)
 SCOPES = [
@@ -120,32 +88,32 @@ CACHE_FILENAME = "ms_graph_cache.bin"  # Name of the cache file
 try:
     if config.database.data_dir is not None:
         config.database.data_dir.mkdir(parents=True, exist_ok=True)
-        CACHE_FILEPATH = config.database.data_dir / CACHE_FILENAME
-        logger.debug(f"MSAL token cache path set to: {CACHE_FILEPATH}")
+        cache_filepath = config.database.data_dir / CACHE_FILENAME
+        logger.debug(f"MSAL token cache path set to: {cache_filepath}")
     else:
         logger.error("config.database.data_dir is None. Cache will be in-memory only.")
-        CACHE_FILEPATH = None
+        cache_filepath = None
 except Exception as dir_err:
     logger.error(
         f"Could not create DATA_DIR for MSAL cache: {dir_err}. Cache will be in-memory only."
     )
-    CACHE_FILEPATH = None  # Set path to None if directory fails
+    cache_filepath = None  # Set path to None if directory fails
 
 # Step 6: Initialize MSAL Serializable Token Cache
 persistent_cache = msal.SerializableTokenCache()
 
 # Step 7: Attempt to load existing cache from file (if path available)
-if CACHE_FILEPATH:
+if cache_filepath:
     try:
-        if CACHE_FILEPATH.exists():
-            logger.debug(f"Loading MSAL cache from: {CACHE_FILEPATH}")
-            persistent_cache.deserialize(CACHE_FILEPATH.read_text(encoding="utf-8"))
+        if cache_filepath.exists():
+            logger.debug(f"Loading MSAL cache from: {cache_filepath}")
+            persistent_cache.deserialize(cache_filepath.read_text(encoding="utf-8"))
             logger.debug("MSAL token cache loaded successfully.")
         else:
             logger.debug("MSAL cache file not found. Starting with empty cache.")
     except Exception as e:
         logger.warning(
-            f"Failed to load MSAL cache from {CACHE_FILEPATH}: {e}. Starting with empty cache."
+            f"Failed to load MSAL cache from {cache_filepath}: {e}. Starting with empty cache."
         )
 
 
@@ -153,7 +121,7 @@ if CACHE_FILEPATH:
 def save_cache_on_exit() -> None:
     """atexit handler: Saves the MSAL token cache to file if it changed."""
     # Check if cache path is valid and cache object exists
-    if not CACHE_FILEPATH or not persistent_cache:
+    if not cache_filepath or not persistent_cache:
         logger.debug("Skipping MSAL cache save: Cache path or object unavailable.")
         return
 
@@ -161,15 +129,15 @@ def save_cache_on_exit() -> None:
     try:
         # Check if cache state actually changed since loading/last save
         if persistent_cache.has_state_changed:
-            logger.debug(f"MSAL cache has changed. Saving to: {CACHE_FILEPATH}")
+            logger.debug(f"MSAL cache has changed. Saving to: {cache_filepath}")
             # Ensure directory exists again (paranoid check)
-            CACHE_FILEPATH.parent.mkdir(parents=True, exist_ok=True)
+            cache_filepath.parent.mkdir(parents=True, exist_ok=True)
             # Serialize and write cache data
             cache_data_to_save = persistent_cache.serialize()
             logger.debug(
                 f"Serialized cache data length: {len(cache_data_to_save)} bytes."
             )
-            CACHE_FILEPATH.write_text(cache_data_to_save, encoding="utf-8")
+            cache_filepath.write_text(cache_data_to_save, encoding="utf-8")
             logger.debug("Successfully saved MSAL token cache.")
             # Optional: Reset flag manually after save if needed, though MSAL might handle this.
             # persistent_cache.has_state_changed = False
@@ -177,7 +145,7 @@ def save_cache_on_exit() -> None:
             logger.debug("MSAL cache unchanged since last load/save. No save needed.")
     except Exception as e:
         logger.error(
-            f"Failed to save MSAL cache to {CACHE_FILEPATH}: {e}", exc_info=True
+            f"Failed to save MSAL cache to {cache_filepath}: {e}", exc_info=True
         )
 
 
@@ -189,11 +157,11 @@ logger.debug("Registered MSAL cache save function with atexit.")
 
 # Step 10: Initialize Shared MSAL Public Client Application instance
 msal_app_instance: Optional[msal.PublicClientApplication] = None
-if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
+if CLIENT_ID and authority:  # Only initialize if config is valid
     try:
         msal_app_instance = msal.PublicClientApplication(
             client_id=CLIENT_ID,  # Pass client_id explicitly
-            authority=AUTHORITY,
+            authority=authority,
             token_cache=persistent_cache,  # Link the persistent cache
         )
         logger.debug(
@@ -206,24 +174,6 @@ if CLIENT_ID and AUTHORITY:  # Only initialize if config is valid
         msal_app_instance = None  # Ensure it's None on failure
 
 # --- Core Authentication and API Functions ---
-
-
-def _check_token_cache() -> bool:
-    """
-    Check if a valid MS Graph token is available in cache.
-    This is a non-blocking check that doesn't attempt authentication.
-
-    Returns:
-        True if a token is available in cache, False otherwise.
-    """
-    if not msal_app_instance:
-        return False
-
-    try:
-        accounts = msal_app_instance.get_accounts()
-        return len(accounts) > 0
-    except Exception:
-        return False
 
 
 def _try_silent_token_acquisition(app: Any) -> Optional[str]:
@@ -244,7 +194,7 @@ def _try_silent_token_acquisition(app: Any) -> Optional[str]:
     return None
 
 
-def _initiate_device_flow(app: Any) -> Optional[dict]:
+def _initiate_device_flow(app: Any) -> Optional[dict[str, Any]]:
     """Initiate device flow and return flow object."""
     logger.debug("Initiating interactive device flow...")
     try:
@@ -261,7 +211,7 @@ def _initiate_device_flow(app: Any) -> Optional[dict]:
     return flow
 
 
-def _display_device_flow_instructions(flow: dict) -> None:
+def _display_device_flow_instructions(flow: dict[str, Any]) -> None:
     """Display user instructions for device flow authentication."""
     print("\n" + "=" * 40)
     print(" MS GRAPH AUTHENTICATION REQUIRED")
@@ -275,7 +225,7 @@ def _display_device_flow_instructions(flow: dict) -> None:
     logger.debug(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
 
 
-def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
+def _process_device_flow_result(result: Optional[dict[str, Any]]) -> Optional[str]:
     """Process device flow result and return access token."""
     if not result:
         logger.error("Device flow failed, timed out, or returned unexpected result: None")
@@ -287,11 +237,11 @@ def _process_device_flow_result(result: Optional[dict]) -> Optional[str]:
         logger.info(f"Authenticated as: {user_info}")
 
         # Save cache immediately after successful authentication
-        if persistent_cache and CACHE_FILEPATH:
+        if persistent_cache and cache_filepath:
             try:
                 cache_data = persistent_cache.serialize()
-                CACHE_FILEPATH.write_text(cache_data, encoding="utf-8")
-                logger.info(f"MS Graph token cache saved to: {CACHE_FILEPATH}")
+                cache_filepath.write_text(cache_data, encoding="utf-8")
+                logger.info(f"MS Graph token cache saved to: {cache_filepath}")
             except Exception as e:
                 logger.error(f"Failed to save MS Graph token cache: {e}")
 
@@ -347,7 +297,7 @@ def acquire_token_device_flow() -> Optional[str]:
 # End of acquire_token_device_flow
 
 
-def _process_list_query_response(lists_data: dict, list_name: str) -> Optional[str]:
+def _process_list_query_response(lists_data: dict[str, Any], list_name: str) -> Optional[str]:
     """Process the list query response and extract list ID."""
     if not lists_data or "value" not in lists_data:
         logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
@@ -406,6 +356,7 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
     logger.debug(f"List query URL: {list_query_url}")
 
     # Execute API request and handle errors
+    response = None
     try:
         response = requests.get(list_query_url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -420,7 +371,7 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
         return None
     except json.JSONDecodeError as json_err:
         logger.error(f"Error decoding JSON response from list query: {json_err}")
-        if "response" in locals() and hasattr(response, "text"):
+        if response is not None and hasattr(response, "text"):
             logger.debug(f"Response content causing JSON error: {response.text[:500]}")
         return None
     except Exception as e:
@@ -547,7 +498,7 @@ def create_todo_task(
     # Validate inputs
     if not access_token or not list_id or not task_title:
         logger.error("Cannot create task: Access token, List ID, or Task title missing.")
-        return False
+        return None
 
     # Prepare API request
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}

@@ -1,58 +1,17 @@
 #!/usr/bin/env python3
 
-"""
-Standard Imports & Advanced System Intelligence Engine
+"""Standardized Imports Module - Single Source of Truth.
 
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
+Provides a single, consistent way to import core functionality across
+the entire Ancestry project, eliminating 5+ different import patterns
+scattered throughout the codebase.
 
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
-
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
-
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
-Standardized Imports Module - Single Source of Truth
-
-This module provides a single, consistent way to import core functionality
-across the entire Ancestry project, eliminating the 5+ different import
-patterns currently scattered throughout the codebase.
-
-Usage in any module:
+Usage:
     from standard_imports import *
-
-    # Everything is now available:
     logger.info("Standardized logging")
     register_function("my_func", my_function)
-    # etc.
 
-This replaces inconsistent patterns like:
+Replaces inconsistent patterns:
 - from core_imports import auto_register_module, get_logger, ...
 - try: from core_imports import ... except ImportError: ...
 - from logging_config import logger

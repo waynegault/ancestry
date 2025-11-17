@@ -1,50 +1,12 @@
 #!/usr/bin/env python3
 
-"""
-Universal Scoring & Advanced System Intelligence Engine
-
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
-
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
-
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
-
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
-Universal Scoring Module
+"""Universal Scoring Module.
 
 Provides standardized scoring functionality for genealogical data across
-Action 10 (GEDCOM) and Action 11 (API) modules. This module consolidates
-duplicate scoring logic and ensures consistent scoring algorithms.
+Action 10 (GEDCOM) and Action 11 (API) modules. Consolidates duplicate
+scoring logic and ensures consistent scoring algorithms.
 
-Features:
+Key Features:
 - Universal scoring function for both GEDCOM and API data
 - Standardized result formatting
 - Consistent scoring criteria handling

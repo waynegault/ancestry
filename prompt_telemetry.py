@@ -1,60 +1,16 @@
-"""
-Prompt Telemetry & Advanced System Intelligence Engine
+"""Prompt Experiment Telemetry (Phase 9).
 
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
+Lightweight JSONL telemetry for prompt experimentation and extraction quality metrics.
 
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
+Each extraction event appended as one JSON line to Logs/prompt_experiments.jsonl
 
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
+Key Fields:
+- timestamp_utc, variant_label, prompt_key, prompt_version
+- parse_success, error, extracted_counts, suggested_tasks_count
+- raw_chars, user_hash (anonymized)
 
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
-Prompt Experiment Telemetry (Phase 9)
-
-Lightweight JSONL telemetry for prompt experimentation & extraction quality metrics.
-
-Each extraction event appended as one JSON object line to Logs/prompt_experiments.jsonl
-Fields captured:
-  timestamp_utc: ISO8601 UTC
-  variant_label: control|alt|<custom>
-  prompt_key: actual prompt key used
-  prompt_version: version string if available
-  parse_success: bool
-  error: optional error message (truncated)
-  extracted_counts: dict of key -> count (for known arrays)
-  suggested_tasks_count: int
-  raw_chars: length of raw JSON text returned from model (if available)
-  user_hash: stable anonymized hash of user identifier (if provided)
-
-Aggregation utilities can produce per-variant stats (counts, success rate, avg tasks).
-Safe to import even if log directory missing (auto creates). Failures are logged but non-fatal.
+Aggregation utilities produce per-variant stats (counts, success rate, avg tasks).
+Safe to import even if log directory missing (auto-creates). Failures are logged but non-fatal.
 """
 from __future__ import annotations
 

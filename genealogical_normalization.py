@@ -1,53 +1,17 @@
 #!/usr/bin/env python3
 
-"""
-Genealogical Normalization & Advanced System Intelligence Engine
+"""Genealogical Normalization Helpers.
 
-Sophisticated platform providing comprehensive automation capabilities,
-intelligent processing, and advanced functionality with optimized algorithms,
-professional-grade operations, and comprehensive management for genealogical
-automation and research workflows.
+Conservative helpers to normalize AI extraction results into structured
+format for downstream messaging and task generation.
 
-System Intelligence:
-• Advanced automation with intelligent processing and optimization protocols
-• Sophisticated management with comprehensive operational capabilities
-• Intelligent coordination with multi-system integration and synchronization
-• Comprehensive analytics with detailed performance metrics and insights
-• Advanced validation with quality assessment and verification protocols
-• Integration with platforms for comprehensive system management and automation
-
-Automation Capabilities:
-• Sophisticated automation with intelligent workflow generation and execution
-• Advanced optimization with performance monitoring and enhancement protocols
-• Intelligent coordination with automated management and orchestration
-• Comprehensive validation with quality assessment and reliability protocols
-• Advanced analytics with detailed operational insights and optimization
-• Integration with automation systems for comprehensive workflow management
-
-Professional Operations:
-• Advanced professional functionality with enterprise-grade capabilities and reliability
-• Sophisticated operational protocols with professional standards and best practices
-• Intelligent optimization with performance monitoring and enhancement
-• Comprehensive documentation with detailed operational guides and analysis
-• Advanced security with secure protocols and data protection measures
-• Integration with professional systems for genealogical research workflows
-
-Foundation Services:
-Provides the essential infrastructure that enables reliable, high-performance
-operations through intelligent automation, comprehensive management,
-and professional capabilities for genealogical automation and research workflows.
-
-Technical Implementation:
-Genealogical Normalization Helpers
-
-Small, conservative helpers to normalize AI extraction results into the
-structured shape consumed by downstream messaging and task generation.
+Key Features:
 - Ensures required keys exist in extracted_data
-- Transforms legacy flat keys to structured containers when reasonable
+- Transforms legacy flat keys to structured containers
 - Deduplicates simple string lists
-- Provides a single entrypoint normalize_ai_response()
+- Single entrypoint normalize_ai_response()
 
-This file intentionally avoids any external side effects and imports only
+Note: Intentionally avoids external side effects and imports only
 standard library modules for safety.
 """
 
@@ -176,7 +140,7 @@ def _validate_and_normalize_date(date_str: str) -> str:
 
     Returns normalized date string or original if no normalization needed.
     """
-    if not date_str or not isinstance(date_str, str):
+    if not date_str:
         return ""
 
     date_str = date_str.strip()
@@ -211,7 +175,7 @@ def _validate_relationship(relationship: str) -> str:
 
     Standardizes common relationship terms to consistent format.
     """
-    if not relationship or not isinstance(relationship, str):
+    if not relationship:
         return ""
 
     rel = relationship.strip().lower()
@@ -254,7 +218,7 @@ def _validate_location(location: str) -> str:
 
     Standardizes location formats and handles common abbreviations.
     """
-    if not location or not isinstance(location, str):
+    if not location:
         return ""
 
     loc = location.strip()
@@ -682,4 +646,3 @@ if __name__ == "__main__":
     print("🧬 Running Genealogical Normalization comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-
