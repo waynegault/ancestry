@@ -137,6 +137,31 @@ python run_all_tests.py --analyze-logs
 python -m action6_gather
 ```
 
+### Centralized Test Utilities
+
+All test modules use centralized helpers from `test_utilities.py` to eliminate duplication and ensure consistent behavior:
+
+**Temporary File Helpers:**
+- `temp_directory(prefix="test-", cleanup=True)` - Context manager for temporary directories with automatic cleanup
+- `temp_file(suffix="", prefix="test-", mode="w+")` - Context manager for temporary files with automatic cleanup
+- `atomic_write_file(target_path, mode="w")` - Atomic file writes using temp file + rename pattern
+
+**Test Infrastructure:**
+- `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
+- All 58 test modules use this pattern for uniform output and exit codes
+
+**Usage Example:**
+```python
+from test_utilities import temp_file, temp_directory
+
+# Use temporary file with automatic cleanup
+with temp_file(suffix='.json', mode='w+') as f:
+    json.dump(test_data, f)
+    f.flush()
+    process_file(Path(f.name))
+# File automatically deleted when context exits
+```
+
 ## AI Quality Telemetry
 
 `prompt_telemetry.py` now captures provider-level metadata and scoring inputs for every AI extraction event. Each JSONL line in `Logs/prompt_experiments.jsonl` includes `provider`, `provider_model`, sanitized `scoring_inputs`, and the usual quality metrics so you can correlate outcomes with a specific LLM or prompt variant.

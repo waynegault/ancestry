@@ -1343,20 +1343,14 @@ def _test_invalid_config_data():
 
 def _test_config_file_integration():
     """Test configuration file integration."""
-    import tempfile
+    from test_utilities import temp_file
     # Test with temporary config file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        f.write("test: value\n")
-        temp_path = Path(f.name)
+    with temp_file(suffix='.yaml', mode='w+') as temp_f:
+        temp_f.write("test: value\n")
+        temp_f.flush()
 
-    try:
         manager = ConfigManager(auto_load=False)
         assert manager is not None
-    finally:
-        with contextlib.suppress(Exception):
-            temp_path.unlink()
-
-
 def _test_environment_integration():
     """Test environment variable integration."""
     # Test environment handling

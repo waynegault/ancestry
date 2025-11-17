@@ -12,8 +12,12 @@ All open work is captured in the single checklist below. Address items in priori
   - ✅ Archived 5 standalone diagnostic scripts to `scripts/archive/`: ai_api_test.py, analyze_test_quality.py, comprehensive_auth_tests.py, lm_studio_manager.py, standardize_test_runners.py
   - ✅ Verified connection_resilience.py, diagnose_chrome.py, grafana_checker.py, gedcom_cache.py are actively used in production
 
-- [ ] **Centralize Test Utilities** (Est. 3h)
+- [x] **Centralize Test Utilities** (Est. 3h)
    Finish moving duplicated helpers into `test_utilities.py`, including migrating remaining temp-file usage in `logging_config.py`, `diagnose_chrome.py`, and `config/config_manager.py`.
+  - ✅ Migrated `logging_config.py` to use `test_utilities.temp_directory()` instead of `tempfile.TemporaryDirectory()`
+  - ✅ Migrated `diagnose_chrome.py` to use `test_utilities.temp_file()` instead of `tempfile.NamedTemporaryFile()`
+  - ✅ Migrated `config/config_manager.py` to use `test_utilities.temp_file()` instead of `tempfile.NamedTemporaryFile()`
+  - ✅ All temporary file operations now use centralized helpers with automatic cleanup
 
 - [ ] **Performance Profiling Utilities** (Est. 3h)
    Package reusable cProfile/timing helpers (decorators + CLI switches) for long-running actions so perf data is easy to capture without manual scripts.
