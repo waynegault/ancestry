@@ -50,6 +50,7 @@ from core.error_handling import (  # type: ignore[import-not-found]
     graceful_degradation,
     timeout_protection,
 )
+from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
@@ -2497,10 +2498,23 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
 
         # Log configuration (matching Action 8 format)
         logger.info(
-            f"Configuration: APP_MODE={config_schema.app_mode}, "
-            f"MAX_PRODUCTIVE={config_schema.max_productive_to_process}, "
-            f"BATCH_SIZE={config_schema.batch_size}, "
-            f"AI_PROVIDER={config_schema.ai_provider}"
+            "Configuration: APP_MODE=%s, MAX_PRODUCTIVE=%s, BATCH_SIZE=%s, AI_PROVIDER=%s",
+            config_schema.app_mode,
+            config_schema.max_productive_to_process,
+            config_schema.batch_size,
+            config_schema.ai_provider,
+        )
+        log_action_banner(
+            action_name="Process Productive",
+            action_number=9,
+            stage="start",
+            logger_instance=logger,
+            details={
+                "mode": config_schema.app_mode,
+                "max_productive": config_schema.max_productive_to_process,
+                "batch_size": config_schema.batch_size,
+                "ai_provider": config_schema.ai_provider,
+            },
         )
 
         # Step 3: Process candidates
@@ -2514,11 +2528,32 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         # Step 5: Log summary
         _log_summary(state)
 
+        log_action_banner(
+            action_name="Process Productive",
+            action_number=9,
+            stage="success" if success else "failure",
+            logger_instance=logger,
+            details={
+                "processed": state.processed_count,
+                "tasks": state.tasks_created_count,
+                "acks": state.acks_sent_count,
+                "skipped": state.skipped_count,
+                "errors": state.error_count,
+                "candidates": state.total_candidates,
+            },
+        )
         return success
 
     except Exception as e:
         logger.critical(
             f"Critical error in process_productive_messages: {e}", exc_info=True
+        )
+        log_action_banner(
+            action_name="Process Productive",
+            action_number=9,
+            stage="failure",
+            logger_instance=logger,
+            details={"error": str(e)},
         )
         return False
     finally:

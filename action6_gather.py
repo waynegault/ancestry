@@ -191,7 +191,7 @@ def _update_session_performance_tracking(session_manager: Optional["SessionManag
 # Note: ObjectPool and lazy_property removed - not essential for core functionality
 # from memory_optimizer import ObjectPool, lazy_property
 # Historical note: prior advanced caching layer removed for clarity
-from core.logging_utils import OptimizedLogger
+from core.logging_utils import OptimizedLogger, log_action_banner
 from standard_imports import setup_module
 
 # === MODULE SETUP ===
@@ -1272,6 +1272,20 @@ def _log_action_start(start_page: int) -> None:
     rel_prob_limit = (
         RELATIONSHIP_PROB_MAX_PER_PAGE if RELATIONSHIP_PROB_MAX_PER_PAGE > 0 else "unlimited"
     )
+    log_action_banner(
+        action_name="Gather DNA Matches",
+        action_number=6,
+        stage="start",
+        logger_instance=raw_logger,
+        details={
+            "start_page": start_page,
+            "requested_pages": requested_max_pages,
+            "matches_per_page": MATCHES_PER_PAGE,
+            "mode": app_mode,
+            "dry_run": "yes" if dry_run_enabled else "no",
+            "rel_prob_limit": rel_prob_limit,
+        },
+    )
     logger.debug(
         "Action 6 start | start_page=%s | requested_pages=%s | matches_per_page=%s | mode=%s | dry_run=%s | rel_prob_limit=%s",
         start_page,
@@ -1494,17 +1508,23 @@ def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
         logger.debug("Rate limiter persistence unavailable (module import failed)")
 
 
-def _emit_action_status(
-    state: dict[str, Any],
-    log_action_status: Callable[[str, bool, Optional[str]], None],
-) -> None:
-    """Log final action status using shared utility helper."""
-    error_message = None
-    if not state["final_success"]:
-        error_message = (
-            f"Processed {state['total_pages_processed']} pages with {state['total_errors']} errors"
-        )
-    log_action_status("Action 6 - Gather DNA Matches", state["final_success"], error_message)
+def _emit_action_status(state: dict[str, Any]) -> None:
+    """Log final action status using standardized banner helper."""
+    details: dict[str, Any] = {
+        "pages": state.get("total_pages_processed", 0),
+        "new": state.get("total_new", 0),
+        "updated": state.get("total_updated", 0),
+        "skipped": state.get("total_skipped", 0),
+        "errors": state.get("total_errors", 0),
+    }
+    stage = "success" if state.get("final_success") else "failure"
+    log_action_banner(
+        action_name="Gather DNA Matches",
+        action_number=6,
+        stage=stage,
+        logger_instance=raw_logger,
+        details=details,
+    )
 
 
 def _log_final_results(session_manager: SessionManager, state: dict[str, Any], action_start_time: float) -> None:
@@ -1516,14 +1536,14 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
         state: State dictionary
         action_start_time: Start time of action
     """
-    from utils import log_action_status, log_final_summary
+    from utils import log_final_summary
 
     run_time_seconds = time.time() - action_start_time
 
     _emit_final_summary(state, run_time_seconds, log_final_summary)
     _emit_timing_breakdown(state)
     _emit_rate_limiter_metrics(session_manager)
-    _emit_action_status(state, log_action_status)
+    _emit_action_status(state)
 
 
 def coord(

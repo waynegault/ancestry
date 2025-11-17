@@ -59,6 +59,7 @@ from core.error_handling import (
     AuthenticationError,
     BrowserError,
 )
+from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
@@ -1015,12 +1016,20 @@ class InboxProcessor:
         except Exception:
             pass
 
-    def _log_configuration(self) -> None:
-        """Log Action 7 configuration settings."""
-        # Get current rate limiting delay (adjusted by dynamic rate limiting)
+    def _log_configuration(self) -> dict[str, Any]:
+        """Log Action 7 configuration settings and return summary."""
         current_delay = self.session_manager.rate_limiter.current_delay if self.session_manager.rate_limiter else 0.0
-
-        logger.info(f"Configuration: MAX_INBOX={self.max_inbox_limit}, AI_PROVIDER={self.ai_provider}, RATE_LIMIT_DELAY={current_delay:.2f}s")
+        logger.info(
+            "Configuration: MAX_INBOX=%s, AI_PROVIDER=%s, RATE_LIMIT_DELAY=%.2fs",
+            self.max_inbox_limit,
+            self.ai_provider,
+            current_delay,
+        )
+        return {
+            "max_inbox": self.max_inbox_limit,
+            "ai_provider": self.ai_provider or "auto",
+            "rate_delay": f"{current_delay:.2f}s",
+        }
 
     def _validate_session_state(self) -> Optional[str]:
         """Validate session manager state and return profile ID."""
@@ -1043,16 +1052,37 @@ class InboxProcessor:
         self._initialize_search_stats()
 
         # Log configuration
-        self._log_configuration()
+        config_details = self._log_configuration()
+        log_action_banner(
+            action_name="Search Inbox",
+            action_number=7,
+            stage="start",
+            logger_instance=logger,
+            details=config_details,
+        )
 
         # Validate session manager state
         my_pid_lower = self._validate_session_state()
         if not my_pid_lower:
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="failure",
+                logger_instance=logger,
+                details={"reason": "missing_profile_id"},
+            )
             return False
 
         # Get database session and comparator
         session, comp_conv_id, comp_ts = self._get_database_session_and_comparator()
         if not session:
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="failure",
+                logger_instance=logger,
+                details={"reason": "db_session_unavailable"},
+            )
             return False
 
         try:
@@ -1087,12 +1117,35 @@ class InboxProcessor:
             # Update final statistics
             self.stats["end_time"] = datetime.now(timezone.utc)
 
+            summary_details = {
+                "fetched": total_api_items,
+                "processed": items_processed,
+                "ai": ai_classified,
+                "status_updates": status_updates,
+                "session_recoveries": session_recoveries,
+                "session_deaths": session_deaths,
+            }
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="success",
+                logger_instance=logger,
+                details=summary_details,
+            )
+
             return True
 
         except Exception as e:
             logger.error(f"Critical error in search_inbox: {e}", exc_info=True)
             self.stats["errors"] += 1
             self.stats["end_time"] = datetime.now(timezone.utc)
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="failure",
+                logger_instance=logger,
+                details={"error": str(e)},
+            )
             return False
         finally:
             # Ensure session is closed
@@ -4248,7 +4301,8 @@ run_comprehensive_tests = create_standard_test_runner(action7_inbox_module_tests
 
 if __name__ == "__main__":
     import sys
-    print("Running Action 7 (Inbox Processor) comprehensive test suite...")
+
+    print("📬 Running Action 7 - Inbox Processor comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
 

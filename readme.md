@@ -32,6 +32,13 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
+### Logging Conventions
+
+- Use `core.logging_utils.log_action_banner()` for action lifecycle logs (`stage="start" | "success" | "failure"`) so operators get consistent emoji-prefixed banners.
+- Actions 6–10 already emit standardized start/final banners including contextual details (pages processed, AI stats, etc.); new actions should follow the same pattern.
+- Shared helpers such as `utils.log_action_status()` delegate to `log_action_banner`, so stand-alone workflows (scripts, utilities) can emit the same structured markers without duplicating formatting logic.
+- Include a compact `details` dict when calling the helper so log greps can filter on keys like `start_page`, `sent`, `errors`, or `reason`.
+
 ## Actions
 
 ### Action 6: DNA Match Gathering

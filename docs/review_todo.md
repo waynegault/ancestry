@@ -2,8 +2,10 @@
 
 All open work is captured in the single checklist below. Address items in priority order unless a dependency is noted.
 
-- [ ] **Logging Standardization** (Est. 2h)
+- [x] **Logging Standardization** (Est. 2h)
    Normalize log levels, prefixes, and emoji usage across action modules and shared utilities so operators can grep consistently. Success = shared helper in `logging_utils.py` plus updated calls in Actions 6–10.
+  - ✅ Added `log_action_banner` helper in `core/logging_utils.py` with start/success/failure stages and detail formatting.
+  - ✅ Actions 6–10 and shared `utils.log_action_status()` now emit standardized lifecycle banners with consistent emoji/prefix payloads.
 
 - [ ] **Dead Code Cleanup** (Est. 2h)
    Audit for legacy helpers/tests left from Phase 5 refactors and remove or quarantine them. Prioritize `connection_resilience.py`, legacy browser recovery code, and redundant cache utilities.
@@ -22,7 +24,6 @@ All open work is captured in the single checklist below. Address items in priori
 
 - [ ] **Strengthen Assertions** (Est. 2h)
    Deepen coverage in `gedcom_intelligence.py` and `message_personalization.py` with edge-case fixtures, explicit assertion messaging, and negative-path tests.
-
 
 - [ ] **Tighten Lint & Type Enforcement** (Est. 3h)
    Gradually remove Ruff ignores (start with F821/E722), then raise Pyright severities from warnings to errors once violations are cleared.

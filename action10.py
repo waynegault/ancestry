@@ -69,6 +69,7 @@ from core.error_handling import (  # type: ignore[import-not-found]
     graceful_degradation,
     timeout_protection,
 )
+from core.logging_utils import log_action_banner
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
 from performance_cache import (  # type: ignore[import-not-found]
@@ -1338,6 +1339,16 @@ def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
     args = parse_command_line_args()
 
     config_data = validate_config()
+    log_action_banner(
+        action_name="GEDCOM Analysis",
+        action_number=10,
+        stage="start",
+        logger_instance=logger,
+        details={
+            "config": getattr(config_schema.database, "gedcom_file_path", "unknown"),
+            "max_results": getattr(config_schema, "max_display_results", "n/a"),
+        },
+    )
     return args, config_data
 
 
@@ -1424,10 +1435,27 @@ def main() -> bool:
             reference_person_name or "Reference Person",
         )
 
+        log_action_banner(
+            action_name="GEDCOM Analysis",
+            action_number=10,
+            stage="success",
+            logger_instance=logger,
+            details={
+                "reference": reference_person_name,
+                "matches": len(scored_matches),
+            },
+        )
         return True
 
     except Exception as e:
         logger.error(f"Error in action10 main: {e}", exc_info=True)
+        log_action_banner(
+            action_name="GEDCOM Analysis",
+            action_number=10,
+            stage="failure",
+            logger_instance=logger,
+            details={"error": str(e)},
+        )
         return False
 
 

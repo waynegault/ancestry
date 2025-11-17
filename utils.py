@@ -9,9 +9,8 @@ and includes login/session verification logic closely tied to SessionManager.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-)
+from core.logging_utils import log_action_banner
+from standard_imports import setup_module
 from test_utilities import create_standard_test_runner
 
 # === MODULE SETUP ===
@@ -371,16 +370,22 @@ def log_action_status(action_name: str, success: bool, error_msg: Optional[str] 
         action_name: Name of the action (e.g., "Match gathering")
         success: True if action completed successfully
         error_msg: Optional error message if success=False
-
     Example:
         log_action_status("Match gathering", True)
-        # Output: ✓ Match gathering completed successfully.
+        # Output: standardized success banner
 
         log_action_status("Match gathering", False, "Session expired")
-        # Output: ✗ Match gathering failed: Session expired
+        # Output: standardized failure banner with reason
     """
-    if not success:
-        logger.error(f"✗ {action_name} failed: {error_msg or 'Unknown error'}")
+    stage = "success" if success else "failure"
+    details = {"error": error_msg} if (error_msg and not success) else None
+    log_action_banner(
+        action_name=action_name,
+        action_number=None,
+        stage=stage,
+        logger_instance=logger,
+        details=details,
+    )
 
 
 # === API REQUEST CONFIGURATION ===

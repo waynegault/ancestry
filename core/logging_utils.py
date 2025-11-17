@@ -25,7 +25,8 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Mapping
+from typing import Any, Literal, Optional
 
 
 # Global flag to track if logging has been initialized
@@ -126,6 +127,54 @@ def suppress_external_loggers() -> None:
 def get_app_logger() -> logging.Logger:
     """Get the main application logger."""
     return get_logger()
+
+
+ActionStage = Literal["start", "success", "failure"]
+_ACTION_STAGE_EMOJI: dict[ActionStage, str] = {
+    "start": "🚀",
+    "success": "✅",
+    "failure": "❌",
+}
+_ACTION_STAGE_LABEL: dict[ActionStage, str] = {
+    "start": "START",
+    "success": "SUCCESS",
+    "failure": "FAILURE",
+}
+
+
+def _format_banner_details(details: Optional[Mapping[str, Any]]) -> str:
+    if not details:
+        return ""
+
+    normalized_items: list[str] = []
+    for key, value in details.items():
+        if value is None or value == "":
+            continue
+        normalized_items.append(f"{key}={value}")
+
+    if not normalized_items:
+        return ""
+    return " | " + ", ".join(normalized_items)
+
+
+def log_action_banner(
+    action_name: str,
+    stage: ActionStage,
+    *,
+    action_number: Optional[int] = None,
+    logger_instance: Optional[logging.Logger] = None,
+    details: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Log standardized action lifecycle banner messages."""
+
+    active_logger = logger_instance or get_app_logger()
+    emoji = _ACTION_STAGE_EMOJI[stage]
+    stage_label = _ACTION_STAGE_LABEL[stage]
+    label = action_name if action_number is None else f"[Action {action_number}] {action_name}"
+    message = f"{emoji} {label} • {stage_label}"
+    message += _format_banner_details(details)
+    log_level = logging.ERROR if stage == "failure" else logging.INFO
+    active_logger.log(log_level, message)
 
 
 # =============================================================================
@@ -387,6 +436,52 @@ def _test_logging_import_fallback() -> bool:
         return False
 
 
+def _test_action_banner_logging() -> bool:
+    """Test standardized action banner logging helper."""
+    try:
+        records: list[tuple[int, str]] = []
+
+        class _ListHandler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append((record.levelno, record.getMessage()))
+
+        test_logger = logging.getLogger("action_banner_test")
+        original_level = test_logger.level
+        handler = _ListHandler()
+        try:
+            test_logger.setLevel(logging.DEBUG)
+            test_logger.addHandler(handler)
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="start",
+                logger_instance=test_logger,
+                details={"max": 25, "provider": "gemini"},
+            )
+            log_action_banner(
+                action_name="Search Inbox",
+                action_number=7,
+                stage="failure",
+                logger_instance=test_logger,
+                details={"error": "timeout"},
+            )
+        finally:
+            test_logger.removeHandler(handler)
+            test_logger.setLevel(original_level)
+
+        assert len(records) == 2
+        start_record = records[0]
+        fail_record = records[1]
+        assert "[Action 7]" in start_record[1]
+        assert "• START" in start_record[1]
+        assert "max=25" in start_record[1]
+        assert fail_record[0] == logging.ERROR
+        assert "timeout" in fail_record[1]
+        return True
+    except Exception:
+        return False
+
+
 # =============================================================================
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
@@ -480,6 +575,14 @@ def logging_utils_module_tests() -> bool:
             "Logging utilities should handle import failures gracefully",
             "Fallback behavior ensures logging works even when dependencies unavailable",
             "Test graceful handling of logging_config import failures"
+        )
+
+        suite.run_test(
+            "Action Banner Logging",
+            _test_action_banner_logging,
+            "log_action_banner should emit standardized lifecycle messages",
+            "Standardized banners enable consistent log grep patterns",
+            "Test action banner helper formatting and log levels"
         )
 
         return suite.finish_suite()

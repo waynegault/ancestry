@@ -26,6 +26,7 @@ from core.error_handling import (  # type: ignore[import-not-found]
     error_context,
     graceful_degradation,
 )
+from core.logging_utils import log_action_banner
 
 # === MESSAGE PERSONALIZATION ===
 _msg_pers_available = False
@@ -3718,7 +3719,27 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     max_messages = config_schema.max_inbox
     batch_size = max(1, config_schema.batch_size)
 
-    logger.info(f"Configuration: APP_MODE={app_mode}, MAX_MESSAGES={max_messages}, BATCH_SIZE={batch_size}, MIN_INTERVAL={MIN_MESSAGE_INTERVAL}, RATE_LIMIT_DELAY={initial_delay:.2f}s")
+    logger.info(
+        "Configuration: APP_MODE=%s, MAX_MESSAGES=%s, BATCH_SIZE=%s, MIN_INTERVAL=%s, RATE_LIMIT_DELAY=%.2fs",
+        app_mode,
+        max_messages,
+        batch_size,
+        MIN_MESSAGE_INTERVAL,
+        initial_delay,
+    )
+    log_action_banner(
+        action_name="Send Messages",
+        action_number=8,
+        stage="start",
+        logger_instance=logger,
+        details={
+            "mode": app_mode,
+            "max_messages": max_messages,
+            "batch_size": batch_size,
+            "min_interval": MIN_MESSAGE_INTERVAL,
+            "rate_delay": f"{initial_delay:.2f}s",
+        },
+    )
 
     # Validate prerequisites
     prerequisites_valid, _ = _validate_action8_prerequisites(session_manager)
@@ -3812,6 +3833,19 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
     # Step 9: Return overall success status
     logger.debug(f"✅ Step 9: Returning overall_success={overall_success}")
+    log_action_banner(
+        action_name="Send Messages",
+        action_number=8,
+        stage="success" if overall_success else "failure",
+        logger_instance=logger,
+        details={
+            "sent": sent_count,
+            "acked": acked_count,
+            "skipped": skipped_count,
+            "errors": error_count,
+            "candidates": total_candidates,
+        },
+    )
     return overall_success
 
 
