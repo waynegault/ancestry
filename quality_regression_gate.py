@@ -294,7 +294,7 @@ def _evaluate_against_baseline(
         _emit_json(out)
         return 1 if is_regression else 0
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if is_regression:
         print("❌ QUALITY REGRESSION DETECTED!")
         print(f"   Quality dropped by {quality_drop:.1f} points")
@@ -303,7 +303,7 @@ def _evaluate_against_baseline(
         print("\n🚫 BLOCKING DEPLOYMENT")
         print(f"   Review recent prompt changes in {args.experiments_file}")
         print("   Run 'python prompt_telemetry.py --stats' for details")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         return 1
 
     improvement = current_median - baseline_median
@@ -315,7 +315,7 @@ def _evaluate_against_baseline(
         print(f"   Quality drop: {abs(quality_drop):.1f} points (within threshold)")
     print(f"   Current: {current_median:.1f} vs Baseline: {baseline_median:.1f}")
     print("\n✅ ALLOWING DEPLOYMENT")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     return 0
 
 

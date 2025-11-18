@@ -1,6 +1,8 @@
 line-length = 120
+target-version = "py39"
 
 [lint]
+preview = true
 # Enhanced rule set for Python best practices
 select = [
     "E",    # pycodestyle errors
@@ -34,9 +36,11 @@ ignore = [
     "E501", "E402", "F401", "F403", "F405",
     "B009", "B010",  # setattr/getattr with constants (SQLAlchemy ORM workaround)
     "PLR0913", "PLR0915", "PLR0912", "PLR2004", "PLC0415",
+    "PLR0917",  # certain helper functions require many arguments
     "N806",  # variable names in functions (for compatibility)
     "UP006", # non-PEP585 annotations (Python 3.9 compatibility)
     "UP007", # Union syntax (for Python 3.9 compatibility)
+    "UP045", # Optional[X] annotations for Python 3.9 compatibility
 ]
 
 [lint.isort]
@@ -52,4 +56,3 @@ quote-style = "preserve"
 indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
-

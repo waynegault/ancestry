@@ -211,7 +211,7 @@ def with_periodic_health_check(
                     if session_manager.attempt_browser_recovery():
                         logger.info(f"✅ Recovery successful, continuing {operation_name}")
                     else:
-                            raise RuntimeError(f"Browser recovery failed in {operation_name}")
+                        raise RuntimeError(f"Browser recovery failed in {operation_name}")
 
                 return original_func(*inner_args, **inner_kwargs)
 

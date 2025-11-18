@@ -73,6 +73,7 @@ from test_framework import TestSuite
 # CACHE CONFIGURATION CLASSES
 # ==============================================
 
+
 @dataclass
 class SessionCacheConfig:
     """Configuration for session caching behavior"""
@@ -190,7 +191,8 @@ class SessionComponentCache(BaseCacheModule):
             self._stats["cache_misses"] += 1
             return None
 
-    def _get_config_hash(self) -> str:
+    @staticmethod
+    def _get_config_hash() -> str:
         """Generate configuration hash for cache key uniqueness"""
         try:
             import os
@@ -234,7 +236,8 @@ class APICacheManager(BaseCacheModule):
             "cache_size_bytes": 0,
         }
 
-    def create_api_cache_key(self, endpoint: str, params: dict[str, Any]) -> str:
+    @staticmethod
+    def create_api_cache_key(endpoint: str, params: dict[str, Any]) -> str:
         """Create a consistent cache key for API responses."""
         # Sort parameters for consistent key generation
         sorted_params = json.dumps(params, sort_keys=True, default=str)
@@ -326,7 +329,8 @@ class APICacheManager(BaseCacheModule):
             self._stats["api_cache_misses"] += 1
             return None
 
-    def _get_service_ttl(self, service: str) -> int:
+    @staticmethod
+    def _get_service_ttl(service: str) -> int:
         """Get appropriate TTL for different services."""
         service_ttls = {
             "ai": SYSTEM_CACHE_CONFIG.ai_analysis_ttl,
@@ -360,7 +364,8 @@ class SystemCacheManager(BaseCacheModule):
         }
         self._lock = threading.Lock()
 
-    def warm_system_caches(self) -> bool:
+    @staticmethod
+    def warm_system_caches() -> bool:
         """Warm system caches with frequently accessed data."""
         try:
             logger.debug("Warming system caches...")
@@ -470,7 +475,8 @@ class UnifiedCacheManager:
         results.append(self.system_cache.warm_system_caches())
         return any(results)  # Return True if at least one cache warmed successfully
 
-    def get_module_name(self) -> str:
+    @staticmethod
+    def get_module_name() -> str:
         """Get module name for compatibility."""
         return "unified_cache_manager"
 
@@ -514,6 +520,7 @@ def warm_all_caches() -> bool:
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
 
 def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to cache expensive session components."""
@@ -724,111 +731,36 @@ def cache_manager_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    # Assign module-level test functions (removing duplicate nested definitions)
-    test_cache_manager_initialization = _test_cache_manager_initialization
-    test_cache_operations = _test_cache_operations
-    test_cache_statistics = _test_cache_statistics
-    test_cache_invalidation = _test_cache_invalidation
-    test_eviction_policies = _test_eviction_policies
-    test_performance_monitoring = _test_performance_monitoring
-    test_cache_performance = _test_cache_performance
-    test_concurrent_access = _test_concurrent_access
-    test_memory_management = _test_memory_management
-    test_database_integration = _test_database_integration
-    test_api_integration = _test_api_integration
-    test_session_management = _test_session_management
-    test_error_handling = _test_error_handling
-    test_recovery_mechanisms = _test_recovery_mechanisms
-    test_data_corruption_handling = _test_data_corruption_handling
-    test_data_encryption = _test_data_encryption
-    test_access_control = _test_access_control
-    test_audit_logging = _test_audit_logging
-    test_configuration_loading = _test_configuration_loading
-    test_environment_adaptation = _test_environment_adaptation
-    test_feature_toggles = _test_feature_toggles
-
     # Create test suite and run tests
     suite = TestSuite("Cache Manager", "cache_manager.py")
     suite.start_suite()
 
-    # Run tests using the suite's run_test method
-    suite.run_test(
-        "Cache Manager Initialization",
-        test_cache_manager_initialization,
-        "Should initialize cache manager with required methods",
-    )
-    suite.run_test(
-        "Basic Cache Operations",
-        test_cache_operations,
-        "Should support set/get operations",
-    )
-    suite.run_test(
-        "Cache Statistics", test_cache_statistics, "Should track cache metrics"
-    )
-    suite.run_test(
-        "Cache Invalidation",
-        test_cache_invalidation,
-        "Should support cache invalidation",
-    )
-    suite.run_test(
-        "Cache Eviction Policies",
-        test_eviction_policies,
-        "Should enforce size limits and evict items",
-    )
-    suite.run_test(
-        "Performance Monitoring",
-        test_performance_monitoring,
-        "Should monitor cache performance",
-    )
-    suite.run_test(
-        "Cache Performance", test_cache_performance, "Should perform well under load"
-    )
-    suite.run_test(
-        "Concurrent Access",
-        test_concurrent_access,
-        "Should handle concurrent operations",
-    )
-    suite.run_test(
-        "Memory Management", test_memory_management, "Should manage memory efficiently"
-    )
-    suite.run_test(
-        "Database Integration",
-        test_database_integration,
-        "Should integrate with database",
-    )
-    suite.run_test(
-        "API Integration", test_api_integration, "Should integrate with API calls"
-    )
-    suite.run_test(
-        "Session Management", test_session_management, "Should handle sessions properly"
-    )
-    suite.run_test(
-        "Error Handling", test_error_handling, "Should handle errors gracefully"
-    )
-    suite.run_test(
-        "Recovery Mechanisms", test_recovery_mechanisms, "Should recover from failures"
-    )
-    suite.run_test(
-        "Data Corruption Handling",
-        test_data_corruption_handling,
-        "Should handle corrupted data",
-    )
-    suite.run_test("Data Encryption", test_data_encryption, "Should encrypt cache data")
-    suite.run_test(
-        "Access Control", test_access_control, "Should control access properly"
-    )
-    suite.run_test("Audit Logging", test_audit_logging, "Should log cache operations")
-    suite.run_test(
-        "Configuration Loading", test_configuration_loading, "Should load configuration"
-    )
-    suite.run_test(
-        "Environment Adaptation",
-        test_environment_adaptation,
-        "Should adapt to environments",
-    )
-    suite.run_test(
-        "Feature Toggles", test_feature_toggles, "Should support feature flags"
-    )
+    tests = [
+        ("Cache Manager Initialization", _test_cache_manager_initialization, "Should initialize cache manager with required methods"),
+        ("Basic Cache Operations", _test_cache_operations, "Should support set/get operations"),
+        ("Cache Statistics", _test_cache_statistics, "Should track cache metrics"),
+        ("Cache Invalidation", _test_cache_invalidation, "Should support cache invalidation"),
+        ("Cache Eviction Policies", _test_eviction_policies, "Should enforce size limits and evict items"),
+        ("Performance Monitoring", _test_performance_monitoring, "Should monitor cache performance"),
+        ("Cache Performance", _test_cache_performance, "Should perform well under load"),
+        ("Concurrent Access", _test_concurrent_access, "Should handle concurrent operations"),
+        ("Memory Management", _test_memory_management, "Should manage memory efficiently"),
+        ("Database Integration", _test_database_integration, "Should integrate with database"),
+        ("API Integration", _test_api_integration, "Should integrate with API calls"),
+        ("Session Management", _test_session_management, "Should handle sessions properly"),
+        ("Error Handling", _test_error_handling, "Should handle errors gracefully"),
+        ("Recovery Mechanisms", _test_recovery_mechanisms, "Should recover from failures"),
+        ("Data Corruption Handling", _test_data_corruption_handling, "Should handle corrupted data"),
+        ("Data Encryption", _test_data_encryption, "Should encrypt cache data"),
+        ("Access Control", _test_access_control, "Should control access properly"),
+        ("Audit Logging", _test_audit_logging, "Should log cache operations"),
+        ("Configuration Loading", _test_configuration_loading, "Should load configuration"),
+        ("Environment Adaptation", _test_environment_adaptation, "Should adapt to environments"),
+        ("Feature Toggles", _test_feature_toggles, "Should support feature flags"),
+    ]
+
+    for test_name, test_func, expectation in tests:
+        suite.run_test(test_name, test_func, expectation)
 
     # Complete the test suite
     return suite.finish_suite()

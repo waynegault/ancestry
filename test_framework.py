@@ -206,12 +206,12 @@ class TestSuite:
     def start_suite(self) -> None:
         """Initialize the test suite with formatted header."""
         self.start_time = time.time()
-        print(f"\n{Colors.BOLD}{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(f"\n{Colors.BOLD}{Colors.CYAN}{'=' * 60}{Colors.RESET}")
         print(
             f"{Colors.BOLD}{Colors.CYAN}{Icons.ROCKET} Testing: {self.suite_name}{Colors.RESET}"
         )
         print(f"{Colors.GRAY}Module: {self.module_name}{Colors.RESET}")
-        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
+        print(f"{Colors.CYAN}{'=' * 60}{Colors.RESET}\n")
 
     def run_test(
         self,
@@ -329,11 +329,11 @@ class TestSuite:
         """Complete the test suite and print summary."""
         total_duration = time.time() - self.start_time if self.start_time else 0
 
-        print(f"\n{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(f"\n{Colors.CYAN}{'=' * 60}{Colors.RESET}")
         print(
             f"{Colors.BOLD}{Colors.CYAN}{Icons.MAGNIFY} Test Summary: {self.suite_name}{Colors.RESET}"
         )
-        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
+        print(f"{Colors.CYAN}{'=' * 60}{Colors.RESET}")
 
         # Overall results
         if self.tests_failed == 0:
@@ -358,7 +358,7 @@ class TestSuite:
 
         # Detailed results for failed tests
         failed_tests = [
-            r for r in self.test_results if r["status"] in ["FAILED", "ERROR"]
+            r for r in self.test_results if r["status"] in {"FAILED", "ERROR"}
         ]
         if failed_tests:
             print(f"\n{Colors.YELLOW}{Icons.INFO} Failed Test Details:{Colors.RESET}")
@@ -371,7 +371,7 @@ class TestSuite:
                         f"    {Colors.GRAY}Expected: {test['expected']}{Colors.RESET}"
                     )
 
-        print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
+        print(f"{Colors.CYAN}{'=' * 60}{Colors.RESET}\n")
 
         return self.tests_failed == 0
 
@@ -433,7 +433,7 @@ def get_test_mode() -> bool:
     """Determine if tests should use real data or mock data."""
     import os
     # Check environment variable or config to determine test mode
-    return os.getenv("ANCESTRY_TEST_MODE", "mock").lower() in ["real", "integration"]
+    return os.getenv("ANCESTRY_TEST_MODE", "mock").lower() in {"real", "integration"}
 
 
 def create_test_data_factory(use_real_data: Optional[bool] = None) -> dict[str, Any]:
@@ -590,7 +590,7 @@ def _test_standardized_data_factory(test_data: Any) -> bool:
     """Test standardized test data factory."""
     assert "test_person" in test_data
     assert "test_environment" in test_data
-    assert test_data["test_person"]["first_name"] in ["Fraser", "John"]  # Allow both mock and real
+    assert test_data["test_person"]["first_name"] in {"Fraser", "John"}  # Allow both mock and real
     assert isinstance(test_data["test_environment"]["use_real_data"], bool)
     return True
 

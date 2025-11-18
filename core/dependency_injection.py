@@ -12,10 +12,12 @@ This module provides a comprehensive dependency injection system to:
 """
 
 # === CORE INFRASTRUCTURE ===
+import os
 import sys
-
-# Add parent directory to path for standard_imports
+import threading
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
 
 parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
@@ -31,10 +33,8 @@ logger = setup_module(globals(), __name__)
 import inspect
 
 # Note: sys already imported at top of file
-import threading
 import unittest
 from functools import wraps
-from typing import Any, Callable, ClassVar, Optional, TypeVar, Union
 
 from test_utilities import EmptyTestService
 
@@ -240,7 +240,8 @@ class DIContainer:
                 + len(self._singletons),
             }
 
-    def _get_service_name(self, service_type: type) -> str:
+    @staticmethod
+    def _get_service_name(service_type: type) -> str:
         """Get service name from type."""
         return f"{service_type.__module__}.{service_type.__name__}"
 
@@ -522,91 +523,55 @@ class TestDIContainer(unittest.TestCase):
     def setUp(self) -> None:
         self.container = DIContainer()
 
-    def test_register_singleton(self):
+    def test_singleton_registration_and_resolution(self):
         class ServiceA(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_singleton(ServiceA, ServiceA)
         instance1 = self.container.resolve(ServiceA)
         instance2 = self.container.resolve(ServiceA)
         self.assertIs(instance1, instance2)
+        self.assertIsInstance(instance1, ServiceA)
 
-    def test_register_transient(self):
+    def test_transient_registration_and_resolution(self):
         class ServiceB(EmptyTestService): ...  # type: ignore[misc]
 
         self.container.register_transient(ServiceB, ServiceB)
         instance1 = self.container.resolve(ServiceB)
         instance2 = self.container.resolve(ServiceB)
         self.assertIsNot(instance1, instance2)
+        self.assertIsInstance(instance1, ServiceB)
+        self.assertIsInstance(instance2, ServiceB)
 
-    def test_register_factory(self):
+    def test_factory_registration_and_resolution(self):
+        @dataclass
         class ServiceC:
-            def __init__(self, value: Any) -> None:
-                self.value = value
+            value: Any
 
         def factory() -> ServiceC:
             return ServiceC("factory_value")
 
         self.container.register_factory(ServiceC, factory)
         instance = self.container.resolve(ServiceC)
+        self.assertIsInstance(instance, ServiceC)
         self.assertEqual(instance.value, "factory_value")
 
-    def test_register_instance(self):
+    def test_instance_registration_and_resolution(self):
         class ServiceD(EmptyTestService): ...  # type: ignore[misc]
 
         instance = ServiceD()
         self.container.register_instance(ServiceD, instance)
         resolved_instance = self.container.resolve(ServiceD)
+        self.assertIsInstance(resolved_instance, ServiceD)
         self.assertIs(resolved_instance, instance)
 
-    def test_resolve_singleton(self):
+    def test_registration_tracking_and_clear(self):
         class ServiceE(EmptyTestService): ...  # type: ignore[misc]
 
+        self.assertFalse(self.container.is_registered(ServiceE))
         self.container.register_singleton(ServiceE, ServiceE)
-        instance = self.container.resolve(ServiceE)
-        self.assertIsInstance(instance, ServiceE)
-
-    def test_resolve_transient(self):
-        class ServiceF(EmptyTestService): ...  # type: ignore[misc]
-
-        self.container.register_transient(ServiceF, ServiceF)
-        instance = self.container.resolve(ServiceF)
-        self.assertIsInstance(instance, ServiceF)
-
-    def test_resolve_factory(self):
-        class ServiceG:
-            def __init__(self, value: Any) -> None:
-                self.value = value
-
-        def factory() -> ServiceG:
-            return ServiceG("factory_value")
-
-        self.container.register_factory(ServiceG, factory)
-        instance = self.container.resolve(ServiceG)
-        self.assertIsInstance(instance, ServiceG)
-        self.assertEqual(instance.value, "factory_value")
-
-    def test_resolve_instance(self):
-        class ServiceH(EmptyTestService): ...  # type: ignore[misc]
-
-        instance = ServiceH()
-        self.container.register_instance(ServiceH, instance)
-        resolved_instance = self.container.resolve(ServiceH)
-        self.assertIsInstance(resolved_instance, ServiceH)
-        self.assertIs(resolved_instance, instance)
-
-    def test_is_registered(self):
-        class ServiceI(EmptyTestService): ...  # type: ignore[misc]
-
-        self.assertFalse(self.container.is_registered(ServiceI))
-        self.container.register_singleton(ServiceI, ServiceI)
-        self.assertTrue(self.container.is_registered(ServiceI))
-
-    def test_clear(self):
-        class ServiceJ(EmptyTestService): ...  # type: ignore[misc]
-
-        self.container.register_singleton(ServiceJ, ServiceJ)
+        self.assertTrue(self.container.is_registered(ServiceE))
         self.container.clear()
-        self.assertFalse(self.container.is_registered(ServiceJ))
+        self.assertFalse(self.container.is_registered(ServiceE))
 
     def test_get_registration_info(self):
         class ServiceK(EmptyTestService): ...  # type: ignore[misc]
@@ -799,10 +764,10 @@ class TestDIContainer(unittest.TestCase):
                 self.config = config
                 self.logged = []
 
+        @dataclass
         class AppService:
-            def __init__(self, log: LogService, config: ConfigService):
-                self.log = log
-                self.config = config
+            log: LogService
+            config: ConfigService
 
         container.register_singleton(ConfigService, ConfigService)
         container.register_singleton(LogService, LogService)

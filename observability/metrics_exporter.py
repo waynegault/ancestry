@@ -279,6 +279,7 @@ def _configure_observability(enabled: bool, host: str, port: int) -> None:
         )
     )
 
+
 def _serve_metrics_endpoint(host: str, port: int, namespace: str) -> int:
     if not (PROMETHEUS_AVAILABLE and PROMETHEUS_SERVER_AVAILABLE):
         logger.error(

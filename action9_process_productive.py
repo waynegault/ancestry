@@ -24,7 +24,7 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -116,7 +116,7 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
         return default
 
 
-def should_exclude_message(message_content: str) -> bool:
+def should_exclude_message(message_content: Optional[str]) -> bool:
     """
     Checks if a message contains any exclusion keywords that indicate no response should be sent.
 
@@ -776,8 +776,9 @@ class PersonProcessor:
 
         return False, latest_message
 
+    @staticmethod
     def _get_latest_incoming_message(
-        self, context_logs: list[ConversationLog]
+        context_logs: list[ConversationLog]
     ) -> Optional[ConversationLog]:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
@@ -786,8 +787,9 @@ class PersonProcessor:
                 return log
         return None
 
+    @staticmethod
     def _should_bypass_ai_extraction(
-        self, latest_message: ConversationLog, log_prefix: str
+        latest_message: ConversationLog, log_prefix: str
     ) -> bool:
         """Determine if AI extraction can be skipped for low-detail OTHER replies."""
 
@@ -983,7 +985,8 @@ class PersonProcessor:
         except Exception as analytics_error:
             logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
 
-    def _load_gedcom_data(self) -> Optional[Any]:
+    @staticmethod
+    def _load_gedcom_data() -> Optional[Any]:
         """Load GEDCOM data from configured path."""
         from gedcom_cache import load_gedcom_with_aggressive_caching
 
@@ -999,7 +1002,8 @@ class PersonProcessor:
 
         return gedcom_data
 
-    def _build_search_criteria_from_person_data(self, person_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    @staticmethod
+    def _build_search_criteria_from_person_data(person_data: dict[str, Any]) -> Optional[dict[str, Any]]:
         """Build search criteria from extracted person data."""
         search_criteria = {}
 
@@ -1021,7 +1025,8 @@ class PersonProcessor:
 
         return search_criteria
 
-    def _perform_gedcom_search(self, gedcom_data: Any, search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _perform_gedcom_search(gedcom_data: Any, search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
         """Perform GEDCOM search using Action 10 logic."""
         from action10 import filter_and_score_individuals
 
@@ -1086,8 +1091,9 @@ class PersonProcessor:
             logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
             return None
 
+    @staticmethod
     def _get_relationship_path_for_person(
-        self, gedcom_data: Any, person_id: Optional[str]
+        gedcom_data: Any, person_id: Optional[str]
     ) -> Optional[str]:
         """
         Get relationship path between found person and reference person.
@@ -1194,7 +1200,8 @@ class PersonProcessor:
             logger.error(f"Error searching API for person {person_name}: {e}", exc_info=True)
             return None
 
-    def _determine_conversation_phase(self, context_logs: list[ConversationLog]) -> str:
+    @staticmethod
+    def _determine_conversation_phase(context_logs: list[ConversationLog]) -> str:
         """
         Determine conversation phase based on message history.
 
@@ -1221,7 +1228,8 @@ class PersonProcessor:
             return "active_dialogue"
         return "research_exchange"
 
-    def _calculate_engagement_score(self, extracted_data: dict[str, Any], context_logs: list[ConversationLog]) -> int:
+    @staticmethod
+    def _calculate_engagement_score(extracted_data: dict[str, Any], context_logs: list[ConversationLog]) -> int:
         """
         Calculate engagement score based on message content and history.
 
@@ -1258,8 +1266,9 @@ class PersonProcessor:
 
         return min(score, 100)
 
+    @staticmethod
     def _calculate_next_contact_date(
-        self, person: Person, engagement_score: int
+        person: Person, engagement_score: int
     ) -> Optional[datetime]:
         """
         Calculate next contact date based on engagement score and status transitions.
@@ -1439,7 +1448,8 @@ class PersonProcessor:
 
         return False
 
-    def _calculate_task_priority_and_due_date(self, person: Person) -> tuple[str, Optional[str], list[str]]:
+    @staticmethod
+    def _calculate_task_priority_and_due_date(person: Person) -> tuple[str, Optional[str], list[str]]:
         """
         Calculate task priority and due date based on relationship closeness.
 
@@ -1484,7 +1494,8 @@ class PersonProcessor:
 
         return importance, due_date, categories
 
-    def _add_person_urls(self, task_body_parts: list[str], person: Person) -> None:
+    @staticmethod
+    def _add_person_urls(task_body_parts: list[str], person: Person) -> None:
         """Add Ancestry profile and DNA comparison URLs to task body."""
         if person.profile_id:
             task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
@@ -1494,7 +1505,8 @@ class PersonProcessor:
         elif person.uuid:
             task_body_parts.append(f"DNA Comparison: https://www.ancestry.com/dna/matches/{person.uuid}/compare")
 
-    def _add_relationship_info(self, task_body_parts: list[str], person: Person) -> None:
+    @staticmethod
+    def _add_relationship_info(task_body_parts: list[str], person: Person) -> None:
         """Add relationship and DNA information to task body."""
         if person.predicted_relationship:
             task_body_parts.append(f"Relationship: {person.predicted_relationship}")
@@ -1506,7 +1518,8 @@ class PersonProcessor:
             status_display = "In Tree" if person.tree_status == "in_tree" else "Out of Tree"
             task_body_parts.append(f"Tree Status: {status_display}")
 
-    def _add_family_tree_info(self, task_body_parts: list[str], person: Person) -> None:
+    @staticmethod
+    def _add_family_tree_info(task_body_parts: list[str], person: Person) -> None:
         """Add family tree information to task body."""
         if not person.family_tree:
             return
@@ -1523,7 +1536,7 @@ class PersonProcessor:
     def _build_task_body_parts(self, person: Person, task_desc: str, task_index: int, total_tasks: int) -> list[str]:
         """Build task body parts with person context."""
         task_body_parts = [
-            f"AI Suggested Task ({task_index+1}/{total_tasks}): {task_desc}",
+            f"AI Suggested Task ({task_index + 1}/{total_tasks}): {task_desc}",
             "",
             f"Match: {person.username or 'Unknown'} (#{person.id})",
             f"Profile: {person.profile_id or 'N/A'}",
@@ -1685,7 +1698,8 @@ class PersonProcessor:
         except Exception as e:
             logger.error(f"Failed to mark message as processed: {e}")
 
-    def _format_lookup_results_for_ai(self, lookup_results: list[PersonLookupResult]) -> str:
+    @staticmethod
+    def _format_lookup_results_for_ai(lookup_results: list[PersonLookupResult]) -> str:
         """
         Format lookup results for inclusion in AI prompt.
 
@@ -1735,7 +1749,8 @@ class PersonProcessor:
 
         return conversation_phase, engagement_score, last_topic, pending_questions
 
-    def _get_person_context_data(self, person: Person) -> tuple[str, str, str]:
+    @staticmethod
+    def _get_person_context_data(person: Person) -> tuple[str, str, str]:
         """Get DNA data, tree statistics, and relationship path for a person."""
         dna_data = ""
         if person.dna_match:
@@ -1793,7 +1808,8 @@ class PersonProcessor:
             log_prefix=log_prefix,
         )
 
-    def _score_relationship_path(self, response_lower: str, lookup_results: list[PersonLookupResult]) -> int:
+    @staticmethod
+    def _score_relationship_path(response_lower: str, lookup_results: list[PersonLookupResult]) -> int:
         """Score relationship path specificity (30 points max)."""
         relationship_keywords = [
             "cousin", "great-grandfather", "great-grandmother", "grandfather", "grandmother",
@@ -1812,7 +1828,8 @@ class PersonProcessor:
             return 10  # Minimal: lookup results have paths but not used in text
         return 0
 
-    def _score_evidence_citations(self, response_text: str, response_lower: str) -> int:
+    @staticmethod
+    def _score_evidence_citations(response_text: str, response_lower: str) -> int:
         """Score genealogical evidence citations (25 points max)."""
         evidence_patterns = {
             "years": len([w for w in response_text.split() if w.isdigit() and len(w) == 4 and 1700 < int(w) < 2025]),
@@ -1832,7 +1849,8 @@ class PersonProcessor:
             return 10  # Minimal: 1-2 pieces
         return 0
 
-    def _score_actionable_steps(self, response_text: str, response_lower: str) -> int:
+    @staticmethod
+    def _score_actionable_steps(response_text: str, response_lower: str) -> int:
         """Score actionable next steps (25 points max)."""
         action_verbs = [
             "search for", "look for", "check", "verify", "find", "locate", "review",
@@ -1860,7 +1878,8 @@ class PersonProcessor:
             return 10  # Minimal: 1 element
         return 0
 
-    def _score_personalization(self, response_lower: str, word_count: int, person: Person) -> int:
+    @staticmethod
+    def _score_personalization(response_lower: str, word_count: int, person: Person) -> int:
         """Score personalization and warmth (20 points max)."""
         # Check for name usage
         name_mentions = 0
@@ -2088,12 +2107,13 @@ class PersonProcessor:
         logger.info(f"{log_prefix}: Using standard acknowledgement template.")
         return msg, self.msg_config.ack_msg_type_id  # type: ignore[return-value]
 
-
-    def _add_relationship_annotation(self, lines: list[str], rel_str: str) -> None:
+    @staticmethod
+    def _add_relationship_annotation(lines: list[str], rel_str: str) -> None:
         if rel_str:
             lines.append(f"\nOur relationship appears to be: {rel_str}.")
 
-    def _build_relationship_diagram_line(self, person: Person, extracted_data: dict[str, Any], log_prefix: str) -> Optional[str]:
+    @staticmethod
+    def _build_relationship_diagram_line(person: Person, extracted_data: dict[str, Any], log_prefix: str) -> Optional[str]:
         rel_path = extracted_data.get("relationship_path")
         if not (isinstance(rel_path, list) and rel_path):
             return None
@@ -2108,7 +2128,8 @@ class PersonProcessor:
             logger.debug(f"{log_prefix}: Relationship diagram enrichment skipped: {e}")
             return None
 
-    def _build_records_enrichment_line(self, person: Person, records: Any, log_prefix: str) -> Optional[str]:
+    @staticmethod
+    def _build_records_enrichment_line(person: Person, records: Any, log_prefix: str) -> Optional[str]:
         if not (isinstance(records, list) and records):
             return None
         try:
@@ -2147,7 +2168,6 @@ class PersonProcessor:
 
         return lines
 
-
     def _formatting_fallback(self, person: Person) -> tuple[str, int]:
         """Return a safe fallback message and type id when formatting fails."""
         safe_username = safe_column_value(person, "username", "User")
@@ -2174,7 +2194,7 @@ class PersonProcessor:
             if getattr(config_schema, "enable_task_enrichment", False):
                 enrich_lines = self._build_enrichment_lines(person, extracted_data, log_prefix)
                 if enrich_lines:
-                    message_text = message_text + "\n".join(enrich_lines)
+                    message_text += "\n".join(enrich_lines)
 
             # 3) Return
             return message_text, message_type_id or 1
@@ -2230,7 +2250,8 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _should_send_message(self, person: Person) -> tuple[bool, str]:
+    @staticmethod
+    def _should_send_message(person: Person) -> tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
         app_mode = config_schema.app_mode
@@ -2252,8 +2273,9 @@ class PersonProcessor:
 
         return True, ""
 
+    @staticmethod
     def _get_conversation_id(
-        self, context_logs: list[ConversationLog], log_prefix: str
+        context_logs: list[ConversationLog], log_prefix: str
     ) -> Optional[str]:
         """Get conversation ID from context logs."""
         if not context_logs:
@@ -2262,21 +2284,21 @@ class PersonProcessor:
             )
             return None
 
-        raw_conv_id = context_logs[-1].conversation_id
-        if raw_conv_id is None:  # type: ignore[comparison-overlap]
+        raw_conv_id_value: Any = getattr(context_logs[-1], "conversation_id", None)
+        if raw_conv_id_value is None:
             logger.error(f"{log_prefix}: Conversation ID is None.")
             return None
 
         try:
-            return str(raw_conv_id)
+            return str(raw_conv_id_value)
         except Exception as e:
             logger.error(
                 f"{log_prefix}: Failed to convert conversation ID to string: {e}"
             )
             return None
 
+    @staticmethod
     def _create_log_data(
-        self,
         person: Person,
         message_text: str,
         message_type_id: int,
@@ -2345,7 +2367,7 @@ class PersonProcessor:
             return False
 
         # Handle successful sends
-        if send_status in ("delivered OK", "typed (dry_run)") or send_status.startswith("skipped ("):
+        if send_status in {"delivered OK", "typed (dry_run)"} or send_status.startswith("skipped ("):
             try:
                 # Get person ID as int
                 person_id_int = int(str(person.id))
@@ -2986,7 +3008,7 @@ def _format_context_for_ai_extraction(
         try:
             # Try to get the direction value
             if hasattr(log, "direction"):
-                direction_value = log.direction
+                direction_value: Any = getattr(log, "direction", None)
 
                 # Check if it's a MessageDirectionEnum or can be compared to one
                 if hasattr(direction_value, "value"):
@@ -2995,7 +3017,7 @@ def _format_context_for_ai_extraction(
                 elif isinstance(direction_value, str):
                     # It's a string
                     is_in_direction = direction_value == MessageDirectionEnum.IN.value
-                elif str(direction_value) == str(MessageDirectionEnum.IN):
+                elif direction_value is not None and str(direction_value) == str(MessageDirectionEnum.IN):
                     # Try string comparison as last resort
                     is_in_direction = True
         except Exception:
@@ -3486,7 +3508,7 @@ def _test_edge_cases() -> None:
     assert isinstance(result, bool), "Should handle empty message"
 
     # Test should_exclude_message with None
-    result = should_exclude_message(None)  # type: ignore[arg-type]
+    result = should_exclude_message(None)
     assert isinstance(result, bool), "Should handle None message"
 
     # Test _process_ai_response with None
@@ -3558,62 +3580,88 @@ def _test_enhanced_task_creation() -> None:
         ms_state=mock_ms_state
     )
 
-    # Test Case 1: High priority - 1st cousin, in tree
-    person1 = Mock(spec=Person)
-    person1.id = 1
-    person1.username = "Test User 1"
-    person1.profile_id = "test123"
-    person1.in_my_tree = True
-    person1.predicted_relationship = "1st cousin"  # Mock property access
-    person1.tree_status = "in_tree"  # Mock property access
+    def _build_person(
+        person_id: int,
+        username: str,
+        profile_id: str,
+        in_tree: bool,
+        relationship: Optional[str],
+        tree_status: Optional[str],
+    ) -> Person:
+        person = Mock(spec=Person)
+        person.id = person_id
+        person.username = username
+        person.profile_id = profile_id
+        person.in_my_tree = in_tree
+        person.predicted_relationship = relationship
+        person.tree_status = tree_status
+        return person
 
-    importance1, due_date1, categories1 = processor._calculate_task_priority_and_due_date(person1)  # type: ignore[attr-defined]
-    assert importance1 == "high", "1st cousin should have high priority"
-    assert "Close Relative" in categories1, "Should include Close Relative category"
-    assert "In Tree" in categories1, "Should include In Tree category"
-    assert due_date1 is not None, "Should have due date"
+    cases = [
+        {
+            "person_kwargs": {
+                "person_id": 1,
+                "username": "Test User 1",
+                "profile_id": "test123",
+                "in_tree": True,
+                "relationship": "1st cousin",
+                "tree_status": "in_tree",
+            },
+            "expected_importance": "high",
+            "required_categories": ["Close Relative", "In Tree"],
+            "due_date_required": True,
+        },
+        {
+            "person_kwargs": {
+                "person_id": 2,
+                "username": "Test User 2",
+                "profile_id": "test456",
+                "in_tree": False,
+                "relationship": "3rd cousin",
+                "tree_status": "out_tree",
+            },
+            "expected_importance": "normal",
+            "required_categories": ["Distant Relative", "Out of Tree"],
+            "due_date_required": True,
+        },
+        {
+            "person_kwargs": {
+                "person_id": 3,
+                "username": "Test User 3",
+                "profile_id": "test789",
+                "in_tree": True,
+                "relationship": "5th cousin",
+                "tree_status": "in_tree",
+            },
+            "expected_importance": "low",
+            "required_categories": ["Distant Relative"],
+            "due_date_required": True,
+        },
+        {
+            "person_kwargs": {
+                "person_id": 4,
+                "username": "Test User 4",
+                "profile_id": "test000",
+                "in_tree": False,
+                "relationship": None,
+                "tree_status": None,
+            },
+            "expected_importance": "normal",
+            "required_categories": ["Ancestry Research"],
+            "due_date_required": False,
+        },
+    ]
 
-    # Test Case 2: Normal priority - 3rd cousin, not in tree
-    person2 = Mock(spec=Person)
-    person2.id = 2
-    person2.username = "Test User 2"
-    person2.profile_id = "test456"
-    person2.in_my_tree = False
-    person2.predicted_relationship = "3rd cousin"
-    person2.tree_status = "out_tree"
-
-    importance2, due_date2, categories2 = processor._calculate_task_priority_and_due_date(person2)  # type: ignore[attr-defined]
-    assert importance2 == "normal", "3rd cousin should have normal priority"
-    assert "Distant Relative" in categories2, "Should include Distant Relative category"
-    assert "Out of Tree" in categories2, "Should include Out of Tree category"
-    assert due_date2 is not None, "Should have due date"
-
-    # Test Case 3: Low priority - 5th cousin, in tree
-    person3 = Mock(spec=Person)
-    person3.id = 3
-    person3.username = "Test User 3"
-    person3.profile_id = "test789"
-    person3.in_my_tree = True
-    person3.predicted_relationship = "5th cousin"
-    person3.tree_status = "in_tree"
-
-    importance3, due_date3, categories3 = processor._calculate_task_priority_and_due_date(person3)  # type: ignore[attr-defined]
-    assert importance3 == "low", "5th cousin should have low priority"
-    assert "Distant Relative" in categories3, "Should include Distant Relative category"
-    assert due_date3 is not None, "Should have due date"
-
-    # Test Case 4: No relationship - default priority
-    person4 = Mock(spec=Person)
-    person4.id = 4
-    person4.username = "Test User 4"
-    person4.profile_id = "test000"
-    person4.in_my_tree = False
-    person4.predicted_relationship = None
-    person4.tree_status = None
-
-    importance4, _, categories4 = processor._calculate_task_priority_and_due_date(person4)  # type: ignore[attr-defined]
-    assert importance4 == "normal", "No relationship should default to normal priority"
-    assert "Ancestry Research" in categories4, "Should always include Ancestry Research category"
+    for case in cases:
+        person = _build_person(**case["person_kwargs"])
+        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)  # type: ignore[attr-defined]
+        assert importance == case["expected_importance"], (
+            f"Unexpected priority for {person.username}: {importance}"
+        )
+        for category in case["required_categories"]:
+            assert category in categories, f"{category} should appear for {person.username}"
+        if case["due_date_required"]:
+            assert due_date is not None, f"Due date required for {person.username}"
 
     logger.info("✅ Enhanced task creation tests passed")
 
@@ -3837,18 +3885,18 @@ def _test_calculate_task_priority_from_relationship() -> None:
     assert isinstance(result1, tuple), "Should return tuple"
     assert len(result1) == 2, "Should return 2-element tuple"
     importance1, days1 = result1
-    assert importance1 in ["high", "normal", "low"], f"Invalid importance: {importance1}"
+    assert importance1 in {"high", "normal", "low"}, f"Invalid importance: {importance1}"
     assert isinstance(days1, int), f"Days should be int, got {type(days1)}"
 
     # Test that different relationships give different priorities
     result2 = calculate_task_priority_from_relationship("5th cousin")
     importance2, _ = result2
-    assert importance2 in ["high", "normal", "low"], f"Invalid importance: {importance2}"
+    assert importance2 in {"high", "normal", "low"}, f"Invalid importance: {importance2}"
 
     # Test DNA-based priority
     result3 = calculate_task_priority_from_relationship(None, shared_dna_cm=250.0)
     importance3, _ = result3
-    assert importance3 in ["high", "normal", "low"], f"Invalid importance: {importance3}"
+    assert importance3 in {"high", "normal", "low"}, f"Invalid importance: {importance3}"
 
     logger.info("✓ Task priority calculation test passed")
 
@@ -3941,110 +3989,90 @@ def action9_process_productive_module_tests() -> bool:
     # Check if we should skip live API tests (set by run_all_tests.py when running in parallel)
     skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
-    # Assign all module-level test functions
-    # Removed: test_module_initialization = _test_module_initialization (smoke test)
-    test_core_functionality = _test_core_functionality
-    test_ai_processing_functions = _test_ai_processing_functions
-    test_edge_cases = _test_edge_cases
-    test_integration = _test_integration
-    test_circuit_breaker_config = _test_circuit_breaker_config
-    test_error_handling = _test_error_handling
-    test_enhanced_task_creation = _test_enhanced_task_creation
-    test_database_session = _test_database_session_availability
-    test_message_templates = _test_message_templates_available
-    # Phase 5 tests
-    test_quality_scoring = _test_response_quality_scoring
-    test_task_priority = _test_calculate_task_priority_from_relationship
-    test_enhanced_task = _test_create_enhanced_research_task
-    test_ai_prompt = _test_generate_ai_response_prompt
-    test_records_format = _test_format_response_with_records
-    test_diagram_format = _test_format_response_with_relationship_diagram
-    test_retry_helper_alignment = _test_retry_helper_alignment_action9
-
     # Define all tests in a data structure to reduce complexity
-    tests = [
+    tests: list[tuple[str, Callable[[], object], str, str, str]] = [
         # Removed smoke test: Module constants, classes, and function availability
 
         ("safe_column_value(), should_exclude_message() core functions",
-         test_core_functionality,
+            _test_core_functionality,
          "All core functions execute correctly with proper data handling and validation",
          "Core utility and message filtering functionality",
          "Testing attribute extraction, message filtering, and core utility functions"),
 
         ("_process_ai_response(), _generate_ack_summary() AI processing",
-         test_ai_processing_functions,
+            _test_ai_processing_functions,
          "AI processing functions handle response data correctly and generate summaries",
          "AI response processing and summary generation functions",
          "Testing AI response parsing, data extraction, and summary generation functionality"),
 
         ("ALL functions with edge case inputs",
-         test_edge_cases,
+            _test_edge_cases,
          "All functions handle edge cases gracefully without crashes or unexpected behavior",
          "Edge case handling across all AI processing functions",
          "Testing functions with empty, None, invalid, and boundary condition inputs"),
 
         ("get_gedcom_data(), _load_templates_for_action9() integration",
-         test_integration,
+            _test_integration,
          "Integration functions work correctly with external data sources and templates",
          "Integration with GEDCOM data and template systems",
          "Testing integration with genealogical data cache and message template loading"),
 
         ("Circuit breaker configuration validation",
-         test_circuit_breaker_config,
+            _test_circuit_breaker_config,
          "Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
          "Circuit breaker decorator configuration reflects improved error handling",
          "Testing process_productive_messages() has proper circuit breaker configuration for production resilience"),
 
         ("Retry helper alignment",
-         test_retry_helper_alignment,
+            _test_retry_helper_alignment_action9,
          "process_productive_messages() uses api_retry helper derived from telemetry",
          "Retry helper configuration",
          "Verifies process_productive_messages() is decorated with api_retry helper for consistent policy tuning"),
 
         ("Error handling for AI processing and utility functions",
-         test_error_handling,
+            _test_error_handling,
          "All error conditions handled gracefully with appropriate fallback responses",
          "Error handling and recovery functionality for AI operations",
          "Testing error scenarios with invalid data, exceptions, and malformed responses"),
 
         ("Enhanced MS To-Do task creation with priority and due dates",
-         test_enhanced_task_creation,
+            _test_enhanced_task_creation,
          "Task priority and due dates calculated correctly based on relationship closeness",
          "Phase 5.3 enhanced task creation with relationship-based priority",
          "Testing _calculate_task_priority_and_due_date() with various relationship types"),
 
         ("Phase 5: Response quality scoring (0-100 scale)",
-         test_quality_scoring,
+            _test_response_quality_scoring,
          "Quality scores calculated correctly based on relationship specificity, evidence, actionability, personalization",
          "Phase 5 response quality scoring with 4-component evaluation",
          "Testing _score_response_quality() with high/medium/low quality responses and edge cases"),
 
-        ("Phase 5: Task priority calculation",
-         test_task_priority,
+          ("Phase 5: Task priority calculation",
+            _test_calculate_task_priority_from_relationship,
          "Task priorities calculated correctly from relationships and DNA",
          "Phase 5 task priority calculation",
          "Testing calculate_task_priority_from_relationship() with various inputs"),
 
-        ("Phase 5: Enhanced research task creation",
-         test_enhanced_task,
+          ("Phase 5: Enhanced research task creation",
+            _test_create_enhanced_research_task,
          "Enhanced tasks created successfully with priority and due dates",
          "Phase 5 enhanced task creation",
          "Testing create_enhanced_research_task() functionality"),
 
         ("Phase 5: AI response prompt generation",
-         test_ai_prompt,
+         _test_generate_ai_response_prompt,
          "AI prompts generated correctly for conversation responses",
          "Phase 5 AI prompt generation",
          "Testing generate_ai_response_prompt() functionality"),
 
         ("Phase 5: Response formatting with records",
-         test_records_format,
+         _test_format_response_with_records,
          "Responses formatted correctly with record sharing",
          "Phase 5 record sharing in responses",
          "Testing format_response_with_records() functionality"),
 
         ("Phase 5: Response formatting with relationship diagrams",
-         test_diagram_format,
+         _test_format_response_with_relationship_diagram,
          "Responses formatted correctly with relationship diagrams",
          "Phase 5 relationship diagrams in responses",
          "Testing format_response_with_relationship_diagram() functionality"),
@@ -4054,13 +4082,13 @@ def action9_process_productive_module_tests() -> bool:
     if not skip_live_api_tests:
         tests.extend([  # type: ignore[arg-type]
             ("Database session availability (real authenticated session)",
-             test_database_session,
+             _test_database_session_availability,
              "Database session is available and functional with real Ancestry authentication",
              "Real authenticated session database connectivity",
              "Testing database session establishment with valid Ancestry credentials"),
 
             ("Message templates available (real authenticated session)",
-             test_message_templates,
+             _test_message_templates_available,
              "Message templates are loaded and available in database with real authentication",
              "Real authenticated session message template loading",
              "Testing message template availability with valid Ancestry session"),

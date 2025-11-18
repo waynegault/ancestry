@@ -321,7 +321,7 @@ def _test_empty_input():
     result = generate_research_suggestions([], [], [])
 
     assert isinstance(result, dict), "Should return dictionary even with empty input"
-    assert result["formatted_message"] == "", "Should return empty message for no data"
+    assert not result["formatted_message"], "Should return empty message for no data"
 
     logger.info("✓ Empty input handling works correctly")
     return True
@@ -571,4 +571,3 @@ if __name__ == "__main__":
 
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-

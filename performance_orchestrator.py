@@ -175,7 +175,8 @@ class MemoryPressureMonitor:
         self.optimization_history = []
         self._lock = threading.Lock()
 
-    def get_memory_info(self) -> dict[str, float]:
+    @staticmethod
+    def get_memory_info() -> dict[str, float]:
         """Get current memory information."""
         process = psutil.Process()
         memory_info = process.memory_info()
@@ -479,7 +480,7 @@ class PerformanceOptimizer:
         if query_suggestions:
             report += "\n🔍 TOP QUERY OPTIMIZATION OPPORTUNITIES:\n"
             for i, suggestion in enumerate(query_suggestions[:3]):  # Top 3
-                report += f"   {i+1}. Query (avg {suggestion['avg_time_ms']:.1f}ms): {suggestion['suggestion']}\n"
+                report += f"   {i + 1}. Query (avg {suggestion['avg_time_ms']:.1f}ms): {suggestion['suggestion']}\n"
 
         report += "\n✅ Performance Optimizer Status: ACTIVE\n"
         report += "============================================================\n"
@@ -506,20 +507,24 @@ def get_global_optimizer() -> PerformanceOptimizer:
 
     return _OptimizerSingleton.instance
 
+
 def optimize_performance() -> list[OptimizationResult]:
     """Run comprehensive performance optimization."""
     optimizer = get_global_optimizer()
     return optimizer.run_comprehensive_optimization()
+
 
 def get_performance_report() -> str:
     """Get performance optimization report."""
     optimizer = get_global_optimizer()
     return optimizer.get_performance_report()
 
+
 def track_query_performance(query: str, execution_time: float) -> None:
     """Track database query performance."""
     optimizer = get_global_optimizer()
     optimizer.query_optimizer.track_query(query, execution_time)
+
 
 def monitor_memory_pressure() -> bool:
     """Check if memory pressure is high."""

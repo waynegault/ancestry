@@ -263,7 +263,8 @@ class DNAGedcomCrossReferencer:
         except Exception as e:
             logger.debug(f"Error analyzing DNA match {dna_match.match_id}: {e}")
 
-    def _find_name_matches(self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _find_name_matches(dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on name similarity."""
         name_matches = []
 
@@ -319,7 +320,8 @@ class DNAGedcomCrossReferencer:
 
         return relationship_matches
 
-    def _find_context_matches(self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _find_context_matches(dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on geographic and temporal context."""
         context_matches = []
 
@@ -338,7 +340,8 @@ class DNAGedcomCrossReferencer:
 
         return context_matches
 
-    def _deduplicate_and_score_matches(self, potential_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _deduplicate_and_score_matches(potential_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Remove duplicate matches and calculate final scores."""
         # Group by GEDCOM person
         person_matches = {}
@@ -364,7 +367,8 @@ class DNAGedcomCrossReferencer:
 
         return unique_matches
 
-    def _generate_verification_tasks(self, dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
+    @staticmethod
+    def _generate_verification_tasks(dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate verification tasks for cross-reference matches."""
         tasks = []
 
@@ -381,7 +385,8 @@ class DNAGedcomCrossReferencer:
 
         return tasks[:5]  # Limit to top 5 tasks
 
-    def _generate_research_suggestions(self, dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
+    @staticmethod
+    def _generate_research_suggestions(dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate research suggestions for cross-reference matches."""
         suggestions = []
 
@@ -441,7 +446,8 @@ class DNAGedcomCrossReferencer:
                 self.verification_opportunities.append(opportunity)
 
     # Helper methods
-    def _extract_person_name(self, person_record: Any) -> str:
+    @staticmethod
+    def _extract_person_name(person_record: Any) -> str:
         """Extract person's name from GEDCOM record."""
         try:
             if hasattr(person_record, 'name') and person_record.name:
@@ -450,27 +456,32 @@ class DNAGedcomCrossReferencer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, _person_record: Any) -> Optional[int]:
+    @staticmethod
+    def _extract_birth_year(_person_record: Any) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_year(self, _person_record: Any) -> Optional[int]:
+    @staticmethod
+    def _extract_death_year(_person_record: Any) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_birth_place(self, _person_record: Any) -> Optional[str]:
+    @staticmethod
+    def _extract_birth_place(_person_record: Any) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _extract_death_place(self, _person_record: Any) -> Optional[str]:
+    @staticmethod
+    def _extract_death_place(_person_record: Any) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         # Placeholder implementation
         return None
 
-    def _parse_relationship_distance(self, relationship: str) -> Optional[int]:
+    @staticmethod
+    def _parse_relationship_distance(relationship: str) -> Optional[int]:
         """Parse relationship string to get distance."""
         # Simple implementation for common relationships
         relationship_distances = {
@@ -490,12 +501,14 @@ class DNAGedcomCrossReferencer:
 
         return None
 
-    def _is_plausible_relationship_match(self, _dna_match: DNAMatch, _gedcom_person: GedcomPerson, _relationship_distance: int) -> bool:
+    @staticmethod
+    def _is_plausible_relationship_match(_dna_match: DNAMatch, _gedcom_person: GedcomPerson, _relationship_distance: int) -> bool:
         """Check if a relationship match is plausible."""
         # Placeholder implementation
         return True
 
-    def _get_expected_cm_range(self, relationship: str) -> Optional[tuple[float, float]]:
+    @staticmethod
+    def _get_expected_cm_range(relationship: str) -> Optional[tuple[float, float]]:
         """Get expected centimorgan range for a relationship."""
         # Simplified ranges for common relationships
         cm_ranges = {
@@ -515,7 +528,8 @@ class DNAGedcomCrossReferencer:
 
         return None
 
-    def _is_cm_in_range(self, actual_cm: float, expected_range: tuple[float, float]) -> bool:
+    @staticmethod
+    def _is_cm_in_range(actual_cm: float, expected_range: tuple[float, float]) -> bool:
         """Check if actual cM is within expected range (with some tolerance)."""
         min_cm, max_cm = expected_range
         # Allow 20% tolerance outside the range
@@ -550,7 +564,8 @@ class DNAGedcomCrossReferencer:
 
         return recommendations
 
-    def _empty_crossref_result(self) -> dict[str, Any]:
+    @staticmethod
+    def _empty_crossref_result() -> dict[str, Any]:
         """Return empty cross-reference result for error cases."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -564,11 +579,13 @@ class DNAGedcomCrossReferencer:
             "error": "Cross-reference analysis failed"
         }
 
-    def _crossref_to_dict(self, crossref_match: CrossReferenceMatch) -> dict[str, Any]:
+    @staticmethod
+    def _crossref_to_dict(crossref_match: CrossReferenceMatch) -> dict[str, Any]:
         """Convert CrossReferenceMatch to dictionary using dataclass asdict()."""
         return asdict(crossref_match)
 
-    def _conflict_to_dict(self, conflict: ConflictIdentification) -> dict[str, Any]:
+    @staticmethod
+    def _conflict_to_dict(conflict: ConflictIdentification) -> dict[str, Any]:
         """Convert ConflictIdentification to dictionary using dataclass asdict()."""
         return asdict(conflict)
 

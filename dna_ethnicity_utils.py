@@ -16,8 +16,10 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import importlib
 import json
 import re
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin
@@ -32,10 +34,34 @@ from config import config_schema
 from core.session_manager import SessionManager
 from session_utils import ensure_session_for_tests_sm_only
 from test_utilities import create_standard_test_runner
-from utils import _api_req  # type: ignore[reportPrivateUsage]
 
 # === CONSTANTS ===
 ETHNICITY_METADATA_FILE = "ethnicity_regions.json"
+
+
+@lru_cache(maxsize=1)
+def _load_utils_module() -> Any:
+    """Lazily import the utils module to avoid circular dependencies."""
+
+    return importlib.import_module("utils")
+
+
+@cache
+def _get_utils_attr(attr_name: str) -> Any:
+    """Fetch an attribute from utils with caching and error handling."""
+
+    utils_module = _load_utils_module()
+    try:
+        return getattr(utils_module, attr_name)
+    except AttributeError as exc:  # pragma: no cover - defensive logging
+        raise AttributeError(f"utils module missing attribute '{attr_name}'") from exc
+
+
+def _call_api_request(**kwargs: Any) -> Any:
+    """Proxy to utils._api_req without importing private names directly."""
+
+    api_request = _get_utils_attr("_api_req")
+    return api_request(**kwargs)
 
 
 def load_ethnicity_metadata() -> dict[str, Any]:
@@ -89,7 +115,7 @@ def fetch_tree_owner_ethnicity_regions(
 
     logger.debug(f"Fetching tree owner ethnicity regions from: {url}")
 
-    response = _api_req(
+    response = _call_api_request(
         url=url,
         driver=session_manager.driver,
         session_manager=session_manager,
@@ -144,7 +170,7 @@ def fetch_ethnicity_region_names(
 
     # This is a POST request with JSON body containing the region keys
     logger.debug(f"Sending POST request with {len(region_keys)} region keys: {region_keys}")
-    response = _api_req(
+    response = _call_api_request(
         url=url,
         driver=session_manager.driver,
         session_manager=session_manager,
@@ -210,7 +236,7 @@ def fetch_ethnicity_comparison(
 
     logger.debug(f"Fetching ethnicity comparison for match {match_test_guid}")
 
-    response = _api_req(
+    response = _call_api_request(
         url=url,
         driver=session_manager.driver,
         session_manager=session_manager,
@@ -555,19 +581,21 @@ def _test_extract_match_ethnicity_percentages() -> bool:
 
 def _setup_test_session(sm: SessionManager) -> bool:
     """Set up and authenticate a test session."""
-    from utils import _load_login_cookies, log_in, login_status  # type: ignore[reportPrivateUsage]
-
     sm.browser_manager.browser_needed = True
 
     if not sm.start_sess("Ethnicity Utils Tests"):
         logger.error("Failed to start session")
         return False
 
-    _load_login_cookies(sm)
-    login_check = login_status(sm, disable_ui_fallback=True)
+    load_login_cookies = _get_utils_attr("_load_login_cookies")
+    perform_login = _get_utils_attr("log_in")
+    login_status_check = _get_utils_attr("login_status")
+
+    load_login_cookies(sm)
+    login_check = login_status_check(sm, disable_ui_fallback=True)
 
     if login_check is False:
-        login_result = log_in(sm)
+        login_result = perform_login(sm)
         if login_result != "LOGIN_SUCCEEDED":
             logger.error(f"Login failed: {login_result}")
             return False
@@ -773,9 +801,6 @@ def dna_ethnicity_utils_module_tests() -> bool:
     return suite.finish_suite()
 
 
-
-
-
 def _test_regression_endpoint_literals_present_in_source() -> bool:
     """Regression guard: ensure API constants are imported and used correctly."""
     try:
@@ -811,4 +836,3 @@ if __name__ == "__main__":
         success = False
 
     sys.exit(0 if success else 1)
-

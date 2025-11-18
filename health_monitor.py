@@ -128,7 +128,7 @@ class HealthAlert:
     acknowledged: bool = False
 
 
-class SessionHealthMonitor:
+class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many management helpers
     """
     Comprehensive session health monitoring with predictive analytics.
     """
@@ -181,7 +181,6 @@ class SessionHealthMonitor:
         self.success_patterns: list[dict[str, Any]] = []
         # Safety test mode flag to standardize alert prefixes
         self._safety_test_mode: bool = False
-
 
         # Initialize metrics
         self._initialize_metrics()
@@ -999,7 +998,8 @@ class SessionHealthMonitor:
             }
         }
 
-    def _get_risk_level(self, risk_score: float) -> str:
+    @staticmethod
+    def _get_risk_level(risk_score: float) -> str:
         """Convert risk score to human-readable level."""
         if risk_score > 0.8:
             return "EMERGENCY"
@@ -1207,7 +1207,8 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.debug(f"Auto checkpoint failed: {e}")
 
-    def _cleanup_old_checkpoints(self, keep_count: int = 5) -> None:
+    @staticmethod
+    def _cleanup_old_checkpoints(keep_count: int = 5) -> None:
         """Clean up old checkpoint files, keeping only the most recent ones."""
         try:
             checkpoint_dir = Path("Cache/session_checkpoints")
@@ -1231,7 +1232,8 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.debug(f"Checkpoint cleanup failed: {e}")
 
-    def list_available_checkpoints(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def list_available_checkpoints() -> list[dict[str, Any]]:
         """List all available checkpoint files with metadata."""
         try:
             checkpoint_dir = Path("Cache/session_checkpoints")
@@ -1342,7 +1344,7 @@ class SessionHealthMonitor:
                     self._immediate_intervention_requested = intervention.get("immediate_intervention", False)
                     self._enhanced_monitoring_active = intervention.get("enhanced_monitoring", False)
 
-            logger.info(f"🔄 Session state recovered from disk (age: {state_age/60:.1f} minutes)")
+            logger.info(f"🔄 Session state recovered from disk (age: {state_age / 60:.1f} minutes)")
             return session_data
 
         except Exception as e:
@@ -1789,7 +1791,7 @@ def _test_session_checkpoint_creation():
     monitor.update_metric("error_rate", 50.0)
     monitor.record_error("test_error")
     checkpoint_path = monitor.create_session_checkpoint("test_checkpoint")
-    assert checkpoint_path != "", "Should create checkpoint successfully"
+    assert checkpoint_path, "Should create checkpoint successfully"
     assert Path(checkpoint_path).exists(), "Checkpoint file should exist"
     new_monitor = SessionHealthMonitor()
     success = new_monitor.restore_from_checkpoint(checkpoint_path)
@@ -1806,7 +1808,7 @@ def _test_session_state_persistence():
     monitor.record_error("persistence_error")
     test_data = {"test_key": "test_value", "page_count": 100}
     state_file = monitor.persist_session_state_to_disk(test_data)
-    assert state_file != "", "Should persist session state successfully"
+    assert state_file, "Should persist session state successfully"
     recovered_data = monitor.recover_session_state_from_disk()
     assert recovered_data is not None, "Should recover session state"
     assert "test_key" in recovered_data, "Should recover custom data"

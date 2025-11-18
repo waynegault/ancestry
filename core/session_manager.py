@@ -105,6 +105,8 @@ except ImportError:
 
 # === LOCAL IMPORTS ===
 import contextlib
+import importlib
+from functools import lru_cache
 
 from api_constants import API_PATH_UUID_NAVHEADER
 from config import config_schema
@@ -114,6 +116,13 @@ from core.database_manager import DatabaseManager
 from core.session_validator import SessionValidator
 from observability.metrics_exporter import start_metrics_exporter, stop_metrics_exporter
 from observability.metrics_registry import metrics
+
+
+@lru_cache(maxsize=1)
+def _load_utils_module() -> Any:
+    """Lazily import the utils module to avoid circular dependencies."""
+
+    return importlib.import_module("utils")
 
 # === MODULE CONSTANTS ===
 # Use global cached config instance
@@ -138,7 +147,7 @@ class SessionLifecycleState(Enum):
     DEGRADED = "DEGRADED"
 
 
-class SessionManager:
+class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many helpers
     """
     Refactored SessionManager that orchestrates specialized managers.
 
@@ -271,28 +280,32 @@ class SessionManager:
             f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}"
         )
 
+    @staticmethod
     @cached_database_manager()
     def _get_cached_database_manager(
-        self, db_path: Optional[str] = None
+        db_path: Optional[str] = None
     ) -> "DatabaseManager":
         """Get cached DatabaseManager instance"""
         logger.debug("Creating/retrieving DatabaseManager from cache")
         return DatabaseManager(db_path)
 
+    @staticmethod
     @cached_browser_manager()
-    def _get_cached_browser_manager(self) -> "BrowserManager":
+    def _get_cached_browser_manager() -> "BrowserManager":
         """Get cached BrowserManager instance"""
         logger.debug("Creating/retrieving BrowserManager from cache")
         return BrowserManager()
 
+    @staticmethod
     @cached_api_manager()
-    def _get_cached_api_manager(self) -> "APIManager":
+    def _get_cached_api_manager() -> "APIManager":
         """Get cached APIManager instance"""
         logger.debug("Creating/retrieving APIManager from cache")
         return APIManager()
 
+    @staticmethod
     @cached_session_validator()
-    def _get_cached_session_validator(self) -> "SessionValidator":
+    def _get_cached_session_validator() -> "SessionValidator":
         """Get cached SessionValidator instance"""
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
@@ -335,22 +348,34 @@ class SessionManager:
 
         return limiter
 
-    def _resolve_rate_limiter_factory(self) -> Optional[Callable[..., Any]]:
+    @staticmethod
+    def _get_utils_attr(attr_name: str) -> Any:
+        """Safely retrieve an attribute from the utils module."""
+
+        utils_module = _load_utils_module()
+        try:
+            return getattr(utils_module, attr_name)
+        except AttributeError as exc:  # pragma: no cover - defensive logging
+            raise AttributeError(f"utils module missing attribute '{attr_name}'") from exc
+
+    @staticmethod
+    def _resolve_rate_limiter_factory() -> Optional[Callable[..., Any]]:
         """Import the rate limiter factory if it is available."""
 
         try:
-            from utils import get_rate_limiter
-        except ImportError:
+            return SessionManager._get_utils_attr("get_rate_limiter")
+        except (ImportError, ModuleNotFoundError, AttributeError):
             return None
-        return get_rate_limiter
 
-    def _resolve_batch_threshold(self) -> int:
+    @staticmethod
+    def _resolve_batch_threshold() -> int:
         """Derive the base batch threshold from configuration."""
 
         batch_threshold = getattr(config_schema, "batch_size", 50) or 50
         return max(int(batch_threshold), 1)
 
-    def _determine_success_threshold(self, batch_threshold: int) -> int:
+    @staticmethod
+    def _determine_success_threshold(batch_threshold: int) -> int:
         """Resolve success threshold with configuration overrides."""
 
         configured_threshold = getattr(
@@ -362,7 +387,8 @@ class SessionManager:
             return configured_threshold
         return max(batch_threshold, 10)
 
-    def _determine_rate_profile(self) -> tuple[float, bool, float]:
+    @staticmethod
+    def _determine_rate_profile() -> tuple[float, bool, float]:
         """Resolve rate profile, aggressive allowances, and desired fill rate."""
 
         safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
@@ -372,8 +398,9 @@ class SessionManager:
         desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
         return safe_rps, allow_aggressive, desired_rate
 
+    @staticmethod
     def _compute_fill_rates(
-        self, safe_rps: float, allow_aggressive: bool, desired_rate: float
+        safe_rps: float, allow_aggressive: bool, desired_rate: float
     ) -> tuple[float, float]:
         """Calculate min/max fill rates with safeguards."""
 
@@ -394,7 +421,8 @@ class SessionManager:
                 "Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap
             )
 
-    def _build_endpoint_profile_config(self) -> dict[str, dict[str, Any]]:
+    @staticmethod
+    def _build_endpoint_profile_config() -> dict[str, dict[str, Any]]:
         """Normalize endpoint throttle profiles from configuration."""
 
         endpoint_profiles_raw = getattr(config_schema.api, "endpoint_throttle_profiles", {})
@@ -407,7 +435,8 @@ class SessionManager:
             if isinstance(key, str) and isinstance(value, dict)
         }
 
-    def _calculate_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> Optional[float]:
+    @staticmethod
+    def _calculate_endpoint_rate_cap(endpoint_profiles: dict[str, dict[str, Any]]) -> Optional[float]:
         """Derive the tightest rate cap from endpoint throttle definitions."""
 
         endpoint_rate_cap: Optional[float] = None
@@ -1271,8 +1300,6 @@ class SessionManager:
         self._precache_csrf_token()
         return True
 
-
-
     def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
         """Sync driver cookies to requests session.
 
@@ -1304,10 +1331,6 @@ class SessionManager:
 
         return synced_count
 
-
-
-
-
     def check_js_errors(self) -> list[dict[str, Any]]:
         """
         Check for JavaScript errors in the browser console.
@@ -1333,7 +1356,7 @@ class SessionManager:
 
             for log_entry in logs:
                 # Check if this is a JavaScript error
-                if log_entry.get('level') in ['SEVERE', 'ERROR']:
+                if log_entry.get('level') in {'SEVERE', 'ERROR'}:
                     # Parse timestamp (browser logs use milliseconds since epoch)
                     log_timestamp = datetime.fromtimestamp(
                         log_entry.get('timestamp', 0) / 1000,
@@ -1700,10 +1723,9 @@ class SessionManager:
             logger.warning(f"Essential cookies {essential_cookies} NOT found before CSRF token API call.")
 
         try:
-            # Import _api_req locally to avoid circular imports
-            from utils import _api_req
+            api_request = self._get_utils_attr("_api_req")
 
-            response_data = _api_req(
+            response_data = api_request(
                 url=csrf_token_url,
                 driver=self.driver,
                 session_manager=self,
@@ -1745,9 +1767,9 @@ class SessionManager:
         logger.debug("Attempting to fetch own profile ID (ucdmid)...")
 
         try:
-            from utils import _api_req
+            api_request = self._get_utils_attr("_api_req")
 
-            response_data = _api_req(
+            response_data = api_request(
                 url=url,
                 driver=self.driver,
                 session_manager=self,
@@ -1800,9 +1822,9 @@ class SessionManager:
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
 
         try:
-            from utils import _api_req
+            api_request = self._get_utils_attr("_api_req")
 
-            response_data = _api_req(
+            response_data = api_request(
                 url=url,
                 driver=self.driver,
                 session_manager=self,
@@ -2103,7 +2125,8 @@ class SessionManager:
         except Exception:
             logger.debug("Failed to update session uptime metric", exc_info=True)
 
-    def _record_session_refresh_metric(self, reason: str) -> None:
+    @staticmethod
+    def _record_session_refresh_metric(reason: str) -> None:
         """Increment session refresh counter for a specific reason."""
         try:
             safe_reason = reason or "unknown"
@@ -2719,7 +2742,7 @@ def _test_regression_prevention_initialization_stability():
         for i in range(3):
             try:
                 session_manager = SessionManager()
-                print(f"   ✅ Initialization attempt {i+1} successful")
+                print(f"   ✅ Initialization attempt {i + 1} successful")
                 results.append(True)
 
                 # Test basic attribute access
@@ -2727,11 +2750,11 @@ def _test_regression_prevention_initialization_stability():
                 _ = hasattr(session_manager, 'browser_manager')
                 _ = hasattr(session_manager, 'api_manager')
 
-                print(f"   ✅ Basic attribute access {i+1} successful")
+                print(f"   ✅ Basic attribute access {i + 1} successful")
                 results.append(True)
 
             except Exception as init_error:
-                print(f"   ❌ Initialization attempt {i+1} failed: {init_error}")
+                print(f"   ❌ Initialization attempt {i + 1} failed: {init_error}")
                 results.append(False)
                 break
 
@@ -2980,8 +3003,8 @@ def _test_circuit_breaker_short_circuit() -> None:
     for i in range(4):
         with suppress(RuntimeError):
             breaker.call(failing_operation)
-        assert breaker.failure_count == i + 1, f"Should have {i+1} failures"
-        assert breaker.state.value == "CLOSED", f"Should stay CLOSED after {i+1} failures"
+        assert breaker.failure_count == i + 1, f"Should have {i + 1} failures"
+        assert breaker.state.value == "CLOSED", f"Should stay CLOSED after {i + 1} failures"
 
     # 5th failure should open the circuit
     with suppress(RuntimeError):

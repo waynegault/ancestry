@@ -192,10 +192,10 @@ def _test_multiple_auth_failure_scenarios() -> None:
         mock_response.status_code = status_code
 
         # 403 and 401 should trigger auth refresh
-        needs_refresh = status_code in (401, 403)
+        needs_refresh = status_code in {401, 403}
 
         # 429 and 500 should trigger retry
-        needs_retry = status_code in (429, 500)
+        needs_retry = status_code in {429, 500}
 
         # At least one recovery strategy should apply
         has_recovery = needs_refresh or needs_retry

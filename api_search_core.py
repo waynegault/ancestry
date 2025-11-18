@@ -11,14 +11,17 @@ to prevent duplicate API calls for the same search criteria.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, TypeAlias
+from functools import lru_cache
+from types import ModuleType
+from typing import Any, Callable, TypeAlias, cast
 
 from api_search_utils import get_api_family_details
 from api_utils import call_discovery_relationship_api, call_treesui_list_api
 from config import config_schema
-from gedcom_utils import _clean_display_date, _parse_date, calculate_match_score
+from gedcom_utils import calculate_match_score
 from genealogy_presenter import present_post_selection
 from logging_config import logger
 from relationship_utils import convert_discovery_api_path_to_unified_format
@@ -42,6 +45,25 @@ _cache_stats = {
     "misses": 0,
     "total_queries": 0,
 }
+
+
+@lru_cache(maxsize=1)
+def _get_gedcom_utils_module() -> ModuleType:
+    return importlib.import_module("gedcom_utils")
+
+
+def _get_gedcom_utils_attr(attr: str) -> Any:
+    return getattr(_get_gedcom_utils_module(), attr)
+
+
+def _clean_display_date(value: Any) -> Any:
+    cleaner = cast(Callable[[Any], Any], _get_gedcom_utils_attr("_clean_display_date"))
+    return cleaner(value)
+
+
+def _parse_date(value: Any) -> Any:
+    parser = cast(Callable[[Any], Any], _get_gedcom_utils_attr("_parse_date"))
+    return parser(value)
 
 
 def _normalize_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
@@ -345,7 +367,7 @@ def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
 
 def _extract_candidate_data(raw: CandidateDict, idx: int, clean: Callable[[Any], str | None]) -> CandidateDict:
     # Extract name - TreesUI parser returns FullName, GivenName, Surname
-    full_name = raw.get("FullName") or (f"{raw.get('GivenName','')} {raw.get('Surname','')}").strip() or "Unknown"
+    full_name = raw.get("FullName") or (f"{raw.get('GivenName', '')} {raw.get('Surname', '')}").strip() or "Unknown"
     pid = raw.get("PersonId", f"Unknown_{idx}")
 
     def _p(s: str | None) -> str | None:
@@ -433,6 +455,7 @@ def _process_and_score_suggestions(suggestions: CandidateList, criteria: dict[st
 # Display helpers (Action 10 compatible)
 # -----------------------------
 
+
 def _extract_field_scores_for_display(candidate: CandidateDict) -> FieldScoreDict:
     fs = candidate.get("field_scores", {}) or {}
     return {
@@ -465,16 +488,16 @@ def _create_table_row_for_candidate(candidate: CandidateDict) -> list[str]:
     name = candidate.get("name", "N/A")
     name_short = name[:30] + ("..." if len(name) > 30 else "")
     name_score = f"[{s['givn_s'] + s['surn_s']}]" + (f"[+{s['name_bonus_orig']}]" if s["name_bonus_orig"] > 0 else "")
-    bdate = f"{candidate.get('birth_date','N/A')} [{b['birth_date_score_component']}]"
+    bdate = f"{candidate.get('birth_date', 'N/A')} [{b['birth_date_score_component']}]"
     bp = str(candidate.get("birth_place", "N/A"))
-    bplace = f"{(bp[:20] + ('...' if len(bp)>20 else ''))} [{s['bplace_s']}]" + (f" [+{b['birth_bonus_s_disp']}]" if b["birth_bonus_s_disp"]>0 else "")
-    ddate = f"{candidate.get('death_date','N/A')} [{b['death_date_score_component']}]"
+    bplace = f"{(bp[:20] + ('...' if len(bp) > 20 else ''))} [{s['bplace_s']}]" + (f" [+{b['birth_bonus_s_disp']}]" if b["birth_bonus_s_disp"] > 0 else "")
+    ddate = f"{candidate.get('death_date', 'N/A')} [{b['death_date_score_component']}]"
     dp = str(candidate.get("death_place", "N/A"))
-    dplace = f"{(dp[:20] + ('...' if len(dp)>20 else ''))} [{s['dplace_s']}]" + (f" [+{b['death_bonus_s_disp']}]" if b["death_bonus_s_disp"]>0 else "")
+    dplace = f"{(dp[:20] + ('...' if len(dp) > 20 else ''))} [{s['dplace_s']}]" + (f" [+{b['death_bonus_s_disp']}]" if b["death_bonus_s_disp"] > 0 else "")
     total = int(candidate.get("score", 0))
     alive_pen = int(candidate.get("field_scores", {}).get("alive_penalty", 0))
     total_cell = f"{total}{f' [{alive_pen}]' if alive_pen < 0 else ''}"
-    return [str(candidate.get("id","N/A")), f"{name_short} {name_score}", bdate, bplace, ddate, dplace, total_cell]
+    return [str(candidate.get("id", "N/A")), f"{name_short} {name_score}", bdate, bplace, ddate, dplace, total_cell]
 
 # -----------------------------
 # Search and post-selection
@@ -508,6 +531,7 @@ def _fetch_cached_results(
 
     limited = cached_results[: max(1, max_results)]
     return cache_key, limited
+
 
 def _resolve_base_and_tree(session_manager: Any) -> tuple[str, str | None]:
     """
@@ -617,6 +641,35 @@ def _get_relationship_paths(
     return formatted_path, unified_path
 
 
+def _build_relationship_line(
+    current_person: dict[str, Any],
+    next_person: dict[str, Any],
+    seen_names: set[str],
+) -> str:
+    relationship = next_person.get("relationship", "relative")
+    next_name = next_person.get("name", "Unknown")
+    next_lifespan = next_person.get("lifeSpan", "")
+    current_name = current_person.get("name", "Unknown")
+
+    next_years = ""
+    lowered_next = next_name.lower()
+    if lowered_next not in seen_names:
+        next_years = f" ({next_lifespan})" if next_lifespan else ""
+        seen_names.add(lowered_next)
+
+    if relationship.startswith("You are the "):
+        rel_type = relationship.replace("You are the ", "").replace(f" of {current_name}", "").strip()
+        inverse_rel = {
+            "son": "father",
+            "daughter": "mother",
+            "grandson": "grandfather",
+            "granddaughter": "grandmother",
+        }.get(rel_type, "parent")
+        return f"   - {current_name} is the {inverse_rel} of {next_name}{next_years}"
+
+    return f"   - {relationship} is {next_name}{next_years}"
+
+
 def _format_kinship_persons_path(kinship_persons: CandidateList, owner_name: str) -> str:
     """Format kinshipPersons array from relation ladder API into readable path."""
     if not kinship_persons or len(kinship_persons) < 2:
@@ -637,39 +690,8 @@ def _format_kinship_persons_path(kinship_persons: CandidateList, owner_name: str
     seen_names.add(first_name.lower())
 
     # Process remaining path steps without repeating the person's name at the start
-    for i in range(len(kinship_persons) - 1):
-        current_person = kinship_persons[i]
-        next_person = kinship_persons[i + 1]
-
-        relationship = next_person.get("relationship", "relative")
-        next_name = next_person.get("name", "Unknown")
-        next_lifespan = next_person.get("lifeSpan", "")
-        current_name = current_person.get("name", "Unknown")
-
-        # Format lifespan - only if we haven't seen this name before
-        next_years = ""
-        if next_name.lower() not in seen_names:
-            next_years = f" ({next_lifespan})" if next_lifespan else ""
-            seen_names.add(next_name.lower())
-
-        # Handle "You are..." relationships specially (convert to inverse relationship)
-        # e.g., "You are the son of Derrick" -> "Derrick is the father of Wayne"
-        if relationship.startswith("You are the "):
-            # Extract the relationship type (e.g., "son", "daughter")
-            rel_type = relationship.replace("You are the ", "").replace(f" of {current_name}", "").strip()
-            # Convert to inverse relationship
-            inverse_rel = {
-                "son": "father",
-                "daughter": "mother",
-                "grandson": "grandfather",
-                "granddaughter": "grandmother",
-            }.get(rel_type, "parent")
-            line = f"   - {current_name} is the {inverse_rel} of {next_name}{next_years}"
-        else:
-            # Normal relationship format
-            line = f"   - {relationship} is {next_name}{next_years}"
-
-        path_lines.append(line)
+    for current_person, next_person in zip(kinship_persons, kinship_persons[1:]):
+        path_lines.append(_build_relationship_line(current_person, next_person, seen_names))
 
     # Header
     header = f"Relationship to {owner_name}:"
@@ -705,6 +727,7 @@ def _handle_supplementary_info_phase(selected_candidate_processed: CandidateDict
         )
     except Exception as e:
         logger.error(f"Post-selection presentation failed: {e}", exc_info=True)
+
 
 __all__ = [
     "_create_table_row_for_candidate",

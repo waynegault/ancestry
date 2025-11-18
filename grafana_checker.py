@@ -127,9 +127,9 @@ def prompt_user_for_setup() -> bool:
     Interactive prompt asking user if they want to run automated setup
     Returns True if user agrees, False otherwise
     """
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("📊 GRAFANA METRICS VISUALIZATION")
-    print("="*70)
+    print("=" * 70)
     print("\n⚠️  Grafana is not fully configured")
     print("\nAutomated setup will:")
     print("  • Download and install Grafana")
@@ -138,10 +138,10 @@ def prompt_user_for_setup() -> bool:
     print("  • Import 3 dashboards (Performance, Genealogy, Code Quality)")
     print("  • Requires Administrator privileges")
     print("\nEstimated time: 5-10 minutes")
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
 
     response = input("\nRun automated setup now? (y/n): ").strip().lower()
-    return response in ('y', 'yes')
+    return response in {'y', 'yes'}
 
 
 def ensure_grafana_ready(auto_setup: bool = False, silent: bool = False) -> bool:
@@ -287,9 +287,9 @@ def ensure_dashboards_imported() -> bool:
 
 def grafana_checker_module_tests() -> bool:
     """Test the Grafana checker functionality"""
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("GRAFANA STATUS CHECK")
-    print("="*70 + "\n")
+    print("=" * 70 + "\n")
 
     status = check_grafana_status()
 
@@ -301,7 +301,7 @@ def grafana_checker_module_tests() -> bool:
 
     print(f"\nStatus Message: {get_status_message()}")
 
-    print("\n" + "="*70 + "\n")
+    print("\n" + "=" * 70 + "\n")
 
     return True
 

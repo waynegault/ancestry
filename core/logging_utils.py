@@ -148,7 +148,7 @@ def _format_banner_details(details: Optional[Mapping[str, Any]]) -> str:
 
     normalized_items: list[str] = []
     for key, value in details.items():
-        if value is None or value == "":
+        if value in {None, ""}:
             continue
         normalized_items.append(f"{key}={value}")
 
@@ -385,6 +385,7 @@ def _test_optimized_logger_functionality() -> bool:
 
         # Test debug_lazy execution
         execution_count = 0
+
         def message_factory() -> str:
             nonlocal execution_count
             execution_count += 1
@@ -442,12 +443,16 @@ def _test_action_banner_logging() -> bool:
         records: list[tuple[int, str]] = []
 
         class _ListHandler(logging.Handler):
+            def __init__(self, store: list[tuple[int, str]]) -> None:
+                super().__init__()
+                self._store = store
+
             def emit(self, record: logging.LogRecord) -> None:
-                records.append((record.levelno, record.getMessage()))
+                self._store.append((record.levelno, record.getMessage()))
 
         test_logger = logging.getLogger("action_banner_test")
         original_level = test_logger.level
-        handler = _ListHandler()
+        handler = _ListHandler(records)
         try:
             test_logger.setLevel(logging.DEBUG)
             test_logger.addHandler(handler)

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class ProgressStats:
     """Statistics for progress tracking"""
@@ -64,13 +65,15 @@ class ProgressStats:
         remaining = self.total_items - self.items_processed
         return remaining / rate
 
-    def memory_usage_mb(self) -> float:
+    @staticmethod
+    def memory_usage_mb() -> float:
         """Get current memory usage in MB"""
         try:
             process = psutil.Process()
             return process.memory_info().rss / 1024 / 1024
         except Exception:
             return 0.0
+
 
 class ProgressIndicator:
     """
@@ -263,6 +266,7 @@ class ProgressIndicator:
             # Add a blank line below the completion summary for readability (per user preference)
             logger.info("")
 
+
 def create_progress_indicator(
     description: str,
     total: Optional[int] = None,
@@ -289,6 +293,7 @@ def create_progress_indicator(
         total=total,
         config=config
     )
+
 
 # Decorator for automatic progress tracking
 def with_progress(

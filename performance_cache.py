@@ -57,6 +57,7 @@ logger = setup_module(globals(), __name__)
 import hashlib
 import pickle
 import time
+from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -67,12 +68,18 @@ from memory_utils import ObjectPool
 # === PERFORMANCE CACHE CLASSES ===
 
 
+@dataclass
 class CacheableObject:
     """Example cacheable object for pooling."""
-    def __init__(self, value: Any = None) -> None:
-        self.value = value
+    value: Optional[Any] = None
 
-cacheable_pool = ObjectPool(lambda: CacheableObject(), max_size=50)
+
+def _create_cacheable_object() -> CacheableObject:
+    """Return a fresh cacheable object for pooling."""
+    return CacheableObject()
+
+
+cacheable_pool = ObjectPool(_create_cacheable_object, max_size=50)
 
 ProgressCallback = Callable[[float], None]
 
@@ -176,7 +183,8 @@ class PerformanceCache:
                 # Trigger cleanup to match new size
                 self._cleanup_old_entries()
 
-    def _generate_cache_key(self, *args: Any, **kwargs: Any) -> str:
+    @staticmethod
+    def _generate_cache_key(*args: Any, **kwargs: Any) -> str:
         """Generate a unique cache key from function arguments"""
         key_data = str(args) + str(sorted(kwargs.items()))
         return hashlib.md5(key_data.encode()).hexdigest()
@@ -761,6 +769,7 @@ def test_performance_cache_initialization() -> bool:
     except Exception:
         return False
 
+
 def test_memory_cache_operations() -> bool:
     """Test basic memory cache operations."""
     try:
@@ -769,6 +778,7 @@ def test_memory_cache_operations() -> bool:
         return cache.get("mem_key") == "value1"
     except Exception:
         return False
+
 
 def test_cache_key_generation() -> bool:
     """Test cache key generation consistency."""
@@ -780,6 +790,7 @@ def test_cache_key_generation() -> bool:
     except Exception:
         return False
 
+
 def test_cache_expiration() -> bool:
     """Test cache miss handling."""
     try:
@@ -787,6 +798,7 @@ def test_cache_expiration() -> bool:
         return cache.get("missing_key") is None
     except Exception:
         return False
+
 
 def test_cache_statistics_collection() -> bool:
     """Test cache statistics collection."""
@@ -798,6 +810,7 @@ def test_cache_statistics_collection() -> bool:
     except Exception:
         return False
 
+
 def test_cache_health_status() -> bool:
     """Test cache health status check."""
     try:
@@ -807,6 +820,7 @@ def test_cache_health_status() -> bool:
     except Exception:
         return False
 
+
 def test_cache_performance_metrics() -> bool:
     """Test cache performance metrics collection."""
     try:
@@ -815,6 +829,7 @@ def test_cache_performance_metrics() -> bool:
         return cache.get("disk_key") == {"a": 1}
     except Exception:
         return False
+
 
 def test_memory_management_cleanup() -> bool:
     """Test memory management and cleanup."""
@@ -827,6 +842,7 @@ def test_memory_management_cleanup() -> bool:
         return len(cache._memory_cache) <= cache._max_size
     except Exception:
         return False
+
 
 def performance_cache_module_tests() -> bool:
     """
@@ -905,6 +921,7 @@ def performance_cache_module_tests() -> bool:
     )
 
     return suite.finish_suite()
+
 
 # Use centralized test runner utility
 from test_utilities import create_standard_test_runner

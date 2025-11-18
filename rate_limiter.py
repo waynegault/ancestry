@@ -620,7 +620,8 @@ class AdaptiveRateLimiter:
         gap = profile.min_interval - (now - last_call)
         return gap if gap > 0.0 else 0.0
 
-    def _calculate_delay_multiplier(self, profile: _EndpointProfile, base_wait: float) -> float:
+    @staticmethod
+    def _calculate_delay_multiplier(profile: _EndpointProfile, base_wait: float) -> float:
         """Return additional delay driven by the configured multiplier."""
 
         if profile.delay_multiplier <= 1.0 or base_wait <= 0.0:
@@ -776,12 +777,14 @@ class AdaptiveRateLimiter:
 
         self.max_fill_rate = max(new_cap, self.min_fill_rate)
         if self.fill_rate > self.max_fill_rate:
+            previous_rate = self.fill_rate
+            self.fill_rate = self.max_fill_rate
             logger.info(
-                "Endpoint cap enforced: reducing fill rate from %.3f to %.3f req/s",
+                "✅ Endpoint cap enforced: clamped fill rate from %.3f → %.3f req/s (endpoint limit %.3f req/s)",
+                previous_rate,
                 self.fill_rate,
                 self.max_fill_rate,
             )
-            self.fill_rate = self.max_fill_rate
 
         if self.min_fill_rate > self.max_fill_rate:
             self.min_fill_rate = max(0.01, self.max_fill_rate * 0.5)
@@ -1336,7 +1339,6 @@ def rate_limiter_module_tests() -> bool:
 from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(rate_limiter_module_tests)
-
 
 
 def _test_initialization() -> None:

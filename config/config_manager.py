@@ -202,7 +202,8 @@ class ConfigManager:
         self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
         self._align_token_bucket_fill_rate(api, unsafe_requested)
 
-    def _unsafe_rate_limit_requested(self, api: Any, speed_profile: str) -> bool:
+    @staticmethod
+    def _unsafe_rate_limit_requested(api: Any, speed_profile: str) -> bool:
         """Return True when any configuration requests relaxed API safety."""
 
         unsafe_requested = bool(getattr(api, "allow_unsafe_rate_limit", False))
@@ -515,7 +516,8 @@ class ConfigManager:
             logger.warning(f"Auto-detection failed, using defaults: {e}")
             return {}
 
-    def _check_minimum_requirements(self, cpu_count: int, memory_gb: float, disk_space_gb: float, validation_results: dict[str, Any]) -> None:
+    @staticmethod
+    def _check_minimum_requirements(cpu_count: int, memory_gb: float, disk_space_gb: float, validation_results: dict[str, Any]) -> None:
         """Check minimum system requirements and update validation results."""
         if cpu_count < 2:
             validation_results["warnings"].append(
@@ -534,7 +536,8 @@ class ConfigManager:
             )
             validation_results["valid"] = False
 
-    def _check_optimal_performance(self, cpu_count: int, memory_gb: float, validation_results: dict[str, Any]) -> None:
+    @staticmethod
+    def _check_optimal_performance(cpu_count: int, memory_gb: float, validation_results: dict[str, Any]) -> None:
         """Check for optimal performance opportunities and add recommendations."""
         if memory_gb >= 16:
             validation_results["recommendations"].append(
@@ -546,7 +549,8 @@ class ConfigManager:
                 "High CPU count detected. Consider increasing concurrency settings for better performance."
             )
 
-    def _check_dependencies_and_chrome(self, validation_results: dict[str, Any]) -> None:
+    @staticmethod
+    def _check_dependencies_and_chrome(validation_results: dict[str, Any]) -> None:
         """Check Python dependencies and Chrome availability."""
         import shutil
 
@@ -611,14 +615,16 @@ class ConfigManager:
                 "system_info": {}
             }
 
-    def _print_system_info(self, system_info: dict[str, Any]) -> None:
+    @staticmethod
+    def _print_system_info(system_info: dict[str, Any]) -> None:
         """Print system information."""
         print("\n📊 System Information:")
         print(f"   CPU Cores: {system_info.get('cpu_cores', 'Unknown')}")
         print(f"   Memory: {system_info.get('memory_gb', 'Unknown')}GB")
         print(f"   Free Disk: {system_info.get('free_disk_gb', 'Unknown')}GB")
 
-    def _print_validation_results(self, validation: dict[str, Any]) -> bool:
+    @staticmethod
+    def _print_validation_results(validation: dict[str, Any]) -> bool:
         """Print validation results. Returns True if valid, False otherwise."""
         if validation.get("errors"):
             print("\n❌ Critical Issues:")
@@ -642,7 +648,8 @@ class ConfigManager:
         print("\n✅ System validation passed!")
         return True
 
-    def _print_optimal_settings(self, auto_detected: dict[str, Any]) -> None:
+    @staticmethod
+    def _print_optimal_settings(auto_detected: dict[str, Any]) -> None:
         """Print auto-detected optimal settings."""
         print("\n🔧 Auto-detected Optimal Settings:")
 
@@ -715,7 +722,8 @@ class ConfigManager:
             logger.error(f"Failed to load config file {self.config_file}: {e}")
             return {}
 
-    def _load_main_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_main_config_from_env(config: dict[str, Any]) -> None:
         """Load main configuration from environment variables."""
         env_value = os.getenv("ENVIRONMENT")
         if env_value:
@@ -723,13 +731,14 @@ class ConfigManager:
 
         debug_mode_value = os.getenv("DEBUG_MODE")
         if debug_mode_value:
-            config["debug_mode"] = debug_mode_value.lower() in ("true", "1", "yes")
+            config["debug_mode"] = debug_mode_value.lower() in {"true", "1", "yes"}
 
         app_name_value = os.getenv("APP_NAME")
         if app_name_value:
             config["app_name"] = app_name_value
 
-    def _load_reference_person_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_reference_person_config_from_env(config: dict[str, Any]) -> None:
         """Load reference person configuration from environment variables."""
         reference_person_id_value = os.getenv("REFERENCE_PERSON_ID")
         if reference_person_id_value:
@@ -739,7 +748,8 @@ class ConfigManager:
         if reference_person_name_value:
             config["reference_person_name"] = reference_person_name_value
 
-    def _load_user_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_user_config_from_env(config: dict[str, Any]) -> None:
         """Load user configuration from environment variables."""
         user_name_value = os.getenv("USER_NAME")
         if user_name_value:
@@ -749,13 +759,15 @@ class ConfigManager:
         if user_location_value:
             config["user_location"] = user_location_value
 
-    def _load_ms_graph_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_ms_graph_config_from_env(config: dict[str, Any]) -> None:
         """Load Microsoft Graph / To-Do configuration from environment variables."""
         ms_todo_list_name_value = os.getenv("MS_TODO_LIST_NAME")
         if ms_todo_list_name_value:
             config["ms_todo_list_name"] = ms_todo_list_name_value
 
-    def _load_testing_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_testing_config_from_env(config: dict[str, Any]) -> None:
         """Load testing configuration from environment variables."""
         # Load test profile configuration
         testing_profile_id_value = os.getenv("TEST_PROFILE_ID")
@@ -770,13 +782,15 @@ class ConfigManager:
         if testing_username_value:
             config["testing_username"] = testing_username_value
 
-    def _load_app_mode_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_app_mode_from_env(config: dict[str, Any]) -> None:
         """Load application mode from environment variables."""
         app_mode_value = os.getenv("APP_MODE")
         if app_mode_value:
             config["app_mode"] = app_mode_value
 
-    def _load_ai_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_ai_config_from_env(config: dict[str, Any]) -> None:
         """Load AI configuration from environment variables."""
         ai_provider_value = os.getenv("AI_PROVIDER")
         if ai_provider_value:
@@ -803,7 +817,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid AI_CONTEXT_WINDOW_MESSAGES: {ai_ctx_window}")
 
-    def _load_timeout_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_timeout_config_from_env(config: dict[str, Any]) -> None:
         """Load timeout configuration from environment variables."""
         refresh_cooldown = os.getenv("PROACTIVE_REFRESH_COOLDOWN")
         if refresh_cooldown:
@@ -826,7 +841,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
 
-    def _load_env_var_if_present(self, api_config: dict[str, Any], env_var: str, config_key: str) -> None:
+    @staticmethod
+    def _load_env_var_if_present(api_config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load environment variable into config if present with type conversion.
 
         Args:
@@ -837,10 +853,10 @@ class ConfigManager:
         value = os.getenv(env_var)
         if value:
             # Type conversion for known boolean fields
-            if config_key in ['lm_studio_auto_start']:
-                api_config[config_key] = value.lower() in ['true', '1', 'yes', 'on']
+            if config_key in {"lm_studio_auto_start"}:
+                api_config[config_key] = value.lower() in {"true", "1", "yes", "on"}
             # Type conversion for known integer fields
-            elif config_key in ['lm_studio_startup_timeout']:
+            elif config_key in {"lm_studio_startup_timeout"}:
                 try:
                     api_config[config_key] = int(value)
                 except ValueError:
@@ -868,6 +884,10 @@ class ConfigManager:
             ("MOONSHOT_API_KEY", "moonshot_api_key"),
             ("MOONSHOT_AI_MODEL", "moonshot_ai_model"),
             ("MOONSHOT_AI_BASE_URL", "moonshot_ai_base_url"),
+            # Grok (xAI) configuration
+            ("XAI_API_KEY", "xai_api_key"),
+            ("XAI_MODEL", "xai_model"),
+            ("XAI_API_HOST", "xai_api_host"),
             # Local LLM API configuration
             ("LOCAL_LLM_API_KEY", "local_llm_api_key"),
             ("LOCAL_LLM_MODEL", "local_llm_model"),
@@ -888,7 +908,8 @@ class ConfigManager:
         if api_config:
             config["api"] = api_config
 
-    def _load_database_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_database_config_from_env(config: dict[str, Any]) -> None:
         """Load database configuration from environment variables."""
         db_config = {}
         database_file_value = os.getenv("DATABASE_FILE")
@@ -923,7 +944,8 @@ class ConfigManager:
         if db_config:
             config["database"] = db_config
 
-    def _load_selenium_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_selenium_config_from_env(config: dict[str, Any]) -> None:
         """Load Selenium configuration from environment variables."""
         selenium_config = {}
         chrome_driver_path_value = os.getenv("CHROME_DRIVER_PATH")
@@ -944,7 +966,7 @@ class ConfigManager:
 
         headless_mode_value = os.getenv("HEADLESS_MODE")
         if headless_mode_value:
-            selenium_config["headless_mode"] = headless_mode_value.lower() in ("true", "1", "yes")
+            selenium_config["headless_mode"] = headless_mode_value.lower() in {"true", "1", "yes"}
 
         debug_port_value = os.getenv("DEBUG_PORT")
         if debug_port_value:
@@ -956,7 +978,8 @@ class ConfigManager:
         if selenium_config:
             config["selenium"] = selenium_config
 
-    def _set_string_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+    @staticmethod
+    def _set_string_config(config: dict[str, Any], section: str, key: str, env_var: str) -> None:
         """Set a string configuration value from environment variable."""
         value = os.getenv(env_var)
         if value:
@@ -964,7 +987,8 @@ class ConfigManager:
                 config[section] = {}
             config[section][key] = value
 
-    def _set_int_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+    @staticmethod
+    def _set_int_config(config: dict[str, Any], section: str, key: str, env_var: str) -> None:
         """Set an integer configuration value from environment variable."""
         value = os.getenv(env_var)
         if value:
@@ -975,7 +999,8 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
-    def _set_float_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+    @staticmethod
+    def _set_float_config(config: dict[str, Any], section: str, key: str, env_var: str) -> None:
         """Set a float configuration value from environment variable."""
         value = os.getenv(env_var)
         if value:
@@ -986,11 +1011,12 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
-    def _set_bool_config(self, config: dict[str, Any], section: str, key: str, env_var: str) -> None:
+    @staticmethod
+    def _set_bool_config(config: dict[str, Any], section: str, key: str, env_var: str) -> None:
         """Set a boolean configuration value from environment variable."""
         value = os.getenv(env_var)
         if value is not None:
-            bool_value = value.strip().lower() in ("true", "1", "yes", "on")
+            bool_value = value.strip().lower() in {"true", "1", "yes", "on"}
             if section not in config:
                 config[section] = {}
             config[section][key] = bool_value
@@ -1044,7 +1070,8 @@ class ConfigManager:
             except json.JSONDecodeError as exc:
                 logger.warning(f"Failed to parse API_ENDPOINT_THROTTLES: {exc}")
 
-    def _load_int_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
+    @staticmethod
+    def _load_int_env_var(config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load a single integer environment variable into config."""
         value = os.getenv(env_var)
         if value:
@@ -1053,11 +1080,12 @@ class ConfigManager:
             except ValueError:
                 logger.warning(f"Invalid {env_var} value: {value}")
 
-    def _load_bool_env_var(self, config: dict[str, Any], env_var: str, config_key: str) -> None:
+    @staticmethod
+    def _load_bool_env_var(config: dict[str, Any], env_var: str, config_key: str) -> None:
         """Load a single boolean environment variable into config."""
         value = os.getenv(env_var)
         if value is not None:
-            config[config_key] = value.strip().lower() in ("true", "1", "yes", "on")
+            config[config_key] = value.strip().lower() in {"true", "1", "yes", "on"}
 
     def _load_processing_limits_from_env(self, config: dict[str, Any]) -> None:
         """Load processing limit configuration from environment variables."""
@@ -1074,7 +1102,8 @@ class ConfigManager:
         if checkpoint_path:
             config["action6_checkpoint_file"] = checkpoint_path
 
-    def _load_logging_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_logging_config_from_env(config: dict[str, Any]) -> None:
         """Load logging configuration from environment variables."""
         logging_config = {}
         log_level_value = os.getenv("LOG_LEVEL")
@@ -1095,7 +1124,8 @@ class ConfigManager:
         if logging_config:
             config["logging"] = logging_config
 
-    def _load_cache_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_cache_config_from_env(config: dict[str, Any]) -> None:
         """Load cache configuration from environment variables."""
         cache_config = {}
         cache_dir_value = os.getenv("CACHE_DIR")
@@ -1119,16 +1149,17 @@ class ConfigManager:
         if cache_config:
             config["cache"] = cache_config
 
-    def _load_security_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_security_config_from_env(config: dict[str, Any]) -> None:
         """Load security configuration from environment variables."""
         security_config = {}
         encryption_enabled_value = os.getenv("ENCRYPTION_ENABLED")
         if encryption_enabled_value:
-            security_config["encryption_enabled"] = encryption_enabled_value.lower() in ("true", "1", "yes")
+            security_config["encryption_enabled"] = encryption_enabled_value.lower() in {"true", "1", "yes"}
 
         use_system_keyring_value = os.getenv("USE_SYSTEM_KEYRING")
         if use_system_keyring_value:
-            security_config["use_system_keyring"] = use_system_keyring_value.lower() in ("true", "1", "yes")
+            security_config["use_system_keyring"] = use_system_keyring_value.lower() in {"true", "1", "yes"}
 
         session_timeout_value = os.getenv("SESSION_TIMEOUT_MINUTES")
         if session_timeout_value:
@@ -1140,18 +1171,19 @@ class ConfigManager:
         if security_config:
             config["security"] = security_config
 
-    def _load_observability_config_from_env(self, config: dict[str, Any]) -> None:
+    @staticmethod
+    def _load_observability_config_from_env(config: dict[str, Any]) -> None:
         """Load observability configuration from environment variables."""
         observability_config: dict[str, Any] = {}
 
         enabled_value = os.getenv("PROMETHEUS_METRICS_ENABLED")
         if enabled_value is not None:
-            observability_config["enable_prometheus_metrics"] = enabled_value.strip().lower() in (
+            observability_config["enable_prometheus_metrics"] = enabled_value.strip().lower() in {
                 "true",
                 "1",
                 "yes",
                 "on",
-            )
+            }
 
         host_value = os.getenv("PROMETHEUS_METRICS_HOST")
         if host_value:
@@ -1170,12 +1202,12 @@ class ConfigManager:
 
         auto_start_value = os.getenv("PROMETHEUS_AUTO_START")
         if auto_start_value is not None:
-            observability_config["auto_start_prometheus"] = auto_start_value.strip().lower() in (
+            observability_config["auto_start_prometheus"] = auto_start_value.strip().lower() in {
                 "true",
                 "1",
                 "yes",
                 "on",
-            )
+            }
 
         binary_path_value = os.getenv("PROMETHEUS_BINARY_PATH")
         if binary_path_value:
@@ -1307,11 +1339,11 @@ def _test_config_manager_initialization():
     try:
         manager = ConfigManager(auto_load=False)
         assert manager is not None, "ConfigManager should instantiate successfully"
-        assert manager.environment in [
+        assert manager.environment in {
             "development",
             "test",
             "production",
-        ], "Should have valid environment"
+        }, "Should have valid environment"
     except Exception:
         # May require specific configuration files
         pass
@@ -1361,6 +1393,8 @@ def _test_config_file_integration():
 
         manager = ConfigManager(auto_load=False)
         assert manager is not None
+
+
 def _test_environment_integration():
     """Test environment variable integration."""
     # Test environment handling

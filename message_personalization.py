@@ -42,7 +42,8 @@ class MessagePersonalizer:
         self.ab_testing_enabled = True
         self.personalization_functions_registry = self._build_personalization_registry()
 
-    def _load_message_templates(self) -> dict[str, str]:
+    @staticmethod
+    def _load_message_templates() -> dict[str, str]:
         """Load message templates from database MessageTemplate table."""
         try:
             from database import MessageTemplate
@@ -81,7 +82,8 @@ class MessagePersonalizer:
             logger.error(f"Error loading message templates from database: {e}")
             return {}
 
-    def _load_personalization_config(self) -> dict[str, Any]:
+    @staticmethod
+    def _load_personalization_config() -> dict[str, Any]:
         """Load personalization configuration settings."""
         return {
             "max_ancestors_to_mention": 3,
@@ -375,7 +377,8 @@ class MessagePersonalizer:
 
         return enhanced_data
 
-    def _get_fallback_value(self, func_name: str) -> str:
+    @staticmethod
+    def _get_fallback_value(func_name: str) -> str:
         """Get fallback value for a personalization function."""
         fallback_values = {
             "shared_ancestors": "our shared family line",
@@ -412,7 +415,8 @@ class MessagePersonalizer:
             return f"{ancestor_names[0]} and {ancestor_names[1]}"
         return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
 
-    def _format_single_vital_record(self, record: Any) -> Optional[str]:
+    @staticmethod
+    def _format_single_vital_record(record: Any) -> Optional[str]:
         """Format a single vital record detail."""
         if not isinstance(record, dict):
             return None
@@ -467,7 +471,8 @@ class MessagePersonalizer:
 
         return " ".join(context_parts) if context_parts else "I'm excited to learn more about our family connection."
 
-    def _format_occupations(self, occupations: list[Any]) -> str:
+    @staticmethod
+    def _format_occupations(occupations: list[Any]) -> str:
         """Format occupation information."""
         if not occupations:
             return ""
@@ -484,7 +489,8 @@ class MessagePersonalizer:
             return f"Family records show {', and '.join(occ_descriptions)}."
         return ""
 
-    def _identify_research_focus(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _identify_research_focus(extracted_data: dict[str, Any]) -> str:
         """Identify the main research focus from extracted data."""
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
@@ -516,7 +522,8 @@ class MessagePersonalizer:
             return " ".join(questions)
         return "Do you have any additional family information that might help our research?"
 
-    def _create_geographic_context(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_geographic_context(extracted_data: dict[str, Any]) -> str:
         """Create geographic context for the subject line."""
         locations = extracted_data.get("locations", [])
         if not locations:
@@ -530,8 +537,6 @@ class MessagePersonalizer:
                     return place
 
         return "Family History Research"
-
-
 
     def _format_location_context(self, extracted_data: dict[str, Any]) -> str:
         """Format location context for messages."""
@@ -552,7 +557,8 @@ class MessagePersonalizer:
             return f" {', '.join(location_names[:-1])}, and {location_names[-1]}"
         return ""
 
-    def _create_research_suggestions(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_research_suggestions(extracted_data: dict[str, Any]) -> str:
         """Create research suggestions based on extracted data."""
         suggestions = []
 
@@ -570,14 +576,16 @@ class MessagePersonalizer:
 
         return " ".join(suggestions) if suggestions else "I'd love to learn more about your family history."
 
-    def _format_research_questions(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _format_research_questions(extracted_data: dict[str, Any]) -> str:
         """Format specific research questions."""
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
             return f" - particularly about {research_questions[0].lower()}"
         return ""
 
-    def _get_fallback_template(self, original_key: str) -> str:
+    @staticmethod
+    def _get_fallback_template(original_key: str) -> str:
         """Get a fallback template key based on the original key."""
         if "In_Tree" in original_key:
             return "In_Tree-Initial"
@@ -587,13 +595,15 @@ class MessagePersonalizer:
             return "Productive_Reply_Acknowledgement"
         return "In_Tree-Initial"  # Default fallback
 
-    def _create_fallback_message(self, _person_data: dict[str, Any], base_format_data: dict[str, str]) -> str:  # type: ignore
+    @staticmethod
+    def _create_fallback_message(_person_data: dict[str, Any], base_format_data: dict[str, str]) -> str:  # type: ignore
         """Create a simple fallback message when template processing fails."""
         name = base_format_data.get("name", "there")
         return f"Dear {name},\n\nThank you for connecting! I'm excited to learn more about our family history.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland"
 
     # Additional helper methods for remaining format data fields
-    def _format_mentioned_people(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _format_mentioned_people(extracted_data: dict[str, Any]) -> str:
         """Format mentioned people from extracted data."""
         structured_names = extracted_data.get("structured_names", [])
         if not structured_names:
@@ -614,7 +624,8 @@ class MessagePersonalizer:
             return f"{', '.join(names[:-1])}, and {names[-1]}"
         return "your family history"
 
-    def _create_research_context(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_research_context(extracted_data: dict[str, Any]) -> str:
         """Create research context description."""
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
@@ -629,12 +640,14 @@ class MessagePersonalizer:
 
         return "our shared family history"
 
-    def _create_personalized_response(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _create_personalized_response(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Create personalized response content."""
         # This would be populated by AI-generated content
         return "I found your information very helpful for my genealogical research."
 
-    def _create_research_insights(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_research_insights(extracted_data: dict[str, Any]) -> str:
         """Create research insights based on extracted data."""
         insights = []
 
@@ -650,7 +663,8 @@ class MessagePersonalizer:
 
         return " ".join(insights) if insights else "This information is very valuable for our family research."
 
-    def _create_follow_up_questions(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_follow_up_questions(extracted_data: dict[str, Any]) -> str:
         """Create follow-up questions for continued research."""
         questions = []
 
@@ -663,7 +677,8 @@ class MessagePersonalizer:
 
         return " ".join(questions)
 
-    def _format_estimated_relationship(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _format_estimated_relationship(extracted_data: dict[str, Any]) -> str:
         """Format estimated relationship from DNA data."""
         dna_info = extracted_data.get("dna_information", [])
         for info in dna_info:
@@ -671,7 +686,8 @@ class MessagePersonalizer:
                 return str(info)
         return "close family connection"
 
-    def _format_shared_dna(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _format_shared_dna(extracted_data: dict[str, Any]) -> str:
         """Format shared DNA amount."""
         dna_info = extracted_data.get("dna_information", [])
         for info in dna_info:
@@ -679,36 +695,43 @@ class MessagePersonalizer:
                 return str(info)
         return "significant DNA"
 
-    def _create_dna_context(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _create_dna_context(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Create DNA-specific context."""
         return "This suggests we share recent common ancestors."
 
-    def _format_shared_ancestor_info(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _format_shared_ancestor_info(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Format shared ancestor information."""
         return "I'd love to compare our family trees to identify our common ancestors."
 
-    def _create_collaboration_request(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _create_collaboration_request(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Create collaboration request text."""
         return "Would you be interested in collaborating on our genealogical research?"
 
-    def _identify_research_topic(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _identify_research_topic(extracted_data: dict[str, Any]) -> str:
         """Identify the main research topic."""
         research_questions = extracted_data.get("research_questions", [])
         if research_questions:
             return research_questions[0]
         return "Family History Research"
 
-    def _format_research_needs(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _format_research_needs(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Format specific research needs."""
         return "I'm looking for additional information to complete our family history."
 
-    def _create_collaboration_proposal(self, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    @staticmethod
+    def _create_collaboration_proposal(_extracted_data: dict[str, Any]) -> str:  # type: ignore
         """Create collaboration proposal text."""
         return "Perhaps we could share our research findings and work together to solve any family history mysteries."
 
     # ========== NEW ADVANCED PERSONALIZATION FUNCTIONS ==========
 
-    def _create_dna_segment_analysis(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_dna_segment_analysis(extracted_data: dict[str, Any]) -> str:
         """Create DNA segment analysis context for advanced users."""
         dna_info = extracted_data.get("dna_information", [])
         for info in dna_info:
@@ -717,7 +740,8 @@ class MessagePersonalizer:
                 return f"The DNA segment data shows {info}, which helps narrow down our common ancestor timeframe."
         return "DNA segment analysis could help us identify our most recent common ancestor."
 
-    def _create_migration_pattern_context(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_migration_pattern_context(extracted_data: dict[str, Any]) -> str:
         """Create context about family migration patterns."""
         locations = extracted_data.get("locations", [])
         if len(locations) >= 2:
@@ -737,7 +761,8 @@ class MessagePersonalizer:
 
         return "Understanding family migration patterns helps piece together our shared ancestry."
 
-    def _extract_year_from_date(self, date: str) -> Optional[int]:
+    @staticmethod
+    def _extract_year_from_date(date: str) -> Optional[int]:
         """Extract 4-digit year from date string."""
         for part in date.split():
             if part.isdigit() and len(part) == 4:
@@ -746,7 +771,8 @@ class MessagePersonalizer:
                     return year
         return None
 
-    def _get_historical_context_for_location(self, year: int, place: str, event_type: str) -> Optional[str]:
+    @staticmethod
+    def _get_historical_context_for_location(year: int, place: str, event_type: str) -> Optional[str]:
         """Get historical context based on year and location."""
         if "Scotland" in place and 1840 <= year <= 1920:
             return f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods."
@@ -784,7 +810,8 @@ class MessagePersonalizer:
 
         return "Understanding the historical context of our family events helps explain migration and life decisions."
 
-    def _create_record_availability_assessment(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_record_availability_assessment(extracted_data: dict[str, Any]) -> str:
         """Assess likely record availability based on location and time period."""
         locations = extracted_data.get("locations", [])
 
@@ -803,7 +830,8 @@ class MessagePersonalizer:
 
         return "Record availability varies by location and time period - I can help identify the best sources for our research."
 
-    def _create_dna_ethnicity_correlation(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_dna_ethnicity_correlation(extracted_data: dict[str, Any]) -> str:
         """Create correlation between DNA ethnicity and documented ancestry."""
         dna_info = extracted_data.get("dna_information", [])
         locations = extracted_data.get("locations", [])
@@ -827,7 +855,8 @@ class MessagePersonalizer:
 
         return "Comparing DNA ethnicity with documented ancestry helps validate our family tree research."
 
-    def _create_surname_distribution_analysis(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_surname_distribution_analysis(extracted_data: dict[str, Any]) -> str:
         """Analyze surname distribution patterns."""
         names = extracted_data.get("structured_names", [])
         locations = extracted_data.get("locations", [])
@@ -855,7 +884,8 @@ class MessagePersonalizer:
 
         return "Surname distribution patterns often reveal family migration routes and concentrations."
 
-    def _get_occupation_context(self, occupation: str, person: str) -> Optional[str]:
+    @staticmethod
+    def _get_occupation_context(occupation: str, person: str) -> Optional[str]:
         """Get social context for a specific occupation."""
         occupation_lower = occupation.lower()
 
@@ -886,7 +916,8 @@ class MessagePersonalizer:
 
         return "Family occupations provide insights into social status, community connections, and available records."
 
-    def _create_family_size_analysis(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_family_size_analysis(extracted_data: dict[str, Any]) -> str:
         """Analyze family size patterns and implications."""
         relationships = extracted_data.get("relationships", [])
 
@@ -931,7 +962,8 @@ class MessagePersonalizer:
 
         return birth_years, marriage_years
 
-    def _analyze_birth_year_gap(self, birth_years: list[int]) -> Optional[str]:
+    @staticmethod
+    def _analyze_birth_year_gap(birth_years: list[int]) -> Optional[str]:
         """Analyze gap between birth years and return interpretation."""
         if len(birth_years) >= 2:
             gap = abs(birth_years[0] - birth_years[1])
@@ -952,7 +984,8 @@ class MessagePersonalizer:
 
         return "Analyzing generational gaps helps estimate relationship distances and common ancestor timeframes."
 
-    def _create_document_preservation_likelihood(self, extracted_data: dict[str, Any]) -> str:
+    @staticmethod
+    def _create_document_preservation_likelihood(extracted_data: dict[str, Any]) -> str:
         """Assess likelihood of document preservation based on context."""
         locations = extracted_data.get("locations", [])
 
@@ -990,7 +1023,8 @@ class MessageEffectivenessTracker:
             "OTHER": 2
         }
 
-    def _load_effectiveness_data(self) -> dict[str, Any]:
+    @staticmethod
+    def _load_effectiveness_data() -> dict[str, Any]:
         """Load existing effectiveness tracking data."""
         try:
             script_dir = Path(__file__).resolve().parent
@@ -1079,7 +1113,7 @@ class MessageEffectivenessTracker:
                 func_stats["usage_count"] += 1
 
                 # Consider ENTHUSIASTIC, PRODUCTIVE, CAUTIOUSLY_INTERESTED as positive
-                if response_intent in ["ENTHUSIASTIC", "PRODUCTIVE", "CAUTIOUSLY_INTERESTED"]:
+                if response_intent in {"ENTHUSIASTIC", "PRODUCTIVE", "CAUTIOUSLY_INTERESTED"}:
                     func_stats["positive_responses"] += 1
 
                 # Update engagement score
@@ -1205,7 +1239,7 @@ def test_message_personalization() -> bool:
     }
 
     # Test message creation
-    message, _functions_used = personalizer.create_personalized_message(  # type: ignore
+    message, _ = personalizer.create_personalized_message(  # type: ignore
         "Enhanced_In_Tree-Initial",
         test_person_data,
         test_extracted_data,
@@ -1216,12 +1250,13 @@ def test_message_personalization() -> bool:
     logger.info(f"Message personalization test: {'✅ PASSED' if success else '❌ FAILED'}")
     return success
 
+
 def test_fallback_template_path() -> bool:
     """Ensure an unknown template key triggers safe fallback without exception."""
     personalizer = MessagePersonalizer()
     # Force empty templates to guarantee fallback path
     personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
-    msg, _functions_used = personalizer.create_personalized_message(  # type: ignore
+    msg, _ = personalizer.create_personalized_message(  # type: ignore
         "Totally_Unknown_Template",
         {"username": "UserX"},
         {},
@@ -1229,6 +1264,7 @@ def test_fallback_template_path() -> bool:
     )
     # Either fallback message or resolved fallback template must appear
     return ("UserX" in msg) and len(msg) > 10
+
 
 def test_shared_ancestors_formatting() -> bool:
     """Validate proper Oxford-comma style formatting for multiple ancestors."""
@@ -1241,6 +1277,7 @@ def test_shared_ancestors_formatting() -> bool:
     formatted = p._format_shared_ancestors(data)
     # Expect: "Alice Brown, Robert Clark, and Sarah Davis"
     return formatted.count(",") == 2 and formatted.endswith("Sarah Davis") and " and " in formatted
+
 
 def test_location_context_limit() -> bool:
     """Ensure location context respects max_locations_to_mention constraint."""
@@ -1329,7 +1366,7 @@ def _test_location_context_formatting_empty():
 
     assert isinstance(formatted, str), "Should return string"
     # Empty data returns empty string - this is expected behavior
-    assert formatted == "", "Should return empty string for empty data"
+    assert not formatted, "Should return empty string for empty data"
 
     logger.info("✓ Empty location context formatted correctly")
     return True
@@ -1352,7 +1389,7 @@ def _test_null_and_none_inputs() -> None:
 
     # Test with all None inputs - should handle gracefully or raise expected error
     try:
-        message, _functions = personalizer.create_personalized_message(
+        message, functions_used = personalizer.create_personalized_message(
             "Enhanced_In_Tree-Initial",
             None,  # type: ignore
             None,  # type: ignore
@@ -1361,14 +1398,14 @@ def _test_null_and_none_inputs() -> None:
         # If no exception, verify fallback behavior
         assert isinstance(message, str), "Should return string even with None inputs"
         assert len(message) > 0, "Should return non-empty fallback message for None inputs"
-        assert isinstance(_functions, list), "Should return list of functions even with None inputs"
+        assert isinstance(functions_used, list), "Should return list of functions even with None inputs"
     except (AttributeError, TypeError) as e:
         # If it raises an error, that's acceptable for None inputs
         # The important thing is we documented the behavior
         assert "NoneType" in str(e), f"Should raise descriptive error for None inputs, got: {e}"
 
     # Test with empty dicts (this should work)
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {},
         {},
@@ -1390,7 +1427,7 @@ def _test_malformed_extracted_data() -> None:
         "research_questions": None,  # Should be list
     }
 
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         malformed_data,
@@ -1422,7 +1459,7 @@ def _test_unicode_and_special_characters() -> None:
         ]
     }
 
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Tëst Üsér"},
         unicode_data,
@@ -1452,7 +1489,7 @@ def _test_extremely_long_inputs() -> None:
         "locations": [{"place": very_long_place, "context": "residence"}] * 30
     }
 
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         long_data,
@@ -1483,7 +1520,7 @@ def _test_missing_template_keys() -> None:
     personalizer.templates["test_complex"] = complex_template
 
     # Provide minimal format data (missing most keys)
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "test_complex",
         {"username": "Test"},
         {"structured_names": []},
@@ -1509,7 +1546,7 @@ def _test_zero_and_negative_numbers() -> None:
         "total_rows": -5,  # Negative count
     }
 
-    message, _functions = personalizer.create_personalized_message(
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         {"username": "Test"},
         edge_case_data,

@@ -39,8 +39,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Action Orchestrator Context (Nov 20)** - `exec_actn()` now uses `_ActionExecutionContext` plus `_finalize_action_execution()` so setup, analytics, and cleanup are decomposed into reusable helpers instead of a 200-line monolith.
 - ✅ **Action 10 Comparison Pipeline (Nov 20)** - Added `_ComparisonConfig`, `_ComparisonResults`, and helper trio (collect → execute → render) so GEDCOM/API fallback runs through a typed pipeline with a single rendering surface.
 - ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
-- ✅ **Pyright Warning Gate (Nov 20)** - Phase 1 of linting hardening enables `reportReturnType` + `reportUnusedVariable`; repo now runs `npx pyright` with zero warnings so regressions break CI early.
-- ✅ **Import Standardization Audit (Nov 20)** - Cleared duplicate `setup_module` calls in config/session modules so there’s a single logger registration per file and `standard_imports` becomes the authoritative entry point.
+- ✅ **Pyright + Ruff Hardening (Nov 18)** - Pyright now runs in `standard` mode with `reportReturnType`, `reportUnusedVariable`, and `reportDuplicateImport` elevated to errors, while Ruff extends into PLR cyclomatic-complexity/argument-count checks with tuned thresholds so CI blocks regressions immediately.
+- ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
@@ -147,6 +147,16 @@ python run_all_tests.py --analyze-logs
 
 # Run specific module tests
 python -m action6_gather
+```
+
+### Static Analysis (Lint + Types)
+
+```bash
+# Type checking (matches VS Code Pylance)
+npx pyright
+
+# Linting / style checks
+ruff check
 ```
 
 ### Centralized Test Utilities
@@ -321,7 +331,6 @@ configure_profiling(
     top_n_functions=50     # Show top 50 functions in reports
 )
 ```
-
 **Report Analysis** - Generate custom reports from existing .stats files:
 
 ```python
@@ -533,12 +542,13 @@ grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ### Core Documentation
 - **README.md** (this file) - Complete project documentation
 - **`.github/copilot-instructions.md`** - AI-assisted development guidelines
-- **`docs/review_todo.md`** - Technical debt and quality improvement tasks (all complete!)
+- **`docs/review_todo.md`** - Technical debt and quality improvement checklist (Updated Nov 18, 2025)
 - **`docs/MAINTAINER_HANDOFF.md`** - Comprehensive handoff brief for next maintainer
 
 ### Quality & Architecture
 - **`docs/DOCUMENTATION_AUDIT.md`** - Documentation quality analysis and best practices
 - **`docs/code_graph.json`** - Complete codebase structure and relationships (28,627 lines)
+- **`import_audit.py`** - Automated scanner + TestSuite that enforces canonical `setup_module(globals(), __name__)` usage across the repo
 - **`visualize_code_graph.html`** - Interactive D3.js code graph visualization
 
 ### Test Examples
@@ -852,9 +862,12 @@ For issues or questions:
   - Parents, spouses, children shown; siblings intentionally omitted in API path
 
 - AI Providers and Local LLM
-  - ai_provider: one of ["moonshot", "deepseek", "gemini", "local_llm"]
-  - Active providers: Moonshot (Kimi), DeepSeek, Google Gemini, Local LLM (LM Studio)
+  - ai_provider: one of ["moonshot", "deepseek", "gemini", "local_llm", "inception", "grok"]
+  - Active providers: Moonshot (Kimi), DeepSeek, Google Gemini, Local LLM (LM Studio), Inception Mercury, Grok (xAI)
   - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
+  - INCEPTION_* when ai_provider=inception: INCEPTION_API_KEY, INCEPTION_AI_MODEL, INCEPTION_AI_BASE_URL
+  - XAI_* when ai_provider=grok: XAI_API_KEY, XAI_MODEL (default grok-4-fast-non-reasoning), XAI_API_HOST (default api.x.ai)
+  - Quick connectivity check: run `python ai_api_test.py --provider gemini` (script now lives at repo root) to validate credentials before invoking the main workflow
   - Default base URL: http://localhost:1234/v1 (LM Studio)
 
 - LM Studio quick-start checklist (real use)

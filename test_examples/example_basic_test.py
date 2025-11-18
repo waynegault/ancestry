@@ -75,7 +75,7 @@ def _test_reverse_string_normal() -> bool:
 def _test_reverse_string_empty() -> bool:
     """Test reversing empty string (edge case)."""
     result = reverse_string("")
-    return result == ""
+    return not result
 
 
 def _test_reverse_string_single_char() -> bool:

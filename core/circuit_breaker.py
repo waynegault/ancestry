@@ -34,7 +34,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
 
-if __package__ in (None, ""):
+if __package__ in {None, ""}:
     _PROJECT_ROOT = Path(__file__).resolve().parents[1]
     if str(_PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(_PROJECT_ROOT))
@@ -338,7 +338,7 @@ def _test_circuit_breaker_state_transitions() -> bool:
     # Record success to close the breaker (or keep it closed)
     breaker.record_success()
     final_state = breaker.get_state()
-    assert final_state in [CircuitBreakerState.CLOSED, CircuitBreakerState.HALF_OPEN]
+    assert final_state in {CircuitBreakerState.CLOSED, CircuitBreakerState.HALF_OPEN}
     assert breaker.get_consecutive_failures() == 0
 
     return True

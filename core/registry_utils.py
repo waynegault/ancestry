@@ -42,7 +42,8 @@ class SmartFunctionRegistry:
             "duplicate_attempts": 0,
         }
 
-    def _get_default_include_patterns(self) -> list[str]:
+    @staticmethod
+    def _get_default_include_patterns() -> list[str]:
         """Get default include patterns for registration."""
         return [
             "run_comprehensive_tests",
@@ -62,7 +63,8 @@ class SmartFunctionRegistry:
             "Response",  # For API response classes
         ]
 
-    def _get_default_exclude_patterns(self) -> list[str]:
+    @staticmethod
+    def _get_default_exclude_patterns() -> list[str]:
         """Get default exclude patterns for registration."""
         return [
             "_private",

@@ -57,6 +57,10 @@ from pathlib import Path
 from statistics import median, quantiles
 from typing import Any, Optional
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from observability.metrics_registry import is_metrics_enabled, record_internal_metric_stat
 
 # Support standalone execution
@@ -466,7 +470,7 @@ class MetricRegistry:
                     if isinstance(avg_value, (int, float)):
                         record_internal_metric_stat(service, metric_name, f"{window_key}_avg", float(avg_value))
         except Exception:
-            # Silent failure – observability must stay best-effort
+            # Silent failure - observability must stay best-effort
             pass
 
 

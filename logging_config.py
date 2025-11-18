@@ -156,7 +156,7 @@ class NameFilter(logging.Filter):
 class RemoteConnectionFilter(logging.Filter):
     """Filters out DEBUG level messages originating specifically from remote_connection.py"""
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: PLR6301 - signature mandated by logging.Filter
         """Return False if DEBUG level and from remote_connection.py, True otherwise."""
         # Step 1: Check if log level is DEBUG
         is_debug = record.levelno == logging.DEBUG
@@ -218,7 +218,8 @@ class AlignedMessageFormatter(logging.Formatter):
             heuristic_index = prefix_with_placeholder.find("] ")
             return heuristic_index + 2 if heuristic_index != -1 else 41
 
-    def _format_multiline_message(self, lines: list[str], prefix: str, indent: str) -> str:
+    @staticmethod
+    def _format_multiline_message(lines: list[str], prefix: str, indent: str) -> str:
         """Format multiline message with proper indentation."""
         result_lines = []
 

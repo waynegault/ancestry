@@ -156,7 +156,6 @@ def present_post_selection(
         print(relation_text)
 
 
-
 # --- Internal Tests ---
 from test_framework import TestSuite  # type: ignore[import-not-found]
 

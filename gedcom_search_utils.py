@@ -45,13 +45,28 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
+import importlib
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Optional, cast
 
 from config.config_manager import ConfigManager
-from gedcom_utils import GedcomData, _normalize_id, calculate_match_score
+from gedcom_utils import GedcomData, calculate_match_score
+
+
+@lru_cache(maxsize=1)
+def _get_gedcom_utils_module() -> ModuleType:
+    """Lazy-load gedcom_utils to avoid importing private helpers directly."""
+    return importlib.import_module("gedcom_utils")
+
+
+def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
+    normalizer = getattr(_get_gedcom_utils_module(), "_normalize_id")
+    return normalizer(value)
+
 
 # --- Local module imports ---
 # from logging_config import logger  # Unused here
@@ -96,6 +111,7 @@ DEFAULT_CONFIG = {
         "bonus_death_date_and_place": 15,  # bonus if both death date and place match
     },
 }
+
 
 # Global cache for GEDCOM data with enhanced caching
 class _GedcomDataCache:
@@ -614,7 +630,7 @@ def _get_individual_data(gedcom_data: GedcomData, individual_id: str) -> tuple[s
         raise MissingConfigError("GEDCOM data does not have processed_data_cache attribute")
 
     # Normalize the individual ID
-    individual_id_norm = _normalize_id(individual_id)
+    individual_id_norm = normalize_gedcom_id(individual_id)
     if individual_id_norm is None:
         raise MissingConfigError(f"Invalid individual ID: {individual_id}")
 
@@ -787,9 +803,9 @@ def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Opt
     wife_tag = fam_record.sub_tag("WIFE")
 
     if husb_tag and husb_tag.value != individual_id_norm:
-        return _normalize_id(husb_tag.value)
+        return normalize_gedcom_id(husb_tag.value)
     if wife_tag and wife_tag.value != individual_id_norm:
-        return _normalize_id(wife_tag.value)
+        return normalize_gedcom_id(wife_tag.value)
 
     return None
 
@@ -799,7 +815,7 @@ def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> l
     children = []
 
     for chil_tag in fam_record.sub_tags("CHIL"):
-        child_id = _normalize_id(chil_tag.value)
+        child_id = normalize_gedcom_id(chil_tag.value)
         if child_id is None:
             continue
         child_info = _get_child_info(gedcom_data, child_id)
@@ -993,7 +1009,7 @@ def get_gedcom_relationship_path(
         return "(Failed to load GEDCOM data)"
 
     # Normalize individual ID
-    individual_id_norm = _normalize_id(individual_id)
+    individual_id_norm = normalize_gedcom_id(individual_id)
     if not individual_id_norm:
         return "(Invalid individual ID)"
 
@@ -1003,7 +1019,7 @@ def get_gedcom_relationship_path(
     if not reference_id:
         return "(Reference person ID not available)"
 
-    reference_id_norm = _normalize_id(reference_id)
+    reference_id_norm = normalize_gedcom_id(reference_id)
     if not reference_id_norm:
         return "(Invalid reference ID)"
 
@@ -1028,7 +1044,6 @@ def get_gedcom_relationship_path(
     return format_relationship_path_unified(
         unified_path, individual_name, reference_name or "Reference Person", None
     )
-
 
 
 def gedcom_search_module_tests() -> bool:

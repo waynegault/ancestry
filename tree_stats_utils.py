@@ -332,14 +332,15 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
         from sqlalchemy import inspect
         inspector = inspect(DnaMatch)
 
+        excluded_cols = {
+            'people_id', 'cm_dna', 'predicted_relationship',
+            'relationship_confidence', 'starred', 'viewed',
+            'note', 'tree_size', 'common_ancestors',
+            'shared_matches_count', 'created_at', 'updated_at'
+        }
         ethnicity_columns = [
             col.name for col in inspector.columns
-            if col.name not in [
-                'people_id', 'cm_dna', 'predicted_relationship',
-                'relationship_confidence', 'starred', 'viewed',
-                'note', 'tree_size', 'common_ancestors',
-                'shared_matches_count', 'created_at', 'updated_at'
-            ]
+            if col.name not in excluded_cols
         ]
 
         # Count non-null values for each ethnicity column

@@ -480,7 +480,6 @@ def get_prompts_summary() -> dict[str, Any]:
             ),
         }
 
-
     except Exception as e:
         logger.error(f"Error generating prompts summary: {e}")
         return {

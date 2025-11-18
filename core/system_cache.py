@@ -106,8 +106,9 @@ class APIResponseCache(BaseCacheModule):  # type: ignore[misc]
         self._lock = threading.Lock()
         logger.debug("APIResponseCache initialized for Phase 5.2")
 
+    @staticmethod
     def _get_api_cache_key(
-        self, service: str, method: str, params: dict[str, Any]
+        service: str, method: str, params: dict[str, Any]
     ) -> str:
         """Generate cache key for API requests"""
         # Create a stable hash of parameters
@@ -225,7 +226,8 @@ class DatabaseQueryCache(BaseCacheModule):  # type: ignore[misc]
         self._lock = threading.Lock()
         logger.debug("DatabaseQueryCache initialized for Phase 5.2")
 
-    def _get_query_cache_key(self, query: str, params: tuple[Any, ...] = ()) -> str:
+    @staticmethod
+    def _get_query_cache_key(query: str, params: tuple[Any, ...] = ()) -> str:
         """Generate cache key for database queries"""
         # Normalize query (remove extra whitespace, convert to lowercase)
         normalized_query = " ".join(query.strip().lower().split())

@@ -38,6 +38,7 @@ REGRESSION_ALERT_WINDOW = 80
 REGRESSION_ALERT_MIN_EVENTS = 6
 REGRESSION_ALERT_THRESHOLD = 7.5
 
+
 def _stable_hash(value: str | None) -> str | None:
     if not value:
         return None
@@ -52,7 +53,7 @@ def _normalize_provider_value(value: str | None) -> str | None:
 
 
 def _prepare_scoring_inputs(value: Any) -> Any:
-    if value in (None, ""):
+    if value in {None, ""}:
         return None
     try:
         sanitized = json.loads(json.dumps(value, ensure_ascii=False, default=str))
@@ -93,6 +94,7 @@ def _collect_variant_quality_sequences(events: list[dict[str, Any]]) -> dict[str
         key = f"{provider}::{variant}"
         sequences.setdefault(key, []).append(float(q_val))
     return sequences
+
 
 def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) -> None:
     """Append a single telemetry event (best effort).
@@ -139,6 +141,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
             _auto_detect_regression_drop()
     except Exception:
         pass
+
 
 def _read_recent_jsonl(file_path: Path, last_n: int) -> list[dict[str, Any]]:
     """Read and parse up to last_n JSONL records from a file (best-effort)."""
@@ -272,6 +275,7 @@ def _load_recent_events(window: int = 500, provider: str | None = None) -> list[
         return []
     return _filter_events_by_provider(events, provider)
 
+
 def _aggregate_variant_data(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Aggregate raw per-variant data from events."""
     variants: dict[str, dict[str, Any]] = {}
@@ -300,9 +304,9 @@ def _compute_variant_metrics(variants: dict[str, dict[str, Any]]) -> dict[str, A
         count = max(d["count"], 1)
         qs_list = d["quality_scores"]
         median_quality = statistics.median(qs_list) if qs_list else None
-        avg_quality = sum(qs_list)/len(qs_list) if qs_list else None
+        avg_quality = sum(qs_list) / len(qs_list) if qs_list else None
         avg_tasks = sum(d["tasks"]) / len(d["tasks"]) if d["tasks"] else 0.0
-        success_rate = d["successes"]/count
+        success_rate = d["successes"] / count
         result_variants[v] = {
             "events": d["count"],
             "success_rate": round(success_rate, 3),
@@ -347,12 +351,14 @@ def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
 
     return {"events": len(events), "variants": result_variants, "improvement": improvement}
 
+
 def _write_alert(alert: dict[str, Any]) -> None:
     try:
         with Path(ALERTS_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(alert, ensure_ascii=False) + "\n")
     except Exception:
         pass
+
 
 def _already_alerted(signature: str) -> bool:
     if not ALERTS_FILE.exists():
@@ -365,6 +371,7 @@ def _already_alerted(signature: str) -> bool:
     except Exception:
         return False
     return False
+
 
 def _auto_analyze_and_alert() -> None:
     analysis = analyze_experiments()
@@ -471,6 +478,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         pass
     return baseline
 
+
 def load_quality_baseline() -> dict[str, Any] | None:
     if not QUALITY_BASELINE_FILE.exists():
         return None
@@ -479,6 +487,7 @@ def load_quality_baseline() -> dict[str, Any] | None:
             return json.load(fh)
     except Exception:
         return None
+
 
 def _get_matching_baseline(variant: str, provider: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     baseline = load_quality_baseline()
@@ -525,7 +534,8 @@ def detect_quality_regression(current_window: int = 120, drop_threshold: float =
     regression = drop >= drop_threshold
     return {"status": "ok", "median_now": median_now, "baseline_median": median_then, "drop": round(drop, 2), "regression": regression}
 
-## === Internal Test Suite (for run_all_tests detection & coverage) ===
+
+# === Internal Test Suite (for run_all_tests detection & coverage) ===
 def _test_record_and_summarize() -> None:
     """Record several events and verify summary reflects them."""
     for i in range(3):
@@ -535,8 +545,8 @@ def _test_record_and_summarize() -> None:
             prompt_key=f"k{i}",
             prompt_version="v1",
             parse_success=True,
-            extracted_data={"people": [1,2]},
-            suggested_tasks=[{"t":1}],
+            extracted_data={"people": [1, 2]},
+            suggested_tasks=[{"t": 1}],
             raw_response_text="{}",
             user_id="tester",
             quality_score=50 + i,
@@ -551,6 +561,7 @@ def _test_record_and_summarize() -> None:
     assert "events" in summary, "Summary should have 'events' key"
     summary_filtered = summarize_experiments(provider="gemini")
     assert isinstance(summary_filtered, dict)
+
 
 def _test_variant_analysis() -> None:
     """Add alt variant events then run analyze_experiments for improvement structure."""
@@ -569,7 +580,8 @@ def _test_variant_analysis() -> None:
         )
         record_extraction_experiment_event(event)
     analysis = analyze_experiments(window=50, min_events_per_variant=1, provider="deepseek")
-    assert "variants" in analysis and analysis.get("events",0) > 0
+    assert "variants" in analysis and analysis.get("events", 0) > 0
+
 
 def _test_build_baseline_and_regression() -> None:
     """Ensure baseline can be built and regression check returns expected keys."""
@@ -597,6 +609,7 @@ def _test_build_baseline_and_regression() -> None:
     reg = detect_quality_regression(current_window=120, drop_threshold=9999, variant="control", provider="gemini")  # Force non-regression
     assert "status" in reg
 
+
 def prompt_telemetry_module_tests() -> bool:
     try:
         from test_framework import TestSuite, suppress_logging
@@ -618,6 +631,7 @@ def prompt_telemetry_module_tests() -> bool:
                        "Ensure enough control events then build baseline & detect",
                        "Check baseline + regression keys")
     return suite.finish_suite()
+
 
 # Use centralized test runner utility
 from test_utilities import create_standard_test_runner

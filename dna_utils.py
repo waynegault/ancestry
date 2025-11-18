@@ -20,7 +20,9 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
+import importlib
 import random
+from functools import lru_cache
 from typing import Any, Optional
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -35,11 +37,26 @@ from config import config_schema
 from core.session_manager import SessionManager
 from my_selectors import MATCH_ENTRY_SELECTOR
 from selenium_utils import get_driver_cookies
-from utils import _api_req, nav_to_page
+from utils import nav_to_page
 
 # ============================================================================
 # NAVIGATION FUNCTIONS
 # ============================================================================
+
+
+@lru_cache(maxsize=1)
+def _load_utils_module() -> Any:
+    """Lazy import of utils to avoid circular dependencies."""
+
+    return importlib.import_module("utils")
+
+
+def _call_api_request(**kwargs: Any) -> Any:
+    """Indirection for utils._api_req without private imports."""
+
+    api_request = getattr(_load_utils_module(), "_api_req")
+    return api_request(**kwargs)
+
 
 def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
     """
@@ -286,7 +303,7 @@ def _fetch_in_tree_from_api(
         f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}..."
     )
 
-    response_in_tree = _api_req(
+    response_in_tree = _call_api_request(
         url=in_tree_url,
         driver=driver,
         session_manager=session_manager,
@@ -426,13 +443,13 @@ def fetch_match_list_page(
     }
 
     logger.debug(f"Calling Match List API for page {current_page}...")
-    logger.debug(f"Headers being passed to _api_req for Match List: {match_list_headers}")
+    logger.debug(f"Headers being passed to match list API: {match_list_headers}")
 
     # Sync cookies before API call
     _sync_cookies_to_session(driver, session_manager)
 
     # Call the API
-    api_result = _api_req(
+    api_result = _call_api_request(
         url=match_list_url,
         driver=driver,
         session_manager=session_manager,
@@ -462,7 +479,6 @@ def _test_csrf_token_extraction() -> bool:
     # Test that CSRF token is correctly extracted from pipe-delimited cookie value
     test_token = "test_csrf_token_12345"
     cookie_value = f"{test_token}|extra_data"
-
     # Simulate what the function does
     extracted = unquote(cookie_value).split("|")[0]
     assert extracted == test_token, f"Expected {test_token}, got {extracted}"

@@ -19,15 +19,16 @@ from test_framework import TestSuite, suppress_logging
 
 logger = setup_module(globals(), __name__)
 
+_prometheus_import_error: Optional[Exception] = None
+
 try:  # pragma: no cover - import-time guard
     import prometheus_client as _prometheus_client  # type: ignore[import-not-found]
 except Exception as exc:  # pragma: no cover - handled gracefully
     _prometheus_client = None
-    PROMETHEUS_AVAILABLE = False
-    _IMPORT_ERROR: Optional[Exception] = exc
-else:
-    PROMETHEUS_AVAILABLE = True
-    _IMPORT_ERROR = None
+    _prometheus_import_error = exc
+
+PROMETHEUS_AVAILABLE = _prometheus_client is not None
+_IMPORT_ERROR: Optional[Exception] = _prometheus_import_error
 
 if _prometheus_client is not None:  # pragma: no cover - runtime wiring
     CollectorRegistry = _prometheus_client.CollectorRegistry
@@ -430,8 +431,8 @@ class MetricsRegistry:
         self._registry = None
         self._metrics.reset()
 
+    @staticmethod
     def _create_metrics(
-        self,
         namespace: str,
         registry: PrometheusCollectorRegistry,
     ) -> dict[str, Any]:
@@ -824,11 +825,11 @@ __all__ = [
     "PROMETHEUS_AVAILABLE",
     "MetricsBundle",
     "MetricsRegistry",
-    "record_internal_metric_stat",
     "configure_metrics",
     "disable_metrics",
     "get_metrics_registry",
     "is_metrics_enabled",
     "metrics",
+    "record_internal_metric_stat",
     "reset_metrics",
 ]

@@ -39,12 +39,14 @@ from logging_config import setup_logging
 _env_log_level = os.getenv("LOG_LEVEL", "INFO")
 logger = setup_logging(log_level=_env_log_level)
 
+
 # === GLOBAL SESSION CACHE ===
 # This is the SINGLE SOURCE OF TRUTH for session management
 class _State:
     session_manager: Optional[SessionManager] = None
     session_uuid: Optional[str] = None
     auth_banner_printed: bool = False
+
 
 GLOBAL_SESSION = _State()
 
@@ -119,7 +121,6 @@ def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: Sessi
     return GLOBAL_SESSION.session_uuid
 
 
-
 def _assert_global_session_exists() -> None:
     """Raise if the global session has not been registered by main.py."""
     if not GLOBAL_SESSION.session_manager:
@@ -137,6 +138,7 @@ def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: 
         logger.debug(f"Using cached global session (UUID={GLOBAL_SESSION.session_uuid}) for {action_name}")
     else:
         logger.debug(f"Re-validating global session state for {action_name}")
+
 
 def get_authenticated_session(
     action_name: str = "Session Setup",

@@ -380,6 +380,7 @@ def validate_action_config() -> bool:
         logger.error(f"Configuration validation failed: {e}")
         return False
 
+
 # Core modules
 from config.config_manager import ConfigManager  # type: ignore[import-not-found]
 from core.database_manager import backup_database, db_transn
@@ -579,7 +580,7 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
         Required state: "db_ready", "driver_ready", or "session_ready"
     """
     # Action 10: do NOT require session upfront; wrapper will ensure session only if API is needed
-    if choice in ["10"]:
+    if choice in {"10"}:
         return "db_ready"
     if not requires_browser:
         return "db_ready"
@@ -611,7 +612,7 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
 
     elif required_state == "session_ready":
         # Skip CSRF check for Action 10 (cookies available after navigation)
-        skip_csrf = (choice in ["10"])
+        skip_csrf = choice in {"10"}
         if not session_manager.guard_action(required_state, action_name):
             result = False
         else:
@@ -635,7 +636,7 @@ def _prepare_action_arguments(
     action_name = action_func.__name__
 
     # Handle keyword args specifically for coord function
-    if action_name in ["coord", "gather_dna_matches"] and "start" in func_sig.parameters:
+    if action_name in {"coord", "gather_dna_matches"} and "start" in func_sig.parameters:
         start_val: Optional[int] = None
         if args:
             potential_start = args[-1]
@@ -705,9 +706,9 @@ def _initialize_action_context(action_func: ActionCallable, choice: str) -> _Act
     process = psutil.Process(os.getpid())
     mem_before = process.memory_info().rss / (1024 * 1024)
 
-    logger.info(f"{'='*45}")
+    logger.info(f"{'=' * 45}")
     logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info(f"{'='*45}\n")
+    logger.info(f"{'=' * 45}\n")
 
     return _ActionExecutionContext(
         choice=choice,
@@ -854,11 +855,11 @@ def _log_performance_metrics(
     except Exception as mem_err:
         mem_log = f"Memory usage unavailable: {mem_err}"
 
-    logger.info(f"{'='*45}")
+    logger.info(f"{'=' * 45}")
     logger.info(f"Action {choice} ({action_name}) finished.")
     logger.info(f"Duration: {formatted_duration}")
     logger.info(mem_log)
-    logger.info(f"{'='*45}\n")
+    logger.info(f"{'=' * 45}\n")
     return duration, mem_used
 
 
@@ -870,7 +871,7 @@ def _perform_session_cleanup(session_manager: SessionManager, should_close: bool
             logger.debug("Closing browser session...")
             session_manager.close_browser()
             logger.debug("Browser session closed. DB connections kept.")
-        elif action_name in ["all_but_first_actn"]:
+        elif action_name in {"all_but_first_actn"}:
             logger.debug("Closing all connections including database...")
             session_manager.close_sess(keep_db=False)
             logger.debug("All connections closed.")
@@ -1029,15 +1030,15 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
             total_people = sess.query(Person).filter(Person.deleted_at.is_(None)).count()
 
             if total_people == 0:
-                print("\n" + "="*60)
+                print("\n" + "=" * 60)
                 print("INFO: DATABASE IS EMPTY")
-                print("="*60)
+                print("=" * 60)
                 print("\nThe database contains no records.")
                 print("Please run Action 2 (Reset Database) first to initialize")
                 print("the database with test data.")
                 print("\nAction 1 is used to delete all records EXCEPT the test")
                 print("profile, but there are currently no records to delete.")
-                print("="*60 + "\n")
+                print("=" * 60 + "\n")
                 logger.info("Action 1: Database is empty. No records to delete.")
                 success = True  # Not an error - just nothing to do
                 return True  # Return to menu without closing session
@@ -1052,9 +1053,9 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
             )
 
             if not person_to_keep:
-                print("\n" + "="*60)
+                print("\n" + "=" * 60)
                 print("⚠️  TEST PROFILE NOT FOUND")
-                print("="*60)
+                print("=" * 60)
                 print("\nThe database does not contain the test profile:")
                 print(f"  Profile ID: {profile_id_to_keep}")
                 print("\nThis could mean:")
@@ -1062,7 +1063,7 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
                 print("  2. TEST_PROFILE_ID in .env doesn't match any person")
                 print("\nPlease run Action 2 (Reset Database) to initialize")
                 print("the database with the test profile.")
-                print("="*60 + "\n")
+                print("=" * 60 + "\n")
                 logger.info("Action 1 aborted: Test profile not found in database.")
                 success = True  # Don't treat as error - just inform user
                 return True  # Return True to avoid closing session
@@ -1350,7 +1351,12 @@ def _seed_message_templates(recreation_session: Any) -> bool:
     logger.debug("Seeding message_templates table from database defaults...")
     try:
         # Import inside function to avoid circular imports at module import time
-        from database import _get_default_message_templates  # type: ignore
+        import database  # type: ignore
+
+        get_default_templates = getattr(database, "_get_default_message_templates", None)
+        if get_default_templates is None:
+            logger.error("Default message template helper not available.")
+            return False
 
         with db_transn(recreation_session) as sess:
             existing_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
@@ -1360,7 +1366,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
                     f"Found {existing_count} existing message templates. Skipping seeding."
                 )
             else:
-                templates_data: list[dict[str, Any]] = _get_default_message_templates()
+                templates_data: list[dict[str, Any]] = get_default_templates()
                 if not templates_data:
                     logger.warning("Default message templates list is empty. Nothing to seed.")
                 else:
@@ -1890,7 +1896,6 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 # End of process_productive_messages_action
 
 
-
 @dataclass
 class _ComparisonConfig:
     """Configuration inputs needed for the GEDCOM/API comparison run."""
@@ -2209,7 +2214,6 @@ def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bo
     )
 
 
-
 # End of run_action11_wrapper
 
 
@@ -2296,7 +2300,7 @@ def _check_action_confirmation(choice: str) -> bool:
             .strip()
             .lower()
         )
-        if confirm not in ["yes", "y"]:
+        if confirm not in {"yes", "y"}:
             print("Action cancelled.\n")
             return False
         print(" ")  # Newline after confirmation
@@ -2362,7 +2366,13 @@ def _open_graph_visualization() -> None:
                 super().__init__(*handler_args, directory=str(root_dir), **handler_kwargs)  # type: ignore[arg-type]
 
             def log_message(self, format: str, *args: Any) -> None:
-                logger.debug("Graph server - " + (format % args))
+                client_host, client_port = getattr(self, "client_address", ("?", "?"))
+                logger.debug(
+                    "Graph server %s:%s - %s",
+                    client_host,
+                    client_port,
+                    format % args,
+                )
 
         for candidate_port in range(preferred_port, preferred_port + 20):
             try:
@@ -2411,9 +2421,6 @@ def _open_graph_visualization() -> None:
             server.shutdown()
             server.server_close()
             logger.info("Graph visualization server stopped")
-
-
-
 
 
 def _show_analytics_dashboard() -> None:
@@ -2636,9 +2643,9 @@ def _show_cache_statistics() -> None:
     """Show comprehensive cache statistics from all cache subsystems."""
     try:
         os.system("cls" if os.name == "nt" else "clear")
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("CACHE STATISTICS")
-        print("="*70 + "\n")
+        print("=" * 70 + "\n")
 
         stats_collected = _show_cache_registry_stats()
 
@@ -2655,7 +2662,7 @@ def _show_cache_statistics() -> None:
             print("Caches may not be initialized yet.")
 
         logger.debug("Cache statistics displayed")
-        print("="*70)
+        print("=" * 70)
 
     except Exception as e:
         logger.error(f"Error displaying cache statistics: {e}", exc_info=True)
@@ -2776,9 +2783,9 @@ def _show_metrics_report() -> None:
 
         from observability.metrics_registry import is_metrics_enabled
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("📊 GRAFANA METRICS DASHBOARD")
-        print("="*70)
+        print("=" * 70)
 
         if not is_metrics_enabled():
             print("\n⚠️  Metrics collection is DISABLED")
@@ -2786,7 +2793,7 @@ def _show_metrics_report() -> None:
             print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
             print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
             print("  3. Restart the application")
-            print("\n" + "="*70 + "\n")
+            print("\n" + "=" * 70 + "\n")
             return
 
         # Check if Grafana is running
@@ -2806,7 +2813,7 @@ def _show_metrics_report() -> None:
             print("   4. Add Prometheus data source → http://localhost:9000")
             print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
             print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
-            print("\n" + "="*70 + "\n")
+            print("\n" + "=" * 70 + "\n")
             webbrowser.open("http://localhost:9000/metrics")
             return
 
@@ -2831,7 +2838,7 @@ def _show_metrics_report() -> None:
         print(f"   2. Genealogy Research Insights: {genealogy_url}")
         print(f"   3. Code Quality & Architecture: {code_quality_url}")
         print("\n💡 If dashboards show 'Not found', run: setup-grafana")
-        print("\n" + "="*70 + "\n")
+        print("\n" + "=" * 70 + "\n")
 
         webbrowser.open(system_perf_url)
         time.sleep(0.5)  # Small delay between opening tabs
@@ -2842,7 +2849,7 @@ def _show_metrics_report() -> None:
     except Exception as e:
         logger.error(f"Error opening Grafana: {e}", exc_info=True)
         print(f"\n⚠️  Error: {e}")
-        print("\n" + "="*70 + "\n")
+        print("\n" + "=" * 70 + "\n")
 
 
 def _handle_meta_options(choice: str) -> bool | None:
@@ -2910,11 +2917,11 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
         True to continue menu loop, False to exit
     """
     # --- Database-only actions (no browser needed) ---
-    if choice in ["1", "2", "3", "4"]:
+    if choice in {"1", "2", "3", "4"}:
         return _handle_database_actions(choice, session_manager)
 
     # --- Browser-required actions ---
-    if choice in ["5", "7", "8", "9", "10"] or choice.startswith("6"):
+    if choice in {"5", "7", "8", "9", "10"} or choice.startswith("6"):
         result = _handle_browser_actions(choice, session_manager, config)
         if result:
             return True
@@ -3253,7 +3260,6 @@ def _cleanup_session_manager(session_manager: Optional[Any]) -> None:
         except Exception as final_close_e:
             logger.debug(f"⚠️  Cleanup warning (non-critical): {final_close_e}")
 
-
     print("\nExit.")
 
 
@@ -3322,21 +3328,21 @@ def main() -> None:
 
 
 def _test_clear_log_file_function() -> bool:
-        """Test log file clearing functionality - validates actual behavior"""
-        # Test function returns proper tuple structure
-        try:
-            result = clear_log_file()
-            assert isinstance(result, tuple), "clear_log_file should return a tuple"
-            assert len(result) == 2, "clear_log_file should return a 2-element tuple"
-            success, message = result
-            assert isinstance(success, bool), "First element should be boolean"
-            assert message is None or isinstance(
-                message, str
-            ), "Second element should be None or string"
-        except Exception as e:
-            # Function may fail in test environment, but should not crash
-            assert isinstance(e, Exception), "Should handle errors gracefully"
-        return True
+    """Test log file clearing functionality - validates actual behavior"""
+    # Test function returns proper tuple structure
+    try:
+        result = clear_log_file()
+        assert isinstance(result, tuple), "clear_log_file should return a tuple"
+        assert len(result) == 2, "clear_log_file should return a 2-element tuple"
+        success, message = result
+        assert isinstance(success, bool), "First element should be boolean"
+        assert message is None or isinstance(
+            message, str
+        ), "Second element should be None or string"
+    except Exception as e:
+        # Function may fail in test environment, but should not crash
+        assert isinstance(e, Exception), "Should handle errors gracefully"
+    return True
 
 
 def _test_main_function_structure() -> bool:
@@ -3382,21 +3388,21 @@ def _test_reset_db_actn_integration() -> bool:
 
 
 def _test_edge_case_handling() -> bool:
-        """Test edge cases and error conditions"""
-        # Test imports are properly structured
-        import sys
+    """Test edge cases and error conditions"""
+    # Test imports are properly structured
+    import sys
 
-        assert "action6_gather" in sys.modules, "action6_gather should be imported"
-        assert "action7_inbox" in sys.modules, "action7_inbox should be imported"
-        assert (
-            "action8_messaging" in sys.modules
-        ), "action8_messaging should be imported"
-        assert (
-            "action9_process_productive" in sys.modules
-        ), "action9_process_productive should be imported"
-        assert "action10" in sys.modules, "action10 should be imported"
-        # api_search_core is imported lazily inside run_gedcom_then_api_fallback, not at module level
-        return True
+    assert "action6_gather" in sys.modules, "action6_gather should be imported"
+    assert "action7_inbox" in sys.modules, "action7_inbox should be imported"
+    assert (
+        "action8_messaging" in sys.modules
+    ), "action8_messaging should be imported"
+    assert (
+        "action9_process_productive" in sys.modules
+    ), "action9_process_productive should be imported"
+    assert "action10" in sys.modules, "action10 should be imported"
+    # api_search_core is imported lazily inside run_gedcom_then_api_fallback, not at module level
+    return True
 
 
 def _test_import_error_handling() -> bool:
@@ -3425,20 +3431,20 @@ def _test_import_error_handling() -> bool:
 
 
 def _test_validate_action_config() -> bool:
-        """Test the new validate_action_config() function from Action 6 lessons"""
-        # Test that the function exists and is callable
-        assert callable(validate_action_config), "validate_action_config should be callable"
+    """Test the new validate_action_config() function from Action 6 lessons"""
+    # Test that the function exists and is callable
+    assert callable(validate_action_config), "validate_action_config should be callable"
 
-        # Test that the function can be executed without errors
-        try:
-            result = validate_action_config()
-            assert isinstance(result, bool), "validate_action_config should return boolean"
-            # Function should succeed even if some warnings are generated
-            assert result is True, "validate_action_config should return True for basic validation"
-        except Exception as e:
-            # If it fails, it should be due to missing config, not function errors
-            assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
-        return True
+    # Test that the function can be executed without errors
+    try:
+        result = validate_action_config()
+        assert isinstance(result, bool), "validate_action_config should return boolean"
+        # Function should succeed even if some warnings are generated
+        assert result is True, "validate_action_config should return True for basic validation"
+    except Exception as e:
+        # If it fails, it should be due to missing config, not function errors
+        assert "config" in str(e).lower(), f"validate_action_config failed unexpectedly: {e}"
+    return True
 
 
 def _test_database_integration() -> bool:
@@ -3457,20 +3463,20 @@ def _test_database_integration() -> bool:
 
 
 def _test_action_integration() -> bool:
-        """Test all actions integrate properly with main"""
-        # Test that all action functions can be called (at module level)
-        actions_to_test: list[tuple[str, Callable[..., Any]]] = [
-            ("coord", coord),
-            ("InboxProcessor", InboxProcessor),
-            ("send_messages_to_matches", send_messages_to_matches),
-            ("process_productive_messages", process_productive_messages),
-            ("run_action10", run_action10),
-        ]
+    """Test all actions integrate properly with main"""
+    # Test that all action functions can be called (at module level)
+    actions_to_test: list[tuple[str, Callable[..., Any]]] = [
+        ("coord", coord),
+        ("InboxProcessor", InboxProcessor),
+        ("send_messages_to_matches", send_messages_to_matches),
+        ("process_productive_messages", process_productive_messages),
+        ("run_action10", run_action10),
+    ]
 
-        for action_name, action_func in actions_to_test:
-            assert callable(action_func), f"{action_name} should be callable"
-            assert action_func is not None, f"{action_name} should not be None"
-        return True
+    for action_name, action_func in actions_to_test:
+        assert callable(action_func), f"{action_name} should be callable"
+        assert action_func is not None, f"{action_name} should not be None"
+    return True
 
 
 def _test_import_performance() -> bool:
@@ -3496,7 +3502,9 @@ def _test_import_performance() -> bool:
 
 def _test_memory_efficiency() -> bool:
     """Test memory usage is reasonable"""
+    import inspect
     import sys
+    from types import ModuleType
 
     # Check that module size is reasonable
     module_size = sys.getsizeof(sys.modules[__name__])
@@ -3504,33 +3512,40 @@ def _test_memory_efficiency() -> bool:
         module_size < 10000
     ), f"Module size should be reasonable, got {module_size} bytes"
 
-    # Test that globals are not excessive (increased limit due to extracted helper functions)
-    # Limit increased from 150 to 160 to accommodate refactored helper functions
-    # Limit increased from 160 to 200 after type safety improvements and additional imports
-    globals_count = len(globals())
+    # Focus on truly stateful globals (exclude functions, classes, imported modules)
+    tracked_state: dict[str, Any] = {
+        name: value
+        for name, value in globals().items()
+        if not name.startswith("__")
+        and not isinstance(value, ModuleType)
+        and not inspect.isfunction(value)
+        and not inspect.isclass(value)
+    }
+
+    globals_count = len(tracked_state)
     assert (
-        globals_count < 200
-    ), f"Global variables should be reasonable, got {globals_count}"
+        globals_count < 80
+    ), f"Stateful global variables should be reasonable, got {globals_count}"
     return True
 
 
 def _test_function_call_performance() -> bool:
-        """Test function call performance"""
-        import time
+    """Test function call performance"""
+    import time
 
-        # Test that basic function calls are fast
-        start_time = time.time()
+    # Test that basic function calls are fast
+    start_time = time.time()
 
-        for _ in range(1000):
-            # Test a simple function call
-            result = callable(menu)
-            assert result is True, "menu should be callable"
+    for _ in range(1000):
+        # Test a simple function call
+        result = callable(menu)
+        assert result is True, "menu should be callable"
 
-        duration = time.time() - start_time
-        assert (
-            duration < 0.1
-        ), f"1000 function checks should be fast, took {duration:.3f}s"
-        return True
+    duration = time.time() - start_time
+    assert (
+        duration < 0.1
+    ), f"1000 function checks should be fast, took {duration:.3f}s"
+    return True
 
 
 def _test_error_handling_structure() -> bool:
@@ -3562,18 +3577,18 @@ def _test_cleanup_procedures() -> bool:
 
 
 def _test_exception_handling_coverage() -> bool:
-        """Test exception handling covers expected scenarios"""
-        import inspect
+    """Test exception handling covers expected scenarios"""
+    import inspect
 
-        # Test main function exception handling
-        main_source = inspect.getsource(main)
+    # Test main function exception handling
+    main_source = inspect.getsource(main)
 
-        # Should handle general exceptions
-        assert "Exception" in main_source, "main() should handle general exceptions"
+    # Should handle general exceptions
+    assert "Exception" in main_source, "main() should handle general exceptions"
 
-        # Should have logging for errors
-        assert "logger" in main_source, "main() should use logger for error reporting"
-        return True
+    # Should have logging for errors
+    assert "logger" in main_source, "main() should use logger for error reporting"
+    return True
 
 
 # ============================================================================

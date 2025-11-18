@@ -224,9 +224,9 @@ def selenium_module_tests() -> list[tuple[str, Any]]:  # type: ignore[misc]
 
     # Test 3: Safe execution with None
     def test_safe_execution():
-        assert extract_text(None) == "", "extract_text should handle None safely"
+        assert not extract_text(None), "extract_text should handle None safely"
         assert (
-            extract_attribute(None, "href") == ""
+            not extract_attribute(None, "href")
         ), "extract_attribute should handle None safely"
         assert (
             not is_elem_there(None, "selector")

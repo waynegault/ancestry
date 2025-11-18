@@ -3,7 +3,7 @@
 
 Loads credentials from the project's .env file, asks which provider to test,
 validates the configured endpoint, and attempts a simple completion request.
-Currently supports Moonshot, DeepSeek, Google Gemini, and Local LLM.
+Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercury, and Grok (xAI).
 """
 from __future__ import annotations
 
@@ -35,8 +35,16 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None  # type: ignore[assignment]
 
+try:
+    from xai_sdk import Client as XAIClient  # type: ignore
+    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    XAIClient = None  # type: ignore[assignment]
+    xai_system_message = None  # type: ignore[assignment]
+    xai_user_message = None  # type: ignore[assignment]
+
 DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
-PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception")
+PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception", "grok")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "moonshot": "Moonshot (Kimi)",
@@ -44,6 +52,16 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "gemini": "Google Gemini",
     "local_llm": "Local LLM (LM Studio)",
     "inception": "Inception Mercury",
+    "grok": "Grok (xAI)",
+}
+
+PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "moonshot": ("MOONSHOT_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "gemini": ("GOOGLE_API_KEY",),
+    "local_llm": (),
+    "inception": ("INCEPTION_API_KEY",),
+    "grok": ("XAI_API_KEY",),
 }
 
 
@@ -73,13 +91,41 @@ def _load_env_file(env_path: Path, override: bool = False) -> None:
                 os.environ.setdefault(key.strip(), cleaned)
 
 
+def _find_env_path(env_file: str) -> Path | None:
+    """Locate an env file relative to common project locations."""
+    if not env_file:
+        return None
+
+    requested_path = Path(env_file)
+    candidates: list[Path] = []
+
+    if requested_path.is_absolute():
+        candidates.append(requested_path)
+    else:
+        candidates.append(Path.cwd() / env_file)
+        script_path = Path(__file__).resolve()
+        candidates.append(script_path.parent / env_file)
+        for ancestor in script_path.parents:
+            candidates.append(ancestor / env_file)
+
+    seen: set[Path] = set()
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            seen.add(candidate)
+            unique_candidates.append(candidate)
+
+    for candidate in unique_candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _ensure_env_loaded(env_file: str, parser: argparse.ArgumentParser) -> None:
     if not env_file:
         return
-    env_path = Path(env_file)
-    if not env_path.is_absolute():
-        env_path = Path(__file__).resolve().parent / env_path
-    if not env_path.exists():
+    env_path = _find_env_path(env_file)
+    if env_path is None:
         if env_file != ".env":
             parser.error(f"Specified env file '{env_file}' not found.")
         return
@@ -117,6 +163,12 @@ def _normalize_base_url(
             changed = True
 
     return normalized, changed
+
+
+def _provider_missing_env(provider: str) -> list[str]:
+    """Return list of required environment variables that are unset for provider."""
+    required = PROVIDER_ENV_REQUIREMENTS.get(provider, ())
+    return [env_var for env_var in required if not os.getenv(env_var)]
 
 
 def _print_result(result: TestResult) -> None:
@@ -182,6 +234,46 @@ def _format_provider_error(provider: str, exc: Exception) -> str:
     if status_code:
         return f"{provider_name} request failed (HTTP {status_code}): {detail_text}"
     return f"{provider_name} request failed: {detail_text}"
+
+
+def _extract_grok_content(response: Any | None) -> str | None:
+    """Extract text content from Grok SDK responses."""
+    if response is None:
+        return None
+
+    def _normalize(entry: Any) -> str | None:
+        if isinstance(entry, str):
+            return entry.strip()
+        for attr in ("text", "content"):
+            value = getattr(entry, attr, None)
+            if isinstance(value, str):
+                return value.strip()
+        return None
+
+    normalized: str | None = None
+    content = getattr(response, "content", None)
+    if isinstance(content, str):
+        normalized = content.strip()
+    elif isinstance(content, list):
+        parts = [part for part in (_normalize(item) for item in content) if part]
+        if parts:
+            normalized = "\n".join(parts)
+
+    if normalized is None:
+        message = getattr(response, "message", None)
+        if message is not None:
+            message_content = getattr(message, "content", None)
+            if isinstance(message_content, str):
+                normalized = message_content.strip()
+            elif isinstance(message_content, list):
+                parts = [part for part in (_normalize(item) for item in message_content) if part]
+                if parts:
+                    normalized = "\n".join(parts)
+
+    if normalized is None:
+        normalized = str(content if content is not None else response).strip()
+
+    return normalized
 
 
 def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
@@ -276,11 +368,110 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("deepseek", False, endpoint_ok, messages)
 
 
+def _describe_gemini_models(model_name: str, messages: list[str]) -> None:
+    if genai is None:
+        return
+    list_models_fn = getattr(genai, "list_models", None)
+    if not callable(list_models_fn):
+        return
+    try:
+        messages.append("\n📋 Available Gemini models with generateContent support:")
+        model_count = 0
+        found_configured = False
+        for model in list_models_fn():  # type: ignore[misc]
+            methods = getattr(model, "supported_generation_methods", [])
+            if "generateContent" not in methods:
+                continue
+            name = getattr(model, "name", "").replace("models/", "")
+            if not name:
+                continue
+            marker = " ← CONFIGURED" if name == model_name else ""
+            messages.append(f"   • {name}{marker}")
+            model_count += 1
+            if name == model_name:
+                found_configured = True
+            if model_count >= 5:
+                messages.append("   ... (additional models available)")
+                break
+        if model_count == 0:
+            messages.append("   ⚠️  No models found with generateContent support")
+        elif not found_configured:
+            messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
+        messages.append("")
+    except Exception as exc:  # pragma: no cover - diagnostic helper
+        messages.append(f"   ⚠️  Could not list models: {exc}")
+        messages.append("")
+
+
+def _suggest_gemini_model_alternatives(error_msg: str) -> str:
+    if genai is None:
+        return error_msg
+    list_models_fn = getattr(genai, "list_models", None)
+    if not callable(list_models_fn):
+        return error_msg
+    try:
+        available_models: list[str] = []
+        for model in list_models_fn():  # type: ignore[misc]
+            methods = getattr(model, "supported_generation_methods", [])
+            if "generateContent" not in methods:
+                continue
+            name = getattr(model, "name", "").replace("models/", "")
+            if name:
+                available_models.append(name)
+            if len(available_models) >= 3:
+                break
+        if available_models:
+            suggestion = f" Try: {', '.join(available_models)}"
+            if suggestion.strip() not in error_msg:
+                error_msg += suggestion
+    except Exception:  # pragma: no cover - suggestion helper
+        return error_msg
+    if "Try:" not in error_msg:
+        error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model."
+    return error_msg
+
+
+def _parse_gemini_response(response: Any, messages: list[str]) -> tuple[bool, str | None, str | None]:
+    candidates = getattr(response, "candidates", [])
+    if not candidates:
+        messages.append("Gemini returned no candidates.")
+        return False, None, None
+
+    candidate = candidates[0]
+    finish_reason = getattr(candidate, "finish_reason", None)
+    safety_ratings = getattr(candidate, "safety_ratings", [])
+
+    if finish_reason and finish_reason != 1:  # 1 = STOP (normal completion)
+        messages.append(f"⚠️  Generation stopped with finish_reason: {finish_reason}")
+        if safety_ratings:
+            messages.append(f"Safety ratings: {safety_ratings}")
+
+    text_parts: list[str] = []
+    parts = getattr(getattr(candidate, "content", None), "parts", [])
+    for part in parts:
+        value = getattr(part, "text", "")
+        if value:
+            text_parts.append(value)
+
+    combined = " ".join(text_parts).strip()
+    if combined:
+        messages.append(_build_messages_preview(combined))
+        finish_reason_text = str(finish_reason) if finish_reason is not None else None
+        return True, combined, finish_reason_text
+
+    messages.append("Gemini response contained no text content.")
+    if hasattr(response, "prompt_feedback"):
+        messages.append(f"Prompt feedback: {response.prompt_feedback}")
+    return False, None, None
+
+
 def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if genai is None:
-        detail = genai_import_error or "Install google-generativeai."
-        messages.append(f"google-generativeai package not available ({detail}).")
+        messages.append(
+            "google-generativeai package not available ("
+            f"{genai_import_error or 'Install google-generativeai.'})."
+        )
         return TestResult("gemini", False, False, messages)
 
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -311,34 +502,7 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
 
     try:
         configure_fn(api_key=api_key)
-
-        list_models_fn = getattr(genai, "list_models", None)
-        if callable(list_models_fn):
-            try:
-                messages.append("\n📋 Available Gemini models with generateContent support:")
-                model_count = 0
-                found_configured = False
-                for model in list_models_fn():  # type: ignore[misc]
-                    methods = getattr(model, "supported_generation_methods", [])
-                    if "generateContent" in methods:
-                        name = getattr(model, "name", "").replace("models/", "")
-                        if name:
-                            marker = " ← CONFIGURED" if name == model_name else ""
-                            messages.append(f"   • {name}{marker}")
-                            model_count += 1
-                            if name == model_name:
-                                found_configured = True
-                            if model_count >= 5:
-                                messages.append("   ... (additional models available)")
-                                break
-                if model_count == 0:
-                    messages.append("   ⚠️  No models found with generateContent support")
-                elif not found_configured:
-                    messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
-                messages.append("")
-            except Exception as exc:  # pragma: no cover - diagnostic helper
-                messages.append(f"   ⚠️  Could not list models: {exc}")
-                messages.append("")
+        _describe_gemini_models(model_name, messages)
 
         model = generative_model_cls(model_name)
         response = model.generate_content(
@@ -350,58 +514,13 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
             ),
         )
 
-        candidates = getattr(response, "candidates", [])
-        if not candidates:
-            messages.append("Gemini returned no candidates.")
-        else:
-            candidate = candidates[0]
-            finish_reason = getattr(candidate, "finish_reason", None)
-            safety_ratings = getattr(candidate, "safety_ratings", [])
-
-            if finish_reason and finish_reason != 1:  # 1 = STOP (normal completion)
-                messages.append(f"⚠️  Generation stopped with finish_reason: {finish_reason}")
-                if safety_ratings:
-                    messages.append(f"Safety ratings: {safety_ratings}")
-
-            text_parts: list[str] = []
-            for part in candidate.content.parts:
-                value = getattr(part, "text", "")
-                if value:
-                    text_parts.append(value)
-
-            combined = " ".join(text_parts).strip()
-            if combined:
-                messages.append(_build_messages_preview(combined))
-                finish_reason_str = str(finish_reason) if finish_reason is not None else None
-                full_output = combined
-                success = True
-            else:
-                messages.append("Gemini response contained no text content.")
-                if hasattr(response, "prompt_feedback"):
-                    messages.append(f"Prompt feedback: {response.prompt_feedback}")
+        success, full_output, finish_reason_str = _parse_gemini_response(response, messages)
 
     except Exception as exc:  # pylint: disable=broad-except
         error_msg = _format_provider_error("gemini", exc)
         lowered = error_msg.lower()
         if "is not found" in lowered or "not supported" in lowered:
-            try:
-                list_models_fn = getattr(genai, "list_models", None)
-                if callable(list_models_fn):
-                    available_models: list[str] = []
-                    for model in list_models_fn():  # type: ignore[misc]
-                        methods = getattr(model, "supported_generation_methods", [])
-                        if "generateContent" in methods:
-                            name = getattr(model, "name", "").replace("models/", "")
-                            if name:
-                                available_models.append(name)
-                            if len(available_models) >= 3:
-                                break
-                    if available_models:
-                        error_msg += f" Try: {', '.join(available_models)}"
-            except Exception:  # pragma: no cover - suggestion helper
-                pass
-            if "Try:" not in error_msg:
-                error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model."
+            error_msg = _suggest_gemini_model_alternatives(error_msg)
         messages.append(error_msg)
 
     return TestResult(
@@ -428,36 +547,44 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
         messages.append("LOCAL_LLM_BASE_URL not configured.")
         return TestResult("local_llm", False, False, messages)
 
-    # Auto-start LM Studio if configured
-    auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
-    if auto_start:
+    def _maybe_start_lm_studio(target_base_url: str) -> None:
+        auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
+        if not auto_start:
+            return
+
         lm_path = os.getenv("LM_STUDIO_PATH")
-        if lm_path and Path(lm_path).exists():
-            # Check if LM Studio is already running by testing the endpoint first
+        if not lm_path or not Path(lm_path).exists():
+            messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
+            return
+
+        def _endpoint_active() -> bool:
             try:
                 import socket
                 from urllib.parse import urlparse
-                parsed = urlparse(base_url)
+
+                parsed = urlparse(target_base_url)
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(1)
                 result = sock.connect_ex((parsed.hostname or "localhost", parsed.port or 1234))
                 sock.close()
-                already_running = (result == 0)
+                return result == 0
             except Exception:
-                already_running = False
+                return False
 
-            if not already_running:
-                try:
-                    subprocess.Popen([lm_path], shell=True)
-                    startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
-                    messages.append(f"Starting LM Studio (waiting {min(startup_timeout, 10)}s for initialization)...")
-                    time.sleep(min(startup_timeout, 10))
-                except Exception as e:
-                    messages.append(f"Failed to start LM Studio: {e}")
-            else:
-                messages.append("LM Studio is already running.")
-        else:
-            messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
+        if _endpoint_active():
+            messages.append("LM Studio is already running.")
+            return
+
+        try:
+            subprocess.Popen([lm_path], shell=True)
+            startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
+            wait_time = min(startup_timeout, 10)
+            messages.append(f"Starting LM Studio (waiting {wait_time}s for initialization)...")
+            time.sleep(wait_time)
+        except Exception as exc:
+            messages.append(f"Failed to start LM Studio: {exc}")
+
+    _maybe_start_lm_studio(base_url)
 
     normalized_base_url, changed = _normalize_base_url(base_url, required_suffix="/v1")
     endpoint_ok = normalized_base_url.endswith("/v1")
@@ -543,25 +670,76 @@ def _test_inception(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("inception", False, endpoint_ok, messages)
 
 
+def _test_grok(prompt: str, max_tokens: int) -> TestResult:
+    messages: list[str] = []
+    if XAIClient is None or xai_system_message is None or xai_user_message is None:
+        messages.append("xai-sdk library not available. Install the xai-sdk package.")
+        return TestResult("grok", False, False, messages)
+
+    api_key = os.getenv("XAI_API_KEY")
+    model_name = os.getenv("XAI_MODEL", "grok-4-fast-non-reasoning")
+    api_host = os.getenv("XAI_API_HOST", "api.x.ai") or "api.x.ai"
+
+    if not api_key:
+        messages.append("XAI_API_KEY not configured.")
+        return TestResult("grok", False, False, messages)
+
+    if not model_name:
+        messages.append("XAI_MODEL not configured.")
+        return TestResult("grok", False, False, messages)
+
+    messages.append(f"Using Grok host: {api_host}")
+    endpoint_ok = True
+
+    try:
+        client = XAIClient(api_key=api_key, api_host=api_host, timeout=60)
+        chat_session = client.chat.create(
+            model=model_name,
+            max_tokens=max_tokens or None,
+            temperature=0.7,
+        )
+        chat_session.append(xai_system_message("You are Grok, a helpful genealogy assistant."))
+        chat_session.append(xai_user_message(prompt))
+        response = chat_session.sample()
+        content = _extract_grok_content(response)
+        finish_reason = getattr(response, "finish_reason", None) or getattr(response, "stop_reason", None)
+        if content:
+            messages.append(_build_messages_preview(content))
+            return TestResult("grok", True, endpoint_ok, messages, full_output=content, finish_reason=finish_reason)
+        messages.append("Grok returned an empty response payload.")
+        return TestResult("grok", False, endpoint_ok, messages)
+    except Exception as exc:  # pylint: disable=broad-except
+        messages.append(_format_provider_error("grok", exc))
+        return TestResult("grok", False, endpoint_ok, messages)
+
+
 PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
     "moonshot": _test_moonshot,
     "deepseek": _test_deepseek,
     "gemini": _test_gemini,
     "local_llm": _test_local_llm,
     "inception": _test_inception,
+    "grok": _test_grok,
 }
 
 
 def _provider_base_url(provider: str) -> str:
+    base_url: str
     if provider == "moonshot":
-        return (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/")
-    if provider == "deepseek":
-        return (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/")
-    if provider == "gemini":
-        return os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)"
-    if provider == "local_llm":
-        return (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/")
-    return ""
+        base_url = (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/")
+    elif provider == "deepseek":
+        base_url = (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/")
+    elif provider == "gemini":
+        base_url = os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)"
+    elif provider == "local_llm":
+        base_url = (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/")
+    elif provider == "inception":
+        base_url = (os.getenv("INCEPTION_AI_BASE_URL") or "https://api.inceptionlabs.ai/v1").rstrip("/")
+    elif provider == "grok":
+        base_url = os.getenv("XAI_API_HOST") or "api.x.ai"
+    else:
+        base_url = ""
+    return base_url
 
 
 def _prompt_for_provider() -> str | None:
@@ -570,7 +748,9 @@ def _prompt_for_provider() -> str | None:
     for idx, provider in enumerate(provider_list, start=1):
         display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
         base_url = _provider_base_url(provider)
-        print(f"  {idx}. {display_name} [{base_url}]")
+        missing_env = _provider_missing_env(provider)
+        status_note = "" if not missing_env else f" - missing: {', '.join(missing_env)}"
+        print(f"  {idx}. {display_name} [{base_url}]{status_note}")
 
     while True:
         choice = input("\nEnter the number of the provider you want to test (or 'q' to quit): ").strip()
@@ -612,6 +792,13 @@ def main(argv: list[str] | None = None) -> int:
         if not tester:
             parser.error(f"Unsupported provider: {args.provider}")
 
+        missing_env = _provider_missing_env(args.provider)
+        if missing_env:
+            missing_list = ", ".join(missing_env)
+            print(f"Provider '{args.provider}' is missing required environment variables: {missing_list}.")
+            print("Update your .env (or pass --env-file) and try again.")
+            return 1
+
         print(f"\nTesting provider: {args.provider}")
 
         # Start timer when making the API call
@@ -652,6 +839,13 @@ def main(argv: list[str] | None = None) -> int:
         tester = PROVIDER_TESTERS.get(provider)
         if not tester:
             parser.error(f"Unsupported provider: {provider}")
+
+        missing_env = _provider_missing_env(provider)
+        if missing_env:
+            missing_list = ", ".join(missing_env)
+            print(f"\n⚠️  Provider '{provider}' is missing required environment variables: {missing_list}.")
+            print("    Update your .env (or pass --env-file) and choose again.\n")
+            continue
 
         print(f"\nTesting provider: {provider}")
 

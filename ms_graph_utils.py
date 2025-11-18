@@ -322,7 +322,7 @@ def _process_list_query_response(lists_data: dict[str, Any], list_name: str) -> 
 def _handle_list_query_http_error(http_err: requests.exceptions.HTTPError) -> None:
     """Handle HTTP errors from list query."""
     status_code = http_err.response.status_code
-    if status_code in [401, 403]:
+    if status_code in {401, 403}:
         logger.error(f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}")
     elif status_code == 404:
         logger.error(f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}")
@@ -385,7 +385,7 @@ def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
 def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, list_id: str) -> None:
     """Handle HTTP errors from task creation."""
     status_code = http_err.response.status_code
-    if status_code in [401, 403]:
+    if status_code in {401, 403}:
         logger.error(f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}")
     elif status_code == 400:
         logger.error(f"MS Graph Bad Request (400) creating task. Payload invalid? Error: {http_err}")
@@ -412,7 +412,7 @@ def _build_task_payload(
         task_data["body"] = {"content": task_body, "contentType": "text"}
 
     # Add enhanced fields (Phase 5.3)
-    if importance and importance in ["low", "normal", "high"]:
+    if importance and importance in {"low", "normal", "high"}:
         task_data["importance"] = importance
 
     if due_date:

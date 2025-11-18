@@ -269,9 +269,9 @@ def _normalize_gender_field(criteria: dict[str, Any], normalized: dict[str, Any]
         return
 
     gender = str(criteria['gender']).lower().strip()
-    if gender in ['m', 'male', 'man']:
+    if gender in {'m', 'male', 'man'}:
         normalized['gender'] = 'm'
-    elif gender in ['f', 'female', 'woman']:
+    elif gender in {'f', 'female', 'woman'}:
         normalized['gender'] = 'f'
     else:
         normalized['gender'] = gender
@@ -370,7 +370,7 @@ def _test_universal_scoring_exact_match() -> None:
     assert len(results) > 0, "Should have results for exact match"
     result = results[0]
     assert result['total_score'] > 50, "Exact match should have positive score"
-    assert result['confidence'] in ['low', 'medium', 'high', 'very_high'], "Should have valid confidence level"
+    assert result['confidence'] in {'low', 'medium', 'high', 'very_high'}, "Should have valid confidence level"
 
 
 def _test_universal_scoring_partial_match() -> None:

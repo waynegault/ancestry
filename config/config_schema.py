@@ -73,7 +73,8 @@ class ConfigValidator:
             self.environment_rules[env] = []
         self.environment_rules[env].append(rule)
 
-    def _validate_single_rule(self, config: Any, rule: ValidationRule) -> Optional[str]:
+    @staticmethod
+    def _validate_single_rule(config: Any, rule: ValidationRule) -> Optional[str]:
         """Validate a single rule against config. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -85,8 +86,9 @@ class ConfigValidator:
             return f"Required field {rule.field_name} is missing"
         return None
 
+    @staticmethod
     def _validate_environment_rule(
-        self, config: Any, rule: ValidationRule, environment: EnvironmentType
+        config: Any, rule: ValidationRule, environment: EnvironmentType
     ) -> Optional[str]:
         """Validate an environment-specific rule. Returns error message or None."""
         if hasattr(config, rule.field_name):
@@ -209,7 +211,8 @@ class DatabaseConfig:
             f"Database configuration validated successfully for {self._get_environment().value} environment"
         )
 
-    def _get_validator(self) -> ConfigValidator:
+    @staticmethod
+    def _get_validator() -> ConfigValidator:
         """Get configured validator for database settings."""
         validator = ConfigValidator()
 
@@ -242,7 +245,7 @@ class DatabaseConfig:
             ValidationRule(
                 "journal_mode",
                 lambda x: x
-                in ["DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"],
+                in {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"},
                 "journal_mode must be one of: DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF",
             )
         )
@@ -250,7 +253,7 @@ class DatabaseConfig:
         validator.add_rule(
             ValidationRule(
                 "synchronous",
-                lambda x: x in ["OFF", "NORMAL", "FULL", "EXTRA"],
+                lambda x: x in {"OFF", "NORMAL", "FULL", "EXTRA"},
                 "synchronous must be one of: OFF, NORMAL, FULL, EXTRA",
             )
         )
@@ -300,7 +303,8 @@ class DatabaseConfig:
 
         return validator
 
-    def _get_environment(self) -> EnvironmentType:
+    @staticmethod
+    def _get_environment() -> EnvironmentType:
         """Determine current environment."""
         env_str = os.getenv("ENVIRONMENT", "development").lower()
         try:
@@ -408,6 +412,11 @@ class APIConfig:
     moonshot_ai_model: str = "kimi-k2-thinking"
     moonshot_ai_base_url: str = "https://api.moonshot.ai/v1"
 
+    # Grok (xAI) configuration
+    xai_api_key: Optional[str] = None
+    xai_model: str = "grok-4-fast-non-reasoning"
+    xai_api_host: str = "api.x.ai"
+
     # Local LLM Configuration (LM Studio)
     local_llm_api_key: Optional[str] = None
     local_llm_model: str = "qwen2.5-14b-instruct"
@@ -505,13 +514,14 @@ class APIConfig:
     def _validate_api_basics(self) -> None:
         """Validate core API configuration values."""
 
+        base_url_value: Any = getattr(self, "base_url", "")
         threshold_value = getattr(self, "token_bucket_success_threshold", None)
 
         validations: list[tuple[Callable[[], bool], str]] = [
-            (lambda: bool(self.base_url), "base_url is required"),
+            (lambda: bool(base_url_value), "base_url is required"),
             (
-                lambda: isinstance(self.base_url, str)
-                and self.base_url.startswith(("http://", "https://")),
+                lambda: isinstance(base_url_value, str)
+                and base_url_value.startswith(("http://", "https://")),
                 "base_url must start with http:// or https://",
             ),
             (lambda: self.request_timeout > 0, "request_timeout must be positive"),
@@ -833,7 +843,7 @@ class ConfigSchema:
     ethnicity_enrichment_min_cm: int = 10  # Minimum shared DNA threshold for ethnicity enrichment API calls
 
     # AI settings
-    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", or ""
+    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", or ""
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
@@ -953,56 +963,34 @@ class ConfigSchema:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConfigSchema":
         """Create configuration from dictionary."""  # Extract sub-config data
-        database_data = data.get("database", {})
-        selenium_data = data.get("selenium", {})
-        api_data = data.get("api", {})
-        logging_data = data.get("logging", {})
-        cache_data = data.get("cache", {})
-        security_data = data.get("security", {})
-        observability_data = data.get("observability", {})
-        test_data = data.get("test", {})
+        sub_config_builders: dict[str, type[Any]] = {
+            "database": DatabaseConfig,
+            "selenium": SeleniumConfig,
+            "api": APIConfig,
+            "logging": LoggingConfig,
+            "cache": CacheConfig,
+            "security": SecurityConfig,
+            "observability": ObservabilityConfig,
+            "test": TestConfig,
+        }
+
+        built_configs = {
+            key: builder(**data.get(key, {}))
+            for key, builder in sub_config_builders.items()
+        }
+
         retry_policy_data = data.get("retry_policies", {})
-        database_config = DatabaseConfig(**database_data)
-        selenium_config = SeleniumConfig(**selenium_data)
-        api_config = APIConfig(**api_data)
-        logging_config = LoggingConfig(**logging_data)
-        cache_config = CacheConfig(**cache_data)
-        security_config = SecurityConfig(**security_data)
-        observability_config = ObservabilityConfig(**observability_data)
-        test_config = TestConfig(**test_data)
         retry_policy_config = RetryPoliciesConfig(
             api=RetryChannelConfig(**retry_policy_data.get("api", {})),
             selenium=RetryChannelConfig(**retry_policy_data.get("selenium", {})),
         )
 
-        # Extract main config data
-        main_data = {
-            k: v
-            for k, v in data.items()
-            if k
-            not in [
-                "database",
-                "selenium",
-                "api",
-                "logging",
-                "cache",
-                "security",
-                "observability",
-                "test",
-                "retry_policies",
-            ]
-        }
+        nested_keys = set(sub_config_builders) | {"retry_policies"}
+        main_data = {k: v for k, v in data.items() if k not in nested_keys}
 
         return cls(
-            database=database_config,
-            selenium=selenium_config,
-            api=api_config,
-            logging=logging_config,
-            cache=cache_config,
-            security=security_config,
-            observability=observability_config,
-            test=test_config,
             retry_policies=retry_policy_config,
+            **built_configs,
             **main_data,
         )
 

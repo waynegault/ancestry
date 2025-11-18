@@ -18,7 +18,10 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 - Optimized batch processing with adaptive sizing based on performance metrics
 """
 
+import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable, Optional
 
 from core.error_handling import with_enhanced_recovery
@@ -77,6 +80,8 @@ def _log_api_duration_message(api_name: str, duration: float) -> None:
         logger.info(f"Slow API call: {api_name} took {duration:.3f}s")
     elif duration > 2.0:
         logger.debug(f"Moderate API call: {api_name} took {duration:.3f}s")
+
+
 def _track_api_metrics(api_name: str, duration: float, response_status: str) -> None:
     """Forward metrics to optional performance monitor."""
     try:
@@ -180,6 +185,7 @@ def _update_session_performance_tracking(session_manager: Optional["SessionManag
         logger.debug(f"Failed to update session performance tracking: {e}")
         pass
 
+
 # FINAL OPTIMIZATION 1: Progressive Processing Integration
 # Removed unused _progress_callback function
 
@@ -201,6 +207,7 @@ logger = OptimizedLogger(raw_logger)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import importlib
 import json
 import logging
 import math
@@ -211,6 +218,7 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
@@ -269,11 +277,28 @@ from test_framework import (
 )
 from test_utilities import atomic_write_file, create_standard_test_runner
 from utils import (
-    _api_req,  # type: ignore[reportPrivateUsage]  # API request helper
     format_name,  # Name formatting utility
     nav_to_page,  # Navigation helper
     retry_api,  # API retry decorator
 )
+
+
+@lru_cache(maxsize=1)
+def _get_utils_module() -> ModuleType:
+    """Lazy-load utils to access private helpers without direct import."""
+    return importlib.import_module("utils")
+
+
+def _get_api_request_callable() -> Callable[..., Any]:
+    api_request = getattr(_get_utils_module(), "_api_req", None)
+    if not callable(api_request):
+        raise ImportError("_api_req function not available from utils")
+    return api_request
+
+
+def _call_api_request(*args: Any, **kwargs: Any) -> Any:
+    return _get_api_request_callable()(*args, **kwargs)
+
 
 # --- Constants ---
 # Get MATCHES_PER_PAGE from config, fallback to 20 if not available
@@ -329,11 +354,13 @@ _CM_RELATIONSHIP_BUCKETS: tuple[tuple[int, str], ...] = (
     (20, "5th cousin"),
 )
 
+
 # Dynamic critical API failure threshold based on total pages to process
 def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
     """Calculate appropriate failure threshold based on total pages to process."""
     # Allow 1 failure per 20 pages, minimum of 10, maximum of 100
     return max(10, min(100, total_pages // 20))
+
 
 CRITICAL_API_FAILURE_THRESHOLD: int = (
     10  # Default minimum threshold, will be dynamically adjusted based on total pages
@@ -341,6 +368,8 @@ CRITICAL_API_FAILURE_THRESHOLD: int = (
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
+
+
 # --- Custom Exceptions ---
 class MaxApiFailuresExceededError(Exception):
     """Custom exception for exceeding API failure threshold in a batch."""
@@ -363,6 +392,7 @@ def _get_cached_profile(profile_id: str) -> Optional[dict[str, Any]]:
         logger.warning(f"Error reading profile cache for {profile_id}: {e}")
     return None
 
+
 def _cache_profile(profile_id: str, profile_data: dict[str, Any]) -> None:
     """Cache profile data using UnifiedCacheManager."""
     cache_key = f"profile_details_{profile_id}"
@@ -381,8 +411,6 @@ def _cache_profile(profile_id: str, profile_data: dict[str, Any]) -> None:
 
 
 # === ETHNICITY ENRICHMENT HELPERS ===
-import contextlib
-from functools import lru_cache
 
 
 @lru_cache(maxsize=1)
@@ -450,7 +478,6 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
                 payload[column_name] = int(percentage) if percentage is not None else None  # type: ignore[comparison-overlap]
 
     return payload if payload else None
-
 
 
 def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
@@ -1143,9 +1170,8 @@ def _accumulate_page_metrics(
     state["pages_with_metrics"] = int(state.get("pages_with_metrics", 0)) + 1
 
     pages_tracked = state["pages_with_metrics"]
-    if pages_tracked in (1, 5) or pages_tracked % 10 == 0:
+    if pages_tracked in {1, 5} or pages_tracked % 10 == 0:
         _log_timing_snapshot(pages_tracked, aggregate_metrics)
-
 
 
 def _try_fast_skip_page(
@@ -2143,8 +2169,8 @@ def _safe_cm_value(match_data: dict[str, Any]) -> int:
 def _determine_match_priority(match_data: dict[str, Any]) -> tuple[str, int, bool, bool]:
     """Map match attributes to priority level."""
     cm_value = _safe_cm_value(match_data)
-    has_tree = bool(match_data.get("in_my_tree", False))
-    is_starred = bool(match_data.get("starred", False))
+    has_tree = bool(match_data.get("in_my_tree"))
+    is_starred = bool(match_data.get("starred"))
 
     if is_starred or cm_value > 50:
         return "high", cm_value, has_tree, is_starred
@@ -2453,7 +2479,6 @@ def _derive_actual_relationship_label(
         return fallback
 
     return None
-
 
 
 PREFETCH_PROGRESS_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75)
@@ -3200,7 +3225,7 @@ def _update_page_statuses(
         page_statuses: Dictionary of status counts
         log_ref_short: Short log reference for the match
     """
-    if status in ["new", "updated", "error"]:
+    if status in {"new", "updated", "error"}:
         page_statuses[status] += 1
     elif status == "skipped":
         logger.info(
@@ -3236,7 +3261,7 @@ def _handle_match_processing_result(
     _update_page_statuses(status, page_statuses, log_ref_short)
 
     # Append valid prepared data
-    if status not in ["error", "skipped"] and prepared_data:
+    if status not in {"error", "skipped"} and prepared_data:
         prepared_bulk_data.append(prepared_data)
     elif status == "error":
         logger.error(
@@ -3356,6 +3381,7 @@ def _get_configured_batch_size() -> int:
         logger.warning(f"Failed to get configured batch size: {e}, using default 10")
         return 10  # Fallback to match .env default
 
+
 def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_batch_size: Optional[int] = None) -> int:
     """Get dynamically adapted batch size based on current server performance."""
     if base_batch_size is None:
@@ -3382,6 +3408,7 @@ def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_b
         adapted_size = base_batch_size
 
     return adapted_size
+
 
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
 
@@ -3466,7 +3493,8 @@ class MemoryOptimizedMatchProcessor:
 
         return processed_matches
 
-    def _process_single_match(self, match: dict[str, Any], _session_manager: SessionManager) -> dict[str, Any]:
+    @staticmethod
+    def _process_single_match(match: dict[str, Any], _session_manager: SessionManager) -> dict[str, Any]:
         """Process a single match with minimal memory footprint.
 
         Args:
@@ -3880,7 +3908,7 @@ def _build_person_update_dict(p_data: dict[str, Any], existing_id: int) -> dict[
     update_dict = {
         k: v
         for k, v in p_data.items()
-        if not k.startswith("_") and k not in ["uuid", "profile_id"]
+        if not k.startswith("_") and k not in {"uuid", "profile_id"}
     }
     if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
         update_dict["status"] = update_dict["status"].value
@@ -4808,12 +4836,63 @@ def _initialize_page_processing(
     return page_statuses, num_matches_on_page, memory_processor
 
 
+@dataclass(slots=True)
+class _BatchLookupArtifacts:
+    existing_persons_map: dict[str, Person]
+    fetch_candidates_uuid: set[str]
+    matches_to_process_later: list[dict[str, Any]]
+    skipped_count: int
+
+
+@dataclass(slots=True)
+class _PrefetchArtifacts:
+    prefetched_data: dict[str, Any]
+    timings: dict[str, float]
+    call_counts: dict[str, int]
+
+
+@dataclass(slots=True)
+class _PrefetchSummary:
+    total_seconds: float
+    filtered_timings: dict[str, float]
+    filtered_counts: dict[str, int]
+
+
+@contextlib.contextmanager
+def _timed_phase(label: str, timing_log: dict[str, float]) -> Iterator[None]:
+    start = time.time()
+    try:
+        yield
+    finally:
+        timing_log[label] = time.time() - start
+
+
+def _summarize_prefetch_metrics(
+    timing_log: dict[str, float],
+    prefetch_artifacts: _PrefetchArtifacts,
+) -> _PrefetchSummary:
+    filtered_timings = {
+        key: value
+        for key, value in prefetch_artifacts.timings.items()
+        if value > 0.0 or prefetch_artifacts.call_counts.get(key, 0) > 0
+    }
+    filtered_counts = {
+        key: prefetch_artifacts.call_counts.get(key, 0)
+        for key in filtered_timings
+    }
+    return _PrefetchSummary(
+        total_seconds=sum(timing_log.values()),
+        filtered_timings=filtered_timings,
+        filtered_counts=filtered_counts,
+    )
+
+
 def _process_batch_lookups(
     batch_session: SqlAlchemySession,
     matches_on_page: list[dict[str, Any]],
     current_page: int,
     page_statuses: dict[str, int]
-) -> tuple[dict[str, Person], set[str], list[dict[str, Any]], int]:
+) -> _BatchLookupArtifacts:
     """Process batch lookups and identify candidates."""
     logger.debug(f"Page {current_page}: Looking up existing persons...")
     uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
@@ -4829,7 +4908,12 @@ def _process_batch_lookups(
     )
     page_statuses["skipped"] = skipped_count
 
-    return existing_persons_map, fetch_candidates_uuid, matches_to_process_later, skipped_count
+    return _BatchLookupArtifacts(
+        existing_persons_map=existing_persons_map,
+        fetch_candidates_uuid=fetch_candidates_uuid,
+        matches_to_process_later=matches_to_process_later,
+        skipped_count=skipped_count,
+    )
 
 
 def _handle_critical_batch_error(
@@ -4966,21 +5050,22 @@ def _perform_batch_api_prefetches(
     fetch_candidates_uuid: set[str],
     matches_to_process_later: list[dict[str, Any]],
     current_page: int
-) -> tuple[dict[str, Any], dict[str, float], dict[str, int]]:
+) -> _PrefetchArtifacts:
     """Perform API prefetches for batch."""
     if len(fetch_candidates_uuid) == 0:
         logger.debug(f"Batch {current_page}: All matches skipped (no API processing needed) - fast path")
-        return {}  # type: ignore[return-value]
+        return _PrefetchArtifacts({}, {}, {})
 
     logger.debug(
         f"Batch {current_page}: Performing sequential API prefetches for {len(fetch_candidates_uuid)} candidates"
     )
 
-    return _perform_api_prefetches(
+    prefetched_data, timings, call_counts = _perform_api_prefetches(
         session_manager,
         fetch_candidates_uuid,
         matches_to_process_later,
     )
+    return _PrefetchArtifacts(prefetched_data, timings, call_counts)
 
 
 def _perform_memory_cleanup(current_page: int) -> None:
@@ -5083,17 +5168,16 @@ def _process_page_matches(
     my_uuid = session_manager.my_uuid
 
     # TIMING BREAKDOWN: Track each phase for performance analysis
-    phase_start = time.time()
     timing_log: dict[str, float] = {}
     page_metrics = PageProcessingMetrics()
-    existing_persons_map: dict[str, Person] = {}
-    fetch_candidates_uuid: set[str] = set()
+    lookup_artifacts: Optional[_BatchLookupArtifacts] = None
+    prefetch_artifacts: Optional[_PrefetchArtifacts] = None
 
     try:
-        page_statuses, num_matches_on_page, _ = _initialize_page_processing(
-            matches_on_page, current_page, my_uuid
-        )
-        timing_log["initialization"] = time.time() - phase_start
+        with _timed_phase("initialization", timing_log):
+            page_statuses, num_matches_on_page, _ = _initialize_page_processing(
+                matches_on_page, current_page, my_uuid
+            )
     except ValueError:
         return 0, 0, 0, 0, page_metrics
 
@@ -5102,68 +5186,72 @@ def _process_page_matches(
 
         try:
             # Phase 1: Database Lookups
-            phase_start = time.time()
-            existing_persons_map, fetch_candidates_uuid, matches_to_process_later, _ = (
-                _process_batch_lookups(batch_session, matches_on_page, current_page, page_statuses)
-            )
-            timing_log["db_lookups"] = time.time() - phase_start
+            with _timed_phase("db_lookups", timing_log):
+                lookup_artifacts = _process_batch_lookups(
+                    batch_session, matches_on_page, current_page, page_statuses
+                )
             logger.debug(f"⏱️  Page {current_page} - DB lookups: {timing_log['db_lookups']:.2f}s")
 
+            assert lookup_artifacts is not None
+
             # Phase 2: API Prefetches (sequential API calls)
-            phase_start = time.time()
-            prefetched_data, prefetch_timings, prefetch_counts = _perform_batch_api_prefetches(
-                session_manager, fetch_candidates_uuid, matches_to_process_later, current_page
-            )
-            timing_log["api_prefetches"] = time.time() - phase_start
+            with _timed_phase("api_prefetches", timing_log):
+                prefetch_artifacts = _perform_batch_api_prefetches(
+                    session_manager,
+                    lookup_artifacts.fetch_candidates_uuid,
+                    lookup_artifacts.matches_to_process_later,
+                    current_page,
+                )
             logger.debug(f"⏱️  Page {current_page} - API prefetches: {timing_log['api_prefetches']:.2f}s")
 
+            assert prefetch_artifacts is not None
+
             # Phase 3: Data Preparation & DB Commit
-            phase_start = time.time()
-            _prepare_and_commit_batch_data(
-                batch_session, session_manager, matches_to_process_later,
-                existing_persons_map, prefetched_data,
-                current_page, page_statuses
+            with _timed_phase("data_prep_commit", timing_log):
+                _prepare_and_commit_batch_data(
+                    batch_session,
+                    session_manager,
+                    lookup_artifacts.matches_to_process_later,
+                    lookup_artifacts.existing_persons_map,
+                    prefetch_artifacts.prefetched_data,
+                    current_page,
+                    page_statuses,
+                )
+            logger.debug(
+                f"⏱️  Page {current_page} - Data prep & commit: {timing_log['data_prep_commit']:.2f}s"
             )
-            timing_log["data_prep_commit"] = time.time() - phase_start
-            logger.debug(f"⏱️  Page {current_page} - Data prep & commit: {timing_log['data_prep_commit']:.2f}s")
         finally:
             _cleanup_batch_session(session_manager, batch_session, reused_session, current_page)
 
         _log_batch_summary_if_needed(is_batch, current_page, page_statuses)
 
+        assert lookup_artifacts is not None
+        assert prefetch_artifacts is not None
+
+        summary = _summarize_prefetch_metrics(timing_log, prefetch_artifacts)
+
         # Log timing breakdown summary for slow pages
-        total_time = sum(timing_log.values())
-        if total_time > 30.0:
+        if summary.total_seconds > 30.0:
             logger.info(
                 "Timings: Page %d total %.1fs | DB %.2fs | API %.2fs | prep %.2fs",
                 current_page,
-                total_time,
+                summary.total_seconds,
                 timing_log.get("db_lookups", 0.0),
                 timing_log.get("api_prefetches", 0.0),
                 timing_log.get("data_prep_commit", 0.0),
             )
 
-        filtered_timings = {
-            key: value
-            for key, value in prefetch_timings.items()
-            if value > 0.0 or prefetch_counts.get(key, 0) > 0
-        }
-        filtered_counts = {
-            key: prefetch_counts.get(key, 0)
-            for key in filtered_timings
-        }
-
         page_metrics = PageProcessingMetrics(
             total_matches=num_matches_on_page,
-            fetch_candidates=len(fetch_candidates_uuid),
-            existing_matches=len(existing_persons_map),
+            fetch_candidates=len(lookup_artifacts.fetch_candidates_uuid),
+            existing_matches=len(lookup_artifacts.existing_persons_map),
             db_seconds=timing_log.get("db_lookups", 0.0),
             prefetch_seconds=timing_log.get("api_prefetches", 0.0),
             commit_seconds=timing_log.get("data_prep_commit", 0.0),
-            total_seconds=total_time,
+            total_seconds=summary.total_seconds,
             batches=1,
-            prefetch_breakdown=filtered_timings,
-            prefetch_call_counts=filtered_counts,
+            prefetch_breakdown=summary.filtered_timings,
+            prefetch_call_counts=summary.filtered_counts,
         )
 
         return (
@@ -5259,7 +5347,7 @@ def _compare_gender_field(current_value: Any, new_value: Any) -> tuple[bool, Any
         new_value is not None
         and current_value is None
         and isinstance(new_value, str)
-        and new_value.lower() in ("f", "m")
+        and new_value.lower() in {"f", "m"}
     ):
         return (True, new_value.lower())
     return (False, new_value)
@@ -5555,12 +5643,12 @@ def _check_relationship_and_side_changes(
             f"  DNA change {log_ref_short}: Predicted Rel ({db_predicted_rel_for_comp} -> {api_predicted_rel_for_comp})"
         )
         return True
-    if bool(details_part.get("from_my_fathers_side", False)) != bool(
+    if bool(details_part.get("from_my_fathers_side")) != bool(
         existing_dna_match.from_my_fathers_side
     ):
         logger_instance.debug(f"  DNA change {log_ref_short}: Father Side")
         return True
-    if bool(details_part.get("from_my_mothers_side", False)) != bool(
+    if bool(details_part.get("from_my_mothers_side")) != bool(
         existing_dna_match.from_my_mothers_side
     ):
         logger_instance.debug(f"  DNA change {log_ref_short}: Mother Side")
@@ -5923,7 +6011,7 @@ def _build_tree_data_dict(
     return {
         k: v
         for k, v in tree_dict_base.items()
-        if v is not None or k in ["_operation", "_existing_tree_id", "uuid"]
+        if v is not None or k in {"_operation", "_existing_tree_id", "uuid"}
     }
 
 
@@ -6027,15 +6115,24 @@ def _prepare_family_tree_operation_data(
 # ------------------------------------------------------------------------------
 
 
-def _extract_match_info(match: dict[str, Any]) -> tuple[Optional[str], str, Optional[str], bool, str]:
+@dataclass(slots=True)
+class _MatchInfo:
+    uuid: str
+    username: str
+    predicted_relationship: Optional[str]
+    in_my_tree: bool
+    log_ref_short: str
+
+
+def _extract_match_info(match: dict[str, Any]) -> _MatchInfo:
     """Extract basic information from match data."""
-    match_uuid = match.get("uuid")
+    match_uuid = str(match.get("uuid") or "")
     match_username_raw = match.get("username")
     match_username = format_name(match_username_raw) if match_username_raw else "Unknown"
     predicted_relationship: Optional[str] = match.get("predicted_relationship")
     match_in_my_tree = match.get("in_my_tree", False)
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
-    return match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short
+    return _MatchInfo(match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short)
 
 
 def _process_person_data_safe(
@@ -6197,6 +6294,66 @@ def _assemble_bulk_data(
     return prepared_data_for_bulk, overall_status
 
 
+@dataclass(slots=True)
+class _PreparedMatchOperations:
+    person_op_data: Optional[dict[str, Any]]
+    person_fields_changed: bool
+    dna_op_data: Optional[dict[str, Any]]
+    tree_op_data: Optional[dict[str, Any]]
+    tree_operation_status: Literal["create", "update", "none"]
+
+
+def _prepare_match_operations(
+    match: dict[str, Any],
+    existing_person: Optional[Person],
+    prefetched_combined_details: Optional[dict[str, Any]],
+    prefetched_tree_data: Optional[dict[str, Any]],
+    match_info: _MatchInfo,
+    logger_instance: logging.Logger,
+    session_manager: SessionManager,
+) -> _PreparedMatchOperations:
+    person_op_data, person_fields_changed = _process_person_data_safe(
+        match,
+        existing_person,
+        prefetched_combined_details,
+        prefetched_tree_data,
+        match_info.uuid or "",
+        match_info.username,
+        match_info.in_my_tree,
+        match_info.log_ref_short,
+        logger_instance,
+    )
+
+    dna_op_data = _process_dna_data_safe(
+        match,
+        existing_person.dna_match if existing_person else None,
+        prefetched_combined_details,
+        match_info.uuid or "",
+        match_info.predicted_relationship,
+        match_info.log_ref_short,
+        logger_instance,
+        session_manager,
+    )
+
+    tree_op_data, tree_operation_status = _process_tree_data_safe(
+        existing_person.family_tree if existing_person else None,
+        prefetched_tree_data,
+        match_info.uuid or "",
+        match_info.in_my_tree,
+        session_manager,
+        match_info.log_ref_short,
+        logger_instance,
+    )
+
+    return _PreparedMatchOperations(
+        person_op_data=person_op_data,
+        person_fields_changed=person_fields_changed,
+        dna_op_data=dna_op_data,
+        tree_op_data=tree_op_data,
+        tree_operation_status=tree_operation_status,
+    )
+
+
 def _do_match(
     _session: SqlAlchemySession,
     match: dict[str, Any],
@@ -6242,49 +6399,45 @@ def _do_match(
         - error_msg (Optional[str]): An error message if status is 'error', otherwise None.
     """
     existing_person: Optional[Person] = existing_person_arg
-    dna_match_record: Optional[DnaMatch] = existing_person.dna_match if existing_person else None
-    family_tree_record: Optional[FamilyTree] = existing_person.family_tree if existing_person else None
 
-    match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short = _extract_match_info(match)
+    match_info = _extract_match_info(match)
 
-    if not match_uuid:
+    if not match_info.uuid:
         error_msg = f"_do_match Pre-check failed: Missing 'uuid' in match data: {match}"
         logger_instance.error(error_msg)
         return None, "error", error_msg
 
     try:
         is_new_person = existing_person is None
-
-        person_op_data, person_fields_changed = _process_person_data_safe(
-            match, existing_person, prefetched_combined_details, prefetched_tree_data,
-            match_uuid, match_username, match_in_my_tree, log_ref_short, logger_instance
-        )
-
-        dna_op_data = _process_dna_data_safe(
-            match, dna_match_record, prefetched_combined_details, match_uuid,
-            predicted_relationship, log_ref_short, logger_instance, session_manager
-        )
-
-        tree_op_data, tree_operation_status = _process_tree_data_safe(
-            family_tree_record, prefetched_tree_data, match_uuid, match_in_my_tree,
-            session_manager, log_ref_short, logger_instance
+        operations = _prepare_match_operations(
+            match,
+            existing_person,
+            prefetched_combined_details,
+            prefetched_tree_data,
+            match_info,
+            logger_instance,
+            session_manager,
         )
 
         prepared_data_for_bulk, overall_status = _assemble_bulk_data(
-            is_new_person, person_op_data, dna_op_data, tree_op_data,
-            tree_operation_status, person_fields_changed
+            is_new_person,
+            operations.person_op_data,
+            operations.dna_op_data,
+            operations.tree_op_data,
+            operations.tree_operation_status,
+            operations.person_fields_changed,
         )
 
         data_to_return = (
             prepared_data_for_bulk
-            if overall_status not in ["skipped", "error"]
+            if overall_status not in {"skipped", "error"}
             and any(v for v in prepared_data_for_bulk.values())
             else None
         )
 
-        if overall_status not in ["error", "skipped"] and not data_to_return:
+        if overall_status not in {"error", "skipped"} and not data_to_return:
             logger_instance.debug(
-                f"Status is '{overall_status}' for {log_ref_short}, but no data payloads prepared. Revising to 'skipped'."
+                f"Status is '{overall_status}' for {match_info.log_ref_short}, but no data payloads prepared. Revising to 'skipped'."
             )
             overall_status = "skipped"
             data_to_return = None
@@ -6294,9 +6447,11 @@ def _do_match(
     except Exception as e:
         error_type = type(e).__name__
         error_details = str(e)
-        error_msg_for_log = f"Unexpected critical error ({error_type}) in _do_match for {log_ref_short}. Details: {error_details}"
+        error_msg_for_log = (
+            f"Unexpected critical error ({error_type}) in _do_match for {match_info.log_ref_short}. Details: {error_details}"
+        )
         logger_instance.error(error_msg_for_log, exc_info=True)
-        error_msg_return = f"Unexpected {error_type} during data prep for {log_ref_short}"
+        error_msg_return = f"Unexpected {error_type} during data prep for {match_info.log_ref_short}"
         return None, "error", error_msg_return
 
 
@@ -6418,8 +6573,6 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
         logger.debug("Cookie sync method not available")
 
 
-
-
 def _read_csrf_from_driver_cookies(driver: Any, csrf_token_cookie_names: tuple[str, ...]) -> Optional[str]:
     """
     Read CSRF token from driver cookies using get_cookie method.
@@ -6482,6 +6635,7 @@ def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
     import time as time_module
     setattr(session_manager, '_cached_csrf_token', csrf_token)
     setattr(session_manager, '_cached_csrf_time', time_module.time())
+
 
 def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
     """
@@ -6579,7 +6733,7 @@ def _call_match_list_api(
         logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
 
     # Call the API with fresh cookie sync
-    return _api_req(
+    return _call_api_request(
         url=match_list_url,
         driver=driver,
         session_manager=session_manager,
@@ -6607,7 +6761,7 @@ def _handle_303_with_redirect(
         f"Match list API received 303 See Other. Retrying with redirect to {location}."
     )
     # Retry once with the new location
-    api_response_redirect = _api_req(
+    api_response_redirect = _call_api_request(
         url=location,
         driver=driver,
         session_manager=session_manager,
@@ -6670,7 +6824,7 @@ def _handle_303_session_refresh(
             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
             logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
 
-            api_response_refresh = _api_req(
+            api_response_refresh = _call_api_request(
                 url=match_list_url,
                 driver=driver,
                 session_manager=session_manager,
@@ -6829,8 +6983,6 @@ def _read_in_tree_cache(sample_ids_on_page: list[str], current_page: int) -> set
     return in_tree_ids
 
 
-
-
 def _process_in_tree_api_response(
     response_in_tree: Any,
     sample_ids_on_page: list[str],
@@ -6881,6 +7033,7 @@ def _process_in_tree_api_response(
         logger.debug(f"In-Tree check response: {response_in_tree}")
 
     return in_tree_ids
+
 
 def _fetch_in_tree_from_api(
     session_manager: SessionManager,
@@ -6933,7 +7086,7 @@ def _fetch_in_tree_from_api(
     logger.debug(
         f"In-Tree Check Headers FULLY set in get_matches: {in_tree_headers}"
     )
-    response_in_tree = _api_req(
+    response_in_tree = _call_api_request(
         url=in_tree_url,
         driver=driver,
         session_manager=session_manager,
@@ -6989,6 +7142,29 @@ def _fetch_in_tree_status(
     return in_tree_ids
 
 
+def _normalize_profile_id(profile_user_id: Any) -> Optional[str]:
+    if not profile_user_id:
+        return None
+    return str(profile_user_id).upper()
+
+
+def _derive_first_name(match_username: str) -> Optional[str]:
+    if not match_username or match_username == "Valued Relative":
+        return None
+    trimmed_username = match_username.strip()
+    if not trimmed_username:
+        return None
+    name_parts = trimmed_username.split()
+    return name_parts[0] if name_parts else None
+
+
+def _build_compare_link(my_uuid: str, sample_id_upper: str) -> str:
+    return urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
+    )
+
+
 def _refine_single_match(
     match_api_data: dict[str, Any],
     my_uuid: str,
@@ -7005,64 +7181,41 @@ def _refine_single_match(
     try:
         profile_info = match_api_data.get("matchProfile", {})
         relationship_info = match_api_data.get("relationship", {})
-        sample_id = match_api_data["sampleId"]
-        sample_id_upper = sample_id.upper()
+        sample_id_upper = str(match_api_data["sampleId"]).upper()
 
-        profile_user_id_raw = profile_info.get("userId")
-        profile_user_id_upper = (
-            str(profile_user_id_raw).upper() if profile_user_id_raw else None
-        )
-        raw_display_name = profile_info.get("displayName")
-        match_username = format_name(raw_display_name)
-
-        first_name: Optional[str] = None
-        if match_username and match_username != "Valued Relative":
-            trimmed_username = match_username.strip()
-            if trimmed_username:
-                name_parts = trimmed_username.split()
-                if name_parts:
-                    first_name = name_parts[0]
+        match_username = format_name(profile_info.get("displayName"))
+        first_name = _derive_first_name(match_username)
 
         admin_profile_id_hint = match_api_data.get("adminId")
         admin_username_hint = match_api_data.get("adminName")
-        photo_url = profile_info.get("photoUrl", "")
-        initials = profile_info.get("displayInitials", "??").upper()
-        gender = match_api_data.get("gender")
-
-        shared_cm = int(relationship_info.get("sharedCentimorgans", 0))
-        shared_segments = int(relationship_info.get("numSharedSegments", 0))
-        predicted_relationship = relationship_info.get("relationshipRange") or relationship_info.get("predictedRelationship")
-        created_date_raw = match_api_data.get("createdDate")
-
-        compare_link = urljoin(
-            config_schema.api.base_url,
-            f"discoveryui-matches/compare/{my_uuid.upper()}/with/{sample_id_upper}",
-        )
+        profile_user_id_upper = _normalize_profile_id(profile_info.get("userId"))
+        compare_link = _build_compare_link(my_uuid, sample_id_upper)
         is_in_tree = sample_id_upper in in_tree_ids
 
         return {
             "username": match_username,
             "first_name": first_name,
-            "initials": initials,
-            "gender": gender,
+            "initials": profile_info.get("displayInitials", "??").upper(),
+            "gender": match_api_data.get("gender"),
             "profile_id": profile_user_id_upper,
             "uuid": sample_id_upper,
             "administrator_profile_id_hint": admin_profile_id_hint,
             "administrator_username_hint": admin_username_hint,
-            "photoUrl": photo_url,
-            "cm_dna": shared_cm,
-            "numSharedSegments": shared_segments,
-            "predicted_relationship": predicted_relationship,
+            "photoUrl": profile_info.get("photoUrl", ""),
+            "cm_dna": int(relationship_info.get("sharedCentimorgans", 0)),
+            "numSharedSegments": int(relationship_info.get("numSharedSegments", 0)),
+            "predicted_relationship": relationship_info.get("relationshipRange")
+            or relationship_info.get("predictedRelationship"),
             "compare_link": compare_link,
             "message_link": None,
             "in_my_tree": is_in_tree,
-            "createdDate": created_date_raw,
+            "createdDate": match_api_data.get("createdDate"),
         }
 
     except (IndexError, KeyError, TypeError, ValueError) as refine_err:
         match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
         logger.error(
-            f"Refinement error page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {type(refine_err).__name__} - {refine_err}. Skipping match.",
+            f"Refinement error page {current_page}, match #{match_index + 1} (UUID: {match_uuid_err}): {type(refine_err).__name__} - {refine_err}. Skipping match.",
             exc_info=False,
         )
         logger.debug(f"Problematic match data during refinement: {match_api_data}")
@@ -7070,7 +7223,7 @@ def _refine_single_match(
     except Exception as critical_refine_err:
         match_uuid_err = match_api_data.get("sampleId", "UUID_UNKNOWN")
         logger.error(
-            f"CRITICAL unexpected error refining match page {current_page}, match #{match_index+1} (UUID: {match_uuid_err}): {critical_refine_err}",
+            f"CRITICAL unexpected error refining match page {current_page}, match #{match_index + 1} (UUID: {match_uuid_err}): {critical_refine_err}",
             exc_info=True,
         )
         logger.debug(
@@ -7108,10 +7261,6 @@ def _refine_all_matches(
         f"Successfully refined {len(refined_matches)} matches on page {current_page}."
     )
     return refined_matches
-
-
-
-
 
 
 def get_matches(
@@ -7353,7 +7502,7 @@ def _fetch_match_details_api(
     _sync_session_cookies(session_manager)
 
     try:
-        details_response = _api_req(
+        details_response = _call_api_request(
             url=details_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -7429,7 +7578,7 @@ def _fetch_profile_details_api(
     _sync_session_cookies(session_manager)
 
     try:
-        profile_response = _api_req(
+        profile_response = _call_api_request(
             url=profile_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -7722,7 +7871,7 @@ def _fetch_batch_badge_details(
     logger.debug(f"Fetching /badgedetails API for UUID {match_uuid}...")
 
     try:
-        badge_response = _api_req(
+        badge_response = _call_api_request(
             url=badge_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -8052,7 +8201,7 @@ def _try_get_fallback(
     api_start_time: float
 ) -> Optional[str]:
     """Try GET fallback for relationship probability."""
-    get_resp = _api_req(
+    get_resp = _call_api_request(
         url=rel_url,
         driver=driver,
         session_manager=session_manager,
@@ -8090,7 +8239,7 @@ def _try_csrf_refresh_fallback(
         if fresh_csrf:
             rel_headers["X-CSRF-Token"] = fresh_csrf
             logger.debug("Refreshed CSRF token. Retrying POST for probability...")
-            api_resp2 = _api_req(
+            api_resp2 = _call_api_request(
                 url=rel_url,
                 driver=driver,
                 session_manager=session_manager,
@@ -8347,7 +8496,7 @@ def _fetch_batch_relationship_prob(
     try:
         rel_headers["X-Requested-With"] = "XMLHttpRequest"
 
-        api_resp = _api_req(
+        api_resp = _call_api_request(
             url=rel_url,
             driver=driver,
             session_manager=session_manager,
@@ -8499,7 +8648,6 @@ def _log_page_start(current_page: int, state: dict[str, Any]) -> None:
         tokens.append(f"ETA {_format_brief_duration(eta)}")
     print("")
     logger.info(" | ".join(tokens))
-
 
 
 def _format_duration_with_avg(total_seconds: float, denominator: float, unit: str) -> str:
@@ -9393,8 +9541,8 @@ def _test_dynamic_api_failure_threshold():
         (200, 10),   # 200 pages -> 200/20 = 10
         (400, 20),   # 400 pages -> 400/20 = 20
         (795, 39),   # 795 pages -> 795/20 = 39 (our actual use case)
-        (2000, 100), # 2000 pages -> 2000/20 = 100 (maximum)
-        (5000, 100), # 5000 pages -> 5000/20 = 250, but capped at 100
+        (2000, 100),  # 2000 pages -> 2000/20 = 100 (maximum)
+        (5000, 100),  # 5000 pages -> 5000/20 = 250, but capped at 100
     ]
 
     for pages, expected in test_cases:
@@ -9613,7 +9761,6 @@ def _test_303_redirect_detection():
                 {'name': '_dnamatches-matchlistui-x-csrf-token', 'value': 'test-token-123'}
             ]
 
-            from action6_gather import _get_csrf_token  # type: ignore[reportPrivateUsage]
             result = _get_csrf_token(mock_session_manager)
             assert result == 'test-token-123', "Should extract CSRF token correctly"
 
@@ -9843,8 +9990,6 @@ def action6_gather_module_tests() -> bool:
             method_description="Testing 303 redirect handling, CSRF token extraction, and session refresh recovery mechanisms",
             expected_outcome="Detects 303 redirects and triggers proper session refresh recovery",
         )
-
-
 
         # PERFORMANCE TESTS
         suite.run_test(

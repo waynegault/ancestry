@@ -75,6 +75,7 @@ def _check_venv() -> None:
             sys.exit(1)
         print()
 
+
 _check_venv()
 import re
 import subprocess
@@ -357,7 +358,7 @@ def optimize_test_order(modules: list[str]) -> list[str]:
     historical_data: dict[str, dict[str, Any]] = {}
     if metrics_file.exists():
         try:
-            with metrics_file.open() as f:
+            with metrics_file.open(encoding="utf-8") as f:
                 historical_data = json.load(f)
         except Exception:
             pass
@@ -418,7 +419,7 @@ def update_test_history(
     historical_data: dict[str, dict[str, Any]] = {}
     if metrics_file.exists():
         try:
-            with metrics_file.open() as f:
+            with metrics_file.open(encoding="utf-8") as f:
                 historical_data = json.load(f)
         except Exception:
             pass
@@ -446,7 +447,7 @@ def update_test_history(
 
     # Save updated data
     try:
-        with metrics_file.open("w") as f:
+        with metrics_file.open("w", encoding="utf-8") as f:
             json.dump(historical_data, f, indent=2)
     except Exception:
         pass  # Silently fail
@@ -514,7 +515,6 @@ class PerformanceMonitor:
                 time.sleep(0.1)  # Sample every 100ms
             except Exception:
                 break
-
 
 
 def run_linter() -> bool:
@@ -614,7 +614,7 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
 def _should_skip_system_file(python_file: Path) -> bool:
     """Check if file should be skipped (system files, test runner, etc.)."""
     # Skip specific system files
-    if python_file.name in ["run_all_tests.py", "main.py", "__main__.py"]:
+    if python_file.name in {"run_all_tests.py", "main.py", "__main__.py"}:
         return True
 
     # Only skip root-level __init__.py, not package __init__.py files
@@ -657,7 +657,7 @@ def _should_skip_demo_file(python_file: Path) -> bool:
 
 def _should_skip_interactive_file(python_file: Path) -> bool:
     """Check if file should be skipped (interactive modules)."""
-    return python_file.name in ["db_viewer.py", "test_program_executor.py"]
+    return python_file.name in {"db_viewer.py", "test_program_executor.py"}
 
 
 def _has_test_function(content: str) -> bool:
@@ -729,7 +729,7 @@ def _extract_docstring_end(stripped: str, docstring_lines: list[str]) -> bool:
         return False
 
     # End of docstring - extract content before closing quotes
-    before_quotes = stripped.split('"""')[0].strip()
+    before_quotes = stripped.split('"""', maxsplit=1)[0].strip()
     if before_quotes:
         docstring_lines.append(before_quotes)
     return True
@@ -800,7 +800,6 @@ def _extract_first_meaningful_line(docstring_lines: list[str], module_path: str)
         description = line.replace(module_base, '').strip()
         description = description.replace(' - ', ' - ').strip()
         return _clean_description_text(description, module_base)
-
 
     return None
 
@@ -873,25 +872,39 @@ def _generate_module_description(module_name: str, description: str | None = Non
     return result
 
 
+def _extract_marker_count(line: str, marker: str) -> Optional[int]:
+    """Return integer count following a marker like '✅ Passed:'."""
+    try:
+        return int(line.split(marker)[1].split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _find_failed_count(stdout_lines: list[str]) -> int:
+    """Search stdout for a failed-test count marker."""
+    for candidate in stdout_lines:
+        failed = _extract_marker_count(candidate, "❌ Failed:")
+        if failed is not None:
+            return failed
+    return 0
+
+
 def _try_pattern_passed_failed(stdout_lines: list[str]) -> str:
     """Pattern 1: Look for '✅ Passed: X' and '❌ Failed: Y'."""
     for line in stdout_lines:
-        if "✅ Passed:" in line:
-            try:
-                passed = int(line.split("✅ Passed:")[1].split()[0])
-                failed = 0
-                # Look for failed count in same line or nearby lines
-                if "❌ Failed:" in line:
-                    failed = int(line.split("❌ Failed:")[1].split()[0])
-                else:
-                    # Check other lines for failed count
-                    for other_line in stdout_lines:
-                        if "❌ Failed:" in other_line:
-                            failed = int(other_line.split("❌ Failed:")[1].split()[0])
-                            break
-                return f"{passed + failed} tests"
-            except (ValueError, IndexError):
-                continue
+        if "✅ Passed:" not in line:
+            continue
+
+        passed = _extract_marker_count(line, "✅ Passed:")
+        if passed is None:
+            continue
+
+        failed = _extract_marker_count(line, "❌ Failed:")
+        if failed is None:
+            failed = _find_failed_count(stdout_lines)
+
+        return f"{passed + failed} tests"
+
     return "Unknown"
 
 
@@ -1023,7 +1036,6 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
                         continue
             break
     return "Unknown"
-
 
 
 def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
@@ -1456,7 +1468,7 @@ def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performa
         existing_data: list[dict[str, Any]] = []
         if metrics_file.exists():
             try:
-                with metrics_file.open() as f:
+                with metrics_file.open(encoding="utf-8") as f:
                     existing_data = json.load(f)
             except (json.JSONDecodeError, FileNotFoundError):
                 existing_data = []
@@ -1616,9 +1628,9 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
         f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)"
     )
 
-    print(f"\n{'='* 60}")
+    print(f"\n{'=' * 60}")
     print("🧪 RUNNING TESTS")
-    print(f"{'='* 60}")
+    print(f"{'=' * 60}")
 
     # Prepare modules with descriptions
     modules_with_descriptions: list[tuple[str, str]] = [
@@ -1682,6 +1694,13 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
     return results, all_metrics, total_tests_run, passed_count
 
 
+def _execute_tests_with_timing(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int, float]:
+    """Execute tests and measure runtime."""
+    start_time = time.time()
+    results, all_metrics, total_tests_run, passed_count = _execute_tests(config)
+    return results, all_metrics, total_tests_run, passed_count, time.time() - start_time
+
+
 def _print_basic_summary(
     total_duration: float,
     total_tests_run: int,
@@ -1692,9 +1711,9 @@ def _print_basic_summary(
     """Print basic test summary statistics."""
     success_rate = (passed_count / len(results)) * 100 if results else 0
 
-    print(f"\n{'='* 60}")
+    print(f"\n{'=' * 60}")
     print("📊 FINAL TEST SUMMARY")
-    print(f"{'='* 60}")
+    print(f"{'=' * 60}")
     print(f"⏰ Duration: {total_duration:.1f}s")
     print(f"🧪 Total Tests Run: {total_tests_run}")
     print(f"✅ Passed: {passed_count}")
@@ -2045,21 +2064,17 @@ def main() -> bool:
         print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
         return False
 
-    total_start_time = time.time()
-
     # Execute tests
-    test_config = TestExecutionConfig(
-        modules_with_descriptions=modules_with_descriptions,
-        discovered_modules=discovered_modules,
-        module_descriptions=module_descriptions,
-        enable_fast_mode=enable_fast_mode,
-        enable_monitoring=enable_monitoring,
-        enable_benchmark=enable_benchmark
+    results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(
+        TestExecutionConfig(
+            modules_with_descriptions=modules_with_descriptions,
+            discovered_modules=discovered_modules,
+            module_descriptions=module_descriptions,
+            enable_fast_mode=enable_fast_mode,
+            enable_monitoring=enable_monitoring,
+            enable_benchmark=enable_benchmark
+        )
     )
-    results, all_metrics, total_tests_run, passed_count = _execute_tests(test_config)
-
-    # Calculate final metrics
-    total_duration = time.time() - total_start_time
     if not enable_fast_mode:  # Recalculate for sequential mode
         passed_count = sum(1 for _, _, success in results if success)
     failed_count = len(results) - passed_count
@@ -2068,16 +2083,17 @@ def main() -> bool:
     _print_basic_summary(total_duration, total_tests_run, passed_count, failed_count, results)
 
     if enable_monitoring:
-        perf_config = PerformanceMetricsConfig(
-            all_metrics=all_metrics,
-            total_duration=total_duration,
-            total_tests_run=total_tests_run,
-            passed_count=passed_count,
-            failed_count=failed_count,
-            enable_fast_mode=enable_fast_mode,
-            enable_benchmark=enable_benchmark
+        _print_performance_metrics(
+            PerformanceMetricsConfig(
+                all_metrics=all_metrics,
+                total_duration=total_duration,
+                total_tests_run=total_tests_run,
+                passed_count=passed_count,
+                failed_count=failed_count,
+                enable_fast_mode=enable_fast_mode,
+                enable_benchmark=enable_benchmark
+            )
         )
-        _print_performance_metrics(perf_config)
 
     _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
 

@@ -230,8 +230,8 @@ def print_weekly_summary(days: int = 7) -> None:
             avg_dur = ent.get("avg_duration_sec") or 0.0
             avg_mem = ent.get("avg_mem_mb")
             print(
-                f"- {action}: runs={ent.get('runs',0)}, success={sr*100:.1f}%, "
-                f"avg_dur={avg_dur:.2f}s, avg_mem={(f'{avg_mem:.1f} MB' if isinstance(avg_mem,(int,float)) else 'n/a')}"
+                f"- {action}: runs={ent.get('runs', 0)}, success={sr * 100:.1f}%, "
+                f"avg_dur={avg_dur:.2f}s, avg_mem={(f'{avg_mem:.1f} MB' if isinstance(avg_mem, (int, float)) else 'n/a')}"
             )
     except Exception as e:
         logger.debug(f"analytics.print_weekly_summary failed: {e}")

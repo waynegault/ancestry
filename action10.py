@@ -46,6 +46,7 @@ optimization and detailed logging.
 
 # === STANDARD LIBRARY IMPORTS ===
 import argparse
+import importlib
 import logging
 import os
 import re
@@ -53,7 +54,9 @@ import sys
 import time
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable, Optional
 
 # === CORE INFRASTRUCTURE ===
@@ -89,7 +92,6 @@ from core.error_handling import MissingConfigError  # type: ignore[import-not-fo
 # Import GEDCOM utilities
 from gedcom_utils import (  # type: ignore[import-not-found]
     GedcomData,
-    _normalize_id,  # type: ignore[reportPrivateUsage]
     calculate_match_score,
     format_relative_info,
 )
@@ -113,6 +115,26 @@ from universal_scoring import calculate_display_bonuses  # type: ignore[import-n
 class _GedcomCacheState:
     """Manages GEDCOM cache state for tests."""
     cache: Optional[GedcomData] = None
+
+
+@lru_cache(maxsize=1)
+def _get_gedcom_utils_module() -> ModuleType:
+    """Lazy-load gedcom_utils to access private helpers without direct import."""
+    return importlib.import_module("gedcom_utils")
+
+
+def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
+    normalizer = getattr(_get_gedcom_utils_module(), "_normalize_id")
+    return normalizer(value)
+
+
+FAMILY_INFO_KEYWORDS = (
+    "Parents",
+    "Siblings",
+    "Spouses",
+    "Children",
+    "Relationship",
+)
 
 
 def get_cached_gedcom() -> Optional[GedcomData]:
@@ -204,9 +226,9 @@ def detailed_scoring_breakdown(
 ) -> str:
     """Generate detailed scoring breakdown for test reporting."""
     breakdown = []
-    breakdown.append(f"\n{'='*80}")
+    breakdown.append(f"\n{'=' * 80}")
     breakdown.append(f"🔍 DETAILED SCORING BREAKDOWN: {test_name}")
-    breakdown.append(f"{'='*80}")
+    breakdown.append(f"{'=' * 80}")
 
     # Add formatted sections
     breakdown.extend(_format_search_criteria(search_criteria))
@@ -233,7 +255,7 @@ def detailed_scoring_breakdown(
     # Test person analysis
     breakdown.extend(_format_test_person_analysis(field_scores, total_score))
 
-    breakdown.append(f"{'='*80}")
+    breakdown.append(f"{'=' * 80}")
     return "\n".join(breakdown)
 
 
@@ -466,7 +488,7 @@ def _display_cache_source_message(gedcom_data: GedcomData) -> None:
     """Display message about where GEDCOM data came from."""
     cache_source = getattr(gedcom_data, '_cache_source', 'unknown')
 
-    if cache_source in ("memory", "disk"):
+    if cache_source in {"memory", "disk"}:
         logger.debug("Using GEDCOM cache")
     elif cache_source == "file":
         logger.debug("Using GEDCOM file; cache saved")
@@ -649,8 +671,8 @@ def log_criteria_summary(
     """Log summary of criteria to be used."""
     logger.debug("--- Final Scoring Criteria Used ---")
     for k, v in scoring_criteria.items():
-        if v is not None and k not in ["birth_date_obj", "death_date_obj"]:
-            logger.debug(f"  {k.replace('_',' ').title()}: '{v}'")
+        if v is not None and k not in {"birth_date_obj", "death_date_obj"}:
+            logger.debug(f"  {k.replace('_', ' ').title()}: '{v}'")
 
     year_range = date_flex.get("year_match_range", 10)
     logger.debug(f"\n--- OR Filter Logic (Year Range: +/- {year_range}) ---")
@@ -985,8 +1007,6 @@ def _format_name_display(candidate: dict[str, Any], scores: dict[str, int]) -> s
     return f"{name_disp_short} {name_score_str}"
 
 
-
-
 def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
     """Format birth date and place displays with scores."""
     # Birth date display
@@ -1168,7 +1188,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
     if "(" not in name or ")" not in name:
         return name, None, None
 
-    years_part = name[name.find("(")+1:name.find(")")]
+    years_part = name[name.find("(") + 1:name.find(")")]
 
     # Try to extract birth year from "b. <date>" pattern
     birth_year = _extract_year_from_pattern(years_part, r'b\.\s+.*?(\d{4})')
@@ -1209,10 +1229,6 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[d
         })
 
     return standardized
-
-
-
-
 
 
 def _extract_years_from_name_if_missing(
@@ -1424,7 +1440,7 @@ def main() -> bool:
 
         # Analyze top match
         reference_person_id_norm = (
-            _normalize_id(reference_person_id_raw)
+            normalize_gedcom_id(reference_person_id_raw)
             if reference_person_id_raw
             else None
         )
@@ -1944,13 +1960,6 @@ def test_display_relatives_fraser() -> None:
 
 def test_analyze_top_match_fraser() -> None:
     """Test analyze_top_match with real Fraser Gault data"""
-    import os
-    from pathlib import Path
-
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
     try:
         # Load real GEDCOM data - MUST be available
         gedcom_path = (
@@ -1963,34 +1972,24 @@ def test_analyze_top_match_fraser() -> None:
         gedcom_data = load_gedcom_data(Path(gedcom_path))
         assert gedcom_data is not None, "GEDCOM data must be loadable for this test"
 
-        # Search for Fraser Gault first
-        expected_first_name = os.getenv("TEST_PERSON_FIRST_NAME", "Fraser")
-        expected_last_name = os.getenv("TEST_PERSON_LAST_NAME", "Gault")
-        expected_birth_year = int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941"))
-        expected_birth_place = os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff")
-
+        person_config = _get_test_person_config()
         search_criteria = {
-            "first_name": expected_first_name.lower(),
-            "surname": expected_last_name.lower(),
-            "birth_year": expected_birth_year,
-            "birth_place": expected_birth_place,
+            "first_name": person_config["first_name"].lower(),
+            "surname": person_config["last_name"].lower(),
+            "birth_year": person_config["birth_year"],
+            "birth_place": person_config["birth_place"],
         }
-
-        scoring_criteria = search_criteria.copy()
-        scoring_weights = (
-            dict(config_schema.common_scoring_weights) if config_schema else {}
-        )
-        date_flex = {"year_match_range": 5}
 
         results = filter_and_score_individuals(
             gedcom_data,
             search_criteria,
-            scoring_criteria,
-            scoring_weights,
-            date_flex,
+            search_criteria,
+            dict(config_schema.common_scoring_weights) if config_schema else {},
+            {"year_match_range": 5},
         )
 
-        assert results, f"Test person {expected_first_name} {expected_last_name} must be found in GEDCOM"
+        full_name = f"{person_config['first_name']} {person_config['last_name']}"
+        assert results, f"Test person {full_name} must be found in GEDCOM"
 
         top_match = results[0]
         reference_person_id = (
@@ -2008,16 +2007,8 @@ def test_analyze_top_match_fraser() -> None:
             assert "Fraser" in log_content, "Should mention Fraser in analysis"
             assert "Gault" in log_content, "Should mention Gault in analysis"
 
-            # Check for family relationship information
-            family_keywords = [
-                "Parents",
-                "Siblings",
-                "Spouses",
-                "Children",
-                "Relationship",
-            ]
             found_family_info = any(
-                keyword in log_content for keyword in family_keywords
+                keyword in log_content for keyword in FAMILY_INFO_KEYWORDS
             )
             assert (
                 found_family_info
@@ -2300,94 +2291,104 @@ def test_relationship_path_calculation() -> None:
 
     # Use cached GEDCOM data (already loaded in Test 3)
     gedcom_data = get_cached_gedcom()
-
     if not gedcom_data:
         print("❌ No GEDCOM data available (should have been loaded in Test 3)")
-    else:
-        print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
+        return
 
-        # Search for test person using consistent criteria
-        person_search = {
-            "first_name": config['first_name'].lower(),
-            "surname": config['last_name'].lower(),
-            "birth_year": config['birth_year'],
-            "birth_place": config['birth_place']
-        }
+    print(f"✅ Using cached GEDCOM: {len(gedcom_data.indi_index)} individuals")
 
-        print(f"\n🔍 Locating {config['first_name']} {config['last_name']}...")
+    # Search for test person using consistent criteria
+    person_search = {
+        "first_name": config['first_name'].lower(),
+        "surname": config['last_name'].lower(),
+        "birth_year": config['birth_year'],
+        "birth_place": config['birth_place']
+    }
 
-        person_results = filter_and_score_individuals(
-            gedcom_data,
-            person_search,
-            person_search,
-            dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5}
+    print(f"\n🔍 Locating {config['first_name']} {config['last_name']}...")
+
+    person_results = filter_and_score_individuals(
+        gedcom_data,
+        person_search,
+        person_search,
+        dict(config_schema.common_scoring_weights),
+        {"year_match_range": 5}
+    )
+
+    if not person_results:
+        print(f"❌ Could not find {config['first_name']} {config['last_name']} in GEDCOM data")
+        return
+
+    person = person_results[0]
+    person_id_value = person.get('id')
+    if not person_id_value:
+        print("❌ Match missing ID, cannot calculate relationship path")
+        return
+    person_id = str(person_id_value)
+
+    person_full_name = str(person.get('full_name_disp') or config['first_name'])
+
+    print(f"✅ Found {config['first_name']}: {person_full_name}")
+    print(f"   Person ID: {person_id}")
+
+    # Get reference person (tree owner) from config
+    reference_person_id_value = config_schema.reference_person_id if config_schema else None
+
+    if not reference_person_id_value:
+        print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
+        return
+
+    reference_person_id = str(reference_person_id_value)
+
+    print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
+
+    # Test relationship path calculation
+    try:
+        print("\n🔍 Calculating relationship path...")
+
+        # Get the individual record for relationship calculation
+        person_individual = gedcom_data.find_individual_by_id(person_id)
+        if not person_individual:
+            print("❌ Could not retrieve individual record for relationship calculation")
+            return
+
+        # Find the relationship path using the consolidated function
+        path_ids = fast_bidirectional_bfs(
+            person_id,  # type: ignore[arg-type]
+            reference_person_id,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            max_depth=25,
+            node_limit=150000,
+            timeout_sec=45,
         )
 
-        if not person_results:
-            print(f"❌ Could not find {config['first_name']} {config['last_name']} in GEDCOM data")
-        else:
-            person = person_results[0]
-            person_id = person.get('id')
+        # Convert the GEDCOM path to the unified format
+        unified_path = convert_gedcom_path_to_unified_format(
+            path_ids,
+            gedcom_data.reader,
+            gedcom_data.id_to_parents,
+            gedcom_data.id_to_children,
+            gedcom_data.indi_index,
+        )
 
-            print(f"✅ Found {config['first_name']}: {person.get('full_name_disp')}")
-            print(f"   Person ID: {person_id}")
+        if not unified_path:
+            print(f"❌ Could not determine relationship path for {person_full_name}")
+            return
 
-            # Get reference person (tree owner) from config
-            reference_person_id = config_schema.reference_person_id if config_schema else None
+        # Format the path using the unified formatter
+        relationship_explanation = format_relationship_path_unified(
+            unified_path, person_full_name, reference_person_name, None  # type: ignore[arg-type]
+        )
 
-            if not reference_person_id:
-                print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
-                # Skip test but don't fail
-            else:
-                print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
+        # Print the formatted relationship path without logger prefix
+        print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
 
-                # Test relationship path calculation
-                try:
-                    print("\n🔍 Calculating relationship path...")
+        print("\u2705 Relationship path calculation completed successfully")
+        print("Conclusion: Relationship path between test person and tree owner successfully calculated")
 
-                    # Get the individual record for relationship calculation
-                    person_individual = gedcom_data.find_individual_by_id(person_id)
-                    if not person_individual:
-                        print("❌ Could not retrieve individual record for relationship calculation")
-                    else:
-                        # Find the relationship path using the consolidated function
-                        path_ids = fast_bidirectional_bfs(
-                            person_id,  # type: ignore[arg-type]
-                            reference_person_id,
-                            gedcom_data.id_to_parents,
-                            gedcom_data.id_to_children,
-                            max_depth=25,
-                            node_limit=150000,
-                            timeout_sec=45,
-                        )
-
-                        # Convert the GEDCOM path to the unified format
-                        unified_path = convert_gedcom_path_to_unified_format(
-                            path_ids,
-                            gedcom_data.reader,
-                            gedcom_data.id_to_parents,
-                            gedcom_data.id_to_children,
-                            gedcom_data.indi_index,
-                        )
-
-                        if unified_path:
-                            # Format the path using the unified formatter
-                            relationship_explanation = format_relationship_path_unified(
-                                unified_path, person.get('full_name_disp'), reference_person_name, None  # type: ignore[arg-type]
-                            )
-
-                            # Print the formatted relationship path without logger prefix
-                            print(relationship_explanation.replace("INFO ", "").replace("logger.info", ""))
-
-                            print("\u2705 Relationship path calculation completed successfully")
-                            print("Conclusion: Relationship path between test person and tree owner successfully calculated")
-                            # Success - no need to track result
-                        else:
-                            print(f"❌ Could not determine relationship path for {person.get('full_name_disp')}")
-
-                except Exception as e:
-                    print(f"❌ Relationship path calculation failed: {e}")
+    except Exception as e:
+        print(f"❌ Relationship path calculation failed: {e}")
 
     # Return nothing (part of TestSuite)
 
@@ -2451,9 +2452,6 @@ def action10_module_tests() -> bool:
 
     _teardown_test_environment(original_gedcom)
     return suite.finish_suite()
-
-
-
 
 
 # === PHASE 4.2: PERFORMANCE VALIDATION FUNCTIONS ===
@@ -2643,8 +2641,12 @@ if __name__ == "__main__":
     # Create custom filter to block performance messages
     class PerformanceFilter(logging.Filter):
         def filter(self, record: logging.LogRecord) -> bool:
-            message = record.getMessage() if hasattr(record, 'getMessage') else str(record.msg)
-            return not ('executed in' in message and 'wrapper' in message)
+            return self._should_allow(record)
+
+        @staticmethod
+        def _should_allow(record: logging.LogRecord) -> bool:
+            message = record.getMessage() if hasattr(record, "getMessage") else str(record.msg)
+            return not ("executed in" in message and "wrapper" in message)
 
     for handler in root_logger.handlers:
         handler.addFilter(PerformanceFilter())

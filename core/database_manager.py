@@ -359,8 +359,8 @@ class DatabaseManager:
         sanitized = query_type.replace(" ", "_").lower()
         return sanitized or "unknown"
 
+    @staticmethod
     async def async_execute_query(
-        self,
         session: Session,
         query: str,
         params: Optional[dict[str, Any]] = None,
@@ -763,7 +763,8 @@ class DatabaseManager:
         else:
             logger.warning("Attempted to return a None DB session.")
 
-    def _commit_session_if_active(self, session: Session, session_id: str) -> None:
+    @staticmethod
+    def _commit_session_if_active(session: Session, session_id: str) -> None:
         """Commit session if active, otherwise log warning."""
         if session.is_active:
             try:
@@ -782,7 +783,8 @@ class DatabaseManager:
                 f"DB Context Manager: Session {session_id} inactive after yield, skipping commit."
             )
 
-    def _rollback_session_if_active(self, session: Optional[Session], session_id: str) -> None:
+    @staticmethod
+    def _rollback_session_if_active(session: Optional[Session], session_id: str) -> None:
         """Rollback session if active."""
         if session and session.is_active:
             try:
@@ -966,9 +968,6 @@ def module_tests() -> bool:
 
     # Generate summary report
     return suite.finish_suite()
-
-
-
 
 
 # Test functions for comprehensive testing

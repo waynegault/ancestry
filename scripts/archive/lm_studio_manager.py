@@ -66,7 +66,8 @@ class LMStudioManager:
         self.startup_timeout = startup_timeout
         self.auto_start = auto_start
 
-    def is_process_running(self) -> bool:
+    @staticmethod
+    def is_process_running() -> bool:
         """
         Check if LM Studio process is running.
 

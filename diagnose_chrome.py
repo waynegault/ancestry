@@ -426,7 +426,7 @@ def fix_chromedriver_version_mismatch(chrome_version: str) -> bool:
             return False
 
         # Get Chrome major version
-        chrome_major = int(chrome_version.split('.')[0])
+        chrome_major = int(chrome_version.split('.', maxsplit=1)[0])
 
         # Delete old UC ChromeDriver if it exists
         appdata = os.environ.get("APPDATA", "")
@@ -757,8 +757,8 @@ def _attempt_uc_autofix(
     uc_path: Path,
 ) -> tuple[bool, str]:
     """Attempt to align ChromeDriver with the installed Chrome version."""
-    chrome_major = chrome_version.split(".")[0]
-    driver_major = chromedriver_version.split(".")[0]
+    chrome_major = chrome_version.split(".", maxsplit=1)[0]
+    driver_major = chromedriver_version.split(".", maxsplit=1)[0]
 
     try:
         from shutil import rmtree
@@ -792,8 +792,8 @@ def _evaluate_uc_alignment(
     uc_path: Path,
 ) -> tuple[bool, str]:
     """Determine compatibility status and auto-fix if needed."""
-    chrome_major = chrome_version.split(".")[0]
-    driver_major = chromedriver_version.split(".")[0]
+    chrome_major = chrome_version.split(".", maxsplit=1)[0]
+    driver_major = chromedriver_version.split(".", maxsplit=1)[0]
 
     if chrome_major == driver_major:
         message = f"Chrome {chrome_version} + ChromeDriver {chromedriver_version} compatible"

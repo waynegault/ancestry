@@ -48,13 +48,16 @@ logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
+import importlib
 import json
 import re
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from functools import lru_cache
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 from urllib.parse import quote, urlencode, urljoin
 
 if TYPE_CHECKING:
@@ -92,9 +95,66 @@ from common_params import ApiIdentifiers
 from config import config_schema
 from core.session_manager import SessionManager
 from database import Person
-from gedcom_utils import _clean_display_date, _parse_date  # type: ignore[reportPrivateUsage]
+from gedcom_utils import calculate_match_score  # Sentinel import to ensure module availability
 from logging_config import setup_logging
-from utils import _api_req, format_name  # type: ignore[reportPrivateUsage]
+from utils import format_name
+
+
+@lru_cache(maxsize=1)
+def _get_utils_module() -> ModuleType:
+    """Lazy-load the utils module to avoid circular imports."""
+    return importlib.import_module("utils")
+
+
+def _get_utils_attr(attr: str) -> Any:
+    module = _get_utils_module()
+    return getattr(module, attr)
+
+
+def _get_api_request_callable() -> Callable[..., Any]:
+    func = _get_utils_attr("_api_req")
+    if not callable(func):
+        raise ImportError("_api_req function not available from utils")
+    return cast(Callable[..., Any], func)
+
+
+def _api_request_available() -> bool:
+    try:
+        func = _get_utils_attr("_api_req")
+    except (AttributeError, ModuleNotFoundError):
+        return False
+    return callable(func)
+
+
+def _call_api_request(*args: Any, **kwargs: Any) -> Any:
+    api_request = _get_api_request_callable()
+    return api_request(*args, **kwargs)  # Call the API request function
+
+
+@lru_cache(maxsize=1)
+def _get_gedcom_utils_module() -> ModuleType:
+    """Lazy-load the gedcom_utils module to access date helpers."""
+    return importlib.import_module("gedcom_utils")
+
+
+def _get_gedcom_utils_attr(attr: str) -> Any:
+    module = _get_gedcom_utils_module()
+    return getattr(module, attr)
+
+
+def _get_parse_date_callable() -> Callable[[Optional[str]], Optional[datetime]]:
+    func = _get_gedcom_utils_attr("_parse_date")
+    if not callable(func):
+        raise ImportError("_parse_date function not available from gedcom_utils")
+    return cast(Callable[[Optional[str]], Optional[datetime]], func)
+
+
+def _get_clean_display_date_callable() -> Callable[[Optional[str]], str]:
+    func = _get_gedcom_utils_attr("_clean_display_date")
+    if not callable(func):
+        raise ImportError("_clean_display_date function not available from gedcom_utils")
+    return cast(Callable[[Optional[str]], str], func)
+
 
 # --- Test framework imports ---
 # TestSuite is imported via TYPE_CHECKING for type hints only
@@ -136,6 +196,9 @@ API_PATH_TREE_OWNER_INFO = "api/uhome/secure/rest/user/tree-info"
 API_PATH_PERSON_PICKER_SUGGEST = "api/person-picker/suggest/{tree_id}"
 API_PATH_PERSON_FACTS_USER = (
     "family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}"
+)
+API_PATH_EDIT_RELATIONSHIPS = (
+    "family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
 )
 API_PATH_PERSON_GETLADDER = (
     "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
@@ -638,7 +701,7 @@ def _normalize_gender_string(gender_str: Optional[str]) -> Optional[str]:
         return "M"
     if gender_str_lower == "female":
         return "F"
-    if gender_str_lower in ["m", "f"]:
+    if gender_str_lower in {"m", "f"}:
         return gender_str_lower.upper()
 
     return None
@@ -1020,7 +1083,7 @@ def _extract_event_from_api_details(
     date_str: Optional[str] = None
     place_str: Optional[str] = None
     date_obj: Optional[datetime] = None
-    parser = _parse_date
+    parser = _get_parse_date_callable()
     found_in_facts = False
 
     # Build all the key names we'll need
@@ -1126,7 +1189,7 @@ def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, An
         _extract_event_from_api_details("Death", person_card, facts_data)
     )
 
-    cleaner = _clean_display_date
+    cleaner = _get_clean_display_date_callable()
     details["birth_date"] = cleaner(birth_date_raw) if birth_date_raw else "N/A"
     details["death_date"] = cleaner(death_date_raw) if death_date_raw else "N/A"
 
@@ -1261,10 +1324,9 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
 @api_retry(max_attempts=3, backoff_factor=2.0)
 @circuit_breaker(failure_threshold=5, recovery_timeout=60)
 # Helper functions for call_suggest_api
-
 def _validate_suggest_api_inputs(owner_tree_id: str):
     """Validate inputs for suggest API call."""
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("Suggest API call failed: _api_req function unavailable (Import Failed?).")
         raise AncestryError(
             "_api_req function not available from utils - Check module imports and dependencies"
@@ -1353,7 +1415,7 @@ def _make_suggest_api_request(
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     }
 
-    return _api_req(
+    return _call_api_request(
         url=suggest_url,
         driver=session_manager.driver,
         session_manager=session_manager,
@@ -1569,7 +1631,7 @@ def _validate_facts_api_prerequisites(
     api_tree_id: str,
 ) -> bool:
     """Validate prerequisites for Facts API call."""
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical(
             "Facts API call failed: _api_req function unavailable (Import Failed?)."
         )
@@ -1678,7 +1740,7 @@ def _try_fallback_facts_request(
                 "X-Requested-With": "XMLHttpRequest",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
             }
-            api_response = _api_req(
+            api_response = _call_api_request(
                 url=facts_api_url,
                 driver=session_manager.driver,
                 session_manager=session_manager,
@@ -1835,7 +1897,7 @@ def call_getladder_api(
     base_url: str,
     timeout: Optional[int] = None,
 ) -> Optional[str]:
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("GetLadder API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
     if not all([owner_tree_id, target_person_id]):
@@ -1861,7 +1923,7 @@ def call_getladder_api(
     logger.debug(f"Attempting {api_description} call: {ladder_api_url}")
 
     try:
-        relationship_data = _api_req(
+        relationship_data = _call_api_request(
             url=ladder_api_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -1930,7 +1992,7 @@ def call_discovery_relationship_api(
     Returns:
         Dictionary containing relationship path data or None if the call fails
     """
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("Discovery Relationship API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
     if not all([owner_profile_id, selected_person_global_id]):
@@ -1959,7 +2021,7 @@ def call_discovery_relationship_api(
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         }
 
-        relationship_data = _api_req(
+        relationship_data = _call_api_request(
             url=discovery_api_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -2149,12 +2211,8 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
             gender = person_raw.get("Gender", "")
 
             # Extract events (birth and death)
-            birth_year = None
-            birth_date_str = None
-            birth_place = None
-            death_year = None
-            death_date_str = None
-            death_place = None
+            birth_info = {"year": None, "date": None, "place": None}
+            death_info = {"year": None, "date": None, "place": None}
             is_living = True
 
             events_list = person_raw.get("Events", [])
@@ -2166,11 +2224,19 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
                     event_type = event.get("t", "")
 
                     # Handle both old format ("B", "D") and new format ("Birth", "Death")
-                    if event_type in ("B", "Birth"):
-                        birth_year, birth_date_str, birth_place = _extract_birth_event(event)
-                    elif event_type in ("D", "Death"):
+                    if event_type in {"B", "Birth"}:
+                        (
+                            birth_info["year"],
+                            birth_info["date"],
+                            birth_info["place"],
+                        ) = _extract_birth_event(event)
+                    elif event_type in {"D", "Death"}:
                         is_living = False
-                        death_year, death_date_str, death_place = _extract_death_event(event)
+                        (
+                            death_info["year"],
+                            death_info["date"],
+                            death_info["place"],
+                        ) = _extract_death_event(event)
 
             # Construct standardized suggestion dict
             suggestion = {
@@ -2179,17 +2245,23 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
                 "FullName": full_name,
                 "GivenName": first_name_part,
                 "Surname": surname_part,
-                "BirthYear": birth_year,
-                "BirthDate": birth_date_str,
-                "BirthPlace": birth_place,
-                "DeathYear": death_year,
-                "DeathDate": death_date_str,
-                "DeathPlace": death_place,
+                "BirthYear": birth_info["year"],
+                "BirthDate": birth_info["date"],
+                "BirthPlace": birth_info["place"],
+                "DeathYear": death_info["year"],
+                "DeathDate": death_info["date"],
+                "DeathPlace": death_info["place"],
                 "Gender": gender,
                 "IsLiving": is_living,
             }
             parsed_results.append(suggestion)
-            logger.debug(f"Parsed {idx}: {full_name} (b. {birth_year} in {birth_place})")
+            logger.debug(
+                "Parsed %s: %s (b. %s in %s)",
+                idx,
+                full_name,
+                birth_info["year"],
+                birth_info["place"],
+            )
 
         except Exception as e:
             logger.error(f"Error parsing item {idx}: {e}", exc_info=True)
@@ -2206,7 +2278,7 @@ def call_treesui_list_api(
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
 ) -> Optional[list[dict[str, Any]]]:
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("TreesUI List API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
     if not owner_tree_id:
@@ -2238,7 +2310,7 @@ def call_treesui_list_api(
                 "Pragma": "no-cache",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             }
-            treesui_response = _api_req(
+            treesui_response = _call_api_request(
                 url=treesui_url,
                 driver=session_manager.driver,
                 session_manager=session_manager,
@@ -2318,7 +2390,7 @@ def call_newfamilyview_api(
     logger.debug(f"Attempting {api_description} call: {newfamilyview_url}")
 
     try:
-        response = _api_req(
+        response = _call_api_request(
             url=newfamilyview_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -2374,7 +2446,7 @@ def call_relation_ladder_with_labels_api(
     logger.debug(f"Attempting {api_description} call: {relation_ladder_url}")
 
     try:
-        response = _api_req(
+        response = _call_api_request(
             url=relation_ladder_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -2562,7 +2634,7 @@ def call_send_message_api(
     app_mode = config_schema.app_mode
     if app_mode == "dry_run":
         return _handle_dry_run_mode(person, existing_conv_id, log_prefix)
-    if app_mode not in ["production", "testing"]:
+    if app_mode not in {"production", "testing"}:
         logger.error(f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic.")
         return SEND_ERROR_INTERNAL_MODE, None
 
@@ -2583,7 +2655,7 @@ def call_send_message_api(
 
     send_api_url, payload, send_api_desc, api_headers = api_request_data
 
-    api_response = _api_req(
+    api_response = _call_api_request(
         url=send_api_url,
         driver=session_manager.driver,
         session_manager=session_manager,
@@ -2702,7 +2774,7 @@ def call_profile_details_api(
     )
 
     try:
-        profile_response = _api_req(
+        profile_response = _call_api_request(
             url=profile_url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -2817,7 +2889,7 @@ def _validate_header_trees_request(session_manager: "SessionManager", tree_name_
     if not session_manager.is_sess_valid():
         logger.error("call_header_trees_api_for_tree_id: Session invalid.")
         return False
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("call_header_trees_api_for_tree_id: _api_req is not callable!")
         raise ImportError("_api_req function not available from utils")
     return True
@@ -2847,7 +2919,7 @@ def call_header_trees_api_for_tree_id(
     }
 
     try:
-        response_data = _api_req(
+        response_data = _call_api_request(
             url=url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -2911,7 +2983,7 @@ def _validate_tree_owner_request(session_manager: "SessionManager", tree_id: str
     if not session_manager.is_sess_valid():
         logger.error("call_tree_owner_api: Session invalid.")
         return False
-    if not callable(_api_req):
+    if not _api_request_available():
         logger.critical("call_tree_owner_api: _api_req is not callable!")
         raise ImportError("_api_req function not available from utils")
     return True
@@ -2934,7 +3006,7 @@ def call_tree_owner_api(
     )
 
     try:
-        response_data = _api_req(
+        response_data = _call_api_request(
             url=url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -3001,9 +3073,6 @@ def call_enhanced_api(
         return None
 
     try:
-        # Import _api_req from utils
-        from utils import _api_req  # type: ignore[reportPrivateUsage]
-
         # Construct full URL
         base_url = config_schema.api.base_url.rstrip('/')
         # Format endpoint with provided IDs
@@ -3024,9 +3093,9 @@ def call_enhanced_api(
         except Exception as e:
             logger.debug(f"Cookie sync failed: {e}")
 
-        # Use enhanced _api_req with special parameters for enhanced headers
+        # Use enhanced API request helper with special parameters for headers
         start_time = time.time()
-        response = _api_req(
+        response = _call_api_request(
             url=url,
             driver=session_manager.driver,
             session_manager=session_manager,
@@ -3074,7 +3143,7 @@ def call_edit_relationships_api(
     Returns:
         Dictionary with relationship data or None if failed
     """
-    endpoint = "/family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
+    endpoint = f"/{API_PATH_EDIT_RELATIONSHIPS}"
     return call_enhanced_api(
         session_manager=session_manager,
         endpoint=endpoint,
@@ -3107,7 +3176,7 @@ def call_relationship_ladder_api(
     Returns:
         Dictionary with relationship ladder data or None if failed
     """
-    endpoint = "/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
+    endpoint = f"/{API_PATH_RELATION_LADDER_WITH_LABELS}"
     return call_enhanced_api(
         session_manager=session_manager,
         endpoint=endpoint,
@@ -3588,7 +3657,7 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
             assert isinstance(invalid_data, dict), "Test data should be dictionary"
             person_id = invalid_data.get("PersonId")
             # Validate that we can detect various invalid PersonId scenarios
-            is_empty = person_id is None or person_id == ""
+            is_empty = not person_id
             is_wrong_type = isinstance(person_id, int)
             assert is_empty or is_wrong_type or isinstance(person_id, str), "PersonId validation should work"
 
@@ -3628,7 +3697,6 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
         "Handling of missing or invalid configuration works gracefully",
         "Test None config, empty config, and incomplete configuration scenarios",
     )
-
 
 
 def _run_regression_guard_tests(suite: "TestSuite") -> None:

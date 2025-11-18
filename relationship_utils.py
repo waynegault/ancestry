@@ -15,6 +15,7 @@ logger = setup_module(globals(), __name__)
 # Debug log de-duplication for gender inference
 _gender_log_once: set[str] = set()
 
+
 def _log_inferred_gender_once(name: str, source: str, message: str) -> None:
     try:
         key = f"{source}:{name.lower()}"
@@ -52,11 +53,45 @@ BS4_AVAILABLE = True
 # --- Test framework imports ---
 # Import specific functions from gedcom_utils
 from common_params import GraphContext
-from gedcom_utils import _are_spouses as _are_spouses_orig  # type: ignore[attr-defined]
 from test_framework import (
     TestSuite,
     suppress_logging,
 )
+
+
+def _gedcom_helper_stub(*_args: Any, **_kwargs: Any) -> Any:
+    """Fallback helper when gedcom_utils is unavailable."""
+    return False
+
+
+try:
+    import gedcom_utils as _gedcom_utils  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - gedcom_utils absent in some test environments
+    _gedcom_utils = None
+
+GEDCOM_UTILS_AVAILABLE = _gedcom_utils is not None
+TAG_BIRTH = getattr(_gedcom_utils, "TAG_BIRTH", "BIRT") if GEDCOM_UTILS_AVAILABLE else "BIRT"
+TAG_DEATH = getattr(_gedcom_utils, "TAG_DEATH", "DEAT") if GEDCOM_UTILS_AVAILABLE else "DEAT"
+TAG_SEX = getattr(_gedcom_utils, "TAG_SEX", "SEX") if GEDCOM_UTILS_AVAILABLE else "SEX"
+
+
+def _load_gedcom_helper(name: str) -> Any:
+    if not GEDCOM_UTILS_AVAILABLE or _gedcom_utils is None:
+        return _gedcom_helper_stub
+    return getattr(_gedcom_utils, name, _gedcom_helper_stub)
+
+
+_are_cousins = _load_gedcom_helper("_are_cousins")
+_are_siblings = _load_gedcom_helper("_are_siblings")
+_get_event_info = _load_gedcom_helper("_get_event_info")
+_get_full_name = _load_gedcom_helper("_get_full_name")
+_is_aunt_or_uncle = _load_gedcom_helper("_is_aunt_or_uncle")
+_is_grandchild = _load_gedcom_helper("_is_grandchild")
+_is_grandparent = _load_gedcom_helper("_is_grandparent")
+_is_great_grandchild = _load_gedcom_helper("_is_great_grandchild")
+_is_great_grandparent = _load_gedcom_helper("_is_great_grandparent")
+_is_niece_or_nephew = _load_gedcom_helper("_is_niece_or_nephew")
+_are_spouses_orig = _load_gedcom_helper("_are_spouses")
 
 
 def _are_spouses(person1_id: str, person2_id: str, reader: Any) -> bool:
@@ -70,6 +105,7 @@ def _clean_gedcom_slashes(name: str) -> str:
     cleaned = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned)  # Start
     return re.sub(r"\s*/([^/]+)/$", r" \1", cleaned)  # End
 
+
 def _format_single_word(word: str) -> str:
     """Format a single word in a name."""
     if not word:
@@ -79,13 +115,14 @@ def _format_single_word(word: str) -> str:
     if word.isupper() and len(word) <= 3:
         return word
     # Handle name particles and prefixes
-    if word.lower() in ["mc", "mac", "o'"]:
+    if word.lower() in {"mc", "mac", "o'"}:
         return word.capitalize()
     # Handle quoted nicknames
     if word.startswith('"') and word.endswith('"'):
         return f'"{word[1:-1].title()}"'
     # Regular title case
     return word.title()
+
 
 def format_name(name: Optional[str]) -> str:
     """
@@ -106,36 +143,6 @@ def format_name(name: Optional[str]) -> str:
         return " ".join(formatted_words)
     except Exception:
         return name.title()
-
-
-# Import GEDCOM specific helpers and types from gedcom_utils - avoid config dependency
-from gedcom_utils import (
-    TAG_BIRTH,
-    TAG_DEATH,
-    TAG_SEX,
-    _are_cousins,  # type: ignore[attr-defined]
-    _are_siblings,  # type: ignore[attr-defined]
-    _get_event_info,  # type: ignore[attr-defined]
-    _get_full_name,  # type: ignore[attr-defined]
-    _is_aunt_or_uncle,  # type: ignore[attr-defined]
-    _is_grandchild,  # type: ignore[attr-defined]
-    _is_grandparent,  # type: ignore[attr-defined]
-    _is_great_grandchild,  # type: ignore[attr-defined]
-    _is_great_grandparent,  # type: ignore[attr-defined]
-    _is_niece_or_nephew,  # type: ignore[attr-defined]
-)
-
-GEDCOM_UTILS_AVAILABLE = True
-
-
-# --- Helper Functions for BFS ---
-
-
-# NOTE: Consolidated versions of these helpers exist in gedcom_utils; to avoid
-# F811 redefinition and keep single source of truth, the local copies are removed.
-
-
-# --- Relationship Path Finding Functions ---
 
 
 def _find_direct_relationship(
@@ -482,7 +489,8 @@ class RelationshipPathCache:
             "hit_rate_percent": hit_rate,
         }
 
-    def _make_key(self, start_id: str, end_id: str) -> tuple[str, str]:
+    @staticmethod
+    def _make_key(start_id: str, end_id: str) -> tuple[str, str]:
         """
         Create normalized cache key.
 
@@ -760,6 +768,7 @@ def _should_skip_list_item(item: Any) -> bool:
         logger.debug(f"Error checking item attributes: {type(item)}")
         return True
 
+
 def _extract_name_from_item(item: Any) -> str:
     """Extract name from list item."""
     try:
@@ -773,6 +782,7 @@ def _extract_name_from_item(item: Any) -> str:
         logger.debug(f"Error extracting name: {type(item)}")
         return "Unknown"
 
+
 def _extract_relationship_from_item(item: Any) -> str:
     """Extract relationship description from list item."""
     try:
@@ -784,6 +794,7 @@ def _extract_relationship_from_item(item: Any) -> str:
         logger.debug(f"Error extracting relationship: {type(item)}")
         return ""
 
+
 def _extract_lifespan_from_item(item: Any) -> str:
     """Extract lifespan from list item."""
     try:
@@ -793,6 +804,7 @@ def _extract_lifespan_from_item(item: Any) -> str:
     except (AttributeError, TypeError):
         logger.debug(f"Error extracting lifespan: {type(item)}")
         return ""
+
 
 def _extract_person_from_list_item(item: Any) -> dict[str, str]:
     """Extract name, relationship, and lifespan from a list item."""
@@ -843,6 +855,7 @@ def _try_json_api_format(json_data: Optional[dict[str, Any]], target_name: str, 
         return None
     return _format_discovery_api_path(json_data, target_name, owner_name)
 
+
 def _try_html_formats(html_content_raw: Optional[str], target_name: str, owner_name: str, relationship_type: str) -> str:
     """Try to format relationship from HTML content."""
     if not html_content_raw:
@@ -872,6 +885,7 @@ def _try_html_formats(html_content_raw: Optional[str], target_name: str, owner_n
         return "(Error: Could not convert relationship data to unified format)"
 
     return format_relationship_path_unified(unified_path, target_name, owner_name, relationship_type)
+
 
 def format_api_relationship_path(
     api_response_data: Union[str, dict[str, Any], None],
@@ -927,7 +941,7 @@ def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[
     sex_char: Optional[str] = None
     if sex_tag and hasattr(sex_tag, "value") and sex_tag.value is not None:
         sex_val = str(sex_tag.value).upper()
-        if sex_val in ("M", "F"):
+        if sex_val in {"M", "F"}:
             sex_char = sex_val
 
     return name, birth_year, death_year, sex_char
@@ -1185,7 +1199,7 @@ def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional
 
     birth_year = years_match.group(1)
     death_year_raw = years_match.group(2)
-    death_year = None if death_year_raw in ["-", "living", "Living"] else death_year_raw
+    death_year = None if death_year_raw in {"-", "living", "Living"} else death_year_raw
 
     return birth_year, death_year
 
@@ -1364,8 +1378,8 @@ def _check_uncle_aunt_pattern_sibling(path_data: list[dict[str, Any]]) -> Option
     if len(path_data) < 3:
         return None
 
-    if (path_data[1].get("relationship") in ["brother", "sister"] and
-        path_data[2].get("relationship") in ["son", "daughter"]):
+    if (path_data[1].get("relationship") in {"brother", "sister"} and
+        path_data[2].get("relationship") in {"son", "daughter"}):
         gender_val = path_data[0].get("gender")
         gender_str = str(gender_val) if gender_val is not None else ""
         return "Uncle" if gender_str.upper() == "M" else "Aunt"
@@ -1378,8 +1392,8 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict[str, Any]]) -> Optiona
     if len(path_data) < 3:
         return None
 
-    if (path_data[1].get("relationship") in ["father", "mother"] and
-        path_data[2].get("relationship") in ["son", "daughter"]):
+    if (path_data[1].get("relationship") in {"father", "mother"} and
+        path_data[2].get("relationship") in {"son", "daughter"}):
         gender_val = path_data[0].get("gender")
         gender_str = str(gender_val) if gender_val is not None else ""
         if gender_str.upper() == "M":
@@ -1396,8 +1410,8 @@ def _check_grandparent_pattern(path_data: list[dict[str, Any]]) -> Optional[str]
     if len(path_data) < 3:
         return None
 
-    if (path_data[1].get("relationship") in ["son", "daughter"] and
-        path_data[2].get("relationship") in ["son", "daughter"]):
+    if (path_data[1].get("relationship") in {"son", "daughter"} and
+        path_data[2].get("relationship") in {"son", "daughter"}):
         # Determine gender
         name = path_data[0].get("name", "")
         gender = _determine_gender_for_person(path_data[0], str(name))
@@ -1421,9 +1435,9 @@ def _check_cousin_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
     if len(path_data) < 4:
         return None
 
-    if (path_data[1].get("relationship") in ["father", "mother"] and
-        path_data[2].get("relationship") in ["brother", "sister"] and
-        path_data[3].get("relationship") in ["son", "daughter"]):
+    if (path_data[1].get("relationship") in {"father", "mother"} and
+        path_data[2].get("relationship") in {"brother", "sister"} and
+        path_data[3].get("relationship") in {"son", "daughter"}):
         return "Cousin"
 
     return None
@@ -1434,8 +1448,8 @@ def _check_nephew_niece_pattern(path_data: list[dict[str, Any]]) -> Optional[str
     if len(path_data) < 3:
         return None
 
-    if (path_data[1].get("relationship") in ["father", "mother"] and
-        path_data[2].get("relationship") in ["son", "daughter"]):
+    if (path_data[1].get("relationship") in {"father", "mother"} and
+        path_data[2].get("relationship") in {"son", "daughter"}):
         gender_val = path_data[0].get("gender")
         target_gender = str(gender_val).upper() if gender_val is not None else ""
 
@@ -1559,7 +1573,7 @@ def format_relationship_path_unified(
     )
 
     # Get owner's first name for possessive
-    owner_first_name = owner_name.split()[0] if owner_name else "Owner"
+    owner_first_name = owner_name.split(maxsplit=1)[0] if owner_name else "Owner"
     owner_possessive = f"{owner_first_name}'s" if not owner_first_name.endswith('s') else f"{owner_first_name}'"
 
     # Get target's first name for subject
@@ -1701,7 +1715,7 @@ def relationship_module_tests() -> None:
 
         # Test 3: No path available
         no_path = fast_bidirectional_bfs("@I001@", "@I999@", id_to_parents, id_to_children)
-        assert no_path is None or (isinstance(no_path, list) and len(no_path) == 0), "No path should return None or empty list"
+        assert no_path is None or (isinstance(no_path, list) and not no_path), "No path should return None or empty list"
         print(f"   ✅ No path available handling: {no_path}")
 
         print("📊 Results: 3/3 BFS pathfinding tests passed")
@@ -1815,7 +1829,8 @@ def _test_gedcom_path_conversion() -> None:
     """Test GEDCOM path conversion"""
     # Create mock GEDCOM data
     class MockReader:
-        def get_element_by_id(self, id_val: str) -> dict[str, str]:
+        @staticmethod
+        def get_element_by_id(id_val: str) -> dict[str, str]:
             return {"name": f"Person {id_val}", "id": id_val}
 
     reader = MockReader()
@@ -2036,7 +2051,7 @@ def _run_validation_tests(suite: "TestSuite") -> None:
 
         # Test with whitespace
         result = format_name("   ")
-        assert result == "", "Whitespace-only input should return empty string"
+        assert not result, "Whitespace-only input should return empty string"
 
         # Test name formatting handles various edge cases
         test_cases = [
@@ -2049,7 +2064,7 @@ def _run_validation_tests(suite: "TestSuite") -> None:
         for test_case in test_cases:
             result = format_name(test_case)
             assert isinstance(result, str), f"Should return string for: {test_case}"
-            assert len(result) > 0, f"Should return non-empty string for: {test_case}"
+            assert result, f"Should return non-empty string for: {test_case}"
 
     # Performance validation
     def test_performance():
@@ -2130,78 +2145,68 @@ def _test_relationship_path_cache() -> None:
 
     logger.info("Testing relationship path cache...")
 
-    # Test 1: First query should be a cache miss
-    initial_stats = get_relationship_cache_stats()
-    assert initial_stats["total_queries"] == 0, "Cache should start empty"
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["total_queries"] == 0, "Cache should start empty"
 
-    path1 = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
-    assert path1 is not None and len(path1) >= 2, "Should find path from grandparent to grandchild"
+    first_path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+    assert first_path is not None and len(first_path) >= 2, "Should find path from grandparent to grandchild"
 
-    stats_after_first = get_relationship_cache_stats()
-    assert stats_after_first["total_queries"] == 1, "Should have 1 query"
-    assert stats_after_first["misses"] == 1, "First query should be a miss"
-    assert stats_after_first["hits"] == 0, "No hits yet"
-    logger.info(f"✓ First query (cache miss): {path1}")
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["total_queries"] == 1, "Should have 1 query"
+    assert cache_stats["misses"] == 1, "First query should be a miss"
+    assert cache_stats["hits"] == 0, "No hits yet"
+    logger.info(f"✓ First query (cache miss): {first_path}")
 
-    # Test 2: Repeat query should be a cache hit
-    path2 = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
-    assert path2 == path1, "Cached path should match original"
+    path = fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
+    assert path == first_path, "Cached path should match original"
 
-    stats_after_second = get_relationship_cache_stats()
-    assert stats_after_second["total_queries"] == 2, "Should have 2 queries"
-    assert stats_after_second["hits"] == 1, "Second query should be a hit"
-    assert stats_after_second["hit_rate_percent"] == 50.0, "Hit rate should be 50%"
-    logger.info(f"✓ Second query (cache hit): {path2}, hit rate: {stats_after_second['hit_rate_percent']:.1f}%")
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["total_queries"] == 2, "Should have 2 queries"
+    assert cache_stats["hits"] == 1, "Second query should be a hit"
+    assert cache_stats["hit_rate_percent"] == 50.0, "Hit rate should be 50%"
+    logger.info(f"✓ Second query (cache hit): {path}, hit rate: {cache_stats['hit_rate_percent']:.1f}%")
 
-    # Test 3: Bidirectional query (reversed IDs) should also hit cache
-    path3 = fast_bidirectional_bfs("@I003@", "@I001@", id_to_parents, id_to_children)
-    assert path3 is not None, "Reverse query should find path"
+    path = fast_bidirectional_bfs("@I003@", "@I001@", id_to_parents, id_to_children)
+    assert path is not None, "Reverse query should find path"
 
-    stats_after_third = get_relationship_cache_stats()
-    assert stats_after_third["hits"] == 2, "Reverse query should also hit cache"
-    hit_rate_third = stats_after_third["hit_rate_percent"]
-    assert 66.0 <= hit_rate_third <= 67.0, f"Hit rate should be ~66.7%, got {hit_rate_third}"
-    logger.info(f"✓ Reverse query (cache hit): {path3}, hit rate: {hit_rate_third:.1f}%")
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["hits"] == 2, "Reverse query should also hit cache"
+    hit_rate = cache_stats["hit_rate_percent"]
+    assert 66.0 <= hit_rate <= 67.0, f"Hit rate should be ~66.7%, got {hit_rate}"
+    logger.info(f"✓ Reverse query (cache hit): {path}, hit rate: {hit_rate:.1f}%")
 
-    # Test 4: Different query should be a cache miss
-    path4 = fast_bidirectional_bfs("@I001@", "@I004@", id_to_parents, id_to_children)
-    assert path4 is not None and len(path4) >= 2, "Should find different path"
+    path = fast_bidirectional_bfs("@I001@", "@I004@", id_to_parents, id_to_children)
+    assert path is not None and len(path) >= 2, "Should find different path"
 
-    stats_after_fourth = get_relationship_cache_stats()
-    assert stats_after_fourth["misses"] == 2, "New query should be a miss"
-    logger.info(f"✓ Different query (cache miss): {path4}")
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["misses"] == 2, "New query should be a miss"
+    logger.info(f"✓ Different query (cache miss): {path}")
 
-    # Test 5: Verify cache size management
-    stats = get_relationship_cache_stats()
-    assert stats["size"] <= stats["maxsize"], "Cache size should not exceed maxsize"
-    assert stats["size"] >= 2, "Should have cached at least 2 unique paths"
-    logger.info(f"✓ Cache size: {stats['size']}/{stats['maxsize']}")
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["size"] <= cache_stats["maxsize"], "Cache size should not exceed maxsize"
+    assert cache_stats["size"] >= 2, "Should have cached at least 2 unique paths"
+    logger.info(f"✓ Cache size: {cache_stats['size']}/{cache_stats['maxsize']}")
 
-    # Test 6: Test same-person queries (should be cached)
-    same1 = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
-    same2 = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
-    assert same1 == same2 == ["@I001@"], "Same-person queries should be cached"
+    same_person_path = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
+    assert same_person_path == ["@I001@"], "Same-person query should return the same person"
+    same_person_path = fast_bidirectional_bfs("@I001@", "@I001@", id_to_parents, id_to_children)
+    assert same_person_path == ["@I001@"], "Same-person queries should be cached"
     logger.info("✓ Same-person queries cached correctly")
 
-    # Test 7: Verify final hit rate
-    final_stats = get_relationship_cache_stats()
-    hit_rate = final_stats["hit_rate_percent"]
-    logger.info(f"✓ Final cache stats: {final_stats['hits']} hits, {final_stats['misses']} misses, {hit_rate:.1f}% hit rate")
+    cache_stats = get_relationship_cache_stats()
+    hit_rate = cache_stats["hit_rate_percent"]
+    logger.info(f"✓ Final cache stats: {cache_stats['hits']} hits, {cache_stats['misses']} misses, {hit_rate:.1f}% hit rate")
 
-    # Test 8: Clear cache and verify reset
     clear_relationship_cache()
-    cleared_stats = get_relationship_cache_stats()
-    assert cleared_stats["total_queries"] == 0, "Cache should be cleared"
-    assert cleared_stats["hits"] == 0, "Hits should be reset"
-    assert cleared_stats["size"] == 0, "Cache should be empty"
+    cache_stats = get_relationship_cache_stats()
+    assert cache_stats["total_queries"] == 0, "Cache should be cleared"
+    assert cache_stats["hits"] == 0, "Hits should be reset"
+    assert cache_stats["size"] == 0, "Cache should be empty"
     logger.info("✓ Cache cleared successfully")
 
-    # Test 9: Performance monitor integration
-    # Run some queries to generate stats
-    for _i in range(5):
+    for _ in range(5):
         fast_bidirectional_bfs("@I001@", "@I003@", id_to_parents, id_to_children)
 
-    # Report to performance monitor (should not crash)
     report_cache_stats_to_performance_monitor()
     logger.info("✓ Performance monitor integration working")
 

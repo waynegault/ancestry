@@ -31,7 +31,6 @@ def get_unified_search_criteria(
     if get_input_func is None:
         get_input_func = input
 
-
     # Collect basic criteria
     first_name = _sanitize_input(get_input_func("  First Name Contains: "))
     surname = _sanitize_input(get_input_func("  Surname Contains: "))
@@ -41,7 +40,6 @@ def get_unified_search_criteria(
         logger.warning("Search requires First Name or Surname. Search cancelled.")
         print("\nSearch requires First Name or Surname. Search cancelled.")
         return None
-
 
     # Birth year
     birth_year = _parse_year_input(get_input_func("  Birth Year (YYYY): "))
@@ -100,6 +98,7 @@ def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetim
         logger.warning(f"Cannot create date object for {date_type} year {year}.")
         return None
 
+
 # Re-export unified presenter functions from genealogy_presenter (single source of truth)
 from genealogy_presenter import display_family_members, present_post_selection  # type: ignore[import-not-found]
 
@@ -108,7 +107,7 @@ def _debug_log_criteria(criteria: dict[str, Any]) -> None:
     """Log collected criteria at DEBUG level, excluding date objects."""
     logger.debug("--- Search Criteria Collected ---")
     for key, value in criteria.items():
-        if value is not None and key not in ["birth_date_obj", "death_date_obj"]:
+        if value is not None and key not in {"birth_date_obj", "death_date_obj"}:
             logger.debug(f"  {key.replace('_', ' ').title()}: {value}")
 
 
@@ -125,13 +124,11 @@ def _print_criteria_summary(criteria: dict[str, Any]) -> None:
     ]
     for key, label in label_map:
         value = criteria.get(key)
-        if value not in (None, ""):
+        if value not in {None, ""}:
             print(f"  {label}: {value}")
     print("")
 
 # (moved) presentation helpers are provided by genealogy_presenter module
-
-
 
 
 # (moved) present_post_selection is provided by genealogy_presenter module
@@ -170,6 +167,7 @@ def _test_present_post_selection_minimal() -> None:
     finally:
         sys.stdout = sys.__stdout__
 
+
 # === TESTS ===
 def _test_sanitize_input() -> None:
     """Test input sanitization."""
@@ -201,8 +199,6 @@ def _test_parse_year_input() -> None:
     assert _parse_year_input("abc") is None, "Should return None for non-numeric"
     assert _parse_year_input("") is None, "Should return None for empty"
     assert _parse_year_input("19.50") is None, "Should return None for decimal"
-
-
 
 
 def _test_create_date_object() -> None:
@@ -330,7 +326,7 @@ def _test_display_family_members() -> None:
         sys.stdout = sys.__stdout__
         output = captured_output.getvalue()
         # Should handle empty data gracefully
-        assert "Parents:" in output or output == "", "Should handle empty data"
+        assert "Parents:" in output or not output, "Should handle empty data"
     finally:
         sys.stdout = sys.__stdout__
 
@@ -385,7 +381,6 @@ def search_criteria_utils_module_tests() -> bool:
         "present_post_selection()",
         "Smoke test with preformatted relationship text"
     )
-
 
     # Category 2: Date Handling Tests
     suite.run_test(
@@ -443,4 +438,3 @@ run_comprehensive_tests = create_standard_test_runner(search_criteria_utils_modu
 
 if __name__ == "__main__":
     run_comprehensive_tests()
-

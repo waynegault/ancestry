@@ -504,4 +504,3 @@ if __name__ == "__main__":
     print("🤖 Running Relationship Diagram Generation comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
-

@@ -8,6 +8,7 @@ SessionManager class to provide a clean separation of concerns.
 """
 
 # === CORE INFRASTRUCTURE ===
+import importlib
 import sys
 from pathlib import Path
 
@@ -24,7 +25,9 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import time
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
@@ -49,6 +52,19 @@ config_schema = config_manager.get_config()
 DriverType = Optional[WebDriver]
 
 
+@lru_cache(maxsize=1)
+def _get_utils_module() -> ModuleType:
+    """Lazy-load utils to access optional helpers without private imports."""
+    return importlib.import_module("utils")
+
+
+def _load_login_cookies_if_available(session_like: Any) -> bool:
+    loader = getattr(_get_utils_module(), "_load_login_cookies", None)
+    if not callable(loader):
+        return False
+    return bool(loader(session_like))
+
+
 class BrowserManager:
     """Manages browser/WebDriver operations and state."""
 
@@ -61,7 +77,8 @@ class BrowserManager:
 
         logger.debug("BrowserManager initialized")
 
-    def _log_browser_initialization_error(self) -> None:
+    @staticmethod
+    def _log_browser_initialization_error() -> None:
         """Log detailed browser initialization error message."""
         logger.error("WebDriver initialization failed (init_webdvr returned None).")
         logger.error("=" * 80)
@@ -93,21 +110,17 @@ class BrowserManager:
     def _load_saved_cookies(self) -> None:
         """Try to load saved cookies after navigating to base URL."""
         try:
-            from utils import _load_login_cookies
             # Create a minimal session manager-like object for cookie loading
-            class CookieLoader:
-                def __init__(self, driver: Any) -> None:
-                    self.driver = driver
-
-            cookie_loader = CookieLoader(self.driver)
-            if _load_login_cookies(cookie_loader):  # type: ignore[arg-type] - CookieLoader has compatible .driver attribute
+            cookie_loader = SimpleNamespace(driver=self.driver)
+            if _load_login_cookies_if_available(cookie_loader):
                 logger.debug("Saved login cookies loaded successfully")
             else:
                 logger.debug("No saved cookies to load or loading failed")
         except Exception as e:
             logger.warning(f"Error loading saved cookies: {e}")
 
-    def _restore_terminal_focus(self) -> None:
+    @staticmethod
+    def _restore_terminal_focus() -> None:
         """Force focus back to the console window on Windows."""
         if sys.platform != "win32":
             return

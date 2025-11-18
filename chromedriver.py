@@ -695,7 +695,7 @@ def run_all_tests(interactive: bool = False) -> bool:
     print("\n=== Test Summary ===")
     passed = sum(1 for result in test_results.values() if result)
     total = len(test_results)
-    print(f"Passed: {passed}/{total} tests ({passed/total*100:.1f}%)")
+    print(f"Passed: {passed}/{total} tests ({passed / total * 100:.1f}%)")
 
     for test_name, result in test_results.items():
         status = "✓ PASS" if result else "✗ FAIL"
@@ -731,7 +731,7 @@ def main() -> int:
 
     # Parse command line arguments
     interactive = False
-    if len(sys.argv) > 1 and sys.argv[1].lower() in ["-i", "--interactive"]:
+    if len(sys.argv) > 1 and sys.argv[1].lower() in {"-i", "--interactive"}:
         interactive = True
 
     # Run tests
@@ -793,6 +793,7 @@ def test_webdriver_initialization() -> None:
     if is_function_available("initialize_chrome_driver"):
         init_func = get_function("initialize_chrome_driver")
         assert callable(init_func)
+
 
 def test_chrome_options_creation() -> None:
     """Test that undetected_chromedriver ChromeOptions can be created without NameError."""

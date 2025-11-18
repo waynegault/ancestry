@@ -94,6 +94,19 @@ except Exception:
         "Google GenAI library not found. Gemini functionality disabled."
     )
 
+# Attempt Grok (xAI) import
+try:
+    from xai_sdk import Client as XAIClient  # type: ignore
+    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
+
+    xai_available = True
+except ImportError:
+    XAIClient = None  # type: ignore
+    xai_system_message = None  # type: ignore
+    xai_user_message = None  # type: ignore
+    xai_available = False
+    logging.warning("xai-sdk library not found. Grok functionality disabled.")
+
 # === LOCAL IMPORTS ===
 import contextlib
 
@@ -755,23 +768,127 @@ def _call_inception_model(system_prompt: str, user_content: str, max_tokens: int
         return None
 
 
+def _normalize_grok_entry(entry: Any) -> str | None:
+    if isinstance(entry, str):
+        return entry.strip()
+    text_value = getattr(entry, "text", None)
+    if isinstance(text_value, str):
+        return text_value.strip()
+    content_value = getattr(entry, "content", None)
+    if isinstance(content_value, str):
+        return content_value.strip()
+    return None
+
+
+def _normalize_grok_sequence(entries: list[Any]) -> str | None:
+    parts = [part for part in (_normalize_grok_entry(item) for item in entries) if part]
+    return "\n".join(parts) if parts else None
+
+
+def _normalize_grok_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return _normalize_grok_sequence(value)
+    return _normalize_grok_entry(value)
+
+
+def _iter_grok_content_candidates(response: Any, primary_content: Any) -> list[Any]:
+    message = getattr(response, "message", None)
+    return [
+        primary_content,
+        getattr(message, "content", None) if message is not None else None,
+        response,
+    ]
+
+
+def _extract_grok_response_content(response: Any | None) -> str | None:
+    """Normalize Grok (xAI) response content to a plain string."""
+    if response is None:
+        return None
+
+    try:
+        primary_content = getattr(response, "content", None)
+        for candidate in _iter_grok_content_candidates(response, primary_content):
+            normalized = _normalize_grok_value(candidate)
+            if normalized:
+                return normalized
+
+        fallback_source = primary_content if primary_content is not None else response
+        fallback_str = str(fallback_source).strip()
+        return fallback_str or None
+    except Exception as exc:  # pragma: no cover - defensive logging around SDK objects
+        logger.error(f"Failed to parse Grok response: {exc}")
+        return None
+
+
+def _call_grok_model(
+    system_prompt: str,
+    user_content: str,
+    max_tokens: int,
+    temperature: float,
+    response_format_type: str | None,
+) -> str | None:
+    """Call Grok (xAI) using the official SDK."""
+    if not xai_available or XAIClient is None or xai_system_message is None or xai_user_message is None:
+        logger.error("_call_grok_model: xai-sdk library not available.")
+        return None
+
+    api_key = getattr(config_schema.api, "xai_api_key", None)
+    model_name = getattr(config_schema.api, "xai_model", "grok-4-fast-non-reasoning")
+    api_host = getattr(config_schema.api, "xai_api_host", "api.x.ai")
+
+    if not api_key:
+        logger.error("_call_grok_model: XAI_API_KEY not configured.")
+        return None
+    if not model_name:
+        logger.error("_call_grok_model: XAI_MODEL not configured.")
+        return None
+
+    timeout_seconds = max(int(getattr(config_schema.api, "request_timeout", 60)), 60)
+
+    try:
+        client = XAIClient(api_key=api_key, api_host=api_host, timeout=timeout_seconds)
+        chat_session = client.chat.create(
+            model=model_name,
+            max_tokens=max_tokens or None,
+            temperature=temperature,
+            response_format="json_object" if response_format_type == "json_object" else None,
+        )
+        chat_session.append(xai_system_message(system_prompt))
+        chat_session.append(xai_user_message(user_content))
+        response = chat_session.sample()
+        content = _extract_grok_response_content(response)
+        if content:
+            return content
+        logger.error("Grok returned an empty or unrecognized response structure.")
+        return None
+    except Exception as exc:  # pragma: no cover - network/SDK errors
+        logger.error(f"Grok API call failed: {exc}")
+        return None
+
+
 def _route_ai_provider_call(
     provider: str, system_prompt: str, user_content: str,
     max_tokens: int, temperature: float, response_format_type: str | None
 ) -> str | None:
     """Route call to appropriate AI provider."""
+    result: str | None = None
     if provider == "deepseek":
-        return _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    if provider == "moonshot":
-        return _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    if provider == "gemini":
-        return _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
-    if provider == "local_llm":
-        return _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    if provider == "inception":
-        return _call_inception_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
-    return None
+        result = _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "moonshot":
+        result = _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "gemini":
+        result = _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
+    elif provider == "local_llm":
+        result = _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "inception":
+        result = _call_inception_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "grok":
+        result = _call_grok_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    else:
+        logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
+    return result
 
 
 def _provider_is_configured(provider: str) -> bool:
@@ -790,6 +907,8 @@ def _provider_is_configured(provider: str) -> bool:
             getattr(config_schema.api, attr, None)
             for attr in ("inception_api_key", "inception_ai_model", "inception_ai_base_url")
         )
+    if provider == "grok":
+        return bool(getattr(config_schema.api, "xai_api_key", None))
     return False
 
 
@@ -797,7 +916,7 @@ def _resolve_provider_chain(primary_provider: str) -> list[str]:
     """Build the list of providers to attempt, including safe fallbacks."""
     provider_chain = [primary_provider]
     if primary_provider == "moonshot":
-        for candidate in ("deepseek", "gemini", "local_llm"):
+        for candidate in ("deepseek", "gemini", "local_llm", "grok"):
             if candidate not in provider_chain and _provider_is_configured(candidate):
                 provider_chain.append(candidate)
     return provider_chain
@@ -810,6 +929,7 @@ def _should_fallback_to_next_provider(provider: str, error: Exception) -> bool:
     if AuthenticationError and isinstance(error, AuthenticationError):
         return True
     return bool(APIError and isinstance(error, APIError) and getattr(error, "status_code", None) == 401)
+
 
 def _handle_authentication_errors(e: Exception, provider: str) -> None:
     """Handle authentication-related errors."""
@@ -855,6 +975,7 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionM
     _handle_rate_limit_errors(e, provider, session_manager)
     _handle_api_errors(e, provider)
     _handle_internal_errors(e, provider)
+
 
 @cached_api_call("ai", ttl=1800)
 def _call_ai_model(
@@ -1072,6 +1193,7 @@ def _check_nested_structure(parsed_json: dict[str, Any], salvaged: dict[str, Any
         return True
     return False
 
+
 def _transform_flat_to_nested(parsed_json: dict[str, Any]) -> dict[str, Any]:
     """Transform flat structure to nested structure."""
     extracted_data = {}
@@ -1102,6 +1224,7 @@ def _transform_flat_to_nested(parsed_json: dict[str, Any]) -> dict[str, Any]:
     )
 
     return extracted_data
+
 
 def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: dict[str, Any]) -> dict[str, Any]:
     """Attempt to salvage flat structure by transforming to expected nested structure."""
@@ -1888,9 +2011,9 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in ["deepseek", "gemini", "moonshot", "local_llm"]:
+    if ai_provider not in {"deepseek", "gemini", "moonshot", "local_llm", "inception", "grok"}:
         logger.error(
-            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', or 'local_llm'",
+            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', 'inception', or 'grok'",
             ai_provider,
         )
         return False
@@ -2031,6 +2154,40 @@ def _validate_local_llm_config() -> bool:
     return config_valid
 
 
+def _validate_grok_config() -> bool:
+    """Validate Grok (xAI) configuration."""
+    config_valid = True
+
+    if not xai_available:
+        logger.error("❌ xai-sdk library not available for Grok")
+        config_valid = False
+    else:
+        logger.info("✅ xai-sdk library available")
+
+    api_key = getattr(config_schema.api, "xai_api_key", None)
+    model_name = getattr(config_schema.api, "xai_model", None)
+    api_host = getattr(config_schema.api, "xai_api_host", None)
+
+    if not api_key:
+        logger.error("❌ XAI_API_KEY not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ XAI_API_KEY configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ XAI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ XAI_MODEL: {model_name}")
+
+    if api_host:
+        logger.info(f"✅ XAI_API_HOST: {api_host}")
+    else:
+        logger.info("XAI_API_HOST not set, defaulting to api.x.ai")
+
+    return config_valid
+
+
 def test_configuration() -> bool:
     """
     Tests AI configuration and dependencies.
@@ -2043,17 +2200,16 @@ def test_configuration() -> bool:
     if not _validate_ai_provider(ai_provider):
         return False
 
-    # Test provider-specific configuration
-    if ai_provider == "deepseek":
-        return _validate_deepseek_config()
-    if ai_provider == "gemini":
-        return _validate_gemini_config()
-    if ai_provider == "moonshot":
-        return _validate_moonshot_config()
-    if ai_provider == "local_llm":
-        return _validate_local_llm_config()
+    validators: dict[str, Any] = {
+        "deepseek": _validate_deepseek_config,
+        "gemini": _validate_gemini_config,
+        "moonshot": _validate_moonshot_config,
+        "local_llm": _validate_local_llm_config,
+        "grok": _validate_grok_config,
+    }
 
-    return True
+    validator = validators.get(ai_provider)
+    return bool(validator()) if validator else True
 
 
 def _validate_extraction_task_structure(prompt_content: str) -> bool:
@@ -2379,7 +2535,7 @@ def ai_interface_module_tests() -> bool:
 
                 suite.run_test(
                     "Health Check",
-                    lambda: quick_health_check(sm)["overall_health"] in ["healthy", "degraded"],
+                    lambda: quick_health_check(sm)["overall_health"] in {"healthy", "degraded"},
                     "AI interface health check completes successfully",
                     "Test health check functionality",
                     "Verify health check returns valid status",

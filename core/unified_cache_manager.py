@@ -91,7 +91,8 @@ class UnifiedCacheManager:
             },
         }
 
-    def _emit_cache_operation(self, service: str, endpoint: str, operation: str) -> None:
+    @staticmethod
+    def _emit_cache_operation(service: str, endpoint: str, operation: str) -> None:
         """Record cache operation metrics with safe fallbacks."""
 
         safe_service = service or "unknown"
@@ -373,7 +374,8 @@ class UnifiedCacheManager:
 
     # Private methods
 
-    def _get_default_ttl(self, service: str) -> int:
+    @staticmethod
+    def _get_default_ttl(service: str) -> int:
         """Get default TTL for service."""
         ttls = {
             "ancestry": 2400,  # 40 minutes

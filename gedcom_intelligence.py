@@ -280,52 +280,69 @@ class GedcomIntelligenceAnalyzer:
         """Analyze family relationships for conflicts."""
         logger.debug("Analyzing relationship conflicts...")
 
-        # Check for relationship inconsistencies
-        for person_id in gedcom_data.indi_index:
+        parent_map = getattr(gedcom_data, "id_to_parents", {})
+        for person_id, parents in parent_map.items():
             try:
-                # Check parent-child age gaps
-                if person_id in gedcom_data.id_to_parents:
-                    person_birth_year = self._extract_birth_year(gedcom_data.indi_index[person_id])
+                person_record = gedcom_data.indi_index.get(person_id)
+                person_birth_year = (
+                    self._extract_birth_year(person_record) if person_record else None
+                )
+                if not person_birth_year:
+                    continue
 
-                    for parent_id in gedcom_data.id_to_parents[person_id]:
-                        if parent_id in gedcom_data.indi_index:
-                            parent_birth_year = self._extract_birth_year(gedcom_data.indi_index[parent_id])
+                for parent_id in parents:
+                    parent_record = gedcom_data.indi_index.get(parent_id)
+                    parent_birth_year = (
+                        self._extract_birth_year(parent_record) if parent_record else None
+                    )
+                    if not parent_birth_year:
+                        continue
 
-                            if person_birth_year and parent_birth_year:
-                                age_gap = person_birth_year - parent_birth_year
-
-                                if age_gap < 12:  # Parent too young
-                                    conflict = GedcomConflict(
-                                        conflict_id=f"age_gap_{parent_id}_{person_id}",
-                                        conflict_type="relationship_conflict",
-                                        description=f"Parent-child age gap too small: {age_gap} years",
-                                        people_involved=[parent_id, person_id],
-                                        severity="major",
-                                        resolution_suggestions=[
-                                            "Verify parent-child relationship",
-                                            "Check for transcription errors in dates",
-                                            "Consider if this might be grandparent-grandchild"
-                                        ]
-                                    )
-                                    self.conflicts_identified.append(conflict)
-                                elif age_gap > 60:  # Parent quite old
-                                    conflict = GedcomConflict(
-                                        conflict_id=f"late_parent_{parent_id}_{person_id}",
-                                        conflict_type="relationship_conflict",
-                                        description=f"Large parent-child age gap: {age_gap} years",
-                                        people_involved=[parent_id, person_id],
-                                        severity="minor",
-                                        resolution_suggestions=[
-                                            "Verify relationship accuracy",
-                                            "Check if this might be step-parent relationship",
-                                            "Look for additional records confirming relationship"
-                                        ]
-                                    )
-                                    self.conflicts_identified.append(conflict)
+                    self._evaluate_age_gap_conflict(person_id, parent_id, person_birth_year, parent_birth_year)
 
             except Exception as e:
                 logger.debug(f"Error analyzing relationships for person {person_id}: {e}")
                 continue
+
+    def _evaluate_age_gap_conflict(
+        self,
+        person_id: str,
+        parent_id: str,
+        person_birth_year: Optional[int],
+        parent_birth_year: Optional[int],
+    ) -> None:
+        if person_birth_year is None or parent_birth_year is None:
+            return
+
+        age_gap = person_birth_year - parent_birth_year
+        if age_gap < 12:
+            conflict = GedcomConflict(
+                conflict_id=f"age_gap_{parent_id}_{person_id}",
+                conflict_type="relationship_conflict",
+                description=f"Parent-child age gap too small: {age_gap} years",
+                people_involved=[parent_id, person_id],
+                severity="major",
+                resolution_suggestions=[
+                    "Verify parent-child relationship",
+                    "Check for transcription errors in dates",
+                    "Consider if this might be grandparent-grandchild",
+                ],
+            )
+            self.conflicts_identified.append(conflict)
+        elif age_gap > 60:
+            conflict = GedcomConflict(
+                conflict_id=f"late_parent_{parent_id}_{person_id}",
+                conflict_type="relationship_conflict",
+                description=f"Large parent-child age gap: {age_gap} years",
+                people_involved=[parent_id, person_id],
+                severity="minor",
+                resolution_suggestions=[
+                    "Verify relationship accuracy",
+                    "Check if this might be step-parent relationship",
+                    "Look for additional records confirming relationship",
+                ],
+            )
+            self.conflicts_identified.append(conflict)
 
     def _identify_research_opportunities(self, gedcom_data: Any):
         """Identify promising research opportunities."""
@@ -376,7 +393,6 @@ class GedcomIntelligenceAnalyzer:
                 "recommendations": self._generate_ai_recommendations()
             }
 
-
         except Exception as e:
             logger.error(f"Error generating AI insights: {e}")
             return {"error": "Failed to generate AI insights"}
@@ -426,7 +442,8 @@ class GedcomIntelligenceAnalyzer:
         return recommendations
 
     # Helper methods for data extraction and analysis
-    def _extract_person_name(self, person_record: Any) -> str:
+    @staticmethod
+    def _extract_person_name(person_record: Any) -> str:
         """Extract person's name from GEDCOM record."""
         try:
             if hasattr(person_record, 'name') and person_record.name:
@@ -435,7 +452,8 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return "Unknown Name"
 
-    def _extract_birth_year(self, _person_record: Any) -> Optional[int]:
+    @staticmethod
+    def _extract_birth_year(_person_record: Any) -> Optional[int]:
         """Extract birth year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -444,7 +462,8 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_year(self, _person_record: Any) -> Optional[int]:
+    @staticmethod
+    def _extract_death_year(_person_record: Any) -> Optional[int]:
         """Extract death year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -452,7 +471,8 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_birth_place(self, _person_record: Any) -> Optional[str]:
+    @staticmethod
+    def _extract_birth_place(_person_record: Any) -> Optional[str]:
         """Extract birth place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -460,7 +480,8 @@ class GedcomIntelligenceAnalyzer:
         except Exception:
             return None
 
-    def _extract_death_place(self, _person_record: Any) -> Optional[str]:
+    @staticmethod
+    def _extract_death_place(_person_record: Any) -> Optional[str]:
         """Extract death place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -476,7 +497,8 @@ class GedcomIntelligenceAnalyzer:
         """Check if person has birth place."""
         return self._extract_birth_place(person_record) is not None
 
-    def _extract_country_from_place(self, place: str) -> Optional[str]:
+    @staticmethod
+    def _extract_country_from_place(place: str) -> Optional[str]:
         """Extract country from place string."""
         if not place:
             return None
@@ -519,12 +541,14 @@ class GedcomIntelligenceAnalyzer:
         sorted_surnames = sorted(surname_counts.items(), key=lambda x: x[1], reverse=True)
         return [surname for surname, _count in sorted_surnames[:5]]
 
-    def _find_geographic_patterns(self, _gedcom_data: Any) -> list[str]:
+    @staticmethod
+    def _find_geographic_patterns(_gedcom_data: Any) -> list[str]:
         """Find geographic patterns in the family tree."""
         # Placeholder implementation
         return ["Pattern analysis not yet implemented"]
 
-    def _analyze_time_coverage(self, _gedcom_data: Any) -> dict[str, Any]:
+    @staticmethod
+    def _analyze_time_coverage(_gedcom_data: Any) -> dict[str, Any]:
         """Analyze time period coverage of the family tree."""
         # Placeholder implementation
         return {"earliest_date": "Unknown", "latest_date": "Unknown", "coverage_span": "Unknown"}
@@ -540,7 +564,8 @@ class GedcomIntelligenceAnalyzer:
                                   len([item for item in self.opportunities_identified if item.priority == "high"])
         }
 
-    def _empty_analysis_result(self) -> dict[str, Any]:
+    @staticmethod
+    def _empty_analysis_result() -> dict[str, Any]:
         """Return empty analysis result for error cases."""
         return {
             "analysis_timestamp": datetime.now().isoformat(),
@@ -553,15 +578,18 @@ class GedcomIntelligenceAnalyzer:
             "error": "Analysis failed"
         }
 
-    def _gap_to_dict(self, gap: GedcomGap) -> dict[str, Any]:
+    @staticmethod
+    def _gap_to_dict(gap: GedcomGap) -> dict[str, Any]:
         """Convert GedcomGap to dictionary using dataclass asdict()."""
         return asdict(gap)
 
-    def _conflict_to_dict(self, conflict: GedcomConflict) -> dict[str, Any]:
+    @staticmethod
+    def _conflict_to_dict(conflict: GedcomConflict) -> dict[str, Any]:
         """Convert GedcomConflict to dictionary using dataclass asdict()."""
         return asdict(conflict)
 
-    def _opportunity_to_dict(self, opportunity: ResearchOpportunity) -> dict[str, Any]:
+    @staticmethod
+    def _opportunity_to_dict(opportunity: ResearchOpportunity) -> dict[str, Any]:
         """Convert ResearchOpportunity to dictionary using dataclass asdict()."""
         return asdict(opportunity)
 
@@ -600,6 +628,7 @@ def test_gap_detection_with_mocked_birth_year() -> None:
         'id_to_children': {}
     })()
     # Monkey patch birth year extractor
+
     def _mock_birth_year(person_record: Any) -> Optional[int]:
         _ = person_record
         return 1865

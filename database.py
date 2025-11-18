@@ -27,8 +27,9 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from pathlib import Path
-from typing import Any, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 from uuid import uuid4
 
 # === THIRD-PARTY IMPORTS ===
@@ -1289,7 +1290,7 @@ def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifier
         ),
         "administrator_username": person_data.get("administrator_username"),
         "message_link": person_data.get("message_link"),
-        "in_my_tree": bool(person_data.get("in_my_tree", False)),
+        "in_my_tree": bool(person_data.get("in_my_tree")),
         "status": status_enum,
         "first_name": person_data.get("first_name"),
         "gender": person_data.get("gender"),
@@ -1431,8 +1432,8 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
     validated_data["shared_segments"] = _validate_optional_numeric(match_data.get("shared_segments"))
     validated_data["longest_shared_segment"] = _validate_optional_numeric(match_data.get("longest_shared_segment"), allow_float=True)
     validated_data["meiosis"] = _validate_optional_numeric(match_data.get("meiosis"))
-    validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side", False))
-    validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side", False))
+    validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side"))
+    validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side"))
 
     # Include ethnicity columns (dynamically added columns starting with 'ethnicity_')
     for key, value in match_data.items():
@@ -1603,10 +1604,11 @@ def create_or_update_dna_match(
 
 def _prepare_family_tree_args(tree_data: dict[str, Any], people_id: int) -> dict[str, Any]:
     """Prepare valid arguments for FamilyTree model."""
+    excluded_fields = {"id", "created_at", "updated_at"}
     valid_tree_args = {
         col.name: tree_data.get(col.name)
         for col in FamilyTree.__table__.columns
-        if col.name in tree_data and col.name not in ("id", "created_at", "updated_at")
+        if col.name in tree_data and col.name not in excluded_fields
     }
     valid_tree_args["people_id"] = people_id
     return valid_tree_args
@@ -1781,7 +1783,7 @@ def _compare_gender_field(current_value: Any, new_value: Any) -> tuple[bool, Any
         new_value is not None
         and current_value is None
         and isinstance(new_value, str)
-        and new_value.lower() in ("f", "m")
+        and new_value.lower() in {"f", "m"}
     ):
         return True, new_value.lower()
 
@@ -1798,15 +1800,16 @@ def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, An
 def _compare_field_values_with_context(key: str, current_value: Any, new_value: Any, log_ref: str) -> tuple[bool, Any]:
     """Compare field values and return (value_changed, value_to_set)."""
     # Field-specific comparisons
-    field_comparators = {
-        "last_logged_in": lambda c, n: _compare_datetime_field(c, n),
-        "status": lambda c, n: _compare_status_field(c, n, log_ref),
-        "birth_year": lambda c, n: _compare_birth_year_field(c, n, log_ref),
-        "gender": lambda c, n: _compare_gender_field(c, n),
+    comparator_map: dict[str, Callable[[Any, Any], tuple[bool, Any]]] = {
+        "last_logged_in": _compare_datetime_field,
+        "status": partial(_compare_status_field, log_ref=log_ref),
+        "birth_year": partial(_compare_birth_year_field, log_ref=log_ref),
+        "gender": _compare_gender_field,
     }
 
-    if key in field_comparators:
-        return field_comparators[key](current_value, new_value)
+    comparator = comparator_map.get(key)
+    if comparator:
+        return comparator(current_value, new_value)
 
     # Boolean comparison
     if isinstance(current_value, bool) or isinstance(new_value, bool):
@@ -1833,7 +1836,7 @@ def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: O
         "profile_id": profile_id_val,
         "username": username_val,
         "message_link": person_data.get("message_link"),
-        "in_my_tree": bool(person_data.get("in_my_tree", False)),
+        "in_my_tree": bool(person_data.get("in_my_tree")),
         "first_name": person_data.get("first_name"),
     }
 
@@ -2912,44 +2915,44 @@ def test_soft_delete_functionality(session: Session) -> bool:
     """
     logger.info("=== Testing Soft Delete Functionality ===")
 
-    # Generate unique test data
     test_uuid = f"TEST-{uuid4()}"
     test_profile_id = f"TEST-{uuid4()}"
     test_username = f"Test User {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-    result = False
+    def _execute_soft_delete_flow() -> bool:
+        if not _create_and_verify_test_person(session, test_uuid, test_profile_id, test_username):
+            logger.error("Failed to create and verify test person for soft delete test.")
+            return False
+
+        logger.info(f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}")
+        if not soft_delete_person(session, test_profile_id, test_username):
+            logger.error(f"Failed to soft-delete test person: ProfileID={test_profile_id}")
+            return False
+        logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
+
+        if not _verify_soft_delete_state(session, test_profile_id):
+            logger.error(f"Soft-delete verification failed for ProfileID={test_profile_id}")
+            return False
+
+        logger.info(f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}")
+        if not hard_delete_person(session, test_profile_id, test_username):
+            logger.error(f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}")
+            return False
+        logger.info(f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}")
+
+        if get_person_by_profile_id(session, test_profile_id, include_deleted=True):
+            logger.error(f"Test person with ProfileID={test_profile_id} still found after hard-delete.")
+            return False
+
+        logger.info("Verified test person permanently deleted.")
+        logger.info("=== All Soft Delete Tests Passed ===")
+        return True
 
     try:
-        # Create and verify test person
-        if _create_and_verify_test_person(session, test_uuid, test_profile_id, test_username):
-            # Soft-delete the person
-            logger.info(f"Soft-deleting test person: ProfileID={test_profile_id}, Username={test_username}")
-            if soft_delete_person(session, test_profile_id, test_username):
-                logger.info(f"Soft-deleted test person: ProfileID={test_profile_id}")
-
-                # Verify soft-delete state
-                if _verify_soft_delete_state(session, test_profile_id):
-                    # Hard-delete for cleanup
-                    logger.info(f"Hard-deleting test person for cleanup: ProfileID={test_profile_id}, Username={test_username}")
-                    if hard_delete_person(session, test_profile_id, test_username):
-                        logger.info(f"Hard-deleted test person for cleanup: ProfileID={test_profile_id}")
-
-                        # Verify permanent deletion
-                        if not get_person_by_profile_id(session, test_profile_id, include_deleted=True):
-                            logger.info("Verified test person permanently deleted.")
-                            logger.info("=== All Soft Delete Tests Passed ===")
-                            result = True
-                        else:
-                            logger.error(f"Test person with ProfileID={test_profile_id} still found after hard-delete.")
-                    else:
-                        logger.error(f"Failed to hard-delete test person for cleanup: ProfileID={test_profile_id}")
-            else:
-                logger.error(f"Failed to soft-delete test person: ProfileID={test_profile_id}")
-
+        return _execute_soft_delete_flow()
     except Exception as e:
         logger.error(f"Error during soft delete test: {e}", exc_info=True)
-
-    return result
+        return False
 
 
 # End of test_soft_delete_functionality
@@ -2966,10 +2969,10 @@ def _create_test_persons_for_cleanup(session: Session) -> tuple[list[dict[str, s
 
     created_ids = []
     for i, person_data in enumerate(test_persons):
-        logger.info(f"Creating test person {i+1}: ProfileID={person_data['profile_id']}")
+        logger.info(f"Creating test person {i + 1}: ProfileID={person_data['profile_id']}")
         person_id = create_person(session, person_data)
         if person_id == 0:
-            raise ValueError(f"Failed to create test person {i+1}.")
+            raise ValueError(f"Failed to create test person {i + 1}.")
         created_ids.append(person_id)
 
     logger.info(f"Created {len(created_ids)} test persons with IDs: {created_ids}")
@@ -2979,14 +2982,14 @@ def _create_test_persons_for_cleanup(session: Session) -> tuple[list[dict[str, s
 def _soft_delete_test_persons_with_timestamps(session: Session, test_persons: list[dict[str, str]]) -> None:
     """Soft-delete test persons and set different timestamps."""
     for i, person_data in enumerate(test_persons):
-        logger.info(f"Soft-deleting test person {i+1}: ProfileID={person_data['profile_id']}")
+        logger.info(f"Soft-deleting test person {i + 1}: ProfileID={person_data['profile_id']}")
         result = soft_delete_person(session, person_data["profile_id"], person_data["username"])
         if not result:
-            raise ValueError(f"Failed to soft-delete test person {i+1}.")
+            raise ValueError(f"Failed to soft-delete test person {i + 1}.")
 
         person = get_person_by_profile_id(session, person_data["profile_id"], include_deleted=True)
         if not person:
-            raise ValueError(f"Test person {i+1} not found after soft-delete.")
+            raise ValueError(f"Test person {i + 1} not found after soft-delete.")
 
         # Set different deleted_at timestamps
         if i == 0:
@@ -2994,7 +2997,7 @@ def _soft_delete_test_persons_with_timestamps(session: Session, test_persons: li
         elif i == 1:
             person.deleted_at = datetime.now(timezone.utc) - timedelta(days=20)  # Should not be cleaned up
 
-        logger.info(f"Set deleted_at for test person {i+1} to {person.deleted_at}")
+        logger.info(f"Set deleted_at for test person {i + 1} to {person.deleted_at}")
 
     session.flush()
 
@@ -3064,10 +3067,10 @@ def test_cleanup_soft_deleted_records(session: Session) -> bool:
 
         # Clean up remaining test persons
         for i in range(1, 3):  # Persons 2 and 3
-            logger.info(f"Hard-deleting test person {i+1} for cleanup")
+            logger.info(f"Hard-deleting test person {i + 1} for cleanup")
             result = hard_delete_person(session, test_persons[i]["profile_id"], test_persons[i]["username"])
             if not result:
-                logger.error(f"Failed to hard-delete test person {i+1} for cleanup.")
+                logger.error(f"Failed to hard-delete test person {i + 1} for cleanup.")
                 return False
 
         logger.info("Hard-deleted remaining test persons for cleanup.")

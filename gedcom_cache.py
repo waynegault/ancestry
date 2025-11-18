@@ -99,6 +99,7 @@ try:
 except ImportError:
     gedcom_pool = None
 
+
 # --- Lazy Loading for Large GEDCOM Datasets ---
 class LazyGedcomData:
     """Lazy loader for large GEDCOM datasets."""
@@ -189,7 +190,8 @@ class GedcomCacheModule(BaseCacheModule):
             logger.error(f"Error clearing GEDCOM cache: {e}")
             return False
 
-    def warm(self) -> bool:
+    @staticmethod
+    def warm() -> bool:
         """Warm up GEDCOM cache with frequently accessed data."""
         try:
             # Check if GEDCOM file is available
@@ -220,7 +222,8 @@ class GedcomCacheModule(BaseCacheModule):
             logger.error(f"Error warming GEDCOM cache: {e}")
             return False
 
-    def _check_memory_cache_health(self) -> tuple[str, list[str], int]:
+    @staticmethod
+    def _check_memory_cache_health() -> tuple[str, list[str], int]:
         """Check memory cache health. Returns (health_status, issues, stale_count)."""
         memory_health = "healthy"
         memory_issues = []
@@ -236,7 +239,8 @@ class GedcomCacheModule(BaseCacheModule):
 
         return memory_health, memory_issues, stale_entries
 
-    def _check_gedcom_file_health(self) -> tuple[str, list[str]]:
+    @staticmethod
+    def _check_gedcom_file_health() -> tuple[str, list[str]]:
         """Check GEDCOM file accessibility. Returns (health_status, issues)."""
         gedcom_health = "healthy"
         gedcom_issues = []
@@ -255,7 +259,8 @@ class GedcomCacheModule(BaseCacheModule):
 
         return gedcom_health, gedcom_issues
 
-    def _determine_overall_health(self, gedcom_health: str, memory_health: str) -> str:
+    @staticmethod
+    def _determine_overall_health(gedcom_health: str, memory_health: str) -> str:
         """Determine overall health based on component health statuses."""
         if gedcom_health == "error" or memory_health == "degraded":
             return "degraded"
@@ -1165,8 +1170,6 @@ def gedcom_cache_module_tests() -> bool:
 from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(gedcom_cache_module_tests)
-
-
 
 
 # --- Main Execution ---

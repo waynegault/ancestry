@@ -125,8 +125,9 @@ class SessionValidator:
 
         return True, ""
 
+    @staticmethod
     def _handle_check_exception(
-        self, exception: Exception, attempt: int, browser_manager: Any
+        exception: Exception, attempt: int, browser_manager: Any
     ) -> tuple[bool, str]:
         """Handle exceptions during checks. Returns (should_abort, error_message)."""
         if isinstance(exception, WebDriverException):
@@ -259,8 +260,8 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
+    @staticmethod
     def _ensure_on_base_url(
-        self,
         driver: Any,
         base_url: str,
         session_manager: Any,
@@ -288,7 +289,8 @@ class SessionValidator:
         if not nav_success:
             logger.warning("Pre-auth navigation failed; continuing with existing session state.")
 
-    def _sync_cookies_for_login(self, session_manager: Any) -> None:
+    @staticmethod
+    def _sync_cookies_for_login(session_manager: Any) -> None:
         """Force a cookie sync before login verification when available."""
         if not hasattr(session_manager, "_sync_cookies_to_requests"):
             return
@@ -321,7 +323,8 @@ class SessionValidator:
         logger.error(error_msg)
         return False, error_msg
 
-    def _attempt_relogin(self, _browser_manager: Any, session_manager: Any) -> bool:
+    @staticmethod
+    def _attempt_relogin(_browser_manager: Any, session_manager: Any) -> bool:
         """
         Attempt to relogin the user.
 
@@ -354,7 +357,8 @@ class SessionValidator:
             logger.error(f"Exception during relogin attempt: {e}", exc_info=True)
             return False
 
-    def _check_and_handle_url(self, browser_manager: Any) -> bool:
+    @staticmethod
+    def _check_and_handle_url(browser_manager: Any) -> bool:
         """
         Check and handle the current URL.
 
@@ -402,7 +406,8 @@ class SessionValidator:
             logger.error(f"Unexpected error checking URL: {e}", exc_info=True)
             return False
 
-    def _should_skip_cookie_check(self, action_name: Optional[str]) -> tuple[bool, Optional[str]]:
+    @staticmethod
+    def _should_skip_cookie_check(action_name: Optional[str]) -> tuple[bool, Optional[str]]:
         """Determine if cookie check should be skipped for this action."""
         if not action_name:
             return False, None
@@ -473,8 +478,8 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
+    @staticmethod
     def _sync_cookies_to_requests(
-        self,
         browser_manager: Any,
         api_manager: Any,
         session_manager: Optional[Any] = None,
@@ -509,7 +514,8 @@ class SessionValidator:
             logger.error(error_msg, exc_info=True)
             return False, error_msg
 
-    def _check_csrf_token(self, api_manager: Any) -> tuple[bool, Optional[str]]:
+    @staticmethod
+    def _check_csrf_token(api_manager: Any) -> tuple[bool, Optional[str]]:
         """
         Check and retrieve CSRF token if needed.
         Uses smart caching to avoid repeated fetches.
@@ -541,8 +547,9 @@ class SessionValidator:
             # CSRF token errors are non-critical
             return True, None
 
+    @staticmethod
     def validate_session_cookies(
-        self, browser_manager: Any, required_cookies: list[str]
+        browser_manager: Any, required_cookies: list[str]
     ) -> bool:
         """
         Validate that required cookies are present.
@@ -563,8 +570,8 @@ class SessionValidator:
             logger.error(f"Error validating session cookies: {e}", exc_info=True)
             return False
 
+    @staticmethod
     def verify_login_status(
-        self,
         api_manager: Any,
         session_manager: Optional[Any] = None,
     ) -> bool:

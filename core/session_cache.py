@@ -73,7 +73,8 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
         self._lock = threading.Lock()
         logger.debug("SessionComponentCache initialized")
 
-    def _get_config_hash(self) -> str:
+    @staticmethod
+    def _get_config_hash() -> str:
         """Generate hash of current configuration for cache validation"""
         try:
             from config.config_manager import ConfigManager  # type: ignore[import-not-found]
@@ -126,7 +127,7 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
                 logger.debug(
                     f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
                 )
-                    # Let existing cache eviction handle cleanup
+                # Let existing cache eviction handle cleanup
 
             logger.debug(f"Cache MISS for {component_type}")
             return None
@@ -225,7 +226,8 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
             logger.warning(f"Error warming session cache: {e}")
             return False
 
-    def get_module_name(self) -> str:
+    @staticmethod
+    def get_module_name() -> str:
         """Get module name"""
         return "session_cache"
 
@@ -331,7 +333,8 @@ class OptimizedSessionState:
     Reduces session validation overhead.
     """
 
-    def get_cached_session_state(self, session_id: str) -> Optional[dict]:  # type: ignore[type-arg]
+    @staticmethod
+    def get_cached_session_state(session_id: str) -> Optional[dict]:  # type: ignore[type-arg]
         """Get cached session state if valid"""
         if not cache:
             return None
@@ -351,7 +354,8 @@ class OptimizedSessionState:
             logger.debug(f"Error retrieving session state for {session_id}: {e}")
             return None
 
-    def cache_session_state(self, session_id: str, state: dict) -> None:  # type: ignore[type-arg]
+    @staticmethod
+    def cache_session_state(session_id: str, state: dict) -> None:  # type: ignore[type-arg]
         """Cache session state using existing infrastructure"""
         if not cache:
             return

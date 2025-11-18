@@ -91,7 +91,8 @@ class TestQualityAnalyzer:
         except Exception as e:
             self.issues["analysis_errors"].append(f"{filepath}: {e}")
 
-    def _find_test_functions(self, tree: ast.AST, content: str) -> list[dict[str, Any]]:
+    @staticmethod
+    def _find_test_functions(tree: ast.AST, content: str) -> list[dict[str, Any]]:
         """Find all test functions in the AST."""
         test_functions: list[dict[str, Any]] = []
         content_lines = content.split("\n")
@@ -154,7 +155,8 @@ class TestQualityAnalyzer:
 
         return issues
 
-    def _is_smoke_test(self, source: str) -> bool:
+    @staticmethod
+    def _is_smoke_test(source: str) -> bool:
         """Check if test is just a smoke test."""
         # Remove comments and docstrings
         lines = [
@@ -166,7 +168,8 @@ class TestQualityAnalyzer:
         # Check if it's just "return True" or similar
         return len(lines) <= 3 and any("return True" in line for line in lines)
 
-    def _has_explicit_assertions(self, source: str) -> bool:
+    @staticmethod
+    def _has_explicit_assertions(source: str) -> bool:
         """Check for explicit assertion statements."""
         assertion_patterns = [
             r"\bassert\b",
@@ -181,7 +184,8 @@ class TestQualityAnalyzer:
         ]
         return any(re.search(pattern, source) for pattern in assertion_patterns)
 
-    def _has_boolean_return_pattern(self, source: str) -> bool:
+    @staticmethod
+    def _has_boolean_return_pattern(source: str) -> bool:
         """Check for boolean return patterns that indicate validation."""
         # Multiple return statements or explicit False return
         if re.search(r"return\s+(True|False)", source):
@@ -189,11 +193,13 @@ class TestQualityAnalyzer:
             return len(return_statements) > 1 or "return False" in source
         return False
 
-    def _has_comparison_return(self, source: str) -> bool:
+    @staticmethod
+    def _has_comparison_return(source: str) -> bool:
         """Check for comparison operators in return statements."""
         return bool(re.search(r"return\s+.+\s+(==|!=|>|<|>=|<=|in|not in|and|or)\s+", source))
 
-    def _has_result_variable_pattern(self, source: str) -> bool:
+    @staticmethod
+    def _has_result_variable_pattern(source: str) -> bool:
         """Check for result/success variable validation pattern."""
         has_result_var = (
             re.search(r"(result|success)\s*=\s*(True|False)", source) or
@@ -201,11 +207,13 @@ class TestQualityAnalyzer:
         )
         return bool(has_result_var and re.search(r"return\s+(result|success)", source))
 
-    def _has_aggregation_pattern(self, source: str) -> bool:
+    @staticmethod
+    def _has_aggregation_pattern(source: str) -> bool:
         """Check for all() aggregation patterns."""
         return bool(re.search(r"all\(", source) and re.search(r"return\s+\w+", source))
 
-    def _has_suite_finish_pattern(self, source: str) -> bool:
+    @staticmethod
+    def _has_suite_finish_pattern(source: str) -> bool:
         """Check for test suite finish pattern."""
         return bool(re.search(r"return\s+\w+\.finish_suite\(\)", source))
 
@@ -220,7 +228,8 @@ class TestQualityAnalyzer:
             self._has_suite_finish_pattern(source)
         )
 
-    def _always_returns_true(self, source: str) -> bool:
+    @staticmethod
+    def _always_returns_true(source: str) -> bool:
         """Check if test always returns True without real validation."""
         # Look for pattern: minimal logic followed by return True
         lines = [line.strip() for line in source.split("\n") if line.strip()]
@@ -240,7 +249,8 @@ class TestQualityAnalyzer:
             "return True" in line for line in meaningful_lines
         )
 
-    def _needs_authentication(self, source: str) -> bool:
+    @staticmethod
+    def _needs_authentication(source: str) -> bool:
         """Heuristically check if test likely interacts with authentication-protected flows."""
         auth_patterns = [
             r"SessionManager\s*\(",
@@ -254,7 +264,8 @@ class TestQualityAnalyzer:
 
         return any(re.search(pattern, source) for pattern in auth_patterns)
 
-    def _is_minimal_test(self, source: str) -> bool:
+    @staticmethod
+    def _is_minimal_test(source: str) -> bool:
         """Check if test has minimal logic."""
         # Count lines of actual code (excluding def, docstring, comments, blank)
         lines = source.split("\n")

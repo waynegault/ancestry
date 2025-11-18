@@ -178,7 +178,7 @@ class IntelligentResearchPrioritizer:
 
             # Group gaps by location
             for gap in gaps:
-                if gap.get("gap_type") in ["missing_places", "missing_dates"]:
+                if gap.get("gap_type") in {"missing_places", "missing_dates"}:
                     # Extract location context if available
                     location = self._extract_location_context(gap)
                     if location:
@@ -412,17 +412,19 @@ class IntelligentResearchPrioritizer:
         self._apply_location_clustering_bonus()
         self._apply_person_clustering_bonus()
 
-    def _is_prerequisite(self, task1: ResearchPriority, task2: ResearchPriority) -> bool:
+    @staticmethod
+    def _is_prerequisite(task1: ResearchPriority, task2: ResearchPriority) -> bool:
         """Determine if task1 is a prerequisite for task2."""
         # Vital records often prerequisite for other research
-        if (task1.task_type == "vital_records" and task2.task_type in ["census", "immigration"] and
+        if (task1.task_type == "vital_records" and task2.task_type in {"census", "immigration"} and
             any(person in task2.target_people for person in task1.target_people)):
             return True
 
         # Conflict resolution prerequisite for verification tasks
         return bool(task1.task_type == "conflict_resolution" and task2.task_type == "dna_verification" and any(person in task2.target_people for person in task1.target_people))
 
-    def _extract_location_from_context(self, context: dict[str, Any]) -> str:
+    @staticmethod
+    def _extract_location_from_context(context: dict[str, Any]) -> str:
         """Extract location information from research context."""
         # Look for location indicators in context
         for key in ['location', 'place', 'county', 'state', 'country']:
@@ -431,22 +433,26 @@ class IntelligentResearchPrioritizer:
         return ""
 
     # Helper methods for calculations and analysis
-    def _estimate_generations_back(self) -> int:
+    @staticmethod
+    def _estimate_generations_back() -> int:
         """Estimate how many generations back this surname line goes."""
         # Placeholder implementation
         return 4
 
-    def _calculate_line_completeness(self) -> float:
+    @staticmethod
+    def _calculate_line_completeness() -> float:
         """Calculate completeness percentage for a family line."""
         # Placeholder implementation
         return 65.0
 
-    def _identify_missing_generations(self) -> list[int]:
+    @staticmethod
+    def _identify_missing_generations() -> list[int]:
         """Identify which generations are missing for this line."""
         # Placeholder implementation
         return [3, 4]
 
-    def _identify_research_bottlenecks(self, surname: str) -> list[str]:
+    @staticmethod
+    def _identify_research_bottlenecks(surname: str) -> list[str]:
         """Identify research bottlenecks for this family line."""
         return [
             f"Missing parents for {surname} ancestors",
@@ -454,7 +460,8 @@ class IntelligentResearchPrioritizer:
             f"Birth records unavailable for early {surname} generations"
         ]
 
-    def _identify_priority_targets(self, surname: str) -> list[str]:
+    @staticmethod
+    def _identify_priority_targets(surname: str) -> list[str]:
         """Identify priority research targets for this family line."""
         return [
             f"Research {surname} family immigration",
@@ -462,7 +469,8 @@ class IntelligentResearchPrioritizer:
             f"Locate {surname} family in census records"
         ]
 
-    def _extract_location_context(self, gap: dict[str, Any]) -> Optional[str]:
+    @staticmethod
+    def _extract_location_context(gap: dict[str, Any]) -> Optional[str]:
         """Extract location context from a gap."""
         # This would analyze the gap description for location clues
         description = gap.get("description", "")
@@ -475,7 +483,8 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _extract_opportunity_location(self, opportunity: dict[str, Any]) -> Optional[str]:
+    @staticmethod
+    def _extract_opportunity_location(opportunity: dict[str, Any]) -> Optional[str]:
         """Extract location from research opportunity."""
         description = opportunity.get("description", "")
         # Simple implementation
@@ -487,11 +496,13 @@ class IntelligentResearchPrioritizer:
             return "England"
         return None
 
-    def _estimate_time_period_for_location(self) -> str:
+    @staticmethod
+    def _estimate_time_period_for_location() -> str:
         """Estimate time period for location cluster."""
         return "1800-1900"  # Placeholder
 
-    def _identify_available_records_for_location(self, location: str) -> list[str]:
+    @staticmethod
+    def _identify_available_records_for_location(location: str) -> list[str]:
         """Identify available record types for a location."""
         record_types = {
             "Scotland": ["Birth certificates", "Death certificates", "Census records", "Parish registers"],
@@ -500,18 +511,20 @@ class IntelligentResearchPrioritizer:
         }
         return record_types.get(location, ["General records"])
 
-    def _calculate_cluster_efficiency(self, location: str, items: list[dict[str, Any]]) -> float:
+    @staticmethod
+    def _calculate_cluster_efficiency(location: str, items: list[dict[str, Any]]) -> float:
         """Calculate research efficiency score for a location cluster."""
         # Base efficiency on number of people and available records
         people_count = len(items)
         base_score = min(1.0, people_count / 5.0)  # More people = higher efficiency
 
         # Bonus for well-documented locations
-        location_bonus = 0.2 if location in ["Scotland", "England", "Ireland"] else 0.0
+        location_bonus = 0.2 if location in {"Scotland", "England", "Ireland"} else 0.0
 
         return min(1.0, base_score + location_bonus)
 
-    def _generate_cluster_research_plan(self, location: str) -> list[str]:
+    @staticmethod
+    def _generate_cluster_research_plan(location: str) -> list[str]:
         """Generate research plan for a location cluster."""
         return [
             f"Research {location} records for multiple family members",
@@ -520,7 +533,8 @@ class IntelligentResearchPrioritizer:
             f"Cross-reference multiple sources for {location}"
         ]
 
-    def _score_gap_type(self, gap_type: str) -> float:
+    @staticmethod
+    def _score_gap_type(gap_type: str) -> float:
         """Calculate score based on gap type."""
         gap_scores = {
             "missing_parents": 25.0,      # Critical for family tree extension
@@ -532,7 +546,8 @@ class IntelligentResearchPrioritizer:
         }
         return gap_scores.get(gap_type, 0.0)
 
-    def _score_priority_level(self, priority: str) -> float:
+    @staticmethod
+    def _score_priority_level(priority: str) -> float:
         """Calculate score based on priority level."""
         if priority == "critical":
             return 20.0
@@ -553,7 +568,8 @@ class IntelligentResearchPrioritizer:
             return (4 - generation_level) * 5.0
         return 0.0
 
-    def _score_evidence_quality(self, evidence_quality: str) -> float:
+    @staticmethod
+    def _score_evidence_quality(evidence_quality: str) -> float:
         """Calculate score based on evidence quality."""
         if evidence_quality == "high":
             return 10.0
@@ -561,7 +577,8 @@ class IntelligentResearchPrioritizer:
             return 5.0
         return 0.0
 
-    def _score_research_difficulty(self, difficulty: str) -> float:
+    @staticmethod
+    def _score_research_difficulty(difficulty: str) -> float:
         """Calculate score based on research difficulty."""
         if difficulty == "easy":
             return 8.0  # Quick wins are valuable
@@ -590,7 +607,8 @@ class IntelligentResearchPrioritizer:
 
         return min(100.0, max(0.0, base_score))
 
-    def _score_conflict_severity(self, severity: str) -> float:
+    @staticmethod
+    def _score_conflict_severity(severity: str) -> float:
         """Calculate score based on conflict severity."""
         severity_scores = {
             "critical": 35,  # Major tree accuracy issues
@@ -600,7 +618,8 @@ class IntelligentResearchPrioritizer:
         }
         return severity_scores.get(severity, 0)
 
-    def _score_conflict_type(self, conflict_type: str) -> float:
+    @staticmethod
+    def _score_conflict_type(conflict_type: str) -> float:
         """Calculate score based on conflict type."""
         type_scores = {
             "relationship_conflict": 20,  # Family structure accuracy is critical
@@ -610,7 +629,8 @@ class IntelligentResearchPrioritizer:
         }
         return type_scores.get(conflict_type, 0)
 
-    def _score_people_involved(self, people_count: int) -> float:
+    @staticmethod
+    def _score_people_involved(people_count: int) -> float:
         """Calculate score based on number of people involved."""
         if people_count > 3:
             return 10  # Multi-person conflicts have broader impact
@@ -618,7 +638,8 @@ class IntelligentResearchPrioritizer:
             return 5
         return 0
 
-    def _score_resolution_evidence(self, evidence_level: str) -> float:
+    @staticmethod
+    def _score_resolution_evidence(evidence_level: str) -> float:
         """Calculate score based on available resolution evidence."""
         evidence_scores = {
             "high": 12,    # High chance of successful resolution
@@ -644,12 +665,13 @@ class IntelligentResearchPrioritizer:
         base_score += self._score_resolution_evidence(conflict.get("resolution_evidence", "low"))
 
         # Research blocking factor
-        if conflict.get("blocks_research", False):
+        if conflict.get("blocks_research"):
             base_score += 15  # Conflicts that block further research get priority
 
         return min(100.0, max(0.0, base_score))
 
-    def _estimate_generation_level(self, person_id: str) -> int:
+    @staticmethod
+    def _estimate_generation_level(person_id: str) -> int:
         """Estimate generation level from person ID (lower numbers = closer to root person)."""
         # This is a simplified estimation - in a real system this would
         # analyze the actual family tree structure
@@ -665,7 +687,8 @@ class IntelligentResearchPrioritizer:
             return 3
         return 4  # Default for other relatives
 
-    def _map_gap_to_task_type(self, gap_type: str) -> str:
+    @staticmethod
+    def _map_gap_to_task_type(gap_type: str) -> str:
         """Map gap type to research task type."""
         mapping = {
             "missing_parents": "vital_records",
@@ -676,7 +699,8 @@ class IntelligentResearchPrioritizer:
         }
         return mapping.get(gap_type, "general_research")
 
-    def _determine_urgency_from_score(self, score: float) -> str:
+    @staticmethod
+    def _determine_urgency_from_score(score: float) -> str:
         """Determine urgency level from priority score."""
         if score >= 85:
             return "critical"
@@ -686,7 +710,8 @@ class IntelligentResearchPrioritizer:
             return "medium"
         return "low"
 
-    def _map_severity_to_urgency(self, severity: str) -> str:
+    @staticmethod
+    def _map_severity_to_urgency(severity: str) -> str:
         """Map conflict severity to urgency."""
         mapping = {
             "critical": "critical",
@@ -695,16 +720,18 @@ class IntelligentResearchPrioritizer:
         }
         return mapping.get(severity, "low")
 
-    def _estimate_research_effort(self, gap: dict[str, Any]) -> str:
+    @staticmethod
+    def _estimate_research_effort(gap: dict[str, Any]) -> str:
         """Estimate research effort required for a gap."""
         gap_type = gap.get("gap_type", "")
-        if gap_type in ["missing_dates", "missing_places"]:
+        if gap_type in {"missing_dates", "missing_places"}:
             return "medium"
         if gap_type == "missing_parents":
             return "high"
         return "medium"
 
-    def _get_priority_adjustment(self, priority: str) -> float:
+    @staticmethod
+    def _get_priority_adjustment(priority: str) -> float:
         """Calculate probability adjustment based on priority level."""
         if priority == "critical":
             return 0.25  # Critical gaps often have more evidence
@@ -716,7 +743,8 @@ class IntelligentResearchPrioritizer:
             return 0.05
         return 0.0
 
-    def _get_gap_type_adjustment(self, gap_type: str) -> float:
+    @staticmethod
+    def _get_gap_type_adjustment(gap_type: str) -> float:
         """Calculate probability adjustment based on gap type."""
         gap_type_adjustments = {
             "missing_dates": 0.15,  # Dates often found in multiple record types
@@ -728,7 +756,8 @@ class IntelligentResearchPrioritizer:
         }
         return gap_type_adjustments.get(gap_type, 0.0)
 
-    def _get_time_period_adjustment(self, time_period: str) -> float:
+    @staticmethod
+    def _get_time_period_adjustment(time_period: str) -> float:
         """Calculate probability adjustment based on time period."""
         if not time_period:
             return 0.0
@@ -745,7 +774,8 @@ class IntelligentResearchPrioritizer:
 
         return 0.0
 
-    def _get_location_adjustment(self, location: str) -> float:
+    @staticmethod
+    def _get_location_adjustment(location: str) -> float:
         """Calculate probability adjustment based on location."""
         if not location:
             return 0.0
@@ -763,7 +793,8 @@ class IntelligentResearchPrioritizer:
 
         return 0.0
 
-    def _get_evidence_quality_adjustment(self, evidence_quality: str) -> float:
+    @staticmethod
+    def _get_evidence_quality_adjustment(evidence_quality: str) -> float:
         """Calculate probability adjustment based on evidence quality."""
         if evidence_quality == "high":
             return 0.15
@@ -773,7 +804,8 @@ class IntelligentResearchPrioritizer:
             return -0.05
         return 0.0
 
-    def _get_difficulty_adjustment(self, difficulty: str) -> float:
+    @staticmethod
+    def _get_difficulty_adjustment(difficulty: str) -> float:
         """Calculate probability adjustment based on research difficulty."""
         if difficulty == "easy":
             return 0.2
@@ -806,7 +838,7 @@ class IntelligentResearchPrioritizer:
         if len(self.research_priorities) > 10:
             recommendations.append("Focus on top 5-10 highest priority tasks to avoid overwhelm")
 
-        high_priority_count = len([p for p in self.research_priorities if p.urgency in ["critical", "high"]])
+        high_priority_count = len([p for p in self.research_priorities if p.urgency in {"critical", "high"}])
         if high_priority_count > 0:
             recommendations.append(f"Address {high_priority_count} high-priority items first")
 
@@ -850,7 +882,8 @@ class IntelligentResearchPrioritizer:
 
         return next_steps
 
-    def _empty_prioritization_result(self) -> dict[str, Any]:
+    @staticmethod
+    def _empty_prioritization_result() -> dict[str, Any]:
         """Return empty prioritization result for error cases."""
         return {
             "prioritization_timestamp": datetime.now().isoformat(),
@@ -864,15 +897,18 @@ class IntelligentResearchPrioritizer:
             "error": "Research prioritization failed"
         }
 
-    def _priority_to_dict(self, priority: ResearchPriority) -> dict[str, Any]:
+    @staticmethod
+    def _priority_to_dict(priority: ResearchPriority) -> dict[str, Any]:
         """Convert ResearchPriority to dictionary using dataclass asdict()."""
         return asdict(priority)
 
-    def _family_line_to_dict(self, family_line: FamilyLineStatus) -> dict[str, Any]:
+    @staticmethod
+    def _family_line_to_dict(family_line: FamilyLineStatus) -> dict[str, Any]:
         """Convert FamilyLineStatus to dictionary using dataclass asdict()."""
         return asdict(family_line)
 
-    def _location_cluster_to_dict(self, cluster: LocationResearchCluster) -> dict[str, Any]:
+    @staticmethod
+    def _location_cluster_to_dict(cluster: LocationResearchCluster) -> dict[str, Any]:
         """Convert LocationResearchCluster to dictionary using dataclass asdict()."""
         return asdict(cluster)
 

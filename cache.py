@@ -66,7 +66,7 @@ import time
 from collections import deque
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
+from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
 
 # Type variables for decorators
 P = ParamSpec('P')
@@ -170,15 +170,18 @@ class BaseCacheModule(CacheInterface):
     Implementation of the standard cache interface for the base cache module.
     """
 
-    def get_stats(self) -> dict[str, Any]:
+    @staticmethod
+    def get_stats() -> dict[str, Any]:
         """Get base cache statistics."""
         return get_cache_stats()
 
-    def clear(self) -> bool:
+    @staticmethod
+    def clear() -> bool:
         """Clear base cache."""
         return clear_cache()
 
-    def warm(self) -> bool:
+    @staticmethod
+    def warm() -> bool:
         """Warm base cache with system data using intelligent warming."""
         try:
             # Traditional warming
@@ -199,7 +202,8 @@ class BaseCacheModule(CacheInterface):
             logger.error(f"Error warming base cache: {e}")
             return False
 
-    def get_module_name(self) -> str:
+    @staticmethod
+    def get_module_name() -> str:
         """Get module name."""
         return "base_cache"
 
@@ -787,17 +791,20 @@ def check_cache_size_before_add(estimated_size: int = 1) -> bool:
 def get_cache_entry_count() -> int:
     """Safely get the number of entries in the cache."""
     try:
-        if cache is not None:
-            # Use len() which works correctly with diskcache
-            # Type ignore for diskcache compatibility
-            return len(cache)  # type: ignore
+        cache_instance = cache
+        if cache_instance is not None:
+            cache_length_raw = len(cache_instance)  # type: ignore[arg-type]
+            return int(cache_length_raw)
         return 0
     except Exception as e:
         logger.warning(f"Error getting cache entry count: {e}")
         # Fallback: try to count by iterating (slower but reliable)
         try:
+            cache_instance = cache
+            if cache_instance is None:
+                return 0
             count = 0
-            for _ in cache:  # type: ignore
+            for _ in cache_instance:  # type: ignore[attr-defined]
                 count += 1
             return count
         except Exception as e2:
@@ -902,11 +909,11 @@ def cache_file_based_on_mtime(
                 )
 
                 # Try to get from cache
-                cached_value = cache.get(final_cache_key, default=ENOVAL, retry=True)
+                cached_value: Any = cache.get(final_cache_key, default=ENOVAL, retry=True)
 
                 if cached_value is not ENOVAL:
                     logger.debug(f"Cache HIT for file-based key: '{final_cache_key}'")
-                    return cached_value  # type: ignore[return-value]
+                    return cast(R, cached_value)
                 logger.debug(f"Cache MISS for file-based key: '{final_cache_key}'")
 
                 # Execute function and cache result
@@ -1082,7 +1089,8 @@ class IntelligentCacheWarmer:
             logger.warning(f"Failed to regenerate cache data for {cache_key}: {e}")
             return False
 
-    def _warm_gedcom_data(self, cache_key: str) -> bool:
+    @staticmethod
+    def _warm_gedcom_data(cache_key: str) -> bool:
         """Warm GEDCOM-related cache data."""
         try:
             # Try to load GEDCOM metadata
@@ -1102,7 +1110,8 @@ class IntelligentCacheWarmer:
             logger.debug(f"Could not warm GEDCOM data for {cache_key}: {e}")
         return False
 
-    def _warm_api_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
+    @staticmethod
+    def _warm_api_data(cache_key: str, session_manager: Optional[Any] = None) -> bool:
         """Warm API-related cache data."""
         try:
             # Warm with API configuration data
@@ -1116,7 +1125,8 @@ class IntelligentCacheWarmer:
             logger.debug(f"Could not warm API data for {cache_key}: {e}")
         return False
 
-    def _warm_profile_data(self, cache_key: str) -> bool:
+    @staticmethod
+    def _warm_profile_data(cache_key: str) -> bool:
         """Warm profile-related cache data."""
         try:
             # Warm with basic profile metadata
@@ -1444,7 +1454,7 @@ def _test_error_handling() -> bool:
     # Test with empty string
     cache.set("test_empty", "")
     retrieved_empty = cache.get("test_empty")
-    assert retrieved_empty == ""
+    assert isinstance(retrieved_empty, str) and not retrieved_empty
     return True
 
 

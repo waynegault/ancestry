@@ -13,7 +13,7 @@ from typing import Optional
 from standard_imports import *
 from test_utilities import create_standard_test_runner
 
-logger = setup_module(globals(), __file__)
+logger = setup_module(globals(), __name__)
 
 
 @dataclass

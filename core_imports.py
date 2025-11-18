@@ -25,6 +25,7 @@ from typing import Any, Callable, ClassVar, Optional
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()
 
+
 # Global state tracking with enhanced metrics
 class _ImportSystemState:
     """Manages import system state."""
@@ -72,42 +73,29 @@ def get_project_root() -> Path:
     with _lock:
         if _ImportSystemState.project_root is None:
             try:
-                # Start from current file and work up
-                current = Path(__file__).resolve()
-
-                # Look for project markers in order of preference
-                markers = [
-                    "main.py",
-                    "requirements.txt",
-                    ".git",
-                    "setup.py",
-                    "pyproject.toml",
-                ]
-
-                for parent in [
-                    current.parent,
-                    current.parent.parent,
-                    current.parent.parent.parent,
-                ]:
-                    for marker in markers:
-                        if (parent / marker).exists():
-                            _ImportSystemState.project_root = parent
-                            _log_info(
-                                f"Project root identified: {_ImportSystemState.project_root} (marker: {marker})"
-                            )
-                            return _ImportSystemState.project_root
-
-                # Fallback to current file's parent
-                _ImportSystemState.project_root = current.parent
-                _log_warning(f"Using fallback project root: {_ImportSystemState.project_root}")
-
+                _ImportSystemState.project_root = _detect_project_root()
             except Exception as e:
-                # Ultimate fallback
                 _ImportSystemState.project_root = Path.cwd()
                 _log_error(f"Error determining project root, using CWD: {e}")
                 _ImportStats.data["errors_encountered"] += 1
 
         return _ImportSystemState.project_root
+
+
+def _detect_project_root() -> Path:
+    """Detect project root by walking parents and checking markers."""
+    current = Path(__file__).resolve()
+    markers = {"main.py", "requirements.txt", ".git", "setup.py", "pyproject.toml"}
+
+    for parent in (current.parent, current.parent.parent, current.parent.parent.parent):
+        for marker in markers:
+            if (parent / marker).exists():
+                _log_info(f"Project root identified: {parent} (marker: {marker})")
+                return parent
+
+    fallback = current.parent
+    _log_warning(f"Using fallback project root: {fallback}")
+    return fallback
 
 
 def _log_info(message: str) -> None:
@@ -230,14 +218,14 @@ def auto_register_module(module_globals: dict[str, Any], module_name: str) -> No
             callable(obj)
             and not name.startswith("_")
             and name
-            in [
+            in {
                 "run_comprehensive_tests",
                 "main",
                 "SessionManager",
                 "DatabaseManager",
                 "BrowserManager",
                 "APIManager",
-            ]
+            }
         ):
             register_function(name, obj)
 

@@ -23,6 +23,7 @@ Replaces inconsistent patterns:
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
@@ -44,9 +45,14 @@ from core_imports import (
     standardize_module_imports,
 )
 
-
 # === STANDARDIZED LOGGER ===
 # Single logger pattern for all modules
+_INTERNAL_LOGGER = logging.getLogger("standard_imports")
+_SETUP_COMPLETE_FLAG = "__standard_imports_initialized__"
+_SETUP_LOGGER_KEY = "__standard_imports_logger__"
+_SETUP_LOCK = threading.RLock()
+
+
 def get_standard_logger(module_name: str) -> logging.Logger:
     """Get a standardized logger for any module."""
     return get_logger(module_name)
@@ -80,20 +86,35 @@ def setup_module(module_globals: dict[str, Any], module_name: str) -> logging.Lo
         from standard_imports import setup_module
         logger = setup_module(globals(), __name__)
     """
-    try:
-        # Step 1: Standardize imports first
-        standardize_module_imports()
+    with _SETUP_LOCK:
+        if module_globals.get(_SETUP_COMPLETE_FLAG):
+            cached_logger = module_globals.get(_SETUP_LOGGER_KEY)
+            if cached_logger is None:
+                cached_logger = get_standard_logger(module_name)
+                module_globals[_SETUP_LOGGER_KEY] = cached_logger
+            _INTERNAL_LOGGER.warning(
+                "Duplicate setup_module call detected for %s; returning cached logger",
+                module_name,
+            )
+            return cached_logger
 
-        # Step 2: Auto-register module functions
-        auto_register_module(module_globals, module_name)
+        try:
+            # Step 1: Standardize imports first
+            standardize_module_imports()
 
-        # Step 3: Return configured logger
-        return get_standard_logger(module_name)
+            # Step 2: Auto-register module functions
+            auto_register_module(module_globals, module_name)
 
-    except Exception as e:
-        # Fallback to basic logger if optimization fails
-        print(f"Warning: setup_module failed for {module_name}, using fallback: {e}")
-        return get_standard_logger(module_name)
+            # Step 3: Return configured logger
+            logger = get_standard_logger(module_name)
+            module_globals[_SETUP_COMPLETE_FLAG] = True
+            module_globals[_SETUP_LOGGER_KEY] = logger
+            return logger
+
+        except Exception as e:
+            # Fallback to basic logger if optimization fails
+            print(f"Warning: setup_module failed for {module_name}, using fallback: {e}")
+            return get_standard_logger(module_name)
 
 
 # === ERROR HANDLING UTILITIES ===
@@ -278,6 +299,16 @@ def _test_function_registration():
     assert retrieved_func() == "sample_result", "Retrieved function should work"
 
 
+def _test_duplicate_setup_detection() -> None:
+    """Ensure duplicate setup_module calls reuse cached logger."""
+    test_globals: dict[str, Any] = {}
+    initial_logger = setup_module(test_globals, "test_duplicate_module")
+    duplicate_logger = setup_module(test_globals, "test_duplicate_module")
+    assert initial_logger is duplicate_logger, "Duplicate setups should reuse logger"
+    assert test_globals.get(_SETUP_COMPLETE_FLAG) is True
+    assert test_globals.get(_SETUP_LOGGER_KEY) is duplicate_logger
+
+
 def _test_safe_imports():
     """Test safe imports."""
     result = safe_import("os")
@@ -392,6 +423,10 @@ def standard_imports_module_tests() -> bool:
          "Function registration and retrieval works correctly",
          "Test register_function, is_function_available, and get_function",
          "Function registration system properly stores and retrieves functions"),
+        ("Duplicate setup_module detection", _test_duplicate_setup_detection,
+         "Duplicate setup_module invocations reuse cache without re-registering",
+         "Call setup_module twice for same module",
+         "Duplicate invocations return cached logger and set sentinel"),
         ("Safe import functionality", test_safe_imports,
          "Safe import functions handle both success and failure cases",
          "Test safe_import and safe_import_from with existing and missing modules",

@@ -110,7 +110,6 @@ def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-
 def _places_requirements_satisfied(search_criteria: dict[str, Any], candidate: dict[str, Any]) -> bool:
     """Require birth/death place presence and match if provided in search criteria.
 
@@ -138,8 +137,6 @@ def _score_name_match(search_name: Optional[str], cand_name: Optional[str], fiel
         field_scores[field_name] = score_int
         reasons.append(f"{field_name.replace('_', ' ').title()} '{search_name}' found in '{cand_name}'")
     return total_score
-
-
 
 
 def _score_year_match(search_year: Any, cand_year: Any, field_name: str, exact_score: Union[int, float], close_score: Union[int, float], year_range: int, total_score: int, field_scores: dict[str, int], reasons: list[str]) -> int:
@@ -390,6 +387,13 @@ def _process_suggest_result(suggestion: dict[str, Any], search_criteria: dict[st
         return None
 
 
+def _extract_event_details(event_data: dict[str, Any]) -> tuple[Optional[int], str]:
+    """Extract normalized year and place from an event dictionary."""
+    date_value = event_data.get("date", {}).get("normalized", "")
+    place_value = event_data.get("place", {}).get("normalized", "")
+    return _extract_year_from_date(date_value), place_value
+
+
 def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, Any], scoring_weights: dict[str, Union[int, float]], date_flex: dict[str, Union[int, float]], scored_matches: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     """Process a single treesui-list person and return match record if score > 0 and not duplicate."""
     try:
@@ -401,17 +405,9 @@ def _process_treesui_person(person: dict[str, Any], search_criteria: dict[str, A
         first_name = person.get("firstName", "")
         surname = person.get("lastName", "")
 
-        # Extract birth information
-        birth_info = person.get("birth", {})
-        birth_date = birth_info.get("date", {}).get("normalized", "")
-        birth_year = _extract_year_from_date(birth_date)
-        birth_place = birth_info.get("place", {}).get("normalized", "")
-
-        # Extract death information
-        death_info = person.get("death", {})
-        death_date = death_info.get("date", {}).get("normalized", "")
-        death_year = _extract_year_from_date(death_date)
-        death_place = death_info.get("place", {}).get("normalized", "")
+        # Extract birth/death details
+        birth_year, birth_place = _extract_event_details(person.get("birth", {}))
+        death_year, death_place = _extract_event_details(person.get("death", {}))
 
         # Extract gender
         gender = person.get("gender", "")
@@ -806,8 +802,6 @@ def _extract_person_info_from_target(target_person: dict[str, Any], result: dict
             result["death_date"] = _format_date(day, month, year)
 
 
-
-
 def _format_person_from_relationship_data(person_obj: dict[str, Any]) -> dict[str, Any]:
     """
     Format a person object from the edit relationships API into a standardized dict.
@@ -865,39 +859,6 @@ def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) 
         month_name = month_names[month] if 1 <= month <= 12 else str(month)
         return f"{month_name} {year}"
     return str(year)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _debug_log_facts_structure(facts_data: Any) -> None:  # type: ignore[reportUnusedFunction]
@@ -970,6 +931,7 @@ def _extract_children_from_data_section(data_section: dict[str, Any], result: di
         elif isinstance(item, dict):
             result["children"].append(_format_person_from_relationship_data(item))
 
+
 def _find_target_person_in_list(persons: list[Any], person_id: str) -> Optional[dict[str, Any]]:
     """Find target person in persons list by matching person_id in gid."""
     for person in persons:
@@ -1005,9 +967,9 @@ def _extract_direct_family(
         related_person = persons_by_gid[target_gid]
         person_dict = _parse_person_from_newfamilyview(related_person)
 
-        if rel_type in ["F", "M"]:  # Father or Mother
+        if rel_type in {"F", "M"}:  # Father or Mother
             result["parents"].append(person_dict)
-        elif rel_type in ["W", "H"]:  # Wife or Husband
+        elif rel_type in {"W", "H"}:  # Wife or Husband
             result["spouses"].append(person_dict)
         elif rel_type == "C":  # Child
             result["children"].append(person_dict)
@@ -1023,7 +985,7 @@ def _extract_siblings(
     parent_gids = [
         rel.get("tgid", {}).get("v", "")
         for rel in family_relationships
-        if rel.get("t") in ["F", "M"]
+        if rel.get("t") in {"F", "M"}
     ]
 
     for parent_gid in parent_gids:
@@ -1437,6 +1399,7 @@ def api_search_utils_module_tests() -> bool:
         )
 
     return suite.finish_suite()
+
 
 # Use centralized test runner utility from test_utilities
 run_comprehensive_tests = create_standard_test_runner(api_search_utils_module_tests)

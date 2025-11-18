@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
+# !/usr/bin/env python3
 
 """
 Performance Intelligence & System Optimization Engine
@@ -143,7 +143,8 @@ class PerformanceMonitor:
 
         logger.debug("Performance monitor initialized")
 
-    def _default_thresholds(self) -> dict[str, float]:
+    @staticmethod
+    def _default_thresholds() -> dict[str, float]:
         """Default performance alert thresholds."""
         return {
             "memory_usage_mb": 1024,  # 1GB
@@ -382,7 +383,8 @@ class PerformanceMonitor:
         else:
             logger.info(f"Performance info: {message}")
 
-    def _get_optimization_recommendation(self, metric_name: str, value: float) -> str:
+    @staticmethod
+    def _get_optimization_recommendation(metric_name: str, value: float) -> str:
         """Get optimization recommendation for a metric."""
         recommendations = {
             "memory_usage_mb": f"High memory usage ({value:.0f}MB). Consider: 1) Implementing object pooling, 2) Optimizing data structures, 3) Adding memory cleanup routines",
@@ -484,8 +486,8 @@ class PerformanceMonitor:
             ),
         }
 
+    @staticmethod
     def _generate_recommendations(
-        self,
         stats_summary: Mapping[str, Mapping[str, Any]],
         function_summary: Mapping[str, Mapping[str, Any]],
     ) -> list[str]:
@@ -807,7 +809,8 @@ class AdvancedPerformanceMonitor:
         if len(self.optimization_recommendations) > 50:
             self.optimization_recommendations = self.optimization_recommendations[-50:]
 
-    def _get_cache_statistics(self) -> dict[str, Any]:
+    @staticmethod
+    def _get_cache_statistics() -> dict[str, Any]:
         """Get cache performance statistics."""
         try:
             from core.cache_registry import get_cache_registry
@@ -833,7 +836,8 @@ class AdvancedPerformanceMonitor:
 
         return {"hit_rate": 75, "total_requests": 0, "cache_size": 0}
 
-    def _get_database_connections(self) -> int:
+    @staticmethod
+    def _get_database_connections() -> int:
         """Get current database connection count."""
         try:
             # This would integrate with actual database manager
@@ -841,7 +845,8 @@ class AdvancedPerformanceMonitor:
         except Exception:
             return 0
 
-    def _get_api_statistics(self) -> dict[str, Any]:
+    @staticmethod
+    def _get_api_statistics() -> dict[str, Any]:
         """Get API performance statistics."""
         try:
             # This would integrate with actual API monitoring
@@ -994,6 +999,7 @@ class AdvancedPerformanceMonitor:
 # Global advanced monitor instance
 _advanced_monitor = AdvancedPerformanceMonitor()
 
+
 def track_api_performance(api_name: str, duration: float, status: str = "unknown") -> None:
     """Global function to track API performance metrics."""
     try:
@@ -1021,21 +1027,26 @@ def track_api_performance(api_name: str, duration: float, status: str = "unknown
         logger.debug(f"Performance tracking error: {e}")
         pass
 
+
 def start_advanced_monitoring() -> bool:
     """Start global advanced performance monitoring."""
     return _advanced_monitor.start_advanced_monitoring()
+
 
 def stop_advanced_monitoring() -> dict[str, Any]:
     """Stop global advanced performance monitoring."""
     return _advanced_monitor.stop_advanced_monitoring()
 
+
 def get_performance_dashboard() -> str:
     """Get current performance dashboard."""
     return _advanced_monitor.generate_performance_dashboard()
 
+
 def validate_system_configuration() -> dict[str, Any]:
     """Validate system configuration and get optimization recommendations."""
     return _advanced_monitor.validate_configuration()
+
 
 def get_system_health_score() -> float:
     """Get current system health score."""

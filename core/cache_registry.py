@@ -204,7 +204,8 @@ class CacheRegistry:
             )
         )
 
-    def _lazy_call(self, module_path: str, attr: str) -> ActionFn:
+    @staticmethod
+    def _lazy_call(module_path: str, attr: str) -> ActionFn:
         def _callable(*args: Any, **kwargs: Any) -> Any:
             module = import_module(module_path)
             target = getattr(module, attr)
@@ -212,12 +213,14 @@ class CacheRegistry:
 
         return _callable
 
-    def _unified_cache_stats(self) -> dict[str, Any]:
+    @staticmethod
+    def _unified_cache_stats() -> dict[str, Any]:
         cache_module = import_module("core.unified_cache_manager")
         unified_cache = cache_module.get_unified_cache()
         return unified_cache.get_stats()
 
-    def _unified_cache_clear(self) -> None:
+    @staticmethod
+    def _unified_cache_clear() -> None:
         cache_module = import_module("core.unified_cache_manager")
         unified_cache = cache_module.get_unified_cache()
         unified_cache.clear()

@@ -49,8 +49,8 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 
-
 # === STANDARD LIBRARY IMPORTS ===
+import importlib
 import logging
 import re
 import sys
@@ -58,11 +58,15 @@ import time
 from collections import deque
 from collections.abc import Mapping
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import (
     Any,
+    Callable,
     Optional,
     Union,
+    cast,
 )
 
 # --- Third-party imports ---
@@ -95,8 +99,46 @@ from common_params import GraphContext
 from config.config_manager import ConfigManager
 from utils import format_name
 
-# Note: _find_direct_relationship and _has_direct_relationship are imported
-# from relationship_utils.py where needed to avoid circular imports
+# Note: _find_direct_relationship and _has_direct_relationship are accessed via
+# lazy-loaded helpers to avoid direct private imports while preventing cycles.
+
+
+@lru_cache(maxsize=1)
+def _get_relationship_utils_module() -> ModuleType:
+    """Lazy-load relationship_utils once to avoid import-time cycles."""
+    return importlib.import_module("relationship_utils")
+
+
+def _get_relationship_utils_attr(attr: str) -> Any:
+    module = _get_relationship_utils_module()
+    return getattr(module, attr)
+
+
+def _call_find_direct_relationship(
+    start_id: str,
+    end_id: str,
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> list[str]:
+    finder = cast(
+        Callable[[str, str, dict[str, set[str]], dict[str, set[str]]], list[str]],
+        _get_relationship_utils_attr("_find_direct_relationship"),
+    )
+    return finder(start_id, end_id, id_to_parents, id_to_children)
+
+
+def _call_has_direct_relationship(
+    id_a: str,
+    id_b: str,
+    id_to_parents: dict[str, set[str]],
+    id_to_children: dict[str, set[str]],
+) -> bool:
+    checker = cast(
+        Callable[[str, str, dict[str, set[str]], dict[str, set[str]]], bool],
+        _get_relationship_utils_attr("_has_direct_relationship"),
+    )
+    return checker(id_a, id_b, id_to_parents, id_to_children)
+
 
 # === MODULE CONFIGURATION ===
 config_manager = ConfigManager()
@@ -120,6 +162,8 @@ TAG_FAMILY_CHILD = "FAMC"
 TAG_FAMILY_SPOUSE = "FAMS"
 TAG_DATE = "DATE"
 TAG_PLACE = "PLAC"
+_GENDER_CHARS_UPPER = {"M", "F"}
+_GENDER_CHARS_LOWER = {"m", "f"}
 TAG_SEX = "SEX"
 TAG_NAME = "NAME"
 TAG_GIVN = "GIVN"
@@ -1000,13 +1044,11 @@ def fast_bidirectional_bfs(
 
     # First try to find a direct relationship (parent, child, sibling)
     # This is a quick check before running the full BFS
-    # Import here to avoid circular dependency
-    from relationship_utils import _find_direct_relationship  # type: ignore
 
     # Convert lists to sets for _find_direct_relationship
     id_to_parents_set = {k: set(v) for k, v in id_to_parents.items()}
     id_to_children_set = {k: set(v) for k, v in id_to_children.items()}
-    direct_path = _find_direct_relationship(
+    direct_path = _call_find_direct_relationship(
         start_id, end_id, id_to_parents_set, id_to_children_set
     )
     if direct_path:
@@ -1148,16 +1190,13 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
     """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
-        # Import here to avoid circular dependency
-        from relationship_utils import _has_direct_relationship  # type: ignore
-
         # Score paths based on directness of relationships
         scored_paths = []
         for path in all_paths:
             # Check if each adjacent pair has a direct relationship
             direct_relationships = 0
             for i in range(len(path) - 1):
-                if _has_direct_relationship(
+                if _call_has_direct_relationship(
                     path[i], path[i + 1], id_to_parents, id_to_children
                 ):
                     direct_relationships += 1
@@ -1188,8 +1227,8 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
     return [start_id, end_id]
 
 
-# Note: _has_direct_relationship and _find_direct_relationship have been moved to relationship_utils.py
-# to eliminate duplication. They are imported at the top of this file.
+# Note: _has_direct_relationship and _find_direct_relationship live in relationship_utils.py
+# to eliminate duplication. They are accessed via lazy-loaded helpers defined above.
 
 
 # _are_directly_related removed - unused 24-line helper function for relationship checking
@@ -1212,7 +1251,7 @@ def _get_person_name_with_birth_year(indi: Optional[GedcomIndividualType], perso
 def _get_gender_char(indi: GedcomIndividualType) -> Optional[str]:
     """Get gender character (M/F) from individual."""
     sex_b = getattr(indi, TAG_SEX.lower(), None)
-    if sex_b and isinstance(sex_b, str) and str(sex_b).upper() in ("M", "F"):
+    if sex_b and isinstance(sex_b, str) and str(sex_b).upper() in _GENDER_CHARS_UPPER:
         return str(sex_b).upper()[0]
     return None
 
@@ -1817,7 +1856,6 @@ def _score_bonuses(weights: Mapping[str, Any], field_scores: dict[str, float], m
     _score_death_bonus(weights, field_scores, match_reasons)
 
 
-
 def _apply_alive_conflict_penalty(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
     """Apply a small negative score when query implies 'alive' but candidate has death info.
 
@@ -1881,7 +1919,6 @@ def calculate_match_score(
 
     # Bonus Scoring
     _score_bonuses(weights, field_scores, match_reasons)
-
 
     # Policy-based negative adjustments
     _apply_alive_conflict_penalty(t_data, c_data, weights, field_scores, match_reasons)
@@ -2011,8 +2048,6 @@ class GedcomData:
                 "[Cache Build] Skipping map build and data pre-processing due to empty INDI index."
             )
 
-
-
     def _process_indi_record(self, indi_record: Any) -> tuple[bool, bool]:
         """Process an individual record for indexing. Returns (processed, skipped)."""
         if not (_is_individual(indi_record) and hasattr(indi_record, "xref_id") and indi_record.xref_id):
@@ -2074,7 +2109,8 @@ class GedcomData:
         else:
             logger.error(f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s.")
 
-    def _extract_parents_from_family(self, fam: Any, fam_id_log: str) -> set[str]:
+    @staticmethod
+    def _extract_parents_from_family(fam: Any, fam_id_log: str) -> set[str]:
         """Extract parent IDs from a family record."""
         parents: set[str] = set()
         for parent_tag in [TAG_HUSBAND, TAG_WIFE]:
@@ -2175,66 +2211,7 @@ class GedcomData:
         errors = 0
         for norm_id, indi in self.indi_index.items():
             try:
-                # Get full name first using the utility
-                full_name_disp = _get_full_name(indi)  # Use the robust getter
-
-                # Derive scoring name parts from the full name (simple split)
-                name_parts = (
-                    full_name_disp.split() if full_name_disp != "Unknown" else []
-                )
-                first_name_score = name_parts[0] if name_parts else ""
-                surname_score = name_parts[-1] if len(name_parts) > 1 else ""
-                # Extract raw names from tags if needed for specific logic elsewhere
-                # Add null check for indi before calling sub_tag
-                name_rec = indi.sub_tag(TAG_NAME) if indi is not None else None
-                givn_raw = name_rec.sub_tag_value(TAG_GIVN) if name_rec else None
-                surn_raw = name_rec.sub_tag_value(TAG_SURN) if name_rec else None
-
-                # Extract gender
-                # Add null check for indi before calling sub_tag_value
-                sex_raw = indi.sub_tag_value(TAG_SEX) if indi is not None else None
-                sex_lower = str(sex_raw).lower() if sex_raw else None
-                gender_norm = sex_lower if sex_lower in ["m", "f"] else None
-
-                # Extract birth info
-                birth_date_obj, birth_date_str, birth_place_raw = _get_event_info(
-                    indi, TAG_BIRTH
-                )
-                birth_year = birth_date_obj.year if birth_date_obj else None
-                birth_date_disp = _clean_display_date(birth_date_str)
-                birth_place_disp = birth_place_raw if birth_place_raw != "N/A" else None
-
-                # Extract death info
-                death_date_obj, death_date_str, death_place_raw = _get_event_info(
-                    indi, TAG_DEATH
-                )
-                death_year = death_date_obj.year if death_date_obj else None
-                death_date_disp = _clean_display_date(death_date_str)
-                death_place_disp = death_place_raw if death_place_raw != "N/A" else None
-
-                self.processed_data_cache[norm_id] = {
-                    "norm_id": norm_id,
-                    "display_id": getattr(indi, "xref_id", norm_id),
-                    "givn_raw": givn_raw,  # Keep raw tag value if needed
-                    "surn_raw": surn_raw,  # Keep raw tag value if needed
-                    "first_name": first_name_score,  # For scoring
-                    "surname": surname_score,  # For scoring
-                    "full_name_disp": full_name_disp,  # For display
-                    "gender_raw": sex_raw,
-                    "gender_norm": gender_norm,
-                    "birth_date_obj": birth_date_obj,
-                    "birth_date_str": birth_date_str,
-                    "birth_date_disp": birth_date_disp,
-                    "birth_year": birth_year,
-                    "birth_place_raw": birth_place_raw,
-                    "birth_place_disp": birth_place_disp,
-                    "death_date_obj": death_date_obj,
-                    "death_date_str": death_date_str,
-                    "death_date_disp": death_date_disp,
-                    "death_year": death_year,
-                    "death_place_raw": death_place_raw,
-                    "death_place_disp": death_place_disp,
-                }
+                self.processed_data_cache[norm_id] = self._build_processed_record(norm_id, indi)
                 processed_count += 1
             except Exception as e:
                 # Enhanced error reporting with more context
@@ -2254,6 +2231,75 @@ class GedcomData:
             logger.error(
                 "[Pre-Process] Processed data cache is EMPTY after build attempt."
             )
+
+    def _build_processed_record(self, norm_id: str, indi: GedcomIndividualType) -> dict[str, Any]:
+        """Construct the processed cache entry for an individual."""
+        full_name_disp = _get_full_name(indi)
+        first_name_score, surname_score = self._derive_name_parts(full_name_disp)
+
+        name_rec = indi.sub_tag(TAG_NAME) if indi is not None else None
+        givn_raw = name_rec.sub_tag_value(TAG_GIVN) if name_rec else None
+        surn_raw = name_rec.sub_tag_value(TAG_SURN) if name_rec else None
+
+        sex_raw = indi.sub_tag_value(TAG_SEX) if indi is not None else None
+        gender_norm = self._normalize_gender_value(sex_raw)
+
+        birth_details = self._event_cache_details(indi, TAG_BIRTH)
+        death_details = self._event_cache_details(indi, TAG_DEATH)
+
+        return {
+            "norm_id": norm_id,
+            "display_id": getattr(indi, "xref_id", norm_id),
+            "givn_raw": givn_raw,
+            "surn_raw": surn_raw,
+            "first_name": first_name_score,
+            "surname": surname_score,
+            "full_name_disp": full_name_disp,
+            "gender_raw": sex_raw,
+            "gender_norm": gender_norm,
+            "birth_date_obj": birth_details["date_obj"],
+            "birth_date_str": birth_details["date_str"],
+            "birth_date_disp": birth_details["date_disp"],
+            "birth_year": birth_details["year"],
+            "birth_place_raw": birth_details["place_raw"],
+            "birth_place_disp": birth_details["place_disp"],
+            "death_date_obj": death_details["date_obj"],
+            "death_date_str": death_details["date_str"],
+            "death_date_disp": death_details["date_disp"],
+            "death_year": death_details["year"],
+            "death_place_raw": death_details["place_raw"],
+            "death_place_disp": death_details["place_disp"],
+        }
+
+    @staticmethod
+    def _derive_name_parts(full_name: str) -> tuple[str, str]:
+        if full_name == "Unknown":
+            return "", ""
+        parts = full_name.split()
+        if not parts:
+            return "", ""
+        first = parts[0]
+        surname = parts[-1] if len(parts) > 1 else ""
+        return first, surname
+
+    @staticmethod
+    def _normalize_gender_value(sex_raw: Optional[str]) -> Optional[str]:
+        if not sex_raw:
+            return None
+        sex_lower = str(sex_raw).lower()
+        return sex_lower if sex_lower in _GENDER_CHARS_LOWER else None
+
+    @staticmethod
+    def _event_cache_details(indi: GedcomIndividualType, tag: str) -> dict[str, Any]:
+        date_obj, date_str, place_raw = _get_event_info(indi, tag)
+        return {
+            "date_obj": date_obj,
+            "date_str": date_str,
+            "date_disp": _clean_display_date(date_str),
+            "year": date_obj.year if date_obj else None,
+            "place_raw": place_raw,
+            "place_disp": None if place_raw == "N/A" else place_raw,
+        }
 
     def get_processed_indi_data(self, norm_id: str) -> Optional[dict[str, Any]]:
         """Retrieves pre-processed data for an individual from the cache."""
@@ -2471,31 +2517,7 @@ class GedcomData:
         if validation_error:
             return validation_error
 
-        # Use the enhanced bidirectional BFS algorithm to find the path
-        max_depth = 25
-        node_limit = 150000
-        timeout_sec = 45
-        logger.debug(
-            f"Calculating relationship path (FastBiBFS): {id1_norm} <-> {id2_norm}"
-        )
-        search_start = time.time()
-        # Convert sets to lists for GraphContext
-        id_to_parents_list = {k: list(v) for k, v in self.id_to_parents.items()}
-        id_to_children_list = {k: list(v) for k, v in self.id_to_children.items()}
-        graph_ctx = GraphContext(
-            id_to_parents=id_to_parents_list,
-            id_to_children=id_to_children_list,
-            start_id=id1_norm,
-            end_id=id2_norm
-        )
-        path_ids = fast_bidirectional_bfs(
-            graph_ctx,
-            max_depth,
-            node_limit,
-            timeout_sec,
-        )
-        search_time = time.time() - search_start
-        logger.debug(f"[PROFILE] BFS search completed in {search_time:.2f}s.")
+        path_ids, search_time = self._run_relationship_search(id1_norm, id2_norm)
         if not path_ids:
             profile_info = f"[PROFILE] Search: {search_time:.2f}s, MapsBuild: {self.family_maps_build_time:.2f}s, IndexBuild: {self.indi_index_build_time:.2f}s, PreProcess: {self.data_processing_time:.2f}s"
             return f"No relationship path found (FastBiBFS could not connect).\n{profile_info}"
@@ -2521,6 +2543,33 @@ class GedcomData:
         profile_info = f"[PROFILE] Total Time: {total_process_time:.2f}s (BFS: 0.00s, Explain: {explanation_time:.2f}s) [Build Times: Maps={self.family_maps_build_time:.2f}s, Index={self.indi_index_build_time:.2f}s, PreProcess={self.data_processing_time:.2f}s]"
         logger.debug(profile_info)
         return f"{explanation_str}\n{profile_info}"
+
+    def _run_relationship_search(self, start_id: str, end_id: str) -> tuple[list[str], float]:
+        """Execute the FastBiBFS search and return path IDs with timing."""
+        max_depth = 25
+        node_limit = 150000
+        timeout_sec = 45
+        logger.debug(
+            f"Calculating relationship path (FastBiBFS): {start_id} <-> {end_id}"
+        )
+        search_start = time.time()
+        id_to_parents_list = {k: list(v) for k, v in self.id_to_parents.items()}
+        id_to_children_list = {k: list(v) for k, v in self.id_to_children.items()}
+        graph_ctx = GraphContext(
+            id_to_parents=id_to_parents_list,
+            id_to_children=id_to_children_list,
+            start_id=start_id,
+            end_id=end_id,
+        )
+        path_ids = fast_bidirectional_bfs(
+            graph_ctx,
+            max_depth,
+            node_limit,
+            timeout_sec,
+        )
+        search_time = time.time() - search_start
+        logger.debug(f"[PROFILE] BFS search completed in {search_time:.2f}s.")
+        return path_ids, search_time
 
     def _find_direct_relationship(self, id1: str, id2: str) -> list[str]:
         """
@@ -2926,7 +2975,7 @@ def test_source_citation_extraction():
     # Test 1: format_source_citations with no sources
     empty_sources = {'birth': [], 'death': [], 'other': []}
     result = format_source_citations(empty_sources)
-    assert result == "", "Empty sources should return empty string"
+    assert not result, "Empty sources should return empty string"
 
     # Test 2: format_source_citations with single birth source
     single_source = {'birth': ['1881 Scotland Census'], 'death': [], 'other': []}
@@ -3151,9 +3200,6 @@ def _run_mock_demonstration() -> None:
 # ==============================================
 # Note: Comprehensive tests are already defined in gedcom_module_tests()
 # Additional test functions for specific GEDCOM operations are defined above
-
-
-
 
 
 # ==============================================

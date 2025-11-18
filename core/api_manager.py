@@ -41,7 +41,7 @@ from config import config_schema  # type: ignore[import-not-found]
 from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 
 # === TYPE ALIASES ===
-ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, None, RequestsResponse]
+ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
 
 # === API CONSTANTS (local keys) ===
 KEY_UCDMID = "ucdmid"
@@ -157,7 +157,8 @@ class APIManager:
         except Exception:
             logger.debug("Failed to record API metrics", exc_info=True)
 
-    def _attempt_session_recovery(self, browser_manager, session_manager) -> bool:  # type: ignore[no-untyped-def]  # noqa: ARG002
+    @staticmethod
+    def _attempt_session_recovery(session_manager) -> bool:  # type: ignore[no-untyped-def]
         """
         Attempt to recover browser session when cookie sync fails.
 
@@ -178,7 +179,8 @@ class APIManager:
         logger.warning("❌ Session recovery failed or not available")
         return False
 
-    def _deduplicate_cookies(self, driver_cookies: list[Any]) -> dict[str, Any]:
+    @staticmethod
+    def _deduplicate_cookies(driver_cookies: list[Any]) -> dict[str, Any]:
         """
         Deduplicate cookies by (name, path), preferring more specific domains.
 
@@ -242,7 +244,7 @@ class APIManager:
             logger.warning("Cannot sync cookies: Browser session invalid.")
 
             # Attempt recovery and retry if successful
-            if self._attempt_session_recovery(browser_manager, session_manager):
+            if self._attempt_session_recovery(session_manager):
                 return self.sync_cookies_from_browser(browser_manager, session_manager=None)
             return False
 
@@ -269,7 +271,6 @@ class APIManager:
         except Exception as e:
             logger.error(f"Error syncing cookies from browser to API: {e}", exc_info=True)
             return False
-
 
     def load_cookies_from_file(self, path: Optional[Union[str, Path]] = None) -> bool:
         """Load cookies from a JSON file into the requests session (browserless).
@@ -342,7 +343,8 @@ class APIManager:
 
         return request_headers
 
-    def _parse_api_response(self, response, api_description: str) -> ApiResponseType:  # type: ignore[no-untyped-def]
+    @staticmethod
+    def _parse_api_response(response, api_description: str) -> ApiResponseType:  # type: ignore[no-untyped-def]
         """Parse API response into appropriate format."""
         try:
             json_response = response.json()
@@ -508,7 +510,8 @@ class APIManager:
 
         return None
 
-    def get_uuid(self) -> Optional[str]:
+    @staticmethod
+    def get_uuid() -> Optional[str]:
         """
         Retrieve user UUID (DNA test GUID).
 
@@ -745,7 +748,6 @@ def _test_connection_error_handling() -> bool:
         return False
     except Exception:
         return False
-
 
 
 def _test_api_endpoint_constant_values() -> bool:

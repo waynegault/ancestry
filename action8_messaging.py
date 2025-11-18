@@ -44,6 +44,7 @@ import os
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
@@ -237,7 +238,7 @@ def calculate_adaptive_interval(
     """
     # Only apply adaptive timing in production mode
     app_mode = getattr(config_schema, 'app_mode', 'production')
-    if app_mode in ('testing', 'dry_run'):
+    if app_mode in {'testing', 'dry_run'}:
         logger.debug(f"{log_prefix}: Adaptive timing disabled in {app_mode} mode (fixed interval only)")
         return timedelta(0)
 
@@ -685,6 +686,7 @@ def load_message_templates() -> dict[str, str]:
 # Load templates lazily at runtime to avoid import-time errors
 MESSAGE_TEMPLATES: dict[str, str] = {}
 
+
 def ensure_message_templates_loaded() -> None:
     """Load message templates on first use; avoid import-time CRITICALs."""
     if MESSAGE_TEMPLATES:
@@ -697,12 +699,14 @@ def ensure_message_templates_loaded() -> None:
     else:
         logger.debug("Message templates not available yet; will retry on first Action 8 use")
 
+
 # Initialize message personalizer
 from typing import Any as _Any
 
 
 class _MPState:
     personalizer: Optional[_Any] = None
+
 
 _MESSAGE_STATE = _MPState()
 
@@ -721,6 +725,7 @@ def ensure_message_personalizer() -> Optional[_Any]:
             logger.warning(f"Failed to initialize message personalizer: {e}")
             _MESSAGE_STATE.personalizer = None
     return _MESSAGE_STATE.personalizer
+
 
 # Do not instantiate at import time to avoid global-session errors
 MESSAGE_PERSONALIZER = None
@@ -1225,8 +1230,6 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
 # Note: _commit_messaging_batch was removed as dead code - replaced by _safe_commit_with_rollback
 
 
-
-
 def _get_simple_messaging_data(
     db_session: Session,
     session_manager: Optional[SessionManager] = None,
@@ -1488,7 +1491,8 @@ class ErrorCategorizer:
         }
         self.monitoring_hooks = []
 
-    def _categorize_success_status(self, status_lower: str) -> tuple[str, str] | None:
+    @staticmethod
+    def _categorize_success_status(status_lower: str) -> tuple[str, str] | None:
         """Categorize successful status. Returns None if not a success status."""
         success_statuses = {
             'sent': ['sent', 'delivered ok'],
@@ -1548,7 +1552,7 @@ class ErrorCategorizer:
 
         # Extract error type from parentheses
         if '(' in status and ')' in status:
-            error_detail = status[status.find('(')+1:status.find(')')].lower()
+            error_detail = status[status.find('(') + 1:status.find(')')].lower()
             return self._categorize_error_detail(error_detail)
 
         # Generic technical error
@@ -1658,7 +1662,8 @@ class ResourceManager:
             logger.warning(f"Could not check memory usage: {mem_err}")
             return 0.0, False
 
-    def trigger_garbage_collection(self) -> int:
+    @staticmethod
+    def trigger_garbage_collection() -> int:
         """Trigger garbage collection and return objects collected."""
         import gc
 
@@ -1781,7 +1786,8 @@ class ProactiveApiManager:
         delay = min(self.base_delay * (2 ** self.consecutive_failures), self.max_delay)
         return delay * random.uniform(0.8, 1.2)
 
-    def _validate_message_send_response(self, response_data: Any, operation: str) -> bool | None:
+    @staticmethod
+    def _validate_message_send_response(response_data: Any, operation: str) -> bool | None:
         """Validate message send response. Returns True/False if validated, None if not applicable."""
         if not operation.startswith("send_message") or not isinstance(response_data, tuple) or len(response_data) < 2:
             return None
@@ -1797,7 +1803,8 @@ class ProactiveApiManager:
 
         return None
 
-    def _validate_generic_response(self, response_data: Any, operation: str) -> bool:
+    @staticmethod
+    def _validate_generic_response(response_data: Any, operation: str) -> bool:
         """Validate generic API response. Returns True if valid."""
         if isinstance(response_data, dict) and ("error" in response_data or "errors" in response_data):
             logger.warning(f"❌ API validation failed for {operation}: Response contains errors")
@@ -2051,7 +2058,7 @@ def enhance_message_with_relationship_diagram(
     try:
         # Use safe_column_value to extract relationship_path
         relationship_path = safe_column_value(family_tree, 'relationship_path', None)
-        if not relationship_path or relationship_path == "":
+        if not relationship_path:
             format_data['relationship_diagram'] = ""
             return
 
@@ -2220,7 +2227,7 @@ def _initialize_person_processing(person: Person) -> tuple[str, int, str, str]:
 
 def _check_person_eligibility(person: Person, log_prefix: str) -> None:
     """Check if person is eligible for messaging based on status."""
-    if person.status in (PersonStatusEnum.ARCHIVE, PersonStatusEnum.BLOCKED, PersonStatusEnum.DEAD):
+    if person.status in {PersonStatusEnum.ARCHIVE, PersonStatusEnum.BLOCKED, PersonStatusEnum.DEAD}:
         logger.debug(f"Skipping {log_prefix}: Status is '{person.status.name}'.")
         raise StopIteration("skipped (status)")
 
@@ -2381,7 +2388,7 @@ def _determine_message_to_send(person: Person, latest_out_log: Optional[Conversa
     family_tree = person.family_tree
 
     # First try A/B testing for initial messages
-    if base_message_key in ["In_Tree-Initial", "Out_Tree-Initial"]:
+    if base_message_key in {"In_Tree-Initial", "Out_Tree-Initial"}:
         message_to_send_key = select_template_variant_ab_testing(person_id, base_message_key)
         template_selection_reason = "A/B Testing"
 
@@ -2411,7 +2418,7 @@ def _get_best_name_for_person(person: Person, family_tree: Optional[FamilyTree])
         return tree_name
     if first_name:
         return first_name
-    if username and username not in ["Unknown", "Unknown User"]:
+    if username and username not in {"Unknown", "Unknown User"}:
         return username
     return "Valued Relative"
 
@@ -2644,12 +2651,63 @@ def _get_existing_conversation_id(latest_out_log: Optional[ConversationLog], lat
     return existing_conversation_id
 
 
+@dataclass(slots=True)
+class _MessageSendResult:
+    status: str
+    conversation_id: Optional[str]
+
+
+def _create_message_flags(person: Person, log_prefix: str) -> "MessageFlags":
+    from common_params import MessageFlags
+
+    send_message_flag, skip_log_reason = _check_mode_filtering(person, log_prefix)
+    return MessageFlags(
+        send_message_flag=send_message_flag,
+        skip_log_reason=skip_log_reason,
+    )
+
+
+def _build_message_context(
+    person: Person,
+    message_text: str,
+    message_key: str,
+    template_reason: str,
+    log_prefix: str,
+    latest_out_log: Optional[ConversationLog],
+    latest_in_log: Optional[ConversationLog],
+) -> tuple["MessageContext", "ConversationState"]:
+    from common_params import ConversationState, MessageContext
+
+    existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
+    msg_ctx = MessageContext(
+        person=person,
+        message_text=message_text,
+        message_to_send_key=message_key,
+        template_selection_reason=template_reason,
+        log_prefix=log_prefix,
+    )
+    conv_state = ConversationState(
+        existing_conversation_id=existing_conversation_id,
+        latest_out_log=latest_out_log,
+        latest_in_log=latest_in_log,
+    )
+    return msg_ctx, conv_state
+
+
+def _message_was_successful(status: str) -> bool:
+    return status in {"delivered OK", "typed (dry_run)"} or status.startswith("skipped (")
+
+
+def _update_conv_state(conv_state: "ConversationState", result: _MessageSendResult) -> None:
+    conv_state.effective_conv_id = result.conversation_id
+
+
 def _send_or_simulate_message(
     session_manager: SessionManager,
     msg_ctx: 'MessageContext',
     conv_state: 'ConversationState',
     msg_flags: 'MessageFlags'
-) -> tuple[str, Optional[str]]:
+) -> _MessageSendResult:
     """Send or simulate message, return status and conversation ID."""
     if msg_flags.send_message_flag:
         log_prefix_for_api = f"{msg_ctx.person.username} #{msg_ctx.person.id}"
@@ -2676,7 +2734,7 @@ def _send_or_simulate_message(
         if effective_conv_id is None:
             effective_conv_id = f"skipped_{uuid.uuid4()}"
 
-    return message_status, effective_conv_id
+    return _MessageSendResult(message_status, effective_conv_id)
 
 
 def _prepare_conversation_log_entry(
@@ -2713,7 +2771,7 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
     """Determine final status and person update based on message outcome."""
     person_update = None
 
-    if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
+    if message_status in {"delivered OK", "typed (dry_run)"} or message_status.startswith("skipped ("):
         if message_to_send_key == "User_Requested_Desist":
             person_update = (person_id, PersonStatusEnum.ARCHIVE)
             status_string = "acked"
@@ -2728,17 +2786,28 @@ def _determine_final_status(message_to_send_key: str, message_status: str, send_
     return status_string, person_update
 
 
+@dataclass(slots=True)
+class _PersonStatusDecision:
+    message_key: Optional[str]
+    template_reason: str
+    dna_match: Optional[Any]
+    family_tree: Optional[Any]
+
+
 def _handle_person_status(
-    person: Person, log_prefix: str, latest_in_log: Optional[ConversationLog],
-    latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str],
-    message_type_map: dict[str, int]
-) -> tuple[Optional[str], str, str, Optional[Any], Optional[Any]]:
+    person: Person,
+    log_prefix: str,
+    latest_in_log: Optional[ConversationLog],
+    latest_out_log: Optional[ConversationLog],
+    latest_out_template_key: Optional[str],
+    message_type_map: dict[str, int],
+) -> _PersonStatusDecision:
     """Handle person status and determine message to send."""
     person_status = safe_column_value(person, "status", None)
 
     if person_status == PersonStatusEnum.DESIST:
-        message_to_send_key, send_reason = _handle_desist_status(log_prefix, latest_out_log, message_type_map)
-        return message_to_send_key, send_reason, "Unknown", None, None
+        message_to_send_key, _ = _handle_desist_status(log_prefix, latest_out_log, message_type_map)
+        return _PersonStatusDecision(message_to_send_key, "Unknown", None, None)
 
     if person_status == PersonStatusEnum.ACTIVE:
         _check_reply_received(latest_in_log, latest_out_log, log_prefix)
@@ -2748,10 +2817,16 @@ def _handle_person_status(
             person, latest_out_log, latest_out_template_key, log_prefix
         )
 
-        return message_to_send_key, "Standard Sequence", template_selection_reason, person.dna_match, person.family_tree
+        return _PersonStatusDecision(
+            message_to_send_key,
+            template_selection_reason,
+            person.dna_match,
+            person.family_tree,
+        )
 
     logger.error(f"Unexpected status for {log_prefix}: {getattr(person.status, 'name', 'UNKNOWN')}")
     raise StopIteration("error (unexpected_status)")
+
 
 def _process_single_person(
     db_session: Session,
@@ -2787,15 +2862,11 @@ def _process_single_person(
 
     # --- Step 1: Initialization and Logging ---
     log_prefix, person_id, _, _ = _initialize_person_processing(person)
-    message_to_send_key: Optional[str] = None  # Key from MESSAGE_TEMPLATES
-    template_selection_reason = "Unknown"  # CONSOLIDATED: Track template selection reason
     status_string: Literal["sent", "acked", "skipped", "error"] = (
         "error"  # Default outcome
     )
 
     # Initialize variables early to prevent UnboundLocalError in exception handlers
-    family_tree = None
-    dna_match = None
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
     person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
 
@@ -2804,57 +2875,63 @@ def _process_single_person(
         _check_person_eligibility(person, log_prefix)
 
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
-        message_to_send_key, _, template_selection_reason, dna_match, family_tree = _handle_person_status(
-            person, log_prefix, latest_in_log, latest_out_log, latest_out_template_key, message_type_map
+        decision = _handle_person_status(
+            person,
+            log_prefix,
+            latest_in_log,
+            latest_out_log,
+            latest_out_template_key,
+            message_type_map,
         )
 
         # --- Step 3: Format the Selected Message ---
-        if not message_to_send_key or message_to_send_key not in MESSAGE_TEMPLATES:
-            logger.error(f"Logic Error: Invalid/missing message key '{message_to_send_key}' for {log_prefix}.")
+        message_key = decision.message_key
+        if not message_key or message_key not in MESSAGE_TEMPLATES:
+            logger.error(f"Logic Error: Invalid/missing message key '{message_key}' for {log_prefix}.")
             raise StopIteration("error (template_key)")
 
-        format_data = _prepare_message_format_data(person, family_tree, dna_match, db_session)
-        message_text = _format_message_text(message_to_send_key, person, format_data, log_prefix)
+        message_text = _format_message_text(
+            message_key,
+            person,
+            _prepare_message_format_data(person, decision.family_tree, decision.dna_match, db_session),
+            log_prefix,
+        )
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
-        send_message_flag, skip_log_reason = _check_mode_filtering(person, log_prefix)
+        msg_flags = _create_message_flags(person, log_prefix)
 
         # --- Step 5: Send/Simulate Message ---
-        existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
-        from common_params import ConversationState, MessageContext, MessageFlags
-        msg_ctx = MessageContext(
-            person=person,
-            message_text=message_text,
-            message_to_send_key=message_to_send_key,
-            template_selection_reason=template_selection_reason,
-            log_prefix=log_prefix
+        msg_ctx, conv_state = _build_message_context(
+            person,
+            message_text,
+            message_key,
+            decision.template_reason,
+            log_prefix,
+            latest_out_log,
+            latest_in_log,
         )
-        conv_state = ConversationState(
-            existing_conversation_id=existing_conversation_id,
-            latest_out_log=latest_out_log,
-            latest_in_log=latest_in_log
-        )
-        msg_flags = MessageFlags(
-            send_message_flag=send_message_flag,
-            skip_log_reason=skip_log_reason
-        )
-        message_status, effective_conv_id = _send_or_simulate_message(
+        send_result = _send_or_simulate_message(
             session_manager, msg_ctx, conv_state, msg_flags
         )
 
         # --- Step 6: Prepare Database Updates based on outcome ---
-        if message_status in ("delivered OK", "typed (dry_run)") or message_status.startswith("skipped ("):
-            # Update conv_state and msg_flags with new values
-            conv_state.effective_conv_id = effective_conv_id
-            msg_flags.message_status = message_status
+        if _message_was_successful(send_result.status):
+            _update_conv_state(conv_state, send_result)
+            msg_flags.message_status = send_result.status
             new_log_entry = _prepare_conversation_log_entry(
                 msg_ctx, conv_state, msg_flags, message_type_map
             )
             status_string, person_update = _determine_final_status(  # type: ignore[assignment]
-                message_to_send_key, message_status, send_message_flag, person_id, log_prefix
+                message_key,
+                send_result.status,
+                msg_flags.send_message_flag,
+                person_id,
+                log_prefix,
             )
         else:
-            logger.warning(f"Message send failed for {log_prefix} with status '{message_status}'. No DB changes staged.")
+            logger.warning(
+                f"Message send failed for {log_prefix} with status '{send_result.status}'. No DB changes staged."
+            )
             new_log_entry = None
             person_update = None
             status_string = "error"
@@ -2879,17 +2956,33 @@ def _process_single_person(
 # Main Action Function Helper Functions
 # ------------------------------------------------------------------------------
 
-def _initialize_action8_counters_and_config() -> tuple[int, int, int, int, int, int, int, bool]:
+@dataclass(slots=True)
+class _Action8RunState:
+    sent_count: int = 0
+    acked_count: int = 0
+    skipped_count: int = 0
+    error_count: int = 0
+    processed_in_loop: int = 0
+    total_candidates: int = 0
+    batch_num: int = 0
+    critical_db_error_occurred: bool = False
+    overall_success: bool = True
+
+
+def _initialize_action8_counters_and_config() -> _Action8RunState:
     """Initialize counters and configuration for Action 8."""
-    sent_count, acked_count, skipped_count, error_count = 0, 0, 0, 0
-    processed_in_loop = 0
-    total_candidates = 0
-    batch_num = 0
-    critical_db_error_occurred = False
-    return sent_count, acked_count, skipped_count, error_count, processed_in_loop, total_candidates, batch_num, critical_db_error_occurred
+    return _Action8RunState()
 
 
-def _initialize_resource_management() -> tuple[list[dict[str, Any]], dict[int, PersonStatusEnum], ResourceManager, ErrorCategorizer]:
+@dataclass(slots=True)
+class _ResourceBundle:
+    db_logs_to_add_dicts: list[dict[str, Any]]
+    person_updates: dict[int, PersonStatusEnum]
+    resource_manager: ResourceManager
+    error_categorizer: ErrorCategorizer
+
+
+def _initialize_resource_management() -> _ResourceBundle:
     """Initialize resource management and error categorization."""
     db_logs_to_add_dicts: list[dict[str, Any]] = []
     person_updates: dict[int, PersonStatusEnum] = {}
@@ -2906,7 +2999,12 @@ def _initialize_resource_management() -> tuple[list[dict[str, Any]], dict[int, P
 
     error_categorizer.add_monitoring_hook(critical_error_hook)
 
-    return db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer
+    return _ResourceBundle(
+        db_logs_to_add_dicts=db_logs_to_add_dicts,
+        person_updates=person_updates,
+        resource_manager=resource_manager,
+        error_categorizer=error_categorizer,
+    )
 
 
 def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, Optional[str]]:
@@ -2936,17 +3034,24 @@ def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bo
     return True, profile_id
 
 
-def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> tuple[Optional[dict], Optional[list], int]:  # type: ignore[type-arg]
+@dataclass(slots=True)
+class _MessagingData:
+    message_type_map: dict[str, int]
+    candidate_persons: list[Any]
+    total_candidates: int
+
+
+def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> Optional[_MessagingData]:  # type: ignore[type-arg]
     """Fetch message type map and candidate persons."""
     try:
         message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
     except MaxApiFailuresExceededError as cascade_err:
         logger.critical(f"🚨 CRITICAL: Session death cascade detected during prefetch: {cascade_err}")
-        return None, None, 0
+        return None
 
     if message_type_map is None or candidate_persons is None:
         logger.error("Failed to fetch essential messaging data. Aborting run.")
-        return None, None, 0
+        return None
 
     total_candidates = len(candidate_persons)
     if total_candidates == 0:
@@ -2959,7 +3064,24 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
                 f"Sending or acknowledging up to {max_messages_to_send_this_run} messages this run.\n"
             )
 
-    return message_type_map, candidate_persons, total_candidates
+    return _MessagingData(message_type_map, candidate_persons, total_candidates)
+
+
+def _apply_processing_result(
+    state: _Action8RunState,
+    resources: _ResourceBundle,
+    processing_result: dict[str, Any],
+) -> None:
+    state.sent_count = processing_result['sent_count']
+    state.acked_count = processing_result['acked_count']
+    state.skipped_count = processing_result['skipped_count']
+    state.error_count = processing_result['error_count']
+    state.processed_in_loop = processing_result['processed_in_loop']
+    state.critical_db_error_occurred = processing_result['critical_db_error_occurred']
+    state.overall_success = processing_result['overall_success']
+    state.batch_num = processing_result['batch_num']
+    resources.db_logs_to_add_dicts = processing_result['db_logs_to_add_dicts']
+    resources.person_updates = processing_result['person_updates']
 
 
 # ------------------------------------------------------------------------------
@@ -3071,11 +3193,13 @@ def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:  # type: ig
     log_dict = _convert_log_object_to_dict(new_log_object)
     return (log_dict, "unchanged") if log_dict else (None, "error")
 
+
 def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list[dict[str, Any]]) -> int:  # type: ignore[type-arg]
     """Handle sent status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
     return sent_count + 1
+
 
 def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_update_tuple, db_logs_to_add_dicts: list, person_updates: dict) -> int:  # type: ignore[type-arg, no-untyped-def]
     """Handle acknowledged status updates."""
@@ -3084,6 +3208,7 @@ def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_upda
     if person_update_tuple:
         person_updates[person_update_tuple[0]] = person_update_tuple[1]
     return acked_count + 1
+
 
 def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dict: Optional[dict], batch_data: 'MessagingBatchData', error_categorizer, person, overall_success: bool) -> tuple[int, int, bool]:  # type: ignore[type-arg, no-untyped-def]
     """Handle error or skipped status updates."""
@@ -3102,6 +3227,7 @@ def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dic
 
     logger.warning(f"Unknown status for {person.username}: {status}")
     return counters.skipped, counters.errors + 1, False
+
 
 def _update_counters_and_collect_data(
     status: str,
@@ -3747,14 +3873,10 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         return False
 
     # Initialize counters and configuration
-    sent_count, acked_count, skipped_count, error_count, processed_in_loop, total_candidates, batch_num, critical_db_error_occurred = _initialize_action8_counters_and_config()
-
-    db_commit_batch_size = batch_size
-    max_messages_to_send_this_run = max_messages
-    overall_success = True
+    state = _initialize_action8_counters_and_config()
 
     # Initialize resource management
-    db_logs_to_add_dicts, person_updates, resource_manager, error_categorizer = _initialize_resource_management()
+    resources = _initialize_resource_management()
 
     # --- Step 2: Get DB Session and Pre-fetch Data ---
     db_session: Optional[Session] = None
@@ -3765,60 +3887,75 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             return False
 
         # Fetch messaging data
-        message_type_map, candidate_persons, total_candidates = _fetch_messaging_data(db_session, session_manager)
+        messaging_data = _fetch_messaging_data(db_session, session_manager)
 
-        if message_type_map is None or candidate_persons is None:
+        if messaging_data is None:
             if db_session:
                 session_manager.return_session(db_session)
             return False
 
-        # --- Step 3: Main Processing Loop ---
-        if total_candidates > 0:
-            processing_result = _execute_main_processing_loop(
-                db_session, session_manager, message_type_map, candidate_persons,
-                total_candidates, db_commit_batch_size, max_messages_to_send_this_run,
-                resource_manager, error_categorizer
-            )
+        state.total_candidates = messaging_data.total_candidates
 
-            # Unpack results
-            sent_count = processing_result['sent_count']
-            acked_count = processing_result['acked_count']
-            skipped_count = processing_result['skipped_count']
-            error_count = processing_result['error_count']
-            processed_in_loop = processing_result['processed_in_loop']
-            critical_db_error_occurred = processing_result['critical_db_error_occurred']
-            overall_success = processing_result['overall_success']
-            batch_num = processing_result['batch_num']
-            db_logs_to_add_dicts = processing_result['db_logs_to_add_dicts']
-            person_updates = processing_result['person_updates']
+        # --- Step 3: Main Processing Loop ---
+        if state.total_candidates > 0:
+            processing_result = _execute_main_processing_loop(
+                db_session,
+                session_manager,
+                messaging_data.message_type_map,
+                messaging_data.candidate_persons,
+                state.total_candidates,
+                batch_size,
+                max_messages,
+                resources.resource_manager,
+                resources.error_categorizer,
+            )
+            _apply_processing_result(state, resources, processing_result)
 
         # --- Step 4: Final Commit ---
-        overall_success, batch_num = _perform_final_commit(
-            db_session, critical_db_error_occurred, db_logs_to_add_dicts,
-            person_updates, batch_num, session_manager,
-            sent_count, acked_count, skipped_count, error_count
+        state.overall_success, state.batch_num = _perform_final_commit(
+            db_session,
+            state.critical_db_error_occurred,
+            resources.db_logs_to_add_dicts,
+            resources.person_updates,
+            state.batch_num,
+            session_manager,
+            state.sent_count,
+            state.acked_count,
+            state.skipped_count,
+            state.error_count,
         )
 
     # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
     except (MaxApiFailuresExceededError, BrowserSessionError, APIRateLimitError,
             AuthenticationExpiredError, ConnectionError, KeyboardInterrupt, Exception) as outer_err:
-        overall_success = _handle_main_processing_exception(outer_err, resource_manager)
+        state.overall_success = _handle_main_processing_exception(outer_err, resources.resource_manager)
 
     # --- Step 6: Final Cleanup and Summary ---
     finally:
         from common_params import BatchCounters, ProcessingState
-        counters_final = BatchCounters(sent=sent_count, acked=acked_count, skipped=skipped_count, errors=error_count)
-        state_final = ProcessingState(batch_num=0, processed_in_loop=processed_in_loop)
-        skipped_count = _perform_final_cleanup(
-            db_session, session_manager, critical_db_error_occurred,
-            total_candidates, state_final, counters_final, overall_success,
-            error_categorizer, start_time
+        counters_final = BatchCounters(
+            sent=state.sent_count,
+            acked=state.acked_count,
+            skipped=state.skipped_count,
+            errors=state.error_count,
+        )
+        state_final = ProcessingState(batch_num=0, processed_in_loop=state.processed_in_loop)
+        state.skipped_count = _perform_final_cleanup(
+            db_session,
+            session_manager,
+            state.critical_db_error_occurred,
+            state.total_candidates,
+            state_final,
+            counters_final,
+            state.overall_success,
+            resources.error_categorizer,
+            start_time,
         )
 
     # Step 7: Final resource cleanup
     logger.debug("🔧 Step 7: Starting final resource cleanup...")
     try:
-        _perform_resource_cleanup(resource_manager)
+        _perform_resource_cleanup(resources.resource_manager)
         logger.debug("🔧 Step 7: Final resource cleanup completed successfully")
     except Exception as cleanup_err:
         logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}", exc_info=True)
@@ -3832,21 +3969,21 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         logger.warning(f"Performance summary error (non-critical): {perf_err}", exc_info=True)
 
     # Step 9: Return overall success status
-    logger.debug(f"✅ Step 9: Returning overall_success={overall_success}")
+    logger.debug(f"✅ Step 9: Returning overall_success={state.overall_success}")
     log_action_banner(
         action_name="Send Messages",
         action_number=8,
-        stage="success" if overall_success else "failure",
+        stage="success" if state.overall_success else "failure",
         logger_instance=logger,
         details={
-            "sent": sent_count,
-            "acked": acked_count,
-            "skipped": skipped_count,
-            "errors": error_count,
-            "candidates": total_candidates,
+            "sent": state.sent_count,
+            "acked": state.acked_count,
+            "skipped": state.skipped_count,
+            "errors": state.error_count,
+            "candidates": state.total_candidates,
         },
     )
-    return overall_success
+    return state.overall_success
 
 
 # End of send_messages_to_matches
@@ -4139,7 +4276,6 @@ def _test_integration_with_shared_modules() -> None:
         try:
             from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
 
-
             db_manager_available = DatabaseManager is not None  # type: ignore[comparison-overlap]
         except ImportError:
             db_manager_available = False
@@ -4207,8 +4343,11 @@ def _test_real_api_manager_integration_minimal() -> None:
             self.session_health_monitor = {'death_cascade_count': 0}
             self.should_halt_operations = lambda: False
             self._my_profile_id = "test_profile_123"
-        def is_sess_valid(self) -> bool:
+
+        @staticmethod
+        def is_sess_valid() -> bool:
             return True
+
         @property
         def my_profile_id(self) -> str:
             return self._my_profile_id
@@ -4226,10 +4365,12 @@ def _test_error_categorization_integration_minimal() -> None:
 
 def _test_logger_respects_info_level() -> None:
     import logging as _logging
+
     class _ListHandler(_logging.Handler):
         def __init__(self) -> None:
             super().__init__()
             self.records = []
+
         def emit(self, record: logging.LogRecord) -> None:
             self.records.append(record)
     lh = _ListHandler()
@@ -4250,10 +4391,12 @@ def _test_logger_respects_info_level() -> None:
 
 def _test_no_debug_when_info() -> None:
     import logging as _logging
+
     class _ListHandler(_logging.Handler):
         def __init__(self) -> None:
             super().__init__()
             self.messages = []
+
         def emit(self, record: logging.LogRecord) -> None:
             self.messages.append((record.levelno, record.getMessage()))
     lh = _ListHandler()
@@ -5234,7 +5377,6 @@ def action8_messaging_tests() -> bool:
             "Test integration with universal session monitor, API framework, error recovery, database manager, and performance monitor",
             "Verify all shared modules are available and properly integrated"
         )
-
 
         # Additional hardening tests integrated from test_action8_hardening.py
         suite.run_test(

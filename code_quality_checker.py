@@ -30,6 +30,7 @@ logger = setup_module(globals(), __name__)
 
 # === QUALITY METRICS ===
 
+
 @dataclass(frozen=True)
 class QualityMetrics:
     """Immutable quality metrics for a code file."""
@@ -147,7 +148,8 @@ class CodeQualityChecker:
             violations=violations
         )
 
-    def _has_type_hints(self, func: ast.FunctionDef) -> bool:
+    @staticmethod
+    def _has_type_hints(func: ast.FunctionDef) -> bool:
         """Check if function has type hints."""
         # Check return annotation
         has_return_annotation = func.returns is not None
@@ -159,7 +161,8 @@ class CodeQualityChecker:
 
         return has_return_annotation or has_arg_annotations
 
-    def _calculate_complexity(self, func: ast.FunctionDef) -> int:
+    @staticmethod
+    def _calculate_complexity(func: ast.FunctionDef) -> int:
         """Calculate cyclomatic complexity (simplified)."""
         complexity = 1  # Base complexity
 
@@ -169,7 +172,8 @@ class CodeQualityChecker:
 
         return complexity
 
-    def _has_mutable_defaults(self, func: ast.FunctionDef) -> bool:
+    @staticmethod
+    def _has_mutable_defaults(func: ast.FunctionDef) -> bool:
         """Check for mutable default arguments."""
         return any(
             isinstance(default, (ast.List, ast.Dict, ast.Set))
@@ -211,7 +215,8 @@ class CodeQualityChecker:
 
         return results
 
-    def generate_report(self, metrics: dict[str, QualityMetrics]) -> str:
+    @staticmethod
+    def generate_report(metrics: dict[str, QualityMetrics]) -> str:
         """Generate a quality report from metrics."""
         if not metrics:
             return "No files analyzed."

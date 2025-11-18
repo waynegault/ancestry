@@ -47,6 +47,7 @@ R = TypeVar('R')
 
 # === ENHANCED CIRCUIT BREAKER CONFIGURATION ===
 
+
 class CircuitState(Enum):
     """Circuit breaker states."""
     CLOSED = "CLOSED"  # Normal operation
@@ -484,6 +485,7 @@ def with_file_recovery(max_attempts: int = 3, base_delay: float = 0.5) -> Callab
         user_guidance=create_user_guidance(),
     )
 
+
 # Enhanced CircuitBreaker implementation
 class CircuitBreaker:
     """
@@ -845,14 +847,16 @@ class ErrorHandler(ABC):
 class DatabaseErrorHandler(ErrorHandler):
     """Handler for database-related errors."""
 
-    def can_handle(self, error: Exception) -> bool:
+    @staticmethod
+    def can_handle(error: Exception) -> bool:
         keywords = ["sql", "database", "connection", "integrity"]
         error_type = str(type(error).__name__).lower()
         error_msg = str(error).lower()
         return any(k in error_type or k in error_msg for k in keywords)
 
+    @staticmethod
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -884,14 +888,16 @@ class DatabaseErrorHandler(ErrorHandler):
 class NetworkErrorHandler(ErrorHandler):
     """Handler for network-related errors."""
 
-    def can_handle(self, error: Exception) -> bool:
+    @staticmethod
+    def can_handle(error: Exception) -> bool:
         return any(
             keyword in str(type(error).__name__).lower()
             for keyword in ["connection", "timeout", "http", "request", "url"]
         )
 
+    @staticmethod
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -923,14 +929,16 @@ class NetworkErrorHandler(ErrorHandler):
 class BrowserErrorHandler(ErrorHandler):
     """Handler for browser/WebDriver-related errors."""
 
-    def can_handle(self, error: Exception) -> bool:
+    @staticmethod
+    def can_handle(error: Exception) -> bool:
         return any(
             keyword in str(type(error).__name__).lower()
             for keyword in ["webdriver", "selenium", "browser", "chrome"]
         )
 
+    @staticmethod
     def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
+        error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
 
@@ -1198,11 +1206,13 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        def can_handle(self, error: Exception) -> bool:  # noqa: ARG002
+        @staticmethod
+        def can_handle(_error: Exception) -> bool:
             return True  # Catch-all for unknown errors
 
+        @staticmethod
         def handle(
-            self, error: Exception, context: Optional[dict[str, Any]] = None
+            error: Exception, context: Optional[dict[str, Any]] = None
         ) -> AppError:
             return AppError(
                 str(error),
@@ -1303,9 +1313,6 @@ def error_handling_module_tests() -> bool:
 
     # Generate summary report
     return suite.finish_suite()
-
-
-
 
 
 # === ERROR RECOVERY MANAGER ===
