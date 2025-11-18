@@ -57,6 +57,8 @@ from pathlib import Path
 from statistics import median, quantiles
 from typing import Any, Optional
 
+from observability.metrics_registry import is_metrics_enabled, record_internal_metric_stat
+
 # Support standalone execution
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -275,6 +277,8 @@ class MetricRegistry:
         self._baseline: dict[str, dict[str, float]] = {}
         self._alerts: list[PerformanceAlert] = []
         self._retention_seconds = 7 * 24 * 3600  # 7 days default
+        self._last_prom_sync = 0.0
+        self._prom_sync_interval = 30.0
 
     def record_metric(
         self,
@@ -288,6 +292,8 @@ class MetricRegistry:
             if service_name not in self.services:
                 self.services[service_name] = ServiceMetrics(service_name)
             self.services[service_name].record_value(metric_name, value, labels)
+
+        self._maybe_sync_prometheus()
 
     def record_timer(
         self,
@@ -426,6 +432,42 @@ class MetricRegistry:
         except Exception as e:
             print(f"⚠️ Failed to save metrics: {e}")
             return file_path
+
+    def _maybe_sync_prometheus(self) -> None:
+        """Periodically export collector stats to Prometheus."""
+
+        if not is_metrics_enabled():
+            return
+
+        now = time.time()
+        if now - self._last_prom_sync < self._prom_sync_interval:
+            return
+
+        self._last_prom_sync = now
+        snapshot = self.get_snapshot()
+        for service_name, metric_map in snapshot.services.items():
+            for metric_name, stats in metric_map.items():
+                self._record_internal_metric(service_name, metric_name, stats)
+
+    @staticmethod
+    def _record_internal_metric(service: str, metric_name: str, stats: dict[str, Any]) -> None:
+        """Emit a curated subset of collector stats into Prometheus."""
+
+        try:
+            for stat_key in ("p50", "p95", "p99"):
+                value = stats.get(stat_key)
+                if isinstance(value, (int, float)):
+                    record_internal_metric_stat(service, metric_name, stat_key, float(value))
+
+            for window_key in ("window_1min", "window_5min"):
+                window_stats = stats.get(window_key)
+                if isinstance(window_stats, dict):
+                    avg_value = window_stats.get("avg")
+                    if isinstance(avg_value, (int, float)):
+                        record_internal_metric_stat(service, metric_name, f"{window_key}_avg", float(avg_value))
+        except Exception:
+            # Silent failure – observability must stay best-effort
+            pass
 
 
 # Global singleton instance

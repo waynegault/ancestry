@@ -54,6 +54,7 @@ from core.error_handling import (
     error_context,
     timeout_protection,
 )
+from observability.metrics_registry import metrics
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -273,6 +274,7 @@ class DatabaseManager:
 
             query_time = time.time() - start_time
             self._update_connection_stats("query", success=True, query_time=query_time)
+            self._record_db_query_metrics(query, query_time, getattr(result, "rowcount", None))
 
             if query_time > self._slow_query_threshold:
                 logger.warning(f"Slow query detected: {query_time:.3f}s")
@@ -282,6 +284,7 @@ class DatabaseManager:
         except Exception as e:
             query_time = time.time() - start_time
             self._update_connection_stats("query", success=False, query_time=query_time)
+            self._record_db_query_metrics(query, query_time, None)
             logger.error(f"Query failed after {query_time:.3f}s: {e}")
             raise
 
@@ -333,6 +336,28 @@ class DatabaseManager:
         finally:
             if session:
                 await loop.run_in_executor(None, self.return_session, session)
+
+    def _record_db_query_metrics(self, query: Any, duration: float, rowcount: Optional[int]) -> None:
+        """Emit Prometheus metrics for database operations."""
+
+        try:
+            operation = self._normalize_query_label(query)
+            metric_bundle = metrics()
+            metric_bundle.database_query_latency.observe(operation, max(duration, 0.0))  # type: ignore[misc]
+            if rowcount is not None and rowcount >= 0:
+                metric_bundle.database_rows.inc(operation, float(rowcount))  # type: ignore[misc]
+        except Exception:
+            logger.debug("Failed to record database metrics", exc_info=True)
+
+    @staticmethod
+    def _normalize_query_label(query: Any) -> str:
+        """Reduce query objects to a low-cardinality label for metrics."""
+
+        if isinstance(query, str):
+            return "text"
+        query_type = getattr(query, "__class__", type(query)).__name__
+        sanitized = query_type.replace(" ", "_").lower()
+        return sanitized or "unknown"
 
     async def async_execute_query(
         self,

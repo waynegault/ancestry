@@ -11,7 +11,7 @@ Key Design Principles:
 1. Single source of truth: fill_rate controls request rate
 2. Adaptive learning: Adjusts fill_rate based on API feedback
 3. Balanced speedup: Requires 50 successes before increasing
-4. Aggressive slowdown: Decreases 20% on 429 errors
+4. Gentle slowdown: Decreases 12% on 429 errors
 5. No oscillation: Long stabilization period prevents fighting
 
 Author: GitHub Copilot (Design Assistant)
@@ -29,6 +29,10 @@ from typing import Any, Optional
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
+
+
+RATE_LIMITER_429_BACKOFF_FACTOR = 0.88
+"""Multiplier applied to fill_rate after a 429 response (12% reduction)."""
 
 
 def _get_state_path() -> Path:
@@ -411,7 +415,7 @@ class AdaptiveRateLimiter:
     - No extra delays, no competing mechanisms
 
     Adaptive Logic:
-    - 429 error → decrease fill_rate by 20% (slow down significantly)
+    - 429 error → decrease fill_rate by 12% (gentler slowdown)
     - Success → increase fill_rate by 2% after 50 consecutive successes
     - Separate immediate retry backoff from system-wide rate
 
@@ -791,7 +795,7 @@ class AdaptiveRateLimiter:
         """
         Handle 429 rate limit error by decreasing fill_rate.
 
-        Decreases rate by 20% to quickly back off from rate limit.
+        Decreases rate by 12% to gently back off from rate limit.
         Resets success counter to prevent premature speedup.
 
         This aggressive slowdown helps find the safe rate quickly
@@ -799,15 +803,18 @@ class AdaptiveRateLimiter:
 
         Example:
             >>> limiter = AdaptiveRateLimiter(initial_fill_rate=1.0)
-            >>> limiter.on_429_error()  # rate → 0.8 req/s
-            >>> limiter.on_429_error()  # rate → 0.64 req/s
+            >>> limiter.on_429_error()  # rate → 0.88 req/s
+            >>> limiter.on_429_error()  # rate → 0.77 req/s
         """
         with self._lock:
             old_rate = self.fill_rate
             self.fill_rate = max(
-                self.fill_rate * 0.80,  # 20% decrease
+                self.fill_rate * RATE_LIMITER_429_BACKOFF_FACTOR,
                 self.min_fill_rate,
             )
+            slowdown_pct = 0.0
+            if old_rate > 0:
+                slowdown_pct = max(0.0, (1 - (self.fill_rate / old_rate)) * 100)
             self.success_count = 0  # Reset success streak
 
             # Update metrics
@@ -820,7 +827,7 @@ class AdaptiveRateLimiter:
 
             logger.warning(
                 f"⚠️ 429 Rate Limit: Decreased rate from {old_rate:.3f} to "
-                f"{self.fill_rate:.3f} req/s (-20%) | "
+                f"{self.fill_rate:.3f} req/s (-{slowdown_pct:.1f}%) | "
                 f"Effective delay: {old_delay:.2f}s → {effective_delay:.2f}s | "
                 f"Total 429s: {self._metrics['error_429_count']}"
             )
@@ -1192,14 +1199,14 @@ def rate_limiter_module_tests() -> bool:
         expected_outcome="Burst completes fast, then rate limiting enforces delay",
     )
 
-    # Test 3: 429 decreases rate by 20%
+    # Test 3: 429 decreases rate by 12%
     suite.run_test(
         test_name="429 error handling",
         test_func=_test_429_decreases_rate,
-        test_summary="Verify 429 error decreases fill_rate by 20%",
+        test_summary="Verify 429 error decreases fill_rate by 12%",
         functions_tested="AdaptiveRateLimiter.on_429_error",
         method_description="Trigger consecutive 429 errors",
-        expected_outcome="Rate decreases by 20% each time: 1.0 → 0.8 → 0.64",
+        expected_outcome="Rate decreases by ~12% each time: 1.0 → 0.88 → 0.77",
     )
 
     # Test 4: Success requires threshold before increase
@@ -1367,15 +1374,15 @@ def _test_token_bucket_enforcement() -> None:
 
 
 def _test_429_decreases_rate() -> None:
-    """Test 429 error decreases rate by 20%."""
+    """Test 429 error decreases rate by approximately 12%."""
     limiter = AdaptiveRateLimiter(initial_fill_rate=1.0)
 
     assert limiter.fill_rate == 1.0
     limiter.on_429_error()
-    assert abs(limiter.fill_rate - 0.8) < 0.001, f"Expected 0.8, got {limiter.fill_rate}"
+    assert abs(limiter.fill_rate - 0.88) < 0.001, f"Expected 0.88, got {limiter.fill_rate}"
 
     limiter.on_429_error()
-    assert abs(limiter.fill_rate - 0.64) < 0.001, f"Expected 0.64, got {limiter.fill_rate}"
+    assert abs(limiter.fill_rate - 0.7744) < 0.001, f"Expected 0.7744, got {limiter.fill_rate}"
 
 
 def _test_success_threshold() -> None:

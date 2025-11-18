@@ -310,7 +310,12 @@ def _log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: st
         return
 
     persisted_state = get_persisted_rate_state()
-    success_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
+    batch_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
+    configured_threshold = getattr(config.api, "token_bucket_success_threshold", None)
+    if isinstance(configured_threshold, int) and configured_threshold > 0:
+        success_threshold = configured_threshold
+    else:
+        success_threshold = max(batch_threshold, 10)
     safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
     desired_rate = getattr(config.api, "token_bucket_fill_rate", None) or safe_rps
     allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
@@ -762,7 +767,9 @@ def _record_action_analytics(
 
     try:
         result_label = _determine_metrics_label(context.result, final_outcome)
-        metrics().action_processed.inc(context.action_name, result_label)  # type: ignore[misc]
+        metrics_bundle = metrics()
+        metrics_bundle.action_processed.inc(context.action_name, result_label)  # type: ignore[misc]
+        metrics_bundle.action_duration.observe(context.action_name, duration_sec)  # type: ignore[misc]
     except Exception:
         logger.debug("Failed to record action throughput metric", exc_info=True)
 

@@ -65,7 +65,7 @@ logger = setup_module(globals(), __name__)
 import threading
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from core.error_handling import (
     api_retry,
@@ -112,7 +112,7 @@ from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
 from core.database_manager import DatabaseManager
 from core.session_validator import SessionValidator
-from observability.metrics_exporter import start_metrics_exporter
+from observability.metrics_exporter import start_metrics_exporter, stop_metrics_exporter
 from observability.metrics_registry import metrics
 
 # === MODULE CONSTANTS ===
@@ -164,6 +164,8 @@ class SessionManager:
     work so exec_actn() can reset degraded sessions automatically.
     """
 
+    ESSENTIAL_SESSION_COOKIES: tuple[str, str] = ("ANCSESSIONID", "SecureATT")
+
     def __init__(self, db_path: Optional[str] = None):
         """
         Initialize the SessionManager with optimized component creation.
@@ -196,6 +198,10 @@ class SessionManager:
         # PHASE 5.1: Session state caching for performance
         self._last_readiness_check: Optional[float] = None
         self._cached_session_state: dict[str, Any] = {}
+
+        # Cookie sync tracking (explicit defaults for recovery logic)
+        self._last_cookie_sync_time: float = 0.0
+        self._session_cookies_synced: bool = False
 
         # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
         self._cached_csrf_token: Optional[str] = None
@@ -294,34 +300,20 @@ class SessionManager:
     def _initialize_rate_limiter(self) -> Optional[Any]:
         """Create or reuse the adaptive rate limiter configured for this session."""
 
-        try:
-            from utils import get_rate_limiter
-        except ImportError:
+        get_rate_limiter = self._resolve_rate_limiter_factory()
+        if not get_rate_limiter:
             return None
 
-        batch_threshold = getattr(config_schema, "batch_size", 50) or 50
-        batch_threshold = max(int(batch_threshold), 1)
-        success_threshold = max(batch_threshold * 2, 50)
+        batch_threshold = self._resolve_batch_threshold()
+        success_threshold = self._determine_success_threshold(batch_threshold)
 
-        safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
-        speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
-        allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
-        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-
-        # Match CLI configuration: let rate limiter drop to 25% of configured RPS.
-        min_fill_rate = max(0.05, safe_rps * 0.25)
-        desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
-        max_fill_rate = desired_rate if allow_aggressive else safe_rps
+        safe_rps, allow_aggressive, desired_rate = self._determine_rate_profile()
+        min_fill_rate, max_fill_rate = self._compute_fill_rates(
+            safe_rps, allow_aggressive, desired_rate
+        )
 
         endpoint_profiles = self._build_endpoint_profile_config()
-        endpoint_rate_cap = self._calculate_endpoint_rate_cap(endpoint_profiles)
-        if endpoint_rate_cap is not None:
-            logger.debug(
-                "Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap
-            )
-
-        if max_fill_rate < min_fill_rate:
-            min_fill_rate = max(0.05, max_fill_rate * 0.5)
+        self._log_endpoint_rate_cap(endpoint_profiles)
 
         bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
         initial_fill_rate = min(safe_rps, max_fill_rate)
@@ -342,6 +334,65 @@ class SessionManager:
             )
 
         return limiter
+
+    def _resolve_rate_limiter_factory(self) -> Optional[Callable[..., Any]]:
+        """Import the rate limiter factory if it is available."""
+
+        try:
+            from utils import get_rate_limiter
+        except ImportError:
+            return None
+        return get_rate_limiter
+
+    def _resolve_batch_threshold(self) -> int:
+        """Derive the base batch threshold from configuration."""
+
+        batch_threshold = getattr(config_schema, "batch_size", 50) or 50
+        return max(int(batch_threshold), 1)
+
+    def _determine_success_threshold(self, batch_threshold: int) -> int:
+        """Resolve success threshold with configuration overrides."""
+
+        configured_threshold = getattr(
+            getattr(config_schema, "api", None),
+            "token_bucket_success_threshold",
+            None,
+        )
+        if isinstance(configured_threshold, int) and configured_threshold > 0:
+            return configured_threshold
+        return max(batch_threshold, 10)
+
+    def _determine_rate_profile(self) -> tuple[float, bool, float]:
+        """Resolve rate profile, aggressive allowances, and desired fill rate."""
+
+        safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
+        speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
+        allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
+        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
+        desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
+        return safe_rps, allow_aggressive, desired_rate
+
+    def _compute_fill_rates(
+        self, safe_rps: float, allow_aggressive: bool, desired_rate: float
+    ) -> tuple[float, float]:
+        """Calculate min/max fill rates with safeguards."""
+
+        min_fill_rate = max(0.05, safe_rps * 0.25)
+        max_fill_rate = desired_rate if allow_aggressive else safe_rps
+
+        if max_fill_rate < min_fill_rate:
+            min_fill_rate = max(0.05, max_fill_rate * 0.5)
+
+        return min_fill_rate, max_fill_rate
+
+    def _log_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> None:
+        """Log derived endpoint rate caps for observability."""
+
+        endpoint_rate_cap = self._calculate_endpoint_rate_cap(endpoint_profiles)
+        if endpoint_rate_cap is not None:
+            logger.debug(
+                "Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap
+            )
 
     def _build_endpoint_profile_config(self) -> dict[str, dict[str, Any]]:
         """Normalize endpoint throttle profiles from configuration."""
@@ -463,6 +514,7 @@ class SessionManager:
     def close_browser(self) -> None:
         """Close the browser session without affecting database."""
         self.browser_manager.close_browser()
+        self._reset_cookie_sync_state("browser_close")
 
     def start_sess(self, action_name: Optional[str] = None) -> bool:
         """
@@ -777,18 +829,37 @@ class SessionManager:
             self.close_browser()
 
             logger.debug("Starting new browser session...")
-            if self.start_browser("session_recovery"):
-                logger.debug("Browser recovery successful, re-authenticating...")
+            if not self.start_browser("session_recovery"):
+                logger.error("Browser restart failed during session recovery")
+                return False
 
-                # Re-authenticate if needed
-                from utils import login_status
-                if login_status(self, disable_ui_fallback=False):
-                    self.session_start_time = time.time()
-                    self._update_session_metrics()
-                    self._record_session_refresh_metric(reason)
-                    logger.info("Session recovery and re-authentication successful")
-                    return True
-                logger.error("Re-authentication failed after browser recovery")
+            logger.debug("Browser recovery successful, validating authentication state...")
+
+            from utils import log_in, login_status
+
+            login_ok = login_status(self, disable_ui_fallback=False)
+            if login_ok is not True:
+                logger.info(
+                    "Recovered browser not authenticated (login_status=%s) - initiating login flow",
+                    login_ok,
+                )
+                login_result = log_in(self)
+                if login_result != "LOGIN_SUCCEEDED":
+                    logger.error(
+                        "Re-authentication failed after browser recovery (result=%s)",
+                        login_result,
+                    )
+                    return False
+
+            if not self._finalize_recovered_session_state():
+                logger.error("Session recovery failed validation (cookies/CSRF missing)")
+                return False
+
+            self.session_start_time = time.time()
+            self._update_session_metrics()
+            self._record_session_refresh_metric(reason)
+            logger.info("Session recovery and re-authentication successful")
+            return True
 
         except Exception as e:
             logger.error(f"Session recovery failed: {e}", exc_info=True)
@@ -1158,10 +1229,47 @@ class SessionManager:
 
     def force_cookie_resync(self) -> None:
         """Force a cookie resync when authentication errors occur."""
-        if hasattr(self, '_session_cookies_synced'):
-            delattr(self, '_session_cookies_synced')
-        self._sync_cookies_to_requests()
+        self._session_cookies_synced = False
+        self._sync_cookies_to_requests(force=True)
         logger.debug("Forced session cookie resync due to authentication error")
+
+    def _reset_cookie_sync_state(self, reason: str = "unspecified") -> None:
+        """Clear cookie sync flags and cached tokens for reliable recovery."""
+
+        self._session_cookies_synced = False
+        self._last_cookie_sync_time = 0.0
+
+        try:
+            self.api_manager._requests_session.cookies.clear()
+        except Exception as exc:
+            logger.debug(
+                "Failed to clear requests-session cookies during %s: %s",
+                reason,
+                exc,
+            )
+
+        self.invalidate_csrf_cache()
+
+    def _finalize_recovered_session_state(self) -> bool:
+        """Ensure cookies/CSRF are available before declaring recovery success."""
+
+        essential_cookies = list(self.ESSENTIAL_SESSION_COOKIES)
+        if not self.get_cookies(essential_cookies, timeout=30):
+            logger.error(
+                "Essential cookies %s missing after session recovery",
+                essential_cookies,
+            )
+            return False
+
+        self.force_cookie_resync()
+
+        csrf_token = self.get_csrf()
+        if not csrf_token:
+            logger.error("Failed to refresh CSRF token after session recovery")
+            return False
+
+        self._precache_csrf_token()
+        return True
 
 
 
@@ -1456,6 +1564,8 @@ class SessionManager:
         self._transition_state(SessionLifecycleState.UNINITIALIZED, "Session fully closed")
         self._update_session_metrics(force_zero=True)
 
+        self._shutdown_metrics_exporter()
+
         logger.debug("Session closed.")
 
     def _cleanup_browser(self) -> None:
@@ -1476,6 +1586,8 @@ class SessionManager:
             self.browser_manager.close_browser()
         except Exception as e:
             logger.warning(f"BrowserManager cleanup failed: {e}")
+
+        self._reset_cookie_sync_state("cleanup_browser")
 
     def _cleanup_database(self) -> None:
         """Close all database connections."""
@@ -1554,6 +1666,7 @@ class SessionManager:
             self._cleanup_api_caches()
             self._reset_session_state()
             self._record_session_refresh_metric("api_forced")
+            self._shutdown_metrics_exporter()
 
             logger.info("Force session restart complete - session marked invalid")
 
@@ -1582,7 +1695,7 @@ class SessionManager:
         logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
 
         # Check essential cookies
-        essential_cookies = ["ANCSESSIONID", "SecureATT"]
+        essential_cookies = list(self.ESSENTIAL_SESSION_COOKIES)
         if not self.get_cookies(essential_cookies, timeout=10):
             logger.warning(f"Essential cookies {essential_cookies} NOT found before CSRF token API call.")
 
@@ -1937,7 +2050,7 @@ class SessionManager:
     @property
     def scraper(self) -> Optional[Any]:
         """Get the CloudScraper instance for anti-bot protection."""
-        return getattr(self, '_scraper', None)
+        return getattr(self, "_scraper", None)
 
     @scraper.setter
     def scraper(self, value: Any) -> None:
@@ -1955,22 +2068,20 @@ class SessionManager:
         """Set browser needed flag."""
         self.browser_manager.browser_needed = value
 
-
-
     @property
     def _requests_session(self) -> requests.Session:
-        """Get the requests session (compatibility property with underscore)."""
+        """Compatibility accessor for the API requests session."""
         return self.api_manager.requests_session
 
-    # Status properties    @property
+    # Status properties
+    @property
     def is_ready(self) -> bool:
-        """Check if the session manager is ready."""
+        """Check if the session manager is ready for work."""
         db_ready = self.db_manager.is_ready
         browser_ready = (
             not self.browser_manager.browser_needed or self.browser_manager.driver_live
         )
         api_ready = self.api_manager.has_essential_identifiers
-
         return db_ready and browser_ready and api_ready
 
     @property
@@ -1986,6 +2097,7 @@ class SessionManager:
             if force_zero:
                 metrics().session_uptime.set(0.0)
                 return
+
             session_age = self.session_age_seconds
             metrics().session_uptime.set(float(session_age) if session_age is not None else 0.0)
         except Exception:
@@ -2016,6 +2128,17 @@ class SessionManager:
                 self._metrics_exporter_started = True
         except Exception:
             logger.debug("Failed to start Prometheus metrics exporter", exc_info=True)
+
+    def _shutdown_metrics_exporter(self) -> None:
+        """Stop the metrics exporter if this manager started it."""
+        if not getattr(self, "_metrics_exporter_started", False):
+            return
+        try:
+            stop_metrics_exporter()
+        except Exception:
+            logger.debug("Failed to stop Prometheus metrics exporter", exc_info=True)
+        finally:
+            self._metrics_exporter_started = False
 
     # PHASE 5.1: Session cache management methods
     def get_session_performance_stats(self) -> dict[str, Any]:
@@ -2959,6 +3082,63 @@ def _test_session_lifecycle_transitions() -> None:
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "request_recovery should reset to UNINITIALIZED"
 
 
+def _test_cookie_sync_state_reset_on_browser_close() -> None:
+    """Closing the browser should clear cookie sync flags and cached cookies."""
+
+    sm = SessionManager()
+
+    # Prevent actual browser operations during the test
+    sm.browser_manager.close_browser = lambda: None  # type: ignore
+
+    sm._session_cookies_synced = True
+    sm._last_cookie_sync_time = 123.0
+    sm.api_manager._requests_session.cookies.set("foo", "bar", domain=".example.com")
+
+    sm.close_browser()
+
+    assert sm._session_cookies_synced is False, "Cookie sync flag should reset"
+    assert sm._last_cookie_sync_time == 0.0, "Last cookie sync timestamp should reset"
+    assert not sm.api_manager._requests_session.cookies.get_dict(), "Requests session cookies should be cleared"
+
+
+def _test_recovery_validation_requires_essential_cookies() -> None:
+    """Recovery validation should fail when essential cookies are missing."""
+
+    sm = SessionManager()
+
+    from types import MethodType
+
+    sm.get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) and False, sm)
+
+    assert not sm._finalize_recovered_session_state(), "Recovery validation should fail without cookies"
+
+
+def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
+    """Successful recovery validation forces cookie resync and CSRF refresh."""
+
+    sm = SessionManager()
+
+    from types import MethodType
+
+    sm.get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) or True, sm)
+
+    flags = {"resync": False, "csrf": False}
+
+    def _fake_force_resync(_session_manager: "SessionManager") -> None:
+        flags["resync"] = True
+
+    def _fake_get_csrf(_session_manager: "SessionManager") -> str:
+        flags["csrf"] = True
+        return "csrf-token"
+
+    sm.force_cookie_resync = MethodType(_fake_force_resync, sm)
+    sm.get_csrf = MethodType(_fake_get_csrf, sm)
+
+    assert sm._finalize_recovered_session_state(), "Recovery validation should succeed with cookies and CSRF"
+    assert flags["resync"], "force_cookie_resync should be invoked"
+    assert flags["csrf"], "get_csrf should be invoked"
+
+
 def core_session_manager_module_tests() -> bool:
     """Comprehensive test suite for session_manager.py (decomposed)."""
     from test_framework import TestSuite, suppress_logging
@@ -3155,6 +3335,27 @@ def core_session_manager_module_tests() -> bool:
             "Lifecycle states transition through UNINITIALIZED→RECOVERING→READY/DEGRADED with guard resets",
             "Validate lifecycle guard and transition helpers",
             "Ensures guard_action resets DEGRADED state and transitions toggle session_ready consistently",
+        )
+        suite.run_test(
+            "Cookie sync reset on browser close",
+            _test_cookie_sync_state_reset_on_browser_close,
+            "Closing browser clears cookie sync flags and cached cookies",
+            "Ensure closing browser invalidates stale cookies",
+            "Verify _reset_cookie_sync_state runs during close_browser and clears request-session cookies",
+        )
+        suite.run_test(
+            "Recovery validation fails without cookies",
+            _test_recovery_validation_requires_essential_cookies,
+            "Recovery helper rejects when essential cookies missing",
+            "Prevent false positives when cookies unavailable",
+            "Mock get_cookies False and expect _finalize_recovered_session_state to fail",
+        )
+        suite.run_test(
+            "Recovery validation resyncs and refreshes CSRF",
+            _test_recovery_validation_resyncs_and_fetches_csrf,
+            "Successful recovery forces cookie resync and CSRF refresh",
+            "Ensure recovery path refreshes auth state",
+            "Mock cookies present and assert force_cookie_resync + get_csrf invoked",
         )
 
         suite.run_test(

@@ -438,6 +438,7 @@ class APIConfig:
     accept_language: str = "en-US,en;q=0.9"
     target_match_throughput: float = 1.0  # Target matches processed per second (0 disables pacing)
     max_throughput_catchup_delay: float = 5.0  # Max pacing delay inserted per page (seconds)
+    token_bucket_success_threshold: Optional[int] = None  # Successes required before speeding up (auto-calculated when None)
 
     # Concurrency - REMOVED: Parallel processing eliminated for API safety
     # Sequential processing only to prevent 429 rate limiting errors
@@ -478,10 +479,10 @@ class APIConfig:
     endpoint_throttle_profiles: dict[str, dict[str, float]] = field(
         default_factory=lambda: {
             "Ethnicity Comparison API": {
-                "min_interval": 2.5,
-                "delay_multiplier": 1.8,
-                "max_rate": 0.4,
-                "cooldown_after_429": 45.0,
+                "min_interval": 1.0,
+                "delay_multiplier": 1.3,
+                "max_rate": 0.65,
+                "cooldown_after_429": 25.0,
             }
         }
     )
@@ -504,24 +505,43 @@ class APIConfig:
     def _validate_api_basics(self) -> None:
         """Validate core API configuration values."""
 
-        if not self.base_url:
-            raise ValueError("base_url is required")
-        if not self.base_url.startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
-        if self.request_timeout <= 0:
-            raise ValueError("request_timeout must be positive")
-        if self.max_retries < 0:
-            raise ValueError("max_retries must be non-negative")
-        if self.retry_backoff_factor < 0:
-            raise ValueError("retry_backoff_factor must be non-negative")
-        if self.requests_per_second <= 0:
-            raise ValueError("requests_per_second must be positive")
-        if self.target_match_throughput < 0:
-            raise ValueError("target_match_throughput must be non-negative")
-        if self.max_throughput_catchup_delay < 0:
-            raise ValueError("max_throughput_catchup_delay must be non-negative")
-        if self.max_relationship_prob_fetches < 0:
-            raise ValueError("max_relationship_prob_fetches must be non-negative")
+        threshold_value = getattr(self, "token_bucket_success_threshold", None)
+
+        validations: list[tuple[Callable[[], bool], str]] = [
+            (lambda: bool(self.base_url), "base_url is required"),
+            (
+                lambda: isinstance(self.base_url, str)
+                and self.base_url.startswith(("http://", "https://")),
+                "base_url must start with http:// or https://",
+            ),
+            (lambda: self.request_timeout > 0, "request_timeout must be positive"),
+            (lambda: self.max_retries >= 0, "max_retries must be non-negative"),
+            (
+                lambda: self.retry_backoff_factor >= 0,
+                "retry_backoff_factor must be non-negative",
+            ),
+            (lambda: self.requests_per_second > 0, "requests_per_second must be positive"),
+            (
+                lambda: threshold_value is None or threshold_value > 0,
+                "token_bucket_success_threshold must be positive when provided",
+            ),
+            (
+                lambda: self.target_match_throughput >= 0,
+                "target_match_throughput must be non-negative",
+            ),
+            (
+                lambda: self.max_throughput_catchup_delay >= 0,
+                "max_throughput_catchup_delay must be non-negative",
+            ),
+            (
+                lambda: self.max_relationship_prob_fetches >= 0,
+                "max_relationship_prob_fetches must be non-negative",
+            ),
+        ]
+
+        for condition, error_message in validations:
+            if not condition():
+                raise ValueError(error_message)
 
     def _sanitize_endpoint_profiles(self) -> dict[str, dict[str, float]]:
         """Normalize endpoint throttling profiles defined in configuration."""
@@ -696,6 +716,8 @@ class ObservabilityConfig:
     metrics_export_host: str = "127.0.0.1"
     metrics_export_port: int = 9000
     metrics_namespace: str = "ancestry"
+    auto_start_prometheus: bool = False
+    prometheus_binary_path: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.metrics_export_host:
@@ -706,6 +728,8 @@ class ObservabilityConfig:
             raise ValueError("metrics_namespace must be non-empty")
         if not all(ch.isalnum() or ch in {":", "_"} for ch in self.metrics_namespace):
             raise ValueError("metrics_namespace must contain only alphanumeric characters, colon, or underscore")
+        if self.prometheus_binary_path is not None and not str(self.prometheus_binary_path).strip():
+            raise ValueError("prometheus_binary_path must be non-empty when provided")
 
 
 @dataclass

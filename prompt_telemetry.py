@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from observability.metrics_registry import metrics
+
 if TYPE_CHECKING:
     from common_params import ExtractionExperimentEvent
 
@@ -129,6 +131,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
         }
         with Path(TELEMETRY_FILE).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(event, ensure_ascii=False) + "\n")
+        _record_prometheus_ai_metrics(event_data, event.get("quality_score"))
         # Lightweight auto-alert hook (Phase 11.2 item 2)
         from contextlib import suppress
         with suppress(Exception):
@@ -227,6 +230,24 @@ def summarize_experiments(last_n: int = 1000, provider: str | None = None) -> di
         return summary
     except Exception:
         return {"events": 0, "variants": {}, "success_rate": 0.0}
+
+
+def _record_prometheus_ai_metrics(event_data: ExtractionExperimentEvent, quality_score: Any) -> None:
+    """Record AI extraction metrics via Prometheus helper (best-effort)."""
+
+    try:
+        provider = _normalize_provider_value(event_data.provider_name) or "unknown"
+        prompt_key = event_data.prompt_key or "unknown"
+        variant = event_data.variant_label or "default"
+        metrics_bundle = metrics()
+        result_label = "success" if event_data.parse_success else "failure"
+        metrics_bundle.ai_parse_results.inc(provider, prompt_key, result_label)  # type: ignore[misc]
+
+        if isinstance(quality_score, (int, float)):
+            metrics_bundle.ai_quality.observe(provider, prompt_key, variant, float(quality_score))  # type: ignore[misc]
+    except Exception:
+        # Telemetry must stay fire-and-forget; ignore observability errors
+        pass
 
 
 # === Analysis & Alerting (Phase 11.2 Items 1 & 2) ===

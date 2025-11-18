@@ -38,6 +38,8 @@ except Exception:  # pragma: no cover - fallback for environments missing config
             metrics_export_host: str = "127.0.0.1"
             metrics_export_port: int = 9000
             metrics_namespace: str = "ancestry"
+            auto_start_prometheus: bool = False
+            prometheus_binary_path: Optional[str] = None
 
             def __post_init__(self) -> None:
                 if not self.metrics_export_host:
@@ -77,6 +79,8 @@ from observability.metrics_registry import (  # type: ignore[import-not-found]
 logger = setup_module(globals(), __name__)
 
 _EXPORTER_LOCK = threading.RLock()
+_runtime_observability: Optional[ObservabilityConfig] = None
+_DEFAULT_PROMETHEUS_BINARY = Path("C:/Programs/Prometheus/prometheus.exe")
 
 
 class _ExporterState:
@@ -111,8 +115,16 @@ def _start_prometheus_server() -> bool:
                 return True  # Already running
             _PROMETHEUS_PROCESS = None  # Process died, clear it  # type: ignore[reportConstantRedefinition]
 
+        settings = _runtime_observability
+        auto_start_enabled = True if settings is None else bool(settings.auto_start_prometheus)
+        if not auto_start_enabled:
+            logger.debug("Prometheus auto-start disabled via configuration")
+            return False
+
+        binary_override = getattr(settings, "prometheus_binary_path", None) if settings else None
+        prometheus_path = Path(binary_override) if binary_override else _DEFAULT_PROMETHEUS_BINARY
+
         # Check if Prometheus is available
-        prometheus_path = Path("C:/Programs/Prometheus/prometheus.exe")
         if not prometheus_path.exists():
             logger.debug("Prometheus not found at %s, skipping auto-start", prometheus_path)
             return False
@@ -403,8 +415,16 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "apply_observability_settings",
     "get_metrics_exporter_address",
     "is_metrics_exporter_running",
     "start_metrics_exporter",
     "stop_metrics_exporter",
 ]
+
+
+def apply_observability_settings(settings: Optional[ObservabilityConfig]) -> None:
+    """Store the latest Observability configuration for exporter helpers."""
+
+    global _runtime_observability  # noqa: PLW0603
+    _runtime_observability = settings

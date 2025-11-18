@@ -68,6 +68,7 @@ except ImportError:
         SeleniumConfig,
     )
 
+from observability.metrics_exporter import apply_observability_settings
 from observability.metrics_registry import configure_metrics
 
 
@@ -167,6 +168,7 @@ class ConfigManager:
 
             try:
                 configure_metrics(getattr(config, "observability", None))
+                apply_observability_settings(getattr(config, "observability", None))
             except Exception as exc:  # pragma: no cover - defensive guard
                 logger.warning("Failed to configure Prometheus metrics: %s", exc)
 
@@ -1014,6 +1016,7 @@ class ConfigManager:
         self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
         self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
         self._set_int_config(config, "api", "burst_limit", "BURST_LIMIT")
+        self._set_int_config(config, "api", "token_bucket_success_threshold", "TOKEN_BUCKET_SUCCESS_THRESHOLD")
 
         # Float configurations - Rate limiting
         self._set_float_config(config, "api", "requests_per_second", "REQUESTS_PER_SECOND")
@@ -1164,6 +1167,19 @@ class ConfigManager:
         namespace_value = os.getenv("PROMETHEUS_METRICS_NAMESPACE")
         if namespace_value:
             observability_config["metrics_namespace"] = namespace_value
+
+        auto_start_value = os.getenv("PROMETHEUS_AUTO_START")
+        if auto_start_value is not None:
+            observability_config["auto_start_prometheus"] = auto_start_value.strip().lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+
+        binary_path_value = os.getenv("PROMETHEUS_BINARY_PATH")
+        if binary_path_value:
+            observability_config["prometheus_binary_path"] = binary_path_value.strip()
 
         if observability_config:
             config["observability"] = observability_config

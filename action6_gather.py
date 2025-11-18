@@ -315,6 +315,20 @@ try:
 except (ValueError, TypeError):
     DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10  # type: ignore[misc]
 
+_CM_RELATIONSHIP_BUCKETS: tuple[tuple[int, str], ...] = (
+    (2200, "Parent/Child"),
+    (1750, "Full sibling"),
+    (1350, "Grandparent/Grandchild or Aunt/Uncle"),
+    (900, "Half sibling or great aunt/uncle"),
+    (540, "1st cousin"),
+    (400, "1st cousin once removed"),
+    (220, "2nd cousin"),
+    (150, "Second cousin once removed / 3rd cousin"),
+    (90, "3rd cousin"),
+    (45, "4th cousin"),
+    (20, "5th cousin"),
+)
+
 # Dynamic critical API failure threshold based on total pages to process
 def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
     """Calculate appropriate failure threshold based on total pages to process."""
@@ -2354,9 +2368,27 @@ def _format_relationship_path_from_kinship(
 ) -> tuple[str, Optional[list[dict[str, Optional[str]]]]]:
     """Convert kinshipPersons data into a narrative relationship path."""
 
-    owner_name = _resolve_tree_owner_name(session_manager)
     if not kinship_persons:
         return "(No relationship path available)", None
+
+    owner_name = _resolve_tree_owner_name(session_manager)
+    normalized_entries = _normalize_kinship_entries(kinship_persons)
+    target_name = match_display_name or normalized_entries[0].get("name") or "Relative"
+
+    narrative, unified_path = _build_unified_relationship_path(
+        normalized_entries, target_name, owner_name
+    )
+    if narrative:
+        return narrative, unified_path
+
+    fallback_narrative = _format_kinship_path_for_action6(kinship_persons)
+    return fallback_narrative, None
+
+
+def _normalize_kinship_entries(
+    kinship_persons: list[dict[str, Any]]
+) -> list[dict[str, Optional[str]]]:
+    """Normalize raw kinship data into the structure used by formatters."""
 
     normalized_entries: list[dict[str, Optional[str]]] = []
     for person in kinship_persons:
@@ -2368,24 +2400,39 @@ def _format_relationship_path_from_kinship(
                 "gender": person.get("gender"),
             }
         )
+    return normalized_entries
 
-    target_name = match_display_name or normalized_entries[0].get("name") or "Relative"
-    unified_path: Optional[list[dict[str, Optional[str]]]] = None
+
+def _build_unified_relationship_path(
+    normalized_entries: list[dict[str, Optional[str]]],
+    target_name: str,
+    owner_name: str,
+) -> tuple[Optional[str], Optional[list[dict[str, Optional[str]]]]]:
+    """Attempt to build a unified relationship narrative from normalized entries."""
 
     try:
         unified_path = convert_api_path_to_unified_format(normalized_entries, target_name)
     except Exception as conv_exc:  # pragma: no cover - diagnostic logging only
-        logger.debug("Failed to normalize kinship path for unified format: %s", conv_exc, exc_info=False)
+        logger.debug(
+            "Failed to normalize kinship path for unified format: %s", conv_exc, exc_info=False
+        )
+        return None, None
 
-    if unified_path:
-        try:
-            narrative = format_relationship_path_unified(unified_path, target_name, owner_name, None)
-            return narrative, unified_path
-        except Exception as fmt_exc:  # pragma: no cover - diagnostic logging only
-            logger.debug("Unified relationship formatting failed: %s", fmt_exc, exc_info=False)
+    if len(unified_path) < 2:
+        logger.debug("Unified relationship path too short (%d entries); falling back", len(unified_path))
+        return None, None
 
-    fallback_narrative = _format_kinship_path_for_action6(kinship_persons)
-    return fallback_narrative, None
+    try:
+        narrative = format_relationship_path_unified(unified_path, target_name, owner_name, None)
+    except Exception as fmt_exc:  # pragma: no cover - diagnostic logging only
+        logger.debug("Unified relationship formatting failed: %s", fmt_exc, exc_info=False)
+        return None, None
+
+    if narrative.startswith("(No relationship path data available"):
+        logger.debug("Unified formatter returned placeholder narrative; falling back")
+        return None, None
+
+    return narrative, unified_path
 
 
 def _derive_actual_relationship_label(
@@ -3156,8 +3203,9 @@ def _update_page_statuses(
     if status in ["new", "updated", "error"]:
         page_statuses[status] += 1
     elif status == "skipped":
-        logger.debug(
-            f"_do_match returned 'skipped' for {log_ref_short}. Not counted in page new/updated/error."
+        logger.info(
+            "♻️  Skipped %s (already up to date)",
+            log_ref_short,
         )
     else:
         logger.error(
@@ -5587,6 +5635,38 @@ def _check_dna_update_needed(
         return True
 
 
+def _infer_predicted_relationship_from_cm(cm_value: int) -> str:
+    """Map centimorgan totals to a descriptive relationship bucket."""
+
+    for threshold, label in _CM_RELATIONSHIP_BUCKETS:
+        if cm_value >= threshold:
+            return label
+    return "Distant relationship?"
+
+
+def _resolve_predicted_relationship_value(
+    api_value: Optional[str],
+    cm_value: int,
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> str:
+    """Return a usable predicted relationship, inferring from cM when API omits it."""
+
+    normalized = (api_value or "").strip()
+    if normalized and normalized.upper() != "N/A":
+        return normalized
+
+    inferred_label = _infer_predicted_relationship_from_cm(cm_value)
+    inferred_value = f"{inferred_label} (≈{cm_value} cM, inferred)"
+    logger_instance.debug(
+        "%s: Predicted relationship missing; inferred '%s' from %s cM",
+        log_ref_short,
+        inferred_value,
+        cm_value,
+    )
+    return inferred_value
+
+
 def _build_dna_dict_base(
     match_uuid: str,
     match: dict[str, Any],
@@ -5727,12 +5807,24 @@ def _prepare_dna_match_operation_data(
     """
     _ = session_manager
     details_part = prefetched_combined_details or {}
-    api_predicted_rel_for_comp = (
-        predicted_relationship if predicted_relationship is not None else "N/A"
+    cm_value_raw = match.get("cm_dna", 0)
+    try:
+        cm_value = int(cm_value_raw or 0)
+    except (TypeError, ValueError):
+        logger_instance.debug(
+            "%s: Unable to parse cm_dna value '%s'; defaulting to 0 for inference",
+            log_ref_short,
+            cm_value_raw,
+        )
+        cm_value = 0
+
+    safe_predicted_relationship = _resolve_predicted_relationship_value(
+        predicted_relationship,
+        cm_value,
+        log_ref_short,
+        logger_instance,
     )
-    safe_predicted_relationship = (
-        predicted_relationship if predicted_relationship is not None else "N/A"
-    )
+    api_predicted_rel_for_comp = safe_predicted_relationship
 
     needs_dna_create_or_update = _check_dna_update_needed(
         existing_dna_match, match, details_part,
@@ -7699,6 +7791,101 @@ def _format_kinship_path_for_action6(kinship_persons: list[dict[str, Any]]) -> s
     return " ".join(path_lines)
 
 
+def _has_kinship_entries(result: Optional[dict[str, Any]]) -> bool:
+    """Return True when the ladder response contains kinship entries."""
+
+    return bool(
+        result
+        and result.get("kinship_persons")
+        and isinstance(result.get("kinship_persons"), list)
+    )
+
+
+def _fetch_ladder_via_relation_api(
+    session_manager: SessionManager,
+    cfpid: str,
+    tree_id: str,
+) -> Optional[dict[str, Any]]:
+    """Fallback to the relationladderwithlabels endpoint when the shared helper returns no data."""
+
+    user_id = session_manager.my_profile_id or session_manager.my_uuid
+    if not user_id or not tree_id:
+        logger.debug(
+            "Cannot invoke ladder fallback for %s - missing user_id (%s) or tree_id (%s)",
+            cfpid,
+            user_id,
+            tree_id,
+        )
+        return None
+
+    try:
+        from api_utils import call_relation_ladder_with_labels_api
+    except ImportError:
+        logger.debug("Relation ladder fallback import failed; skipping fallback for %s", cfpid)
+        return None
+
+    selenium_cfg = getattr(config_schema, "selenium", None)
+    timeout_value = getattr(selenium_cfg, "api_timeout", 30) if selenium_cfg else 30
+
+    fallback_raw = call_relation_ladder_with_labels_api(
+        session_manager=session_manager,
+        user_id=user_id,
+        tree_id=tree_id,
+        person_id=cfpid,
+        base_url=config_schema.api.base_url,  # type: ignore[arg-type]
+        timeout=int(timeout_value),
+    )
+
+    if not fallback_raw:
+        return None
+
+    kinship = fallback_raw.get("kinshipPersons") or fallback_raw.get("kinship_persons")
+    if not kinship or not isinstance(kinship, list):
+        return None
+
+    logger.info(
+        "Recovered %d kinship entries for cfpid %s via relation ladder fallback",
+        len(kinship),
+        cfpid,
+    )
+
+    return {
+        "person_id": cfpid,
+        "reference_person_id": fallback_raw.get("mePid"),
+        "kinship_persons": kinship,
+        "raw_data": fallback_raw,
+    }
+
+
+def _load_relationship_ladder_data(
+    session_manager: SessionManager,
+    cfpid: str,
+    tree_id: str,
+) -> Optional[dict[str, Any]]:
+    """Load ladder information with automatic fallback for sparse responses."""
+
+    from api_utils import get_relationship_path_data
+
+    primary = get_relationship_path_data(
+        session_manager=session_manager,
+        person_id=cfpid,
+    )
+
+    if _has_kinship_entries(primary):
+        return primary
+
+    fallback = _fetch_ladder_via_relation_api(session_manager, cfpid, tree_id)
+    if fallback:
+        return fallback
+
+    if not primary:
+        logger.warning("Relationship ladder API returned no data for cfpid %s", cfpid)
+        return None
+
+    logger.warning("Relationship ladder API returned empty kinship data for cfpid %s", cfpid)
+    return primary
+
+
 def _fetch_batch_ladder(
     session_manager: SessionManager,
     cfpid: str,
@@ -7723,21 +7910,14 @@ def _fetch_batch_ladder(
     """
     logger.debug(f"Fetching ladder for cfpid {cfpid} in tree {tree_id}")
 
-    # Use the modern enhanced relationship ladder API (no legacy fallback)
-    from api_utils import get_relationship_path_data
-
-    enhanced_result = get_relationship_path_data(
-        session_manager=session_manager,
-        person_id=cfpid
-    )
-
+    enhanced_result = _load_relationship_ladder_data(session_manager, cfpid, tree_id)
     if not enhanced_result or not isinstance(enhanced_result, dict):  # type: ignore[arg-type,misc]  # type: ignore[arg-type]
-        logger.error(f"Enhanced API failed to return data for {cfpid} - NO FALLBACK")
+        logger.error(f"Enhanced API failed to return ladder data for {cfpid}")
         return None
 
     kinship_persons = enhanced_result.get("kinship_persons", [])
     if not kinship_persons:
-        logger.debug(f"Enhanced API returned no kinship data for {cfpid}")
+        logger.debug(f"No kinship entries available for {cfpid} after fallback attempts")
         return None
 
     narrative, unified_path = _format_relationship_path_from_kinship(
@@ -7767,9 +7947,8 @@ def _fetch_batch_ladder(
 
 
 # ============================================================================
-# LEGACY CODE REMOVED - All ladder/relationship API calls now use modern enhanced API
-# via api_utils.get_relationship_path_data() which calls relationladderwithlabels endpoint
-# NO FALLBACK to old /getladder endpoint - failures should be visible for quick repair
+# LEGACY CODE REMOVED - Ladder fetches use the enhanced API with an automatic
+# fallback to the relationladderwithlabels endpoint when needed.
 # ============================================================================
 
 
@@ -9284,6 +9463,63 @@ def _test_checkpoint_resume_logic() -> bool:
     return True
 
 
+def _test_cm_relationship_fallback() -> bool:
+    """Verify cM-driven predicted relationship inference when API data is missing."""
+
+    from types import SimpleNamespace
+
+    print("🧪 Testing cM-based predicted relationship fallback...")
+    session_manager_stub = SimpleNamespace()
+    logger_instance = logging.getLogger("action6.tests.cm_fallback")
+
+    missing_match = {
+        "uuid": "TEST-CM-550",
+        "cm_dna": 550,
+        "compare_link": None,
+    }
+
+    inferred = _prepare_dna_match_operation_data(
+        match=missing_match,
+        existing_dna_match=None,
+        prefetched_combined_details=None,
+        match_uuid=missing_match["uuid"],
+        predicted_relationship=None,
+        log_ref_short="TEST-CM",
+        logger_instance=logger_instance,
+        session_manager=session_manager_stub,  # type: ignore[arg-type]
+    )
+
+    assert inferred is not None, "Expected DNA data dict for new match"
+    inferred_payload = inferred.get("dna_match", inferred)  # type: ignore[union-attr]
+    inferred_value = inferred_payload.get("predicted_relationship")
+    assert isinstance(inferred_value, str)
+    assert inferred_value.startswith("1st cousin"), inferred_value
+    assert "inferred" in inferred_value
+
+    provided_match = {
+        "uuid": "TEST-API-REL",
+        "cm_dna": 75,
+        "compare_link": None,
+    }
+
+    provided = _prepare_dna_match_operation_data(
+        match=provided_match,
+        existing_dna_match=None,
+        prefetched_combined_details=None,
+        match_uuid=provided_match["uuid"],
+        predicted_relationship="3rd cousin",
+        log_ref_short="TEST-API",
+        logger_instance=logger_instance,
+        session_manager=session_manager_stub,  # type: ignore[arg-type]
+    )
+
+    provided_payload = provided.get("dna_match", provided)  # type: ignore[union-attr]
+    assert provided_payload.get("predicted_relationship") == "3rd cousin"
+
+    print("🎉 cM-based predicted relationship fallback tests passed!")
+    return True
+
+
 def _test_regression_prevention_session_management():
     """
     🛡️ REGRESSION TEST: Session management and stability.
@@ -9569,6 +9805,15 @@ def action6_gather_module_tests() -> bool:
             functions_tested="_write_checkpoint_state(), _determine_start_page(), _persist_action6_checkpoint()",
             method_description="Patch checkpoint path to temp file and validate resume + override flows",
             expected_outcome="Checkpoint resume honours saved state and clears once pages complete",
+        )
+
+        suite.run_test(
+            test_name="cM relationship fallback logic",
+            test_func=_test_cm_relationship_fallback,
+            test_summary="Predicted relationship inference uses cM buckets when API omits a value",
+            functions_tested="_prepare_dna_match_operation_data(), _resolve_predicted_relationship_value()",
+            method_description="Simulate matches with and without API-provided relationships to verify inference and pass-through behavior",
+            expected_outcome="Missing values get inferred labels while provided labels remain unchanged",
         )
 
         suite.run_test(
