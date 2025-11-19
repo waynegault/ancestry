@@ -272,6 +272,16 @@ If you see thousands of errors or errors from `.git` files:
   - **Total Impact**: ~400 lines of verbose jargon removed, 12 modules improved
   - See `docs/DOCUMENTATION_AUDIT.md` for complete analysis and best practices
 
+**Type Ignore Guard (Nov 19, 2025)**
+- `code_quality_checker.py` now surfaces any `type: ignore[...]` directives as explicit violations so module tests immediately fail when suppressions creep in.
+- `scripts/check_type_ignores.py` provides a fast repository-wide scan that exits non-zero if a directive appears anywhere outside vendor directories.
+
+```powershell
+python scripts/check_type_ignores.py
+```
+
+Run the guard locally (or wire it into CI) to maintain the zero-ignore baseline captured in `docs/review_todo.md`.
+
 ### Testing
 - Write tests for all new functionality
 - Tests should fail when functionality fails (no fake passes)

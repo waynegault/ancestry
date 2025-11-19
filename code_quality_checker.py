@@ -89,7 +89,7 @@ class CodeQualityChecker:
                 content = f.read()
 
             tree = ast.parse(content)
-            return self._analyze_ast(tree, str(file_path))
+            return self._analyze_ast(tree, str(file_path), content)
 
         except Exception as e:
             logger.error(f"Failed to analyze {file_path}: {e}")
@@ -102,7 +102,7 @@ class CodeQualityChecker:
                 violations=[f"Analysis failed: {e}"]
             )
 
-    def _analyze_ast(self, tree: ast.AST, file_path: str) -> QualityMetrics:
+    def _analyze_ast(self, tree: ast.AST, file_path: str, content: str) -> QualityMetrics:
         """Analyze AST for quality metrics."""
         functions = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
 
@@ -110,7 +110,7 @@ class CodeQualityChecker:
         functions_with_type_hints = 0
         long_functions = 0
         complex_functions = 0
-        violations = []
+        violations = self._find_type_ignore_violations(content)
 
         for func in functions:
             # Check type hints (skip test functions)
@@ -147,6 +147,21 @@ class CodeQualityChecker:
             complex_functions=complex_functions,
             violations=violations
         )
+
+    @staticmethod
+    def _find_type_ignore_violations(content: str) -> list[str]:
+        """Detect disallowed `type: ignore` directives within file content."""
+        violations: list[str] = []
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            comment_index = line.find("#")
+            if comment_index == -1:
+                continue
+            if "type: ignore" in line[comment_index:].lower():
+                snippet = line.strip() or "<empty>"
+                violations.append(
+                    f"Line {line_number} uses 'type: ignore' (disallowed): {snippet}"
+                )
+        return violations
 
     @staticmethod
     def _has_type_hints(func: ast.FunctionDef) -> bool:
@@ -292,6 +307,14 @@ def code_quality_checker_module_tests() -> bool:
             assert isinstance(checker.violations, list)
             assert isinstance(checker.metrics, dict)
 
+        def test_type_ignore_detection() -> None:
+            """Ensure the checker flags forbidden `type: ignore` usage."""
+            checker = CodeQualityChecker()
+            sample = "value = 1  # type: ign" "ore[attr-defined]"
+            findings = checker._find_type_ignore_violations(sample)
+            assert len(findings) == 1
+            assert "line 1" in findings[0].lower()
+
         suite.run_test(
             "Quality Metrics",
             test_quality_metrics,
@@ -306,6 +329,14 @@ def code_quality_checker_module_tests() -> bool:
             "Code quality checker initializes correctly",
             "Test CodeQualityChecker initialization",
             "Verify checker creates proper data structures"
+        )
+
+        suite.run_test(
+            "Type Ignore Detection",
+            test_type_ignore_detection,
+            "Checker identifies forbidden type ignore comments",
+            "Ensure `_find_type_ignore_violations` catches disallowed directives",
+            "Prevent regressions that re-introduce `type: ignore` usage"
         )
 
         return suite.finish_suite()
