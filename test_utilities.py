@@ -42,6 +42,7 @@ for professional genealogical automation development and quality assurance.
 import contextlib
 import tempfile
 from collections.abc import Iterator
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Optional
 from unittest.mock import MagicMock
@@ -669,7 +670,7 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
     from pathlib import Path
 
     try:
-        import gedcom  # type: ignore
+        gedcom_module = import_module("gedcom")
     except ImportError:
         return None
 
@@ -681,7 +682,7 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
         return None
 
     try:
-        return gedcom.parse(gedcom_path)
+        return gedcom_module.parse(gedcom_path)
     except Exception:
         return None
 

@@ -621,7 +621,26 @@ def test_gedcom_intelligence() -> bool:
 
 def test_gap_detection_with_mocked_birth_year() -> None:
     """Mock birth year extraction to trigger missing parents gap logic (>1800)."""
-    analyzer = GedcomIntelligenceAnalyzer()
+
+    class MockedBirthYearAnalyzer(GedcomIntelligenceAnalyzer):
+        """Analyzer variant with deterministic extractors for testing."""
+
+        @staticmethod
+        def _extract_birth_year(person_record: Any) -> Optional[int]:
+            _ = person_record
+            return 1865
+
+        @staticmethod
+        def _extract_birth_place(person_record: Any) -> Optional[str]:
+            _ = person_record
+            return None
+
+        @staticmethod
+        def _extract_person_name(person_record: Any) -> str:
+            _ = person_record
+            return "Alice Example"
+
+    analyzer = MockedBirthYearAnalyzer()
     mock_gedcom = type('MockGedcom', (), {
         'indi_index': {'I1': type('Person', (), {'name': ['Alice Example']})()},
         'id_to_parents': {},
@@ -629,21 +648,6 @@ def test_gap_detection_with_mocked_birth_year() -> None:
     })()
     # Monkey patch birth year extractor
 
-    def _mock_birth_year(person_record: Any) -> Optional[int]:
-        _ = person_record
-        return 1865
-
-    def _mock_birth_place(person_record: Any) -> Optional[str]:
-        _ = person_record
-        return None
-
-    def _mock_person_name(person_record: Any) -> str:
-        _ = person_record
-        return 'Alice Example'
-
-    analyzer._extract_birth_year = _mock_birth_year  # type: ignore
-    analyzer._extract_birth_place = _mock_birth_place  # type: ignore
-    analyzer._extract_person_name = _mock_person_name  # type: ignore
     result = analyzer.analyze_gedcom_data(mock_gedcom)
     gap_types = {g['gap_type'] for g in result['gaps_identified']}
     assert 'missing_parents' in gap_types or 'missing_parents' in ''.join(gap_types), "Should include missing parents gap"
