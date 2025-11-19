@@ -7,7 +7,7 @@ from __future__ import annotations
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import Any, Optional, Protocol, cast
 
 parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
@@ -22,7 +22,7 @@ logger = setup_module(globals(), __name__)
 _prometheus_import_error: Optional[Exception] = None
 
 try:  # pragma: no cover - import-time guard
-    import prometheus_client as _prometheus_client  # type: ignore[import-not-found]
+    import prometheus_client as _prometheus_client
 except Exception as exc:  # pragma: no cover - handled gracefully
     _prometheus_client = None
     _prometheus_import_error = exc
@@ -41,18 +41,34 @@ else:  # pragma: no cover - typed fallback when dependency missing
     Gauge = cast(Any, None)
     Histogram = cast(Any, None)
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from prometheus_client import (  # type: ignore[import-not-found]
-        CollectorRegistry as PrometheusCollectorRegistry,
-        Counter as PrometheusCounter,
-        Gauge as PrometheusGauge,
-        Histogram as PrometheusHistogram,
-    )
-else:  # pragma: no cover - runtime alias
-    PrometheusCollectorRegistry = Any
-    PrometheusCounter = Any
-    PrometheusGauge = Any
-    PrometheusHistogram = Any
+
+class _CounterMetric(Protocol):
+    def labels(self, **labels: str) -> _CounterMetric:  # pragma: no cover - protocol only
+        ...
+
+    def inc(self, amount: float = 1.0) -> None:  # pragma: no cover - protocol only
+        ...
+
+
+class _GaugeMetric(Protocol):
+    def labels(self, **labels: str) -> _GaugeMetric:  # pragma: no cover - protocol only
+        ...
+
+    def set(self, value: float) -> None:  # pragma: no cover - protocol only
+        ...
+
+
+class _HistogramMetric(Protocol):
+    def labels(self, **labels: str) -> _HistogramMetric:  # pragma: no cover - protocol only
+        ...
+
+    def observe(self, value: float) -> None:  # pragma: no cover - protocol only
+        ...
+
+
+PrometheusCounter = _CounterMetric
+PrometheusGauge = _GaugeMetric
+PrometheusHistogram = _HistogramMetric
 
 
 class _ApiLatencyProxy:
@@ -386,7 +402,7 @@ class MetricsRegistry:
         self._lock = threading.RLock()
         self._enabled = False
         self._namespace = "ancestry"
-        self._registry: Optional[PrometheusCollectorRegistry] = None
+        self._registry: Optional[Any] = None
         self._metrics = MetricsBundle()
         self._import_logged = False
 
@@ -434,7 +450,7 @@ class MetricsRegistry:
     @staticmethod
     def _create_metrics(
         namespace: str,
-        registry: PrometheusCollectorRegistry,
+        registry: Any,
     ) -> dict[str, Any]:
         """Create Prometheus metrics in the provided registry."""
         metrics_map: dict[str, Any] = {}
@@ -579,7 +595,7 @@ class MetricsRegistry:
 
         return metrics_map
 
-    def get_registry(self) -> Optional[PrometheusCollectorRegistry]:
+    def get_registry(self) -> Optional[Any]:
         """Return the active Prometheus registry (if enabled)."""
         return self._registry
 
@@ -614,7 +630,7 @@ def metrics() -> MetricsBundle:
     return _METRICS_REGISTRY.metrics
 
 
-def get_metrics_registry() -> Optional[PrometheusCollectorRegistry]:
+def get_metrics_registry() -> Optional[Any]:
     """Return the active Prometheus registry for exporter wiring."""
     return _METRICS_REGISTRY.get_registry()
 

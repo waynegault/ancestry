@@ -244,10 +244,10 @@ def _record_prometheus_ai_metrics(event_data: ExtractionExperimentEvent, quality
         variant = event_data.variant_label or "default"
         metrics_bundle = metrics()
         result_label = "success" if event_data.parse_success else "failure"
-        metrics_bundle.ai_parse_results.inc(provider, prompt_key, result_label)  # type: ignore[misc]
+        metrics_bundle.ai_parse_results.inc(provider, prompt_key, result_label)
 
         if isinstance(quality_score, (int, float)):
-            metrics_bundle.ai_quality.observe(provider, prompt_key, variant, float(quality_score))  # type: ignore[misc]
+            metrics_bundle.ai_quality.observe(provider, prompt_key, variant, float(quality_score))
     except Exception:
         # Telemetry must stay fire-and-forget; ignore observability errors
         pass

@@ -170,18 +170,27 @@ class BaseCacheModule(CacheInterface):
     Implementation of the standard cache interface for the base cache module.
     """
 
-    @staticmethod
-    def get_stats() -> dict[str, Any]:
+    def __init__(self) -> None:
+        self._module_name = "base_cache"
+        self.module_name = self._module_name  # Legacy attribute for consumers expecting `module_name`
+        self._last_stats: Optional[dict[str, Any]] = None
+        self._last_warm_timestamp: Optional[float] = None
+        self._last_clear_timestamp: Optional[float] = None
+
+    def get_stats(self) -> dict[str, Any]:
         """Get base cache statistics."""
-        return get_cache_stats()
+        stats = get_cache_stats()
+        self._last_stats = stats
+        return stats
 
-    @staticmethod
-    def clear() -> bool:
+    def clear(self) -> bool:
         """Clear base cache."""
-        return clear_cache()
+        cleared = clear_cache()
+        if cleared:
+            self._last_clear_timestamp = time.time()
+        return cleared
 
-    @staticmethod
-    def warm() -> bool:
+    def warm(self) -> bool:
         """Warm base cache with system data using intelligent warming."""
         try:
             # Traditional warming
@@ -195,16 +204,22 @@ class BaseCacheModule(CacheInterface):
             # === PHASE 12.4.1: INTELLIGENT CACHE WARMING ===
             warmer = get_intelligent_cache_warmer()
             warmed_count = warmer.warm_predictive_cache()
+            self._last_warm_timestamp = time.time()
 
-            logger.info(f"Base cache warming completed: {warmed_count} predictive entries warmed")
+            logger.info(
+                f"Base cache warming completed: {warmed_count} predictive entries warmed"
+            )
             return True
         except Exception as e:
             logger.error(f"Error warming base cache: {e}")
             return False
 
-    @staticmethod
-    def get_module_name() -> str:
+    def get_module_name(self) -> str:
         """Get module name."""
+        if hasattr(self, "_module_name"):
+            return self._module_name
+        if hasattr(self, "module_name"):
+            return self.module_name  # type: ignore[attr-defined]
         return "base_cache"
 
     def get_health_status(self) -> dict[str, Any]:

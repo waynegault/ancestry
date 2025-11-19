@@ -31,7 +31,7 @@ import sys
 import threading
 import time
 import webbrowser
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
@@ -51,17 +51,11 @@ from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
 
-# === GRAFANA INTEGRATION ===
-try:
-    import grafana_checker  # type: ignore
-except ImportError:
-    grafana_checker = None  # type: ignore
-
+# === ACTION MODULES ===
 from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
-from observability.metrics_registry import metrics  # type: ignore[import-not-found]
 from test_utilities import create_standard_test_runner
 
 ActionCallable = Callable[..., Any]
@@ -120,6 +114,91 @@ class APIManagerProtocol(Protocol):
         *,
         session_manager: "SessionManager",
     ) -> bool: ...
+
+
+class ConfigManagerProtocol(Protocol):
+    """Protocol describing the ConfigManager behavior used here."""
+
+    def get_config(self) -> Any: ...
+
+
+class GrafanaCheckerProtocol(Protocol):
+    """Protocol for optional grafana_checker helpers."""
+
+    def ensure_dashboards_imported(self) -> None: ...
+
+    def check_grafana_status(self) -> Mapping[str, Any]: ...
+
+    def ensure_grafana_ready(self, *, auto_setup: bool = False, silent: bool = True) -> None: ...
+
+
+_config_manager_factory: type[ConfigManagerProtocol] | None = None
+_config_manager_error: Exception | None = None
+
+try:
+    _config_module = import_module("config.config_manager")
+except Exception as exc:
+    _config_manager_error = exc
+else:
+    _config_candidate = getattr(_config_module, "ConfigManager", None)
+    if isinstance(_config_candidate, type):
+        _config_manager_factory = cast(type[ConfigManagerProtocol], _config_candidate)
+    else:
+        _config_manager_error = RuntimeError("ConfigManager class missing from config.config_manager")
+
+
+_grafana_checker: GrafanaCheckerProtocol | None = None
+try:
+    _grafana_checker_module = import_module("grafana_checker")
+except Exception:
+    _grafana_checker = None
+else:
+    _grafana_checker = cast(GrafanaCheckerProtocol, _grafana_checker_module)
+
+grafana_checker: GrafanaCheckerProtocol | None = _grafana_checker
+
+
+_metrics_factory: Callable[[], Any] | None = None
+_metrics_import_error: Exception | None = None
+
+try:
+    _metrics_module = import_module("observability.metrics_registry")
+except Exception as exc:
+    _metrics_import_error = exc
+else:
+    _metrics_candidate = getattr(_metrics_module, "metrics", None)
+    if callable(_metrics_candidate):
+        _metrics_factory = cast(Callable[[], Any], _metrics_candidate)
+    else:
+        _metrics_import_error = RuntimeError("metrics() not found in observability.metrics_registry")
+
+
+def _create_config_manager() -> Optional[ConfigManagerProtocol]:
+    """Instantiate ConfigManager if available."""
+
+    if _config_manager_factory is None:
+        if _config_manager_error is not None:
+            logger.debug("ConfigManager unavailable: %s", _config_manager_error)
+        return None
+
+    try:
+        return _config_manager_factory()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Failed to instantiate ConfigManager: %s", exc, exc_info=True)
+        return None
+
+
+def _get_metrics_bundle() -> Optional[Any]:
+    """Return a metrics bundle if the observability module is available."""
+
+    if _metrics_factory is None:
+        return None
+
+    try:
+        return _metrics_factory()
+    except Exception:  # pragma: no cover - metrics are optional
+        logger.debug("Metrics bundle request failed", exc_info=True)
+        return None
 
 
 def _get_database_manager(session_manager: "SessionManager") -> Optional[DatabaseManagerProtocol]:
@@ -382,7 +461,6 @@ def validate_action_config() -> bool:
 
 
 # Core modules
-from config.config_manager import ConfigManager  # type: ignore[import-not-found]
 from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
 from database import (
@@ -401,9 +479,8 @@ from utils import (
     nav_to_page,
 )
 
-# Initialize config manager
-config_manager = ConfigManager()  # type: ignore[misc]
-config: Any = config_manager.get_config()  # type: ignore[misc]
+config_manager = _create_config_manager()
+config: Any = config_manager.get_config() if config_manager is not None else None
 
 
 def menu() -> str:
@@ -471,13 +548,13 @@ def clear_log_file() -> tuple[bool, Optional[str]]:
         for handler in logger.handlers:
             if isinstance(handler, logging.FileHandler):
                 log_file_handler = handler
-                log_file_path = handler.baseFilename  # type: ignore[union-attr]
+                log_file_path = handler.baseFilename
                 break
-        if log_file_handler and log_file_path:
+        if log_file_handler is not None and log_file_path is not None:
             # Step 2: Flush the handler (ensuring all previous writes are persisted to disk)
-            log_file_handler.flush()  # type: ignore[union-attr]
+            log_file_handler.flush()
             # Step 3: Close the handler (releases resources)
-            log_file_handler.close()  # type: ignore[union-attr]
+            log_file_handler.close()
             # Step 4: Clear the log file contents
             with Path(log_file_path).open("w", encoding="utf-8"):
                 pass
@@ -513,14 +590,23 @@ def initialize_aggressive_caching() -> bool:
     """Initialize aggressive caching systems."""
 
     try:
-        from core.system_cache import warm_system_caches  # type: ignore[import-not-found]
-
-        return bool(warm_system_caches())
+        cache_module = import_module("core.system_cache")
     except ImportError:
         logger.debug("System cache module not available (non-critical)")
         return False
     except Exception as e:
         logger.error(f"Failed to initialize aggressive caching: {e}")
+        return False
+
+    warm_system_caches = getattr(cache_module, "warm_system_caches", None)
+    if not callable(warm_system_caches):
+        logger.debug("warm_system_caches() not available in system cache module")
+        return False
+
+    try:
+        return bool(warm_system_caches())
+    except Exception as exc:  # pragma: no cover - cache init rarely fails
+        logger.error("warm_system_caches() failed: %s", exc)
         return False
 
 
@@ -768,9 +854,10 @@ def _record_action_analytics(
 
     try:
         result_label = _determine_metrics_label(context.result, final_outcome)
-        metrics_bundle = metrics()
-        metrics_bundle.action_processed.inc(context.action_name, result_label)  # type: ignore[misc]
-        metrics_bundle.action_duration.observe(context.action_name, duration_sec)  # type: ignore[misc]
+        metrics_bundle = _get_metrics_bundle()
+        if metrics_bundle is not None:
+            metrics_bundle.action_processed.inc(context.action_name, result_label)
+            metrics_bundle.action_duration.observe(context.action_name, duration_sec)
     except Exception:
         logger.debug("Failed to record action throughput metric", exc_info=True)
 
@@ -1351,9 +1438,9 @@ def _seed_message_templates(recreation_session: Any) -> bool:
     logger.debug("Seeding message_templates table from database defaults...")
     try:
         # Import inside function to avoid circular imports at module import time
-        import database  # type: ignore
+        database_module = import_module("database")
 
-        get_default_templates = getattr(database, "_get_default_message_templates", None)
+        get_default_templates = getattr(database_module, "_get_default_message_templates", None)
         if get_default_templates is None:
             logger.error("Default message template helper not available.")
             return False
@@ -2362,8 +2449,7 @@ def _open_graph_visualization() -> None:
         class GraphRequestHandler(SimpleHTTPRequestHandler):
             """Custom handler serving project files quietly."""
 
-            def __init__(self, *handler_args: Any, **handler_kwargs: Any) -> None:
-                super().__init__(*handler_args, directory=str(root_dir), **handler_kwargs)  # type: ignore[arg-type]
+            directory = str(root_dir)
 
             def log_message(self, format: str, *args: Any) -> None:
                 client_host, client_port = getattr(self, "client_address", ("?", "?"))

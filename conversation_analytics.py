@@ -19,13 +19,67 @@ Phase: 6 - Production Deployment & Monitoring
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from importlib import import_module
+from typing import Any, Optional, Protocol, cast as typing_cast
 
 from sqlalchemy import String as SQLString, cast
 from sqlalchemy.orm import Session
 
 # Import analytics models from database.py (they're defined there to avoid circular imports)
 from database import ConversationMetrics, EngagementTracking
+
+
+class _DatabaseManagerProtocol(Protocol):
+    """Interface subset required from DatabaseManager for tests."""
+
+    def get_session(self) -> Optional[Session]:  # pragma: no cover - protocol definition
+        """Return a SQLAlchemy session bound to the project database."""
+
+
+_database_manager_class: type[_DatabaseManagerProtocol] | None = None
+_database_manager_error: Exception | None = None
+
+try:  # pragma: no cover - optional dependency
+    _database_module = import_module("core.database_manager")
+except Exception as exc:
+    _database_manager_error = exc
+else:
+    _database_candidate = getattr(_database_module, "DatabaseManager", None)
+    if isinstance(_database_candidate, type):
+        _database_manager_class = typing_cast(type[_DatabaseManagerProtocol], _database_candidate)
+    else:
+        _database_manager_error = RuntimeError(
+            "DatabaseManager class missing from core.database_manager"
+        )
+
+
+def _resolve_database_manager_class() -> Optional[type[_DatabaseManagerProtocol]]:
+    """Return the cached DatabaseManager class if available."""
+
+    return _database_manager_class
+
+
+def _create_database_manager() -> _DatabaseManagerProtocol:
+    """Instantiate DatabaseManager or raise a helpful error."""
+
+    db_class = _resolve_database_manager_class()
+    if db_class is None:
+        error_detail = f": {_database_manager_error!r}" if _database_manager_error else ""
+        raise RuntimeError(f"DatabaseManager unavailable{error_detail}")
+
+    try:
+        return db_class()
+    except Exception as exc:  # pragma: no cover - defensive instantiation guard
+        raise RuntimeError("Failed to instantiate DatabaseManager") from exc
+
+
+def _create_database_session() -> Session:
+    """Convenience helper to obtain a SQLAlchemy session for analytics tests."""
+
+    session = _create_database_manager().get_session()
+    if session is None:  # pragma: no cover - guard for unexpected behavior
+        raise RuntimeError("DatabaseManager.get_session() returned None")
+    return session
 
 
 def record_engagement_event(
@@ -403,10 +457,7 @@ def _test_database_models_available() -> None:
 
 def _test_record_engagement_event() -> None:
     """Test recording an engagement event."""
-    from core.database_manager import DatabaseManager  # type: ignore
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Ensure a valid person exists
@@ -445,11 +496,8 @@ def _test_record_engagement_event() -> None:
 
 def _test_update_conversation_metrics_new() -> None:
     """Test updating conversation metrics for new conversation."""
-    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get a valid person from the database
@@ -490,11 +538,8 @@ def _test_update_conversation_metrics_new() -> None:
 
 def _test_update_conversation_metrics_existing() -> None:
     """Test updating existing conversation metrics."""
-    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get a valid person from the database
@@ -541,10 +586,7 @@ def _test_update_conversation_metrics_existing() -> None:
 
 def _test_get_overall_analytics_empty() -> None:
     """Test getting overall analytics with no data."""
-    from core.database_manager import DatabaseManager  # type: ignore
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get analytics (may have existing data, so just verify structure)
@@ -564,10 +606,7 @@ def _test_get_overall_analytics_empty() -> None:
 
 def _test_print_analytics_dashboard() -> None:
     """Test printing analytics dashboard."""
-    from core.database_manager import DatabaseManager  # type: ignore
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Should not raise exception
@@ -578,10 +617,7 @@ def _test_print_analytics_dashboard() -> None:
 
 def _test_engagement_score_delta_calculation() -> None:
     """Test engagement score delta calculation."""
-    from core.database_manager import DatabaseManager  # type: ignore
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Ensure a valid person exists
@@ -631,11 +667,8 @@ def _test_engagement_score_delta_calculation() -> None:
 
 def _test_template_tracking() -> None:
     """Test template usage tracking."""
-    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get a valid person from the database
@@ -681,11 +714,8 @@ def _test_template_tracking() -> None:
 
 def _test_research_outcomes_tracking() -> None:
     """Test research outcomes tracking."""
-    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get a valid person from the database
@@ -723,11 +753,8 @@ def _test_research_outcomes_tracking() -> None:
 
 def _test_tree_impact_tracking() -> None:
     """Test tree impact tracking."""
-    from core.database_manager import DatabaseManager  # type: ignore
     from database import Person
-    dm = DatabaseManager()
-    session = dm.get_session()
-    assert session is not None, "Session should not be None"
+    session = _create_database_session()
 
     try:
         # Get a valid person from the database

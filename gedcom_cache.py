@@ -190,8 +190,7 @@ class GedcomCacheModule(BaseCacheModule):
             logger.error(f"Error clearing GEDCOM cache: {e}")
             return False
 
-    @staticmethod
-    def warm() -> bool:
+    def warm(self) -> bool:
         """Warm up GEDCOM cache with frequently accessed data."""
         try:
             # Check if GEDCOM file is available
@@ -213,10 +212,15 @@ class GedcomCacheModule(BaseCacheModule):
                 "size": file_stats.st_size,
                 "mtime": file_stats.st_mtime,
                 "warmed_at": time.time(),
+                "module_name": self.module_name,
             }
 
             warm_cache_with_data(cache_key, metadata)
-            logger.info(f"GEDCOM cache warmed with metadata for {gedcom_path}")
+            logger.info(
+                "[%s] GEDCOM cache warmed with metadata for %s",
+                self.module_name,
+                gedcom_path,
+            )
             return True
         except Exception as e:
             logger.error(f"Error warming GEDCOM cache: {e}")

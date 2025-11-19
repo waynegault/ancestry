@@ -831,6 +831,19 @@ class APIError(AppError):
 class ErrorHandler(ABC):
     """Abstract base class for error handlers."""
 
+    def _augment_context(self, context: Optional[dict[str, Any]]) -> dict[str, Any]:
+        """Attach handler metadata to the context for downstream diagnostics."""
+        enriched_context = dict(context or {})
+        enriched_context.setdefault("handler", type(self).__name__)
+        return enriched_context
+
+    @staticmethod
+    def _match_keywords(error: Exception, keywords: tuple[str, ...]) -> bool:
+        """Return True when the error metadata matches any of the supplied keywords."""
+        error_type = type(error).__name__.lower()
+        error_msg = str(error).lower()
+        return any(keyword in error_type or keyword in error_msg for keyword in keywords)
+
     @abstractmethod
     def can_handle(self, error: Exception) -> bool:
         """Check if this handler can process the given error."""
@@ -847,25 +860,22 @@ class ErrorHandler(ABC):
 class DatabaseErrorHandler(ErrorHandler):
     """Handler for database-related errors."""
 
-    @staticmethod
-    def can_handle(error: Exception) -> bool:
-        keywords = ["sql", "database", "connection", "integrity"]
-        error_type = str(type(error).__name__).lower()
-        error_msg = str(error).lower()
-        return any(k in error_type or k in error_msg for k in keywords)
+    def can_handle(self, error: Exception) -> bool:
+        keywords = ("sql", "database", "connection", "integrity")
+        return self._match_keywords(error, keywords)
 
-    @staticmethod
     def handle(
-        error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
+        context_with_handler = self._augment_context(context)
 
         if "connection" in error_message.lower():
             return DatabaseError(
                 "Database connection failed",
                 technical_details=error_message,
                 recovery_suggestion="Check database connectivity and try again",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         if "integrity" in error_message.lower():
@@ -873,14 +883,14 @@ class DatabaseErrorHandler(ErrorHandler):
                 "Database integrity constraint violated",
                 technical_details=error_message,
                 recovery_suggestion="Check data validity and constraints",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         return DatabaseError(
             "Database operation failed",
             technical_details=error_message,
             recovery_suggestion="Try the operation again or contact support",
-            context=context,
+            context=context_with_handler,
             original_exception=error,
         )
 
@@ -888,25 +898,22 @@ class DatabaseErrorHandler(ErrorHandler):
 class NetworkErrorHandler(ErrorHandler):
     """Handler for network-related errors."""
 
-    @staticmethod
-    def can_handle(error: Exception) -> bool:
-        return any(
-            keyword in str(type(error).__name__).lower()
-            for keyword in ["connection", "timeout", "http", "request", "url"]
-        )
+    def can_handle(self, error: Exception) -> bool:
+        keywords = ("connection", "timeout", "http", "request", "url")
+        return self._match_keywords(error, keywords)
 
-    @staticmethod
     def handle(
-        error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
+        context_with_handler = self._augment_context(context)
 
         if "timeout" in error_message.lower():
             return NetworkError(
                 "Network request timed out",
                 technical_details=error_message,
                 recovery_suggestion="Check your internet connection and try again",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         if "connection" in error_message.lower():
@@ -914,14 +921,14 @@ class NetworkErrorHandler(ErrorHandler):
                 "Network connection failed",
                 technical_details=error_message,
                 recovery_suggestion="Check your internet connection and try again",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         return NetworkError(
             "Network request failed",
             technical_details=error_message,
             recovery_suggestion="Check your internet connection and try again",
-            context=context,
+            context=context_with_handler,
             original_exception=error,
         )
 
@@ -929,25 +936,22 @@ class NetworkErrorHandler(ErrorHandler):
 class BrowserErrorHandler(ErrorHandler):
     """Handler for browser/WebDriver-related errors."""
 
-    @staticmethod
-    def can_handle(error: Exception) -> bool:
-        return any(
-            keyword in str(type(error).__name__).lower()
-            for keyword in ["webdriver", "selenium", "browser", "chrome"]
-        )
+    def can_handle(self, error: Exception) -> bool:
+        keywords = ("webdriver", "selenium", "browser", "chrome")
+        return self._match_keywords(error, keywords)
 
-    @staticmethod
     def handle(
-        error: Exception, context: Optional[dict[str, Any]] = None
+        self, error: Exception, context: Optional[dict[str, Any]] = None
     ) -> AppError:
         error_message = str(error)
+        context_with_handler = self._augment_context(context)
 
         if "session" in error_message.lower():
             return BrowserError(
                 "Browser session lost",
                 technical_details=error_message,
                 recovery_suggestion="Restart the browser and try again",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         if "element" in error_message.lower():
@@ -955,14 +959,14 @@ class BrowserErrorHandler(ErrorHandler):
                 "Web element not found or not accessible",
                 technical_details=error_message,
                 recovery_suggestion="Refresh the page and try again",
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
         return BrowserError(
             "Browser operation failed",
             technical_details=error_message,
             recovery_suggestion="Restart the browser and try again",
-            context=context,
+            context=context_with_handler,
             original_exception=error,
         )
 
@@ -1206,20 +1210,26 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
 
     # Default handler for unknown types
     class DefaultHandler(ErrorHandler):
-        @staticmethod
-        def can_handle(_error: Exception) -> bool:
+        def can_handle(self, error: Exception) -> bool:
+            handler_name = type(self).__name__
+            logger.debug(
+                "%s engaged for %s: %s",
+                handler_name,
+                type(error).__name__,
+                error,
+            )
             return True  # Catch-all for unknown errors
 
-        @staticmethod
         def handle(
-            error: Exception, context: Optional[dict[str, Any]] = None
+            self, error: Exception, context: Optional[dict[str, Any]] = None
         ) -> AppError:
+            context_with_handler = self._augment_context(context)
             return AppError(
                 str(error),
                 category=ErrorCategory.SYSTEM,
                 severity=ErrorSeverity.MEDIUM,
                 technical_details=traceback.format_exc(),
-                context=context,
+                context=context_with_handler,
                 original_exception=error,
             )
 

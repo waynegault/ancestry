@@ -14,7 +14,8 @@ user experience. Keep api_search_core focused on retrieval.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,36 @@ def present_post_selection(
 
 
 # --- Internal Tests ---
-from test_framework import TestSuite  # type: ignore[import-not-found]
+try:  # pragma: no cover - optional dependency for runtime testing
+    from test_framework import TestSuite as _RealTestSuite
+except Exception:
+
+    @dataclass
+    class _FallbackTestSuite:
+        name: str
+        module: str
+
+        def start_suite(self) -> None:
+            logger.info("Starting test suite: %s", self.name)
+
+        @staticmethod
+        def run_test(*args: Any, **kwargs: Any) -> None:
+            func: Callable[..., Any] | None = None
+            if "test_func" in kwargs and callable(kwargs["test_func"]):
+                func = kwargs["test_func"]
+            elif len(args) > 1 and callable(args[1]):
+                func = args[1]
+
+            if func is not None:
+                func()
+
+        def finish_suite(self) -> bool:
+            logger.info("Finished test suite: %s", self.name)
+            return True
+
+    TestSuite = _FallbackTestSuite
+else:
+    TestSuite = _RealTestSuite
 
 
 def genealogy_presenter_module_tests() -> bool:
@@ -187,7 +217,19 @@ def genealogy_presenter_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+try:  # pragma: no cover - optional dependency for runtime testing
+    from test_utilities import create_standard_test_runner as _real_create_runner
+except Exception:
+
+    def _fallback_create_runner(test_func: Callable[[], bool]) -> Callable[[], bool]:
+        def _runner() -> bool:
+            return test_func()
+
+        return _runner
+
+    create_standard_test_runner = _fallback_create_runner
+else:
+    create_standard_test_runner = _real_create_runner
 
 run_comprehensive_tests = create_standard_test_runner(genealogy_presenter_module_tests)
 

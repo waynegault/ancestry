@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: PTH123
 
 """
 Comprehensive Test Orchestration & Quality Assurance Engine
@@ -54,6 +53,7 @@ import concurrent.futures
 import json
 import os
 import sys
+from types import ModuleType
 
 
 # Check if running in venv and warn if not
@@ -89,11 +89,13 @@ from pathlib import Path
 from typing import Any, Callable, Final, Optional, TypedDict
 
 try:
-    import psutil
-    _psutil_available = True
+    import psutil as _psutil
 except ImportError:
-    psutil = None  # type: ignore[assignment]
+    psutil: Optional[ModuleType] = None
     _psutil_available = False
+else:
+    psutil = _psutil
+    _psutil_available = True
 
 PSUTIL_AVAILABLE = _psutil_available
 
@@ -1865,7 +1867,7 @@ def analyze_application_logs(log_path: str | None = None) -> LogAnalysisData | L
         "highest_page": 0,
     }
 
-    with open(log_file, encoding='utf-8') as f:
+    with log_file.open(encoding='utf-8') as f:
         content = f.read()
 
     # Extract API fetch timing data

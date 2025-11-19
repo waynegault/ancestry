@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 
 """
 Session Validator - Handles session validation and readiness checks.
@@ -25,13 +26,18 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+
+if TYPE_CHECKING:  # Import only for static type checking to avoid circular deps
+    from core.session_manager import SessionManager
+else:  # pragma: no cover - runtime fallback used only for type hints
+    SessionManager = Any
 
 # Use global cached config instance
 
@@ -290,14 +296,12 @@ class SessionValidator:
             logger.warning("Pre-auth navigation failed; continuing with existing session state.")
 
     @staticmethod
-    def _sync_cookies_for_login(session_manager: Any) -> None:
+    def _sync_cookies_for_login(session_manager: SessionManager) -> None:
         """Force a cookie sync before login verification when available."""
-        if not hasattr(session_manager, "_sync_cookies_to_requests"):
-            return
 
         try:
             logger.debug("Pre-syncing cookies from browser before login check (forced)...")
-            session_manager._sync_cookies_to_requests(force=True)
+            session_manager.sync_cookies_to_requests(force=True)
         except Exception as exc:  # Pragmatic guard to keep login flow resilient
             logger.debug(f"Cookie pre-sync failed (continuing with existing state): {exc}")
 

@@ -847,6 +847,18 @@ For issues or questions:
   - Ethnicity Region Names: `dna/origins/public/ethnicity/2025/names?locale=en-GB`
     - Purpose: Map region keys to friendly names for display and column naming
 
+  **Action 6 Prefetch Stack** (sample log case; all paths join onto `https://www.ancestry.com/` from `config_schema.APIConfig.base_url`)
+  - Match profile details: `/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true`
+    - Used by: `action6_gather._fetch_match_details_api` during the `combined_details` prefetch stage
+  - Relationship probability snapshot: `discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}`
+    - Used by: `action6_gather._fetch_batch_relationship_prob` when prioritizing working sets
+  - Ethnicity comparison: `discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity`
+    - Used by: `dna_ethnicity_utils.fetch_ethnicity_comparison` when the prefetch plan flags `ethnicity`
+  - DNA badge breakdown: `/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails`
+    - Used by: `action6_gather._fetch_batch_badge_details` for badge-driven triage
+  - Relationship ladder (JSON API): `family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
+    - Used by: `api_utils.call_relationship_ladder_api` inside `action6_gather._fetch_batch_ladder` for `ladder_details`
+
   **Messaging Endpoints** (used by Action 8)
   - Send New Message: `app-api/express/v2/conversations/message`
   - Send Existing Conversation: `app-api/express/v2/conversations/{conv_id}`

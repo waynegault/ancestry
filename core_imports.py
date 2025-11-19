@@ -19,8 +19,9 @@ import sys
 import threading
 import time
 from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional, ParamSpec, TypeVar, cast, overload
 
 # Thread-safe locks for concurrent access
 _lock = threading.RLock()
@@ -284,20 +285,44 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         return logging.getLogger(name or __name__)
 
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+@overload
 def safe_execute(
-    func: Optional[Callable[..., Any]] = None,
+    func: Callable[P, R],
     *,
-    default_return: Any = None,
+    default_return: Optional[R] = None,
+    suppress_errors: bool = ...,
+    log_errors: bool = ...,
+) -> Callable[P, R]:
+    ...
+
+
+@overload
+def safe_execute(
+    func: None = ...,
+    *,
+    default_return: Optional[R] = None,
+    suppress_errors: bool = ...,
+    log_errors: bool = ...,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    ...
+
+
+def safe_execute(
+    func: Optional[Callable[P, R]] = None,
+    *,
+    default_return: Optional[R] = None,
     suppress_errors: bool = True,
     log_errors: bool = True,
-) -> Callable[..., Any]:
-    """
-    Unified safe execution decorator that consolidates error handling patterns.
-    Replaces scattered try/catch blocks throughout the codebase.
-    """
+) -> Callable[P, R] | Callable[[Callable[P, R]], Callable[P, R]]:
+    """Unified safe-execution decorator that preserves wrapped signatures."""
 
-    def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def decorator(f: Callable[P, R]) -> Callable[P, R]:
+        @wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             try:
                 return f(*args, **kwargs)
             except Exception as e:
@@ -306,7 +331,7 @@ def safe_execute(
                     logger.error(f"Error in {f.__name__}: {e}", exc_info=True)
                 if not suppress_errors:
                     raise
-                return default_return
+                return cast(R, default_return)
 
         return wrapper
 

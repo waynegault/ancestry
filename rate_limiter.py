@@ -41,8 +41,16 @@ def _get_state_path() -> Path:
     return project_root / "Cache" / "rate_limiter_state.json"
 
 
-_persisted_state_cache: Optional[dict[str, Any]] = None
-_rate_limiter_state_source: str = "default"
+@dataclass
+class _LimiterState:
+    """Mutable container for module-level rate limiter state."""
+
+    persisted_state_cache: Optional[dict[str, Any]] = None
+    rate_limiter_state_source: str = "default"
+    global_rate_limiter: Optional["AdaptiveRateLimiter"] = None
+
+
+_LIMITER_STATE = _LimiterState()
 
 
 @dataclass
@@ -993,10 +1001,9 @@ class AdaptiveRateLimiter:
 
 def _load_persisted_state() -> Optional[dict[str, Any]]:
     """Load persisted rate limiter state from disk."""
-    global _persisted_state_cache  # noqa: PLW0603
-
-    if _persisted_state_cache is not None:
-        return _persisted_state_cache
+    cached_state = _LIMITER_STATE.persisted_state_cache
+    if cached_state is not None:
+        return cached_state
 
     state_path = _get_state_path()
     if not state_path.exists():
@@ -1006,19 +1013,17 @@ def _load_persisted_state() -> Optional[dict[str, Any]]:
         raw = state_path.read_text(encoding="utf-8")
         data = json.loads(raw)
         if isinstance(data, dict) and "fill_rate" in data:
-            _persisted_state_cache = data
+            _LIMITER_STATE.persisted_state_cache = data
             return data
     except Exception as exc:  # pragma: no cover - diagnostics only
         logger.debug(f"Failed to load persisted rate limiter state: {exc}")
 
-    _persisted_state_cache = None
+    _LIMITER_STATE.persisted_state_cache = None
     return None
 
 
 def _persist_state(payload: dict[str, Any]) -> None:
     """Persist rate limiter state to disk."""
-    global _persisted_state_cache  # noqa: PLW0603
-
     state_path = _get_state_path()
     try:
         # Use centralized atomic_write_file helper from test_utilities
@@ -1027,13 +1032,12 @@ def _persist_state(payload: dict[str, Any]) -> None:
         with atomic_write_file(state_path) as f:
             json.dump(payload, f, indent=2)
 
-        _persisted_state_cache = payload
+        _LIMITER_STATE.persisted_state_cache = payload
     except Exception as exc:  # pragma: no cover - diagnostics only
         logger.debug(f"Failed to persist rate limiter state: {exc}")
 
 
 # Singleton instance for global access
-_global_rate_limiter: Optional[AdaptiveRateLimiter] = None
 _global_rate_limiter_lock = threading.Lock()
 
 
@@ -1066,11 +1070,9 @@ def get_adaptive_rate_limiter(
         >>> limiter = get_adaptive_rate_limiter()
         >>> limiter.wait()
     """
-    global _global_rate_limiter  # noqa: PLW0603
-    global _rate_limiter_state_source  # noqa: PLW0603
-
     with _global_rate_limiter_lock:
-        if _global_rate_limiter is None:
+        limiter_state = _LIMITER_STATE
+        if limiter_state.global_rate_limiter is None:
             config = _build_limiter_config(
                 initial_fill_rate=initial_fill_rate,
                 success_threshold=success_threshold,
@@ -1079,28 +1081,28 @@ def get_adaptive_rate_limiter(
                 capacity=capacity,
             )
 
-            _global_rate_limiter = AdaptiveRateLimiter(
+            limiter_state.global_rate_limiter = AdaptiveRateLimiter(
                 initial_fill_rate=config.rate,
                 success_threshold=config.success_threshold,
                 min_fill_rate=config.min_rate,
                 max_fill_rate=config.max_rate,
                 capacity=config.capacity,
             )
-            _global_rate_limiter.configure_endpoint_profiles(endpoint_profiles)
-            _global_rate_limiter.initial_source = config.source
-            _rate_limiter_state_source = config.source
+            limiter_state.global_rate_limiter.configure_endpoint_profiles(endpoint_profiles)
+            limiter_state.global_rate_limiter.initial_source = config.source
+            limiter_state.rate_limiter_state_source = config.source
             logger.debug(
                 "Created global AdaptiveRateLimiter with rate=%.3f req/s (source=%s, threshold=%d, bounds=%.3f-%.3f, capacity=%.1f)",
-                _global_rate_limiter.fill_rate,
+                limiter_state.global_rate_limiter.fill_rate,
                 config.source,
-                _global_rate_limiter.success_threshold,
-                _global_rate_limiter.min_fill_rate,
-                _global_rate_limiter.max_fill_rate,
-                _global_rate_limiter.capacity,
+                limiter_state.global_rate_limiter.success_threshold,
+                limiter_state.global_rate_limiter.min_fill_rate,
+                limiter_state.global_rate_limiter.max_fill_rate,
+                limiter_state.global_rate_limiter.capacity,
             )
         else:
             _update_existing_limiter(
-                _global_rate_limiter,
+                limiter_state.global_rate_limiter,
                 success_threshold=success_threshold,
                 min_fill_rate=min_fill_rate,
                 max_fill_rate=max_fill_rate,
@@ -1108,12 +1110,12 @@ def get_adaptive_rate_limiter(
                 endpoint_profiles=endpoint_profiles,
             )
 
-        return _global_rate_limiter
+        return limiter_state.global_rate_limiter
 
 
 def get_rate_limiter_state_source() -> str:
     """Return the origin of the current rate limiter initialization."""
-    return _rate_limiter_state_source
+    return _LIMITER_STATE.rate_limiter_state_source
 
 
 def get_persisted_rate_state() -> Optional[dict[str, Any]]:
@@ -1160,12 +1162,9 @@ def reset_global_rate_limiter() -> None:
         >>> reset_global_rate_limiter()
         >>> limiter = get_adaptive_rate_limiter(initial_fill_rate=1.0)
     """
-    global _global_rate_limiter  # noqa: PLW0603
-    global _rate_limiter_state_source  # noqa: PLW0603
-
     with _global_rate_limiter_lock:
-        _global_rate_limiter = None
-        _rate_limiter_state_source = "default"
+        _LIMITER_STATE.global_rate_limiter = None
+        _LIMITER_STATE.rate_limiter_state_source = "default"
         logger.info("Global rate limiter reset")
 
 

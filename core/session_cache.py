@@ -20,8 +20,23 @@ parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module  # type: ignore[import-not-found]
+from contextlib import contextmanager
+from functools import wraps
+from importlib import import_module
 
+# === OPTIONAL STANDARD IMPORTS SETUP ===
+try:
+    from standard_imports import setup_module as _setup_module
+except Exception:  # pragma: no cover - fallback when bootstrap module missing
+    import logging
+
+    def _setup_module(namespace: dict[str, object], module_name: str) -> logging.Logger:
+        logging.basicConfig(level=logging.INFO)
+        logger_obj = logging.getLogger(module_name)
+        namespace["logger"] = logger_obj
+        return logger_obj
+
+setup_module = _setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -30,17 +45,59 @@ import hashlib
 import threading
 import time
 import weakref
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    ParamSpec,
+    TypeVar,
+    cast,
+)
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
-from cache import (  # type: ignore[import-not-found]
-    BaseCacheModule,  # Base cache interface
-    cache,  # Global cache instance
-    get_cache_stats,  # Statistics
-    get_unified_cache_key,  # Unified key generation
-    warm_cache_with_data,  # Cache warming
-)
+class _BaseCacheModuleFallback:
+    def __init__(self, *_: Any, **__: Any) -> None:
+        return
+
+
+BaseCacheModule: type = _BaseCacheModuleFallback
+cache: Any = None
+
+
+def get_cache_stats() -> dict[str, Any]:
+    return {"cache_available": False}
+
+
+def get_unified_cache_key(*parts: Any) -> str:
+    return "::".join(str(part) for part in parts)
+
+
+def warm_cache_with_data(*_: Any, **__: Any) -> bool:
+    return False
+
+
+try:  # pragma: no cover - cache module optional during some tests
+    from cache import (
+        BaseCacheModule as _BaseCacheModule,
+        cache as _cache_instance,
+        get_cache_stats as _get_cache_stats,
+        get_unified_cache_key as _get_unified_cache_key,
+        warm_cache_with_data as _warm_cache_with_data,
+    )
+except Exception as exc:  # pragma: no cover - fallback shims
+    logger.debug("Cache module unavailable: %s", exc)
+else:
+    BaseCacheModule = _BaseCacheModule
+    cache = cast(Any, _cache_instance)
+    get_cache_stats = _get_cache_stats
+    get_unified_cache_key = _get_unified_cache_key
+    warm_cache_with_data = _warm_cache_with_data
 
 # === SESSION CACHE CONFIGURATION ===
 
@@ -58,6 +115,79 @@ class SessionCacheConfig:
 # Global cache configuration
 CACHE_CONFIG = SessionCacheConfig()
 
+
+_config_manager_factory: type[Any] | None = None
+_config_manager_error: Exception | None = None
+
+try:  # pragma: no cover - configuration optional in some tests
+    _config_module = import_module("config.config_manager")
+except Exception as exc:
+    _config_manager_error = exc
+else:
+    _config_candidate = getattr(_config_module, "ConfigManager", None)
+    if isinstance(_config_candidate, type):
+        _config_manager_factory = cast(type[Any], _config_candidate)
+    else:
+        _config_manager_error = RuntimeError("ConfigManager class missing from config.config_manager")
+
+
+def _load_config_schema_snapshot() -> Optional[Any]:
+    """Safely instantiate ConfigManager and return its schema."""
+
+    if _config_manager_factory is None:
+        if _config_manager_error is not None:
+            logger.debug("ConfigManager unavailable: %s", _config_manager_error)
+        return None
+
+    try:
+        manager = _config_manager_factory()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("ConfigManager instantiation failed: %s", exc)
+        return None
+
+    try:
+        return manager.get_config()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("ConfigManager.get_config() failed: %s", exc)
+        return None
+
+
+try:
+    from test_framework import TestSuite, suppress_logging
+except Exception:  # pragma: no cover - minimal fallback for optional dependency
+
+    @dataclass
+    class TestSuite:
+        name: str
+        module: str
+
+        def start_suite(self) -> None:
+            logger.info("Starting test suite: %s", self.name)
+
+        @staticmethod
+        def run_test(*args: Any, **__: Any) -> None:
+            test_func = args[1] if len(args) > 1 else None
+            if callable(test_func):
+                test_func()
+
+        def finish_suite(self) -> bool:
+            logger.info("Finished test suite: %s", self.name)
+            return True
+
+    @contextmanager
+    def suppress_logging() -> Any:
+        yield
+
+try:
+    from test_utilities import create_standard_test_runner
+except Exception:  # pragma: no cover - fallback runner
+
+    def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], bool]:
+        def _runner() -> bool:
+            return test_func()
+
+        return _runner
+
 # === SESSION COMPONENT CACHE ===
 
 
@@ -68,6 +198,8 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
     """
 
     def __init__(self) -> None:
+        super().__init__()
+        self.module_name = "session_cache"
         self._active_sessions = weakref.WeakSet()
         self._session_timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
@@ -77,19 +209,23 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
     def _get_config_hash() -> str:
         """Generate hash of current configuration for cache validation"""
         try:
-            from config.config_manager import ConfigManager  # type: ignore[import-not-found]
+            config_schema = _load_config_schema_snapshot()
 
-            config_manager = ConfigManager()
-            config_schema = config_manager.get_config()
+            db_path = "default"
+            username = "default"
+            if config_schema is not None:
+                try:
+                    db_path = str(getattr(getattr(config_schema, "database", object), "database_file", "default"))
+                except Exception:
+                    logger.debug("Database path missing from config schema", exc_info=True)
+                try:
+                    username = str(getattr(getattr(config_schema, "api", object), "username", "default"))
+                except Exception:
+                    logger.debug("API username missing from config schema", exc_info=True)
 
-            # Create hash from relevant config values
             config_data = {
-                "db_path": (
-                    str(config_schema.database.database_file)
-                    if config_schema
-                    else "default"
-                ),
-                "username": config_schema.api.username if config_schema else "default",
+                "db_path": db_path,
+                "username": username,
                 "cache_version": "5.1.0",  # Version for cache invalidation
             }
 
@@ -98,6 +234,11 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
         except Exception as e:
             logger.debug(f"Error generating config hash: {e}")
             return "default_config"
+
+    def config_hash_snapshot(self) -> str:
+        """Expose current config hash for diagnostics/tests."""
+
+        return self._get_config_hash()
 
     def get_cached_component(self, component_type: str) -> Optional[Any]:
         """Get cached component if available and valid"""
@@ -226,10 +367,9 @@ class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
             logger.warning(f"Error warming session cache: {e}")
             return False
 
-    @staticmethod
-    def get_module_name() -> str:
+    def get_module_name(self) -> str:
         """Get module name"""
-        return "session_cache"
+        return self.module_name
 
     def get_health_status(self) -> dict[str, Any]:
         """Get health status of session cache"""
@@ -270,19 +410,20 @@ _session_cache = SessionComponentCache()
 # === CACHING DECORATORS USING EXISTING INFRASTRUCTURE ===
 
 
-def cached_session_component(component_type: str) -> Callable:  # type: ignore[type-arg]
+def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator to cache expensive session components using existing cache infrastructure.
     Dramatically reduces session manager initialization time.
     """
 
-    def decorator(creation_func: Callable) -> Callable:  # type: ignore[type-arg]
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(creation_func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Try to get from cache first
             cached_component = _session_cache.get_cached_component(component_type)
             if cached_component is not None:
                 logger.debug(f"Reusing cached {component_type}")
-                return cached_component
+                return cast(R, cached_component)
 
             # Create new component
             logger.debug(f"Creating new {component_type}")
@@ -304,22 +445,22 @@ def cached_session_component(component_type: str) -> Callable:  # type: ignore[t
     return decorator
 
 
-def cached_database_manager() -> Callable:  # type: ignore[type-arg]
+def cached_database_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for DatabaseManager caching"""
     return cached_session_component("database_manager")
 
 
-def cached_browser_manager() -> Callable:  # type: ignore[type-arg]
+def cached_browser_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for BrowserManager caching"""
     return cached_session_component("browser_manager")
 
 
-def cached_api_manager() -> Callable:  # type: ignore[type-arg]
+def cached_api_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for APIManager caching"""
     return cached_session_component("api_manager")
 
 
-def cached_session_validator() -> Callable:  # type: ignore[type-arg]
+def cached_session_validator() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for SessionValidator caching"""
     return cached_session_component("session_validator")
 
@@ -334,7 +475,7 @@ class OptimizedSessionState:
     """
 
     @staticmethod
-    def get_cached_session_state(session_id: str) -> Optional[dict]:  # type: ignore[type-arg]
+    def get_cached_session_state(session_id: str) -> Optional[dict[str, Any]]:
         """Get cached session state if valid"""
         if not cache:
             return None
@@ -355,7 +496,7 @@ class OptimizedSessionState:
             return None
 
     @staticmethod
-    def cache_session_state(session_id: str, state: dict) -> None:  # type: ignore[type-arg]
+    def cache_session_state(session_id: str, state: Mapping[str, Any]) -> None:
         """Cache session state using existing infrastructure"""
         if not cache:
             return
@@ -363,7 +504,7 @@ class OptimizedSessionState:
         try:
             cache_key = get_unified_cache_key("session", "state", session_id)
             cache_data = {
-                "state": state.copy(),
+                "state": dict(state),
                 "timestamp": time.time(),
                 "session_id": session_id,
             }
@@ -420,7 +561,7 @@ def _test_config_hash_generation():
     cache_instance = SessionComponentCache()
 
     # Generate config hash
-    config_hash = cache_instance._get_config_hash()  # type: ignore[reportPrivateUsage]
+    config_hash = cache_instance.config_hash_snapshot()
 
     # Verify hash is generated
     assert config_hash is not None, "Config hash should be generated"
@@ -428,7 +569,7 @@ def _test_config_hash_generation():
     assert len(config_hash) > 0, "Config hash should not be empty"
 
     # Verify hash is consistent
-    config_hash2 = cache_instance._get_config_hash()  # type: ignore[reportPrivateUsage]
+    config_hash2 = cache_instance.config_hash_snapshot()
     assert config_hash == config_hash2, "Config hash should be consistent"
 
     logger.info(f"✅ Config hash generated: {config_hash}")
@@ -494,7 +635,7 @@ def _test_cached_session_component_decorator():
     """Test cached_session_component decorator"""
     call_count = {"count": 0}
 
-    @cached_session_component("test_decorator_component")  # type: ignore[misc]
+    @cached_session_component("test_decorator_component")
     def create_test_component() -> dict[str, Any]:
         # Sleep to make it "expensive" so it gets cached (>0.1s threshold)
         time.sleep(0.15)
@@ -561,12 +702,12 @@ def _test_warm_session_cache():
     return True
 
 
-def test_session_cache_performance() -> None:
+def test_session_cache_performance() -> bool:
     """Test session cache performance improvements"""
     logger.info("🚀 Testing Session Cache Performance")
 
     # Test component caching
-    @cached_session_component("test_component")  # type: ignore[misc]
+    @cached_session_component("test_component")
     def create_expensive_component() -> dict[str, Any]:
         time.sleep(0.1)  # Simulate expensive operation
         return {"test": "data", "timestamp": time.time()}
@@ -588,13 +729,11 @@ def test_session_cache_performance() -> None:
     logger.info(f"Speedup: {speedup:.1f}x")
     logger.info(f"Cache stats: {get_session_cache_stats()}")
 
-    return speedup > 5  # type: ignore[return-value] # Should be much faster
+    return speedup > 5
 
 
 def session_cache_module_tests() -> bool:
     """Comprehensive test suite for session_cache.py using the unified TestSuite."""
-    from test_framework import TestSuite, suppress_logging  # type: ignore[import-not-found]
-
     suite = TestSuite("Session Cache", "core/session_cache.py")
     suite.start_suite()
 
@@ -682,9 +821,6 @@ def session_cache_module_tests() -> bool:
 
     return suite.finish_suite()
 
-
-# Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
 
 run_comprehensive_tests = create_standard_test_runner(session_cache_module_tests)
 

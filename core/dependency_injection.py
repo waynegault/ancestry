@@ -12,7 +12,6 @@ This module provides a comprehensive dependency injection system to:
 """
 
 # === CORE INFRASTRUCTURE ===
-import os
 import sys
 import threading
 from dataclasses import dataclass

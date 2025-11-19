@@ -57,7 +57,7 @@ import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, cast
 from urllib.parse import quote, urlencode, urljoin
 
 if TYPE_CHECKING:
@@ -95,9 +95,16 @@ from common_params import ApiIdentifiers
 from config import config_schema
 from core.session_manager import SessionManager
 from database import Person
-from gedcom_utils import calculate_match_score  # Sentinel import to ensure module availability
 from logging_config import setup_logging
 from utils import format_name
+
+
+class EventInfo(TypedDict):
+    """Structured event details extracted from TreesUI responses."""
+
+    year: Optional[int]
+    date: Optional[str]
+    place: Optional[str]
 
 
 @lru_cache(maxsize=1)
@@ -2211,8 +2218,8 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
             gender = person_raw.get("Gender", "")
 
             # Extract events (birth and death)
-            birth_info = {"year": None, "date": None, "place": None}
-            death_info = {"year": None, "date": None, "place": None}
+            birth_info: EventInfo = {"year": None, "date": None, "place": None}
+            death_info: EventInfo = {"year": None, "date": None, "place": None}
             is_living = True
 
             events_list = person_raw.get("Events", [])
@@ -3088,8 +3095,7 @@ def call_enhanced_api(
 
         # Sync cookies to ensure authentication state
         try:
-            if hasattr(session_manager, '_sync_cookies_to_requests'):
-                session_manager._sync_cookies_to_requests()  # type: ignore[reportPrivateUsage]
+            session_manager.sync_cookies_to_requests()
         except Exception as e:
             logger.debug(f"Cookie sync failed: {e}")
 

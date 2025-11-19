@@ -41,6 +41,7 @@ class MessagePersonalizer:
         self.effectiveness_tracker = MessageEffectivenessTracker()
         self.ab_testing_enabled = True
         self.personalization_functions_registry = self._build_personalization_registry()
+        self._last_generation_snapshot: Optional[dict[str, Any]] = None
 
     @staticmethod
     def _load_message_templates() -> dict[str, str]:
@@ -140,10 +141,10 @@ class MessagePersonalizer:
     def create_personalized_message(
         self,
         template_key: str,
-        person_data: dict[str, Any],
-        extracted_data: dict[str, Any],
-        base_format_data: dict[str, str],
-        _track_effectiveness: bool = True  # type: ignore
+        person_data: Optional[dict[str, Any]] = None,
+        extracted_data: Optional[dict[str, Any]] = None,
+        base_format_data: Optional[dict[str, str]] = None,
+        track_effectiveness: bool = True,
     ) -> tuple[str, list[str]]:
         """
         Create a personalized message using extracted genealogical data with intelligent function selection.
@@ -158,85 +159,146 @@ class MessagePersonalizer:
         Returns:
             Tuple of (personalized message text, list of personalization functions used)
         """
+        person_payload: dict[str, Any] = person_data or {}
+        extraction_payload: dict[str, Any] = extracted_data or {}
+        normalized_base_format = self._prepare_base_format_data(person_payload, base_format_data)
+
         try:
-            # Get the template (with A/B testing if enabled)
-            if template_key not in self.templates:
-                logger.warning(f"Template '{template_key}' not found, using fallback")
-                template_key = self._get_fallback_template(template_key)
-
-            # Apply A/B testing for template selection if enabled
-            if self.ab_testing_enabled:
-                template_key = self._apply_ab_testing(template_key, extracted_data)
-
-            template = self.templates.get(template_key, "")
+            resolved_key, template = self._resolve_template(template_key, extraction_payload)
             if not template:
-                return self._create_fallback_message(person_data, base_format_data), []
+                return self._create_fallback_message(person_payload, normalized_base_format), []
 
-            # Select optimal personalization functions based on data and effectiveness
-            selected_functions = self._select_optimal_personalization_functions(extracted_data)
-
-            # Create enhanced format data using selected functions
+            selected_functions = self._select_optimal_personalization_functions(extraction_payload)
             enhanced_format_data = self._create_enhanced_format_data(
-                extracted_data, base_format_data, person_data, selected_functions
+                extraction_payload, normalized_base_format, person_payload, selected_functions
             )
+            personalized_message = self._format_template_safe(template, enhanced_format_data)
 
-            # Format the message with safe formatting
-            try:
-                personalized_message = template.format(**enhanced_format_data)
-            except KeyError as ke:
-                logger.warning(f"Missing template key {ke}, using fallback formatting")
-                # Add missing keys with default values
-                missing_keys = {
-                    "total_rows": "many",
-                    "predicted_relationship": "family connection",
-                    "actual_relationship": "family connection",
-                    "relationship_path": "our shared family line",
-                    "shared_ancestors": "our shared family line",
-                    "ancestors_details": "",
-                    "genealogical_context": "I'm excited to learn more about our family connection.",
-                    "research_focus": " our shared family history",
-                    "specific_questions": "Do you have any additional family information that might help our research?",
-                    "geographic_context": "Family History Research",
-                    "location_context": "",
-                    "research_suggestions": "I'd love to learn more about your family history.",
-                    "specific_research_questions": "",
-                    "mentioned_people": "your family history",
-                    "research_context": "our shared family history",
-                    "personalized_response": "I found your information very helpful for my genealogical research.",
-                    "research_insights": "This information is very valuable for our family research.",
-                    "follow_up_questions": "Do you have any other family documents or stories that might help our research?",
-                    "estimated_relationship": "close family connection",
-                    "shared_dna_amount": "significant DNA",
-                    "dna_context": "This suggests we share recent common ancestors.",
-                    "shared_ancestor_information": "I'd love to compare our family trees to identify our common ancestors.",
-                    "research_collaboration_request": "Would you be interested in collaborating on our genealogical research?",
-                    "research_topic": "Family History Research",
-                    "specific_research_needs": "I'm looking for additional information to complete our family history.",
-                    "collaboration_proposal": "Perhaps we could share our research findings and work together to solve any family history mysteries."
-                }
+            if track_effectiveness:
+                self._record_generation_snapshot(resolved_key, selected_functions, extraction_payload)
+            else:
+                logger.debug("Effectiveness tracking disabled for template '%s'", resolved_key)
 
-                # Add any missing keys to enhanced_format_data
-                for key, default_value in missing_keys.items():
-                    if key not in enhanced_format_data:
-                        enhanced_format_data[key] = default_value
-
-                # Try formatting again
-                personalized_message = template.format(**enhanced_format_data)
-
-            logger.info(f"Created personalized message using template '{template_key}' with {len(selected_functions)} personalization functions")
+            logger.info(
+                "Created personalized message using template '%s' with %d personalization functions",
+                resolved_key,
+                len(selected_functions),
+            )
             return personalized_message, selected_functions
 
         except Exception as e:
             logger.error(f"Error creating personalized message: {e}")
-            return self._create_fallback_message(person_data, base_format_data), []
+            return self._create_fallback_message(person_payload, normalized_base_format), []
 
-    def _apply_ab_testing(self, template_key: str, _extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _prepare_base_format_data(
+        self,
+        person_payload: dict[str, Any],
+        base_format_data: Optional[dict[str, str]],
+    ) -> dict[str, str]:
+        """Normalize and populate base format data with safe defaults."""
+        normalized_base_format = {key: str(value) for key, value in (base_format_data or {}).items()}
+        if normalized_base_format:
+            return normalized_base_format
+
+        fallback_name = (
+            person_payload.get("name")
+            or person_payload.get("username")
+            or person_payload.get("preferred_name")
+            or "there"
+        )
+        return {"name": str(fallback_name)}
+
+    def _resolve_template(
+        self,
+        template_key: str,
+        extraction_payload: dict[str, Any],
+    ) -> tuple[str, str]:
+        """Resolve final template key (with fallbacks and A/B testing) and content."""
+        resolved_key = template_key
+        if resolved_key not in self.templates:
+            logger.warning("Template '%s' not found, using fallback", resolved_key)
+            resolved_key = self._get_fallback_template(resolved_key)
+
+        if self.ab_testing_enabled:
+            resolved_key = self._apply_ab_testing(resolved_key, extraction_payload)
+
+        template = self.templates.get(resolved_key, "")
+        return resolved_key, template
+
+    def _format_template_safe(self, template: str, enhanced_format_data: dict[str, str]) -> str:
+        """Format template text while backfilling missing keys."""
+        try:
+            return template.format(**enhanced_format_data)
+        except KeyError as ke:
+            logger.warning("Missing template key %s, using fallback formatting", ke)
+            populated = enhanced_format_data.copy()
+            for key, default_value in self._get_template_default_values().items():
+                populated.setdefault(key, default_value)
+            return template.format(**populated)
+
+    @staticmethod
+    def _get_template_default_values() -> dict[str, str]:
+        """Return fallback template values for backwards compatibility."""
+        return {
+            "total_rows": "many",
+            "predicted_relationship": "family connection",
+            "actual_relationship": "family connection",
+            "relationship_path": "our shared family line",
+            "shared_ancestors": "our shared family line",
+            "ancestors_details": "",
+            "genealogical_context": "I'm excited to learn more about our family connection.",
+            "research_focus": " our shared family history",
+            "specific_questions": "Do you have any additional family information that might help our research?",
+            "geographic_context": "Family History Research",
+            "location_context": "",
+            "research_suggestions": "I'd love to learn more about your family history.",
+            "specific_research_questions": "",
+            "mentioned_people": "your family history",
+            "research_context": "our shared family history",
+            "personalized_response": "I found your information very helpful for my genealogical research.",
+            "research_insights": "This information is very valuable for our family research.",
+            "follow_up_questions": "Do you have any other family documents or stories that might help our research?",
+            "estimated_relationship": "close family connection",
+            "shared_dna_amount": "significant DNA",
+            "dna_context": "This suggests we share recent common ancestors.",
+            "shared_ancestor_information": "I'd love to compare our family trees to identify our common ancestors.",
+            "research_collaboration_request": "Would you be interested in collaborating on our genealogical research?",
+            "research_topic": "Family History Research",
+            "specific_research_needs": "I'm looking for additional information to complete our family history.",
+            "collaboration_proposal": "Perhaps we could share our research findings and work together to solve any family history mysteries.",
+        }
+
+    def _record_generation_snapshot(
+        self,
+        template_key: str,
+        selected_functions: list[str],
+        extraction_payload: dict[str, Any],
+    ) -> None:
+        """Capture telemetry for the generated message."""
+        self._last_generation_snapshot = {
+            "template_key": template_key,
+            "selected_functions": list(selected_functions),
+            "data_keys": sorted(extraction_payload.keys()),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def _apply_ab_testing(self, template_key: str, extracted_data: Optional[dict[str, Any]] = None) -> str:
         """Apply A/B testing for template selection based on effectiveness data."""
         # Get alternative templates for A/B testing
         alternative_templates = self._get_alternative_templates(template_key)
 
         if not alternative_templates:
             return template_key
+
+        data_profile = extracted_data or {}
+        if data_profile.get("dna_information"):
+            dna_ready_templates = [tpl for tpl in alternative_templates if "dna" in tpl.lower()]
+            if dna_ready_templates:
+                logger.debug(
+                    "A/B testing: selected DNA-focused template '%s' based on extracted data",
+                    dna_ready_templates[0],
+                )
+                template_key = dna_ready_templates[0]
 
         # Check effectiveness scores
         current_score = self.effectiveness_tracker.get_template_effectiveness_score(template_key)
@@ -260,8 +322,9 @@ class MessagePersonalizer:
             "research_collaboration": ["research_collaboration_formal", "research_collaboration_friendly"]
         }
 
-        for _family, templates in template_families.items():  # type: ignore
+        for family_name, templates in template_families.items():
             if template_key in templates:
+                logger.debug("Template '%s' resolved to family '%s' for A/B alternatives", template_key, family_name)
                 return [t for t in templates if t != template_key and t in self.templates]
 
         return []
@@ -342,40 +405,72 @@ class MessagePersonalizer:
         self,
         extracted_data: dict[str, Any],
         base_format_data: dict[str, str],
-        _person_data: dict[str, Any],  # type: ignore
+        person_data: Optional[dict[str, Any]] = None,
         selected_functions: Optional[list[str]] = None
     ) -> dict[str, str]:
         """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
+        person_payload = person_data or {}
 
-        # If no specific functions selected, use all available functions
-        if selected_functions is None:
-            selected_functions = list(self.personalization_functions_registry.keys())
+        self._apply_person_context(enhanced_data, person_payload)
+        resolved_functions = self._resolve_selected_functions(selected_functions)
+        self._apply_personalization_functions(resolved_functions, enhanced_data, extracted_data)
+        self._ensure_required_template_keys(enhanced_data)
 
-        # Apply selected personalization functions
+        return enhanced_data
+
+    def _apply_person_context(self, enhanced_data: dict[str, str], person_payload: dict[str, Any]) -> None:
+        """Populate person-specific defaults when available."""
+        preferred_name = (
+            person_payload.get("preferred_name")
+            or person_payload.get("display_name")
+            or person_payload.get("name")
+            or person_payload.get("username")
+        )
+        if preferred_name:
+            enhanced_data.setdefault("person_name", str(preferred_name))
+
+        hometown = person_payload.get("home_location") or person_payload.get("location")
+        if hometown:
+            enhanced_data.setdefault("person_location", str(hometown))
+
+    def _resolve_selected_functions(self, selected_functions: Optional[list[str]]) -> list[str]:
+        """Determine which personalization functions should run."""
+        if selected_functions is not None:
+            return list(selected_functions)
+        return list(self.personalization_functions_registry.keys())
+
+    def _apply_personalization_functions(
+        self,
+        selected_functions: list[str],
+        enhanced_data: dict[str, str],
+        extracted_data: dict[str, Any],
+    ) -> None:
+        """Execute personalization functions safely."""
         for func_name in selected_functions:
-            if func_name in self.personalization_functions_registry:
-                try:
-                    func = self.personalization_functions_registry[func_name]
-                    enhanced_data[func_name] = func(extracted_data)
-                except Exception as e:
-                    logger.warning(f"Error applying personalization function '{func_name}': {e}")
-                    # Provide fallback value
-                    enhanced_data[func_name] = self._get_fallback_value(func_name)
+            func = self.personalization_functions_registry.get(func_name)
+            if func is None:
+                continue
+            try:
+                enhanced_data[func_name] = func(extracted_data)
+            except Exception as e:
+                logger.warning(f"Error applying personalization function '{func_name}': {e}")
+                enhanced_data[func_name] = self._get_fallback_value(func_name)
 
-        # Ensure all required template keys have values (backward compatibility)
-        required_keys = {
+    def _ensure_required_template_keys(self, enhanced_data: dict[str, str]) -> None:
+        """Guarantee essential template placeholders are populated."""
+        for key, default_value in self._get_required_template_keys().items():
+            enhanced_data.setdefault(key, default_value)
+
+    @staticmethod
+    def _get_required_template_keys() -> dict[str, str]:
+        """Return required template values for backwards compatibility."""
+        return {
             "total_rows": "many",
             "predicted_relationship": "family connection",
             "actual_relationship": "family connection",
-            "relationship_path": "our shared family line"
+            "relationship_path": "our shared family line",
         }
-
-        for key, default_value in required_keys.items():
-            if key not in enhanced_data:
-                enhanced_data[key] = default_value
-
-        return enhanced_data
 
     @staticmethod
     def _get_fallback_value(func_name: str) -> str:
@@ -596,10 +691,14 @@ class MessagePersonalizer:
         return "In_Tree-Initial"  # Default fallback
 
     @staticmethod
-    def _create_fallback_message(_person_data: dict[str, Any], base_format_data: dict[str, str]) -> str:  # type: ignore
+    def _create_fallback_message(person_data: Optional[dict[str, Any]], base_format_data: dict[str, str]) -> str:
         """Create a simple fallback message when template processing fails."""
-        name = base_format_data.get("name", "there")
-        return f"Dear {name},\n\nThank you for connecting! I'm excited to learn more about our family history.\n\nWarmest regards,\n\nWayne\nAberdeen, Scotland"
+        name = base_format_data.get("name") or (person_data or {}).get("name") or "there"
+        hometown = (person_data or {}).get("location") or "Aberdeen, Scotland"
+        return (
+            f"Dear {name},\n\nThank you for connecting! I'm excited to learn more about our family history."
+            f"\n\nWarmest regards,\n\nWayne\n{hometown}"
+        )
 
     # Additional helper methods for remaining format data fields
     @staticmethod
@@ -641,10 +740,26 @@ class MessagePersonalizer:
         return "our shared family history"
 
     @staticmethod
-    def _create_personalized_response(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _create_personalized_response(extracted_data: dict[str, Any]) -> str:
         """Create personalized response content."""
-        # This would be populated by AI-generated content
-        return "I found your information very helpful for my genealogical research."
+        structured_names = extracted_data.get("structured_names") or []
+        target_name = "your family"
+        if structured_names:
+            first_entry = structured_names[0]
+            if isinstance(first_entry, dict):
+                target_name = first_entry.get("full_name") or first_entry.get("preferred_name") or target_name
+            else:
+                target_name = str(first_entry)
+
+        research_focus = "our family connection"
+        research_questions = extracted_data.get("research_questions") or []
+        if research_questions:
+            research_focus = research_questions[0]
+
+        return (
+            f"Your notes about {target_name} shed new light on {research_focus}. "
+            "I appreciate the context you shared—it gives me several concrete next steps to pursue."
+        )
 
     @staticmethod
     def _create_research_insights(extracted_data: dict[str, Any]) -> str:
@@ -696,18 +811,43 @@ class MessagePersonalizer:
         return "significant DNA"
 
     @staticmethod
-    def _create_dna_context(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _create_dna_context(extracted_data: dict[str, Any]) -> str:
         """Create DNA-specific context."""
-        return "This suggests we share recent common ancestors."
+        dna_info = extracted_data.get("dna_information", [])
+        if dna_info:
+            detail = str(dna_info[0])
+            return (
+                f"The DNA detail you mentioned ({detail}) helps narrow down our shared ancestors to just a few generations."
+            )
+        shared_cm = extracted_data.get("shared_dna_cm")
+        if shared_cm:
+            return f"Sharing roughly {shared_cm} cM usually indicates a fairly recent common ancestor."
+        return "This DNA match suggests we have recent common ancestors worth exploring together."
 
     @staticmethod
-    def _format_shared_ancestor_info(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _format_shared_ancestor_info(extracted_data: dict[str, Any]) -> str:
         """Format shared ancestor information."""
+        shared_ancestors = extracted_data.get("shared_ancestors") or extracted_data.get("structured_names") or []
+        names: list[str] = []
+        for ancestor in shared_ancestors[:2]:
+            if isinstance(ancestor, dict):
+                full_name = ancestor.get("full_name")
+                if full_name:
+                    names.append(full_name)
+            else:
+                names.append(str(ancestor))
+        if names:
+            joined = " and ".join(names)
+            return f"I'd love to compare our trees to confirm how we connect through {joined}."
         return "I'd love to compare our family trees to identify our common ancestors."
 
     @staticmethod
-    def _create_collaboration_request(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _create_collaboration_request(extracted_data: dict[str, Any]) -> str:
         """Create collaboration request text."""
+        research_questions = extracted_data.get("research_questions") or []
+        if research_questions:
+            topic = research_questions[0].rstrip(".? ")
+            return f"Would you be open to collaborating on solving the question about {topic}?"
         return "Would you be interested in collaborating on our genealogical research?"
 
     @staticmethod
@@ -719,13 +859,24 @@ class MessagePersonalizer:
         return "Family History Research"
 
     @staticmethod
-    def _format_research_needs(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _format_research_needs(extracted_data: dict[str, Any]) -> str:
         """Format specific research needs."""
+        research_needs = extracted_data.get("research_needs") or extracted_data.get("research_questions") or []
+        if research_needs:
+            need = str(research_needs[0]).rstrip(". ")
+            return f"I'm looking for additional documents or stories that might clarify {need}."
         return "I'm looking for additional information to complete our family history."
 
     @staticmethod
-    def _create_collaboration_proposal(_extracted_data: dict[str, Any]) -> str:  # type: ignore
+    def _create_collaboration_proposal(extracted_data: dict[str, Any]) -> str:
         """Create collaboration proposal text."""
+        locations = extracted_data.get("locations", [])
+        if locations and isinstance(locations[0], dict):
+            place = locations[0].get("place")
+            if place:
+                return (
+                    f"Perhaps we could share our findings about families in {place} and work together on any remaining mysteries."
+                )
         return "Perhaps we could share our research findings and work together to solve any family history mysteries."
 
     # ========== NEW ADVANCED PERSONALIZATION FUNCTIONS ==========
@@ -1051,7 +1202,7 @@ class MessageEffectivenessTracker:
         personalization_functions_used: list[str],
         response_intent: str,
         response_quality_score: float,
-        _conversation_length: int,  # type: ignore
+        conversation_length: int,
         genealogical_data_extracted: int
     ) -> None:
         """
@@ -1073,11 +1224,19 @@ class MessageEffectivenessTracker:
                     "responses_received": 0,
                     "avg_response_quality": 0.0,
                     "intent_distribution": {},
-                    "avg_data_extracted": 0.0
+                    "avg_data_extracted": 0.0,
+                    "avg_conversation_length": 0.0,
                 }
 
             template_stats = self.effectiveness_data["template_performance"][template_key]
+            template_stats.setdefault("avg_conversation_length", 0.0)
             template_stats["total_sent"] += 1
+            total_sent = template_stats["total_sent"]
+            current_avg_length = template_stats["avg_conversation_length"]
+            normalized_length = max(conversation_length, 0)
+            template_stats["avg_conversation_length"] = (
+                (current_avg_length * (total_sent - 1) + normalized_length) / total_sent
+            )
 
             if response_intent != "NO_RESPONSE":
                 template_stats["responses_received"] += 1
@@ -1239,7 +1398,7 @@ def test_message_personalization() -> bool:
     }
 
     # Test message creation
-    message, _ = personalizer.create_personalized_message(  # type: ignore
+    message, _ = personalizer.create_personalized_message(
         "Enhanced_In_Tree-Initial",
         test_person_data,
         test_extracted_data,
@@ -1256,7 +1415,7 @@ def test_fallback_template_path() -> bool:
     personalizer = MessagePersonalizer()
     # Force empty templates to guarantee fallback path
     personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
-    msg, _ = personalizer.create_personalized_message(  # type: ignore
+    msg, _ = personalizer.create_personalized_message(
         "Totally_Unknown_Template",
         {"username": "UserX"},
         {},
@@ -1391,9 +1550,9 @@ def _test_null_and_none_inputs() -> None:
     try:
         message, functions_used = personalizer.create_personalized_message(
             "Enhanced_In_Tree-Initial",
-            None,  # type: ignore
-            None,  # type: ignore
-            None   # type: ignore
+            None,
+            None,
+            None,
         )
         # If no exception, verify fallback behavior
         assert isinstance(message, str), "Should return string even with None inputs"

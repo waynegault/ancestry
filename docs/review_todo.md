@@ -2,7 +2,7 @@
 
 All review-driven work is tracked here. Completed items remain documented with implementation notes until the next review cycle so future auditors can see what changed and why.
 
-## Recently Completed
+## CHeck that these have actually been done
 
 - [x] **Pylance Diagnostics Sweep** (Nov 18)
   - `npx pyright` now runs clean with 0 errors / 0 warnings across the full workspace, establishing a post-refactor baseline after relocating `ai_api_test.py`.

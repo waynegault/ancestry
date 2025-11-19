@@ -7,9 +7,60 @@ to ensure identical search criteria collection and validation.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from importlib import import_module
+from typing import Any, Callable, Optional, Protocol, cast
 
 from logging_config import logger
+
+FamilyData = dict[str, list[dict[str, Any]]]
+
+
+class _PresenterModule(Protocol):
+    def display_family_members(
+        self,
+        family_data: FamilyData,
+        relation_labels: Optional[dict[str, str]] = None,
+    ) -> None: ...
+
+    def present_post_selection(
+        self,
+        display_name: str,
+        birth_year: Optional[int],
+        death_year: Optional[int],
+        family_data: FamilyData,
+        owner_name: str,
+        relation_labels: Optional[dict[str, str]] = None,
+        unified_path: Optional[list[dict[str, Any]]] = None,
+        formatted_path: Optional[str] = None,
+    ) -> None: ...
+
+
+_presenter_module: Optional[_PresenterModule] = None
+_presenter_import_error: Exception | None = None
+
+
+try:  # pragma: no cover - optional dependency
+    _presenter_candidate = import_module("genealogy_presenter")
+except Exception as exc:
+    _presenter_import_error = exc
+else:
+    missing_attrs = [
+        attr for attr in ("display_family_members", "present_post_selection") if not hasattr(_presenter_candidate, attr)
+    ]
+    if missing_attrs:
+        _presenter_import_error = AttributeError(
+            f"genealogy_presenter missing attributes: {', '.join(missing_attrs)}"
+        )
+    else:
+        _presenter_module = cast(_PresenterModule, _presenter_candidate)
+
+
+def _resolve_presenter_module() -> _PresenterModule:
+    if _presenter_module is not None:
+        return _presenter_module
+    if _presenter_import_error is not None:
+        raise RuntimeError("genealogy_presenter module unavailable") from _presenter_import_error
+    raise RuntimeError("genealogy_presenter module unavailable")
 
 
 def get_unified_search_criteria(
@@ -100,7 +151,35 @@ def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetim
 
 
 # Re-export unified presenter functions from genealogy_presenter (single source of truth)
-from genealogy_presenter import display_family_members, present_post_selection  # type: ignore[import-not-found]
+def display_family_members(
+    family_data: FamilyData,
+    relation_labels: Optional[dict[str, str]] = None,
+) -> None:
+    presenter = _resolve_presenter_module()
+    presenter.display_family_members(family_data, relation_labels)
+
+
+def present_post_selection(
+    display_name: str,
+    birth_year: Optional[int],
+    death_year: Optional[int],
+    family_data: FamilyData,
+    owner_name: str,
+    relation_labels: Optional[dict[str, str]] = None,
+    unified_path: Optional[list[dict[str, Any]]] = None,
+    formatted_path: Optional[str] = None,
+) -> None:
+    presenter = _resolve_presenter_module()
+    presenter.present_post_selection(
+        display_name=display_name,
+        birth_year=birth_year,
+        death_year=death_year,
+        family_data=family_data,
+        owner_name=owner_name,
+        relation_labels=relation_labels,
+        unified_path=unified_path,
+        formatted_path=formatted_path,
+    )
 
 
 def _debug_log_criteria(criteria: dict[str, Any]) -> None:
