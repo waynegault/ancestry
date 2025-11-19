@@ -23,7 +23,7 @@ import contextlib
 import importlib
 import random
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any, Optional, cast
 from urllib.parse import unquote, urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -87,10 +87,11 @@ def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
         logger.error("nav_to_dna_matches_page: WebDriver is None")
         return False
 
+    match_entry_selector = cast(str, MATCH_ENTRY_SELECTOR)
     success = nav_to_page(
         driver=driver,
         url=target_url,
-        selector=MATCH_ENTRY_SELECTOR,  # type: ignore
+        selector=match_entry_selector,
         session_manager=session_manager,
     )
 
@@ -319,11 +320,9 @@ def _fetch_in_tree_from_api(
         logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
         return in_tree_ids
 
-    status_code_log = (
-        f" Status: {response_in_tree.status_code}"  # type: ignore
-        if isinstance(response_in_tree, requests.Response)
-        else ""
-    )
+    status_code_log = ""
+    if isinstance(response_in_tree, requests.Response):
+        status_code_log = f" Status: {response_in_tree.status_code}"
     logger.warning(
         f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
     )

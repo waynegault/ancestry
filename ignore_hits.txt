@@ -1,0 +1,147 @@
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1358:            conv_state.conversation_phase = self._determine_conversation_phase(context_logs)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1361:            conv_state.engagement_score = self._calculate_engagement_score(extracted_data, context_logs)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1368:                conv_state.mentioned_people = json.dumps(people_names)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1373:                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1378:                conv_state.pending_questions = json.dumps(questions)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1386:                conv_state.next_action_date = next_contact_date  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1387:                conv_state.next_action = "send_follow_up"  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:1695:                message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2096:            return custom_reply + signature, self.msg_config.custom_reply_msg_type_id  # type: ignore[return-value]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2108:        return msg, self.msg_config.ack_msg_type_id  # type: ignore[return-value]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2337:                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2475:@error_context("action9_process_productive")  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2863:def _validate_with_pydantic(ai_response: dict[str, Any], log_prefix: str) -> Optional[dict[str, Any]]:  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2875:def _salvage_extracted_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, list[Any]]:  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2902:def _salvage_suggested_tasks(ai_response: dict[str, Any], log_prefix: str) -> list[Any]:  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:2921:def _salvage_partial_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, Any]:  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3033:        if not isinstance(content, str):  # type: ignore[arg-type,misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3657:        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3792:    score1 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3809:    score2 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3823:    score3 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3833:    score4 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3844:    score5 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:3869:    score6 = processor._score_response_quality(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\action9_process_productive.py:4083:        tests.extend([  # type: ignore[arg-type]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:24:    OpenAI = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:28:    import google.generativeai as genai  # type: ignore[import-untyped]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:30:    genai = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:36:    load_dotenv = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:39:    from xai_sdk import Client as XAIClient  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:40:    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:42:    XAIClient = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:43:    xai_system_message = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:44:    xai_user_message = None  # type: ignore[assignment]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:381:        for model in list_models_fn():  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_api_test.py:414:        for model in list_models_fn():  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:71:    OpenAI = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:72:    APIConnectionError = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:73:    RateLimitError = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:74:    AuthenticationError = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:75:    APIError = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:81:    from google import genai  # type: ignore  # Updated to google-genai package
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:82:    from google.genai import errors as genai_errors, types as genai_types  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:89:    genai = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:90:    genai_types = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:91:    genai_errors = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:99:    from xai_sdk import Client as XAIClient  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:100:    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:104:    XAIClient = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:105:    xai_system_message = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:106:    xai_user_message = None  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:136:    USE_JSON_PROMPTS = False  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:139:    def get_prompt(prompt_key: str) -> str | None:  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:142:    def load_prompts() -> dict[str, Any]:  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:442:        for model in genai.list_models():  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:511:        genai.configure(api_key=api_key)  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:512:        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:530:        return genai.GenerationConfig(  # type: ignore[attr-defined]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:545:        return model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:714:                drl.on_429_error(endpoint)  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:938:    elif genai_errors and hasattr(genai_errors, "PermissionDenied") and isinstance(e, genai_errors.PermissionDenied):  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:947:    elif genai_errors and hasattr(genai_errors, "ResourceExhausted") and isinstance(e, genai_errors.ResourceExhausted):  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:958:    elif genai_errors and hasattr(genai_errors, "GoogleAPIError") and isinstance(e, genai_errors.GoogleAPIError):  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1112:                from ai_prompt_utils import get_prompt_with_experiment  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1155:        from ai_prompt_utils import get_prompt_version  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1156:        from prompt_telemetry import record_extraction_experiment_event  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1169:        record_extraction_experiment_event(  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1170:            variant_label=variant_label,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1171:            prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1172:            prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1173:            parse_success=parse_success,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1174:            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1175:            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1176:            raw_response_text=cleaned_response_str,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1177:            user_id=getattr(session_manager, "user_id", None),  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1178:            quality_score=quality_score,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1179:            component_coverage=component_coverage,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1180:            anomaly_summary=anomaly_summary,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\ai_interface.py:1181:            error=error,  # type: ignore[call-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:617:def _validate_api_session(session_manager: SessionManager) -> bool:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:625:def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:642:def _resolve_owner_profile_id(session_manager: SessionManager) -> str:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:655:def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:684:    if not api_response or not isinstance(api_response, dict):  # type: ignore[arg-type,misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:864:def _debug_log_facts_structure(facts_data: Any) -> None:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:879:def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:889:def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:900:def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:913:def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_search_utils.py:921:def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\api_utils.py:3567:        assert isinstance(parsed, dict), "Parsed result should be dictionary"  # type: ignore[possibly-unbound]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\chromedriver.py:70:import undetected_chromedriver as uc  # type: ignore  # Anti-bot detection bypass
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\chromedriver.py:103:    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / PROFILE_DIR)  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\chromedriver.py:104:    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\chromedriver.py:810:        return True  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\diagnose_chrome.py:422:            import undetected_chromedriver as uc  # type: ignore[import-untyped]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\diagnose_chrome.py:576:def _build_process_issue(process_entries: list | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:  # type: ignore[type-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\diagnose_chrome.py:633:    processes: dict,  # type: ignore[type-arg]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\diagnose_chrome.py:766:        import undetected_chromedriver as uc  # type: ignore[import-untyped]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_ethnicity_utils.py:186:            error_msg += f", Status: {response.status_code}"  # type: ignore[union-attr]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_ethnicity_utils.py:188:            error_msg += f", Body: {response.text[:200]}"  # type: ignore[union-attr]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_ethnicity_utils.py:646:def _test_tree_owner_ethnicity_fetch() -> bool:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_ethnicity_utils.py:681:def _test_region_names_fetch() -> bool:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_ethnicity_utils.py:715:def _test_ethnicity_comparison() -> bool:  # type: ignore[reportUnusedFunction]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_utils.py:93:        selector=MATCH_ENTRY_SELECTOR,  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\dna_utils.py:323:        f" Status: {response_in_tree.status_code}"  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:81:    NameRec = type(None)  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:267:            return indi.value, ""  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:303:        return name_tag.format()  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:483:        parsed_dt = dateparser.parse(cleaned_str, settings=settings)  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:617:            return individual.value  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:904:    if id_to_parents is None or id_to_children is None:  # type: ignore[unreachable]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:1976:            self.reader = GedcomReader(str(self.path))  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\gedcom_utils.py:2070:        self.indi_index[norm_id] = indi_record  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\api_manager.py:367:    def _parse_api_response(response, api_description: str) -> ApiResponseType:  # type: ignore[no-untyped-def]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\api_manager.py:789:        assert api_manager._sanitize_endpoint_label("https://example.com/") == "root"  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\api_manager.py:790:        complex_label = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\api_manager.py:794:        hex_path = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:346:            metric_bundle.database_query_latency.observe(operation, max(duration, 0.0))  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:348:                metric_bundle.database_rows.inc(operation, float(rowcount))  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:509:        def enable_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:  # type: ignore[unused-function]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:992:        db_manager._db_init_attempted = True  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1009:        not db_manager._db_ready  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1052:    assert db_manager._connection_stats["total_connections"] == 1  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1053:    assert db_manager._connection_stats["active_connections"] == 1  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1058:    assert db_manager._connection_stats["active_connections"] == 0  # type: ignore[protected-access]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1186:@error_context("Database Transaction")  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1280:@api_retry(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1361:@timeout_protection(timeout=300)  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\database_manager.py:1362:@error_context("Database Backup Operation")  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:526:        class ServiceA(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:535:        class ServiceB(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:558:        class ServiceD(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:567:        class ServiceE(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:576:        class ServiceK(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:588:        class ServiceL(EmptyTestService):  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\dependency_injection.py:599:        class UnregisteredService(EmptyTestService): ...  # type: ignore[misc]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1573:            last_exception.context.update(context_payload)  # type: ignore[union-attr]
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1707:            old_handler = signal.signal(signal.SIGALRM, timeout_handler)  # type: ignore[attr-defined] - SIGALRM not on Windows
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1708:            signal.alarm(timeout)  # type: ignore[attr-defined] - alarm not on Windows
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1712:                signal.alarm(0)  # type: ignore[attr-defined] - Disable the alarm
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1715:                signal.signal(signal.SIGALRM, old_handler)  # type: ignore[attr-defined] - Restore old handler
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1958:                    cb.record_failure()  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1962:                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\error_handling.py:1966:                cb.record_success()  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\metrics_collector.py:114:    metrics: dict[str, deque[MetricPoint]] = field(default_factory=dict)  # type: ignore
+C:\Users\wayne\GitHub\Python\Projects\Ancestry\core\session_cache.py:203:class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]

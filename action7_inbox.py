@@ -350,7 +350,15 @@ class InboxProcessor:
 
         if isinstance(conversations_raw, list):
             for conv_data_raw in conversations_raw:
-                conv_dict = cast(dict[str, Any], conv_data_raw)  # type: ignore[redundant-cast]
+                if not isinstance(conv_data_raw, Mapping):
+                    logger.debug(
+                        "Skipping conversation entry with unexpected type: %s",
+                        type(conv_data_raw),
+                    )
+                    continue
+                conv_dict: dict[str, Any] = {
+                    str(key): value for key, value in conv_data_raw.items()
+                }
                 info = self._extract_conversation_info(conv_dict, my_profile_id)
                 if info:
                     all_conversations_processed.append(info)
@@ -538,7 +546,7 @@ class InboxProcessor:
         raw_members = conv_data.get("members", [])
         member_dicts: list[dict[str, Any]] = []
         if isinstance(raw_members, list):
-            member_dicts = [cast(dict[str, Any], m) for m in cast(list[Any], raw_members) if isinstance(m, dict)]
+            member_dicts = [m for m in raw_members if isinstance(m, dict)]
         participant_info = self._find_other_participant(member_dicts, my_profile_id, conversation_id)
         if participant_info is None:
             return None
@@ -580,11 +588,17 @@ class InboxProcessor:
         # Prepare headers
         contextual_headers = getattr(config_schema.api, "contextual_headers", {}).get(api_description, {})
         headers: HeadersDict = {}
-        if isinstance(contextual_headers, dict):
-            ctx_dict = cast(dict[str, Any], contextual_headers)
-            headers = {str(k): str(v) for k, v in ctx_dict.items() if v is not None}
-        else:
-            logger.warning(f"Expected dict for contextual headers, got {type(contextual_headers)}")
+        if isinstance(contextual_headers, Mapping):
+            headers = {
+                str(k): str(v)
+                for k, v in contextual_headers.items()
+                if v is not None
+            }
+        elif contextual_headers:
+            logger.warning(
+                "Expected dict-like structure for contextual headers, got %s",
+                type(contextual_headers),
+            )
 
         # Set ancestry-userid - check for None to avoid AttributeError
         my_profile_id = self.session_manager.my_profile_id
@@ -1548,13 +1562,17 @@ class InboxProcessor:
 
         ai_result = _classify_with_recovery()
 
-        # Extract sentiment from result
         ai_sentiment_result: Optional[str] = None
-        if isinstance(ai_result, tuple) and ai_result:
-            first_elem = ai_result[0] if ai_result else None  # type: ignore[misc]
-            ai_sentiment_result = str(first_elem) if first_elem else None  # type: ignore[arg-type]
-        elif ai_result:
-            ai_sentiment_result = str(ai_result) if ai_result else None  # type: ignore[arg-type]
+        if isinstance(ai_result, str):
+            ai_sentiment_result = ai_result
+        elif isinstance(ai_result, (list, tuple)) and ai_result:
+            first_elem = ai_result[0]
+            if isinstance(first_elem, str):
+                ai_sentiment_result = first_elem
+            elif first_elem is not None:
+                ai_sentiment_result = str(first_elem)
+        elif ai_result is not None:
+            ai_sentiment_result = str(ai_result)
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
 
@@ -1724,7 +1742,8 @@ class InboxProcessor:
         if isinstance(conversation_history, Mapping):
             for key, log in conversation_history.items():
                 conv_key: Any = key[0] if isinstance(key, tuple) and key else key
-                if str(conv_key) == str(conversation_id):  # type: ignore[arg-type]
+                conv_key_str = str(conv_key)
+                if conv_key_str == conversation_id:
                     normalized.append(log)
         elif isinstance(conversation_history, (list, tuple)):
             normalized = list(conversation_history)
@@ -1770,26 +1789,35 @@ class InboxProcessor:
 
     def _process_follow_up_result(
         self,
-        result: Optional[dict[str, Any]],
+        result: Optional[Mapping[str, Any]],
         conversation_id: str,
     ) -> dict[str, Any]:
-        if not result or "error" in result:
-            error_msg = result.get("error") if isinstance(result, dict) else "unknown error"
+        if not isinstance(result, Mapping):
             logger.warning(
-                "Follow-up extraction failed for %s: %s", conversation_id, error_msg
-            )
-            return self._default_follow_up_payload()
-
-        follow_up_data: Optional[dict[str, Any]]
-        follow_up_data = result.get("response") if "response" in result else result  # type: ignore[assignment]
-
-        if not isinstance(follow_up_data, dict):
-            logger.warning(
-                "Invalid follow-up data format for %s: %s",
+                "Follow-up extraction failed for %s: unexpected result type %s",
                 conversation_id,
-                type(follow_up_data),
+                type(result),
             )
             return self._default_follow_up_payload()
+
+        if "error" in result:
+            logger.warning(
+                "Follow-up extraction failed for %s: %s",
+                conversation_id,
+                result.get("error"),
+            )
+            return self._default_follow_up_payload()
+
+        response_payload = result.get("response")
+        follow_up_data: Mapping[str, Any]
+        if isinstance(response_payload, Mapping):
+            follow_up_data = response_payload
+        else:
+            follow_up_data = result
+            logger.debug(
+                "Using heuristic result for follow-up data in %s (no response payload)",
+                conversation_id,
+            )
 
         follow_up_required = follow_up_data.get("follow_up_required", False)
         days_until_due = follow_up_data.get("days_until_due")
@@ -3535,17 +3563,18 @@ def _test_conversation_database_storage() -> None:
     processor = InboxProcessor(sm)
 
     # Get count before processing
-    db_session = sm.db_manager.get_session()  # type: ignore[misc]
-    if not db_session:
+    sm = _ensure_session_for_tests()
+    db_session = sm.db_manager.get_session()
+    if db_session is None:
         logger.error("Could not get database session")
         return
-    count_before: int = db_session.query(ConversationLog).count()  # type: ignore[assignment,misc]
+    count_before = int(db_session.query(ConversationLog).count())
 
     # Process a small batch
     processor.search_inbox(max_inbox_limit=3)
 
     # Get count after processing
-    count_after: int = db_session.query(ConversationLog).count()  # type: ignore[assignment]
+    count_after = int(db_session.query(ConversationLog).count())
 
     # Verify conversations were stored (or already existed)
     assert count_after >= count_before, "Conversation count should not decrease"
@@ -3573,21 +3602,22 @@ def _test_conversation_parsing() -> None:
     processor.search_inbox(max_inbox_limit=2)
 
     # Get a conversation from database
-    db_session = sm.db_manager.get_session()  # type: ignore[misc]
-    if not db_session:
+    sm = _ensure_session_for_tests()
+    db_session = sm.db_manager.get_session()
+    if db_session is None:
         logger.error("Could not get database session")
         return
-    conv: Optional[ConversationLog] = db_session.query(ConversationLog).first()  # type: ignore[assignment,misc]
+    conv = db_session.query(ConversationLog).first()
 
-    if conv:
-        # Verify conversation has required fields
-        assert conv.conversation_id is not None, "Conversation should have ID"  # type: ignore[union-attr]
-        assert conv.direction is not None, "Conversation should have direction"  # type: ignore[union-attr]
-        assert conv.updated_at is not None, "Conversation should have timestamp"  # type: ignore[union-attr]
-
-        logger.info(f"Parsed conversation {conv.conversation_id} with direction {conv.direction}")  # type: ignore[union-attr]
-    else:
+    if conv is None:
         logger.info("No conversations in database (inbox may be empty)")
+        return
+
+    assert conv.conversation_id is not None, "Conversation should have ID"
+    assert conv.direction is not None, "Conversation should have direction"
+    assert conv.updated_at is not None, "Conversation should have timestamp"
+
+    logger.info("Parsed conversation %s with direction %s", conv.conversation_id, conv.direction)
 
 
 def _test_ai_classification() -> None:
@@ -3722,7 +3752,7 @@ def _test_error_recovery() -> None:
     processor = InboxProcessor(sm)
 
     # Test state initialization
-    state = processor._initialize_loop_state()  # type: ignore[misc]
+    state = processor._initialize_loop_state()
 
     # Verify error tracking fields exist
     assert "session_deaths" in state, "State should track session deaths"
@@ -3766,7 +3796,7 @@ def _test_clarify_ambiguous_intent() -> None:
         "locations": [{"place": "Scotland", "context": "birthplace"}],
     }
 
-    ambiguity_analysis = processor._analyze_entity_ambiguity(entities_ambiguous)  # type: ignore[misc]
+    ambiguity_analysis = processor._analyze_entity_ambiguity(entities_ambiguous)
     assert ambiguity_analysis != "No ambiguity detected", "Should detect name and location ambiguity"
     assert "Mary Smith" in ambiguity_analysis, "Should mention ambiguous name"
     assert "Scotland" in ambiguity_analysis or "too broad" in ambiguity_analysis, "Should detect broad location"
@@ -3786,7 +3816,7 @@ def _test_clarify_ambiguous_intent() -> None:
         "locations": [{"place": "Banff, Banffshire, Scotland", "context": "birthplace"}],
     }
 
-    ambiguity_analysis_complete = processor._analyze_entity_ambiguity(entities_complete)  # type: ignore[misc]
+    ambiguity_analysis_complete = processor._analyze_entity_ambiguity(entities_complete)
     assert ambiguity_analysis_complete == "No ambiguity detected", "Should not detect ambiguity in complete entities"
 
     logger.info("✅ No ambiguity detected for complete entities")
@@ -3814,7 +3844,7 @@ def _test_conversation_phase_initial_outreach() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    phase = processor._determine_conversation_phase(  # type: ignore[misc]
+    phase = processor._determine_conversation_phase(
         conversation_id="test_conv_1",
         direction=MessageDirectionEnum.OUT,
         ai_sentiment=None,
@@ -3841,7 +3871,7 @@ def _test_conversation_phase_response_received() -> None:
     mock_out_log.latest_timestamp = datetime.now(timezone.utc)
     mock_out_log.ai_sentiment = None
 
-    phase = processor._determine_conversation_phase(  # type: ignore[misc]
+    phase = processor._determine_conversation_phase(
         conversation_id="test_conv_2",
         direction=MessageDirectionEnum.IN,
         ai_sentiment="PRODUCTIVE",
@@ -3875,7 +3905,7 @@ def _test_conversation_phase_information_shared() -> None:
         # Use unique key with index to avoid overwriting
         mock_logs[f"test_conv_3_{i}", direction_name] = mock_log
 
-    phase = processor._determine_conversation_phase(  # type: ignore[misc]
+    phase = processor._determine_conversation_phase(
         conversation_id="test_conv_3",
         direction=MessageDirectionEnum.IN,
         ai_sentiment="PRODUCTIVE",
@@ -3903,7 +3933,7 @@ def _test_follow_up_extraction_productive() -> None:
     mock_log.ai_sentiment = "PRODUCTIVE"
     conversation_history = [mock_log]
 
-    result = processor._extract_follow_up_requirements(  # type: ignore[misc]
+    result = processor._extract_follow_up_requirements(
         conversation_history=conversation_history,
         latest_message="Do you know when Charles Fetch was born?",
         direction=MessageDirectionEnum.IN,
@@ -3944,7 +3974,7 @@ def _test_follow_up_extraction_with_dict_history() -> None:
         ("other_conv", MessageDirectionEnum.OUT.name): other_log,
     }
 
-    result = processor._extract_follow_up_requirements(  # type: ignore[misc]
+    result = processor._extract_follow_up_requirements(
         conversation_history=history_dict,
         latest_message="Can you share the marriage record?",
         direction=MessageDirectionEnum.IN,
@@ -3967,7 +3997,7 @@ def _test_follow_up_skips_desist() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    result = processor._extract_follow_up_requirements(  # type: ignore[misc]
+    result = processor._extract_follow_up_requirements(
         conversation_history=[],
         latest_message="I'm not interested in genealogy anymore.",
         direction=MessageDirectionEnum.IN,
@@ -3990,7 +4020,7 @@ def _test_follow_up_reminder_task_creation() -> None:
     processor = InboxProcessor(session_manager=sm)
 
     due_date = datetime.now(timezone.utc) + timedelta(days=7)
-    result = processor._create_follow_up_reminder_task(  # type: ignore[misc]
+    result = processor._create_follow_up_reminder_task(
         person_id=123,
         conversation_id="task_test_1",
         task_title="Follow up with @TestUser about Charles Fetch",
@@ -4021,7 +4051,7 @@ def _test_task_importance_calculation() -> None:
     person_high.dna_match.cm_dna = 150
     mock_db_session.query().filter().first.return_value = person_high
 
-    importance = processor._calculate_task_importance(person_id=1, base_urgency="standard")  # type: ignore[misc]
+    importance = processor._calculate_task_importance(person_id=1, base_urgency="standard")
     assert importance == "high", f"Expected 'high' for cM=150, engagement=80, got '{importance}'"
 
     person_medium = MagicMock(spec=Person)
@@ -4031,7 +4061,7 @@ def _test_task_importance_calculation() -> None:
     person_medium.dna_match.cm_dna = 75
     mock_db_session.query().filter().first.return_value = person_medium
 
-    importance = processor._calculate_task_importance(person_id=2, base_urgency="standard")  # type: ignore[misc]
+    importance = processor._calculate_task_importance(person_id=2, base_urgency="standard")
     assert importance == "normal", f"Expected 'normal' for cM=75, engagement=40, got '{importance}'"
 
     person_low = MagicMock(spec=Person)
@@ -4041,13 +4071,13 @@ def _test_task_importance_calculation() -> None:
     person_low.dna_match.cm_dna = 30
     mock_db_session.query().filter().first.return_value = person_low
 
-    importance = processor._calculate_task_importance(person_id=3, base_urgency="standard")  # type: ignore[misc]
+    importance = processor._calculate_task_importance(person_id=3, base_urgency="standard")
     assert importance == "low", f"Expected 'low' for cM=30, engagement=20, got '{importance}'"
 
-    importance_urgent = processor._calculate_task_importance(person_id=3, base_urgency="urgent")  # type: ignore[misc]
+    importance_urgent = processor._calculate_task_importance(person_id=3, base_urgency="urgent")
     assert importance_urgent == "high", f"Expected 'high' for urgent override, got '{importance_urgent}'"
 
-    importance_patient = processor._calculate_task_importance(person_id=1, base_urgency="patient")  # type: ignore[misc]
+    importance_patient = processor._calculate_task_importance(person_id=1, base_urgency="patient")
     assert importance_patient == "low", f"Expected 'low' for patient override, got '{importance_patient}'"
 
 
@@ -4060,7 +4090,7 @@ def _test_conversation_log_follow_up_fields() -> None:
     processor = InboxProcessor(session_manager=sm)
 
     due_date = datetime.now(timezone.utc) + timedelta(days=14)
-    log_upsert = processor._create_conversation_log_upsert(  # type: ignore[misc]
+    log_upsert = processor._create_conversation_log_upsert(
         api_conv_id="log_test_1",
         direction=MessageDirectionEnum.IN,
         people_id=456,
@@ -4085,7 +4115,7 @@ def _test_conversation_phase_closed() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    phase = processor._determine_conversation_phase(  # type: ignore[misc]
+    phase = processor._determine_conversation_phase(
         conversation_id="test_conv_4",
         direction=MessageDirectionEnum.IN,
         ai_sentiment="DESIST",

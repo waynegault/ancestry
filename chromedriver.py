@@ -58,6 +58,7 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 # === THIRD-PARTY IMPORTS ===
 import contextlib
+import importlib
 import json
 import os
 import random
@@ -65,9 +66,19 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
-import undetected_chromedriver as uc  # type: ignore  # Anti-bot detection bypass
+try:
+    _uc_module = importlib.import_module("undetected_chromedriver")
+except ImportError as uc_error:  # pragma: no cover - required dependency
+    raise ImportError("undetected_chromedriver is required for browser automation") from uc_error
+
+uc = cast(Any, _uc_module)
+
+if TYPE_CHECKING:
+    from undetected_chromedriver import ChromeOptions as ChromeOptionsType
+else:  # pragma: no cover - runtime fallback
+    ChromeOptionsType = Any
 from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
@@ -96,12 +107,11 @@ PROFILE_DIR = (
 )
 # Handle the case where CHROME_USER_DATA_DIR might be None
 if CHROME_USER_DATA_DIR is not None:
-    DEFAULT_PROFILE_PATH = str(Path(CHROME_USER_DATA_DIR) / PROFILE_DIR)
-    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
+    profile_root = Path(CHROME_USER_DATA_DIR)
 else:
-    # Use a default temporary directory if CHROME_USER_DATA_DIR is None
-    DEFAULT_PROFILE_PATH = str(Path.home() / ".ancestry_temp" / PROFILE_DIR)  # type: ignore
-    PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")  # type: ignore
+    profile_root = Path.home() / ".ancestry_temp"
+DEFAULT_PROFILE_PATH = str(profile_root / PROFILE_DIR)
+PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 
 # --------------------------
 # Chrome Configuration
@@ -208,7 +218,7 @@ def close_tabs(driver: WebDriver) -> None:
 
 # Helper functions for init_webdvr
 
-def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
+def _configure_chrome_options(config: Any) -> ChromeOptionsType:
     """Configure Chrome options for WebDriver initialization with enhanced stealth."""
     options = uc.ChromeOptions()
 
@@ -277,7 +287,7 @@ def _configure_chrome_options(config: Any) -> uc.ChromeOptions:
     return options
 
 
-def _create_chrome_driver(_options: uc.ChromeOptions, attempt_num: int) -> Optional[WebDriver]:
+def _create_chrome_driver(_options: ChromeOptionsType, attempt_num: int) -> Optional[WebDriver]:
     """Create Chrome WebDriver instance with multiple fallback strategies."""
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
@@ -807,14 +817,12 @@ def test_chrome_options_creation() -> None:
         assert "--headless=new" in options.arguments, "Should be able to add arguments"
 
         logger.debug("undetected_chromedriver ChromeOptions creation test passed")
-        return True  # type: ignore
     except NameError as e:
         if "'uc' is not defined" in str(e):
             raise AssertionError(f"NameError indicates missing undetected_chromedriver import: {e}") from e
         raise AssertionError(f"Unexpected NameError: {e}") from e
     except Exception as e:
         raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}") from e
-    return False  # Should not reach here
 
 
 def chromedriver_module_tests() -> bool:

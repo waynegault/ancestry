@@ -97,6 +97,9 @@ else:
     get_unified_cache_key = _get_unified_cache_key
     warm_cache_with_data = _warm_cache_with_data
 
+# Provide a typed view of the current BaseCacheModule implementation for Pyright.
+_TypedBaseCacheModule = cast(type[_BaseCacheModuleFallback], BaseCacheModule)
+
 # === SESSION CACHE CONFIGURATION ===
 
 
@@ -200,7 +203,7 @@ def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], b
 # === SESSION COMPONENT CACHE ===
 
 
-class SessionComponentCache(BaseCacheModule):  # type: ignore[misc]
+class SessionComponentCache(_TypedBaseCacheModule):
     """
     High-performance cache for session manager components.
     Extends the existing cache infrastructure with session-specific optimizations.

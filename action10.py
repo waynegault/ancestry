@@ -79,6 +79,9 @@ from performance_cache import (
     fast_test_cache,
 )
 
+MatchScoreResult = tuple[float, dict[str, float], list[str]]
+CacheKey = tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]
+
 # === THIRD-PARTY IMPORTS ===
 try:
     from tabulate import tabulate
@@ -709,8 +712,8 @@ def calculate_match_score_cached(
     candidate_data: dict[str, Any],
     scoring_weights: Mapping[str, int | float],
     date_flex: dict[str, Any],
-    cache: Optional[dict[Any, Any]] = None,  # type: ignore[type-arg]
-) -> tuple[float, dict[str, int], list[str]]:
+    cache: Optional[dict[CacheKey, MatchScoreResult]] = None,
+) -> MatchScoreResult:
     """Calculate match score with caching for performance."""
     if cache is None:
         cache = {}
@@ -839,7 +842,7 @@ def _process_individual(
     scoring_weights: dict[str, Any],
     date_flex: dict[str, Any],
     year_range: int,
-    score_cache: dict[str, Any],
+    score_cache: dict[CacheKey, MatchScoreResult],
 ) -> Optional[dict[str, Any]]:
     """Process a single individual for filtering and scoring."""
     try:
@@ -887,7 +890,7 @@ def filter_and_score_individuals(
     year_range = date_flex.get("year_match_range", 10)
 
     # For caching match scores
-    score_cache = {}
+    score_cache: dict[CacheKey, MatchScoreResult] = {}
     scored_matches: list[dict[str, Any]] = []
 
     # For progress tracking
@@ -1799,7 +1802,7 @@ def test_sanitize_input() -> None:
 
 def test_get_validated_year_input_patch() -> None:
     """Test year input validation with various input formats"""
-    import builtins
+    from unittest.mock import patch
 
     test_inputs = [
         ("1990", 1990, "Simple year"),
@@ -1811,19 +1814,18 @@ def test_get_validated_year_input_patch() -> None:
 
     print("📋 Testing year input validation with formats:")
     results = []
-    orig_input = builtins.input
     failures = []
 
-    try:
-        for input_val, expected, description in test_inputs:
-            try:
-                # Create a closure that captures input_val and ignores the prompt argument
-                def make_mock_input(test_value: str) -> Callable[[str], str]:
-                    def mock_input_func(_: str = "") -> str:
-                        return test_value
-                    return mock_input_func
+    for input_val, expected, description in test_inputs:
+        try:
+            # Create a closure that captures input_val and ignores the prompt argument
+            def make_mock_input(test_value: str) -> Callable[[str], str]:
+                def mock_input_func(_: str = "") -> str:
+                    return test_value
 
-                builtins.input = make_mock_input(input_val)  # type: ignore[assignment]
+                return mock_input_func
+
+            with patch("builtins.input", make_mock_input(input_val)):
                 actual = get_validated_year_input("Enter year: ")
                 passed = actual == expected
                 status = "✅" if passed else "❌"
@@ -1833,27 +1835,24 @@ def test_get_validated_year_input_patch() -> None:
                     f"      Input: '{input_val}' → Output: {actual} (Expected: {expected})"
                 )
 
-                results.append(passed)
-                if not passed:
-                    failures.append(f"Failed for '{input_val}': expected {expected}, got {actual}")
+            results.append(passed)
+            if not passed:
+                failures.append(f"Failed for '{input_val}': expected {expected}, got {actual}")
 
-            except Exception as e:
-                print(f"   ❌ {description}: Exception {e}")
-                results.append(False)
-                failures.append(f"Exception for '{input_val}': {e}")
+        except Exception as e:
+            print(f"   ❌ {description}: Exception {e}")
+            results.append(False)
+            failures.append(f"Exception for '{input_val}': {e}")
 
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
-        )
+    print(
+        f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
+    )
 
-        # Fail if any tests failed
-        if failures:
-            raise AssertionError(f"Year input validation failed: {'; '.join(failures)}")
+    # Fail if any tests failed
+    if failures:
+        raise AssertionError(f"Year input validation failed: {'; '.join(failures)}")
 
-        # Return nothing (part of TestSuite)
-
-    finally:
-        builtins.input = orig_input
+    # Return nothing (part of TestSuite)
 
 
 def test_fraser_gault_scoring_algorithm() -> None:
@@ -2287,7 +2286,9 @@ def test_relationship_path_calculation() -> None:
     config = _get_test_person_config()
 
     # Get tree owner data from configuration
-    reference_person_name = config_schema.reference_person_name if config_schema else "Tree Owner"
+    reference_person_name: str = (
+        config_schema.reference_person_name if config_schema else "Tree Owner"
+    )
 
     # Use cached GEDCOM data (already loaded in Test 3)
     gedcom_data = get_cached_gedcom()
@@ -2324,7 +2325,7 @@ def test_relationship_path_calculation() -> None:
     if not person_id_value:
         print("❌ Match missing ID, cannot calculate relationship path")
         return
-    person_id = str(person_id_value)
+    person_id: str = str(person_id_value)
 
     person_full_name = str(person.get('full_name_disp') or config['first_name'])
 
@@ -2338,7 +2339,7 @@ def test_relationship_path_calculation() -> None:
         print("⚠️ REFERENCE_PERSON_ID not configured, skipping relationship path test")
         return
 
-    reference_person_id = str(reference_person_id_value)
+    reference_person_id: str = str(reference_person_id_value)
 
     print(f"   Reference person: {reference_person_name} (ID: {reference_person_id})")
 
@@ -2354,7 +2355,7 @@ def test_relationship_path_calculation() -> None:
 
         # Find the relationship path using the consolidated function
         path_ids = fast_bidirectional_bfs(
-            person_id,  # type: ignore[arg-type]
+            person_id,
             reference_person_id,
             gedcom_data.id_to_parents,
             gedcom_data.id_to_children,
@@ -2378,7 +2379,10 @@ def test_relationship_path_calculation() -> None:
 
         # Format the path using the unified formatter
         relationship_explanation = format_relationship_path_unified(
-            unified_path, person_full_name, reference_person_name, None  # type: ignore[arg-type]
+            unified_path,
+            person_full_name,
+            reference_person_name,
+            relationship_type=None,
         )
 
         # Print the formatted relationship path without logger prefix

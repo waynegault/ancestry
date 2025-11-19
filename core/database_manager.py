@@ -56,6 +56,13 @@ from core.error_handling import (
 )
 from observability.metrics_registry import metrics
 
+Decorator = Callable[[Callable[..., Any]], Callable[..., Any]]
+DecoratorFactory = Callable[..., Decorator]
+
+error_context_decorator = cast(DecoratorFactory, error_context)
+api_retry_decorator = cast(DecoratorFactory, api_retry)
+timeout_protection_decorator = cast(DecoratorFactory, timeout_protection)
+
 # === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
@@ -343,9 +350,9 @@ class DatabaseManager:
         try:
             operation = self._normalize_query_label(query)
             metric_bundle = metrics()
-            metric_bundle.database_query_latency.observe(operation, max(duration, 0.0))  # type: ignore[misc]
+            metric_bundle.database_query_latency.observe(operation, max(duration, 0.0))
             if rowcount is not None and rowcount >= 0:
-                metric_bundle.database_rows.inc(operation, float(rowcount))  # type: ignore[misc]
+                metric_bundle.database_rows.inc(operation, float(rowcount))
         except Exception:
             logger.debug("Failed to record database metrics", exc_info=True)
 
@@ -505,20 +512,25 @@ class DatabaseManager:
 
     def _attach_pragma_listener(self) -> None:
         """Attach event listener for SQLite PRAGMA settings."""
-        @event.listens_for(self.engine, "connect")
-        def enable_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:  # type: ignore[unused-function]
-            cursor = dbapi_connection.cursor()
-            try:
-                cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA foreign_keys=ON;")
-                cursor.execute("PRAGMA synchronous=NORMAL;")
-                logger.debug(
-                    "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
-                )
-            except sqlite3.Error as pragma_e:
-                logger.error(f"Failed setting PRAGMA: {pragma_e}")
-            finally:
-                cursor.close()
+        if not self.engine:
+            logger.warning("Cannot attach PRAGMA listener without an engine instance")
+            return
+        event.listen(self.engine, "connect", self._apply_sqlite_settings)
+
+    @staticmethod
+    def _apply_sqlite_settings(dbapi_connection: Any, _connection_record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA foreign_keys=ON;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            logger.debug(
+                "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
+            )
+        except sqlite3.Error as pragma_e:
+            logger.error(f"Failed setting PRAGMA: {pragma_e}")
+        finally:
+            cursor.close()
 
     def _cleanup_failed_initialization(self) -> None:
         """Clean up resources after failed initialization."""
@@ -989,7 +1001,7 @@ def _build_stubbed_db_manager() -> tuple[DatabaseManager, MagicMock, MagicMock, 
     session_factory = MagicMock(side_effect=_make_session)
 
     def stub_initializer() -> None:
-        db_manager._db_init_attempted = True  # type: ignore[protected-access]
+        setattr(db_manager, "_db_init_attempted", True)
         db_manager.engine = engine_mock
         db_manager.Session = session_factory
 
@@ -1006,7 +1018,7 @@ def test_database_manager_initialization() -> None:
     assert db_manager.engine is None, "Engine should be None before initialization"
     assert db_manager.Session is None, "Session should be None before initialization"
     assert (
-        not db_manager._db_ready  # type: ignore[protected-access]
+        not getattr(db_manager, "_db_ready", False)
     ), "Database should not be ready before initialization"
 
 
@@ -1049,13 +1061,15 @@ def test_connection_pooling() -> None:
 
     session = db_manager.get_session()
     assert session is sessions[-1], "get_session should return a stubbed session"
-    assert db_manager._connection_stats["total_connections"] == 1  # type: ignore[protected-access]
-    assert db_manager._connection_stats["active_connections"] == 1  # type: ignore[protected-access]
+    stats = cast(dict[str, Any], getattr(db_manager, "_connection_stats", {}))
+    assert stats["total_connections"] == 1
+    assert stats["active_connections"] == 1
 
     session_mock = cast(MagicMock, session)
     db_manager.return_session(session_mock)
     session_mock.close.assert_called_once()
-    assert db_manager._connection_stats["active_connections"] == 0  # type: ignore[protected-access]
+    stats = cast(dict[str, Any], getattr(db_manager, "_connection_stats", {}))
+    assert stats["active_connections"] == 0
 
 
 def test_database_readiness() -> None:
@@ -1183,7 +1197,7 @@ if __name__ == "__main__":
 
 
 @contextlib.contextmanager
-@error_context("Database Transaction")  # type: ignore[misc]
+@error_context_decorator("Database Transaction")
 def db_transn(session: Session):
     """Context manager that wraps SQLAlchemy transactions with rich logging."""
 
@@ -1277,7 +1291,7 @@ def db_transn(session: Session):
         )
 
 
-@api_retry(max_attempts=3, backoff_factor=2.0)  # type: ignore[misc]
+@api_retry_decorator(max_attempts=3, backoff_factor=2.0)
 def _validate_backup_paths() -> tuple[Path, Path, Path]:
     """Validate and return database plus backup paths."""
 
@@ -1358,8 +1372,8 @@ def _perform_backup_copy(db_path: Path, backup_path: Path) -> None:
         )
 
 
-@timeout_protection(timeout=300)  # type: ignore[misc]
-@error_context("Database Backup Operation")  # type: ignore[misc]
+@timeout_protection_decorator(timeout=300)
+@error_context_decorator("Database Backup Operation")
 def backup_database() -> bool:
     """Create a timestamped backup of the SQLite database file."""
 

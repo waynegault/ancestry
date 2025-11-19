@@ -120,7 +120,7 @@ class APIManager:
         lowered = segment.lower()
         return len(segment) >= 8 and all(ch in "0123456789abcdef-" for ch in lowered)
 
-    def _sanitize_endpoint_label(self, url: str) -> str:
+    def sanitize_endpoint_label(self, url: str) -> str:
         """Normalize URL paths to stable metric labels."""
         try:
             parsed = urlparse(url)
@@ -364,7 +364,9 @@ class APIManager:
         return request_headers
 
     @staticmethod
-    def _parse_api_response(response, api_description: str) -> ApiResponseType:  # type: ignore[no-untyped-def]
+    def _parse_api_response(
+        response: RequestsResponse, api_description: str
+    ) -> ApiResponseType:
         """Parse API response into appropriate format."""
         try:
             json_response = response.json()
@@ -405,7 +407,7 @@ class APIManager:
             API response data or None if failed
         """
         method_upper = method.upper()
-        endpoint_label = self._sanitize_endpoint_label(url)
+        endpoint_label = self.sanitize_endpoint_label(url)
         status_code: Optional[int] = None
         result_label = "failure"
         start_time = time.perf_counter()
@@ -786,12 +788,12 @@ def _test_endpoint_label_sanitization() -> bool:
     """Ensure endpoint labels collapse high-cardinality segments."""
     try:
         api_manager = APIManager()
-        assert api_manager._sanitize_endpoint_label("https://example.com/") == "root"  # type: ignore[protected-access]
-        complex_label = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
+        assert api_manager.sanitize_endpoint_label("https://example.com/") == "root"
+        complex_label = api_manager.sanitize_endpoint_label(
             "https://example.com/api/person/12345/details"
         )
         assert complex_label == "api/person/:param/details"
-        hex_path = api_manager._sanitize_endpoint_label(  # type: ignore[protected-access]
+        hex_path = api_manager.sanitize_endpoint_label(
             "https://example.com/api/match/ABCDEF1234567890/data"
         )
         assert hex_path == "api/match/:param/data"

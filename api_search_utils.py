@@ -27,7 +27,7 @@ auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
@@ -614,7 +614,7 @@ def search_api_for_criteria(
 
 # Helper functions for get_api_family_details
 
-def _validate_api_session(session_manager: SessionManager) -> bool:  # type: ignore[reportUnusedFunction]
+def _validate_api_session(session_manager: SessionManager) -> bool:
     """Validate that session manager is active and valid (browserless capable)."""
     if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
         logger.error("Essential API identifiers not available (not logged in)")
@@ -622,7 +622,7 @@ def _validate_api_session(session_manager: SessionManager) -> bool:  # type: ign
     return True
 
 
-def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:  # type: ignore[reportUnusedFunction]
+def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
     """Resolve tree ID from session manager or config."""
     if tree_id:
         return tree_id
@@ -639,7 +639,7 @@ def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) ->
     return tree_id
 
 
-def _resolve_owner_profile_id(session_manager: SessionManager) -> str:  # type: ignore[reportUnusedFunction]
+def _resolve_owner_profile_id(session_manager: SessionManager) -> str:
     """Resolve owner profile ID from session manager or config."""
     owner_profile_id = session_manager.my_profile_id
     if owner_profile_id:
@@ -652,7 +652,7 @@ def _resolve_owner_profile_id(session_manager: SessionManager) -> str:  # type: 
     return owner_profile_id
 
 
-def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
+def _get_facts_data_from_api(
     session_manager: SessionManager,
     person_id: str,
     tree_id: str,
@@ -674,14 +674,14 @@ def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
     from api_utils import call_edit_relationships_api
 
     # Call the Edit Relationships API
-    api_response = call_edit_relationships_api(
+    api_response: Optional[dict[str, Any]] = call_edit_relationships_api(
         session_manager=session_manager,
         user_id=owner_profile_id,
         tree_id=tree_id,
         person_id=person_id,
     )
 
-    if not api_response or not isinstance(api_response, dict):  # type: ignore[arg-type,misc]
+    if api_response is None:
         logger.warning(f"No data returned from Edit Relationships API for person {person_id}")
         return None
 
@@ -861,7 +861,7 @@ def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) 
     return str(year)
 
 
-def _debug_log_facts_structure(facts_data: Any) -> None:  # type: ignore[reportUnusedFunction]
+def _debug_log_facts_structure(facts_data: Any) -> None:
     """Log top-level structure of the facts data for debugging."""
     if not isinstance(facts_data, dict):
         logger.debug("Family data is not a dict; skipping structure log")
@@ -876,7 +876,7 @@ def _debug_log_facts_structure(facts_data: Any) -> None:  # type: ignore[reportU
             logger.debug(f"  {key}: {type(value).__name__}")
 
 
-def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:  # type: ignore[reportUnusedFunction]
+def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:
     """Return the primary data section containing relationship arrays."""
     if isinstance(facts_data, dict):
         person_section = facts_data.get("person")
@@ -886,7 +886,7 @@ def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:  # type: ig
     return {}
 
 
-def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+def _extract_target_person_info_if_available(data_section: dict[str, Any], result: dict[str, Any]) -> None:
     """Extract target person's own info if present."""
     try:
         target_person = data_section.get("targetPerson")
@@ -897,7 +897,7 @@ def _extract_target_person_info_if_available(data_section: dict[str, Any], resul
         pass
 
 
-def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+def _extract_parents_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
     """Append parents (fathers/mothers) to result['parents']."""
     fathers = data_section.get("fathers", [])
     for father in fathers:
@@ -910,7 +910,7 @@ def _extract_parents_from_data_section(data_section: dict[str, Any], result: dic
             result["parents"].append(_format_person_from_relationship_data(mother))
 
 
-def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
     """Append spouses to result['spouses']."""
     spouses = data_section.get("spouses", [])
     for spouse in spouses:
@@ -918,7 +918,7 @@ def _extract_spouses_from_data_section(data_section: dict[str, Any], result: dic
             result["spouses"].append(_format_person_from_relationship_data(spouse))
 
 
-def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:  # type: ignore[reportUnusedFunction]
+def _extract_children_from_data_section(data_section: dict[str, Any], result: dict[str, Any]) -> None:
     """Append children (flattened) to result['children']."""
     children_field = data_section.get("children", [])
     if not isinstance(children_field, list):
@@ -930,6 +930,21 @@ def _extract_children_from_data_section(data_section: dict[str, Any], result: di
                     result["children"].append(_format_person_from_relationship_data(child))
         elif isinstance(item, dict):
             result["children"].append(_format_person_from_relationship_data(item))
+
+
+# Keep legacy relationship helpers reachable for diagnostic scripts and tests.
+LEGACY_FAMILY_DETAIL_HELPERS: tuple[Callable[..., Any], ...] = (
+    _validate_api_session,
+    _resolve_tree_id,
+    _resolve_owner_profile_id,
+    _get_facts_data_from_api,
+    _debug_log_facts_structure,
+    _get_data_section_from_facts,
+    _extract_target_person_info_if_available,
+    _extract_parents_from_data_section,
+    _extract_spouses_from_data_section,
+    _extract_children_from_data_section,
+)
 
 
 def _find_target_person_in_list(persons: list[Any], person_id: str) -> Optional[dict[str, Any]]:
@@ -1211,6 +1226,9 @@ def _test_module_initialization() -> None:
     result = getattr(config_schema, "TEST_KEY_12345", "default_value")
     assert isinstance(result, str), "Should return string value"
     assert result == "default_value", "Should return default value for missing keys"
+
+    # Ensure legacy helper registry remains populated for external diagnostics.
+    assert LEGACY_FAMILY_DETAIL_HELPERS, "Legacy helper registry should not be empty"
 
     # Test configuration structure
     assert isinstance(

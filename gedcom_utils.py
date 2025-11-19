@@ -56,7 +56,7 @@ import re
 import sys
 import time
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -71,22 +71,37 @@ from typing import (
 
 # --- Third-party imports ---
 try:
-    from ged4py.model import Individual, Name, NameRec, Record
-    from ged4py.parser import GedcomReader
+    from ged4py.model import (
+        Individual as _GedcomIndividual,
+        Name as _GedcomName,
+        NameRec as _GedcomNameRec,
+        Record as _GedcomRecord,
+    )
+    from ged4py.parser import GedcomReader as _GedcomReader
 except ImportError:
-    GedcomReader = type(None)
-    Individual = type(None)
-    Record = type(None)
-    Name = type(None)
-    NameRec = type(None)  # type: ignore
+    _GedcomReader = type(None)
+    _GedcomIndividual = type(None)
+    _GedcomRecord = type(None)
+    _GedcomName = type(None)
+    _GedcomNameRec = type(None)
     print(
         "ERROR: ged4py library not found. This script requires ged4py (`pip install ged4py`)"
     )
 
+GedcomReader = _GedcomReader
+Individual = _GedcomIndividual
+Record = _GedcomRecord
+Name = _GedcomName
+NameRec = _GedcomNameRec
+
+dateparser: Optional[Any] = None
 try:
-    import dateparser
+    import dateparser as _dateparser
+
+    dateparser = _dateparser
     _dateparser_available = True  # Use lowercase to avoid constant redefinition warning
 except ImportError:
+    dateparser = None
     _dateparser_available = False
     print(
         "WARNING: dateparser library not found. Date parsing will be limited. Run 'pip install dateparser'"
@@ -263,8 +278,9 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
 def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[GedcomIndividualType], str]:
     """Validate and extract individual from input, handling wrapped values."""
     if not _is_individual(indi):
-        if hasattr(indi, "value") and _is_individual(getattr(indi, "value", None)):
-            return indi.value, ""  # type: ignore
+        wrapped_value = getattr(indi, "value", None)
+        if _is_individual(wrapped_value):
+            return cast(GedcomIndividualType, wrapped_value), ""
         logger.warning(f"_get_full_name called with non-Individual type: {type(indi)}")
         return None, "Unknown (Invalid Type)"
 
@@ -300,7 +316,11 @@ def _try_sub_tag_format_method(indi: GedcomIndividualType, indi_id_log: str) -> 
         return None
 
     try:
-        return name_tag.format()  # type: ignore
+        format_method = getattr(name_tag, "format", None)
+        if callable(format_method):
+            formatted = format_method()
+            return formatted if isinstance(formatted, str) else None
+        return None
     except Exception as fmt_err:
         logger.warning(f"Error calling indi.sub_tag(TAG_NAME).format() for {indi_id_log}: {fmt_err}")
         return None
@@ -475,12 +495,12 @@ def _clean_date_string(date_str: str) -> Optional[str]:
 
 def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
     """Try parsing with dateparser library if available."""
-    if not DATEPARSER_AVAILABLE:
+    if not DATEPARSER_AVAILABLE or dateparser is None:
         return None
 
     try:
         settings = {"PREFER_DAY_OF_MONTH": "first", "REQUIRE_PARTS": ["year"]}
-        parsed_dt = dateparser.parse(cleaned_str, settings=settings)  # type: ignore
+        parsed_dt = dateparser.parse(cleaned_str, settings=settings)
 
         if parsed_dt:
             pass
@@ -611,10 +631,9 @@ def _clean_display_date(raw_date_str: Optional[str]) -> str:  # ... implementati
 def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Optional[GedcomIndividualType]:
     """Validate and normalize individual to ensure it's a valid GedcomIndividualType."""
     if not _is_individual(individual):
-        if hasattr(individual, "value") and _is_individual(getattr(individual, "value", None)):
-            # Type ignore is needed because the type checker doesn't understand the dynamic nature
-            # of this code. We've already checked that individual.value is a valid GedcomIndividualType
-            return individual.value  # type: ignore
+        wrapped_value = getattr(individual, "value", None)
+        if _is_individual(wrapped_value):
+            return cast(GedcomIndividualType, wrapped_value)
         logger.warning(f"_get_event_info invalid input type: {type(individual)}")
         return None
 
@@ -897,11 +916,16 @@ def format_relative_info(relative: Any) -> str:  # ... implementation ...
 # _reconstruct_path removed - unused 89-line helper function for BFS path reconstruction
 
 
-def _validate_bfs_inputs(start_id: str, end_id: str, id_to_parents: Any, id_to_children: Any) -> bool:
+def _validate_bfs_inputs(
+    start_id: str,
+    end_id: str,
+    id_to_parents: Optional[Mapping[str, Collection[str]]],
+    id_to_children: Optional[Mapping[str, Collection[str]]],
+) -> bool:
     """Validate inputs for bidirectional BFS search."""
     if start_id == end_id:
         return True
-    if id_to_parents is None or id_to_children is None:  # type: ignore[unreachable]
+    if id_to_parents is None or id_to_children is None:
         logger.error("[FastBiBFS] Relationship maps are None.")
         return False
     if not start_id or not end_id:
@@ -1971,9 +1995,10 @@ class GedcomData:
             # Initialize GedcomReader with the file path as a string
             # The constructor takes a file parameter (file name or file object)
             # There seems to be a discrepancy between the documentation and the actual implementation
-            # We'll try to create it with a positional argument, ignoring the type checker warning
-            # @type: ignore is used to suppress the type checker warning
-            self.reader = GedcomReader(str(self.path))  # type: ignore
+            # We'll call the reader via a casted factory to satisfy the type checker while
+            # still passing the file path string required at runtime.
+            reader_factory = cast(Callable[[Any], GedcomReaderType], GedcomReader)
+            self.reader = reader_factory(str(self.path))
             load_time = time.time() - load_start
             logger.debug(f"GEDCOM file loaded in {load_time:.2f}s.")
         except Exception as e:
@@ -2067,7 +2092,8 @@ class GedcomData:
         if norm_id in self.indi_index:
             logger.warning(f"Duplicate normalized INDI ID found: {norm_id}. Overwriting.")
 
-        self.indi_index[norm_id] = indi_record  # type: ignore
+        safe_record = cast(GedcomIndividualType, indi_record)
+        self.indi_index[norm_id] = safe_record
         return True, False
 
     def _build_indi_index(self) -> None:

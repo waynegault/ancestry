@@ -8,40 +8,50 @@ Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercu
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import re
 import subprocess
 import sys
 import textwrap
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 try:
-    from openai import OpenAI
+    from openai import OpenAI as _OpenAI
 except ImportError:  # pragma: no cover - optional dependency
-    OpenAI = None  # type: ignore[assignment]
+    _OpenAI = None
+
+OpenAI: Any | None = _OpenAI
 
 genai_import_error: str | None = None
 try:
-    import google.generativeai as genai  # type: ignore[import-untyped]
+    genai = importlib.import_module("google.generativeai")
 except Exception as import_error:  # pragma: no cover - optional dependency
-    genai = None  # type: ignore[assignment]
+    genai = None
     genai_import_error = str(import_error)
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _load_dotenv
 except ImportError:  # pragma: no cover - optional dependency
-    load_dotenv = None  # type: ignore[assignment]
+    _load_dotenv = None
+
+load_dotenv: Callable[..., Any] | None = _load_dotenv
 
 try:
-    from xai_sdk import Client as XAIClient  # type: ignore
-    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
+    from xai_sdk import Client as _XAIClient
+    from xai_sdk.chat import system as _xai_system_message, user as _xai_user_message
 except ImportError:  # pragma: no cover - optional dependency
-    XAIClient = None  # type: ignore[assignment]
-    xai_system_message = None  # type: ignore[assignment]
-    xai_user_message = None  # type: ignore[assignment]
+    _XAIClient = None
+    _xai_system_message = None
+    _xai_user_message = None
+
+XAIClient: Callable[..., Any] | None = cast(Callable[..., Any] | None, _XAIClient)
+xai_system_message: Callable[..., Any] | None = _xai_system_message
+xai_user_message: Callable[..., Any] | None = _xai_user_message
 
 DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
 PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception", "grok")
@@ -63,6 +73,8 @@ PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "inception": ("INCEPTION_API_KEY",),
     "grok": ("XAI_API_KEY",),
 }
+
+ListModelsFn = Callable[[], Iterable[Any]]
 
 
 @dataclass
@@ -371,14 +383,15 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
 def _describe_gemini_models(model_name: str, messages: list[str]) -> None:
     if genai is None:
         return
-    list_models_fn = getattr(genai, "list_models", None)
-    if not callable(list_models_fn):
+    list_models_raw = getattr(genai, "list_models", None)
+    if not callable(list_models_raw):
         return
+    list_models_fn = cast(ListModelsFn, list_models_raw)
     try:
         messages.append("\n📋 Available Gemini models with generateContent support:")
         model_count = 0
         found_configured = False
-        for model in list_models_fn():  # type: ignore[misc]
+        for model in list_models_fn():
             methods = getattr(model, "supported_generation_methods", [])
             if "generateContent" not in methods:
                 continue
@@ -406,12 +419,13 @@ def _describe_gemini_models(model_name: str, messages: list[str]) -> None:
 def _suggest_gemini_model_alternatives(error_msg: str) -> str:
     if genai is None:
         return error_msg
-    list_models_fn = getattr(genai, "list_models", None)
-    if not callable(list_models_fn):
+    list_models_raw = getattr(genai, "list_models", None)
+    if not callable(list_models_raw):
         return error_msg
+    list_models_fn = cast(ListModelsFn, list_models_raw)
     try:
         available_models: list[str] = []
-        for model in list_models_fn():  # type: ignore[misc]
+        for model in list_models_fn():
             methods = getattr(model, "supported_generation_methods", [])
             if "generateContent" not in methods:
                 continue

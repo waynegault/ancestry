@@ -24,7 +24,7 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 # === THIRD-PARTY IMPORTS ===
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -54,6 +54,7 @@ from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import (
     ConversationLog,
+    ConversationState,
     MessageDirectionEnum,
     MessageTemplate,
     Person,
@@ -90,6 +91,10 @@ EXCLUSION_KEYWORDS = [
 
 MAX_OTHER_MESSAGE_WORDS_FOR_AI = 25
 NAME_LIKE_PATTERN = re.compile(r"\b[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?\s+[A-Z][a-z]+(?:[-'][A-Z][a-z]+)?\b")
+
+DecoratorCallable = Callable[[Callable[..., Any]], Callable[..., Any]]
+DecoratorFactory = Callable[..., DecoratorCallable]
+error_context_decorator = cast(DecoratorFactory, error_context)
 
 
 def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
@@ -1338,44 +1343,46 @@ class PersonProcessor:
             log_prefix: Logging prefix
         """
         try:
-            import json
-
-            from database import ConversationState
-
             if not self.db_state.session:
                 logger.warning(f"{log_prefix}: No database session, skipping conversation state update")
                 return
 
             # Get or create conversation state
-            conv_state = self.db_state.session.query(ConversationState).filter_by(people_id=person.id).first()
+            conv_state = (
+                self.db_state.session.query(ConversationState)
+                .filter_by(people_id=person.id)
+                .first()
+            )
 
-            if not conv_state:
+            if conv_state is None:
                 conv_state = ConversationState(people_id=person.id)
                 self.db_state.session.add(conv_state)
                 logger.debug(f"{log_prefix}: Created new conversation state")
 
             # Update conversation phase
-            conv_state.conversation_phase = self._determine_conversation_phase(context_logs)  # type: ignore[assignment]
+            conv_phase = self._determine_conversation_phase(context_logs)
+            conv_state.conversation_phase = conv_phase
 
             # Update engagement score
-            conv_state.engagement_score = self._calculate_engagement_score(extracted_data, context_logs)  # type: ignore[assignment]
+            engagement_score = self._calculate_engagement_score(extracted_data, context_logs)
+            conv_state.engagement_score = engagement_score
 
             # Update mentioned people (JSON-encoded)
             mentioned_people = extracted_data.get("mentioned_people", [])
             if mentioned_people:
                 # Store just the names for simplicity
                 people_names = [p.get("name", "Unknown") for p in mentioned_people]
-                conv_state.mentioned_people = json.dumps(people_names)  # type: ignore[assignment]
+                conv_state.mentioned_people = json.dumps(people_names)
 
             # Update last topic
             topics = extracted_data.get("topics", [])
             if topics:
-                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)  # type: ignore[assignment]
+                conv_state.last_topic = topics[0] if isinstance(topics, list) else str(topics)
 
             # Update pending questions (JSON-encoded)
             questions = extracted_data.get("questions", [])
             if questions:
-                conv_state.pending_questions = json.dumps(questions)  # type: ignore[assignment]
+                conv_state.pending_questions = json.dumps(questions)
 
             # Phase 4: Calculate next contact date based on engagement and status
             current_engagement = safe_column_value(conv_state, "engagement_score", 0)
@@ -1383,8 +1390,8 @@ class PersonProcessor:
                 person, current_engagement
             )
             if next_contact_date:
-                conv_state.next_action_date = next_contact_date  # type: ignore[assignment]
-                conv_state.next_action = "send_follow_up"  # type: ignore[assignment]
+                conv_state.next_action_date = next_contact_date
+                conv_state.next_action = "send_follow_up"
                 logger.debug(f"{log_prefix}: Next contact scheduled for {next_contact_date}")
 
             # Commit changes
@@ -1692,7 +1699,7 @@ class PersonProcessor:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                setattr(message, "custom_reply_sent_at", datetime.now(timezone.utc))
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -2093,7 +2100,10 @@ class PersonProcessor:
             location_part = f"\n{user_location}" if user_location else ""
             signature = f"\n\nBest regards,\n{user_name}{location_part}"
             logger.info(f"{log_prefix}: Using custom genealogical reply with signature.")
-            return custom_reply + signature, self.msg_config.custom_reply_msg_type_id  # type: ignore[return-value]
+            message_type_id = self.msg_config.custom_reply_msg_type_id or self.msg_config.ack_msg_type_id
+            if message_type_id is None:
+                raise RuntimeError("Message template IDs are not configured.")
+            return custom_reply + signature, message_type_id
 
         first_name = safe_column_value(person, "first_name", "")
         username = safe_column_value(person, "username", "")
@@ -2105,7 +2115,9 @@ class PersonProcessor:
             user_name = getattr(config_schema, "user_name", "Tree Owner")
             msg = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
         logger.info(f"{log_prefix}: Using standard acknowledgement template.")
-        return msg, self.msg_config.ack_msg_type_id  # type: ignore[return-value]
+        if self.msg_config.ack_msg_type_id is None:
+            raise RuntimeError("Acknowledgement message type ID is not configured.")
+        return msg, self.msg_config.ack_msg_type_id
 
     @staticmethod
     def _add_relationship_annotation(lines: list[str], rel_str: str) -> None:
@@ -2334,7 +2346,7 @@ class PersonProcessor:
         ):
             try:
                 if self.db_state.session:
-                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)  # type: ignore[assignment]
+                    setattr(latest_message, "custom_reply_sent_at", datetime.now(timezone.utc))
                     self.db_state.session.add(latest_message)
                     self.db_state.session.flush()
                     logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")
@@ -2472,7 +2484,7 @@ class BatchCommitManager:
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=2400)  # 40 minutes for productive message processing
 @graceful_degradation(fallback_value=False)
-@error_context("action9_process_productive")  # type: ignore[misc]
+@error_context_decorator("action9_process_productive")
 def process_productive_messages(session_manager: SessionManager) -> bool:
     """
     Simplified main function for Action 9. Processes productive messages by:
@@ -2860,7 +2872,9 @@ def _get_default_ai_response_structure() -> dict[str, Any]:
     }
 
 
-def _validate_with_pydantic(ai_response: dict[str, Any], log_prefix: str) -> Optional[dict[str, Any]]:  # type: ignore[misc]
+def _validate_with_pydantic(
+    ai_response: dict[str, Any], log_prefix: str
+) -> Optional[dict[str, Any]]:
     """Try to validate AI response with Pydantic schema."""
     try:
         validated_response = AIResponse.model_validate(ai_response)
@@ -2872,7 +2886,9 @@ def _validate_with_pydantic(ai_response: dict[str, Any], log_prefix: str) -> Opt
         return None
 
 
-def _salvage_extracted_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, list[Any]]:  # type: ignore[misc]
+def _salvage_extracted_data(
+    ai_response: dict[str, Any], log_prefix: str
+) -> dict[str, list[Any]]:
     """Try to salvage extracted_data from malformed AI response."""
     result = _get_default_ai_response_structure()["extracted_data"]
 
@@ -2899,7 +2915,9 @@ def _salvage_extracted_data(ai_response: dict[str, Any], log_prefix: str) -> dic
     return result
 
 
-def _salvage_suggested_tasks(ai_response: dict[str, Any], log_prefix: str) -> list[Any]:  # type: ignore[misc]
+def _salvage_suggested_tasks(
+    ai_response: dict[str, Any], log_prefix: str
+) -> list[Any]:
     """Try to salvage suggested_tasks from malformed AI response."""
     if "suggested_tasks" not in ai_response:
         logger.warning(f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list.")
@@ -2918,7 +2936,9 @@ def _salvage_suggested_tasks(ai_response: dict[str, Any], log_prefix: str) -> li
     ]
 
 
-def _salvage_partial_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, Any]:  # type: ignore[misc]
+def _salvage_partial_data(
+    ai_response: dict[str, Any], log_prefix: str
+) -> dict[str, Any]:
     """Try to salvage partial data from malformed AI response."""
     try:
         extracted_data = _salvage_extracted_data(ai_response, log_prefix)
@@ -3027,11 +3047,9 @@ def _format_context_for_ai_extraction(
         # Use a simple boolean value to avoid SQLAlchemy type issues
         author_label = "USER: " if bool(is_in_direction) else "SCRIPT: "
 
-        # Step 3b: Get message content and handle potential None
-        content = log.latest_message_content or ""
-        # Ensure content is a string
-        if not isinstance(content, str):  # type: ignore[arg-type,misc]
-            content = str(content)
+        # Step 3b: Get message content and handle potential None/SQLAlchemy proxies
+        content_raw: Any = getattr(log, "latest_message_content", "") or ""
+        content = content_raw if isinstance(content_raw, str) else str(content_raw)
 
         # Step 3c: Truncate content by word count if necessary
         words = content.split()
@@ -3654,7 +3672,7 @@ def _test_enhanced_task_creation() -> None:
 
     for case in cases:
         person = _build_person(**case["person_kwargs"])
-        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)  # type: ignore[attr-defined]
+        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)
         assert importance == case["expected_importance"], (
             f"Unexpected priority for {person.username}: {importance}"
         )
@@ -3789,7 +3807,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score1 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score1 = processor._score_response_quality(
         response_text=high_quality_response,
         lookup_results=lookup_results,
         person=mock_person
@@ -3806,7 +3824,7 @@ def _test_response_quality_scoring() -> None:
     more details.
     """
 
-    score2 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score2 = processor._score_response_quality(
         response_text=medium_quality_response,
         lookup_results=[],
         person=mock_person
@@ -3820,7 +3838,7 @@ def _test_response_quality_scoring() -> None:
     Thanks for the message. I'll check my records.
     """
 
-    score3 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score3 = processor._score_response_quality(
         response_text=low_quality_response,
         lookup_results=[],
         person=mock_person
@@ -3830,7 +3848,7 @@ def _test_response_quality_scoring() -> None:
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
 
     # Test Case 4: Edge case - empty response
-    score4 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score4 = processor._score_response_quality(
         response_text="",
         lookup_results=[],
         person=mock_person
@@ -3841,7 +3859,7 @@ def _test_response_quality_scoring() -> None:
 
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
-    score5 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score5 = processor._score_response_quality(
         response_text=very_long_response,
         lookup_results=[],
         person=mock_person
@@ -3866,7 +3884,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score6 = processor._score_response_quality(  # type: ignore[attr-defined]
+    score6 = processor._score_response_quality(
         response_text=unused_lookup_response,
         lookup_results=rich_lookup_results,
         person=mock_person
@@ -3990,7 +4008,7 @@ def action9_process_productive_module_tests() -> bool:
     skip_live_api_tests = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
     # Define all tests in a data structure to reduce complexity
-    tests: list[tuple[str, Callable[[], object], str, str, str]] = [
+    tests: list[tuple[str, Callable[[], Any], str, str, str]] = [
         # Removed smoke test: Module constants, classes, and function availability
 
         ("safe_column_value(), should_exclude_message() core functions",
@@ -4080,7 +4098,7 @@ def action9_process_productive_module_tests() -> bool:
 
     # Only add database session tests if not skipping live API tests
     if not skip_live_api_tests:
-        tests.extend([  # type: ignore[arg-type]
+        tests.extend([
             ("Database session availability (real authenticated session)",
              _test_database_session_availability,
              "Database session is available and functional with real Ancestry authentication",

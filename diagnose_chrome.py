@@ -12,6 +12,7 @@ Diagnoses common Chrome/ChromeDriver issues including:
 """
 
 import contextlib
+import importlib
 import json
 import os
 import subprocess
@@ -19,6 +20,20 @@ import sys
 import winreg
 from pathlib import Path
 from typing import Any
+
+_uc_module: Any | None = None
+
+
+def _load_uc_module() -> Any | None:
+    """Return the undetected_chromedriver module when available."""
+    global _uc_module
+    if _uc_module is not None:
+        return _uc_module
+    try:
+        _uc_module = importlib.import_module("undetected_chromedriver")
+    except ImportError:
+        _uc_module = None
+    return _uc_module
 
 
 def print_header(title: str) -> None:
@@ -149,11 +164,11 @@ def check_chrome_installation() -> tuple[bool, str | None]:
     return True, None  # Chrome exists even if we can't get version
 
 
-def check_running_processes() -> dict[str, Any]:
+def check_running_processes() -> dict[str, list[str]]:
     """Check for running Chrome/ChromeDriver processes."""
     print_header("Running Process Check")
 
-    processes = {"chrome": [], "chromedriver": []}
+    processes: dict[str, list[str]] = {"chrome": [], "chromedriver": []}
 
     try:
         # Check for Chrome processes
@@ -417,10 +432,8 @@ def fix_chromedriver_version_mismatch(chrome_version: str) -> bool:
     try:
         print(f"Downloading ChromeDriver to match Chrome {chrome_version}...")
 
-        # Import undetected_chromedriver
-        try:
-            import undetected_chromedriver as uc  # type: ignore[import-untyped]
-        except ImportError:
+        uc = _load_uc_module()
+        if uc is None:
             print("✗ undetected-chromedriver not installed")
             print("  Run: pip install undetected-chromedriver")
             return False
@@ -573,7 +586,7 @@ def _build_version_guidance(
     return None, success_note
 
 
-def _build_process_issue(process_entries: list | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:  # type: ignore[type-arg]
+def _build_process_issue(process_entries: list[str] | None, title: str, details: list[str]) -> tuple[str, list[str]] | None:
     """Return process-related recommendation when entries are present."""
     if not process_entries:
         return None
@@ -630,7 +643,7 @@ def _build_cache_issue(cache_ok: bool) -> tuple[str, list[str]] | None:
 
 
 def provide_recommendations(
-    processes: dict,  # type: ignore[type-arg]
+    processes: dict[str, list[str]],
     profile_ok: bool,
     disk_ok: bool,
     cache_ok: bool,
@@ -763,7 +776,9 @@ def _attempt_uc_autofix(
     try:
         from shutil import rmtree
 
-        import undetected_chromedriver as uc  # type: ignore[import-untyped]
+        uc = _load_uc_module()
+        if uc is None:
+            return False, "undetected-chromedriver is not installed"
 
         uc_dir = Path(os.environ.get("APPDATA", "")) / "undetected_chromedriver"
         if uc_dir.exists():

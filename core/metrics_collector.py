@@ -107,11 +107,16 @@ class WindowedStats:
     p99: float
 
 
+def _metric_series_map_factory() -> dict[str, deque[MetricPoint]]:
+    """Return an empty dict for per-metric deque tracking."""
+    return {}
+
+
 @dataclass
 class ServiceMetrics:
     """Aggregated metrics for a service."""
     service_name: str
-    metrics: dict[str, deque[MetricPoint]] = field(default_factory=dict)  # type: ignore
+    metrics: dict[str, deque[MetricPoint]] = field(default_factory=_metric_series_map_factory)
     windows: dict[str, dict[str, WindowedStats]] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 

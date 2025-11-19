@@ -5112,12 +5112,11 @@ def _perform_batch_api_prefetches(
     return _PrefetchArtifacts(prefetched_data, timings, call_counts)
 
 
-_previous_memory_mb: Optional[float] = None
+_memory_cleanup_state: dict[str, Optional[float]] = {"previous_mb": None}
 
 
 def _perform_memory_cleanup(current_page: int) -> None:
     """Perform memory cleanup for batch processing."""
-    global _previous_memory_mb
     try:
         import gc
         import os
@@ -5146,11 +5145,12 @@ def _perform_memory_cleanup(current_page: int) -> None:
             gc.collect(0)
             logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
 
-        if _previous_memory_mb is not None:
-            memory_growth = current_memory_mb - _previous_memory_mb
+        previous_memory_mb = _memory_cleanup_state.get("previous_mb")
+        if previous_memory_mb is not None:
+            memory_growth = current_memory_mb - previous_memory_mb
             if memory_growth > 50:
                 logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
-        _previous_memory_mb = current_memory_mb
+        _memory_cleanup_state["previous_mb"] = current_memory_mb
 
     except Exception as cleanup_exc:
         logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
@@ -8398,11 +8398,7 @@ def _extract_best_prediction(
     top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
 
     paths_raw = best_pred.get("pathsToMatch", [])
-    path_entries: Sequence[Any]
-    if isinstance(paths_raw, Sequence):
-        path_entries = paths_raw
-    else:
-        path_entries = []
+    path_entries: Sequence[Any] = paths_raw if isinstance(paths_raw, Sequence) else []
 
     labels: list[str] = []
     for path in path_entries:

@@ -49,62 +49,70 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+import importlib
 import json
 import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
 try:
     from openai import (
-        APIConnectionError,
-        APIError,
-        AuthenticationError,
-        OpenAI,
-        RateLimitError,
+        APIConnectionError as _APIConnectionError,
+        APIError as _APIError,
+        AuthenticationError as _AuthenticationError,
+        OpenAI as _OpenAI,
+        RateLimitError as _RateLimitError,
     )
-
-    openai_available = True
 except ImportError:
-    OpenAI = None  # type: ignore
-    APIConnectionError = None  # type: ignore
-    RateLimitError = None  # type: ignore
-    AuthenticationError = None  # type: ignore
-    APIError = None  # type: ignore
-    openai_available = False
+    _OpenAI = None
+    _APIConnectionError = None
+    _RateLimitError = None
+    _AuthenticationError = None
+    _APIError = None
+
+OpenAI: Any | None = _OpenAI
+APIConnectionError: Any | None = _APIConnectionError
+RateLimitError: Any | None = _RateLimitError
+AuthenticationError: Any | None = _AuthenticationError
+APIError: Any | None = _APIError
+openai_available = OpenAI is not None
+if not openai_available:
     logging.warning("OpenAI library not found. DeepSeek functionality disabled.")
 
 # Attempt Google Gemini import
 try:
-    from google import genai  # type: ignore  # Updated to google-genai package
-    from google.genai import errors as genai_errors, types as genai_types  # type: ignore
-
-    genai_available = True
-    if not hasattr(genai, "Client"):
-        genai_available = False
-        logging.warning("Google GenAI library structure seems incomplete.")
+    genai = cast(Any, importlib.import_module("google.genai"))
+    genai_errors = cast(Any, importlib.import_module("google.genai.errors"))
+    genai_types = cast(Any, importlib.import_module("google.genai.types"))
 except Exception:
-    genai = None  # type: ignore
-    genai_types = None  # type: ignore
-    genai_errors = None  # type: ignore
-    genai_available = False
+    genai = None
+    genai_errors = None
+    genai_types = None
+
+genai_available = genai is not None and hasattr(genai, "Client")
+if not genai_available:
     logging.warning(
-        "Google GenAI library not found. Gemini functionality disabled."
+        "Google GenAI library not found or incomplete. Gemini functionality disabled."
     )
 
 # Attempt Grok (xAI) import
 try:
-    from xai_sdk import Client as XAIClient  # type: ignore
-    from xai_sdk.chat import system as xai_system_message, user as xai_user_message  # type: ignore
-
-    xai_available = True
+    from xai_sdk import Client as _XAIClient
+    from xai_sdk.chat import system as _xai_system_message, user as _xai_user_message
 except ImportError:
-    XAIClient = None  # type: ignore
-    xai_system_message = None  # type: ignore
-    xai_user_message = None  # type: ignore
-    xai_available = False
+    _XAIClient = None
+    _xai_system_message = None
+    _xai_user_message = None
+
+XAIClient: Callable[..., Any] | None = _XAIClient
+xai_system_message: Callable[..., Any] | None = _xai_system_message
+xai_user_message: Callable[..., Any] | None = _xai_user_message
+xai_available = XAIClient is not None
+if not xai_available:
     logging.warning("xai-sdk library not found. Grok functionality disabled.")
 
 # === LOCAL IMPORTS ===
@@ -126,20 +134,48 @@ config_schema = config_manager.get_config()
 from test_utilities import create_standard_test_runner
 
 # --- Constants and Prompts ---
+_get_prompt: Callable[[str], str | None] | None
+_load_prompts: Callable[[], dict[str, Any]] | None
 try:
-    from ai_prompt_utils import get_prompt, load_prompts
-
-    USE_JSON_PROMPTS = True
-    logger.debug("AI prompt utilities loaded successfully - will use JSON prompts")
+    from ai_prompt_utils import get_prompt as _get_prompt, load_prompts as _load_prompts
 except ImportError:
+    _get_prompt = None
+    _load_prompts = None
+
+USE_JSON_PROMPTS = _get_prompt is not None and _load_prompts is not None
+if USE_JSON_PROMPTS:
+    assert _get_prompt is not None
+    assert _load_prompts is not None
+    get_prompt = _get_prompt
+    load_prompts = _load_prompts
+    logger.debug("AI prompt utilities loaded successfully - will use JSON prompts")
+else:
     logger.warning("ai_prompt_utils module not available, using fallback prompts")
-    USE_JSON_PROMPTS = False  # type: ignore
-    # Provide minimal fallback stubs so later references are defined
-    pass  # Optional type import not needed
-    def get_prompt(prompt_key: str) -> str | None:  # type: ignore[misc]
+
+    def get_prompt(prompt_key: str) -> str | None:
         _ = prompt_key  # Fallback stub - parameter required for API compatibility
         return None
-    def load_prompts() -> dict[str, Any]:  # type: ignore
+_get_prompt_with_experiment: Callable[..., str | None] | None = None
+_get_prompt_version: Callable[[str], str | None] | None = None
+try:
+    prompt_utils_module = importlib.import_module("ai_prompt_utils")
+    _get_prompt_with_experiment = getattr(prompt_utils_module, "get_prompt_with_experiment", None)
+    _get_prompt_version = getattr(prompt_utils_module, "get_prompt_version", None)
+except Exception:
+    _get_prompt_with_experiment = None
+    _get_prompt_version = None
+
+try:
+    prompt_telemetry_module = importlib.import_module("prompt_telemetry")
+    _record_extraction_experiment_event = getattr(
+        prompt_telemetry_module,
+        "record_extraction_experiment_event",
+        None,
+    )
+except Exception:
+    _record_extraction_experiment_event = None
+
+    def load_prompts() -> dict[str, Any]:
         return {"prompts": {}}
 
 # Based on the prompt from the original ai_interface.py (and updated with more categories from ai_prompts.json example)
@@ -152,6 +188,9 @@ EXPECTED_INTENT_CATEGORIES = {
     "OTHER",
     "DESIST",  # Added from the original file's SYSTEM_PROMPT_INTENT
 }
+
+ListModelsFn = Callable[[], Iterable[Any]]
+GenerativeModelFactory = Callable[[str], Any]
 
 # Fallback system prompt for Action 7 (Intent Classification)
 # Combined elements from original file and ai_prompts.json example.
@@ -433,13 +472,15 @@ def _list_available_gemini_models() -> list[str]:
     if not genai_available:
         return []
 
-    if not hasattr(genai, "list_models"):
+    list_models_obj = getattr(genai, "list_models", None)
+    if not callable(list_models_obj):
         logger.debug("genai.list_models() not available in this SDK version")
         return []
+    list_models_fn = cast(ListModelsFn, list_models_obj)
 
     try:
         models = []
-        for model in genai.list_models():  # type: ignore[attr-defined]
+        for model in list_models_fn():
             if hasattr(model, "supported_generation_methods"):
                 methods = getattr(model, "supported_generation_methods", [])
                 if "generateContent" in methods:
@@ -507,9 +548,16 @@ def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
             logger.error(f"💡 Or choose from: {', '.join(available[:3])}")
         return None
 
+    configure_fn = getattr(genai, "configure", None)
+    model_cls = getattr(genai, "GenerativeModel", None)
+    if not callable(configure_fn) or model_cls is None:
+        logger.error("_call_ai_model: Gemini SDK missing configure/GenerativeModel")
+        return None
+
     try:
-        genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
+        configure_fn(api_key=api_key)
+        model_factory = cast(GenerativeModelFactory, model_cls)
+        model = model_factory(model_name)
         logger.debug(f"✅ Gemini model '{model_name}' initialized successfully")
         return model
     except Exception as e:
@@ -523,11 +571,13 @@ def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
 
 def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any | None:
     """Create Gemini generation config."""
-    if not hasattr(genai, "GenerationConfig"):
+    generation_config_cls = getattr(genai, "GenerationConfig", None)
+    if generation_config_cls is None:
         return None
 
     try:
-        return genai.GenerationConfig(  # type: ignore[attr-defined]
+        generation_config_factory = cast(Callable[..., Any], generation_config_cls)
+        return generation_config_factory(
             candidate_count=1,
             max_output_tokens=max_tokens,
             temperature=temperature,
@@ -538,11 +588,13 @@ def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any
 
 def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Any | None) -> Any | None:
     """Generate content using Gemini model."""
-    if not hasattr(model, "generate_content"):
+    generate_content = getattr(model, "generate_content", None)
+    if not callable(generate_content):
         return None
 
     try:
-        return model.generate_content(full_prompt, generation_config=generation_config)  # type: ignore[call-arg]
+        generate_content_fn = cast(Callable[..., Any], generate_content)
+        return generate_content_fn(full_prompt, generation_config=generation_config)
     except Exception as e:
         logger.error(f"Gemini generation failed: {e}")
         return None
@@ -709,9 +761,11 @@ def _handle_rate_limit_error(session_manager: SessionManager, source: str | None
     if session_manager and hasattr(session_manager, "rate_limiter"):
         try:
             drl = getattr(session_manager, "rate_limiter", None)
-            if drl is not None and hasattr(drl, "on_429_error"):
-                endpoint = source or "AI Provider"
-                drl.on_429_error(endpoint)  # type: ignore[misc]
+            endpoint = source or "AI Provider"
+            if drl is not None:
+                on_429 = getattr(drl, "on_429_error", None)
+                if callable(on_429):
+                    on_429(endpoint)
         except Exception:
             pass
 
@@ -935,7 +989,7 @@ def _handle_authentication_errors(e: Exception, provider: str) -> None:
     """Handle authentication-related errors."""
     if AuthenticationError and isinstance(e, AuthenticationError):
         logger.error(f"AI Authentication Error ({provider}): {e}")
-    elif genai_errors and hasattr(genai_errors, "PermissionDenied") and isinstance(e, genai_errors.PermissionDenied):  # type: ignore
+    elif genai_errors and hasattr(genai_errors, "PermissionDenied") and isinstance(e, genai_errors.PermissionDenied):
         logger.error(f"Gemini Permission Denied: {e}")
 
 
@@ -944,7 +998,7 @@ def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: Sess
     if RateLimitError and isinstance(e, RateLimitError):
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
-    elif genai_errors and hasattr(genai_errors, "ResourceExhausted") and isinstance(e, genai_errors.ResourceExhausted):  # type: ignore
+    elif genai_errors and hasattr(genai_errors, "ResourceExhausted") and isinstance(e, genai_errors.ResourceExhausted):
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
         _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
 
@@ -955,7 +1009,7 @@ def _handle_api_errors(e: Exception, provider: str) -> None:
         logger.error(f"AI Connection Error ({provider}): {e}")
     elif APIError and isinstance(e, APIError):
         logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
-    elif genai_errors and hasattr(genai_errors, "GoogleAPIError") and isinstance(e, genai_errors.GoogleAPIError):  # type: ignore
+    elif genai_errors and hasattr(genai_errors, "GoogleAPIError") and isinstance(e, genai_errors.GoogleAPIError):
         logger.error(f"Google API Error (Gemini): {e}")
 
 
@@ -1108,11 +1162,14 @@ def _get_extraction_prompt(session_manager: SessionManager) -> str:
     system_prompt = get_fallback_extraction_prompt()
     if USE_JSON_PROMPTS:
         try:
-            try:
-                from ai_prompt_utils import get_prompt_with_experiment  # type: ignore
+            if _get_prompt_with_experiment:
                 variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
-                loaded_prompt = get_prompt_with_experiment("extraction_task", variants=variants, user_id=getattr(session_manager, "user_id", None))
-            except Exception:
+                loaded_prompt = _get_prompt_with_experiment(
+                    "extraction_task",
+                    variants=variants,
+                    user_id=getattr(session_manager, "user_id", None),
+                )
+            else:
                 loaded_prompt = get_prompt("extraction_task")
             if loaded_prompt:
                 system_prompt = loaded_prompt
@@ -1151,10 +1208,10 @@ def _compute_component_coverage(parsed_json: dict[str, Any]) -> float | None:
 
 def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any] | None, cleaned_response_str: str | None, session_manager: SessionManager, parse_success: bool, error: str | None = None) -> None:
     """Record extraction telemetry event."""
-    try:
-        from ai_prompt_utils import get_prompt_version  # type: ignore
-        from prompt_telemetry import record_extraction_experiment_event  # type: ignore
+    if _record_extraction_experiment_event is None or _get_prompt_version is None:
+        return
 
+    try:
         variant_label = "alt" if "extraction_task_alt" in system_prompt[:120] else "control"
         # Note: extraction_quality module not yet implemented, so quality_score is None
         quality_score = None
@@ -1166,19 +1223,22 @@ def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any]
 
         anomaly_summary = None
 
-        record_extraction_experiment_event(  # type: ignore[call-arg]
-            variant_label=variant_label,  # type: ignore[call-arg]
-            prompt_key="extraction_task_alt" if variant_label == "alt" else "extraction_task",  # type: ignore[call-arg]
-            prompt_version=get_prompt_version("extraction_task_alt" if variant_label == "alt" else "extraction_task"),  # type: ignore[call-arg]
-            parse_success=parse_success,  # type: ignore[call-arg]
-            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,  # type: ignore[call-arg]
-            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,  # type: ignore[call-arg]
-            raw_response_text=cleaned_response_str,  # type: ignore[call-arg]
-            user_id=getattr(session_manager, "user_id", None),  # type: ignore[call-arg]
-            quality_score=quality_score,  # type: ignore[call-arg]
-            component_coverage=component_coverage,  # type: ignore[call-arg]
-            anomaly_summary=anomaly_summary,  # type: ignore[call-arg]
-            error=error,  # type: ignore[call-arg]
+        prompt_key = "extraction_task_alt" if variant_label == "alt" else "extraction_task"
+        prompt_version = _get_prompt_version(prompt_key)
+
+        _record_extraction_experiment_event(
+            variant_label=variant_label,
+            prompt_key=prompt_key,
+            prompt_version=prompt_version,
+            parse_success=parse_success,
+            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,
+            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,
+            raw_response_text=cleaned_response_str,
+            user_id=getattr(session_manager, "user_id", None),
+            quality_score=quality_score,
+            component_coverage=component_coverage,
+            anomaly_summary=anomaly_summary,
+            error=error,
         )
     except Exception:
         pass

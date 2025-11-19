@@ -21,7 +21,7 @@ import json
 import re
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urljoin
 
 # === LOCAL IMPORTS ===
@@ -182,10 +182,12 @@ def fetch_ethnicity_region_names(
 
     if not response or not isinstance(response, dict):
         error_msg = f"Failed to fetch ethnicity region names. Response type: {type(response)}"
-        if response and hasattr(response, 'status_code'):
-            error_msg += f", Status: {response.status_code}"  # type: ignore[union-attr]
-        if response and hasattr(response, 'text'):
-            error_msg += f", Body: {response.text[:200]}"  # type: ignore[union-attr]
+        status_code = getattr(response, "status_code", None)
+        if status_code is not None:
+            error_msg += f", Status: {status_code}"
+        body_preview = getattr(response, "text", None)
+        if isinstance(body_preview, str) and body_preview:
+            error_msg += f", Body: {body_preview[:200]}"
         logger.error(error_msg)
         return None
 
@@ -643,7 +645,7 @@ def _log_ethnicity_results(ethnicity_data: dict[str, Any]) -> None:
         logger.info(f"  Region {region['key']}: {region['percentage']}%")
 
 
-def _test_tree_owner_ethnicity_fetch() -> bool:  # type: ignore[reportUnusedFunction]
+def _test_tree_owner_ethnicity_fetch() -> bool:
     """Test fetching tree owner's ethnicity regions from API."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
@@ -678,7 +680,7 @@ def _test_tree_owner_ethnicity_fetch() -> bool:  # type: ignore[reportUnusedFunc
             logger.debug(f"Error closing session: {e}")
 
 
-def _test_region_names_fetch() -> bool:  # type: ignore[reportUnusedFunction]
+def _test_region_names_fetch() -> bool:
     """Test fetching region name mappings from API."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
     try:
@@ -712,7 +714,7 @@ def _test_region_names_fetch() -> bool:  # type: ignore[reportUnusedFunction]
             logger.debug(f"Error closing session: {e}")
 
 
-def _test_ethnicity_comparison() -> bool:  # type: ignore[reportUnusedFunction]
+def _test_ethnicity_comparison() -> bool:
     """Test fetching ethnicity comparison for a match."""
     sm = ensure_session_for_tests_sm_only("DNA Ethnicity Test", skip_csrf=True)
 
@@ -761,6 +763,13 @@ def _test_ethnicity_comparison() -> bool:  # type: ignore[reportUnusedFunction]
             sm.close_sess(keep_db=False)
         except Exception as e:
             logger.debug(f"Error closing session: {e}")
+
+
+LIVE_API_TESTS: tuple[Callable[[], bool], ...] = (
+    _test_tree_owner_ethnicity_fetch,
+    _test_region_names_fetch,
+    _test_ethnicity_comparison,
+)
 
 
 def dna_ethnicity_utils_module_tests() -> bool:

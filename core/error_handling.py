@@ -502,6 +502,25 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self._lock = threading.Lock()
 
+    def _handle_success_locked(self) -> None:
+        if self.state == CircuitState.HALF_OPEN:
+            self.success_count += 1
+            if self.success_count >= self.config.success_threshold:
+                self.state = CircuitState.CLOSED
+                self.failure_count = 0
+                self.success_count = 0
+        else:
+            self.state = CircuitState.CLOSED
+            self.failure_count = 0
+            self.success_count = 0
+
+    def _handle_failure_locked(self) -> None:
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.config.failure_threshold:
+            self.state = CircuitState.OPEN
+            self.success_count = 0
+
     def call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute function with circuit breaker protection."""
         with self._lock:
@@ -518,23 +537,22 @@ class CircuitBreaker:
         try:
             result = func(*args, **kwargs)
             with self._lock:
-                if self.state == CircuitState.HALF_OPEN:
-                    self.success_count += 1
-                    if self.success_count >= self.config.success_threshold:
-                        self.state = CircuitState.CLOSED
-                        self.failure_count = 0
-                        self.success_count = 0
-                elif self.state == CircuitState.CLOSED:
-                    self.failure_count = 0  # Reset on success
+                self._handle_success_locked()
             return result
         except Exception as e:
             with self._lock:
-                self.failure_count += 1
-                self.last_failure_time = time.time()
-                if self.failure_count >= self.config.failure_threshold:
-                    self.state = CircuitState.OPEN
-                    self.success_count = 0
+                self._handle_failure_locked()
             raise e
+
+    def record_failure(self) -> None:
+        """Record failure manually for testing/telemetry without executing call."""
+        with self._lock:
+            self._handle_failure_locked()
+
+    def record_success(self) -> None:
+        """Record success manually, useful for half-open recovery tests."""
+        with self._lock:
+            self._handle_success_locked()
 
     def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
@@ -751,6 +769,20 @@ class AppError(Exception):
                 str(self.original_exception) if self.original_exception else None
             ),
         }
+
+
+def _safe_update_error_context(error: Exception, payload: Optional[dict[str, Any]]) -> None:
+    """Attach diagnostic payloads to legacy error types that track context."""
+
+    if not payload:
+        return
+
+    existing = getattr(error, "context", None)
+    if isinstance(existing, dict):
+        existing.update(payload)
+        return
+
+    setattr(error, "context", dict(payload))
 
 
 class AuthenticationError(AppError):
@@ -1569,8 +1601,8 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
             last_exception,
         )
 
-        if isinstance(last_exception, AncestryError) and hasattr(last_exception, "context"):
-            last_exception.context.update(context_payload)  # type: ignore[union-attr]
+        if isinstance(last_exception, AncestryError):
+            _safe_update_error_context(last_exception, context_payload)
 
         raise last_exception
 
@@ -1703,16 +1735,21 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
             def timeout_handler(_signum: int, _frame: Any) -> None:
                 raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
 
-            # Set the signal handler and a timeout alarm
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)  # type: ignore[attr-defined] - SIGALRM not on Windows
-            signal.alarm(timeout)  # type: ignore[attr-defined] - alarm not on Windows
+            sigalrm = getattr(signal, "SIGALRM", None)
+            alarm_fn: Optional[Callable[[int], Any]] = getattr(signal, "alarm", None)
+            if sigalrm is None or alarm_fn is None:
+                # Platform does not expose SIGALRM, fall back to direct execution
+                return func(*args, **kwargs)
+
+            old_handler = signal.signal(sigalrm, timeout_handler)
+            alarm_fn(timeout)
 
             try:
                 result = func(*args, **kwargs)
-                signal.alarm(0)  # type: ignore[attr-defined] - Disable the alarm
+                alarm_fn(0)  # Disable the alarm once we have a result
                 return result
             finally:
-                signal.signal(signal.SIGALRM, old_handler)  # type: ignore[attr-defined] - Restore old handler
+                signal.signal(sigalrm, old_handler)
         return wrapper
     return decorator
 
@@ -1955,15 +1992,15 @@ def test_circuit_breaker() -> None:
             # Test failure recording
             if hasattr(cb, 'record_failure'):
                 for _ in range(2):  # Record some failures but not enough to open
-                    cb.record_failure()  # type: ignore
+                    cb.record_failure()
 
                 # Test that circuit breaker tracks failures
                 if hasattr(cb, 'failure_count'):
-                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"  # type: ignore
+                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"
 
             # Test success recording
             if hasattr(cb, 'record_success'):
-                cb.record_success()  # type: ignore
+                cb.record_success()
 
         except Exception:
             pass  # Circuit breaker might require specific setup

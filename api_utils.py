@@ -3556,6 +3556,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         json_string = json.dumps(large_data)
 
         start_time = time.time()
+        parsed: Any = {}
         for _ in range(10):
             parsed = json.loads(json_string)
         end_time = time.time()
@@ -3564,7 +3565,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         assert (
             parsing_time < 1.0
         ), f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
-        assert isinstance(parsed, dict), "Parsed result should be dictionary"  # type: ignore[possibly-unbound]
+        assert isinstance(parsed, dict), "Parsed result should be dictionary"
 
     def test_url_encoding_performance():
         """Test URL encoding performance with multiple strings."""
