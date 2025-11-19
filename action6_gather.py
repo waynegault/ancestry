@@ -19,10 +19,10 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 """
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Callable, Final, Optional
+from typing import Any, Callable, Final, Optional, cast
 
 from core.error_handling import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
@@ -222,7 +222,10 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 integrate_with_action6(sys.modules[__name__])
 
 # === THIRD-PARTY IMPORTS ===
-import cloudscraper
+try:
+    from cloudscraper.exceptions import CloudflareException as CloudflareChallengeError
+except Exception:  # pragma: no cover - fallback when submodule unavailable
+    CloudflareChallengeError = Exception
 import requests
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
@@ -5109,8 +5112,12 @@ def _perform_batch_api_prefetches(
     return _PrefetchArtifacts(prefetched_data, timings, call_counts)
 
 
+_previous_memory_mb: Optional[float] = None
+
+
 def _perform_memory_cleanup(current_page: int) -> None:
     """Perform memory cleanup for batch processing."""
+    global _previous_memory_mb
     try:
         import gc
         import os
@@ -5139,11 +5146,11 @@ def _perform_memory_cleanup(current_page: int) -> None:
             gc.collect(0)
             logger.debug(f"Memory cleanup: Light garbage collection at page {current_page}")
 
-        if hasattr(_process_page_matches, '_prev_memory'):
-            memory_growth = current_memory_mb - _process_page_matches._prev_memory  # type: ignore
+        if _previous_memory_mb is not None:
+            memory_growth = current_memory_mb - _previous_memory_mb
             if memory_growth > 50:
                 logger.warning(f"Memory growth detected: +{memory_growth:.1f} MB since last check")
-        _process_page_matches._prev_memory = current_memory_mb  # type: ignore
+        _previous_memory_mb = current_memory_mb
 
     except Exception as cleanup_exc:
         logger.warning(f"Memory cleanup warning at page {current_page}: {cleanup_exc}")
@@ -5406,7 +5413,11 @@ def _compare_boolean_field(current_value: Any, new_value: Any) -> tuple[bool, An
     return (bool(current_value) != bool(new_value), bool(new_value))
 
 
-def _get_field_comparator(key: str, current_value: Any, new_value: Any):
+def _get_field_comparator(
+    key: str,
+    current_value: Any,
+    new_value: Any,
+) -> Optional[Callable[[Any, Any], tuple[bool, Any]]]:
     """Get the appropriate comparator function for a field."""
     # Check for boolean fields first (type-based)
     if isinstance(current_value, bool) or isinstance(new_value, bool):
@@ -5416,7 +5427,6 @@ def _get_field_comparator(key: str, current_value: Any, new_value: Any):
     field_comparators = {
         "last_logged_in": _compare_datetime_field,
         "status": _compare_status_field,
-        "birth_year": _compare_birth_year_field,
         "gender": _compare_gender_field,
         "profile_id": _compare_profile_id_field,
         "administrator_profile_id": _compare_profile_id_field,
@@ -5433,17 +5443,17 @@ def _compare_person_field(
     logger_instance: logging.Logger
 ) -> tuple[bool, Any]:
     """Compare person field and return whether it changed and the value to set."""
+
+    if key == "birth_year":
+        return _compare_birth_year_field(current_value, new_value, log_ref_short, logger_instance)
+
     comparator = _get_field_comparator(key, current_value, new_value)
 
     if comparator is None:
         # Default comparison for fields without special handling
         return (current_value != new_value, new_value)
 
-    # Call the appropriate comparator
-    if comparator == _compare_birth_year_field:
-        return comparator(current_value, new_value, log_ref_short, logger_instance)  # type: ignore[call-arg]
-
-    return comparator(current_value, new_value)  # type: ignore[misc]
+    return comparator(current_value, new_value)
 
 
 def _determine_profile_ids_when_both_exist(
@@ -5510,7 +5520,8 @@ def _build_message_link(
     """Build message link for person."""
     message_target_id = person_profile_id or person_admin_id
     if message_target_id:
-        return urljoin(config_schema_arg.api.base_url, f"/messaging/?p={message_target_id.upper()}")  # type: ignore
+        base_url = config_schema_arg.api.base_url
+        return urljoin(base_url, f"/messaging/?p={message_target_id.upper()}")
     return None
 
 
@@ -5716,11 +5727,8 @@ def _compare_dna_fields(
     api_longest = float(api_longest_raw) if api_longest_raw is not None else None
     db_longest = existing_dna_match.longest_shared_segment
 
-    db_predicted_rel_for_comp = (
-        existing_dna_match.predicted_relationship
-        if existing_dna_match.predicted_relationship is not None  # type: ignore[comparison-overlap]
-        else "N/A"
-    )
+    raw_predicted_rel = cast(Optional[str], getattr(existing_dna_match, "predicted_relationship", None))
+    db_predicted_rel_for_comp = raw_predicted_rel or "N/A"
 
     if _check_basic_dna_changes(api_cm, db_cm, api_segments, db_segments, log_ref_short, logger_instance):
         return True
@@ -5976,20 +5984,19 @@ def _build_tree_links(
     config_schema_arg: "ConfigSchema"
 ) -> tuple[Optional[str], Optional[str]]:
     """Build facts and view links for a person in the tree."""
-    if not their_cfpid or not session_manager.my_tree_id:
+    tree_id = session_manager.my_tree_id
+    if not their_cfpid or not tree_id:
         return None, None
 
-    base_person_path = f"/family-tree/person/tree/{session_manager.my_tree_id}/person/{their_cfpid}"
-    facts_link = urljoin(config_schema_arg.api.base_url, f"{base_person_path}/facts")  # type: ignore
+    base_url = config_schema_arg.api.base_url
+    base_person_path = f"/family-tree/person/tree/{tree_id}/person/{their_cfpid}"
+    facts_link = urljoin(base_url, f"{base_person_path}/facts")
     view_params = {
         "cfpid": their_cfpid,
         "showMatches": "true",
-        "sid": session_manager.my_uuid,
+        "sid": session_manager.my_uuid or "",
     }
-    base_view_url = urljoin(
-        config_schema_arg.api.base_url,  # type: ignore
-        f"/family-tree/tree/{session_manager.my_tree_id}/family",
-    )
+    base_view_url = urljoin(base_url, f"/family-tree/tree/{tree_id}/family")
     view_in_tree_link = f"{base_view_url}?{urlencode(view_params)}"
     return facts_link, view_in_tree_link
 
@@ -6261,7 +6268,8 @@ def _process_tree_data_safe(
             f"Error in _prepare_family_tree_operation_data for {log_ref_short}: {tree_err}",
             exc_info=True,
         )
-        return None, "none"  # type: ignore
+        fallback_status: Literal["none"] = "none"
+        return None, fallback_status
 
 
 def _populate_bulk_data_dict(
@@ -7052,11 +7060,9 @@ def _process_in_tree_api_response(
                 f"Error writing in-tree status to cache: {cache_write_err}"
             )
     else:
-        status_code_log = (
-            f" Status: {response_in_tree.status_code}"  # type: ignore
-            if isinstance(response_in_tree, requests.Response)
-            else ""
-        )
+        status_code_log = ""
+        if isinstance(response_in_tree, requests.Response):
+            status_code_log = f" Status: {response_in_tree.status_code}"
         logger.warning(
             f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
         )
@@ -8005,12 +8011,14 @@ def _fetch_ladder_via_relation_api(
     selenium_cfg = getattr(config_schema, "selenium", None)
     timeout_value = getattr(selenium_cfg, "api_timeout", 30) if selenium_cfg else 30
 
+    base_url = config_schema.api.base_url
+
     fallback_raw = call_relation_ladder_with_labels_api(
         session_manager=session_manager,
         user_id=user_id,
         tree_id=tree_id,
         person_id=cfpid,
-        base_url=config_schema.api.base_url,  # type: ignore[arg-type]
+        base_url=base_url,
         timeout=int(timeout_value),
     )
 
@@ -8089,7 +8097,7 @@ def _fetch_batch_ladder(
     logger.debug(f"Fetching ladder for cfpid {cfpid} in tree {tree_id}")
 
     enhanced_result = _load_relationship_ladder_data(session_manager, cfpid, tree_id)
-    if not enhanced_result or not isinstance(enhanced_result, dict):  # type: ignore[arg-type,misc]  # type: ignore[arg-type]
+    if enhanced_result is None:
         logger.error(f"Enhanced API failed to return ladder data for {cfpid}")
         return None
 
@@ -8134,7 +8142,7 @@ def _fetch_batch_ladder(
     retry_on_exceptions=(
         requests.exceptions.RequestException,
         ConnectionError,
-        cloudscraper.exceptions.CloudflareException,  # type: ignore
+        CloudflareChallengeError,
     )
 )
 def _get_cached_csrf_token(
@@ -8365,34 +8373,51 @@ def _try_relationship_prob_fallbacks(
     )
 
 
-def _extract_best_prediction(predictions: list[dict[str, Any]], sample_id_upper: str, api_description: str) -> Optional[tuple[float, list[str]]]:
-    """Extract best prediction from predictions list."""
-    valid_preds = [
-        p
-        for p in predictions
-        if isinstance(p, dict)  # type: ignore[arg-type,misc]
-        and "distributionProbability" in p
-        and "pathsToMatch" in p
-    ]
+def _extract_best_prediction(
+    predictions: Sequence[Any],
+    sample_id_upper: str,
+    api_description: str,
+) -> Optional[tuple[float, list[str]]]:
+    """Extract the most likely prediction from an API response payload."""
+
+    valid_preds: list[dict[str, Any]] = []
+    for candidate in predictions:
+        if (
+            isinstance(candidate, dict)
+            and "distributionProbability" in candidate
+            and "pathsToMatch" in candidate
+        ):
+            valid_preds.append(candidate)
+
     if not valid_preds:
         logger.debug(f"{api_description}: No valid prediction paths for {sample_id_upper}.")
         return None
 
     best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-    top_prob = best_pred.get("distributionProbability", 0.0)
-    paths = best_pred.get("pathsToMatch", [])
-    labels = [
-        p.get("label") for p in paths if isinstance(p, dict)  # type: ignore[arg-type,misc] and p.get("label")
-    ]
+    top_prob_raw = best_pred.get("distributionProbability", 0.0)
+    top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
+
+    paths_raw = best_pred.get("pathsToMatch", [])
+    path_entries: Sequence[Any]
+    if isinstance(paths_raw, Sequence):
+        path_entries = paths_raw
+    else:
+        path_entries = []
+
+    labels: list[str] = []
+    for path in path_entries:
+        if isinstance(path, dict):
+            label_value = path.get("label")
+            if isinstance(label_value, str):
+                labels.append(label_value)
+
     if not labels:
-        # Note: API returns probability already as percentage (e.g., 99.0), not decimal (0.99)
-        top_prob_display = top_prob
         logger.debug(
-            f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob_display:.1f}%"
+            f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob:.1f}%"
         )
         return None
 
-    return top_prob, labels  # type: ignore[return-value]
+    return top_prob, labels
 
 
 def _cache_relationship_result(match_uuid: str, max_labels_param: int, result: str) -> None:
@@ -8558,7 +8583,7 @@ def _fetch_batch_relationship_prob(
         logger.debug(f"{api_description}: Unable to retrieve probability data for {sample_id_upper}.")
         return None
 
-    except cloudscraper.exceptions.CloudflareException as cf_e:  # type: ignore
+    except CloudflareChallengeError as cf_e:
         logger.error(
             f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}"
         )
@@ -8902,10 +8927,11 @@ def nav_to_list(session_manager: SessionManager) -> bool:
         logger.error("nav_to_list: WebDriver is None")
         return False
 
+    match_entry_selector = cast(str, MATCH_ENTRY_SELECTOR)
     success = nav_to_page(
         driver=driver,
         url=target_url,
-        selector=MATCH_ENTRY_SELECTOR,  # type: ignore
+        selector=match_entry_selector,
         session_manager=session_manager,
     )
 
@@ -9002,8 +9028,8 @@ def _test_module_initialization():
     # Test _initialize_gather_state function
     print("   • Testing _initialize_gather_state...")
     try:
-        state = _initialize_gather_state()
-        is_dict = isinstance(state, dict)  # type: ignore[arg-type,misc]
+        state: Any = _initialize_gather_state()
+        is_dict = isinstance(state, dict)
 
         required_keys = ["total_new", "total_updated", "total_pages_processed"]
         keys_present = all(key in state for key in required_keys)
@@ -9666,7 +9692,9 @@ def _test_cm_relationship_fallback() -> bool:
     )
 
     assert inferred is not None, "Expected DNA data dict for new match"
-    inferred_payload = inferred.get("dna_match", inferred)  # type: ignore[union-attr]
+    inferred_payload = inferred.get("dna_match")
+    if not isinstance(inferred_payload, dict):
+        inferred_payload = inferred
     inferred_value = inferred_payload.get("predicted_relationship")
     assert isinstance(inferred_value, str)
     assert inferred_value.startswith("1st cousin"), inferred_value
@@ -9688,7 +9716,10 @@ def _test_cm_relationship_fallback() -> bool:
         logger_instance=logger_instance,
     )
 
-    provided_payload = provided.get("dna_match", provided)  # type: ignore[union-attr]
+    assert provided is not None, "Expected DNA data dict when API provides relationship"
+    provided_payload = provided.get("dna_match")
+    if not isinstance(provided_payload, dict):
+        provided_payload = provided
     assert provided_payload.get("predicted_relationship") == "3rd cousin"
 
     print("🎉 cM-based predicted relationship fallback tests passed!")
