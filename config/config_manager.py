@@ -31,15 +31,19 @@ logger = setup_module(globals(), __name__)
 import copy
 import json
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 # === THIRD-PARTY IMPORTS ===
+LoadDotenvCallable = Callable[..., bool]
+load_dotenv: Optional[LoadDotenvCallable]
+
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _load_dotenv_impl
 except ImportError:
-    load_dotenv = None  # type: ignore[assignment]
+    load_dotenv = None
     _dotenv_imported = False
 else:
+    load_dotenv = _load_dotenv_impl
     _dotenv_imported = True
 
 DOTENV_AVAILABLE = _dotenv_imported

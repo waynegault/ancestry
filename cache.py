@@ -64,6 +64,7 @@ import shutil
 import sys
 import time
 from collections import deque
+from collections.abc import Iterable, Sized
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
@@ -220,8 +221,11 @@ class BaseCacheModule(CacheInterface):
         """Get module name."""
         if hasattr(self, "_module_name"):
             return self._module_name
-        if hasattr(self, "module_name"):
-            return self.module_name  # type: ignore[attr-defined]
+        module_name_attr = getattr(self, "module_name", None)
+        if isinstance(module_name_attr, str):
+            return module_name_attr
+        if module_name_attr is not None:
+            return str(module_name_attr)
         return "base_cache"
 
     def get_health_status(self) -> dict[str, Any]:
@@ -810,7 +814,8 @@ def get_cache_entry_count() -> int:
     try:
         cache_instance = cache
         if cache_instance is not None:
-            cache_length_raw = len(cache_instance)  # type: ignore[arg-type]
+            sized_cache = cast(Sized, cache_instance)
+            cache_length_raw = len(sized_cache)
             return int(cache_length_raw)
         return 0
     except Exception as e:
@@ -821,7 +826,8 @@ def get_cache_entry_count() -> int:
             if cache_instance is None:
                 return 0
             count = 0
-            for _ in cache_instance:  # type: ignore[attr-defined]
+            iterable_cache = cast(Iterable[Any], cache_instance)
+            for _ in iterable_cache:
                 count += 1
             return count
         except Exception as e2:
