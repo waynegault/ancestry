@@ -238,9 +238,9 @@ class ConversationLog(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object. 'back_populates' ensures bidirectional linking.
-    person = relationship("Person", back_populates="conversation_log_entries")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_log_entries")
     # Defines the link to the MessageTemplate object for outgoing messages.
-    message_template = relationship("MessageTemplate")  # type: ignore
+    message_template: Mapped[Optional["MessageTemplate"]] = relationship("MessageTemplate")
 
     # --- Table Arguments (Indexes) ---
     __table_args__ = (
@@ -433,7 +433,7 @@ class ConversationMetrics(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_metrics")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_metrics")
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize ConversationMetrics with proper defaults."""
@@ -543,7 +543,7 @@ class EngagementTracking(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="engagement_events")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="engagement_events")
 
 
 # End of EngagementTracking class
@@ -770,7 +770,7 @@ class ConversationState(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_state")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_state")
 
 
 # End of ConversationState class
@@ -847,7 +847,7 @@ class DnaMatch(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="dna_match")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="dna_match")
 
     # --- Properties ---
     @property
@@ -929,7 +929,7 @@ class FamilyTree(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="family_tree")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="family_tree")
 
     # --- Properties ---
     @property
@@ -1041,30 +1041,30 @@ class Person(Base):
 
     # --- Relationships ---
     # One-to-one relationship with FamilyTree. `cascade` ensures deletion of related FamilyTree record if Person deleted.
-    family_tree = relationship(  # type: ignore
+    family_tree: Mapped[Optional["FamilyTree"]] = relationship(
         "FamilyTree",
         back_populates="person",
         uselist=False,
         cascade="all, delete-orphan",
     )
     # One-to-one relationship with DnaMatch. `cascade` ensures deletion.
-    dna_match = relationship(  # type: ignore
+    dna_match: Mapped[Optional["DnaMatch"]] = relationship(
         "DnaMatch", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with ConversationLog. `cascade` ensures deletion.
-    conversation_log_entries = relationship(  # type: ignore
+    conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationState. `cascade` ensures deletion.
-    conversation_state = relationship(  # type: ignore
+    conversation_state: Mapped[Optional["ConversationState"]] = relationship(
         "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationMetrics. `cascade` ensures deletion.
-    conversation_metrics = relationship(  # type: ignore
+    conversation_metrics: Mapped[Optional["ConversationMetrics"]] = relationship(
         "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with EngagementTracking. `cascade` ensures deletion.
-    engagement_events = relationship(  # type: ignore
+    engagement_events: Mapped[list["EngagementTracking"]] = relationship(
         "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
     )
 
