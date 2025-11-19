@@ -17,7 +17,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module  # type: ignore[import-not-found]
+from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
@@ -1257,7 +1257,7 @@ def error_handling_module_tests() -> bool:
     Core Error Handling module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (  # type: ignore[import-not-found]
+    from test_framework import (
         TestSuite,
         suppress_logging,
     )
@@ -2017,7 +2017,7 @@ def test_error_context() -> None:
 # Standalone Test Block
 # =============================================
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(error_handling_module_tests)
 
@@ -2030,7 +2030,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         # Replaced with standardize_module_imports()
-        from core_imports import ensure_imports  # type: ignore[import-not-found]
+        from core_imports import ensure_imports
 
         ensure_imports()
     except ImportError:

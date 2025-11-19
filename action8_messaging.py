@@ -21,7 +21,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === ERROR HANDLING ===
-from core.error_handling import (  # type: ignore[import-not-found]
+from core.error_handling import (
     circuit_breaker,
     error_context,
     graceful_degradation,
@@ -117,12 +117,12 @@ def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
 from sqlalchemy.orm import Session, joinedload
 
 # === API & CORE ===
-from api_utils import call_send_message_api  # type: ignore[import-not-found]
+from api_utils import call_send_message_api
 from cache import cache_result
 from common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
 from config import config_schema
 from connection_resilience import with_connection_resilience
-from core.error_handling import (  # type: ignore[import-not-found]
+from core.error_handling import (
     APIRateLimitError,
     AuthenticationExpiredError,
     BrowserSessionError,
@@ -990,22 +990,29 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # Response Rate Tracking and Analysis
 # ------------------------------------------------------------------------------
 
-def _get_session_manager(session_manager) -> Any:  # type: ignore[no-untyped-def]
+def _get_session_manager(session_manager: Optional[SessionManager]) -> Optional[SessionManager]:
     """Return provided session manager or the globally registered one (no local creation)."""
     if session_manager:
         return session_manager
+
     try:
-        from session_utils import get_global_session  # type: ignore
-        sm = get_global_session()
-        if sm is None:
-            logger.critical("No global session registered. main.py must register the global session before calling messaging actions.")
-        return sm
-    except Exception as e:
-        logger.critical(f"Failed to obtain global session: {e}")
+        from session_utils import get_global_session as runtime_get_global_session
+    except Exception as exc:
+        logger.critical(f"Failed to import session_utils while loading global session: {exc}")
         return None
 
+    try:
+        sm = runtime_get_global_session()
+    except Exception as exc:
+        logger.critical(f"Failed to obtain global session: {exc}")
+        return None
 
-def _get_template_selections(session, cutoff_date) -> list:  # type: ignore[type-arg, no-untyped-def]
+    if sm is None:
+        logger.critical("No global session registered. main.py must register the global session before calling messaging actions.")
+    return sm
+
+
+def _get_template_selections(session: Session, cutoff_date: datetime) -> list[ConversationLog]:
     """Get template selections from database."""
     return session.query(ConversationLog).filter(
         ConversationLog.script_message_status.like("TEMPLATE_SELECTED:%"),
@@ -1031,7 +1038,11 @@ def _initialize_template_stats() -> dict[str, Any]:
     }
 
 
-def _find_response_for_template(session, person_id: int, sent_time: datetime):  # type: ignore[no-untyped-def]
+def _find_response_for_template(
+    session: Session,
+    person_id: int,
+    sent_time: datetime,
+) -> Optional[ConversationLog]:
     """Find response for a specific template sent to a person."""
     return session.query(ConversationLog).filter(
         ConversationLog.person_id == person_id,
@@ -1056,10 +1067,15 @@ def _calculate_response_rates(template_stats: dict[str, dict[str, Any]]) -> None
             stats["response_rate"] = (stats["responses"] / stats["sent"]) * 100
 
 
-def _process_template_selections(session, template_selections, template_stats: dict[str, dict[str, Any]]) -> None:  # type: ignore[no-untyped-def]
+def _process_template_selections(
+    session: Session,
+    template_selections: list[ConversationLog],
+    template_stats: dict[str, dict[str, Any]],
+) -> None:
     """Process template selections and calculate statistics."""
     for selection in template_selections:
-        template_name = _extract_template_name(selection.script_message_status)
+        status_value = selection.script_message_status or ""
+        template_name = _extract_template_name(status_value)
         if not template_name:
             continue
 
@@ -1081,7 +1097,10 @@ def _process_template_selections(session, template_selections, template_stats: d
             _update_response_time_average(template_stats, template_name, response_hours)
 
 
-def analyze_template_effectiveness(session_manager=None, days_back: int = 30) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+def analyze_template_effectiveness(
+    session_manager: Optional[SessionManager] = None,
+    days_back: int = 30,
+) -> dict[str, Any]:
     """
     Analyze template effectiveness by measuring response rates.
 
@@ -1093,6 +1112,9 @@ def analyze_template_effectiveness(session_manager=None, days_back: int = 30) ->
         Dictionary with template effectiveness statistics
     """
     session_manager = _get_session_manager(session_manager)
+    if session_manager is None:
+        logger.error("Session manager not available for template analysis")
+        return {}
 
     try:
         with session_manager.get_db_conn_context() as session:
@@ -1194,34 +1216,27 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
         duration: Duration of the operation in seconds
     """
     try:
-        # Initialize performance tracking attributes if they don't exist
-        if not hasattr(session_manager, '_response_times'):
-            session_manager._response_times = []  # type: ignore[attr-defined]
-        if not hasattr(session_manager, '_recent_slow_calls'):
-            session_manager._recent_slow_calls = 0  # type: ignore[attr-defined]
-        if not hasattr(session_manager, '_avg_response_time'):
-            session_manager._avg_response_time = 0.0  # type: ignore[attr-defined]
+        if not hasattr(session_manager, "_response_times"):
+            session_manager._response_times = []
+            session_manager._recent_slow_calls = 0
+            session_manager._avg_response_time = 0.0
 
-        # Track response time (keep last 50 measurements)
-        session_manager._response_times.append(duration)  # type: ignore[attr-defined]
-        if len(session_manager._response_times) > 50:  # type: ignore[attr-defined]
-            session_manager._response_times.pop(0)  # type: ignore[attr-defined]
+        response_times = session_manager._response_times
+        response_times.append(duration)
+        if len(response_times) > 50:
+            response_times.pop(0)
 
-        # Update average response time
-        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)  # type: ignore[attr-defined]
+        session_manager._avg_response_time = sum(response_times) / len(response_times)
 
-        # Track consecutive slow calls - OPTIMIZATION: Adjusted threshold like Action 6
-        if duration > 15.0:  # OPTIMIZATION: Increased from 5.0s to 15.0s - align with Action 6 thresholds
-            session_manager._recent_slow_calls += 1  # type: ignore[attr-defined]
+        if duration > 15.0:  # OPTIMIZATION: Align slow-call threshold with Action 6
+            session_manager._recent_slow_calls += 1
         else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)  # type: ignore[attr-defined]
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
 
-        # Cap slow call counter to prevent endless accumulation
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)  # type: ignore[attr-defined]
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
 
-    except Exception as e:
-        logger.debug(f"Failed to update messaging performance tracking: {e}")
-        pass
+    except Exception as exc:  # pragma: no cover - telemetry safety
+        logger.debug(f"Failed to update messaging performance tracking: {exc}")
 
 
 # ------------------------------------------------------------------------------
@@ -1763,12 +1778,13 @@ class ProactiveApiManager:
         logger.warning("Attempting re-authentication...")
 
         try:
-            if hasattr(self.session_manager, 'attempt_recovery'):
-                recovery_success = self.session_manager.attempt_recovery('auth_recovery')  # type: ignore[attr-defined]
-                if recovery_success:
-                    logger.info("Re-authentication successful")
-                    self.consecutive_failures = 0
-                    return True
+            recovery_success = self.session_manager.attempt_session_recovery(
+                reason="auth_recovery"
+            )
+            if recovery_success:
+                logger.info("Re-authentication successful")
+                self.consecutive_failures = 0
+                return True
 
             logger.error("Re-authentication failed")
             return False
@@ -3041,7 +3057,7 @@ class _MessagingData:
     total_candidates: int
 
 
-def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> Optional[_MessagingData]:  # type: ignore[type-arg]
+def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> Optional[_MessagingData]:
     """Fetch message type map and candidate persons."""
     try:
         message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
@@ -4254,7 +4270,7 @@ def _test_integration_with_shared_modules() -> None:
 
         # Test API call framework integration (now in core/api_manager.py)
         try:
-            from core.api_manager import APIManager  # type: ignore[import-not-found]
+            from core.api_manager import APIManager
             api_framework_available = APIManager is not None
         except ImportError:
             api_framework_available = False
@@ -4274,7 +4290,7 @@ def _test_integration_with_shared_modules() -> None:
 
         # Test database session manager integration (now in core/database_manager.py)
         try:
-            from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
+            from core.database_manager import DatabaseManager
 
             db_manager_available = DatabaseManager is not None  # type: ignore[comparison-overlap]
         except ImportError:

@@ -43,7 +43,7 @@ from ai_interface import (
 from config import config_schema
 from connection_resilience import with_connection_resilience
 from conversation_analytics import record_engagement_event, update_conversation_metrics
-from core.error_handling import (  # type: ignore[import-not-found]
+from core.error_handling import (
     api_retry,
     circuit_breaker,
     error_context,

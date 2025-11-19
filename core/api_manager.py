@@ -15,14 +15,14 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module  # type: ignore[import-not-found]
+from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
 from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -32,13 +32,17 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 
 # === LOCAL IMPORTS ===
-from api_constants import (  # type: ignore[import-not-found]
+from api_constants import (
     API_PATH_CSRF_TOKEN,
     API_PATH_PROFILE_ID,
     API_PATH_UUID_NAVHEADER,
 )
-from config import config_schema  # type: ignore[import-not-found]
-from observability.metrics_registry import metrics  # type: ignore[import-not-found]
+from config import config_schema
+from observability.metrics_registry import metrics
+
+if TYPE_CHECKING:
+    from core.browser_manager import BrowserManager
+    from core.session_manager import SessionManager
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
@@ -158,7 +162,9 @@ class APIManager:
             logger.debug("Failed to record API metrics", exc_info=True)
 
     @staticmethod
-    def _attempt_session_recovery(session_manager) -> bool:  # type: ignore[no-untyped-def]
+    def _attempt_session_recovery(
+        session_manager: Optional["SessionManager"],
+    ) -> bool:
         """
         Attempt to recover browser session when cookie sync fails.
 
@@ -180,7 +186,9 @@ class APIManager:
         return False
 
     @staticmethod
-    def _deduplicate_cookies(driver_cookies: list[Any]) -> dict[str, Any]:
+    def _deduplicate_cookies(
+        driver_cookies: list[Any],
+    ) -> dict[tuple[str, str], dict[str, Any]]:
         """
         Deduplicate cookies by (name, path), preferring more specific domains.
 
@@ -212,7 +220,10 @@ class APIManager:
 
         return unique_cookies
 
-    def _sync_cookies_to_session(self, unique_cookies: dict) -> None:  # type: ignore[type-arg]
+    def _sync_cookies_to_session(
+        self,
+        unique_cookies: Mapping[tuple[str, str], dict[str, Any]],
+    ) -> None:
         """
         Add deduplicated cookies to requests session.
 
@@ -228,7 +239,11 @@ class APIManager:
                 secure=cookie.get("secure", False),
             )
 
-    def sync_cookies_from_browser(self, browser_manager, session_manager=None) -> bool:  # type: ignore[no-untyped-def]
+    def sync_cookies_from_browser(
+        self,
+        browser_manager: "BrowserManager",
+        session_manager: Optional["SessionManager"] = None,
+    ) -> bool:
         """
         Sync cookies from browser to the requests session.
 
@@ -784,7 +799,7 @@ def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
     """
-    from test_framework import (  # type: ignore[import-not-found]
+    from test_framework import (
         TestSuite,
     )
 
@@ -867,7 +882,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         sys.path.insert(0, str(project_root))
-        from core_imports import ensure_imports  # type: ignore[import-not-found]
+        from core_imports import ensure_imports
 
         ensure_imports()
     except ImportError:
@@ -880,6 +895,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(api_manager_module_tests)

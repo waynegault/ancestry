@@ -17,7 +17,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module  # type: ignore[import-not-found]
+from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
@@ -43,7 +43,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager  # type: ignore[import-not-found]
+from config.config_manager import ConfigManager
 from core.error_handling import (
     AncestryError,
     DatabaseConnectionError,
@@ -589,7 +589,7 @@ class DatabaseManager:
             else:
                 # Import Base locally to avoid circular import issues
                 try:
-                    from database import Base  # type: ignore[import-not-found]
+                    from database import Base
                     Base.metadata.create_all(self.engine)
                     logger.debug("DB tables created successfully.")
                 except ImportError as e:
@@ -886,7 +886,7 @@ class DatabaseManager:
 
 def module_tests() -> bool:
     """Test DatabaseManager functionality."""
-    from test_framework import (  # type: ignore[import-not-found]
+    from test_framework import (
         TestSuite,
         suppress_logging,
     )
@@ -1163,13 +1163,13 @@ def test_schema_upgrade_adds_conversation_log_columns() -> None:
 # Standalone Test Block
 # ==============================================
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(module_tests)
 
 
 if __name__ == "__main__":
-    from core_imports import import_context  # type: ignore[import-not-found]
+    from core_imports import import_context
 
     # Use clean import context for testing
     with import_context():

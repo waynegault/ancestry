@@ -1481,9 +1481,7 @@ def _try_direct_suggest_fallback(
     direct_response_obj = None
 
     try:
-        cookies = {}
-        if session_manager._requests_session:  # type: ignore[reportPrivateUsage]
-            cookies = session_manager._requests_session.cookies.get_dict()  # type: ignore[reportPrivateUsage]
+        cookies = session_manager.requests_session.cookies.get_dict()
 
         direct_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -1665,9 +1663,7 @@ def _try_direct_facts_request(
 
     direct_response_obj = None
     try:
-        cookies = {}
-        if session_manager._requests_session:  # type: ignore[reportPrivateUsage]
-            cookies = session_manager._requests_session.cookies.get_dict()  # type: ignore[reportPrivateUsage]
+        cookies = session_manager.requests_session.cookies.get_dict()
 
         direct_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",

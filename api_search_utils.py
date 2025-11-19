@@ -671,7 +671,7 @@ def _get_facts_data_from_api(  # type: ignore[reportUnusedFunction]
     # Import the API function and json module
     import json
 
-    from api_utils import call_edit_relationships_api  # type: ignore[import-not-found]
+    from api_utils import call_edit_relationships_api
 
     # Call the Edit Relationships API
     api_response = call_edit_relationships_api(
@@ -1023,7 +1023,7 @@ def get_api_family_details(
 
     Returns a dict with keys: parents, spouses, children, siblings.
     """
-    from api_utils import call_newfamilyview_api  # type: ignore[import-not-found]
+    from api_utils import call_newfamilyview_api
 
     # Validate session and resolve identifiers
     if not session_manager or not hasattr(session_manager, "driver"):

@@ -738,7 +738,7 @@ __all__ = [
 ]
 
 # --- Internal Tests ---
-from test_framework import TestSuite  # type: ignore[import-not-found]
+from test_framework import TestSuite
 
 
 def _api_search_core_module_tests() -> bool:
@@ -1032,7 +1032,7 @@ def _api_search_core_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(_api_search_core_module_tests)
 

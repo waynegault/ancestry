@@ -2744,7 +2744,7 @@ def _extract_cookie_value(cookie_obj: Optional[Mapping[str, Any]]) -> Optional[s
     return str(value) if value is not None else None
 
 
-def _build_cookie_lookup(driver: DriverType) -> dict[str, str]:
+def _build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
     """Create a name->value mapping for all cookies in the driver."""
     cookies_raw = cast(Sequence[Mapping[str, Any]], driver.get_cookies() or [])
     cookies_dict: dict[str, str] = {}
@@ -3709,7 +3709,7 @@ def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_ur
         # Save cookies after successful login
         _save_login_cookies(session_manager)
         # CRITICAL FIX: Sync browser cookies to API requests session
-        session_manager._sync_cookies_to_requests()
+        session_manager.sync_cookies_to_requests()
         return "LOGIN_SUCCEEDED"
 
     if login_check_result is False:
@@ -3871,7 +3871,7 @@ def _perform_api_login_check(session_manager: SessionManager) -> Optional[bool]:
     """Perform API-based login status check."""
     logger.debug("Performing primary API-based login status check...")
     try:
-        session_manager._sync_cookies_to_requests()
+        session_manager.sync_cookies_to_requests()
         api_check_result = session_manager.api_manager.verify_api_login_status()
 
         if api_check_result is True:

@@ -494,7 +494,7 @@ def get_metrics_registry() -> MetricRegistry:
 # Test suite
 def core_metrics_collector_module_tests() -> bool:
     """Run comprehensive tests for metrics collection system."""
-    from test_framework import TestSuite  # type: ignore[import-not-found]
+    from test_framework import TestSuite
 
     suite = TestSuite("MetricsCollector", "core/metrics_collector.py")
     suite.start_suite()

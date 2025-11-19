@@ -60,12 +60,12 @@ from types import ModuleType
 from typing import Any, Callable, Optional
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module  # type: ignore[import-not-found]
+from standard_imports import setup_module
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
 
-from core.error_handling import (  # type: ignore[import-not-found]
+from core.error_handling import (
     api_retry,
     circuit_breaker,
     error_context,
@@ -75,7 +75,7 @@ from core.error_handling import (  # type: ignore[import-not-found]
 from core.logging_utils import log_action_banner
 
 # === PHASE 4.2: PERFORMANCE OPTIMIZATION ===
-from performance_cache import (  # type: ignore[import-not-found]
+from performance_cache import (
     fast_test_cache,
 )
 
@@ -86,29 +86,29 @@ except ImportError:
     tabulate = None
 
 # === LOCAL IMPORTS ===
-from config import config_schema  # type: ignore[import-not-found]
-from core.error_handling import MissingConfigError  # type: ignore[import-not-found]
+from config import config_schema
+from core.error_handling import MissingConfigError
 
 # Import GEDCOM utilities
-from gedcom_utils import (  # type: ignore[import-not-found]
+from gedcom_utils import (
     GedcomData,
     calculate_match_score,
     format_relative_info,
 )
-from genealogy_presenter import display_family_members, present_post_selection  # type: ignore[import-not-found]
+from genealogy_presenter import display_family_members, present_post_selection
 
 # Import relationship utilities
-from relationship_utils import (  # type: ignore[import-not-found]
+from relationship_utils import (
     convert_gedcom_path_to_unified_format,
     fast_bidirectional_bfs,
 )
 
 # Import unified search criteria and display functions
-from search_criteria_utils import get_unified_search_criteria  # type: ignore[import-not-found]
-from test_framework import mock_logger_context  # type: ignore[import-not-found]
+from search_criteria_utils import get_unified_search_criteria
+from test_framework import mock_logger_context
 
 # Import universal scoring utilities
-from universal_scoring import calculate_display_bonuses  # type: ignore[import-not-found]
+from universal_scoring import calculate_display_bonuses
 
 
 # --- Module-level GEDCOM cache for tests ---
@@ -307,7 +307,7 @@ def sanitize_input(value: str) -> Optional[str]:
 
 
 # Import centralized validation utility
-from test_utilities import is_valid_year as _is_valid_year  # type: ignore[import-not-found]
+from test_utilities import is_valid_year as _is_valid_year
 
 
 def _try_simple_year_parsing(value: str) -> Optional[int]:
@@ -1480,7 +1480,7 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
     import os
     from pathlib import Path
 
-    from test_framework import TestSuite  # type: ignore[import-not-found]
+    from test_framework import TestSuite
 
     # Use minimal test GEDCOM for faster tests (saves ~35s)
     original_gedcom = os.getenv("GEDCOM_FILE_PATH")
@@ -1606,7 +1606,7 @@ def _create_search_criteria(test_data: dict[str, Any]) -> dict[str, Any]:
 
 def _search_for_person(gedcom_data: Any, search_criteria: dict[str, Any]) -> list[dict[str, Any]]:
     """Search for a person in GEDCOM data using filter_and_score_individuals."""
-    from test_framework import clean_test_output  # type: ignore[import-not-found]
+    from test_framework import clean_test_output
 
     with clean_test_output():
         return filter_and_score_individuals(
@@ -1620,7 +1620,7 @@ def _search_for_person(gedcom_data: Any, search_criteria: dict[str, Any]) -> lis
 
 def _validate_score_result(score: int, expected_score: int, test_name: str) -> None:
     """Validate scoring results and print formatted output."""
-    from test_framework import Colors  # type: ignore[import-not-found]
+    from test_framework import Colors
 
     print(f"\n{Colors.BOLD}{Colors.WHITE}✅ Test Validation:{Colors.RESET}")
     print(f"   Score ≥ 50: {Colors.GREEN if score >= 50 else Colors.RED}{score >= 50}{Colors.RESET}")
@@ -2278,7 +2278,7 @@ def test_api_search_peter_fraser() -> None:
 
 def test_relationship_path_calculation() -> None:
     """Test relationship path calculation from test person to tree owner"""
-    from relationship_utils import (  # type: ignore[import-not-found]
+    from relationship_utils import (
         convert_gedcom_path_to_unified_format,
         fast_bidirectional_bfs,
         format_relationship_path_unified,
@@ -2616,7 +2616,7 @@ if __name__ == "__main__":
     import traceback  # Use centralized path management - already handled at module level
     os.environ['DISABLE_PERFORMANCE_MONITORING'] = '1'
 
-    from logging_config import setup_logging  # type: ignore[import-not-found]
+    from logging_config import setup_logging
 
     logger = setup_logging()
 
@@ -2683,6 +2683,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(action10_module_tests)

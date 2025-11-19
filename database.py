@@ -64,7 +64,7 @@ from sqlalchemy.orm import (
 # === LOCAL IMPORTS ===
 from common_params import MatchIdentifiers
 from config import config_schema
-from core.database_manager import backup_database, db_transn  # type: ignore[import-not-found]
+from core.database_manager import backup_database, db_transn
 
 # === MODULE CONFIGURATION ===
 # Use global cached config instance

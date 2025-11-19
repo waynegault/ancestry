@@ -190,8 +190,8 @@ class MessagePersonalizer:
             logger.error(f"Error creating personalized message: {e}")
             return self._create_fallback_message(person_payload, normalized_base_format), []
 
+    @staticmethod
     def _prepare_base_format_data(
-        self,
         person_payload: dict[str, Any],
         base_format_data: Optional[dict[str, str]],
     ) -> dict[str, str]:
@@ -419,7 +419,8 @@ class MessagePersonalizer:
 
         return enhanced_data
 
-    def _apply_person_context(self, enhanced_data: dict[str, str], person_payload: dict[str, Any]) -> None:
+    @staticmethod
+    def _apply_person_context(enhanced_data: dict[str, str], person_payload: dict[str, Any]) -> None:
         """Populate person-specific defaults when available."""
         preferred_name = (
             person_payload.get("preferred_name")

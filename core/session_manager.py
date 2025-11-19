@@ -65,7 +65,7 @@ logger = setup_module(globals(), __name__)
 import threading
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, cast
 
 from core.error_handling import (
     api_retry,
@@ -147,6 +147,13 @@ class SessionLifecycleState(Enum):
     DEGRADED = "DEGRADED"
 
 
+class SupportsBrowserConsoleLogs(Protocol):
+    """Protocol for WebDrivers that expose get_log for console inspection."""
+
+    def get_log(self, log_type: str) -> list[dict[str, Any]]:  # pragma: no cover - protocol
+        ...
+
+
 class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many helpers
     """
     Refactored SessionManager that orchestrates specialized managers.
@@ -216,6 +223,11 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         self._cached_csrf_token: Optional[str] = None
         self._csrf_cache_time: float = 0.0
         self._csrf_cache_duration: float = 300.0  # 5-minute cache
+
+        # Performance monitoring attributes shared with actions
+        self._response_times: list[float] = []
+        self._avg_response_time: float = 0.0
+        self._recent_slow_calls: int = 0
 
         # Configuration (cached access)
         self.ancestry_username: str = config_schema.api.username
@@ -895,6 +907,11 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
 
         return False
 
+    def attempt_session_recovery(self, reason: str = "browser_error") -> bool:
+        """Public wrapper so callers avoid touching the private helper."""
+
+        return self._attempt_session_recovery(reason=reason)
+
     # UNIVERSAL SESSION HEALTH MONITORING METHODS
     def check_session_health(self) -> bool:
         """
@@ -1256,6 +1273,11 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
             if hasattr(self, '_in_sync_cookies'):
                 self._in_sync_cookies = False
 
+    def sync_cookies_to_requests(self, force: bool = False) -> None:
+        """Public wrapper that enforces typing-friendly cookie sync access."""
+
+        self._sync_cookies_to_requests(force=force)
+
     def force_cookie_resync(self) -> None:
         """Force a cookie resync when authentication errors occur."""
         self._session_cookies_synced = False
@@ -1338,14 +1360,15 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         Returns:
             list[Dict]: List of JavaScript errors found since last check
         """
-        if not self.driver or not self.driver_live:
+        driver = self.driver
+        if not driver or not self.driver_live:
             return []
 
         try:
             # Get browser logs (if available)
-            if hasattr(self.driver, 'get_log'):
-                # Type: ignore to handle dynamic method availability
-                logs = getattr(self.driver, 'get_log')('browser')  # type: ignore
+            if hasattr(driver, 'get_log'):
+                log_driver = cast(SupportsBrowserConsoleLogs, driver)
+                logs = log_driver.get_log('browser')
             else:
                 logger.debug("WebDriver does not support get_log method")
                 return []
@@ -1443,7 +1466,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
                     self.browser_manager.driver,
                     url,
                     selector="body",
-                    session_manager=self,  # type: ignore
+                    session_manager=self,
                 )
                 if not nav_success:
                     logger.warning(f"Failed to navigate to {url} after restart.")
@@ -2056,6 +2079,11 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
 
         cache_age = time.time() - self._csrf_cache_time
         return cache_age < self._csrf_cache_duration
+
+    def is_csrf_token_valid(self) -> bool:
+        """Typed public helper for callers that need to verify CSRF freshness."""
+
+        return self._is_csrf_token_valid()
 
     # Public properties
     @property
@@ -3111,7 +3139,8 @@ def _test_cookie_sync_state_reset_on_browser_close() -> None:
     sm = SessionManager()
 
     # Prevent actual browser operations during the test
-    sm.browser_manager.close_browser = lambda: None  # type: ignore
+    browser_manager = cast(Any, sm.browser_manager)
+    browser_manager.close_browser = lambda: None
 
     sm._session_cookies_synced = True
     sm._last_cookie_sync_time = 123.0

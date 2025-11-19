@@ -797,7 +797,7 @@ def create_test_session() -> Session:
         finally:
             session.close()
     """
-    from core.database_manager import DatabaseManager  # type: ignore[import-not-found]
+    from core.database_manager import DatabaseManager
 
     dm = DatabaseManager()
     session = dm.get_session()
