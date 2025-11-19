@@ -25,6 +25,9 @@ All review-driven work is tracked here. Completed items remain documented with i
 
 - [ ] **Type Ignore Eradication (Nov 19)**
   - Cycle 1 in progress: `core/system_cache.py` now uses a typed stub for `BaseCacheModule`, eliminating the three `# type: ignore[misc]` suppressions without sacrificing runtime behavior.
+  - Cycle 2 (Nov 19): `action6_gather.py` now keeps the default failure threshold constant (`CRITICAL_API_FAILURE_THRESHOLD_DEFAULT`) separate from the mutable runtime value, so the global reassignment no longer needs a suppression and downstream logging still reports both numbers.
+  - `_lookup_existing_persons` and `_get_person_id_mapping` have been rewritten to use SQLAlchemy's `select()`/`scalars()` APIs with typed dictionaries, removing the `.filter(... )` and `return-value` ignores while retaining eager loading and recovery queries.
+  - The relationship-probability limiter now builds a typed `set[str]` for medium-priority UUIDs, ensuring the tuple return annotation matches without a `# type: ignore[return-value]`.
   - `action6_gather.py` constants are now dynamically derived via lowercase working vars, removing all `# type: ignore[misc]` fallbacks and cleaning up untyped third-party import suppressions (`cloudscraper`) plus unused `ENOVAL` baggage.
   - `action7_inbox.py` switched to `TYPE_CHECKING` aliases for `BrowserError`/`APIError`/`AuthenticationError`, so the assignment suppressions are gone while subclasses still inherit the concrete error types.
   - `cache.py` now imports DiskCache directly with lowercase staging for `CACHE_DIR`, letting us drop the legacy import/path suppressions.

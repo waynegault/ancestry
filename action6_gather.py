@@ -22,7 +22,7 @@ import contextlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Final, Optional
 
 from core.error_handling import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
@@ -229,6 +229,7 @@ from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
 )
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
 
@@ -367,8 +368,9 @@ def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
     return max(10, min(100, total_pages // 20))
 
 
-CRITICAL_API_FAILURE_THRESHOLD: int = (
-    10  # Default minimum threshold, will be dynamically adjusted based on total pages
+CRITICAL_API_FAILURE_THRESHOLD_DEFAULT: Final[int] = 10
+critical_api_failure_threshold: int = (
+    CRITICAL_API_FAILURE_THRESHOLD_DEFAULT  # Dynamically adjusted for each run
 )
 
 # Configurable settings from config_schema
@@ -1425,10 +1427,10 @@ def _main_page_processing_loop(
     """Main loop for fetching and processing pages of matches."""
 
     # Calculate dynamic API failure threshold based on total pages to process
-    global CRITICAL_API_FAILURE_THRESHOLD  # noqa: PLW0603
+    global critical_api_failure_threshold  # noqa: PLW0603
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
-    original_threshold = CRITICAL_API_FAILURE_THRESHOLD
-    CRITICAL_API_FAILURE_THRESHOLD = dynamic_threshold  # type: ignore[misc]
+    original_threshold = critical_api_failure_threshold
+    critical_api_failure_threshold = dynamic_threshold
     if dynamic_threshold != original_threshold:
         logger.info(
             "Action 6: API failure threshold adjusted to %d for %d-page run (baseline %d)",
@@ -1990,13 +1992,16 @@ def _lookup_existing_persons(
         # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
         uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
 
-        existing_persons = (
-            session.query(Person)
+        if not uuids_norm:
+            return existing_persons_map
+
+        stmt = (
+            select(Person)
             .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .filter(Person.deleted_at.is_(None))  # type: ignore  # Exclude soft-deleted
-            .filter(Person.uuid.in_(uuids_norm))  # type: ignore
-            .all()
+            .where(Person.deleted_at.is_(None))
+            .where(Person.uuid.in_(list(uuids_norm)))
         )
+        existing_persons = session.scalars(stmt).all()
         # Step 4: Populate the result map (key by UUID)
         existing_persons_map: dict[str, Person] = {
             str(person.uuid).upper(): person
@@ -2321,15 +2326,17 @@ def _limit_relationship_probability_requests(
     }
 
     ranked_medium = sorted(matches_by_uuid.values(), key=_relationship_priority_sort_key)
-    selected_medium = {
-        match.get("uuid")
-        for match in ranked_medium[:remaining_slots]
-        if match and match.get("uuid")
-    }
+    selected_medium: set[str] = set()
+    for match in ranked_medium[:remaining_slots]:
+        if not match:
+            continue
+        uuid_val = match.get("uuid")
+        if isinstance(uuid_val, str) and uuid_val:
+            selected_medium.add(uuid_val)
 
     trimmed_count = len(medium_priority_uuids) - len(selected_medium)
     combined = allowed_high.union(selected_medium)
-    return combined, selected_medium, trimmed_count  # type: ignore[return-value]
+    return combined, selected_medium, trimmed_count
 
 
 def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
@@ -2832,12 +2839,12 @@ def _enforce_session_health_for_prefetch(
 def _raise_prefetch_threshold_if_needed(stats: _PrefetchStats, exc: Exception | None = None) -> None:
     """Raise when the critical API failure threshold is reached."""
 
-    if stats.critical_failures < CRITICAL_API_FAILURE_THRESHOLD:
+    if stats.critical_failures < critical_api_failure_threshold:
         return
 
     logger.critical(
         f"Exceeded critical API failure threshold ({stats.critical_failures}/"
-        f"{CRITICAL_API_FAILURE_THRESHOLD}). Halting batch."
+        f"{critical_api_failure_threshold}). Halting batch."
     )
     message = f"Critical API failure threshold reached ({stats.critical_failures} failures)."
     if exc is None:
@@ -3836,9 +3843,10 @@ def _get_person_id_mapping(
     Returns:
         Dictionary mapping UUID to Person ID
     """
+    created_person_map: dict[str, int] = {}
     if not inserted_uuids:
         logger.warning("No UUIDs available in insert_data to query back IDs.")
-        return {}  # type: ignore[return-value]
+        return created_person_map
 
     logger.debug(f"Querying IDs for {len(inserted_uuids)} inserted UUIDs...")
 
@@ -3846,12 +3854,16 @@ def _get_person_id_mapping(
         session.flush()  # Make pending changes visible to current session
         session.commit()  # Commit to database for ID generation
 
-        newly_inserted_persons = (
-            session.query(Person.id, Person.uuid)
-            .filter(Person.uuid.in_(inserted_uuids))  # type: ignore
-            .all()
+        person_lookup_stmt = (
+            select(Person.id, Person.uuid)
+            .where(Person.uuid.in_(inserted_uuids))
         )
-        created_person_map = {p_uuid: p_id for p_id, p_uuid in newly_inserted_persons}
+        newly_inserted_persons = session.execute(person_lookup_stmt).all()
+        created_person_map = {
+            p_uuid: p_id
+            for p_id, p_uuid in newly_inserted_persons
+            if p_id is not None and isinstance(p_uuid, str)
+        }
 
         logger.debug(f"Person ID Mapping: Queried {len(inserted_uuids)} UUIDs, mapped {len(created_person_map)} Person IDs")
 
@@ -3863,24 +3875,29 @@ def _get_person_id_mapping(
             )
 
             # Recovery attempt: Query with broader filter
-            recovery_persons = (
-                session.query(Person.id, Person.uuid)
-                .filter(Person.uuid.in_(missing_uuids))
-                .filter(Person.deleted_at.is_(None))
-                .all()
-            )
-
-            recovery_map = {p_uuid: p_id for p_id, p_uuid in recovery_persons}
-            if recovery_map:
-                logger.info(f"Recovery: Found {len(recovery_map)} additional Person IDs")
-                created_person_map.update(recovery_map)
+            if missing_uuids:
+                recovery_stmt = (
+                    select(Person.id, Person.uuid)
+                    .where(Person.uuid.in_(missing_uuids))
+                    .where(Person.deleted_at.is_(None))
+                )
+                recovery_persons = session.execute(recovery_stmt).all()
+                recovery_map = {
+                    p_uuid: p_id
+                    for p_id, p_uuid in recovery_persons
+                    if p_id is not None and isinstance(p_uuid, str)
+                }
+                if recovery_map:
+                    logger.info(f"Recovery: Found {len(recovery_map)} additional Person IDs")
+                    created_person_map.update(recovery_map)
 
         return created_person_map
 
     except Exception as mapping_error:
         logger.error(f"CRITICAL: Person ID mapping query failed: {mapping_error}")
         session.rollback()
-        return {}  # type: ignore[return-value]
+        created_person_map.clear()
+        return created_person_map
 
 
 def _process_person_creates(
@@ -9558,7 +9575,10 @@ def _test_dynamic_api_failure_threshold():
         print(f"   {status} {pages} pages -> {result} threshold (expected {expected})")
         results.append(result == expected)
 
-    print(f"   Current default threshold: {CRITICAL_API_FAILURE_THRESHOLD}")
+    print(
+        "   Current default threshold: "
+        f"{CRITICAL_API_FAILURE_THRESHOLD_DEFAULT} (runtime: {critical_api_failure_threshold})"
+    )
 
     success = all(results)
     if success:
