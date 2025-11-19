@@ -421,10 +421,11 @@ def _cache_profile(profile_id: str, profile_data: dict[str, Any]) -> None:
 @lru_cache(maxsize=1)
 def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     """Load ethnicity metadata and return (region_keys, key->column mapping)."""
-    metadata = load_ethnicity_metadata()
-    if not isinstance(metadata, dict):  # type: ignore[arg-type,misc]
+    metadata_raw: Any = load_ethnicity_metadata()
+    if not isinstance(metadata_raw, dict):
         logger.debug("Ethnicity metadata unavailable or invalid; skipping ethnicity enrichment")
         return [], {}
+    metadata: dict[str, Any] = metadata_raw
 
     regions = metadata.get("tree_owner_regions", [])
     if not isinstance(regions, list) or not regions:
@@ -474,13 +475,13 @@ def _fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str)
     if not comparison_data:
         return None
 
-    percentages = extract_match_ethnicity_percentages(comparison_data, region_keys)
+    percentages: dict[str, Optional[int]] = extract_match_ethnicity_percentages(comparison_data, region_keys)
     payload: dict[str, Optional[int]] = {}
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if column_name:
             with contextlib.suppress(TypeError, ValueError):
-                payload[column_name] = int(percentage) if percentage is not None else None  # type: ignore[comparison-overlap]
+                payload[column_name] = int(percentage) if percentage is not None else None
 
     return payload if payload else None
 

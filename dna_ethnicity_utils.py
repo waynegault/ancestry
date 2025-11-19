@@ -504,7 +504,7 @@ def _add_ethnicity_columns_to_database(tree_owner_regions: list[dict[str, Any]],
 def extract_match_ethnicity_percentages(
     comparison_data: dict[str, Any],
     tree_owner_region_keys: list[str]
-) -> dict[str, int]:
+) -> dict[str, Optional[int]]:
     """
     Extract match's ethnicity percentages for tree owner's regions.
 
@@ -521,7 +521,7 @@ def extract_match_ethnicity_percentages(
         >>> extract_match_ethnicity_percentages(comparison_data, tree_owner_region_keys)
         {'08302': 0, '06842': 16}
     """
-    percentages = {}
+    percentages: dict[str, Optional[int]] = {}
 
     if not comparison_data or "comparisons" not in comparison_data:
         # Return 0% for all regions if no comparison data
@@ -536,7 +536,12 @@ def extract_match_ethnicity_percentages(
 
     # Extract percentages for tree owner's regions
     for region_key in tree_owner_region_keys:
-        percentages[region_key] = comparison_lookup.get(region_key, 0)
+        percentage_value = comparison_lookup.get(region_key, 0)
+        try:
+            normalized_value: Optional[int] = int(percentage_value)
+        except (TypeError, ValueError):
+            normalized_value = None
+        percentages[region_key] = normalized_value
 
     return percentages
 

@@ -33,4 +33,6 @@ All review-driven work is tracked here. Completed items remain documented with i
   - `test_utilities.py` loads the optional `gedcom` dependency via `import_module` so the function signature stays typed and the `# type: ignore` is no longer needed even when the package is absent.
   - `config/config_manager.py` declares a typed optional `load_dotenv` callable so the ImportError fallback no longer needs an assignment suppression.
   - `cache.py` relies on `Sized`/`Iterable` casts and safe attribute access to satisfy Pyright for `len(cache)`/iteration paths and the legacy `module_name` property, clearing the remaining ignores in that module.
+  - `action6_gather.py` now validates ethnicity metadata via an `Any` staging variable and relies on the corrected Optional percentage typing so the helper no longer needs suppressions for metadata guards or percentage normalization.
+  - `dna_ethnicity_utils.py` normalizes comparison payloads to `Optional[int]` values (with defensive conversions) so downstream code can reason about missing data without masking type errors.
   - Remaining work: ~180 additional `# type: ignore[...]` sites across action modules, ORM helpers, and GEDCOM tooling; need staged sweeps (imports first, then attr/arg issues) with Pyright checks and regression tests after each tranche.
