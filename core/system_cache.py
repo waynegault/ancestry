@@ -38,17 +38,35 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
-    BaseCacheModule,  # Base cache interface
     cache,  # Global cache instance
     clear_cache,  # Cache clearing
     get_cache_stats,  # Statistics
     get_unified_cache_key,  # Unified key generation
     warm_cache_with_data,  # Cache warming
 )
+
+if TYPE_CHECKING:
+    class BaseCacheModule:
+        """Lightweight stub mirroring the runtime BaseCacheModule for typing."""
+
+        def __init__(self) -> None: ...
+
+        def get_stats(self) -> dict[str, Any]: ...
+
+        def clear(self) -> bool: ...
+
+        def warm(self) -> bool: ...
+
+        def get_module_name(self) -> str: ...
+
+        def get_health_status(self) -> dict[str, Any]: ...
+
+else:  # pragma: no cover - runtime import for actual implementation
+    from cache import BaseCacheModule
 
 # === SESSION CACHE INTEGRATION ===
 from core.session_cache import (
@@ -89,7 +107,7 @@ SYSTEM_CACHE_CONFIG = SystemCacheConfig()
 # === API RESPONSE CACHING SYSTEM ===
 
 
-class APIResponseCache(BaseCacheModule):  # type: ignore[misc]
+class APIResponseCache(BaseCacheModule):
     """
     High-performance API response caching system.
     Optimizes external API calls with intelligent TTL management.
@@ -210,7 +228,7 @@ class APIResponseCache(BaseCacheModule):  # type: ignore[misc]
 # === DATABASE QUERY CACHING SYSTEM ===
 
 
-class DatabaseQueryCache(BaseCacheModule):  # type: ignore[misc]
+class DatabaseQueryCache(BaseCacheModule):
     """
     High-performance database query result caching.
     Optimizes database operations with intelligent invalidation.
@@ -296,7 +314,7 @@ class DatabaseQueryCache(BaseCacheModule):  # type: ignore[misc]
 # === MEMORY OPTIMIZATION SYSTEM ===
 
 
-class MemoryOptimizer(BaseCacheModule):  # type: ignore[misc]
+class MemoryOptimizer(BaseCacheModule):
     """
     Intelligent memory optimization and garbage collection management.
     """
@@ -973,7 +991,7 @@ def system_cache_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner  # type: ignore[import-not-found]
+from test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(system_cache_module_tests)
 

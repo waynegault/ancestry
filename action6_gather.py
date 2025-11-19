@@ -148,42 +148,38 @@ def _log_api_performance(api_name: str, start_time: float, response_status: str 
     _track_api_metrics(api_name, duration, response_status)
 
 
-def _update_session_performance_tracking(session_manager: Optional["SessionManager"], duration: float, response_status: str) -> None:  # noqa: ARG001
-    """Update session manager with performance tracking data.
+def _update_session_performance_tracking(
+    session_manager: Optional["SessionManager"],
+    duration: float,
+    _response_status: str,
+) -> None:
+    """Update session manager with performance tracking data."""
 
-    Note: response_status parameter reserved for future use.
+    if session_manager is None:
+        return
 
-    Args:
-        session_manager: SessionManager instance
-        duration: Response duration in seconds
-        _response_status: Response status (unused, kept for API compatibility)
-    """
     try:
-        # Initialize tracking if not exists
-        if not hasattr(session_manager, '_response_times'):
-            session_manager._response_times = []  # type: ignore[attr-defined]
-            session_manager._recent_slow_calls = 0  # type: ignore[attr-defined]
-            session_manager._avg_response_time = 0.0  # type: ignore[attr-defined]
+        if not hasattr(session_manager, "_response_times"):
+            session_manager._response_times = []
+            session_manager._recent_slow_calls = 0
+            session_manager._avg_response_time = 0.0
 
-        # Add response time to tracking (keep last 20 calls)
-        session_manager._response_times.append(duration)  # type: ignore[attr-defined]
-        if len(session_manager._response_times) > 20:  # type: ignore[attr-defined]
-            session_manager._response_times.pop(0)  # type: ignore[attr-defined]
+        response_times = session_manager._response_times
+        response_times.append(duration)
+        if len(response_times) > 20:
+            response_times.pop(0)
 
-        # Update average response time
-        session_manager._avg_response_time = sum(session_manager._response_times) / len(session_manager._response_times)  # type: ignore[attr-defined]
+        session_manager._avg_response_time = sum(response_times) / len(response_times)
 
-        # Track consecutive slow calls
         if duration > 5.0:
-            session_manager._recent_slow_calls += 1  # type: ignore[attr-defined]
+            session_manager._recent_slow_calls += 1
         else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)  # type: ignore[attr-defined]
+            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
 
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)  # type: ignore[attr-defined]
+        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
 
-    except Exception as e:
-        logger.debug(f"Failed to update session performance tracking: {e}")
-        pass
+    except Exception as exc:  # pragma: no cover - defensive telemetry
+        logger.debug(f"Failed to update session performance tracking: {exc}")
 
 
 # FINAL OPTIMIZATION 1: Progressive Processing Integration
@@ -226,9 +222,8 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 integrate_with_action6(sys.modules[__name__])
 
 # === THIRD-PARTY IMPORTS ===
-import cloudscraper  # type: ignore[import-untyped]
+import cloudscraper
 import requests
-from diskcache.core import ENOVAL  # type: ignore[import-untyped]  # For checking cache misses
 from requests.exceptions import ConnectionError, RequestException
 from selenium.common.exceptions import (
     NoSuchCookieException,
@@ -301,44 +296,54 @@ def _call_api_request(*args: Any, **kwargs: Any) -> Any:
 
 
 # --- Constants ---
-# Get MATCHES_PER_PAGE from config, fallback to 20 if not available
+# Default values before attempting config overrides
+_matches_per_page_default = 20
+_enable_ethnicity_enrichment_default = True
+_ethnicity_min_cm_default = 10
+_relationship_prob_limit_default: Any = 0
+
+_matches_per_page = _matches_per_page_default
+_enable_ethnicity_enrichment = _enable_ethnicity_enrichment_default
+_ethnicity_min_cm = _ethnicity_min_cm_default
+_relationship_prob_limit_raw: Any = _relationship_prob_limit_default
+
+# Get MATCHES_PER_PAGE from config, fallback to defaults if not available
 try:
     from config import config_schema as _cfg_temp
 
-    MATCHES_PER_PAGE: int = getattr(_cfg_temp, "matches_per_page", 20)
-    ENABLE_ETHNICITY_ENRICHMENT: bool = getattr(
-        _cfg_temp, "enable_ethnicity_enrichment", True
+    _matches_per_page = int(getattr(_cfg_temp, "matches_per_page", _matches_per_page))
+    _enable_ethnicity_enrichment = bool(
+        getattr(_cfg_temp, "enable_ethnicity_enrichment", _enable_ethnicity_enrichment)
     )
-    try:
-        ETHNICITY_ENRICHMENT_MIN_CM: int = int(
-            getattr(_cfg_temp, "ethnicity_enrichment_min_cm", 10) or 0
-        )
-    except (TypeError, ValueError):
-        ETHNICITY_ENRICHMENT_MIN_CM = 10  # type: ignore[misc]
-    _RELATIONSHIP_PROB_LIMIT_RAW = getattr(
-        getattr(_cfg_temp, "api", None), "max_relationship_prob_fetches", 0
+    raw_min_cm = getattr(_cfg_temp, "ethnicity_enrichment_min_cm", _ethnicity_min_cm)
+    _ethnicity_min_cm = int(raw_min_cm or _ethnicity_min_cm)
+    _relationship_prob_limit_raw = getattr(
+        getattr(_cfg_temp, "api", None), "max_relationship_prob_fetches", _relationship_prob_limit_raw
     )
-except ImportError:
-    MATCHES_PER_PAGE = 20  # type: ignore[misc]
-    ENABLE_ETHNICITY_ENRICHMENT = True  # type: ignore[misc]
-    ETHNICITY_ENRICHMENT_MIN_CM = 10  # type: ignore[misc]
-    _RELATIONSHIP_PROB_LIMIT_RAW = 0  # type: ignore[misc]
+except (ImportError, ValueError, TypeError):
+    # Defaults already set above; import errors simply retain defaults
+    pass
 
-ETHNICITY_ENRICHMENT_MIN_CM = max(0, int(ETHNICITY_ENRICHMENT_MIN_CM))  # type: ignore[misc]
+ETHNICITY_ENRICHMENT_MIN_CM: int = max(0, int(_ethnicity_min_cm))
+MATCHES_PER_PAGE: int = max(1, _matches_per_page)
+ENABLE_ETHNICITY_ENRICHMENT: bool = _enable_ethnicity_enrichment
 
 try:
-    RELATIONSHIP_PROB_MAX_PER_PAGE: int = int(_RELATIONSHIP_PROB_LIMIT_RAW or 0)
+    _relationship_prob_max_per_page = int(_relationship_prob_limit_raw or 0)
 except (TypeError, ValueError):
-    RELATIONSHIP_PROB_MAX_PER_PAGE = 0  # type: ignore[misc]
+    _relationship_prob_max_per_page = 0
 
-RELATIONSHIP_PROB_MAX_PER_PAGE = max(0, RELATIONSHIP_PROB_MAX_PER_PAGE)  # type: ignore[misc]
+RELATIONSHIP_PROB_MAX_PER_PAGE: int = max(0, _relationship_prob_max_per_page)
 
 # Get DNA match probability threshold from environment, fallback to 10 cM
 try:
     import os
-    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = int(os.getenv('DNA_MATCH_PROBABILITY_THRESHOLD_CM', '10'))
+
+    _dna_threshold_raw = int(os.getenv('DNA_MATCH_PROBABILITY_THRESHOLD_CM', '10'))
 except (ValueError, TypeError):
-    DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = 10  # type: ignore[misc]
+    _dna_threshold_raw = 10
+
+DNA_MATCH_PROBABILITY_THRESHOLD_CM: int = max(0, _dna_threshold_raw)
 
 _CM_RELATIONSHIP_BUCKETS: tuple[tuple[int, str], ...] = (
     (2200, "Parent/Child"),
@@ -781,7 +786,12 @@ def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[st
         'X-CSRF-TOKEN'
     ]
 
-    cookies = session_manager.driver.get_cookies()  # type: ignore[union-attr]
+    driver = session_manager.driver
+    if not driver:
+        logger.warning("Cannot access CSRF cookies: browser driver missing")
+        return None
+
+    cookies = driver.get_cookies()
     for cookie_name in csrf_cookie_names:
         for cookie in cookies:
             if cookie['name'] == cookie_name:
@@ -831,7 +841,12 @@ def _ensure_on_match_list_page(session_manager: SessionManager) -> bool:
         target_matches_url_base = urljoin(
             config_schema.api.base_url, f"discoveryui-matches/list/{session_manager.my_uuid}"
         )
-        current_url = session_manager.driver.current_url  # type: ignore
+        driver = session_manager.driver
+        if not driver:
+            logger.error("WebDriver unavailable while checking DNA match list page.")
+            return False
+
+        current_url = driver.current_url
 
         if not current_url.startswith(target_matches_url_base):
             if not nav_to_list(session_manager):
@@ -1157,7 +1172,7 @@ def _accumulate_page_metrics(
             page_metrics.db_seconds,
             page_metrics.commit_seconds,
         )
-    )
+        )  # Closing parenthesis for _process_dna_data_safe
     if not has_signal:
         return
 
@@ -1334,13 +1349,17 @@ def _handle_session_death(current_page_num: int, _state: dict[str, Any]) -> None
 
 def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
     """Attempt proactive session refresh to prevent timeout."""
-    if not (hasattr(session_manager, 'session_start_time') and session_manager.session_start_time):
+
+    if not session_manager.session_start_time:
         return
 
     session_age = time.time() - session_manager.session_start_time
     if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
-        logger.info(f"Proactively refreshing session after {session_age:.0f} seconds to prevent timeout")
-        if session_manager._attempt_session_recovery(reason="proactive"):  # type: ignore[reportPrivateUsage]
+        logger.info(
+            "Proactively refreshing session after %.0f seconds to prevent timeout",
+            session_age,
+        )
+        if session_manager.attempt_session_recovery(reason="proactive"):
             logger.info("✅ Proactive session refresh successful")
         else:
             logger.error("❌ Proactive session refresh failed")
@@ -1499,7 +1518,6 @@ def _validate_session_state(session_manager: SessionManager) -> None:
     if not session_manager.my_uuid:
         raise AuthenticationExpiredError(
             "Failed to retrieve my_uuid for DNA match gathering",
-            context={"session_state": "authenticated but no UUID"},
         )
 
 
@@ -5295,7 +5313,7 @@ def _compare_datetime_field(current_value: Any, new_value: Any) -> tuple[bool, A
             if isinstance(current_value, datetime)
             else None
         )
-    )
+        )  # Closing parenthesis for _process_dna_data_safe
     new_dt_utc = (
         new_value.astimezone(timezone.utc).replace(microsecond=0)
         if isinstance(new_value, datetime) and new_value.tzinfo
@@ -5304,7 +5322,7 @@ def _compare_datetime_field(current_value: Any, new_value: Any) -> tuple[bool, A
             if isinstance(new_value, datetime)
             else None
         )
-    )
+        )  # Closing parenthesis for _process_dna_data_safe
     return (new_dt_utc != current_dt_utc, new_value)
 
 
@@ -5873,7 +5891,6 @@ def _prepare_dna_match_operation_data(
     predicted_relationship: Optional[str],
     log_ref_short: str,
     logger_instance: logging.Logger,
-    session_manager: SessionManager,
 ) -> Optional[dict[str, Any]]:
     """
     Prepares DnaMatch data for create or update operations by comparing API data with existing records.
@@ -5893,7 +5910,6 @@ def _prepare_dna_match_operation_data(
         or None if no create/update is needed. The dictionary includes fields like: cm_dna,
         shared_segments, longest_shared_segment, etc.
     """
-    _ = session_manager
     details_part = prefetched_combined_details or {}
     cm_value_raw = match.get("cm_dna", 0)
     try:
@@ -6176,7 +6192,6 @@ def _process_dna_data_safe(
     predicted_relationship: Optional[str],
     log_ref_short: str,
     logger_instance: logging.Logger,
-    session_manager: SessionManager
 ) -> Optional[dict[str, Any]]:
     """Process DNA match data with error handling."""
     try:
@@ -6188,7 +6203,6 @@ def _process_dna_data_safe(
             predicted_relationship=predicted_relationship,
             log_ref_short=log_ref_short,
             logger_instance=logger_instance,
-            session_manager=session_manager,
         )
     except Exception as dna_err:
         logger_instance.error(
@@ -6332,7 +6346,6 @@ def _prepare_match_operations(
         match_info.predicted_relationship,
         match_info.log_ref_short,
         logger_instance,
-        session_manager,
     )
 
     tree_op_data, tree_operation_status = _process_tree_data_safe(
@@ -6508,10 +6521,6 @@ def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool
     Returns:
         Tuple of (is_valid, driver, my_uuid)
     """
-    if not isinstance(session_manager, SessionManager):  # type: ignore[unreachable]
-        logger.error("get_matches: Invalid SessionManager instance provided.")
-        return False, None, None
-
     driver = session_manager.driver
     my_uuid = session_manager.my_uuid
 
@@ -6562,10 +6571,9 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
     last_cookie_sync = getattr(session_manager, '_last_cookie_sync_time', 0)
     cookie_sync_needed = (current_time - last_cookie_sync) > 300  # 5 minutes
 
-    if cookie_sync_needed and hasattr(session_manager, '_sync_cookies_to_requests'):
-        session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
-        # Track the sync time
-        setattr(session_manager, '_last_cookie_sync_time', current_time)
+    if cookie_sync_needed:
+        session_manager.sync_cookies_to_requests()
+        session_manager._last_cookie_sync_time = current_time
         logger.debug("Smart cookie sync performed (cookies were stale)")
     elif not cookie_sync_needed:
         logger.debug("Skipping cookie sync - cookies are fresh")
@@ -6633,8 +6641,8 @@ def _read_csrf_from_fallback_cookies(driver: Any, csrf_token_cookie_names: tuple
 def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
     """Cache CSRF token in session manager."""
     import time as time_module
-    setattr(session_manager, '_cached_csrf_token', csrf_token)
-    setattr(session_manager, '_cached_csrf_time', time_module.time())
+    session_manager._cached_csrf_token = csrf_token
+    session_manager._csrf_cache_time = time_module.time()
 
 
 def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
@@ -6647,8 +6655,8 @@ def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any
     import time as time_module
 
     # Check if we have a cached CSRF token that's still valid
-    cached_csrf_token = getattr(session_manager, '_cached_csrf_token', None)
-    cached_csrf_time = getattr(session_manager, '_cached_csrf_time', 0)
+    cached_csrf_token = session_manager._cached_csrf_token
+    cached_csrf_time = session_manager._csrf_cache_time
     csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
 
     if cached_csrf_token and csrf_cache_valid:
@@ -6727,10 +6735,9 @@ def _call_match_list_api(
 
     # CRITICAL: Ensure cookies are synced immediately before API call
     try:
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
+        session_manager.sync_cookies_to_requests()
     except Exception as cookie_sync_error:
-        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+        logger.warning("Session-level cookie sync hint failed (ignored): %s", cookie_sync_error)
 
     # Call the API with fresh cookie sync
     return _call_api_request(
@@ -6805,7 +6812,7 @@ def _handle_303_session_refresh(
             logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
 
         # Force clear readiness check cache to ensure fresh validation
-        session_manager._last_readiness_check = None  # type: ignore[attr-defined]
+        session_manager._last_readiness_check = None
         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
 
         # Force session refresh with cleared cache
@@ -6815,7 +6822,7 @@ def _handle_303_session_refresh(
             return None
 
         # Force cookie sync and CSRF token refresh
-        session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
+        session_manager.sync_cookies_to_requests()
         fresh_csrf_token = _get_csrf_token(session_manager, force_api_refresh=True)
         if fresh_csrf_token:
             # Update headers with fresh token and retry
@@ -7403,10 +7410,9 @@ def _get_api_headers() -> dict[str, str]:
 def _sync_session_cookies(session_manager: SessionManager) -> None:
     """Sync session cookies if available."""
     try:
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
+        session_manager.sync_cookies_to_requests()
     except Exception as cookie_sync_error:
-        logger.warning(f"Session-level cookie sync hint failed (ignored): {cookie_sync_error}")
+        logger.warning("Session-level cookie sync hint failed (ignored): %s", cookie_sync_error)
 
 
 def _ensure_action6_session_ready(
@@ -8111,12 +8117,12 @@ def _fetch_batch_ladder(
 def _get_cached_csrf_token(
 session_manager: SessionManager, api_description: str) -> Optional[str]:
     """Get cached CSRF token if available."""
-    if (hasattr(session_manager, '_cached_csrf_token') and
-        hasattr(session_manager, '_is_csrf_token_valid') and
-        session_manager._is_csrf_token_valid() and  # type: ignore[attr-defined]
-        session_manager._cached_csrf_token):  # type: ignore[attr-defined]
-        logger.debug(f"Using cached CSRF token for {api_description} (performance optimized).")
-        return session_manager._cached_csrf_token  # type: ignore[attr-defined]
+    if session_manager.is_csrf_token_valid() and session_manager._cached_csrf_token:
+        logger.debug(
+            "Using cached CSRF token for %s (performance optimized).",
+            api_description,
+        )
+        return session_manager._cached_csrf_token
     return None
 
 
@@ -8128,8 +8134,7 @@ def _extract_csrf_from_cookies(
     """Extract CSRF token from driver cookies."""
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
-        if hasattr(session_manager, '_sync_cookies_to_requests'):
-            session_manager._sync_cookies_to_requests()  # type: ignore[attr-defined]
+        session_manager.sync_cookies_to_requests()
         driver_cookies_list = driver.get_cookies()
         driver_cookies_dict = {
             c["name"]: c["value"]
@@ -8141,8 +8146,9 @@ def _extract_csrf_from_cookies(
                 csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
 
                 import time
-                session_manager._cached_csrf_token = csrf_token_val  # type: ignore[attr-defined]
-                session_manager._csrf_cache_time = time.time()  # type: ignore[attr-defined]
+
+                session_manager._cached_csrf_token = csrf_token_val
+                session_manager._csrf_cache_time = time.time()
 
                 logger.debug(
                     f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}."
@@ -9614,10 +9620,7 @@ def _test_checkpoint_resume_logic() -> bool:
 def _test_cm_relationship_fallback() -> bool:
     """Verify cM-driven predicted relationship inference when API data is missing."""
 
-    from types import SimpleNamespace
-
     print("🧪 Testing cM-based predicted relationship fallback...")
-    session_manager_stub = SimpleNamespace()
     logger_instance = logging.getLogger("action6.tests.cm_fallback")
 
     missing_match = {
@@ -9634,7 +9637,6 @@ def _test_cm_relationship_fallback() -> bool:
         predicted_relationship=None,
         log_ref_short="TEST-CM",
         logger_instance=logger_instance,
-        session_manager=session_manager_stub,  # type: ignore[arg-type]
     )
 
     assert inferred is not None, "Expected DNA data dict for new match"
@@ -9658,7 +9660,6 @@ def _test_cm_relationship_fallback() -> bool:
         predicted_relationship="3rd cousin",
         log_ref_short="TEST-API",
         logger_instance=logger_instance,
-        session_manager=session_manager_stub,  # type: ignore[arg-type]
     )
 
     provided_payload = provided.get("dna_match", provided)  # type: ignore[union-attr]
@@ -9778,7 +9779,7 @@ def _test_303_redirect_detection():
         mock_session_manager.config = Mock()
         mock_session_manager.config.api = Mock()
         mock_session_manager.config.api.base_url = 'https://www.ancestry.co.uk/'
-        mock_session_manager._sync_cookies_to_requests = Mock()
+        mock_session_manager.sync_cookies_to_requests = Mock()
         mock_session_manager.driver.current_url = 'https://www.ancestry.co.uk/discoveryui-matches/list/FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7'
 
         # Test the logic without actual navigation

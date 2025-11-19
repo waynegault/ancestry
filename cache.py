@@ -73,10 +73,10 @@ P = ParamSpec('P')
 R = TypeVar('R')
 
 # --- Third-party imports ---
-from diskcache import Cache  # type: ignore
+from diskcache import Cache
 
 # Import constants used for checking cache misses vs. stored None values
-from diskcache.core import ENOVAL  # type: ignore
+from diskcache.core import ENOVAL
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
@@ -90,9 +90,11 @@ from test_framework import (
 
 # Step 1: Define cache directory from configuration
 if config_schema and getattr(config_schema.cache, "cache_dir", None):
-    CACHE_DIR = Path(str(config_schema.cache.cache_dir))
+    _cache_dir = Path(str(config_schema.cache.cache_dir))
 else:
-    CACHE_DIR = Path("Cache")  # type: ignore
+    _cache_dir = Path("Cache")
+
+CACHE_DIR: Path = _cache_dir
 logger.debug(f"Cache directory configured: {CACHE_DIR}")
 
 # Step 2: Ensure the cache directory exists

@@ -23,4 +23,9 @@ All review-driven work is tracked here. Completed items remain documented with i
 
 ## Backlog
 
-- [ ] *No outstanding review tasks — add the next item here when identified.*
+- [ ] **Type Ignore Eradication (Nov 19)**
+  - Cycle 1 in progress: `core/system_cache.py` now uses a typed stub for `BaseCacheModule`, eliminating the three `# type: ignore[misc]` suppressions without sacrificing runtime behavior.
+  - `action6_gather.py` constants are now dynamically derived via lowercase working vars, removing all `# type: ignore[misc]` fallbacks and cleaning up untyped third-party import suppressions (`cloudscraper`) plus unused `ENOVAL` baggage.
+  - `action7_inbox.py` switched to `TYPE_CHECKING` aliases for `BrowserError`/`APIError`/`AuthenticationError`, so the assignment suppressions are gone while subclasses still inherit the concrete error types.
+  - `cache.py` now imports DiskCache directly with lowercase staging for `CACHE_DIR`, letting us drop the legacy import/path suppressions.
+  - Remaining work: ~180 additional `# type: ignore[...]` sites across action modules, ORM helpers, and GEDCOM tooling; need staged sweeps (imports first, then attr/arg issues) with Pyright checks and regression tests after each tranche.

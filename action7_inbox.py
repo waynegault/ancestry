@@ -84,18 +84,13 @@ class MaxApiFailuresExceededError(Exception):
 
 
 if TYPE_CHECKING:
-    class BrowserErrorBaseError(Exception):
-        """Typed BrowserError stub for static analysis."""
-
-    class APIErrorBaseError(Exception):
-        """Typed APIError stub for static analysis."""
-
-    class AuthenticationErrorBaseError(Exception):
-        """Typed AuthenticationError stub for static analysis."""
+    from core.error_handling import BrowserError as BrowserErrorBaseError
+    from core.error_handling import APIError as APIErrorBaseError
+    from core.error_handling import AuthenticationError as AuthenticationErrorBaseError
 else:
-    BrowserErrorBaseError = BrowserError  # type: ignore[assignment]
-    APIErrorBaseError = APIError  # type: ignore[assignment]
-    AuthenticationErrorBaseError = AuthenticationError  # type: ignore[assignment]
+    BrowserErrorBaseError = BrowserError
+    APIErrorBaseError = APIError
+    AuthenticationErrorBaseError = AuthenticationError
 
 
 class BrowserSessionError(BrowserErrorBaseError):
