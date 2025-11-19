@@ -133,6 +133,8 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
     Comprehensive session health monitoring with predictive analytics.
     """
 
+    _action6_callback_registered: bool
+
     def __init__(self) -> None:
         self.metrics_history: dict[str, deque[tuple[float, float]]] = {}
         self.current_metrics: dict[str, HealthMetric] = {}
@@ -181,6 +183,8 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
         self.success_patterns: list[dict[str, Any]] = []
         # Safety test mode flag to standardize alert prefixes
         self._safety_test_mode: bool = False
+        # Integration bookkeeping
+        self._action6_callback_registered: bool = False
 
         # Initialize metrics
         self._initialize_metrics()
@@ -1414,7 +1418,7 @@ def integrate_with_action6(action6_module: Any) -> Any:
 
             try:
                 action6_module.register_api_metrics_callback(_record_api_metrics)
-                monitor._action6_callback_registered = True  # type: ignore[attr-defined]
+                monitor._action6_callback_registered = True
                 logger.debug("Registered Action 6 API performance callback with health monitor")
             except Exception as integration_error:
                 logger.debug(f"Failed to register Action 6 health callback: {integration_error}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import socket
 import subprocess
@@ -52,24 +53,21 @@ else:
                 raise ValueError("metrics_namespace must be non-empty")
 
 try:
-    from standard_imports import setup_module as _setup_module
+    from standard_imports import setup_module
 except Exception:  # pragma: no cover - logging fallback
-    import logging
 
-    def setup_module(namespace: dict[str, Any], module_name: str) -> logging.Logger:
+    def setup_module(module_globals: dict[str, Any], module_name: str) -> logging.Logger:
         logging.basicConfig(level=logging.INFO)
         logger_obj = logging.getLogger(module_name)
-        namespace["logger"] = logger_obj
+        module_globals["logger"] = logger_obj
         return logger_obj
-else:
-    setup_module = _setup_module
 
 try:
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
 except Exception:  # pragma: no cover - lightweight fallback for optional dependency
 
     @dataclass
-    class TestSuite:
+    class _FallbackTestSuite:
         name: str
         module: str
         tests_run: int = 0
@@ -87,8 +85,14 @@ except Exception:  # pragma: no cover - lightweight fallback for optional depend
             return True
 
     @contextmanager
-    def suppress_logging() -> Any:  # pragma: no cover - fallback noop
+    def _fallback_suppress_logging() -> Any:  # pragma: no cover - fallback noop
         yield
+
+    _FrameworkTestSuite = _FallbackTestSuite
+    _framework_suppress_logging = _fallback_suppress_logging
+
+TestSuite = cast(type[Any], _FrameworkTestSuite)
+suppress_logging = _framework_suppress_logging
 
 
 @dataclass

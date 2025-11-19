@@ -22,7 +22,8 @@ logger = setup_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Optional, Union
 from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -265,7 +266,11 @@ class APIManager:
 
         try:
             # Get cookies from browser
-            driver_cookies = browser_manager.driver.get_cookies()
+            driver = browser_manager.driver
+            if driver is None:
+                logger.error("Cannot sync cookies: Browser driver is not available.")
+                return False
+            driver_cookies = driver.get_cookies()
             logger.debug(f"Retrieved {len(driver_cookies)} cookies from browser for API sync.")
 
             # Clear existing cookies to prevent duplicates

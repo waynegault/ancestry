@@ -33,7 +33,7 @@ STRUCTURED_KEYS = [
 ]
 
 # Legacy/flat keys occasionally seen in AI responses
-LEGACY_TO_STRUCTURED_MAP = {
+LEGACY_TO_STRUCTURED_MAP: dict[str, tuple[str, str]] = {
     "mentioned_names": ("structured_names", "name"),
     "mentioned_locations": ("locations", "place"),
     "mentioned_dates": ("vital_records", "date"),
@@ -286,7 +286,7 @@ def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
     - mentioned_locations -> locations[{place}]
     - mentioned_dates -> vital_records[{date}]
     """
-    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():  # type: ignore
+    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():
         legacy_vals = extracted.get(legacy_key)
         if not legacy_vals:
             continue

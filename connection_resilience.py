@@ -21,11 +21,12 @@ logger = setup_module(globals(), __name__)
 
 import functools
 import time
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, ParamSpec, TypeVar
 
 from utils import prevent_system_sleep, restore_system_sleep
 
-F = TypeVar('F', bound=Callable[..., Any])
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 class ConnectionResilienceManager:
@@ -109,7 +110,7 @@ _resilience_manager = ConnectionResilienceManager()
 def with_connection_resilience(
     operation_name: str,
     max_recovery_attempts: int = 3
-) -> Callable[[F], F]:
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator to add connection resilience to long-running operations.
 
@@ -125,9 +126,9 @@ def with_connection_resilience(
             # Long-running operation
             pass
     """
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             _resilience_manager.max_recovery_attempts = max_recovery_attempts
             _resilience_manager.start_resilience_mode()
 
@@ -167,14 +168,14 @@ def with_connection_resilience(
             finally:
                 _resilience_manager.stop_resilience_mode()
 
-        return wrapper  # type: ignore
+        return wrapper
     return decorator
 
 
 def with_periodic_health_check(
     check_interval: int = 5,
     operation_name: str = "Operation"
-) -> Callable[[F], F]:
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator to add periodic browser health checks during operation.
 
@@ -184,11 +185,11 @@ def with_periodic_health_check(
             # Operation with periodic health checks
             pass
     """
-    def decorator(func: F) -> F:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Get session_manager from args
-            session_manager = None
+            session_manager: Any = None
             for arg in args:
                 if hasattr(arg, 'check_session_health'):
                     session_manager = arg
@@ -202,7 +203,7 @@ def with_periodic_health_check(
             check_counter = {'count': 0}
             original_func = func
 
-            def monitored_func(*inner_args: Any, **inner_kwargs: Any) -> Any:
+            def monitored_func(*inner_args: P.args, **inner_kwargs: P.kwargs) -> R:
                 check_counter['count'] += 1
 
                 # Periodic health check
@@ -217,7 +218,7 @@ def with_periodic_health_check(
 
             return monitored_func(*args, **kwargs)
 
-        return wrapper  # type: ignore
+        return wrapper
     return decorator
 
 

@@ -49,10 +49,10 @@ import time
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar, cast
 
 # Type variables for generic decorator support
-F = TypeVar('F', bound=Callable[..., Any])
+FuncType = TypeVar('FuncType', bound=Callable[..., Any])
 R = TypeVar('R')
 
 
@@ -150,7 +150,7 @@ def profile_with_cprofile(
     output_file: Optional[str] = None,
     enabled: Optional[bool] = None,
     sort_by: Optional[str] = None,
-) -> Callable[[F], F]:
+) -> Callable[[FuncType], FuncType]:
     """
     Decorator to profile a function with cProfile.
 
@@ -172,7 +172,7 @@ def profile_with_cprofile(
             pass
     """
 
-    def decorator(func: F) -> F:
+    def decorator(func: FuncType) -> FuncType:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Check if profiling is enabled (decorator arg overrides global)
@@ -224,7 +224,7 @@ def profile_with_cprofile(
                 )
                 raise e
 
-        return wrapper  # type: ignore[return-value]
+        return cast(FuncType, wrapper)
 
     return decorator
 

@@ -20,23 +20,29 @@ parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+import logging
 from contextlib import contextmanager
 from functools import wraps
 from importlib import import_module
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    ParamSpec,
+    TypeVar,
+    cast,
+)
 
 # === OPTIONAL STANDARD IMPORTS SETUP ===
 try:
-    from standard_imports import setup_module as _setup_module
+    from standard_imports import setup_module
 except Exception:  # pragma: no cover - fallback when bootstrap module missing
-    import logging
 
-    def _setup_module(namespace: dict[str, object], module_name: str) -> logging.Logger:
+    def setup_module(module_globals: dict[str, object], module_name: str) -> logging.Logger:
         logging.basicConfig(level=logging.INFO)
         logger_obj = logging.getLogger(module_name)
-        namespace["logger"] = logger_obj
+        module_globals["logger"] = logger_obj
         return logger_obj
-
-setup_module = _setup_module
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -47,14 +53,6 @@ import time
 import weakref
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Callable,
-    Optional,
-    ParamSpec,
-    TypeVar,
-    cast,
-)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -153,11 +151,11 @@ def _load_config_schema_snapshot() -> Optional[Any]:
 
 
 try:
-    from test_framework import TestSuite, suppress_logging
+    from test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
 except Exception:  # pragma: no cover - minimal fallback for optional dependency
 
     @dataclass
-    class TestSuite:
+    class _FallbackTestSuite:
         name: str
         module: str
 
@@ -175,18 +173,29 @@ except Exception:  # pragma: no cover - minimal fallback for optional dependency
             return True
 
     @contextmanager
-    def suppress_logging() -> Any:
+    def _fallback_suppress_logging() -> Any:
         yield
 
-try:
-    from test_utilities import create_standard_test_runner
-except Exception:  # pragma: no cover - fallback runner
+    _FrameworkTestSuite = _FallbackTestSuite
+    _framework_suppress_logging = _fallback_suppress_logging
 
-    def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], bool]:
+TestSuite = cast(type[Any], _FrameworkTestSuite)
+suppress_logging = _framework_suppress_logging
+
+
+def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], bool]:
+    """Import the shared runner lazily with a fallback."""
+
+    try:
+        from test_utilities import create_standard_test_runner as _create_standard_test_runner
+    except Exception:
+
         def _runner() -> bool:
             return test_func()
 
         return _runner
+
+    return _create_standard_test_runner(test_func)
 
 # === SESSION COMPONENT CACHE ===
 

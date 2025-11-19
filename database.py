@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union, cast
 from uuid import uuid4
 
 # === THIRD-PARTY IMPORTS ===
@@ -53,6 +53,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import (
     Mapped,
+    Mapper,
     Query,
     Session,
     declarative_base,
@@ -238,9 +239,9 @@ class ConversationLog(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object. 'back_populates' ensures bidirectional linking.
-    person = relationship("Person", back_populates="conversation_log_entries")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_log_entries")
     # Defines the link to the MessageTemplate object for outgoing messages.
-    message_template = relationship("MessageTemplate")  # type: ignore
+    message_template: Mapped[Optional["MessageTemplate"]] = relationship("MessageTemplate")
 
     # --- Table Arguments (Indexes) ---
     __table_args__ = (
@@ -433,7 +434,7 @@ class ConversationMetrics(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_metrics")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_metrics")
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize ConversationMetrics with proper defaults."""
@@ -543,7 +544,7 @@ class EngagementTracking(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="engagement_events")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="engagement_events")
 
 
 # End of EngagementTracking class
@@ -770,7 +771,7 @@ class ConversationState(Base):
     )
 
     # --- Relationships ---
-    person = relationship("Person", back_populates="conversation_state")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="conversation_state")
 
 
 # End of ConversationState class
@@ -847,7 +848,7 @@ class DnaMatch(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="dna_match")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="dna_match")
 
     # --- Properties ---
     @property
@@ -929,7 +930,7 @@ class FamilyTree(Base):
 
     # --- Relationships ---
     # Defines the link back to the Person object.
-    person = relationship("Person", back_populates="family_tree")  # type: ignore
+    person: Mapped["Person"] = relationship("Person", back_populates="family_tree")
 
     # --- Properties ---
     @property
@@ -1041,30 +1042,30 @@ class Person(Base):
 
     # --- Relationships ---
     # One-to-one relationship with FamilyTree. `cascade` ensures deletion of related FamilyTree record if Person deleted.
-    family_tree = relationship(  # type: ignore
+    family_tree: Mapped[Optional["FamilyTree"]] = relationship(
         "FamilyTree",
         back_populates="person",
         uselist=False,
         cascade="all, delete-orphan",
     )
     # One-to-one relationship with DnaMatch. `cascade` ensures deletion.
-    dna_match = relationship(  # type: ignore
+    dna_match: Mapped[Optional["DnaMatch"]] = relationship(
         "DnaMatch", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with ConversationLog. `cascade` ensures deletion.
-    conversation_log_entries = relationship(  # type: ignore
+    conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationState. `cascade` ensures deletion.
-    conversation_state = relationship(  # type: ignore
+    conversation_state: Mapped[Optional["ConversationState"]] = relationship(
         "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-one relationship with ConversationMetrics. `cascade` ensures deletion.
-    conversation_metrics = relationship(  # type: ignore
+    conversation_metrics: Mapped[Optional["ConversationMetrics"]] = relationship(
         "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
     # One-to-many relationship with EngagementTracking. `cascade` ensures deletion.
-    engagement_events = relationship(  # type: ignore
+    engagement_events: Mapped[list["EngagementTracking"]] = relationship(
         "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
     )
 
@@ -1189,8 +1190,8 @@ CREATE_VIEW_SQL = text(
 # End of CREATE_VIEW_SQL
 
 
-@event.listens_for(Base.metadata, "after_create")  # type: ignore
-def _create_views(target: Any, connection: Connection, **kw: Any) -> None:  # type: ignore[misc]
+@event.listens_for(Base.metadata, "after_create")
+def _create_views(target: Any, connection: Connection, **kw: Any) -> None:
     """SQLAlchemy event listener to create the 'messages' view after tables are created.
 
     Note: Function is accessed by SQLAlchemy event system, not directly called in code.
@@ -1302,13 +1303,14 @@ def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifier
 
 def _get_person_id_after_creation(session: Session, new_person: Person, log_ref: str) -> int:
     """Get person ID after creation with error handling."""
-    if new_person.id is None:  # type: ignore[comparison-overlap]
+    person_pk = cast(Optional[int], getattr(new_person, "id", None))
+    if person_pk is None:
         logger.error(f"ID not assigned after flush for {log_ref}! Rolling back.")
         session.rollback()
         return 0
 
     try:
-        person_id = session.scalar(select(Person.id).where(Person.id == new_person.id))
+        person_id = session.scalar(select(Person.id).where(Person.id == person_pk))
         return person_id if person_id is not None else 0
     except Exception as e:
         logger.warning(f"Error getting person ID: {e}")
@@ -2406,7 +2408,10 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
         return 0
 
     logger.debug(f"{log_prefix}Bulk inserting {len(log_inserts_mappings)} ConversationLog entries...")
-    sess.bulk_insert_mappings(ConversationLog, log_inserts_mappings)  # type: ignore[arg-type]
+    sess.bulk_insert_mappings(
+        cast(Mapper[Any], ConversationLog.__mapper__),
+        log_inserts_mappings,
+    )
     processed_logs_count = len(log_inserts_mappings)
     logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
 

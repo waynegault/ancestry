@@ -84,9 +84,11 @@ class MaxApiFailuresExceededError(Exception):
 
 
 if TYPE_CHECKING:
-    from core.error_handling import BrowserError as BrowserErrorBaseError
-    from core.error_handling import APIError as APIErrorBaseError
-    from core.error_handling import AuthenticationError as AuthenticationErrorBaseError
+    from core.error_handling import (
+        APIError as APIErrorBaseError,
+        AuthenticationError as AuthenticationErrorBaseError,
+        BrowserError as BrowserErrorBaseError,
+    )
 else:
     BrowserErrorBaseError = BrowserError
     APIErrorBaseError = APIError
