@@ -65,9 +65,11 @@ def _gedcom_helper_stub(*_args: Any, **_kwargs: Any) -> Any:
 
 
 try:
-    import gedcom_utils as _gedcom_utils  # type: ignore[attr-defined]
+    import gedcom_utils as _loaded_gedcom_utils
 except Exception:  # pragma: no cover - gedcom_utils absent in some test environments
-    _gedcom_utils = None
+    _loaded_gedcom_utils = None
+
+_gedcom_utils: Any | None = _loaded_gedcom_utils
 
 GEDCOM_UTILS_AVAILABLE = _gedcom_utils is not None
 TAG_BIRTH = getattr(_gedcom_utils, "TAG_BIRTH", "BIRT") if GEDCOM_UTILS_AVAILABLE else "BIRT"

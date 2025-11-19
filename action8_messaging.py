@@ -46,7 +46,16 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, TypeVar, cast
+
+T = TypeVar("T")
+
+
+class AncestorInfo(TypedDict, total=False):
+    name: str
+    birth_year: Optional[int]
+    birth_place: Optional[str]
+
 
 if TYPE_CHECKING:
     from common_params import (
@@ -143,12 +152,36 @@ from database import (
 )
 
 # === TREE STATISTICS ===
+TreeStatsFunc = Callable[[Session, str], dict[str, Any]]
+EthnicityCommonalityFunc = Callable[[Session, str, int], dict[str, Any]]
+
+
+def _default_tree_statistics(_: Session, __: str) -> dict[str, Any]:
+    return {}
+
+
+def _default_ethnicity_commonality(_: Session, __: str, ___: int) -> dict[str, Any]:
+    return {}
+
+
+_tree_stats_available = True
 try:
-    from tree_stats_utils import calculate_ethnicity_commonality, calculate_tree_statistics
-    TREE_STATS_AVAILABLE = True
+    from tree_stats_utils import (
+        calculate_ethnicity_commonality as _calc_ethnicity_commonality_impl,
+        calculate_tree_statistics as _calc_tree_stats_impl,
+    )
 except ImportError:
     logger.warning("tree_stats_utils not available - tree statistics will not be included in messages")
-    TREE_STATS_AVAILABLE = False  # type: ignore[assignment]
+    _tree_stats_available = False
+    _calc_tree_stats_impl = _default_tree_statistics
+    _calc_ethnicity_commonality_impl = _default_ethnicity_commonality
+
+TREE_STATS_AVAILABLE = _tree_stats_available
+calculate_tree_statistics: TreeStatsFunc = cast(TreeStatsFunc, _calc_tree_stats_impl)
+calculate_ethnicity_commonality: EthnicityCommonalityFunc = cast(
+    EthnicityCommonalityFunc,
+    _calc_ethnicity_commonality_impl,
+)
 
 # === MONITORING & TESTING ===
 from performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
@@ -302,7 +335,7 @@ def _has_message_after_tree_creation(person: Person, created_at: datetime) -> bo
         return False
 
     for log in person.conversation_log_entries:
-        if log.direction == "OUT" and log.latest_timestamp:
+        if log.direction == MessageDirectionEnum.OUT and log.latest_timestamp:
             log_timestamp = log.latest_timestamp
             if log_timestamp.tzinfo is None:
                 log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
@@ -778,7 +811,7 @@ MESSAGE_TRANSITION_TABLE = {
 
 
 def determine_next_message_type(
-    last_message_details: Optional[tuple[str, datetime, str]],
+    last_message_details: Optional[tuple[Optional[str], datetime, str]],
     is_in_family_tree: bool,
 ) -> Optional[str]:
     """
@@ -786,7 +819,7 @@ def determine_next_message_type(
 
     Uses state machine with transition table mapping (current_type, is_in_tree) to next_type.
     """
-    last_message_type = None
+    last_message_type: Optional[str] = None
     if last_message_details:
         last_message_type, _, _ = last_message_details
 
@@ -814,7 +847,7 @@ def determine_next_message_type(
 # Improved Variable Handling Functions
 # ------------------------------------------------------------------------------
 
-def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:  # type: ignore[no-untyped-def]
+def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel: str) -> str:
     """
     Get a natural-sounding relationship description with proper fallbacks.
 
@@ -836,7 +869,7 @@ def get_safe_relationship_text(family_tree, predicted_rel: str) -> str:  # type:
     return "a family connection"
 
 
-def get_safe_relationship_path(family_tree) -> str:  # type: ignore[no-untyped-def]
+def get_safe_relationship_path(family_tree: Optional[FamilyTree]) -> str:
     """
     Get a natural-sounding relationship path with proper fallbacks.
 
@@ -872,7 +905,7 @@ def _is_distant_relationship(actual_rel: str) -> bool:
     return any(distant in actual_rel.lower() for distant in distant_markers)
 
 
-def _calculate_family_tree_confidence(family_tree, is_distant_relationship: bool) -> int:  # type: ignore[no-untyped-def]
+def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_distant_relationship: bool) -> int:
     """Calculate confidence score from family tree data."""
     confidence_score = 0
 
@@ -905,7 +938,7 @@ def _ensure_timezone_aware(dt: Optional[datetime]) -> Optional[datetime]:
 
 # === TEMPLATE SELECTION HELPERS ===
 
-def _calculate_dna_match_confidence(dna_match, is_distant_relationship: bool) -> int:  # type: ignore[no-untyped-def]
+def _calculate_dna_match_confidence(dna_match: Optional[DnaMatch], is_distant_relationship: bool) -> int:
     """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
         predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
@@ -938,7 +971,11 @@ def _get_template_by_confidence_score(base_template_key: str, confidence_score: 
     return short_key if short_key else base_template_key
 
 
-def select_template_by_confidence(base_template_key: str, family_tree, dna_match) -> str:  # type: ignore[no-untyped-def]
+def select_template_by_confidence(
+    base_template_key: str,
+    family_tree: Optional[FamilyTree],
+    dna_match: Optional[DnaMatch]
+) -> str:
     """Select template variant based on relationship confidence."""
     # Check for distant relationships first
     is_distant_relationship = False
@@ -1387,7 +1424,7 @@ def _get_person_message_history(db_session: Session, person_id: int) -> tuple[Op
         return None, None, None
 
 
-def _validate_system_health(session_manager: SessionManager) -> bool:
+def _validate_system_health(session_manager: Optional[SessionManager]) -> bool:
     """
     Comprehensive system health validation before starting messaging operations.
 
@@ -1400,6 +1437,10 @@ def _validate_system_health(session_manager: SessionManager) -> bool:
         True if system is healthy and ready for messaging, False otherwise.
     """
     try:
+        if session_manager is None:
+            logger.warning("Session manager not available for health validation")
+            return False
+
         # Use consolidated session health validation
         if not session_manager.validate_system_health("Action 8"):
             return False
@@ -1434,7 +1475,7 @@ def _validate_system_health(session_manager: SessionManager) -> bool:
 def _safe_commit_with_rollback(
     session: Session,
     log_upserts: list[dict[str, Any]],
-    person_updates: dict[int, PersonStatusEnum],
+    person_updates: dict[int, Any],
     context: str,
     session_manager: SessionManager
 ) -> tuple[bool, int, int]:
@@ -1504,7 +1545,7 @@ class ErrorCategorizer:
             'template_errors': 0,
             'database_errors': 0
         }
-        self.monitoring_hooks = []
+        self.monitoring_hooks: list[Callable[[dict[str, Any]], None]] = []
 
     @staticmethod
     def _categorize_success_status(status_lower: str) -> tuple[str, str] | None:
@@ -1608,7 +1649,7 @@ class ErrorCategorizer:
         self.error_counts['technical_errors'] += 1
         return 'error', 'unknown_status'
 
-    def add_monitoring_hook(self, hook_function: Callable) -> None:  # type: ignore[type-arg]
+    def add_monitoring_hook(self, hook_function: Callable[[dict[str, Any]], None]) -> None:
         """Add a monitoring hook function."""
         self.monitoring_hooks.append(hook_function)
 
@@ -1872,7 +1913,7 @@ class ProactiveApiManager:
                 logger.critical(f"🚨 Too many consecutive API failures ({self.consecutive_failures}). Consider halting operations.")
 
 
-def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, operation_name: str):  # type: ignore[type-arg]
+def _with_operation_timeout(operation_func: Callable[[], T], timeout_seconds: int, operation_name: str) -> T:
     """
     Execute operation with proper timeout handling (cross-platform).
 
@@ -1910,15 +1951,15 @@ def _with_operation_timeout(operation_func: Callable, timeout_seconds: int, oper
     if exception[0]:
         raise exception[0]
 
-    return result[0]
+    return cast(T, result[0])
 
 
 def _safe_api_call_with_validation(
     session_manager: SessionManager,
-    api_function: Callable,  # type: ignore[type-arg]
+    api_function: Callable[..., Any],
     operation_name: str,
-    *args,  # type: ignore[no-untyped-def]
-    **kwargs  # type: ignore[no-untyped-def]
+    *args: Any,
+    **kwargs: Any
 ) -> tuple[bool, Any]:
     """
     Safely call API with proactive rate limiting, authentication, and validation.
@@ -2106,11 +2147,11 @@ def enhance_message_with_relationship_diagram(
         format_data['relationship_diagram'] = ""
 
 
-def _extract_research_context(person: Person, family_tree: Optional[FamilyTree]) -> tuple[list, list, list]:  # type: ignore[type-arg]
+def _extract_research_context(person: Person, family_tree: Optional[FamilyTree]) -> tuple[list[str], list[str], list[AncestorInfo]]:
     """Extract location, time period, and common ancestor information."""
-    locations = []
-    time_periods = []
-    common_ancestors = []
+    locations: list[str] = []
+    time_periods: list[str] = []
+    common_ancestors: list[AncestorInfo] = []
 
     # Get birth/death info from person
     if hasattr(person, 'birth_year') and person.birth_year:
@@ -2124,7 +2165,7 @@ def _extract_research_context(person: Person, family_tree: Optional[FamilyTree])
             common_ancestors.append({
                 'name': ancestor_name,
                 'birth_year': None,
-                'birth_place': None
+                'birth_place': None,
             })
 
     return locations, time_periods, common_ancestors
@@ -2166,8 +2207,11 @@ def enhance_message_with_research_suggestions(
 
         # Generate suggestions
         from research_suggestions import generate_research_suggestions
+        ancestor_payload: list[dict[str, Any]] = (
+            [dict(ancestor) for ancestor in common_ancestors] if common_ancestors else [{}]
+        )
         result = generate_research_suggestions(
-            common_ancestors=common_ancestors if common_ancestors else [{}],
+            common_ancestors=ancestor_payload,
             locations=locations if locations else [""],
             time_periods=time_periods if time_periods else [""]
         )
@@ -2362,7 +2406,11 @@ def _check_message_interval(
         raise StopIteration("skipped (datetime_error)") from None
 
 
-def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> Optional[tuple[str, datetime, str]]:
+def _get_last_script_message_details(
+    latest_out_log: Optional[ConversationLog],
+    latest_out_template_key: Optional[str],
+    log_prefix: str
+) -> Optional[tuple[Optional[str], datetime, str]]:
     """Extract details from the last script message."""
     if not latest_out_log:
         return None
@@ -2387,7 +2435,7 @@ def _get_last_script_message_details(latest_out_log: Optional[ConversationLog], 
         logger.debug(f"Could not determine message type for {log_prefix}, using None for fallback")
 
     last_status = safe_column_value(latest_out_log, "script_message_status", "Unknown")
-    return (last_type_name, out_timestamp, last_status)  # type: ignore[return-value]
+    return (last_type_name, out_timestamp, last_status)
 
 
 def _determine_message_to_send(person: Person, latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str) -> tuple[str, str]:
@@ -2487,7 +2535,7 @@ def _format_ethnicity_text(shared_regions: list[str]) -> str:
     return f"We share {len(shared_regions)} ethnicity regions including {shared_regions[0]}"
 
 
-def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, person: Person) -> None:  # type: ignore[type-arg]
+def _add_tree_statistics_to_format_data(format_data: dict[str, Any], db_session: Session, person: Person) -> None:
     """Add tree statistics and ethnicity commonality to format data."""
     if not TREE_STATS_AVAILABLE:
         format_data.update({
@@ -2503,7 +2551,7 @@ def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, 
         if not owner_profile_id:
             raise ValueError("No owner profile ID available")
 
-        stats = calculate_tree_statistics(db_session, owner_profile_id)  # type: ignore[possibly-unbound]
+        stats = calculate_tree_statistics(db_session, owner_profile_id)
         format_data.update({
             "total_matches": stats.get('total_matches', 0),
             "matches_in_tree": stats.get('in_tree_count', 0),
@@ -2515,7 +2563,7 @@ def _add_tree_statistics_to_format_data(format_data: dict, db_session: Session, 
 
         # Add ethnicity commonality for out-of-tree matches
         if not person.in_my_tree and person.id:
-            ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, person.id)  # type: ignore[possibly-unbound]
+            ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, person.id)
             shared_regions = ethnicity.get('shared_regions', [])
             format_data["ethnicity_commonality"] = _format_ethnicity_text(shared_regions)
         else:
@@ -2587,7 +2635,7 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
     return format_data
 
 
-def _format_message_text(message_to_send_key: str, person: Person, format_data: dict, log_prefix: str) -> str:  # type: ignore[type-arg]
+def _format_message_text(message_to_send_key: str, person: Person, format_data: dict[str, Any], log_prefix: str) -> str:
     """Format message text using enhanced or standard template."""
     message_template = MESSAGE_TEMPLATES[message_to_send_key]
     message_text = None
@@ -2878,9 +2926,7 @@ def _process_single_person(
 
     # --- Step 1: Initialization and Logging ---
     log_prefix, person_id, _, _ = _initialize_person_processing(person)
-    status_string: Literal["sent", "acked", "skipped", "error"] = (
-        "error"  # Default outcome
-    )
+    status_string: str = "error"
 
     # Initialize variables early to prevent UnboundLocalError in exception handlers
     new_log_entry: Optional[ConversationLog] = None  # Prepared log object
@@ -2937,7 +2983,7 @@ def _process_single_person(
             new_log_entry = _prepare_conversation_log_entry(
                 msg_ctx, conv_state, msg_flags, message_type_map
             )
-            status_string, person_update = _determine_final_status(  # type: ignore[assignment]
+            status_string, person_update = _determine_final_status(
                 message_key,
                 send_result.status,
                 msg_flags.send_message_flag,
@@ -3107,8 +3153,15 @@ def _apply_processing_result(
 # Helper functions for send_messages_to_matches
 
 
-def _handle_critical_db_error(progress_bar, total_candidates: int, processed_in_loop: int,  # type: ignore[no-untyped-def]
-                               sent_count: int, acked_count: int, skipped_count: int, error_count: int) -> int:
+def _handle_critical_db_error(
+    progress_bar: Optional[Any],
+    total_candidates: int,
+    processed_in_loop: int,
+    sent_count: int,
+    acked_count: int,
+    skipped_count: int,
+    error_count: int,
+) -> int:
     """Handle critical database error by updating progress bar and calculating remaining skips."""
     remaining_to_skip = total_candidates - processed_in_loop + 1
     if progress_bar:
@@ -3142,14 +3195,20 @@ def _check_and_handle_browser_health(
     return False, 0
 
 
-def _check_message_send_limit(max_messages_to_send_this_run: int, sent_count: int, acked_count: int,
-                               progress_bar, skipped_count: int, error_count: int) -> bool:  # type: ignore[no-untyped-def]
+def _check_message_send_limit(
+    max_messages_to_send_this_run: int,
+    sent_count: int,
+    acked_count: int,
+    progress_bar: Optional[Any],
+    skipped_count: int,
+    error_count: int,
+) -> bool:
     """Check if message sending limit has been reached. Returns True if should skip."""
     current_sent_total = sent_count + acked_count
     if max_messages_to_send_this_run > 0 and current_sent_total >= max_messages_to_send_this_run:
-        if not hasattr(progress_bar, "limit_logged"):
+        if progress_bar and not hasattr(progress_bar, "limit_logged"):
             logger.debug(f"Message sending limit ({max_messages_to_send_this_run}) reached. Skipping remaining.")
-            progress_bar.limit_logged = True
+            setattr(progress_bar, "limit_logged", True)
         if progress_bar:
             progress_bar.set_description(
                 f"Limit reached: Sent={sent_count} ACK={acked_count} Skip={skipped_count + 1} Err={error_count}"
@@ -3169,7 +3228,7 @@ def _log_periodic_progress(processed_in_loop: int, total_candidates: int, sent_c
         )
 
 
-def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:  # type: ignore[no-untyped-def]
+def _convert_log_object_to_dict(new_log_object: ConversationLog) -> Optional[dict[str, Any]]:
     """Convert SQLAlchemy ConversationLog object to dictionary for batch commit."""
     try:
         log_dict = {
@@ -3202,7 +3261,9 @@ def _convert_log_object_to_dict(new_log_object) -> Optional[dict[str, Any]]:  # 
         return None
 
 
-def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:  # type: ignore[type-arg, no-untyped-def]
+def _prepare_log_dict(
+    new_log_object: Optional[ConversationLog],
+) -> tuple[Optional[dict[str, Any]], Literal["unchanged", "error"]]:
     """Convert log object to dict."""
     if not new_log_object:
         return None, "unchanged"
@@ -3210,14 +3271,24 @@ def _prepare_log_dict(new_log_object) -> tuple[Optional[dict], str]:  # type: ig
     return (log_dict, "unchanged") if log_dict else (None, "error")
 
 
-def _handle_sent_status(sent_count: int, log_dict: Optional[dict], db_logs_to_add_dicts: list[dict[str, Any]]) -> int:  # type: ignore[type-arg]
+def _handle_sent_status(
+    sent_count: int,
+    log_dict: Optional[dict[str, Any]],
+    db_logs_to_add_dicts: list[dict[str, Any]],
+) -> int:
     """Handle sent status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
     return sent_count + 1
 
 
-def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_update_tuple, db_logs_to_add_dicts: list, person_updates: dict) -> int:  # type: ignore[type-arg, no-untyped-def]
+def _handle_acked_status(
+    acked_count: int,
+    log_dict: Optional[dict[str, Any]],
+    person_update_tuple: Optional[tuple[int, PersonStatusEnum]],
+    db_logs_to_add_dicts: list[dict[str, Any]],
+    person_updates: dict[int, Any],
+) -> int:
     """Handle acknowledged status updates."""
     if log_dict:
         db_logs_to_add_dicts.append(log_dict)
@@ -3226,7 +3297,15 @@ def _handle_acked_status(acked_count: int, log_dict: Optional[dict], person_upda
     return acked_count + 1
 
 
-def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dict: Optional[dict], batch_data: 'MessagingBatchData', error_categorizer, person, overall_success: bool) -> tuple[int, int, bool]:  # type: ignore[type-arg, no-untyped-def]
+def _handle_error_or_skip_status(
+    status: str,
+    counters: BatchCounters,
+    log_dict: Optional[dict[str, Any]],
+    batch_data: MessagingBatchData,
+    error_categorizer: ErrorCategorizer,
+    person: Person,
+    overall_success: bool,
+) -> tuple[int, int, bool]:
     """Handle error or skipped status updates."""
     category, error_type = error_categorizer.categorize_status(status)
 
@@ -3247,12 +3326,12 @@ def _handle_error_or_skip_status(status: str, counters: 'BatchCounters', log_dic
 
 def _update_counters_and_collect_data(
     status: str,
-    new_log_object,  # type: ignore[no-untyped-def]
-    person_update_tuple,  # type: ignore[no-untyped-def]
-    counters: 'BatchCounters',
-    batch_data: 'MessagingBatchData',
-    error_categorizer,  # type: ignore[no-untyped-def]
-    person,  # type: ignore[no-untyped-def]
+    new_log_object: Optional[ConversationLog],
+    person_update_tuple: Optional[tuple[int, PersonStatusEnum]],
+    counters: BatchCounters,
+    batch_data: MessagingBatchData,
+    error_categorizer: ErrorCategorizer,
+    person: Person,
     overall_success: bool
 ) -> tuple[int, int, int, int, bool]:
     """Update counters and collect database updates based on processing status."""
@@ -3282,7 +3361,10 @@ def _should_commit_batch(current_batch_size: int, memory_usage_mb: float,
     )
 
 
-def _calculate_batch_memory(db_logs_to_add_dicts: list, person_updates: dict) -> tuple[int, float]:  # type: ignore[type-arg]
+def _calculate_batch_memory(
+    db_logs_to_add_dicts: list[dict[str, Any]],
+    person_updates: dict[int, Any]
+) -> tuple[int, float]:
     """Calculate current batch size and memory usage."""
     import sys
     current_batch_size = len(db_logs_to_add_dicts) + len(person_updates)
@@ -3291,10 +3373,17 @@ def _calculate_batch_memory(db_logs_to_add_dicts: list, person_updates: dict) ->
     return current_batch_size, memory_usage_mb
 
 
-def _perform_batch_commit(db_session, db_logs_to_add_dicts: list, person_updates: dict,  # type: ignore[type-arg, no-untyped-def]
-                          batch_num: int, session_manager: SessionManager,
-                          sent_count: int = 0, acked_count: int = 0,
-                          skipped_count: int = 0, error_count: int = 0) -> tuple[bool, int]:
+def _perform_batch_commit(
+    db_session: Session,
+    db_logs_to_add_dicts: list[dict[str, Any]],
+    person_updates: dict[int, Any],
+    batch_num: int,
+    session_manager: SessionManager,
+    sent_count: int = 0,
+    acked_count: int = 0,
+    skipped_count: int = 0,
+    error_count: int = 0,
+) -> tuple[bool, int]:
     """Perform batch commit and return success status and updated batch number."""
     batch_num += 1
     current_batch_size, memory_usage_mb = _calculate_batch_memory(db_logs_to_add_dicts, person_updates)
@@ -3329,7 +3418,7 @@ def _create_result_dict(
     critical_db_error: bool = False,
     overall_success: bool = True,
     should_continue: bool = True
-) -> dict:  # type: ignore[type-arg]
+) -> dict[str, Any]:
     """Create standardized result dictionary."""
     return {
         'sent_count': counters.sent,
@@ -3385,14 +3474,14 @@ def _process_single_candidate_iteration(
     person: Any,
     db_session: Session,
     session_manager: SessionManager,
-    message_type_map: dict,  # type: ignore[type-arg]
-    error_categorizer: Any,
+    message_type_map: dict[str, int],
+    error_categorizer: ErrorCategorizer,
     batch_config: BatchConfig,
     counters: BatchCounters,
     batch_data: MessagingBatchData,
     state: ProcessingState,
     total_candidates: int
-) -> dict:  # type: ignore[type-arg]
+) -> dict[str, Any]:
     """
     Process a single candidate iteration in the main loop.
 
@@ -3469,7 +3558,7 @@ def _log_final_summary(
     state: 'ProcessingState',
     counters: 'BatchCounters',
     overall_success: bool,
-    error_categorizer,  # type: ignore[no-untyped-def]
+    error_categorizer: ErrorCategorizer,
     start_time: float
 ) -> None:
     """Log final summary of message sending action."""
@@ -3698,15 +3787,15 @@ def _log_performance_summary() -> None:
 
 
 def _process_all_candidates(
-    candidate_persons: list,  # type: ignore[type-arg]
+    candidate_persons: list[Any],
     total_candidates: int,
     db_session: Session,
     session_manager: SessionManager,
-    message_type_map: dict,  # type: ignore[type-arg]
-    resource_manager: Any,
-    error_categorizer: Any,
-    batch_config: 'BatchConfig',
-) -> dict:  # type: ignore[type-arg]
+    message_type_map: dict[str, int],
+    resource_manager: ResourceManager,
+    error_categorizer: ErrorCategorizer,
+    batch_config: BatchConfig,
+) -> dict[str, Any]:
     """Process all candidate persons for messaging. Returns dict with counters and results."""
     from common_params import BatchCounters, MessagingBatchData, ProcessingState
 
@@ -3794,13 +3883,13 @@ def _execute_main_processing_loop(
     db_session: Session,
     session_manager: SessionManager,
     message_type_map: dict[str, int],
-    candidate_persons: list,  # type: ignore[type-arg]
+    candidate_persons: list[Any],
     total_candidates: int,
     db_commit_batch_size: int,
     max_messages_to_send_this_run: int,
-    resource_manager,  # type: ignore[no-untyped-def]
-    error_categorizer  # type: ignore[no-untyped-def]
-) -> dict:  # type: ignore[type-arg]
+    resource_manager: ResourceManager,
+    error_categorizer: ErrorCategorizer
+) -> dict[str, Any]:
     """Execute the main processing loop for all candidates."""
     batch_config = BatchConfig(
         commit_batch_size=db_commit_batch_size,
@@ -3817,7 +3906,7 @@ def _execute_main_processing_loop(
 
 def _handle_main_processing_exception(
     outer_err: BaseException,
-    resource_manager  # type: ignore[no-untyped-def]
+    resource_manager: ResourceManager
 ) -> bool:
     """Handle exceptions during main processing."""
     overall_success = _handle_action8_exception(outer_err)
@@ -3834,7 +3923,7 @@ def _handle_main_processing_exception(
 @with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
 @circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
 @graceful_degradation(fallback_value=False)
-@error_context("action8_messaging")  # type: ignore[misc]
+@error_context("action8_messaging")
 def send_messages_to_matches(session_manager: SessionManager) -> bool:
     """
     Main function for Action 8.
@@ -4148,8 +4237,8 @@ def _test_session_death_cascade_detection() -> None:
 
         # Test error inheritance
         cascade_error = MaxApiFailuresExceededError("Test cascade error", context={"source": "Action 8"})
-        # MaxApiFailuresExceededError is always an Exception subclass
-        is_exception = isinstance(cascade_error, BaseException)  # type: ignore[unnecessary-isinstance] # Verify it's an exception
+        # MaxApiFailuresExceededError should inherit from Exception
+        is_exception = issubclass(type(cascade_error), BaseException)
         status = "✅" if is_exception else "❌"
         print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
         results.append(is_exception)
@@ -4178,11 +4267,11 @@ def _test_performance_tracking() -> None:
         class MockSessionManager:
             pass
 
-        mock_session = MockSessionManager()
+        mock_session = cast(SessionManager, MockSessionManager())
 
         # Test performance tracking doesn't crash
         try:
-            _update_messaging_performance(mock_session, 1.5)  # type: ignore[arg-type]
+            _update_messaging_performance(mock_session, 1.5)
             tracking_works = True
         except Exception:
             tracking_works = False
@@ -4291,8 +4380,7 @@ def _test_integration_with_shared_modules() -> None:
         # Test database session manager integration (now in core/database_manager.py)
         try:
             from core.database_manager import DatabaseManager
-
-            db_manager_available = DatabaseManager is not None  # type: ignore[comparison-overlap]
+            db_manager_available = bool(DatabaseManager)
         except ImportError:
             db_manager_available = False
         status = "✅" if db_manager_available else "❌"
@@ -4301,7 +4389,7 @@ def _test_integration_with_shared_modules() -> None:
 
         # Test performance monitoring integration
         from performance_monitor import PerformanceMonitor
-        perf_monitor_available = PerformanceMonitor is not None  # type: ignore[comparison-overlap] # Check if available
+        perf_monitor_available = bool(PerformanceMonitor)
         status = "✅" if perf_monitor_available else "❌"
         print(f"   {status} Performance monitoring available")
         results.append(perf_monitor_available)
@@ -4317,7 +4405,7 @@ def _test_integration_with_shared_modules() -> None:
 def _test_system_health_validation_hardening() -> None:
     from unittest.mock import Mock
     # None session manager
-    assert _validate_system_health(None) is False  # type: ignore[arg-type]
+    assert _validate_system_health(None) is False
     # Healthy mock
     mock_session = Mock()
     mock_session.should_halt_operations.return_value = False
@@ -4367,7 +4455,8 @@ def _test_real_api_manager_integration_minimal() -> None:
         @property
         def my_profile_id(self) -> str:
             return self._my_profile_id
-    api = ProactiveApiManager(MockSessionManager())  # type: ignore[arg-type]
+    session_manager = cast(SessionManager, MockSessionManager())
+    api = ProactiveApiManager(session_manager)
     delay = api.calculate_delay()
     assert isinstance(delay, (int, float)) and delay >= 0
     assert api.validate_api_response(("delivered OK", "conv_123"), "send_message_test") is True
@@ -4471,7 +4560,7 @@ def _test_main_function_with_dry_run() -> bool:
         raise
 
 
-def _fetch_test_candidates(db_session: Session, limit: int = 10) -> list:  # type: ignore[type-arg]
+def _fetch_test_candidates(db_session: Session, limit: int = 10) -> list[Person]:
     """Fetch limited test candidates from database."""
     from database import Person, PersonStatusEnum
     return (
@@ -4491,13 +4580,13 @@ def _fetch_test_candidates(db_session: Session, limit: int = 10) -> list:  # typ
 
 def _process_test_candidates(
     db_session: Session,
-    sm: 'SessionManager',
-    test_candidates: list,  # type: ignore[type-arg]
+    sm: SessionManager,
+    test_candidates: list[Person],
     message_type_map: dict[str, int]
-) -> tuple[list, dict]:  # type: ignore[type-arg]
+) -> tuple[list[ConversationLog], dict[int, PersonStatusEnum]]:
     """Process test candidates and collect logs and updates."""
-    db_logs_to_add = []
-    person_updates = {}
+    db_logs_to_add: list[ConversationLog] = []
+    person_updates: dict[int, PersonStatusEnum] = {}
 
     for person in test_candidates:
         try:
@@ -4840,7 +4929,7 @@ def _test_status_change_detection_all_scenarios() -> bool:
             # Setup conversation log if has_message_after
             if has_message_after:
                 conv_log = Mock(spec=ConversationLog)
-                conv_log.direction = "OUT"
+                conv_log.direction = MessageDirectionEnum.OUT
                 conv_log.latest_timestamp = tree_created + timedelta(days=1)
                 person.conversation_log_entries = [conv_log]
             else:
@@ -4879,6 +4968,7 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
         person.id = 123
         person.username = "Test User"
 
+        conv_state: Optional[ConversationState] = None
         if has_state:
             conv_state = Mock(spec=ConversationState)
             conv_state.next_action = 'send_follow_up'
@@ -4890,9 +4980,9 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
         result = cancel_pending_messages_on_status_change(person, "test")
 
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
-        if has_state:
-            assert conv_state.next_action == expected_action, f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
-            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"  # type: ignore[possibly-unbound]
+        if has_state and conv_state:
+            assert conv_state.next_action == expected_action, f"{description}: Expected action '{expected_action}', got '{conv_state.next_action}'"
+            assert conv_state.next_action_date is None, f"{description}: next_action_date should be None"
 
         logger.info(f"✓ {description}")
 
@@ -4957,6 +5047,7 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
         person.id = 456
         person.username = "Test User"
 
+        conv_state: Optional[Any] = None
         if has_state:
             conv_state = Mock()
             if is_active:
@@ -4977,9 +5068,9 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
 
         assert result == expected_result, f"{description}: Expected {expected_result}, got {result}"
 
-        if has_state:
-            assert conv_state.next_action == 'await_reply', f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"  # type: ignore[possibly-unbound]
-            assert conv_state.conversation_phase == 'active_dialogue', f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"  # type: ignore[possibly-unbound]
+        if has_state and conv_state:
+            assert conv_state.next_action == 'await_reply', f"{description}: Expected next_action='await_reply', got '{conv_state.next_action}'"
+            assert conv_state.conversation_phase == 'active_dialogue', f"{description}: Expected phase='active_dialogue', got '{conv_state.conversation_phase}'"
 
         logger.info(f"✓ {description}")
 
@@ -5614,7 +5705,7 @@ def action8_messaging_tests() -> bool:
     else:
         logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
-    return suite.finish_suite()  # type: ignore[return-value]
+    return suite.finish_suite()
 
 
 # Use centralized test runner utility

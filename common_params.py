@@ -148,7 +148,7 @@ class MessagingBatchData:
     Used in action8_messaging.py for collecting database updates.
     """
     db_logs_to_add_dicts: list[dict[str, Any]]
-    person_updates: dict[str, Any]
+    person_updates: dict[int, Any]
 
 
 @dataclass
