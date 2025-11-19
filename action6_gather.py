@@ -3918,8 +3918,11 @@ def _process_person_creates(
     # De-duplicate Person creates
     person_creates_filtered = _deduplicate_person_creates(person_creates_raw)
 
+    created_person_map: dict[str, int] = {}
+    insert_data: list[dict[str, Any]] = []
+
     if not person_creates_filtered:
-        return {}, []  # type: ignore[return-value]
+        return created_person_map, insert_data
 
     # Prepare insert data
     insert_data = _prepare_person_insert_data(person_creates_filtered, session, existing_persons_map)
@@ -3929,7 +3932,7 @@ def _process_person_creates(
 
     # Perform bulk insert
     logger.debug(f"Bulk inserting {len(insert_data)} Person records...")
-    session.bulk_insert_mappings(Person, insert_data)  # type: ignore
+    session.bulk_insert_mappings(Person.__mapper__, insert_data)
 
     # Get newly created IDs
     session.flush()
@@ -3967,7 +3970,7 @@ def _process_person_updates(
         logger.debug("No Person updates needed for this batch.")
         return
 
-    update_mappings = []
+    update_mappings: list[dict[str, Any]] = []
     for p_data in person_updates:
         existing_id = p_data.get("_existing_person_id")
         if not existing_id:
@@ -3981,7 +3984,7 @@ def _process_person_updates(
 
     if update_mappings:
         logger.debug(f"Bulk updating {len(update_mappings)} Person records...")
-        session.bulk_update_mappings(Person, update_mappings)  # type: ignore
+        session.bulk_update_mappings(Person.__mapper__, update_mappings)
         logger.debug("Bulk update Persons called.")
     else:
         logger.debug("No valid Person updates to perform.")
@@ -4127,21 +4130,23 @@ def _get_existing_dna_matches(
     Returns:
         Map of people_id to DnaMatch ID
     """
-    people_ids_in_batch = {
-        pid for pid in all_person_ids_map.values() if pid is not None  # type: ignore[comparison-overlap]
-    }
+    people_ids_in_batch: set[int] = set(all_person_ids_map.values())
     logger.debug(f"all_person_ids_map has {len(all_person_ids_map)} entries, people_ids_in_batch has {len(people_ids_in_batch)} IDs")
     if not people_ids_in_batch:
         logger.warning("No people IDs in batch - cannot query for existing DNA matches")
-        return {}  # type: ignore[return-value]
+        return {}
 
     logger.debug(f"Querying for existing DNA matches for people IDs: {sorted(people_ids_in_batch)}")
-    existing_matches = (
-        session.query(DnaMatch.people_id, DnaMatch.id)
-        .filter(DnaMatch.people_id.in_(people_ids_in_batch))  # type: ignore
-        .all()
+    stmt = (
+        select(DnaMatch.people_id, DnaMatch.id)
+        .where(DnaMatch.people_id.in_(list(people_ids_in_batch)))
     )
-    existing_dna_matches_map: dict[int, int] = dict(existing_matches)  # type: ignore
+    existing_matches = session.execute(stmt).all()
+    existing_dna_matches_map: dict[int, int] = {}
+    for people_id, match_id in existing_matches:
+        if people_id is None or match_id is None:
+            continue
+        existing_dna_matches_map[int(people_id)] = int(match_id)
     logger.debug(
         f"Found {len(existing_dna_matches_map)} existing DnaMatch records for people in this batch."
     )
@@ -4272,8 +4277,8 @@ def _bulk_insert_dna_matches(
     logger.debug(f"Bulk inserting {len(dna_insert_data)} DnaMatch records...")
 
     # Separate ethnicity columns from core data
-    core_insert_data = []
-    ethnicity_updates = []
+    core_insert_data: list[dict[str, Any]] = []
+    ethnicity_updates: list[tuple[int, dict[str, Any]]] = []
 
     for insert_map in dna_insert_data:
         core_map = {k: v for k, v in insert_map.items() if not k.startswith("ethnicity_")}
@@ -4283,7 +4288,7 @@ def _bulk_insert_dna_matches(
             ethnicity_updates.append((insert_map["people_id"], ethnicity_map))
 
     # Bulk insert core data
-    session.bulk_insert_mappings(DnaMatch, core_insert_data)  # type: ignore
+    session.bulk_insert_mappings(DnaMatch.__mapper__, core_insert_data)
     session.flush()
 
     # Apply ethnicity data
@@ -4317,8 +4322,8 @@ def _bulk_update_dna_matches(
     logger.debug(f"Bulk updating {len(dna_update_mappings)} DnaMatch records...")
 
     # Separate ethnicity columns from core data
-    core_update_mappings = []
-    ethnicity_updates = []
+    core_update_mappings: list[dict[str, Any]] = []
+    ethnicity_updates: list[tuple[int, dict[str, Any]]] = []
 
     for update_map in dna_update_mappings:
         core_map, ethnicity_map = _separate_core_and_ethnicity(update_map)
@@ -4329,7 +4334,7 @@ def _bulk_update_dna_matches(
 
     # Bulk update core data
     if core_update_mappings:
-        session.bulk_update_mappings(DnaMatch, core_update_mappings)  # type: ignore
+        session.bulk_update_mappings(DnaMatch.__mapper__, core_update_mappings)
         session.flush()
 
     # Apply ethnicity data
@@ -4467,7 +4472,7 @@ def _process_family_tree_operations(
         )
         if tree_insert_data:
             logger.debug(f"Bulk inserting {len(tree_insert_data)} FamilyTree records...")
-            session.bulk_insert_mappings(FamilyTree, tree_insert_data)  # type: ignore
+            session.bulk_insert_mappings(FamilyTree.__mapper__, tree_insert_data)
         else:
             logger.debug("No valid FamilyTree records to insert")
     else:
@@ -4478,7 +4483,7 @@ def _process_family_tree_operations(
         tree_update_mappings = _prepare_family_tree_updates(tree_updates)
         if tree_update_mappings:
             logger.debug(f"Bulk updating {len(tree_update_mappings)} FamilyTree records...")
-            session.bulk_update_mappings(FamilyTree, tree_update_mappings)  # type: ignore
+            session.bulk_update_mappings(FamilyTree.__mapper__, tree_update_mappings)
             logger.debug("Bulk update FamilyTrees called.")
         else:
             logger.debug("No valid FamilyTree updates.")
