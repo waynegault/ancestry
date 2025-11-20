@@ -86,6 +86,15 @@ class RetentionResult:
         return data
 
 
+@dataclass
+class _RetentionRunState:
+    """Mutable bookkeeping while enforcing a retention policy."""
+
+    total_size_bytes: int
+    files_deleted: int = 0
+    bytes_deleted: int = 0
+
+
 class CacheRetentionService:
     """Applies retention constraints to Cache/ subdirectories."""
 
@@ -175,7 +184,8 @@ class CacheRetentionService:
             remaining_files=files,
         )
 
-    def _scan_files(self, target: RetentionTarget) -> list[FileInfo]:
+    @staticmethod
+    def _scan_files(target: RetentionTarget) -> list[FileInfo]:
         files: list[FileInfo] = []
         search_path = target.path
         if not search_path.exists():
@@ -202,84 +212,28 @@ class CacheRetentionService:
         start_time = time.time()
         files = self._scan_files(target)
         initial_count = len(files)
-        now = time.time()
-        total_size = sum(f.size for f in files)
-        files_deleted = 0
-        bytes_deleted = 0
+        state = _RetentionRunState(total_size_bytes=sum(f.size for f in files))
         violations = {"age": False, "size": False, "count": False}
-        policy = target.policy
 
-        # Age-based cleanup
-        if policy.max_age_hours is not None:
-            cutoff = now - (policy.max_age_hours * 3600)
-            remaining: list[FileInfo] = []
-            for info in files:
-                if info.mtime < cutoff:
-                    success, removed_bytes = self._delete_file(info)
-                    if success:
-                        files_deleted += 1
-                        bytes_deleted += removed_bytes
-                        total_size -= info.size
-                        violations["age"] = True
-                    else:
-                        remaining.append(info)
-                else:
-                    remaining.append(info)
-            files = remaining
+        files = self._apply_age_policy(files, target.policy, state, violations)
+        files = self._apply_size_policy(files, target.policy, state, violations)
+        files = self._apply_count_policy(files, target.policy, state, violations)
 
-        # Size-based cleanup
-        if policy.max_total_size_mb is not None:
-            max_bytes = int(policy.max_total_size_mb * 1024 * 1024)
-            if total_size > max_bytes:
-                violations["size"] = True
-            files.sort(key=lambda f: f.mtime)
-            idx = 0
-            while total_size > max_bytes and idx < len(files):
-                info = files[idx]
-                success, removed_bytes = self._delete_file(info)
-                if success:
-                    files_deleted += 1
-                    bytes_deleted += removed_bytes
-                    total_size -= info.size
-                    files.pop(idx)
-                else:
-                    idx += 1
-
-        # Count-based cleanup
-        if policy.max_file_count is not None and len(files) > policy.max_file_count:
-            violations["count"] = True
-            files.sort(key=lambda f: f.mtime)
-            failures = 0
-            while len(files) > policy.max_file_count and files:
-                info = files[0]
-                success, removed_bytes = self._delete_file(info)
-                if success:
-                    files_deleted += 1
-                    bytes_deleted += removed_bytes
-                    total_size -= info.size
-                    files.pop(0)
-                    failures = 0
-                else:
-                    files.append(files.pop(0))
-                    failures += 1
-                    if failures >= len(files):
-                        break
-
-        result = self._build_result(
+        return self._build_result(
             target=target,
             files_scanned=initial_count,
             files_remaining=len(files),
-            files_deleted=files_deleted,
-            bytes_deleted=bytes_deleted,
-            total_size_bytes=total_size,
+            files_deleted=state.files_deleted,
+            bytes_deleted=state.bytes_deleted,
+            total_size_bytes=state.total_size_bytes,
             auto_triggered=auto_triggered,
             violations=violations,
             start_time=start_time,
             remaining_files=files,
         )
-        return result
 
-    def _delete_file(self, info: FileInfo) -> tuple[bool, int]:
+    @staticmethod
+    def _delete_file(info: FileInfo) -> tuple[bool, int]:
         try:
             info.path.unlink()
             logger.debug("Retention removed %s", info.path)
@@ -289,6 +243,93 @@ class CacheRetentionService:
         except Exception as exc:
             logger.debug("Failed to delete %s: %s", info.path, exc)
             return False, 0
+
+    def _apply_age_policy(
+        self,
+        files: list[FileInfo],
+        policy: RetentionPolicy,
+        state: _RetentionRunState,
+        violations: dict[str, bool],
+    ) -> list[FileInfo]:
+        if policy.max_age_hours is None:
+            return files
+
+        cutoff = time.time() - (policy.max_age_hours * 3600)
+        remaining: list[FileInfo] = []
+        for info in files:
+            if info.mtime >= cutoff:
+                remaining.append(info)
+                continue
+
+            success, removed_bytes = self._delete_file(info)
+            if success:
+                state.files_deleted += 1
+                state.bytes_deleted += removed_bytes
+                state.total_size_bytes -= info.size
+                violations["age"] = True
+            else:
+                remaining.append(info)
+        return remaining
+
+    def _apply_size_policy(
+        self,
+        files: list[FileInfo],
+        policy: RetentionPolicy,
+        state: _RetentionRunState,
+        violations: dict[str, bool],
+    ) -> list[FileInfo]:
+        max_mb = policy.max_total_size_mb
+        if max_mb is None:
+            return files
+
+        max_bytes = int(max_mb * 1024 * 1024)
+        if state.total_size_bytes <= max_bytes:
+            return files
+
+        violations["size"] = True
+        files = sorted(files, key=lambda f: f.mtime)
+        idx = 0
+        while state.total_size_bytes > max_bytes and idx < len(files):
+            info = files[idx]
+            success, removed_bytes = self._delete_file(info)
+            if success:
+                state.files_deleted += 1
+                state.bytes_deleted += removed_bytes
+                state.total_size_bytes -= info.size
+                files.pop(idx)
+            else:
+                idx += 1
+        return files
+
+    def _apply_count_policy(
+        self,
+        files: list[FileInfo],
+        policy: RetentionPolicy,
+        state: _RetentionRunState,
+        violations: dict[str, bool],
+    ) -> list[FileInfo]:
+        max_count = policy.max_file_count
+        if max_count is None or len(files) <= max_count:
+            return files
+
+        violations["count"] = True
+        files = sorted(files, key=lambda f: f.mtime)
+        failures = 0
+        while len(files) > max_count and files:
+            info = files[0]
+            success, removed_bytes = self._delete_file(info)
+            if success:
+                state.files_deleted += 1
+                state.bytes_deleted += removed_bytes
+                state.total_size_bytes -= info.size
+                files.pop(0)
+                failures = 0
+            else:
+                files.append(files.pop(0))
+                failures += 1
+                if failures >= len(files):
+                    break
+        return files
 
     def _build_result(
         self,

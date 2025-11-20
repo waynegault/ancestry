@@ -91,6 +91,8 @@ class DatabaseManagerProtocol(Protocol):
 
     def _initialize_engine_and_session(self) -> None: ...
 
+    def close_connections(self, dispose_engine: bool = False) -> None: ...
+
 
 class BrowserManagerProtocol(Protocol):
     """Protocol describing the subset of BrowserManager used here."""
@@ -2636,6 +2638,72 @@ def _format_cache_stat_value(value: Any) -> str:
     return str(value)
 
 
+def _render_retention_targets(targets: Any) -> bool:
+    if not (isinstance(targets, list) and targets and isinstance(targets[0], dict)):
+        return False
+
+    print("  Targets:")
+    now_ts = time.time()
+    for target in targets:
+        name = target.get("name", "?")
+        files = target.get("files_remaining", target.get("files_scanned", "?"))
+        size_bytes = target.get("total_size_bytes", 0)
+        size_mb = (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
+        deleted = target.get("files_deleted", 0)
+        run_ts = target.get("run_timestamp")
+        if isinstance(run_ts, (int, float)) and run_ts:
+            age_minutes = max(0.0, (now_ts - run_ts) / 60)
+            age_str = f"{age_minutes:.1f}m ago"
+        else:
+            age_str = "n/a"
+        print(
+            f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})"
+        )
+    return True
+
+
+def _render_stat_fields(stats: dict[str, Any]) -> bool:
+    shown_any = False
+    for key in sorted(stats.keys()):
+        if key in {"name", "kind", "health", "targets"}:
+            continue
+        value = stats[key]
+        if value in (None, "", [], {}):
+            continue
+        print(f"  {key.replace('_', ' ').title()}: {_format_cache_stat_value(value)}")
+        shown_any = True
+    return shown_any
+
+
+def _render_health_stats(health: Any) -> bool:
+    if not (isinstance(health, dict) and health):
+        return False
+    score = health.get("overall_score")
+    score_str = f"{score:.1f}" if isinstance(score, (int, float)) else str(score)
+    print(f"  Health Score: {score_str}")
+    recommendations = health.get("recommendations")
+    if recommendations:
+        print(f"  Recommendations: {len(recommendations)}")
+    return True
+
+
+def _print_cache_component(component_name: str, stats: dict[str, Any]) -> None:
+    icon = _CACHE_KIND_ICONS.get(stats.get("kind", ""), "🗃️")
+    display_name = stats.get("name", component_name).upper()
+    kind = stats.get("kind", "unknown")
+    print(f"{icon} {display_name} [{kind}]")
+    print("-" * 70)
+
+    had_output = False
+    had_output |= _render_retention_targets(stats.get("targets"))
+    had_output |= _render_stat_fields(stats)
+    had_output |= _render_health_stats(stats.get("health"))
+
+    if not had_output:
+        print("  No statistics available for this component.")
+    print()
+
+
 def _show_cache_registry_stats() -> bool:
     """Display consolidated cache stats through CacheRegistry."""
 
@@ -2650,58 +2718,7 @@ def _show_cache_registry_stats() -> bool:
 
         for component_name in component_names:
             stats = summary.get(component_name, {})
-            icon = _CACHE_KIND_ICONS.get(stats.get("kind", ""), "🗃️")
-            display_name = stats.get("name", component_name).upper()
-            kind = stats.get("kind", "unknown")
-            print(f"{icon} {display_name} [{kind}]")
-            print("-" * 70)
-
-            shown_any = False
-            targets = stats.get("targets")
-            if isinstance(targets, list) and targets and isinstance(targets[0], dict):
-                print("  Targets:")
-                now_ts = time.time()
-                for target in targets:
-                    name = target.get("name", "?")
-                    files = target.get("files_remaining", target.get("files_scanned", "?"))
-                    size_bytes = target.get("total_size_bytes", 0)
-                    size_mb = (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
-                    deleted = target.get("files_deleted", 0)
-                    run_ts = target.get("run_timestamp")
-                    if isinstance(run_ts, (int, float)) and run_ts:
-                        age_minutes = max(0.0, (now_ts - run_ts) / 60)
-                        age_str = f"{age_minutes:.1f}m ago"
-                    else:
-                        age_str = "n/a"
-                    print(
-                        f"    - {name}: {files} files, {size_mb:.2f} MB, "
-                        f"removed {deleted} ({age_str})"
-                    )
-                shown_any = True
-
-            for key in sorted(stats.keys()):
-                if key in {"name", "kind", "health", "targets"}:
-                    continue
-                value = stats[key]
-                if value in (None, "", [], {}):
-                    continue
-                print(f"  {key.replace('_', ' ').title()}: {_format_cache_stat_value(value)}")
-                shown_any = True
-
-            health = stats.get("health")
-            if isinstance(health, dict) and health:
-                score = health.get("overall_score")
-                score_str = f"{score:.1f}" if isinstance(score, (int, float)) else str(score)
-                print(f"  Health Score: {score_str}")
-                recommendations = health.get("recommendations")
-                if recommendations:
-                    print(f"  Recommendations: {len(recommendations)}")
-                shown_any = True
-
-            if not shown_any:
-                print("  No statistics available for this component.")
-
-            print()
+            _print_cache_component(component_name, stats)
 
         registry_info = summary.get("registry", {})
         print("REGISTRY OVERVIEW")
@@ -2845,6 +2862,66 @@ def _show_cache_statistics() -> None:
         print("Error displaying cache statistics. Check logs for details.")
 
     input("\nPress Enter to continue...")
+
+
+def _run_schema_migrations_action() -> None:
+    """Apply pending schema migrations and report the current version state."""
+
+    print("\n" + "=" * 70)
+    print("SCHEMA MIGRATIONS")
+    print("=" * 70)
+
+    db_manager: Optional[DatabaseManagerProtocol] = None
+    try:
+        from core import schema_migrator
+        from core.database_manager import DatabaseManager
+
+        db_manager = DatabaseManager()
+        if not db_manager.ensure_ready():
+            print("Unable to initialize database engine. See logs for details.")
+            return
+
+        engine = getattr(db_manager, "engine", None)
+        if engine is None:
+            print("Unable to access database engine instance.")
+            return
+
+        registered_migrations = schema_migrator.get_registered_migrations()
+        print(f"Registered migrations: {len(registered_migrations)}")
+
+        applied_versions = schema_migrator.apply_pending_migrations(engine)
+        installed_versions = schema_migrator.get_applied_versions(engine)
+
+        if applied_versions:
+            print(f"\nApplied migrations: {', '.join(applied_versions)}")
+        else:
+            print("\nNo pending migrations; schema already current.")
+
+        if installed_versions:
+            print(
+                f"Installed versions ({len(installed_versions)}): "
+                f"{', '.join(installed_versions)}"
+            )
+        else:
+            print("Installed versions: none recorded.")
+
+        pending_versions = [
+            migration.version for migration in registered_migrations if migration.version not in installed_versions
+        ]
+        if pending_versions:
+            print(f"Pending migrations ({len(pending_versions)}): {', '.join(pending_versions)}")
+        else:
+            print("All registered migrations have been applied.")
+    except Exception as exc:
+        logger.error("Failed to run schema migrations: %s", exc, exc_info=True)
+        print(f"Error applying migrations: {exc}")
+    finally:
+        if db_manager is not None:
+            try:
+                db_manager.close_connections(dispose_engine=True)
+            except Exception:
+                logger.debug("Failed to close temporary database manager", exc_info=True)
+        input("\nPress Enter to continue...")
 
 
 def _toggle_log_level() -> None:
@@ -3135,6 +3212,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("setup-grafana", _run_grafana_setup)
     registry.set_action_function("graph", _open_graph_visualization)
     registry.set_action_function("s", _show_cache_statistics)
+    registry.set_action_function("migrate-db", _run_schema_migrations_action)
     registry.set_action_function("t", _toggle_log_level)
     registry.set_action_function("c", _clear_screen)
     registry.set_action_function("q", _exit_application)

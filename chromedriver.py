@@ -106,10 +106,11 @@ PROFILE_DIR = (
     config_schema.selenium.profile_dir if config_schema.selenium else "Default"
 )
 # Handle the case where CHROME_USER_DATA_DIR might be None
-if CHROME_USER_DATA_DIR is not None:
-    profile_root = Path(CHROME_USER_DATA_DIR)
-else:
-    profile_root = Path.home() / ".ancestry_temp"
+profile_root = (
+    Path(CHROME_USER_DATA_DIR)
+    if CHROME_USER_DATA_DIR is not None
+    else Path.home() / ".ancestry_temp"
+)
 DEFAULT_PROFILE_PATH = str(profile_root / PROFILE_DIR)
 PREFERENCES_FILE = str(Path(DEFAULT_PROFILE_PATH) / "Preferences")
 

@@ -608,6 +608,8 @@ class DatabaseManager:
                     logger.warning(
                         f"Cannot create tables - Base not available from database module: {e}"
                     )
+
+            self._run_schema_migrations()
         except SQLAlchemyError as table_create_e:
             logger.warning(
                 f"Non-critical error during DB table check/creation: {table_create_e}"
@@ -621,6 +623,23 @@ class DatabaseManager:
             return
 
         self._ensure_conversation_log_columns(inspector)
+
+    def _run_schema_migrations(self) -> None:
+        """Apply registered schema migrations using the shared migrator."""
+
+        if not self.engine:
+            logger.debug("Cannot run schema migrations without an initialized engine")
+            return
+
+        try:
+            from core import schema_migrator
+        except ImportError as import_error:
+            logger.debug("Schema migrator unavailable: %s", import_error)
+            return
+
+        applied_versions = schema_migrator.apply_pending_migrations(self.engine)
+        if applied_versions:
+            logger.info("Schema migrations applied: %s", ", ".join(applied_versions))
 
     def _ensure_conversation_log_columns(self, inspector: Inspector) -> None:
         """Ensure conversation_log table contains newly introduced columns."""

@@ -18,22 +18,19 @@ import os
 import subprocess
 import sys
 import winreg
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-_uc_module: Any | None = None
 
-
+@lru_cache(maxsize=1)
 def _load_uc_module() -> Any | None:
     """Return the undetected_chromedriver module when available."""
-    global _uc_module
-    if _uc_module is not None:
-        return _uc_module
+
     try:
-        _uc_module = importlib.import_module("undetected_chromedriver")
+        return importlib.import_module("undetected_chromedriver")
     except ImportError:
-        _uc_module = None
-    return _uc_module
+        return None
 
 
 def print_header(title: str) -> None:

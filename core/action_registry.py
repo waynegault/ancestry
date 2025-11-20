@@ -401,6 +401,17 @@ class ActionRegistry:
         ))
 
         self.register(ActionMetadata(
+            id="migrate-db",
+            name="Apply Schema Migrations",
+            description="Run pending database schema migrations and show status",
+            function=None,
+            category=ActionCategory.DATABASE,
+            browser_requirement=ActionRequirement.NONE,
+            is_meta_action=True,
+            menu_order=170,
+        ))
+
+        self.register(ActionMetadata(
             id="q",
             name="Exit",
             description="Exit the application",
