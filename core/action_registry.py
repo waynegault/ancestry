@@ -62,6 +62,9 @@ class ActionMetadata:
     menu_order: int = 999  # Lower numbers appear first in menu
     is_test_action: bool = False
     is_meta_action: bool = False
+    input_hint: Optional[str] = None
+    inject_config: bool = False
+    skip_csrf_check: bool = False
 
 
 class ActionRegistry:
@@ -89,13 +92,22 @@ class ActionRegistry:
         # Categorize for efficient access
         if action.is_test_action:
             self._test_actions.append(action)
+            self._test_actions.sort(key=lambda x: x.menu_order)
         elif action.is_meta_action:
             self._meta_actions.append(action)
+            self._meta_actions.sort(key=lambda x: x.menu_order)
         else:
             self._menu_actions.append(action)
-
-            # Sort by menu_order for consistent display
             self._menu_actions.sort(key=lambda x: x.menu_order)
+
+    def set_action_function(self, action_id: str, function: Callable[..., object]) -> None:
+        """Assign the executable function for a registered action."""
+
+        action = self._actions.get(action_id)
+        if action is None:
+            logger.error("Attempted to assign function to unknown action_id '%s'", action_id)
+            return
+        action.function = function
 
     def get_action(self, action_id: str) -> Optional[ActionMetadata]:
         """Get action metadata by ID."""
@@ -239,6 +251,8 @@ class ActionRegistry:
             category=ActionCategory.BROWSER,
             browser_requirement=ActionRequirement.FULL_SESSION,
             max_args=1,  # Optional start page
+            input_hint="[start page]",
+            inject_config=True,
             menu_order=6,
         ))
 
@@ -281,6 +295,7 @@ class ActionRegistry:
             category=ActionCategory.BROWSER,
             browser_requirement=ActionRequirement.FULL_SESSION,
             enable_caching=True,
+            skip_csrf_check=True,
             menu_order=10,
         ))
 
@@ -293,6 +308,7 @@ class ActionRegistry:
             category=ActionCategory.UTILITY,
             browser_requirement=ActionRequirement.NONE,
             is_test_action=True,
+            menu_order=1000,
         ))
 
         self.register(ActionMetadata(
@@ -303,6 +319,7 @@ class ActionRegistry:
             category=ActionCategory.UTILITY,
             browser_requirement=ActionRequirement.NONE,
             is_test_action=True,
+            menu_order=1010,
         ))
 
         # Meta Actions
@@ -314,6 +331,40 @@ class ActionRegistry:
             category=ActionCategory.ANALYTICS,
             browser_requirement=ActionRequirement.NONE,
             is_meta_action=True,
+            menu_order=100,
+        ))
+
+        self.register(ActionMetadata(
+            id="metrics",
+            name="View Prometheus Metrics Report",
+            description="Open the local Prometheus/Grafana metrics view",
+            function=None,
+            category=ActionCategory.ANALYTICS,
+            browser_requirement=ActionRequirement.NONE,
+            is_meta_action=True,
+            menu_order=110,
+        ))
+
+        self.register(ActionMetadata(
+            id="setup-grafana",
+            name="Run Automated Grafana Setup",
+            description="Validate Grafana installation and import dashboards",
+            function=None,
+            category=ActionCategory.ANALYTICS,
+            browser_requirement=ActionRequirement.NONE,
+            is_meta_action=True,
+            menu_order=120,
+        ))
+
+        self.register(ActionMetadata(
+            id="graph",
+            name="Open Code Graph Visualization",
+            description="Launch the interactive repository dependency graph",
+            function=None,
+            category=ActionCategory.UTILITY,
+            browser_requirement=ActionRequirement.NONE,
+            is_meta_action=True,
+            menu_order=130,
         ))
 
         self.register(ActionMetadata(
@@ -324,6 +375,7 @@ class ActionRegistry:
             category=ActionCategory.ANALYTICS,
             browser_requirement=ActionRequirement.NONE,
             is_meta_action=True,
+            menu_order=140,
         ))
 
         self.register(ActionMetadata(
@@ -334,6 +386,7 @@ class ActionRegistry:
             category=ActionCategory.UTILITY,
             browser_requirement=ActionRequirement.NONE,
             is_meta_action=True,
+            menu_order=150,
         ))
 
         self.register(ActionMetadata(
@@ -344,6 +397,7 @@ class ActionRegistry:
             category=ActionCategory.UTILITY,
             browser_requirement=ActionRequirement.NONE,
             is_meta_action=True,
+            menu_order=160,
         ))
 
         self.register(ActionMetadata(
@@ -354,6 +408,7 @@ class ActionRegistry:
             category=ActionCategory.UTILITY,
             browser_requirement=ActionRequirement.NONE,
             is_meta_action=True,
+            menu_order=170,
         ))
 
         self._initialized = True

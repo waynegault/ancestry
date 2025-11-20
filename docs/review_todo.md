@@ -7,15 +7,11 @@ Top 10 improvements (refreshed Nov 19 2025, ordered from highest to lowest pri
 
 1b.  Monitor `core/error_handling.api_retry` telemetry for the next few production runs and regenerate any derived documentation (e.g., `docs/code_graph.json`) so they stop referencing `utils.retry_api`.
 
-2. (Priority 2) Wire the action registry into menu/dispatch flows
-`core/action_registry.py` already provides a dataclass-driven catalog of action metadata, browser requirements, and confirmation prompts, but `main.py` still hard-codes the menu (`main.py` §486‑538) and browser/state gating logic (`main.py` §612‑760). Any change requires touching multiple scattered lists, defeating the purpose of the registry.
+2. (Priority 2) Wire the action registry into menu/dispatch flows — ✅ Completed Nov 23 2025
+`main.menu()` now renders every primary, meta, and test action straight from `core.action_registry`, and the registry’s metadata drives browser requirements, config injection, input hints, and session gating. The legacy `MENU_OPTIONS`, manual `input().startswith()` parsing, and bespoke `_handle_*` helpers were deleted, so adding a new action only requires a registry entry plus a function binding.
 
-   Recommendation: Have `main.menu()` and `exec_actn()` consume `core.action_registry.get_action_registry()` so menu rendering, argument validation, and state requirements come from one source of truth, then delete the parallel hard-coded arrays.
-
-3. (Priority 3) Add retention policies for the on-disk Cache/ hierarchy
-Several subsystems write directly under `Cache/` without TTL or size limits: `performance_cache.PerformanceCache` creates per-key `.pkl` files in `Cache/performance` and never deletes them (`performance_cache.py` §111‑134, §282‑327), while the health monitor and session tooling accumulate JSON blobs in `Cache/session_checkpoints` and `Cache/session_state` (`health_monitor.py` §1008‑1250). Diskcache handles its own shards, but these bespoke writers will grow indefinitely and are invisible to Grafana.
-
-   Recommendation: introduce a shared retention service (age- or size-based) for `Cache/performance`, session checkpoints, and other ad-hoc directories, and surface the metrics through `core/cache_registry` so operators can monitor cleanup effectiveness.
+3. (Priority 3) Add retention policies for the on-disk Cache/ hierarchy — ✅ Completed Nov 23 2025
+New `cache_retention.CacheRetentionService` enforces age/size/count policies for `Cache/performance`, `Cache/session_checkpoints`, and `Cache/session_state`, publishing per-target metrics via the cache registry. Automatic sweeps run hourly (and immediately when performance cache initializes or session checkpoints/state write to disk), and operators can trigger ad-hoc cleanup through the Cache Statistics screen or `registry.clear("cache_retention")`.
 
 4. (Priority 4) Add database schema versioning
 Schema changes are still applied by calling `Base.metadata.create_all(engine)` at runtime with no migration history (`database.py` §3325‑3365). Any column change requires manual SQL or a destructive reset, which is risky now that production data lives in `Data/ancestry.db`.

@@ -461,6 +461,12 @@ def validate_action_config() -> bool:
 
 
 # Core modules
+from core.action_registry import (
+    ActionCategory,
+    ActionMetadata,
+    ActionRequirement,
+    get_action_registry,
+)
 from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
 from database import (
@@ -481,6 +487,32 @@ from utils import (
 
 config_manager = _create_config_manager()
 config: Any = config_manager.get_config() if config_manager is not None else None
+
+
+def _parse_menu_choice(choice: str) -> tuple[str, list[str]]:
+    """Split raw menu input into the action identifier and trailing arguments."""
+
+    tokens = choice.strip().split()
+    if not tokens:
+        return "", []
+    action_id = tokens[0].lower()
+    return action_id, tokens[1:]
+
+
+def _get_action_metadata(action_id: str) -> Optional[ActionMetadata]:
+    """Return action metadata for the provided identifier."""
+
+    if not action_id:
+        return None
+    registry = get_action_registry()
+    return registry.get_action(action_id)
+
+
+def _format_menu_line(action: ActionMetadata) -> str:
+    """Format a menu line for the given action metadata."""
+
+    hint = f" {action.input_hint}" if action.input_hint else ""
+    return f"{action.id}. {action.name}{hint}"
 
 
 def menu() -> str:
@@ -509,29 +541,41 @@ def menu() -> str:
         level_name = config.logging.log_level.upper()
 
     print(f"(Log Level: {level_name})\n")
-    print("1. Delete all rows except first person (test profile)")
-    print("2. Reset Database")
-    print("3. Backup Database")
-    print("4. Restore Database")
-    print("5. Check Login Status & Display Identifiers")
-    print("6. Gather DNA Matches [start page]")
-    print("7. Search Inbox")
-    print("8. Send Messages")
-    print("9. Process Productive Messages")
-    print("10. Compare: GEDCOM vs API (Side-by-side)")
-    print("")
-    print("analytics. View Conversation Analytics Dashboard")
-    print("metrics. View Prometheus Metrics Report")
-    print("setup-grafana. Run Automated Grafana Setup")
-    print("")
-    print("graph. Open Code Graph Visualization")
-    print("test. Run Main.py Internal Tests")
-    print("testall. Run All Module Tests")
-    print("")
-    print("s. Show Cache Statistics")
-    print("t. Toggle Console Log Level (INFO/DEBUG)")
-    print("c. Clear Screen")
-    print("q. Exit")
+
+    registry = get_action_registry()
+
+    for action in registry.get_menu_actions():
+        print(_format_menu_line(action))
+
+    meta_actions = registry.get_meta_actions()
+    analytics_meta = [action for action in meta_actions if action.category == ActionCategory.ANALYTICS]
+    graph_meta = [action for action in meta_actions if action.id == "graph"]
+    system_meta = [
+        action for action in meta_actions
+        if action.category != ActionCategory.ANALYTICS and action.id != "graph"
+    ]
+
+    if analytics_meta:
+        print("")
+        for action in analytics_meta:
+            print(_format_menu_line(action))
+
+    if graph_meta:
+        print("")
+        for action in graph_meta:
+            print(_format_menu_line(action))
+
+    test_actions = registry.get_test_actions()
+    if test_actions:
+        print("")
+        for action in test_actions:
+            print(_format_menu_line(action))
+
+    if system_meta:
+        print("")
+        for action in system_meta:
+            print(_format_menu_line(action))
+
     return input("\nEnter choice: ").strip().lower()
 
 
@@ -634,7 +678,7 @@ def ensure_caching_initialized() -> bool:
 
 # Helper functions for exec_actn
 
-def _determine_browser_requirement(choice: str) -> bool:
+def _determine_browser_requirement(choice: str, metadata: Optional[ActionMetadata] = None) -> bool:
     """
     Determine if action requires a browser based on user choice.
 
@@ -644,17 +688,22 @@ def _determine_browser_requirement(choice: str) -> bool:
     Returns:
         True if action requires browser, False otherwise
     """
-    browserless_choices = [
-        "1",   # Action 1 - Delete all except first person (database only)
-        "2",   # Action 2 - Reset database
-        "3",   # Action 3 - Backup database
-        "4",   # Action 4 - Restore database
-        "10",  # Action 10 - GEDCOM analysis (no browser needed)
-    ]
+    if metadata is None:
+        action_id, _ = _parse_menu_choice(choice)
+        metadata = _get_action_metadata(action_id)
+
+    if metadata:
+        return metadata.browser_requirement != ActionRequirement.NONE
+
+    browserless_choices = {"1", "2", "3", "4", "10"}
     return choice not in browserless_choices
 
 
-def _determine_required_state(choice: str, requires_browser: bool) -> str:
+def _determine_required_state(
+    choice: str,
+    requires_browser: bool,
+    metadata: Optional[ActionMetadata] = None,
+) -> str:
     """
     Determine the required session state for the action.
 
@@ -665,17 +714,31 @@ def _determine_required_state(choice: str, requires_browser: bool) -> str:
     Returns:
         Required state: "db_ready", "driver_ready", or "session_ready"
     """
-    # Action 10: do NOT require session upfront; wrapper will ensure session only if API is needed
-    if choice in {"10"}:
-        return "db_ready"
+    if metadata is None:
+        action_id, _ = _parse_menu_choice(choice)
+        metadata = _get_action_metadata(action_id)
+
+    if metadata:
+        if metadata.browser_requirement == ActionRequirement.NONE:
+            return "db_ready"
+        if metadata.browser_requirement == ActionRequirement.DRIVER_ONLY:
+            return "driver_ready"
+        return "session_ready"
+
     if not requires_browser:
         return "db_ready"
-    if choice == "5":  # check_login_actn
+    if choice == "5":
         return "driver_ready"
     return "session_ready"
 
 
-def _ensure_required_state(session_manager: SessionManager, required_state: str, action_name: str, choice: str) -> bool:
+def _ensure_required_state(
+    session_manager: SessionManager,
+    required_state: str,
+    action_name: str,
+    choice: str,
+    metadata: Optional[ActionMetadata] = None,
+) -> bool:
     """Ensure the required session state is achieved."""
 
     result = True
@@ -697,8 +760,7 @@ def _ensure_required_state(session_manager: SessionManager, required_state: str,
             result = browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
 
     elif required_state == "session_ready":
-        # Skip CSRF check for Action 10 (cookies available after navigation)
-        skip_csrf = choice in {"10"}
+        skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
         if not session_manager.guard_action(required_state, action_name):
             result = False
         else:
@@ -993,14 +1055,22 @@ def exec_actn(
     context = _initialize_action_context(action_func, choice)
     final_outcome = False
 
+    action_metadata = _get_action_metadata(choice)
+
     # Determine browser requirement and required state based on user choice
-    requires_browser = _determine_browser_requirement(choice)
+    requires_browser = _determine_browser_requirement(choice, action_metadata)
     session_manager.browser_needed = requires_browser
-    required_state = _determine_required_state(choice, requires_browser)
+    required_state = _determine_required_state(choice, requires_browser, action_metadata)
 
     try:
         # Ensure Required State
-        state_ok = _ensure_required_state(session_manager, required_state, context.action_name, choice)
+        state_ok = _ensure_required_state(
+            session_manager,
+            required_state,
+            context.action_name,
+            choice,
+            action_metadata,
+        )
         if not state_ok:
             logger.error(f"Failed to achieve required state '{required_state}' for action '{context.action_name}'.")
             raise Exception(f"Setup failed: Could not achieve state '{required_state}'.")
@@ -2372,14 +2442,11 @@ def _check_action_confirmation(choice: str) -> bool:
         True if action should proceed, False if cancelled
 
     """
-    confirm_actions = {
-        "1": "Delete all people except first person (test profile)",
-        "2": "COMPLETELY reset the database (deletes data)",
-        "4": "Restore database from backup (overwrites data)",
-    }
+    action_id, _ = _parse_menu_choice(choice)
+    metadata = _get_action_metadata(action_id)
 
-    if choice in confirm_actions:
-        action_desc = confirm_actions[choice]
+    if metadata and metadata.requires_confirmation:
+        action_desc = metadata.confirmation_message or metadata.name
         confirm = (
             input(
                 f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
@@ -2547,6 +2614,7 @@ _CACHE_KIND_ICONS = {
     "gedcom": "🌳",
     "performance": "📊",
     "database": "🗄️",
+    "retention": "🧹",
 }
 
 
@@ -2589,8 +2657,30 @@ def _show_cache_registry_stats() -> bool:
             print("-" * 70)
 
             shown_any = False
+            targets = stats.get("targets")
+            if isinstance(targets, list) and targets and isinstance(targets[0], dict):
+                print("  Targets:")
+                now_ts = time.time()
+                for target in targets:
+                    name = target.get("name", "?")
+                    files = target.get("files_remaining", target.get("files_scanned", "?"))
+                    size_bytes = target.get("total_size_bytes", 0)
+                    size_mb = (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
+                    deleted = target.get("files_deleted", 0)
+                    run_ts = target.get("run_timestamp")
+                    if isinstance(run_ts, (int, float)) and run_ts:
+                        age_minutes = max(0.0, (now_ts - run_ts) / 60)
+                        age_str = f"{age_minutes:.1f}m ago"
+                    else:
+                        age_str = "n/a"
+                    print(
+                        f"    - {name}: {files} files, {size_mb:.2f} MB, "
+                        f"removed {deleted} ({age_str})"
+                    )
+                shown_any = True
+
             for key in sorted(stats.keys()):
-                if key in {"name", "kind", "health"}:
+                if key in {"name", "kind", "health", "targets"}:
                     continue
                 value = stats[key]
                 if value in (None, "", [], {}):
@@ -2789,78 +2879,6 @@ def _toggle_log_level() -> None:
         )
 
 
-def _handle_database_actions(choice: str, session_manager: SessionManager) -> bool:
-    """Handle database-only actions (no browser needed)."""
-    if choice == "1":
-        exec_actn(all_but_first_actn, session_manager, choice)
-    elif choice == "2":
-        exec_actn(reset_db_actn, session_manager, choice)
-    elif choice == "3":
-        exec_actn(backup_db_actn, session_manager, choice)
-    elif choice == "4":
-        exec_actn(restore_db_actn, session_manager, choice)
-    return True
-
-
-def _handle_action6_with_start_page(choice: str, session_manager: SessionManager, config: Any) -> bool:
-    """Handle Action 6 (DNA match gathering) with optional start page."""
-    parts = choice.split()
-    start_val: Optional[int] = None
-    if len(parts) > 1:
-        try:
-            start_arg = int(parts[1])
-            if start_arg > 0:
-                start_val = start_arg
-            else:
-                logger.warning(f"Invalid start page '{parts[1]}'. Using checkpoint resume if available.")
-                print(f"Invalid start page '{parts[1]}'. Defaulting to checkpoint resume.")
-        except ValueError:
-            logger.warning(f"Invalid start page '{parts[1]}'. Using checkpoint resume if available.")
-            print(f"Invalid start page '{parts[1]}'. Defaulting to checkpoint resume.")
-
-    exec_actn(gather_dna_matches, session_manager, "6", False, config, start_val)
-    return True
-
-
-def _handle_browser_actions(choice: str, session_manager: SessionManager, config: Any) -> bool:
-    """Handle browser-required actions."""
-    result = False
-
-    if choice == "5":
-        exec_actn(check_login_actn, session_manager, choice)
-        result = True
-    elif choice.startswith("6"):
-        # Action 6 - DNA match gathering (with optional start page)
-        result = _handle_action6_with_start_page(choice, session_manager, config)
-    elif choice == "7":
-        exec_actn(srch_inbox_actn, session_manager, choice)
-        result = True
-    elif choice == "8":
-        exec_actn(send_messages_action, session_manager, choice)
-        result = True
-    elif choice == "9":
-        ensure_caching_initialized()
-        exec_actn(process_productive_messages_action, session_manager, choice)
-        result = True
-    elif choice == "10":
-        ensure_caching_initialized()
-        exec_actn(run_gedcom_then_api_fallback, session_manager, choice)
-        result = True
-
-    return result
-
-
-def _handle_test_options(choice: str) -> bool:
-    """Handle test options."""
-    if choice == "test":
-        _run_main_tests()
-        return True
-    if choice == "testall":
-        _run_all_tests()
-        return True
-    return False
-
-
 def _show_metrics_report() -> None:
     """Open Grafana dashboard in browser."""
     try:
@@ -2938,61 +2956,132 @@ def _show_metrics_report() -> None:
         print("\n" + "=" * 70 + "\n")
 
 
-def _handle_meta_options(choice: str) -> bool | None:
-    """Handle meta options (analytics, sec, s, t, c, q).
+def _run_grafana_setup() -> None:
+    """Run Grafana setup if available."""
 
-    Returns:
-        True to continue menu loop
-        False to exit
-        None if choice not handled
-    """
-    def _clear_screen() -> None:
-        os.system("cls" if os.name == "nt" else "clear")
-
-    def _run_grafana_setup() -> None:
-        """Run Grafana setup if available."""
-        if grafana_checker:
-            status = grafana_checker.check_grafana_status()
-            if status["ready"]:
-                print("\n✅ Grafana is already fully configured and running!")
-                print("   Dashboard URL: http://localhost:3000")
-                print("   Default credentials: admin / ancestry")
-                print("\n📊 Checking dashboards...")
-                grafana_checker.ensure_dashboards_imported()
-                print("\n✅ Dashboard check complete!")
-                print("\n📊 Available Dashboards:")
-                print("   • Overview:    http://localhost:3000/d/ancestry-overview")
-                print("   • Performance: http://localhost:3000/d/ancestry-performance")
-                print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
-                print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
-                print("\n💡 If dashboards are empty, configure data sources:")
-                print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
-            else:
-                grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
+    if grafana_checker:
+        status = grafana_checker.check_grafana_status()
+        if status["ready"]:
+            print("\n✅ Grafana is already fully configured and running!")
+            print("   Dashboard URL: http://localhost:3000")
+            print("   Default credentials: admin / ancestry")
+            print("\n📊 Checking dashboards...")
+            grafana_checker.ensure_dashboards_imported()
+            print("\n✅ Dashboard check complete!")
+            print("\n📊 Available Dashboards:")
+            print("   • Overview:    http://localhost:3000/d/ancestry-overview")
+            print("   • Performance: http://localhost:3000/d/ancestry-performance")
+            print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
+            print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
+            print("\n💡 If dashboards are empty, configure data sources:")
+            print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
         else:
-            print("\n⚠️  Grafana checker module not available")
-            print("Ensure grafana_checker.py is in the project root directory\n")
+            grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
+    else:
+        print("\n⚠️  Grafana checker module not available")
+        print("Ensure grafana_checker.py is in the project root directory\n")
 
-    meta_actions: dict[str, Callable[[], None]] = {
-        "analytics": _show_analytics_dashboard,
-        "metrics": _show_metrics_report,
-        "setup-grafana": _run_grafana_setup,
-        "graph": _open_graph_visualization,
-        "s": _show_cache_statistics,
-        "t": _toggle_log_level,
-        "c": _clear_screen,
-    }
 
-    if choice in meta_actions:
-        meta_actions[choice]()
+def _clear_screen() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def _exit_application() -> bool:
+    _clear_screen()
+    print("Exiting.")
+    return False
+
+
+def _execute_meta_action(metadata: ActionMetadata) -> Optional[bool]:
+    """Execute a meta action and return loop control signal."""
+
+    action_func = metadata.function
+    if not callable(action_func):
+        logger.error("Meta action '%s' is not wired to a function", metadata.id)
+        print("Action not available.\n")
         return True
 
-    if choice == "q":
-        os.system("cls" if os.name == "nt" else "clear")
-        print("Exiting.")
-        return False
+    result = action_func()
+    if isinstance(result, bool):
+        return result
+    return True
 
+
+def _execute_test_action(metadata: ActionMetadata) -> None:
+    """Execute a registered test action."""
+
+    action_func = metadata.function
+    if not callable(action_func):
+        logger.error("Test action '%s' is not wired to a function", metadata.id)
+        print("Test action not available.\n")
+        return
+    action_func()
+
+
+def _validate_action_args(metadata: ActionMetadata, arg_tokens: list[str]) -> bool:
+    """Validate CLI arguments against action metadata."""
+
+    if not arg_tokens:
+        return True
+    if metadata.max_args == 0:
+        print(f"Action '{metadata.name}' does not accept additional arguments.\n")
+        return False
+    if len(arg_tokens) > metadata.max_args:
+        print(f"Action '{metadata.name}' accepts at most {metadata.max_args} argument(s).\n")
+        return False
+    return True
+
+
+def _parse_start_page_argument(arg_tokens: list[str]) -> Optional[int]:
+    """Parse optional start page for Action 6."""
+
+    if not arg_tokens:
+        return None
+
+    start_token = arg_tokens[0]
+    try:
+        start_arg = int(start_token)
+        if start_arg > 0:
+            return start_arg
+        logger.warning("Invalid start page '%s'. Using checkpoint resume if available.", start_token)
+        print(f"Invalid start page '{start_token}'. Defaulting to checkpoint resume.")
+    except ValueError:
+        logger.warning("Invalid start page '%s'. Using checkpoint resume if available.", start_token)
+        print(f"Invalid start page '{start_token}'. Defaulting to checkpoint resume.")
     return None
+
+
+def _execute_primary_action(
+    metadata: ActionMetadata,
+    session_manager: SessionManager,
+    config_obj: Any,
+    arg_tokens: list[str],
+) -> bool:
+    """Execute a primary action (non-meta/test) using exec_actn."""
+
+    action_func = metadata.function
+    if not callable(action_func):
+        logger.error("Action '%s' is not wired to an executable function", metadata.id)
+        print("Action not implemented yet.\n")
+        return True
+
+    if not _validate_action_args(metadata, arg_tokens):
+        return True
+
+    extra_args: list[Any] = []
+    if metadata.inject_config:
+        extra_args.append(config_obj)
+
+    if metadata.id == "6":
+        extra_args.append(_parse_start_page_argument(arg_tokens))
+    elif arg_tokens:
+        logger.debug("Ignoring unused arguments %s for action %s", arg_tokens, metadata.id)
+
+    if metadata.enable_caching:
+        ensure_caching_initialized()
+
+    exec_actn(action_func, session_manager, metadata.id, metadata.close_session_after, *extra_args)
+    return True
 
 
 def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: Any) -> bool:
@@ -3002,29 +3091,59 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
     Returns:
         True to continue menu loop, False to exit
     """
-    # --- Database-only actions (no browser needed) ---
-    if choice in {"1", "2", "3", "4"}:
-        return _handle_database_actions(choice, session_manager)
+    action_id, arg_tokens = _parse_menu_choice(choice)
+    metadata = _get_action_metadata(action_id)
 
-    # --- Browser-required actions ---
-    if choice in {"5", "7", "8", "9", "10"} or choice.startswith("6"):
-        result = _handle_browser_actions(choice, session_manager, config)
-        if result:
-            return True
-
-    # --- Test Options ---
-    result = _handle_test_options(choice)
-    if result:
+    if metadata is None:
+        print("Invalid choice.\n")
         return True
 
-    # --- Meta Options ---
-    result = _handle_meta_options(choice)
-    if result is not None:
-        return result
+    if metadata.is_meta_action:
+        if arg_tokens:
+            print("This option does not accept arguments.\n")
+            return True
+        result = _execute_meta_action(metadata)
+        return True if result is None else bool(result)
 
-    # Handle invalid choices
-    print("Invalid choice.\n")
-    return True
+    if metadata.is_test_action:
+        if arg_tokens:
+            print("This option does not accept arguments.\n")
+            return True
+        _execute_test_action(metadata)
+        return True
+
+    return _execute_primary_action(metadata, session_manager, config, arg_tokens)
+
+
+def _assign_action_registry_functions() -> None:
+    """Attach callable implementations to action registry metadata."""
+
+    registry = get_action_registry()
+    registry.set_action_function("1", all_but_first_actn)
+    registry.set_action_function("2", reset_db_actn)
+    registry.set_action_function("3", backup_db_actn)
+    registry.set_action_function("4", restore_db_actn)
+    registry.set_action_function("5", check_login_actn)
+    registry.set_action_function("6", gather_dna_matches)
+    registry.set_action_function("7", srch_inbox_actn)
+    registry.set_action_function("8", send_messages_action)
+    registry.set_action_function("9", process_productive_messages_action)
+    registry.set_action_function("10", run_gedcom_then_api_fallback)
+
+    registry.set_action_function("analytics", _show_analytics_dashboard)
+    registry.set_action_function("metrics", _show_metrics_report)
+    registry.set_action_function("setup-grafana", _run_grafana_setup)
+    registry.set_action_function("graph", _open_graph_visualization)
+    registry.set_action_function("s", _show_cache_statistics)
+    registry.set_action_function("t", _toggle_log_level)
+    registry.set_action_function("c", _clear_screen)
+    registry.set_action_function("q", _exit_application)
+
+    registry.set_action_function("test", _run_main_tests)
+    registry.set_action_function("testall", _run_all_tests)
+
+
+_assign_action_registry_functions()
 
 
 def _check_startup_status(session_manager: SessionManager) -> None:

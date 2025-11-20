@@ -125,6 +125,13 @@ class PerformanceCache:
             f"Performance cache initialized with max size {max_memory_cache_size} (Phase 7.3.1 Enhanced)"
         )
 
+        try:
+            from cache_retention import auto_enforce_retention
+
+            auto_enforce_retention("performance_cache")
+        except Exception as retention_error:  # pragma: no cover - best effort cleanup
+            logger.debug("Performance cache retention sweep skipped: %s", retention_error)
+
     @property
     def cache_stats(self) -> dict[str, Any]:
         """Lazily compute cache statistics."""

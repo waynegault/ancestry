@@ -204,6 +204,15 @@ class CacheRegistry:
             )
         )
 
+        self.register(
+            CacheComponent(
+                name="cache_retention",
+                kind="retention",
+                stats_fn=self._lazy_call("cache_retention", "get_retention_summary"),
+                clear_fn=self._lazy_call("cache_retention", "enforce_retention_now"),
+            )
+        )
+
     @staticmethod
     def _lazy_call(module_path: str, attr: str) -> ActionFn:
         def _callable(*args: Any, **kwargs: Any) -> Any:

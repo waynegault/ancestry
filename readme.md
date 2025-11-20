@@ -427,6 +427,7 @@ cache.invalidate_by_key("person_12345")  # Specific entry
 
 - `core/cache_registry.CacheRegistry` now provides a single entry point for every cache subsystem (disk, unified, session, system, GEDCOM, performance, tree stats).
 - Tree statistics cache metrics (row counts, freshness, expiration counts) now surface alongside disk/memory caches, and you can warm or clear them through the registry just like other caches.
+- The new `cache_retention` component reports how many files remain under each `Cache/` target, how old they are, and how many bytes were deleted by the most recent sweep so storage growth is fully visible from the same dashboard.
 - Call `get_cache_registry().summary()` to power dashboards, health checks, or CLI tooling without importing each cache module manually.
 - The main menu's **Cache Statistics** screen and `performance_monitor` pull from the registry so new caches stay visible automatically.
 
@@ -438,6 +439,7 @@ summary = registry.summary()
 print(summary["disk_cache"].get("hit_rate"))
 registry.clear("performance_cache")  # Targeted clear
 registry.warm("tree_stats_cache")  # Refresh DB-backed cache rows
+registry.clear("cache_retention")  # Force retention sweep on all targets
 ```
 
 Monitor in logs:
@@ -448,6 +450,24 @@ Get-Content Logs/app.log -Wait | Select-String "cache hit|cache miss"
 # Review integration test results
 python -m test_action6_cache_integration
 ```
+
+#### Cache Retention Service
+
+- `cache_retention.CacheRetentionService` enforces age, size, and file-count limits for `Cache/performance` (GEDCOM pickles), `Cache/session_checkpoints`, and `Cache/session_state` crash-recovery artifacts.
+- Sweeps run automatically every hour, plus immediately after the performance cache initializes and whenever session checkpoints or state snapshots are written—so long-lived runs never leak disk space.
+- Retention metrics surface through the registry (`summary()["cache_retention"]["targets"]`), and operators can trigger on-demand cleanup from the CLI, API, or Cache Statistics screen.
+- The service is extensible: register new `RetentionTarget` definitions if additional cache folders need policies.
+
+Trigger a cleanup programmatically:
+
+```python
+from cache_retention import enforce_retention_now, get_retention_summary
+
+enforce_retention_now()  # Sweep all targets immediately
+print(get_retention_summary())  # Inspect last run + per-target metrics
+```
+
+Each target report includes rows like `Cache/performance → 120 files / 33.5 MB (removed 14 old entries 5.1m ago)`, making it easy to alert on stale data or unexpected growth.
 
 #### Database Utilities
 

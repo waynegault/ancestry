@@ -1235,6 +1235,13 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
 
         except Exception as e:
             logger.debug(f"Checkpoint cleanup failed: {e}")
+        else:
+            try:
+                from cache_retention import auto_enforce_retention
+
+                auto_enforce_retention("session_checkpoints")
+            except Exception as retention_error:
+                logger.debug("Retention sweep for session checkpoints skipped: %s", retention_error)
 
     @staticmethod
     def list_available_checkpoints() -> list[dict[str, Any]]:
@@ -1309,6 +1316,14 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
                 json.dump(session_data, f, indent=2, default=str)
 
             logger.debug(f"Session state persisted to disk: {state_file}")
+
+            try:
+                from cache_retention import auto_enforce_retention
+
+                auto_enforce_retention("session_state")
+            except Exception as retention_error:
+                logger.debug("Retention sweep for session state skipped: %s", retention_error)
+
             return str(state_file)
 
         except Exception as e:
