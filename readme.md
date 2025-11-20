@@ -43,6 +43,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
 - ✅ **CLI Maintenance Module (Nov 21)** - Non-essential menu helpers now live in `cli/maintenance.py`, and `main.py` simply instantiates `MainCLIHelpers` and re-exports the bound methods so the entrypoint focuses on action orchestration.
 - ✅ **Main Menu Test Suite Re-embedded (Nov 21)** - The `main.py` regression suite now lives at the bottom of the entrypoint, so tests stay co-located with the code they cover; run it via the main menu helper or `python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"`.
+- ✅ **Main.py Refactoring (Nov 25)** - Extracted application lifecycle management (startup, shutdown, session pre-authentication) into `core/lifecycle.py`, reducing `main.py` to a focused entry point that delegates to specialized modules.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
@@ -1054,7 +1055,7 @@ python run_all_tests.py --emit-coverage
 - Summary from last run:
   - Total Modules: 82; With Tests: 80; Without: 2
   - Total Public Functions: 1,048; Total Test Functions: 1,033
-- The detailed per-module table previously in test_coverage_report.md has been consolidated into this readme per single-file policy. Re-run the command above to produce a fresh, complete table locally.
+- The detailed per-module table previously in test_coverage_report.md has been consolidated into this readme per single-doc policy. Re-run the command above to produce a fresh, complete table locally.
 
   - Example minimal call using requests:
 
