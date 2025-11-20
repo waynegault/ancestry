@@ -23,7 +23,7 @@ New `cache_retention.CacheRetentionService` enforces age/size/count policies for
 
    Recommendation: continue trimming `main.py` by peeling off the remaining subsystems (caching bootstrap, analytics extras, session warmups) into dedicated modules so the entrypoint just wires SessionManager + the registry together. Once that is done, reassess whether further menu slimming is needed beyond the existing `ui/menu.py` renderer.
 
-6. (Priority 6) Stop suppressing configuration warnings
+6. (Priority 6) Stop suppressing configuration warnings — ✅ Completed Nov 25 2025
 Startup immediately sets `SUPPRESS_CONFIG_WARNINGS=1` (`main.py` §12‑16) and `_should_suppress_config_warnings()` defaults to hiding validation issues whenever tests or scripts run (`main.py` §336‑344). The same flag is re-applied inside `core/session_manager.py` when tests execute (§18‑44). As a result, misconfigured `.env` values never reach the operator.
 
    Recommendation: remove the blanket suppression, surface the warnings emitted by `ConfigManager`, and treat noisy modules as bugs to fix rather than silencing them globally.
@@ -33,7 +33,7 @@ Startup immediately sets `SUPPRESS_CONFIG_WARNINGS=1` (`main.py` §12‑16) and
 
    Recommendation: re-enable the unknown-type checks incrementally (start with warnings), add missing annotations in hot files (`action6_gather.py`, `main.py`, `action7_inbox.py`), and gate new modules on `reportGeneralTypeIssues` = error once coverage improves.
 
-8. (Priority 8) Remove legacy warning suppression from SessionManager
+8. (Priority 8) Remove legacy warning suppression from SessionManager — ✅ Completed Nov 25 2025
 The top of `core/session_manager.py` still redirects `sys.stderr`, installs global `warnings.filterwarnings`, and notes "OBSOLETE" in comments (§18‑43), yet the code path runs every time tests execute. This hides legitimate RuntimeWarnings and complicates debugging.
 
    Recommendation: delete the stderr redirection/suppression block, ensure tests run via `python core/session_manager.py` work without it, and lean on targeted `warnings.catch_warnings` in the rare helpers that truly need it.

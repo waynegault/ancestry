@@ -1,10 +1,8 @@
 import gc
-import logging
 import shutil
 import time
 from importlib import import_module
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.exc import SQLAlchemyError

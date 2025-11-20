@@ -11,8 +11,6 @@ messaging, and genealogical research tools.
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
 import os
 
-os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"
-
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 

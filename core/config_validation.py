@@ -50,8 +50,6 @@ def log_basic_configuration_values(config: Any) -> None:
 def should_suppress_config_warnings() -> bool:
     """Return True when runtime context indicates configuration warnings should be muted."""
 
-    if os.environ.get("SUPPRESS_CONFIG_WARNINGS") == "1":
-        return True
     if os.environ.get("PYTEST_CURRENT_TEST") is not None:
         return True
     return any("test" in arg.lower() for arg in sys.argv)

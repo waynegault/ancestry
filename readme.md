@@ -44,6 +44,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **CLI Maintenance Module (Nov 21)** - Non-essential menu helpers now live in `cli/maintenance.py`, and `main.py` simply instantiates `MainCLIHelpers` and re-exports the bound methods so the entrypoint focuses on action orchestration.
 - ✅ **Main Menu Test Suite Re-embedded (Nov 21)** - The `main.py` regression suite now lives at the bottom of the entrypoint, so tests stay co-located with the code they cover; run it via the main menu helper or `python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"`.
 - ✅ **Main.py Refactoring (Nov 25)** - Extracted application lifecycle management (startup, shutdown, session pre-authentication) into `core/lifecycle.py`, reducing `main.py` to a focused entry point that delegates to specialized modules.
+- ✅ **Configuration Warning Visibility (Nov 25)** - Removed blanket configuration warning suppression from `main.py` and `core/session_manager.py` so misconfigured `.env` values are properly surfaced to operators instead of being silently swallowed.
+- ✅ **SessionManager Cleanup (Nov 25)** - Removed legacy `sys.stderr` redirection and obsolete warning suppression blocks from `core/session_manager.py`, improving debugging visibility and removing dead code paths.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

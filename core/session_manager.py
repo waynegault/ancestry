@@ -11,37 +11,8 @@ PHASE 5.1 OPTIMIZATION: Enhanced with intelligent session caching for dramatic
 performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
-# === SUPPRESS TEST WARNINGS FIRST (before any imports) ===
-import os
-import sys
-import warnings
-from contextlib import suppress
-from enum import Enum
-
-_original_stderr = None
-
-# NOTE: These warning suppressions are OBSOLETE but kept for defense-in-depth.
-# PREFERRED APPROACH: Run as script (`python core\session_manager.py`) NOT as module (`python -m core.session_manager`)
-# See test execution block at bottom of file for full explanation.
-#
-# The suppression below doesn't work for runpy RuntimeWarnings anyway (they occur before our code runs),
-# but it does suppress other test-related warnings if someone uses `-m` anyway.
-
-# Suppress warnings during test runs - must be before other imports
-if __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv):
-    # Suppress all RuntimeWarnings (including runpy module warnings)
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
-    warnings.filterwarnings("ignore", message=".*runpy.*")
-    # Also suppress via simplefilter for more aggressive filtering
-    warnings.simplefilter("ignore", RuntimeWarning)
-    # Suppress config warning output to stderr
-    os.environ["SUPPRESS_CONFIG_WARNINGS"] = "1"
-    # Redirect stderr temporarily to suppress subprocess warnings
-    import io
-    _original_stderr = sys.stderr
-    sys.stderr = io.StringIO()
-
 # === CORE INFRASTRUCTURE ===
+import sys
 from pathlib import Path
 
 # Add parent directory to path for core_imports
@@ -51,12 +22,6 @@ if str(parent_dir) not in sys.path:
 
 from standard_imports import setup_module
 
-# Restore stderr after critical imports
-if (
-    __name__ == "__main__" or any("test" in arg.lower() for arg in sys.argv)
-) and _original_stderr is not None:
-    sys.stderr = _original_stderr
-
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -64,7 +29,9 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import threading
 import time
+from contextlib import suppress
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, cast
 
 from core.error_handling import (

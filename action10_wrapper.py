@@ -13,7 +13,6 @@ from core.analytics_helpers import (
     IDNormalizer,
     MatchAnalyzer,
     MatchList,
-    RowBuilder,
     SupplementaryHandler,
     load_match_analysis_helpers,
     load_result_row_builders,

@@ -485,7 +485,7 @@ def _test_parse_menu_choice_behavior() -> bool:
 
 def _test_prepare_action_arguments_special_cases() -> bool:
     configure_action_runner(config={"sentinel": True})
-    fake_session = object()
+    fake_session = cast("SessionManager", object())
 
     def gather_dna_matches(session_manager: Any, config_schema: Any | None = None, start: int | None = None) -> None:
         del session_manager, config_schema, start

@@ -1,5 +1,4 @@
-import logging
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urljoin
 
 from action6_gather import coord
@@ -7,7 +6,6 @@ from action7_inbox import InboxProcessor
 from action8_messaging import send_messages_to_matches
 from action9_process_productive import process_productive_messages
 from config.config_manager import ConfigManager
-from core.action_registry import get_action_registry
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
