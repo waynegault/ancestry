@@ -41,7 +41,7 @@ import base64  # For make_ube
 import binascii  # For make_ube
 import json
 import logging
-import random  # For retry_api, RateLimiter
+import random  # Used by RateLimiter jitter calculations
 import re
 import threading  # For thread-safe rate limiting
 import time
@@ -1075,171 +1075,6 @@ def _calculate_sleep_time(
     sleep_time = min(base + jitter, max_delay)
     return max(0.1, sleep_time)
 
-
-def _should_retry_status_code(response: Any, retry_codes: set[int]) -> tuple[bool, Optional[int]]:
-    """Check if response status code should trigger a retry."""
-    if isinstance(response, RequestsResponse):
-        status_code = response.status_code
-        if status_code in retry_codes:
-            return True, status_code
-    return False, None
-
-
-def _handle_status_code_retry(
-    status_code: int,
-    retries: int,
-    max_retries: int,
-    attempt: int,
-    delay: float,
-    backoff_factor: float,
-    max_delay: float,
-    jitter_seconds: float,
-    func_name: str,
-) -> tuple[bool, float]:
-    """Handle retry logic for status code errors. Returns (should_continue, new_delay)."""
-    if retries <= 0:
-        logger.error(f"API Call failed after {max_retries} retries for '{func_name}' (Final Status {status_code}).")
-        return False, delay
-
-    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay, jitter_seconds)
-    logger.warning(f"API Call status {status_code} (Attempt {attempt}/{max_retries}) for '{func_name}'. Retrying in {sleep_time:.2f}s...")
-    time.sleep(sleep_time)
-    return True, delay * backoff_factor
-
-
-def _handle_exception_retry(
-    exception: Exception,
-    retries: int,
-    max_retries: int,
-    attempt: int,
-    delay: float,
-    backoff_factor: float,
-    max_delay: float,
-    jitter_seconds: float,
-    func_name: str,
-) -> tuple[bool, float]:
-    """Handle retry logic for exceptions. Returns (should_continue, new_delay)."""
-    if retries <= 0:
-        logger.error(
-            f"API Call failed after {max_retries} retries for '{func_name}'. Final Exception: {type(exception).__name__} - {exception}",
-            exc_info=False,
-        )
-        raise exception
-
-    sleep_time = _calculate_sleep_time(delay, backoff_factor, attempt, max_delay, jitter_seconds)
-    logger.warning(f"API Call exception '{type(exception).__name__}' (Attempt {attempt}/{max_retries}) for '{func_name}', retrying in {sleep_time:.2f}s...")
-    time.sleep(sleep_time)
-    return True, delay * backoff_factor
-
-
-def retry_api(
-    max_retries: Optional[int] = None,
-    initial_delay: Optional[float] = None,
-    backoff_factor: Optional[float] = None,
-    retry_on_exceptions: Optional[tuple[type[Exception], ...]] = None,
-    retry_on_status_codes: Optional[list[int]] = None,
-    policy: Optional[str | RetryPolicyProfile] = "api",
-) -> Callable[..., Any]:
-    """Decorator factory for retrying API calls with exponential backoff, logging, etc."""
-
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        resolved_policy = resolve_retry_policy(policy, default="api")
-        default_retry_exceptions: tuple[type[Exception], ...] = (
-            RequestException,
-            ConnectionError,
-            TimeoutError,
-        )
-        effective_retry_exceptions = (
-            retry_on_exceptions
-            if retry_on_exceptions is not None
-            else (resolved_policy.retry_on if resolved_policy else default_retry_exceptions)
-        )
-
-        @wraps(func)
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # Get configuration
-            config = _get_retry_config(
-                max_retries,
-                initial_delay,
-                backoff_factor,
-                retry_on_status_codes,
-                policy=resolved_policy,
-            )
-
-            # Initialize retry state
-            retries = config["max_retries"]
-            delay = config["initial_delay"]
-            attempt = 0
-            last_exception: Optional[Exception] = None
-            last_response: RequestsResponseTypeOptional = None
-
-            # Retry loop
-            while retries > 0:
-                attempt += 1
-                try:
-                    response = func(*args, **kwargs)
-                    last_response = response
-
-                    # Check if status code should trigger retry
-                    should_retry, status_code = _should_retry_status_code(response, config["retry_codes"])
-
-                    if should_retry:
-                        assert status_code is not None, "status_code must be set when should_retry is True"
-                        retries -= 1
-                        last_exception = HTTPError(f"{status_code} Error", response=response)
-
-                        # Handle status code retry
-                        should_continue, delay = _handle_status_code_retry(
-                            status_code,
-                            retries,
-                            config["max_retries"],
-                            attempt,
-                            delay,
-                            config["backoff_factor"],
-                            config["max_delay"],
-                            config["jitter_seconds"],
-                            func.__name__,
-                        )
-                        if not should_continue:
-                            return response
-                        continue
-
-                    # Success - return response
-                    return response
-
-                except effective_retry_exceptions as e:
-                    last_exception = e
-                    retries -= 1
-
-                    # Handle exception retry
-                    should_continue, delay = _handle_exception_retry(
-                        e,
-                        retries,
-                        config["max_retries"],
-                        attempt,
-                        delay,
-                        config["backoff_factor"],
-                        config["max_delay"],
-                        config["jitter_seconds"],
-                        func.__name__,
-                    )
-                    continue
-
-                except Exception as e:
-                    # Non-retryable exception
-                    logger.error(f"Unexpected error during API call attempt {attempt} for '{func.__name__}': {e}", exc_info=True)
-                    raise e
-
-            # Retry loop exhausted
-            logger.error(f"Exited retry loop for '{func.__name__}'. Last status: {getattr(last_response, 'status_code', 'N/A')}, Last exception: {last_exception}")
-            if last_exception:
-                raise last_exception
-            return last_response if last_response is not None else RuntimeError(f"{func.__name__} failed after all retries.")
-
-        return wrapper
-    return decorator
-
-# End of retry_api
 
 # Helper functions for ensure_browser_open
 
@@ -4832,7 +4667,6 @@ def _test_decorators() -> None:
     """Test decorator availability and basic functionality"""
     # Test retry decorator availability
     assert callable(retry), "retry decorator should be callable"
-    assert callable(retry_api), "retry_api decorator should be callable"
     assert callable(
         ensure_browser_open
     ), "ensure_browser_open decorator should be callable"

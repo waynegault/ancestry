@@ -52,6 +52,7 @@ from core.error_handling import (
     APIError,
     AuthenticationError,
     BrowserError,
+    api_retry as _api_retry,
     selenium_retry,
     with_api_recovery as _with_api_recovery,
     with_enhanced_recovery as _with_enhanced_recovery,
@@ -120,7 +121,6 @@ from core.error_handling import (
 )
 from utils import (
     format_name,
-    retry_api as _retry_api,
     urljoin,
 )
 
@@ -133,7 +133,7 @@ timeout_protection = cast(DecoratorFactory, _timeout_protection)
 with_connection_resilience = cast(DecoratorFactory, _with_connection_resilience)
 with_api_recovery = cast(DecoratorFactory, _with_api_recovery)
 with_enhanced_recovery = cast(DecoratorFactory, _with_enhanced_recovery)
-retry_api = cast(DecoratorFactory, _retry_api)
+api_retry = cast(DecoratorFactory, _api_retry)
 
 
 # --- Helper function for SQLAlchemy Column conversion ---
@@ -376,7 +376,7 @@ class InboxProcessor:
         return all_conversations_processed, forward_cursor
 
     @cached_api_call("ancestry", ttl=900)  # 15-minute cache for conversations
-    @retry_api()  # Apply retry decorator for resilience
+    @api_retry()  # Apply retry decorator for resilience
     def _get_all_conversations_api(
         self, session_manager: SessionManager, limit: int, cursor: Optional[str] = None
     ) -> tuple[Optional[list[dict[str, Any]]], Optional[str]]:
@@ -645,7 +645,7 @@ class InboxProcessor:
         )
 
     @cached_api_call("ancestry", ttl=600)
-    @retry_api(max_retries=2)
+    @api_retry(max_attempts=2)
     def _fetch_conversation_context(
         self, conversation_id: str
     ) -> Optional[list[dict[str, Any]]]:

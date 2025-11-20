@@ -242,6 +242,7 @@ from core.error_handling import (
     DatabaseConnectionError,
     NetworkTimeoutError,
     RetryableError,
+    api_retry,
     circuit_breaker,
     error_context,
     selenium_retry,
@@ -278,7 +279,6 @@ from test_utilities import atomic_write_file, create_standard_test_runner
 from utils import (
     format_name,  # Name formatting utility
     nav_to_page,  # Navigation helper
-    retry_api,  # API retry decorator
 )
 
 
@@ -7415,7 +7415,7 @@ def get_matches(
 # End of get_matches
 
 
-@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+@api_retry(retry_on=[requests.exceptions.RequestException, ConnectionError])
 def _get_api_headers() -> dict[str, str]:
     """Get standard API headers for match details requests."""
     return {
@@ -7790,7 +7790,7 @@ def _fetch_combined_details(
 # End of _fetch_combined_details
 
 
-@retry_api(retry_on_exceptions=(requests.exceptions.RequestException, ConnectionError))
+@api_retry(retry_on=[requests.exceptions.RequestException, ConnectionError])
 def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
     """Try to get badge details from cache."""
     cache_key = f"badge_details_{match_uuid}"
@@ -8138,15 +8138,16 @@ def _fetch_batch_ladder(
 # ============================================================================
 
 
-@retry_api(
-    retry_on_exceptions=(
+@api_retry(
+    retry_on=[
         requests.exceptions.RequestException,
         ConnectionError,
         CloudflareChallengeError,
-    )
+    ]
 )
 def _get_cached_csrf_token(
-session_manager: SessionManager, api_description: str) -> Optional[str]:
+    session_manager: SessionManager, api_description: str
+) -> Optional[str]:
     """Get cached CSRF token if available."""
     if session_manager.is_csrf_token_valid() and session_manager._cached_csrf_token:
         logger.debug(

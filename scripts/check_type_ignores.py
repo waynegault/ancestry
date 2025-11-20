@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 EXCLUDED_PARTS = {".git", ".venv", "__pycache__", "node_modules", "env", "venv"}
 
