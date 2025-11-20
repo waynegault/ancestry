@@ -80,7 +80,6 @@ HEALTH_CHECK_INTERVAL_PAGES=5
 SESSION_REFRESH_THRESHOLD_MIN=25
 ```
 
-
 #### Schema Migration Workflow
 
 - `core/schema_migrator.py` registers ordered migrations (starting with `0001_baseline`) and records executions in the `schema_migrations` table so every deployment knows which revisions ran against `Data/ancestry.db`.

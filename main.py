@@ -464,7 +464,6 @@ def validate_action_config() -> bool:
 
 # Core modules
 from core.action_registry import (
-    ActionCategory,
     ActionMetadata,
     ActionRequirement,
     get_action_registry,
@@ -481,6 +480,7 @@ from database import (
 )
 from logging_config import setup_logging
 from my_selectors import WAIT_FOR_PAGE_SELECTOR
+from ui.menu import render_main_menu
 from utils import (
     log_in,
     login_status,
@@ -510,75 +510,10 @@ def _get_action_metadata(action_id: str) -> Optional[ActionMetadata]:
     return registry.get_action(action_id)
 
 
-def _format_menu_line(action: ActionMetadata) -> str:
-    """Format a menu line for the given action metadata."""
-
-    hint = f" {action.input_hint}" if action.input_hint else ""
-    return f"{action.id}. {action.name}{hint}"
-
-
 def menu() -> str:
-    """Display the main menu and return the user's choice."""
-    print("\nMain Menu")
-    print("=" * 17)
-    level_name = "UNKNOWN"  # Default
+    """Display the main menu and return the normalized choice."""
 
-    if logger and logger.handlers:
-        console_handler: Optional[StreamHandler[TextIO]] = None
-        for handler in logger.handlers:
-            if isinstance(handler, StreamHandler):
-                shandler = cast(StreamHandler[TextIO], handler)
-                stream: Optional[TextIO] = shandler.stream
-                if stream is sys.stderr:
-                    console_handler = shandler
-                    break
-        if console_handler is not None:
-            level_name = logging.getLevelName(int(console_handler.level))
-        else:
-            level = logger.getEffectiveLevel()
-            # getLevelNamesMapping returns dict[str, int], we need reverse lookup
-            level_names = {v: k for k, v in logging.getLevelNamesMapping().items()}
-            level_name = level_names.get(level, str(level))
-    elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
-        level_name = config.logging.log_level.upper()
-
-    print(f"(Log Level: {level_name})\n")
-
-    registry = get_action_registry()
-
-    for action in registry.get_menu_actions():
-        print(_format_menu_line(action))
-
-    meta_actions = registry.get_meta_actions()
-    analytics_meta = [action for action in meta_actions if action.category == ActionCategory.ANALYTICS]
-    graph_meta = [action for action in meta_actions if action.id == "graph"]
-    system_meta = [
-        action for action in meta_actions
-        if action.category != ActionCategory.ANALYTICS and action.id != "graph"
-    ]
-
-    if analytics_meta:
-        print("")
-        for action in analytics_meta:
-            print(_format_menu_line(action))
-
-    if graph_meta:
-        print("")
-        for action in graph_meta:
-            print(_format_menu_line(action))
-
-    test_actions = registry.get_test_actions()
-    if test_actions:
-        print("")
-        for action in test_actions:
-            print(_format_menu_line(action))
-
-    if system_meta:
-        print("")
-        for action in system_meta:
-            print(_format_menu_line(action))
-
-    return input("\nEnter choice: ").strip().lower()
+    return render_main_menu(logger, config, get_action_registry())
 
 
 # End of menu

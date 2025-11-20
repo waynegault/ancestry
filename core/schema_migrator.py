@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import sys
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,6 +23,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 MigrationFn = Callable[[Engine], None]
+CliAction = Callable[[Engine], None]
 DEFAULT_DB_PATH = Path("Data/ancestry.db")
 
 
@@ -160,6 +161,43 @@ def _list_applied_versions(engine: Engine) -> list[str]:
     return get_applied_versions(engine)
 
 
+def _print_registered_migrations(engine: Engine) -> None:
+    print("\nRegistered migrations:")
+    for line in _render_status_table(engine):
+        print(f"  {line}")
+
+
+def _print_applied_versions(engine: Engine) -> None:
+    versions = _list_applied_versions(engine)
+    print("\nApplied versions (sorted):")
+    if versions:
+        for version in versions:
+            print(f"  {version}")
+    else:
+        print("  <none>")
+
+
+def _apply_pending_migrations_cli(engine: Engine) -> None:
+    applied_versions = apply_pending_migrations(engine)
+    if applied_versions:
+        print("\nApplied migrations:")
+        for version in applied_versions:
+            print(f"  {version}")
+    else:
+        print("\nNo pending migrations; schema already current.")
+
+
+def _collect_cli_actions(args: Namespace) -> list[CliAction]:
+    actions: list[CliAction] = []
+    if getattr(args, "list", False):
+        actions.append(_print_registered_migrations)
+    if getattr(args, "show_applied", False):
+        actions.append(_print_applied_versions)
+    if getattr(args, "apply", False):
+        actions.append(_apply_pending_migrations_cli)
+    return actions
+
+
 def run_cli(argv: Optional[Sequence[str]] = None) -> int:
     """Simple CLI for applying or inspecting schema migrations."""
 
@@ -175,33 +213,13 @@ def run_cli(argv: Optional[Sequence[str]] = None) -> int:
     if args.run_tests:
         return 0 if schema_migrator_module_tests() else 1
 
-    if not any((args.list, args.apply, args.show_applied)):
-        args.apply = True
+    actions = _collect_cli_actions(args)
+    if not actions:
+        actions.append(_apply_pending_migrations_cli)
 
     engine = _build_cli_engine(args.db_path)
-
-    if args.list:
-        print("\nRegistered migrations:")
-        for line in _render_status_table(engine):
-            print(f"  {line}")
-
-    if args.show_applied:
-        versions = _list_applied_versions(engine)
-        print("\nApplied versions (sorted):")
-        if versions:
-            for version in versions:
-                print(f"  {version}")
-        else:
-            print("  <none>")
-
-    if args.apply:
-        applied_versions = apply_pending_migrations(engine)
-        if applied_versions:
-            print("\nApplied migrations:")
-            for version in applied_versions:
-                print(f"  {version}")
-        else:
-            print("\nNo pending migrations; schema already current.")
+    for action in actions:
+        action(engine)
 
     return 0
 
