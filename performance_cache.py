@@ -111,7 +111,7 @@ class PerformanceCache:
         self._disk_cache_dir = Path("Cache/performance")
         self._disk_cache_dir.mkdir(parents=True, exist_ok=True)
         self._cacheable_pool = cacheable_pool
-        self._cache_stats = {
+        self._cache_stats: dict[str, Any] = {
             "hits": 0,
             "misses": 0,
             "evictions": 0,
@@ -260,7 +260,7 @@ class PerformanceCache:
     def invalidate_dependencies(self, pattern: str):
         """Invalidate cache entries matching a pattern or dependency."""
         invalidated = 0
-        keys_to_remove = []
+        keys_to_remove: list[str] = []
 
         for key in self._memory_cache:
             if pattern in key or any(pattern in dep for dep in self._cache_dependencies.get(key, [])):
@@ -446,7 +446,7 @@ def progressive_processing(
             if data is not None and hasattr(data, "__len__") and len(data) > chunk_size:
                 logger.info(f"Processing {len(data)} items in chunks of {chunk_size}")
 
-                results = []
+                results: list[Any] = []
                 total_chunks = (len(data) + chunk_size - 1) // chunk_size
 
                 for i in range(0, len(data), chunk_size):
@@ -615,7 +615,7 @@ def _warm_relationships_cache(gedcom_path: str) -> None:
 
 def get_cache_stats() -> dict[str, Any]:
     """Get comprehensive cache statistics for monitoring and optimization"""
-    stats = {
+    stats: dict[str, Any] = {
         "memory_entries": len(_performance_cache._memory_cache),
         "disk_cache_dir": str(_performance_cache._disk_cache_dir),
         "max_size": _performance_cache._max_size,
@@ -665,34 +665,35 @@ def get_cache_stats() -> dict[str, Any]:
 
 def _calculate_cache_health(stats: dict[str, Any]) -> dict[str, Any]:
     """Calculate cache health indicators."""
-    health = {
+    recommendations: list[str] = []
+    health: dict[str, Any] = {
         "overall_score": 0.0,
         "memory_health": "good",
         "hit_rate_health": "good",
         "turnover_health": "good",
-        "recommendations": []
+        "recommendations": recommendations
     }
 
     # Memory health
     if stats["memory_pressure"] > 0.9:
         health["memory_health"] = "critical"
-        health["recommendations"].append("Consider increasing cache size or reducing memory pressure")
+        recommendations.append("Consider increasing cache size or reducing memory pressure")
     elif stats["memory_pressure"] > 0.8:
         health["memory_health"] = "warning"
-        health["recommendations"].append("Monitor memory usage closely")
+        recommendations.append("Monitor memory usage closely")
 
     # Hit rate health
     if stats["hit_rate"] < 0.3:
         health["hit_rate_health"] = "poor"
-        health["recommendations"].append("Cache hit rate is low - consider cache warming or TTL adjustment")
+        recommendations.append("Cache hit rate is low - consider cache warming or TTL adjustment")
     elif stats["hit_rate"] < 0.6:
         health["hit_rate_health"] = "fair"
-        health["recommendations"].append("Cache hit rate could be improved")
+        recommendations.append("Cache hit rate could be improved")
 
     # Turnover health
     if stats["cache_turnover_rate"] > 2.0:
         health["turnover_health"] = "high"
-        health["recommendations"].append("High cache turnover - consider increasing cache size")
+        recommendations.append("High cache turnover - consider increasing cache size")
 
     # Calculate overall score
     memory_score = max(0, 1 - stats["memory_pressure"])

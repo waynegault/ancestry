@@ -48,8 +48,13 @@ IMPORTANT: Always run tests in venv (virtual environment)
     Windows: .venv\\Scripts\activate
     Linux/Mac: source .venv/bin/activate
 """
+from __future__ import annotations
 
+import argparse
+import ast
 import concurrent.futures
+import importlib
+import importlib.util
 import json
 import os
 import sys

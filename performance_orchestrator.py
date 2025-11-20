@@ -65,7 +65,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
-from typing import Any, Callable, Optional
+from typing import Any, Callable, DefaultDict, Deque, Dict, List, Optional, Set
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -95,6 +95,10 @@ class OptimizationResult:
 class SmartQueryOptimizer:
     """Analyzes and optimizes database query performance."""
 
+    query_cache: Dict[str, Any]
+    slow_queries: Deque[Dict[str, Any]]
+    query_stats: DefaultDict[str, Dict[str, float | int]]
+
     def __init__(self) -> None:
         self.query_cache = {}
         self.slow_queries = deque(maxlen=100)
@@ -112,15 +116,16 @@ class SmartQueryOptimizer:
 
             # Track slow queries (> 100ms)
             if execution_time > 0.1:
-                self.slow_queries.append({
+                entry: Dict[str, Any] = {
                     "query": query,
                     "time": execution_time,
                     "timestamp": time.time()
-                })
+                }
+                self.slow_queries.append(entry)
 
     def get_optimization_suggestions(self) -> list[dict[str, Any]]:
         """Get query optimization suggestions."""
-        suggestions = []
+        suggestions: list[dict[str, Any]] = []
 
         with self._lock:
             # Find frequently run slow queries
@@ -172,7 +177,7 @@ class MemoryPressureMonitor:
     def __init__(self, pressure_threshold: float = 85.0) -> None:
         self.pressure_threshold = pressure_threshold
         self.monitoring = False
-        self.optimization_history = []
+        self.optimization_history: list[dict[str, Any]] = []
         self._lock = threading.Lock()
 
     @staticmethod
@@ -248,7 +253,7 @@ class APIBatchCoordinator:
     def __init__(self, batch_size: int = 10, batch_timeout: float = 1.0) -> None:
         self.batch_size = batch_size
         self.batch_timeout = batch_timeout
-        self.pending_requests = defaultdict(list)
+        self.pending_requests: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
         self.batch_stats = {"total_batches": 0, "total_requests": 0, "time_saved_ms": 0}
         self._lock = threading.Lock()
 
@@ -319,6 +324,9 @@ class APIBatchCoordinator:
 class ModuleLoadOptimizer:
     """Optimizes module loading and initialization times."""
 
+    load_times: Dict[str, List[float]]
+    optimization_applied: Set[str]
+
     def __init__(self) -> None:
         self.load_times = {}
         self.optimization_applied = set()
@@ -344,7 +352,7 @@ class ModuleLoadOptimizer:
         """Optimize modules with slow import times."""
         try:
             with self._lock:
-                slow_modules = []
+                slow_modules: list[tuple[str, float]] = []
                 for module, times in self.load_times.items():
                     avg_time = sum(times) / len(times)
                     if avg_time > 0.1 and module not in self.optimization_applied:  # >100ms average
@@ -389,7 +397,7 @@ class PerformanceOptimizer:
         self.batch_coordinator = APIBatchCoordinator()
         self.module_optimizer = ModuleLoadOptimizer()
 
-        self.optimization_results = []
+        self.optimization_results: list[OptimizationResult] = []
         self.last_optimization = time.time()
         self.startup_time = time.time()
 
@@ -397,7 +405,7 @@ class PerformanceOptimizer:
 
     def run_comprehensive_optimization(self) -> list[OptimizationResult]:
         """Run all available optimizations."""
-        results = []
+        results: list[OptimizationResult] = []
 
         logger.info("Starting comprehensive performance optimization")
 
@@ -465,7 +473,7 @@ class PerformanceOptimizer:
 """
 
         # Add details for each optimization type
-        optimization_types = defaultdict(list)
+        optimization_types: defaultdict[str, list[OptimizationResult]] = defaultdict(list)
         for result in self.optimization_results:
             if result.success:
                 optimization_types[result.optimization_type].append(result)

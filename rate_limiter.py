@@ -24,7 +24,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict, cast
 
 from standard_imports import setup_module
 
@@ -97,6 +97,20 @@ class _LimiterConfig:
     max_rate: float
     capacity: float
     source: str
+
+
+class LimiterStateDict(TypedDict, total=False):
+    fill_rate: float
+    success_threshold: int
+    min_fill_rate: float
+    max_fill_rate: float
+    capacity: float
+    timestamp: float
+    total_requests: int
+    avg_wait_time: float
+    rate_increases: int
+    rate_decreases: int
+    error_429_count: int
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -227,19 +241,21 @@ def _apply_persisted_config(
             False,
         )
 
+    p = cast(LimiterStateDict, persisted)
+
     persisted_min_used = False
     persisted_max_used = False
 
     if threshold_value is None:
-        threshold_value = _safe_int(persisted.get("success_threshold"))
+        threshold_value = _safe_int(p.get("success_threshold"))
     if current_min_rate is None:
-        current_min_rate = _safe_float(persisted.get("min_fill_rate"))
+        current_min_rate = _safe_float(p.get("min_fill_rate"))
         persisted_min_used = current_min_rate is not None
     if current_max_rate is None:
-        current_max_rate = _safe_float(persisted.get("max_fill_rate"))
+        current_max_rate = _safe_float(p.get("max_fill_rate"))
         persisted_max_used = current_max_rate is not None
     if bucket_capacity is None:
-        bucket_capacity = _safe_float(persisted.get("capacity"))
+        bucket_capacity = _safe_float(p.get("capacity"))
 
     return (
         threshold_value,
@@ -693,10 +709,12 @@ class AdaptiveRateLimiter:
             logger.warning("Invalid endpoint throttle entry for %s; expected dict", endpoint)
             return None
 
-        min_interval = _safe_float(raw_profile.get("min_interval")) or 0.0
-        max_rate = self._sanitize_max_rate(raw_profile.get("max_rate"))
-        delay_multiplier = _safe_float(raw_profile.get("delay_multiplier")) or 1.0
-        cooldown_after_429 = _safe_float(raw_profile.get("cooldown_after_429")) or 0.0
+        profile_dict = cast(dict[str, Any], raw_profile)
+
+        min_interval = _safe_float(profile_dict.get("min_interval")) or 0.0
+        max_rate = self._sanitize_max_rate(profile_dict.get("max_rate"))
+        delay_multiplier = _safe_float(profile_dict.get("delay_multiplier")) or 1.0
+        cooldown_after_429 = _safe_float(profile_dict.get("cooldown_after_429")) or 0.0
 
         min_interval, rate_cap = self._apply_rate_cap_adjustments(min_interval, max_rate)
 
@@ -1456,7 +1474,7 @@ def _test_metrics() -> None:
 def _test_thread_safety() -> None:
     """Test thread safety of operations."""
     limiter = AdaptiveRateLimiter(initial_fill_rate=10.0, capacity=20.0)
-    errors = []
+    errors: list[Exception] = []
 
     def make_requests() -> None:
         try:

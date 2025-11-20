@@ -40,6 +40,7 @@ Provides the essential GEDCOM processing infrastructure that enables sophisticat
 genealogical analysis, relationship discovery, and family tree intelligence for
 professional genealogical research and family history exploration.
 """
+from __future__ import annotations
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -2020,7 +2021,7 @@ class GedcomData:
             self.build_caches()  # Build caches upon initialization
 
     @classmethod
-    def from_cache(cls, cached_data: dict[str, Any], gedcom_path: str) -> "GedcomData":
+    def from_cache(cls, cached_data: dict[str, Any], gedcom_path: str) -> GedcomData:
         """
         Create a GedcomData instance from cached data.
 

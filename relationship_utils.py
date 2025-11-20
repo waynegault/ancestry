@@ -5,6 +5,7 @@
 Utilities for processing genealogical relationship data including
 relationship calculation, path finding, and family tree traversal.
 """
+from __future__ import annotations
 
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
@@ -1765,7 +1766,7 @@ def relationship_module_tests() -> None:
 from test_utilities import create_standard_test_runner
 
 
-def _run_basic_functionality_tests(suite: "TestSuite") -> None:
+def _run_basic_functionality_tests(suite: TestSuite) -> None:
     """Run basic functionality tests for relationship_utils module."""
     def test_name_formatting():
         # Test normal name
@@ -1992,7 +1993,7 @@ def _test_api_relationship_formatting() -> None:
         raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
 
 
-def _run_conversion_tests(suite: "TestSuite") -> None:
+def _run_conversion_tests(suite: TestSuite) -> None:
     """Run conversion tests for relationship_utils module."""
     # Assign module-level test functions
     test_gedcom_path_conversion = _test_gedcom_path_conversion
@@ -2042,7 +2043,7 @@ def _run_conversion_tests(suite: "TestSuite") -> None:
     )
 
 
-def _run_validation_tests(suite: "TestSuite") -> None:
+def _run_validation_tests(suite: TestSuite) -> None:
     """Run validation and performance tests for relationship_utils module."""
     def test_error_handling():
         # Test with None inputs

@@ -8,6 +8,7 @@ geographic locations, time periods, and available Ancestry collections.
 Author: Wayne Gault
 Created: October 21, 2025
 """
+from __future__ import annotations
 
 import logging
 from typing import Any, Optional

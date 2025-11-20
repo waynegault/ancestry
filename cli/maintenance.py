@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Protocol, TextIO
+from typing import Any, ClassVar, Optional, Protocol, TextIO, cast
 from urllib import request as urllib_request
 
 from logging_config import setup_logging
@@ -559,7 +559,7 @@ class MainCLIHelpers:
             console_handler: Optional[StreamHandler[TextIO]] = None
             for handler in self._logger.handlers:
                 if isinstance(handler, logging.StreamHandler):
-                    handler_typed = handler  # type: ignore[assignment]
+                    handler_typed = cast(logging.StreamHandler[TextIO], handler)
                     if handler_typed.stream == sys.stderr:
                         console_handler = handler_typed
                         break

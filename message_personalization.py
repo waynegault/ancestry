@@ -19,7 +19,7 @@ Phase: 9.1 - Message Template Enhancement
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # Import standard modules
 from standard_imports import *
@@ -329,7 +329,7 @@ class MessagePersonalizer:
 
         return []
 
-    def _add_data_based_functions(self, extracted_data: dict[str, Any], selected_functions: list[str]) -> None:
+    def _add_data_based_functions(self, extracted_data: Dict[str, Any], selected_functions: List[str]) -> None:
         """Add personalization functions based on available data."""
         if extracted_data.get("dna_information"):
             dna_functions = ["dna_segment_analysis", "dna_ethnicity_correlation", "estimated_relationship", "shared_dna_amount"]
@@ -355,23 +355,23 @@ class MessagePersonalizer:
         if extracted_data.get("relationships"):
             selected_functions.append("family_size_analysis")
 
-    def _add_advanced_functions(self, selected_functions: list[str]) -> None:
+    def _add_advanced_functions(self, selected_functions: List[str]) -> None:
         """Add advanced functions based on effectiveness."""
         advanced_functions = ["surname_distribution_analysis", "document_preservation_likelihood"]
         for func in advanced_functions:
             if self._is_function_effective(func):
                 selected_functions.append(func)
 
-    def _select_optimal_personalization_functions(self, extracted_data: dict[str, Any]) -> list[str]:
+    def _select_optimal_personalization_functions(self, extracted_data: Dict[str, Any]) -> List[str]:
         """Select optimal personalization functions based on data availability and effectiveness."""
-        selected_functions = ["shared_ancestors", "genealogical_context", "research_focus"]
+        selected_functions: List[str] = ["shared_ancestors", "genealogical_context", "research_focus"]
 
         self._add_data_based_functions(extracted_data, selected_functions)
         self._add_advanced_functions(selected_functions)
 
         return list(set(selected_functions))
 
-    def _get_best_performing_function(self, function_list: list[str]) -> Optional[str]:
+    def _get_best_performing_function(self, function_list: List[str]) -> Optional[str]:
         """Get the best performing function from a list based on effectiveness data."""
         best_func = None
         best_score = 0.0
@@ -487,17 +487,19 @@ class MessagePersonalizer:
         }
         return fallback_values.get(func_name, "our family research")
 
-    def _format_shared_ancestors(self, extracted_data: dict[str, Any]) -> str:
+    def _format_shared_ancestors(self, extracted_data: Dict[str, Any]) -> str:
         """Format shared ancestors information."""
-        structured_names = extracted_data.get("structured_names", [])
+        structured_names: List[Any] = extracted_data.get("structured_names", [])
         if not structured_names:
             return "our shared family line"
 
         # Get up to 3 most relevant names
-        ancestor_names = []
+        ancestor_names: List[str] = []
         for name_data in structured_names[:self.personalization_config["max_ancestors_to_mention"]]:
             if isinstance(name_data, dict):
-                full_name = name_data.get("full_name", "")
+                # Explicitly cast to Dict[str, Any] for pyright
+                name_dict: Dict[str, Any] = name_data
+                full_name = str(name_dict.get("full_name", ""))
                 if full_name:
                     ancestor_names.append(full_name)
             elif isinstance(name_data, str):
@@ -517,15 +519,17 @@ class MessagePersonalizer:
         if not isinstance(record, dict):
             return None
 
-        person = record.get("person", "")
-        event_type = record.get("event_type", "")
-        date = record.get("date", "")
-        place = record.get("place", "")
+        # Explicitly cast to Dict[str, Any] for pyright
+        record_dict: Dict[str, Any] = record
+        person = str(record_dict.get("person", ""))
+        event_type = str(record_dict.get("event_type", ""))
+        date = str(record_dict.get("date", ""))
+        place = str(record_dict.get("place", ""))
 
         if not person or not (date or place):
             return None
 
-        detail_parts = [person]
+        detail_parts: list[str] = [str(person)]
         if event_type and date:
             detail_parts.append(f"{event_type} {date}")
         if place:
@@ -539,7 +543,7 @@ class MessagePersonalizer:
         if not vital_records:
             return ""
 
-        details = []
+        details: list[str] = []
         for record in vital_records[:2]:
             formatted = self._format_single_vital_record(record)
             if formatted:
@@ -549,7 +553,7 @@ class MessagePersonalizer:
 
     def _create_genealogical_context(self, extracted_data: dict[str, Any]) -> str:
         """Create genealogical context paragraph."""
-        context_parts = []
+        context_parts: list[str] = []
 
         # Add location information
         locations = extracted_data.get("locations", [])
@@ -568,16 +572,18 @@ class MessagePersonalizer:
         return " ".join(context_parts) if context_parts else "I'm excited to learn more about our family connection."
 
     @staticmethod
-    def _format_occupations(occupations: list[Any]) -> str:
+    def _format_occupations(occupations: List[Any]) -> str:
         """Format occupation information."""
         if not occupations:
             return ""
 
-        occ_descriptions = []
+        occ_descriptions: List[str] = []
         for occ in occupations[:2]:  # Limit to 2 occupations
             if isinstance(occ, dict):
-                person = occ.get("person", "")
-                occupation = occ.get("occupation", "")
+                # Explicitly cast to Dict[str, Any] for pyright
+                occ_dict: Dict[str, Any] = occ
+                person = str(occ_dict.get("person", ""))
+                occupation = str(occ_dict.get("occupation", ""))
                 if person and occupation:
                     occ_descriptions.append(f"{person} worked as a {occupation}")
 
@@ -586,9 +592,9 @@ class MessagePersonalizer:
         return ""
 
     @staticmethod
-    def _identify_research_focus(extracted_data: dict[str, Any]) -> str:
+    def _identify_research_focus(extracted_data: Dict[str, Any]) -> str:
         """Identify the main research focus from extracted data."""
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             # Use the first research question as focus
             return f" {research_questions[0].lower()}"
@@ -596,21 +602,22 @@ class MessagePersonalizer:
         # Fallback to general family history
         return " our shared family history"
 
-    def _generate_specific_questions(self, extracted_data: dict[str, Any]) -> str:
+    def _generate_specific_questions(self, extracted_data: Dict[str, Any]) -> str:
         """Generate specific follow-up questions based on extracted data."""
-        questions = []
+        questions: List[str] = []
 
         # Questions based on research gaps
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         for question in research_questions[:self.personalization_config["max_research_questions"]]:
-            if isinstance(question, str) and question:
+            if question:
                 questions.append(f"Do you have any information about {question.lower()}?")
 
         # Questions based on locations
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         for location in locations[:1]:  # Just one location question
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
                 if place:
                     questions.append(f"Do you have any family connections to {place}?")
 
@@ -619,31 +626,33 @@ class MessagePersonalizer:
         return "Do you have any additional family information that might help our research?"
 
     @staticmethod
-    def _create_geographic_context(extracted_data: dict[str, Any]) -> str:
+    def _create_geographic_context(extracted_data: Dict[str, Any]) -> str:
         """Create geographic context for the subject line."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         if not locations:
             return "Family History Research"
 
         # Get the most relevant location
         for location in locations:
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
                 if place:
                     return place
 
         return "Family History Research"
 
-    def _format_location_context(self, extracted_data: dict[str, Any]) -> str:
+    def _format_location_context(self, extracted_data: Dict[str, Any]) -> str:
         """Format location context for messages."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         if not locations:
             return ""
 
-        location_names = []
+        location_names: List[str] = []
         for location in locations[:self.personalization_config["max_locations_to_mention"]]:
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
                 if place:
                     location_names.append(place)
 
@@ -654,28 +663,35 @@ class MessagePersonalizer:
         return ""
 
     @staticmethod
-    def _create_research_suggestions(extracted_data: dict[str, Any]) -> str:
+    def _create_research_suggestions(extracted_data: Dict[str, Any]) -> str:
         """Create research suggestions based on extracted data."""
-        suggestions = []
+        suggestions: List[str] = []
 
         # Suggestions based on mentioned people
-        structured_names = extracted_data.get("structured_names", [])
+        structured_names: List[Any] = extracted_data.get("structured_names", [])
         if structured_names:
-            name = structured_names[0].get("full_name", "") if isinstance(structured_names[0], dict) else str(structured_names[0])
+            first_name_data = structured_names[0]
+            name = ""
+            if isinstance(first_name_data, dict):
+                name_dict: Dict[str, Any] = first_name_data
+                name = str(name_dict.get("full_name", ""))
+            else:
+                name = str(first_name_data)
+
             if name:
                 suggestions.append(f"I'm particularly interested in learning more about {name} and their family line.")
 
         # Suggestions based on research questions
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             suggestions.append(f"I'm currently researching {research_questions[0].lower()}.")
 
         return " ".join(suggestions) if suggestions else "I'd love to learn more about your family history."
 
     @staticmethod
-    def _format_research_questions(extracted_data: dict[str, Any]) -> str:
+    def _format_research_questions(extracted_data: Dict[str, Any]) -> str:
         """Format specific research questions."""
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             return f" - particularly about {research_questions[0].lower()}"
         return ""
@@ -703,16 +719,17 @@ class MessagePersonalizer:
 
     # Additional helper methods for remaining format data fields
     @staticmethod
-    def _format_mentioned_people(extracted_data: dict[str, Any]) -> str:
+    def _format_mentioned_people(extracted_data: Dict[str, Any]) -> str:
         """Format mentioned people from extracted data."""
-        structured_names = extracted_data.get("structured_names", [])
+        structured_names: List[Any] = extracted_data.get("structured_names", [])
         if not structured_names:
             return "your family history"
 
-        names = []
+        names: List[str] = []
         for name_data in structured_names[:3]:
             if isinstance(name_data, dict):
-                full_name = name_data.get("full_name", "")
+                name_dict: Dict[str, Any] = name_data
+                full_name = str(name_dict.get("full_name", ""))
                 if full_name:
                     names.append(full_name)
 
@@ -725,35 +742,37 @@ class MessagePersonalizer:
         return "your family history"
 
     @staticmethod
-    def _create_research_context(extracted_data: dict[str, Any]) -> str:
+    def _create_research_context(extracted_data: Dict[str, Any]) -> str:
         """Create research context description."""
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             return research_questions[0]
 
         # Fallback to general context
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         if locations and isinstance(locations[0], dict):
-            place = locations[0].get("place", "")
+            loc_dict: Dict[str, Any] = locations[0]
+            place = str(loc_dict.get("place", ""))
             if place:
                 return f"family connections in {place}"
 
         return "our shared family history"
 
     @staticmethod
-    def _create_personalized_response(extracted_data: dict[str, Any]) -> str:
+    def _create_personalized_response(extracted_data: Dict[str, Any]) -> str:
         """Create personalized response content."""
-        structured_names = extracted_data.get("structured_names") or []
+        structured_names: List[Any] = extracted_data.get("structured_names") or []
         target_name = "your family"
         if structured_names:
             first_entry = structured_names[0]
             if isinstance(first_entry, dict):
-                target_name = first_entry.get("full_name") or first_entry.get("preferred_name") or target_name
+                entry_dict: Dict[str, Any] = first_entry
+                target_name = str(entry_dict.get("full_name") or entry_dict.get("preferred_name") or target_name)
             else:
                 target_name = str(first_entry)
 
         research_focus = "our family connection"
-        research_questions = extracted_data.get("research_questions") or []
+        research_questions: List[str] = extracted_data.get("research_questions") or []
         if research_questions:
             research_focus = research_questions[0]
 
@@ -763,28 +782,28 @@ class MessagePersonalizer:
         )
 
     @staticmethod
-    def _create_research_insights(extracted_data: dict[str, Any]) -> str:
+    def _create_research_insights(extracted_data: Dict[str, Any]) -> str:
         """Create research insights based on extracted data."""
-        insights = []
+        insights: List[str] = []
 
         # Insights from vital records
-        vital_records = extracted_data.get("vital_records", [])
+        vital_records: List[Any] = extracted_data.get("vital_records", [])
         if vital_records:
             insights.append("This information helps fill in some important gaps in our family timeline.")
 
         # Insights from relationships
-        relationships = extracted_data.get("relationships", [])
+        relationships: List[Any] = extracted_data.get("relationships", [])
         if relationships:
             insights.append("The family relationships you mentioned help clarify some connections I've been researching.")
 
         return " ".join(insights) if insights else "This information is very valuable for our family research."
 
     @staticmethod
-    def _create_follow_up_questions(extracted_data: dict[str, Any]) -> str:
+    def _create_follow_up_questions(extracted_data: Dict[str, Any]) -> str:
         """Create follow-up questions for continued research."""
-        questions = []
+        questions: List[str] = []
 
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             questions.append(f"Do you have any additional information about {research_questions[0].lower()}?")
 
@@ -794,27 +813,27 @@ class MessagePersonalizer:
         return " ".join(questions)
 
     @staticmethod
-    def _format_estimated_relationship(extracted_data: dict[str, Any]) -> str:
+    def _format_estimated_relationship(extracted_data: Dict[str, Any]) -> str:
         """Format estimated relationship from DNA data."""
-        dna_info = extracted_data.get("dna_information", [])
+        dna_info: List[Any] = extracted_data.get("dna_information", [])
         for info in dna_info:
             if "cousin" in str(info).lower() or "relationship" in str(info).lower():
                 return str(info)
         return "close family connection"
 
     @staticmethod
-    def _format_shared_dna(extracted_data: dict[str, Any]) -> str:
+    def _format_shared_dna(extracted_data: Dict[str, Any]) -> str:
         """Format shared DNA amount."""
-        dna_info = extracted_data.get("dna_information", [])
+        dna_info: List[Any] = extracted_data.get("dna_information", [])
         for info in dna_info:
             if "cm" in str(info).lower() or "centimorgans" in str(info).lower():
                 return str(info)
         return "significant DNA"
 
     @staticmethod
-    def _create_dna_context(extracted_data: dict[str, Any]) -> str:
+    def _create_dna_context(extracted_data: Dict[str, Any]) -> str:
         """Create DNA-specific context."""
-        dna_info = extracted_data.get("dna_information", [])
+        dna_info: List[Any] = extracted_data.get("dna_information", [])
         if dna_info:
             detail = str(dna_info[0])
             return (
@@ -826,13 +845,14 @@ class MessagePersonalizer:
         return "This DNA match suggests we have recent common ancestors worth exploring together."
 
     @staticmethod
-    def _format_shared_ancestor_info(extracted_data: dict[str, Any]) -> str:
+    def _format_shared_ancestor_info(extracted_data: Dict[str, Any]) -> str:
         """Format shared ancestor information."""
-        shared_ancestors = extracted_data.get("shared_ancestors") or extracted_data.get("structured_names") or []
-        names: list[str] = []
+        shared_ancestors: List[Any] = extracted_data.get("shared_ancestors") or extracted_data.get("structured_names") or []
+        names: List[str] = []
         for ancestor in shared_ancestors[:2]:
             if isinstance(ancestor, dict):
-                full_name = ancestor.get("full_name")
+                ancestor_dict: Dict[str, Any] = ancestor
+                full_name = str(ancestor_dict.get("full_name", ""))
                 if full_name:
                     names.append(full_name)
             else:
@@ -843,37 +863,38 @@ class MessagePersonalizer:
         return "I'd love to compare our family trees to identify our common ancestors."
 
     @staticmethod
-    def _create_collaboration_request(extracted_data: dict[str, Any]) -> str:
+    def _create_collaboration_request(extracted_data: Dict[str, Any]) -> str:
         """Create collaboration request text."""
-        research_questions = extracted_data.get("research_questions") or []
+        research_questions: List[str] = extracted_data.get("research_questions") or []
         if research_questions:
             topic = research_questions[0].rstrip(".? ")
             return f"Would you be open to collaborating on solving the question about {topic}?"
         return "Would you be interested in collaborating on our genealogical research?"
 
     @staticmethod
-    def _identify_research_topic(extracted_data: dict[str, Any]) -> str:
+    def _identify_research_topic(extracted_data: Dict[str, Any]) -> str:
         """Identify the main research topic."""
-        research_questions = extracted_data.get("research_questions", [])
+        research_questions: List[str] = extracted_data.get("research_questions", [])
         if research_questions:
             return research_questions[0]
         return "Family History Research"
 
     @staticmethod
-    def _format_research_needs(extracted_data: dict[str, Any]) -> str:
+    def _format_research_needs(extracted_data: Dict[str, Any]) -> str:
         """Format specific research needs."""
-        research_needs = extracted_data.get("research_needs") or extracted_data.get("research_questions") or []
+        research_needs: List[Any] = extracted_data.get("research_needs") or extracted_data.get("research_questions") or []
         if research_needs:
             need = str(research_needs[0]).rstrip(". ")
             return f"I'm looking for additional documents or stories that might clarify {need}."
         return "I'm looking for additional information to complete our family history."
 
     @staticmethod
-    def _create_collaboration_proposal(extracted_data: dict[str, Any]) -> str:
+    def _create_collaboration_proposal(extracted_data: Dict[str, Any]) -> str:
         """Create collaboration proposal text."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         if locations and isinstance(locations[0], dict):
-            place = locations[0].get("place")
+            loc_dict: Dict[str, Any] = locations[0]
+            place = str(loc_dict.get("place", ""))
             if place:
                 return (
                     f"Perhaps we could share our findings about families in {place} and work together on any remaining mysteries."
@@ -883,9 +904,9 @@ class MessagePersonalizer:
     # ========== NEW ADVANCED PERSONALIZATION FUNCTIONS ==========
 
     @staticmethod
-    def _create_dna_segment_analysis(extracted_data: dict[str, Any]) -> str:
+    def _create_dna_segment_analysis(extracted_data: Dict[str, Any]) -> str:
         """Create DNA segment analysis context for advanced users."""
-        dna_info = extracted_data.get("dna_information", [])
+        dna_info: List[Any] = extracted_data.get("dna_information", [])
         for info in dna_info:
             info_str = str(info).lower()
             if "segment" in info_str or "chromosome" in info_str:
@@ -893,15 +914,16 @@ class MessagePersonalizer:
         return "DNA segment analysis could help us identify our most recent common ancestor."
 
     @staticmethod
-    def _create_migration_pattern_context(extracted_data: dict[str, Any]) -> str:
+    def _create_migration_pattern_context(extracted_data: Dict[str, Any]) -> str:
         """Create context about family migration patterns."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
         if len(locations) >= 2:
-            places = []
+            places: List[str] = []
             for loc in locations[:3]:
                 if isinstance(loc, dict):
-                    place = loc.get("place", "")
-                    time_period = loc.get("time_period", "")
+                    loc_dict: Dict[str, Any] = loc
+                    place = str(loc_dict.get("place", ""))
+                    time_period = str(loc_dict.get("time_period", ""))
                     if place:
                         if time_period:
                             places.append(f"{place} ({time_period})")
@@ -939,9 +961,10 @@ class MessagePersonalizer:
         if not isinstance(record, dict):
             return None
 
-        date = record.get("date", "")
-        place = record.get("place", "")
-        event_type = record.get("event_type", "")
+        record_dict: Dict[str, Any] = record
+        date = str(record_dict.get("date", ""))
+        place = str(record_dict.get("place", ""))
+        event_type = str(record_dict.get("event_type", ""))
 
         if not (date and place):
             return None
@@ -951,9 +974,9 @@ class MessagePersonalizer:
             return self._get_historical_context_for_location(year, place, event_type)
         return None
 
-    def _create_historical_context_analysis(self, extracted_data: dict[str, Any]) -> str:
+    def _create_historical_context_analysis(self, extracted_data: Dict[str, Any]) -> str:
         """Create historical context based on dates and locations."""
-        vital_records = extracted_data.get("vital_records", [])
+        vital_records: List[Any] = extracted_data.get("vital_records", [])
 
         for record in vital_records[:2]:
             context = self._analyze_vital_record_context(record)
@@ -963,13 +986,14 @@ class MessagePersonalizer:
         return "Understanding the historical context of our family events helps explain migration and life decisions."
 
     @staticmethod
-    def _create_record_availability_assessment(extracted_data: dict[str, Any]) -> str:
+    def _create_record_availability_assessment(extracted_data: Dict[str, Any]) -> str:
         """Assess likely record availability based on location and time period."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
 
         for location in locations:
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
 
                 if "Scotland" in place:
                     return "Scottish records are generally well-preserved, especially civil registration after 1855 and parish records."
@@ -983,13 +1007,13 @@ class MessagePersonalizer:
         return "Record availability varies by location and time period - I can help identify the best sources for our research."
 
     @staticmethod
-    def _create_dna_ethnicity_correlation(extracted_data: dict[str, Any]) -> str:
+    def _create_dna_ethnicity_correlation(extracted_data: Dict[str, Any]) -> str:
         """Create correlation between DNA ethnicity and documented ancestry."""
-        dna_info = extracted_data.get("dna_information", [])
-        locations = extracted_data.get("locations", [])
+        dna_info: List[Any] = extracted_data.get("dna_information", [])
+        locations: List[Any] = extracted_data.get("locations", [])
 
-        ethnicity_regions = []
-        documented_regions = []
+        ethnicity_regions: List[str] = []
+        documented_regions: List[str] = []
 
         for info in dna_info:
             info_str = str(info).lower()
@@ -998,7 +1022,8 @@ class MessagePersonalizer:
 
         for location in locations:
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
                 if place:
                     documented_regions.append(place.lower())
 
@@ -1008,24 +1033,26 @@ class MessagePersonalizer:
         return "Comparing DNA ethnicity with documented ancestry helps validate our family tree research."
 
     @staticmethod
-    def _create_surname_distribution_analysis(extracted_data: dict[str, Any]) -> str:
+    def _create_surname_distribution_analysis(extracted_data: Dict[str, Any]) -> str:
         """Analyze surname distribution patterns."""
-        names = extracted_data.get("structured_names", [])
-        locations = extracted_data.get("locations", [])
+        names: List[Any] = extracted_data.get("structured_names", [])
+        locations: List[Any] = extracted_data.get("locations", [])
 
-        surnames = []
-        places = []
+        surnames: List[str] = []
+        places: List[str] = []
 
         for name in names:
             if isinstance(name, dict):
-                full_name = name.get("full_name", "")
+                name_dict: Dict[str, Any] = name
+                full_name = str(name_dict.get("full_name", ""))
                 if full_name and " " in full_name:
-                    surname = full_name.split()[-1]
+                    surname = full_name.rsplit(maxsplit=1)[-1]
                     surnames.append(surname)
 
         for location in locations:
             if isinstance(location, dict):
-                place = location.get("place", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
                 if place:
                     places.append(place)
 
@@ -1054,14 +1081,15 @@ class MessagePersonalizer:
                 return context
         return None
 
-    def _create_occupation_social_context(self, extracted_data: dict[str, Any]) -> str:
+    def _create_occupation_social_context(self, extracted_data: Dict[str, Any]) -> str:
         """Create social context based on occupations."""
-        occupations = extracted_data.get("occupations", [])
+        occupations: List[Any] = extracted_data.get("occupations", [])
 
         for occ in occupations:
             if isinstance(occ, dict):
-                occupation = occ.get("occupation", "")
-                person = occ.get("person", "")
+                occ_dict: Dict[str, Any] = occ
+                occupation = str(occ_dict.get("occupation", ""))
+                person = str(occ_dict.get("person", ""))
                 context = self._get_occupation_context(occupation, person)
                 if context:
                     return context
@@ -1069,16 +1097,17 @@ class MessagePersonalizer:
         return "Family occupations provide insights into social status, community connections, and available records."
 
     @staticmethod
-    def _create_family_size_analysis(extracted_data: dict[str, Any]) -> str:
+    def _create_family_size_analysis(extracted_data: Dict[str, Any]) -> str:
         """Analyze family size patterns and implications."""
-        relationships = extracted_data.get("relationships", [])
+        relationships: List[Any] = extracted_data.get("relationships", [])
 
         children_count = 0
         siblings_count = 0
 
         for rel in relationships:
             if isinstance(rel, dict):
-                relationship = rel.get("relationship", "").lower()
+                rel_dict: Dict[str, Any] = rel
+                relationship = str(rel_dict.get("relationship", "")).lower()
                 if relationship == "child":
                     children_count += 1
                 elif relationship == "sibling":
@@ -1095,15 +1124,16 @@ class MessagePersonalizer:
 
     # Note: _extract_year_from_date is defined earlier in the class (line 766)
 
-    def _extract_birth_and_marriage_years(self, vital_records: list[Any]) -> tuple[list[int], list[int]]:
+    def _extract_birth_and_marriage_years(self, vital_records: List[Any]) -> tuple[List[int], List[int]]:
         """Extract birth and marriage years from vital records."""
-        birth_years = []
-        marriage_years = []
+        birth_years: List[int] = []
+        marriage_years: List[int] = []
 
         for record in vital_records:
             if isinstance(record, dict):
-                event_type = record.get("event_type", "")
-                date = record.get("date", "")
+                record_dict: Dict[str, Any] = record
+                event_type = str(record_dict.get("event_type", ""))
+                date = str(record_dict.get("date", ""))
                 year = self._extract_year_from_date(date)
 
                 if year:
@@ -1115,7 +1145,7 @@ class MessagePersonalizer:
         return birth_years, marriage_years
 
     @staticmethod
-    def _analyze_birth_year_gap(birth_years: list[int]) -> Optional[str]:
+    def _analyze_birth_year_gap(birth_years: List[int]) -> Optional[str]:
         """Analyze gap between birth years and return interpretation."""
         if len(birth_years) >= 2:
             gap = abs(birth_years[0] - birth_years[1])
@@ -1125,9 +1155,9 @@ class MessagePersonalizer:
                 return f"The {gap}-year age gap suggests sibling or cousin relationships, indicating we share more recent common ancestors."
         return None
 
-    def _create_generational_gap_analysis(self, extracted_data: dict[str, Any]) -> str:
+    def _create_generational_gap_analysis(self, extracted_data: Dict[str, Any]) -> str:
         """Analyze generational gaps and their implications."""
-        vital_records = extracted_data.get("vital_records", [])
+        vital_records: List[Any] = extracted_data.get("vital_records", [])
         birth_years, _ = self._extract_birth_and_marriage_years(vital_records)
 
         analysis = self._analyze_birth_year_gap(birth_years)
@@ -1137,14 +1167,15 @@ class MessagePersonalizer:
         return "Analyzing generational gaps helps estimate relationship distances and common ancestor timeframes."
 
     @staticmethod
-    def _create_document_preservation_likelihood(extracted_data: dict[str, Any]) -> str:
+    def _create_document_preservation_likelihood(extracted_data: Dict[str, Any]) -> str:
         """Assess likelihood of document preservation based on context."""
-        locations = extracted_data.get("locations", [])
+        locations: List[Any] = extracted_data.get("locations", [])
 
         for location in locations:
             if isinstance(location, dict):
-                place = location.get("place", "")
-                context = location.get("context", "")
+                loc_dict: Dict[str, Any] = location
+                place = str(loc_dict.get("place", ""))
+                context = str(loc_dict.get("context", ""))
 
                 if "church" in context.lower() or "parish" in context.lower():
                     return f"Church connections in {place} suggest good preservation of parish records and potential for baptism, marriage, and burial documentation."
@@ -1153,7 +1184,7 @@ class MessagePersonalizer:
                 if "immigration" in context.lower() or "emigration" in context.lower():
                     return f"Immigration records for {place} often include family details and can help trace origins and destinations."
 
-        return "Document preservation varies by location and institution - I can help identify the most promising record sources."
+        return "Document preservation varies by location and institution - I can help identify the best sources for our research."
 
 
 class MessageEffectivenessTracker:
@@ -1317,12 +1348,12 @@ class MessageEffectivenessTracker:
 
         return min(response_score + quality_score + data_score, 10.0)
 
-    def get_optimization_recommendations(self) -> list[str]:
+    def get_optimization_recommendations(self) -> List[str]:
         """Get recommendations for optimizing message effectiveness."""
-        recommendations = []
+        recommendations: List[str] = []
 
         # Analyze template performance
-        template_scores = {}
+        template_scores: Dict[str, float] = {}
         for template_key in self.effectiveness_data["template_performance"]:
             template_scores[template_key] = self.get_template_effectiveness_score(template_key)
 
@@ -1337,7 +1368,7 @@ class MessageEffectivenessTracker:
                 recommendations.append(f"Template '{worst_template}' needs improvement (score: {template_scores[worst_template]:.1f}). Consider revising or replacing.")
 
         # Analyze personalization function effectiveness
-        func_effectiveness = {}
+        func_effectiveness: Dict[str, float] = {}
         for func_name, stats in self.effectiveness_data["personalization_effectiveness"].items():
             if stats["usage_count"] >= 5:  # Only consider functions used at least 5 times
                 effectiveness = stats["positive_responses"] / stats["usage_count"]

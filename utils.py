@@ -46,7 +46,7 @@ import re
 import threading  # For thread-safe rate limiting
 import time
 import uuid  # For make_ube
-from collections.abc import Mapping, Sequence  # Consolidated typing imports
+from collections.abc import Mapping  # Consolidated typing imports
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path  # For cookie persistence
@@ -76,31 +76,13 @@ from api_constants import (
 from common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile, resolve_retry_policy
 from observability.metrics_registry import metrics
+from selenium_utils import DriverProtocol, WebElementProtocol
 
 # === TYPE ALIASES ===
 # Define type aliases
 RequestsResponseTypeOptional = Optional[RequestsResponse]
 Locator = tuple[str, str]
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
-
-
-class DriverProtocol(Protocol):
-    """Protocol capturing the WebDriver surface this module needs."""
-
-    def get_attribute(self, name: str) -> Any:  # pragma: no cover - protocol definition
-        ...
-
-    def execute_script(self, script: str, *args: Any) -> Any:  # pragma: no cover - protocol definition
-        ...
-
-    def get_cookies(self) -> list[dict[str, Any]]:  # pragma: no cover - protocol definition
-        ...
-
-    def add_cookie(self, cookie: dict[str, Any]) -> None:  # pragma: no cover - protocol definition
-        ...
-
-    def get_cookie(self, name: str) -> Optional[dict[str, Any]]:  # pragma: no cover - protocol definition
-        ...
 
 
 DriverType = Optional[WebDriver]
@@ -699,7 +681,9 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
             logger.debug("Cannot save cookies: No driver available")
             return False
 
-        cookies = driver.get_cookies()
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        cookies = driver_proto.get_cookies()
         if not cookies:
             logger.debug("No cookies to save")
             return False
@@ -726,6 +710,9 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
             logger.debug("Cannot load cookies: No driver available")
             return False
 
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+
         cookies_file = _get_cookie_file_path()
 
         if not cookies_file.exists():
@@ -750,7 +737,9 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
                     if cookie["expiry"] < time_module.time():
                         del cookie["expiry"]
 
-                driver.add_cookie(cookie)
+                # Cast cookie values to object to match Protocol
+                cookie_obj: dict[str, object] = cast(dict[str, object], cookie)
+                driver_proto.add_cookie(cookie_obj)
                 loaded_count += 1
             except Exception as cookie_err:
                 logger.debug(f"Failed to add cookie {cookie.get('name', 'unknown')}: {cookie_err}")
@@ -1468,9 +1457,10 @@ def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> Op
     if not driver:
         return None
 
-    driver_obj = cast(Any, driver)
+    # Cast to Protocol to ensure types
+    driver_proto = cast(DriverProtocol, driver)
     try:
-        user_agent = driver_obj.execute_script("return navigator.userAgent;")
+        user_agent = driver_proto.execute_script("return navigator.userAgent;")
     except WebDriverException as exc:  # pragma: no cover - driver-specific failures
         logger.debug("[%s] WebDriver error getting User-Agent: %s", api_description, exc)
         return None
@@ -2581,7 +2571,9 @@ def _extract_cookie_value(cookie_obj: Optional[Mapping[str, Any]]) -> Optional[s
 
 def _build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
     """Create a name->value mapping for all cookies in the driver."""
-    cookies_raw = cast(Sequence[Mapping[str, Any]], driver.get_cookies() or [])
+    # Cast to Protocol to ensure types
+    driver_proto = cast(DriverProtocol, driver)
+    cookies_raw = driver_proto.get_cookies()
     cookies_dict: dict[str, str] = {}
     for cookie in cookies_raw:
         name = cookie.get("name")
@@ -2596,7 +2588,9 @@ def _get_ancsessionid_cookie(driver: DriverType) -> Optional[str]:
     if not driver:
         return None
     try:
-        direct_value = _extract_cookie_value(driver.get_cookie("ANCSESSIONID"))
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        direct_value = _extract_cookie_value(driver_proto.get_cookie("ANCSESSIONID"))
         if direct_value:
             return direct_value
 
@@ -2725,8 +2719,9 @@ def _debug_log_page_buttons(driver: WebDriver) -> None:
         for i, btn in enumerate(all_buttons[:10]):
             try:
                 btn_text = btn.text.strip()
-                btn_classes = btn.get_attribute("class")
-                btn_data_method = btn.get_attribute("data-method")
+                btn_proto = cast(WebElementProtocol, btn)
+                btn_classes = btn_proto.get_attribute("class")
+                btn_data_method = btn_proto.get_attribute("data-method")
                 if btn_text or btn_data_method:
                     logger.debug(f"  Button {i}: text='{btn_text}', class='{btn_classes}', data-method='{btn_data_method}'")
             except Exception:
@@ -2738,7 +2733,9 @@ def _debug_log_page_buttons(driver: WebDriver) -> None:
 def _perform_sms_button_click(driver: WebDriver, sms_button: WebElement) -> bool:
     """Attempt to click the SMS button with fallback strategies."""
     try:
-        driver.execute_script("arguments[0].click();", sms_button)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].click();", sms_button)
         logger.debug("SMS button clicked via JavaScript.")
         print("  ✓ SMS verification code requested. Check your phone!", flush=True)
         time.sleep(3)
@@ -2892,7 +2889,9 @@ def _clear_input_field(driver: WebDriver, input_element: WebElement, field_name:
         time.sleep(0.1)
         input_element.clear()
         time.sleep(0.1)
-        driver.execute_script("arguments[0].value = '';", input_element)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].value = '';", input_element)
         time.sleep(0.1)
         return True
     except (ElementNotInteractableException, StaleElementReferenceException) as e:
@@ -2922,11 +2921,13 @@ def _enter_username(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> bo
         logger.debug(f"Entering username (attempt {attempt}/{max_attempts})...")
 
         # Use JavaScript to set value directly for reliability
-        driver.execute_script("arguments[0].value = arguments[1];", username_input, ancestry_username)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].value = arguments[1];", username_input, ancestry_username)
         time.sleep(0.2)
 
         # Trigger input event to ensure page JavaScript recognizes the change
-        driver.execute_script("""
+        driver_proto.execute_script("""
             var element = arguments[0];
             var event = new Event('input', { bubbles: true });
             element.dispatchEvent(event);
@@ -2934,7 +2935,8 @@ def _enter_username(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> bo
         time.sleep(0.1)
 
         # Verify the value was set
-        current_value = username_input.get_attribute("value")
+        username_input_proto = cast(WebElementProtocol, username_input)
+        current_value = username_input_proto.get_attribute("value")
         if current_value == ancestry_username:
             logger.debug(f"Username successfully entered and verified (attempt {attempt}).")
             print(f"  ✓ Username entered: {ancestry_username[:3]}***", flush=True)
@@ -2992,8 +2994,9 @@ def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
         for i, btn in enumerate(all_buttons[:5]):
             try:
                 btn_text = btn.text.strip()
-                btn_id = btn.get_attribute("id")
-                btn_class = btn.get_attribute("class")
+                btn_proto = cast(WebElementProtocol, btn)
+                btn_id = btn_proto.get_attribute("id")
+                btn_class = btn_proto.get_attribute("class")
                 if btn_text or btn_id:
                     logger.debug(f"  Button {i}: text='{btn_text}', id='{btn_id}', class='{btn_class}'")
             except Exception:
@@ -3005,7 +3008,9 @@ def _debug_log_signin_page_buttons(driver: WebDriver) -> None:
 def _perform_next_button_click(driver: WebDriver, next_button: WebElement) -> bool:
     """Attempt to click the Next button with fallback strategies."""
     try:
-        driver.execute_script("arguments[0].click();", next_button)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].click();", next_button)
         logger.debug("Next button clicked via JavaScript.")
         logger.info("Next button clicked, waiting for password field to appear...")
         time.sleep(random.uniform(2.0, 3.0))
@@ -3077,11 +3082,13 @@ def _attempt_password_entry(
     logger.info(f"[PASSWORD_ENTRY] Attempt {attempt}/{max_attempts}: Entering password...")
 
     logger.debug("[PASSWORD_ENTRY] Setting password value via JavaScript...")
-    driver.execute_script("arguments[0].value = arguments[1];", password_input, ancestry_password)
+    # Cast to Protocol to ensure types
+    driver_proto = cast(DriverProtocol, driver)
+    driver_proto.execute_script("arguments[0].value = arguments[1];", password_input, ancestry_password)
     time.sleep(0.2)
 
     logger.debug("[PASSWORD_ENTRY] Triggering input event...")
-    driver.execute_script(
+    driver_proto.execute_script(
         """
             var element = arguments[0];
             var event = new Event('input', { bubbles: true });
@@ -3092,7 +3099,8 @@ def _attempt_password_entry(
     time.sleep(0.1)
 
     logger.debug("[PASSWORD_ENTRY] Verifying password was set...")
-    current_value = password_input.get_attribute("value")
+    password_input_proto = cast(WebElementProtocol, password_input)
+    current_value = password_input_proto.get_attribute("value")
     current_length = len(current_value) if current_value else 0
     expected_length = len(ancestry_password)
     logger.info(
@@ -3187,7 +3195,9 @@ def _try_javascript_click(driver: WebDriver, sign_in_button: WebElement) -> bool
     """Try JavaScript click on sign in button."""
     try:
         logger.debug("Attempting JavaScript click on sign in button...")
-        driver.execute_script("arguments[0].click();", sign_in_button)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].click();", sign_in_button)
         logger.info("JavaScript click executed.")
         return True
     except WebDriverException as js_click_e:
@@ -3331,7 +3341,9 @@ def _click_accept_button_js(driver: WebDriver, accept_button: WebElement) -> boo
     """Try JavaScript click on accept button."""
     try:
         logger.debug("Attempting JS click on accept button...")
-        driver.execute_script("arguments[0].click();", accept_button)
+        # Cast to Protocol to ensure types
+        driver_proto = cast(DriverProtocol, driver)
+        driver_proto.execute_script("arguments[0].click();", accept_button)
         logger.info("Clicked accept button via JS successfully.")
         # Reduce verification wait to 1 second for faster dismissal
         _wait_until_not_present(
@@ -3880,7 +3892,9 @@ def _check_browser_session(
 def _document_ready(driver: WebDriver) -> bool:
     """Return True once the current document is fully loaded."""
 
-    state = driver.execute_script("return document.readyState")
+    # Cast to Protocol to ensure types
+    driver_proto = cast(DriverProtocol, driver)
+    state = driver_proto.execute_script("return document.readyState")
     return isinstance(state, str) and state in {"complete", "interactive"}
 
 
@@ -4558,7 +4572,7 @@ def _test_parse_cookie() -> None:
     ]
 
     print("📋 Testing cookie parsing with various formats:")
-    results = []
+    results: list[bool] = []
 
     for cookie_str, expected, description in test_cases:
         try:
@@ -4601,7 +4615,7 @@ def _test_ordinal_case() -> None:
     ]
 
     print("📋 Testing ordinal number formatting:")
-    results = []
+    results: list[bool] = []
 
     for input_val, expected, description in test_cases:
         try:
@@ -4639,7 +4653,7 @@ def _test_format_name() -> None:
     ]
 
     print("📋 Testing name formatting with various cases:")
-    results = []
+    results: list[bool] = []
 
     for input_val, expected, description in test_cases:
         try:

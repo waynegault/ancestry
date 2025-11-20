@@ -17,15 +17,50 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
 # Local imports
+
+# --- Protocols ---
+
+
+class DriverProtocol(Protocol):
+    """Protocol capturing the WebDriver surface to ensure strict typing."""
+
+    def execute_script(self, script: str, *args: object) -> object: ...
+
+    def get_cookies(self) -> list[dict[str, object]]: ...
+
+    def add_cookie(self, cookie: dict[str, object]) -> None: ...
+
+    def get_cookie(self, name: str) -> Optional[dict[str, object]]: ...
+
+    def get_attribute(self, name: str) -> Optional[str]: ...
+
+
+class WebElementProtocol(Protocol):
+    """Protocol for WebElement to ensure strict typing."""
+
+    def get_attribute(self, name: str) -> Optional[str]: ...
+
+    def click(self) -> None: ...
+
+    def clear(self) -> None: ...
+
+    def send_keys(self, *value: object) -> None: ...
+
+    @property
+    def text(self) -> str: ...
+
+    def is_displayed(self) -> bool: ...
+
 
 # --- Selenium Specific Helpers ---
 
@@ -41,30 +76,35 @@ def force_user_agent(driver: Optional[WebDriver], user_agent: str):
         return False
 
     # Use execute_script to modify the user agent
-    driver.execute_script("navigator.userAgent = arguments[0]", user_agent)
+    driver_proto = cast(DriverProtocol, driver)
+    driver_proto.execute_script("navigator.userAgent = arguments[0]", user_agent)
     logger.debug(f"Set user agent to: {user_agent}")
     return True
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_text(element: Any) -> str:
+def extract_text(element: Optional[WebElement]) -> str:
     """Extract text from an element safely with unified error handling."""
     if not element:
         return ""
-    return element.text or ""
+
+    element_proto = cast(WebElementProtocol, element)
+    return element_proto.text or ""
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_attribute(element: Any, attribute: str) -> str:
+def extract_attribute(element: Optional[WebElement], attribute: str) -> str:
     """Extract attribute from an element safely with unified error handling."""
     if not element:
         return ""
-    return element.get_attribute(attribute) or ""
+
+    element_proto = cast(WebElementProtocol, element)
+    return element_proto.get_attribute(attribute) or ""
 
 
 @safe_execute(default_return=False, log_errors=False)
 def is_elem_there(
-    driver: Any,
+    driver: Optional[WebDriver],
     selector: str,
     by: str = By.CSS_SELECTOR,
     *,
@@ -85,7 +125,7 @@ def is_elem_there(
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_browser_open(driver: Any) -> bool:
+def is_browser_open(driver: Optional[WebDriver]) -> bool:
     """Check if browser is still open and responsive with unified error handling."""
     if not driver:
         return False
@@ -95,7 +135,7 @@ def is_browser_open(driver: Any) -> bool:
 
 
 @safe_execute(log_errors=True)
-def close_tabs(driver: Any, keep_first: bool = True) -> None:
+def close_tabs(driver: Optional[WebDriver], keep_first: bool = True) -> None:
     """Close browser tabs with unified error handling."""
     if not driver:
         return
@@ -116,15 +156,17 @@ def close_tabs(driver: Any, keep_first: bool = True) -> None:
 
 
 @safe_execute(default_return=[], log_errors=False)
-def get_driver_cookies(driver: Any) -> list[dict[str, Any]]:
+def get_driver_cookies(driver: Optional[WebDriver]) -> list[dict[str, Any]]:
     """Get all cookies from driver with unified error handling."""
     if not driver:
         return []
-    return driver.get_cookies()
+
+    driver_proto = cast(DriverProtocol, driver)
+    return driver_proto.get_cookies()
 
 
 @safe_execute(default_return=False, log_errors=True)
-def export_cookies(driver: Any, filepath: str) -> bool:
+def export_cookies(driver: Optional[WebDriver], filepath: str) -> bool:
     """Export cookies to file with unified error handling."""
     if not driver:
         return False
@@ -137,19 +179,20 @@ def export_cookies(driver: Any, filepath: str) -> bool:
 
 
 @safe_execute(log_errors=False)
-def scroll_to_element(driver: Any, element: Any) -> None:
+def scroll_to_element(driver: Optional[WebDriver], element: Optional[WebElement]) -> None:
     """Scroll element into view with unified error handling."""
     if not driver or not element:
         return
 
-    driver.execute_script("arguments[0].scrollIntoView(true);", element)
+    driver_proto = cast(DriverProtocol, driver)
+    driver_proto.execute_script("arguments[0].scrollIntoView(true);", element)
     time.sleep(0.1)  # Brief pause for scroll completion
 
 
 @safe_execute(default_return=None, log_errors=False)
 def wait_for_element(
-    driver: Any, selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
-) -> Any:
+    driver: Optional[WebDriver], selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
+) -> Optional[WebElement]:
     """Wait for element to be present with unified error handling."""
     if not driver:
         return None
@@ -159,7 +202,7 @@ def wait_for_element(
 
 
 @safe_execute(default_return=False, log_errors=False)
-def safe_click(driver: Any, element: Any) -> bool:
+def safe_click(driver: Optional[WebDriver], element: Optional[WebElement]) -> bool:
     """Safely click an element with unified error handling."""
     if not driver or not element:
         return False
@@ -167,24 +210,29 @@ def safe_click(driver: Any, element: Any) -> bool:
     # Scroll to element first
     scroll_to_element(driver, element)
     # Try to click
-    element.click()
+    element_proto = cast(WebElementProtocol, element)
+    element_proto.click()
     return True
 
 
 @safe_execute(default_return="", log_errors=False)
-def get_element_text(element: Any) -> str:
+def get_element_text(element: Optional[WebElement]) -> str:
     """Get text from element with unified error handling."""
     if not element:
         return ""
-    return element.text or ""
+
+    element_proto = cast(WebElementProtocol, element)
+    return element_proto.text or ""
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_element_visible(element: Any) -> bool:
+def is_element_visible(element: Optional[WebElement]) -> bool:
     """Check if element is visible with unified error handling."""
     if not element:
         return False
-    return element.is_displayed()
+
+    element_proto = cast(WebElementProtocol, element)
+    return element_proto.is_displayed()
 
 
 def selenium_module_tests() -> list[tuple[str, Any]]:

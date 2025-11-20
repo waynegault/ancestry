@@ -492,7 +492,7 @@ class PerformanceMonitor:
         function_summary: Mapping[str, Mapping[str, Any]],
     ) -> list[str]:
         """Generate performance recommendations based on collected data."""
-        recommendations = []
+        recommendations: list[str] = []
 
         # Check for high error rates
         for name, profile in function_summary.items():
@@ -936,7 +936,7 @@ class AdvancedPerformanceMonitor:
 
     def validate_configuration(self) -> dict[str, Any]:
         """Validate current configuration and suggest optimizations."""
-        validation_results = {
+        validation_results: dict[str, Any] = {
             "status": "valid",
             "issues": [],
             "recommendations": [],

@@ -49,7 +49,7 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
@@ -748,8 +748,8 @@ class MockLogger:
     """
 
     def __init__(self) -> None:
-        self.lines = []
-        self.messages = {
+        self.lines: list[str] = []
+        self.messages: dict[str, list[str]] = {
             "debug": [],
             "info": [],
             "warning": [],
@@ -969,7 +969,7 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     Returns:
         List of boolean results for each function test
     """
-    results = []
+    results: List[bool] = []
     print(f"\n🔍 Testing {module_name} Function Availability:")
 
     for func_name in required_functions:

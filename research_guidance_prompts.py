@@ -39,7 +39,7 @@ def create_research_guidance_prompt(
     Returns:
         Formatted AI prompt string
     """
-    prompt_parts = []
+    prompt_parts: list[str] = []
 
     # Header
     prompt_parts.append("Generate genealogical research guidance for the following person:")
@@ -74,7 +74,7 @@ def create_research_guidance_prompt(
         prompt_parts.append("Available Records:")
         for record in available_records:
             record_type = record.get('type', 'Unknown')
-            details = record.get('details', {})
+            details: dict[str, Any] = record.get('details', {})
             date = details.get('date', 'Unknown date')
             place = details.get('place', 'Unknown place')
             prompt_parts.append(f"  - {record_type}: {date}, {place}")
@@ -111,7 +111,7 @@ def create_conversation_response_prompt(
     Returns:
         Formatted AI prompt string
     """
-    prompt_parts = []
+    prompt_parts: list[str] = []
 
     # Header
     prompt_parts.append("Generate a helpful, friendly response to this DNA match:")
@@ -169,7 +169,7 @@ def create_brick_wall_analysis_prompt(
     Returns:
         Formatted AI prompt string
     """
-    prompt_parts = []
+    prompt_parts: list[str] = []
 
     # Header
     prompt_parts.append("Analyze this genealogical brick wall and suggest research strategies:")

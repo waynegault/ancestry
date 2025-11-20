@@ -14,11 +14,12 @@ Author: Ancestry Automation System
 Created: August 6, 2025
 Phase: 12.3 - Intelligent Research Prioritization
 """
+from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # Import standard modules
 from standard_imports import *
@@ -145,9 +146,9 @@ class IntelligentResearchPrioritizer:
         """Analyze completeness of different family lines."""
         try:
             # Extract family patterns from GEDCOM analysis
-            ai_insights = gedcom_analysis.get("ai_insights", {})
-            family_patterns = ai_insights.get("family_patterns", {})
-            common_surnames = family_patterns.get("common_surnames", [])
+            ai_insights: dict[str, Any] = gedcom_analysis.get("ai_insights", {})
+            family_patterns: dict[str, Any] = ai_insights.get("family_patterns", {})
+            common_surnames: list[str] = family_patterns.get("common_surnames", [])
 
             # Analyze each major surname line
             for _i, surname in enumerate(common_surnames[:5]):  # Top 5 surnames
@@ -171,10 +172,10 @@ class IntelligentResearchPrioritizer:
         """Create location-based research clusters for efficiency."""
         try:
             # Group research opportunities by location
-            location_groups = defaultdict(list)
+            location_groups: dict[str, list[Any]] = defaultdict(list)
 
-            gaps = gedcom_analysis.get("gaps_identified", [])
-            opportunities = gedcom_analysis.get("research_opportunities", [])
+            gaps: list[dict[str, Any]] = gedcom_analysis.get("gaps_identified", [])
+            opportunities: list[dict[str, Any]] = gedcom_analysis.get("research_opportunities", [])
 
             # Group gaps by location
             for gap in gaps:
@@ -204,7 +205,7 @@ class IntelligentResearchPrioritizer:
                         location=location,
                         time_period=self._estimate_time_period_for_location(),
                         people_count=len(items),
-                        target_people=[item.get("person_name", "") for item in items if isinstance(item, dict)],
+                        target_people=[str(cast(dict[str, Any], item).get("person_name", "")) for item in items if isinstance(item, dict)],
                         available_records=self._identify_available_records_for_location(location),
                         research_efficiency_score=self._calculate_cluster_efficiency(location, items),
                         cluster_research_plan=self._generate_cluster_research_plan(location)
@@ -217,7 +218,7 @@ class IntelligentResearchPrioritizer:
 
     def _generate_priority_tasks_from_gaps(self, gedcom_analysis: dict[str, Any]):
         """Generate priority tasks from identified gaps."""
-        gaps = gedcom_analysis.get("gaps_identified", [])
+        gaps: list[dict[str, Any]] = gedcom_analysis.get("gaps_identified", [])
 
         for gap in gaps:
             priority_score = self._calculate_gap_priority_score(gap)
@@ -244,7 +245,7 @@ class IntelligentResearchPrioritizer:
 
     def _generate_priority_tasks_from_conflicts(self, gedcom_analysis: dict[str, Any]):
         """Generate priority tasks from identified conflicts."""
-        conflicts = gedcom_analysis.get("conflicts_identified", [])
+        conflicts: list[dict[str, Any]] = gedcom_analysis.get("conflicts_identified", [])
 
         for conflict in conflicts:
             priority_score = self._calculate_conflict_priority_score(conflict)
@@ -274,7 +275,7 @@ class IntelligentResearchPrioritizer:
         if not dna_crossref_analysis:
             return
 
-        verification_opportunities = dna_crossref_analysis.get("verification_opportunities", [])
+        verification_opportunities: list[dict[str, Any]] = dna_crossref_analysis.get("verification_opportunities", [])
 
         for opportunity in verification_opportunities:
             priority_score = 85.0 if opportunity.get("priority") == "high" else 65.0
@@ -504,7 +505,7 @@ class IntelligentResearchPrioritizer:
     @staticmethod
     def _identify_available_records_for_location(location: str) -> list[str]:
         """Identify available record types for a location."""
-        record_types = {
+        record_types: dict[str, list[str]] = {
             "Scotland": ["Birth certificates", "Death certificates", "Census records", "Parish registers"],
             "Ireland": ["Civil registration", "Catholic parish records", "Griffith's Valuation"],
             "England": ["Birth certificates", "Death certificates", "Census records", "Parish registers"]
@@ -833,7 +834,7 @@ class IntelligentResearchPrioritizer:
 
     def _generate_research_recommendations(self) -> list[str]:
         """Generate overall research recommendations."""
-        recommendations = []
+        recommendations: list[str] = []
 
         if len(self.research_priorities) > 10:
             recommendations.append("Focus on top 5-10 highest priority tasks to avoid overwhelm")
