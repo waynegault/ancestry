@@ -22,7 +22,6 @@ logger = setup_module(globals(), __name__)
 # === TEST UTILITIES ===
 # === STANDARD LIBRARY IMPORTS ===
 import gc
-import inspect
 import logging
 
 # os already imported at top for SUPPRESS_CONFIG_WARNINGS
@@ -46,7 +45,6 @@ from typing import Any, Callable, Optional, Protocol, TextIO, cast
 from urllib.parse import urljoin
 
 # === THIRD-PARTY IMPORTS ===
-import psutil
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
@@ -56,9 +54,22 @@ from action6_gather import coord  # Import the main DNA match gathering function
 from action7_inbox import InboxProcessor
 from action9_process_productive import process_productive_messages
 from action10 import main as run_action10
+from core.action_registry import (
+    ActionMetadata,
+    get_action_registry,
+)
+from core.action_runner import (
+    DatabaseManagerProtocol,
+    configure_action_runner,
+    exec_actn,
+    get_action_metadata as _get_action_metadata,
+    get_api_manager as _get_api_manager,
+    get_browser_manager as _get_browser_manager,
+    get_database_manager as _get_database_manager,
+    parse_menu_choice as _parse_menu_choice,
+)
 from test_utilities import create_standard_test_runner
 
-ActionCallable = Callable[..., Any]
 SendMessagesAction = Callable[["SessionManager"], bool]
 MatchRecord = dict[str, Any]
 MatchList = list[MatchRecord]
@@ -79,43 +90,6 @@ def _import_send_messages_action() -> SendMessagesAction:
 
 
 send_messages_to_matches: SendMessagesAction = _import_send_messages_action()
-
-
-class DatabaseManagerProtocol(Protocol):
-    """Protocol describing the subset of DatabaseManager used here."""
-
-    engine: Any
-    Session: Any
-
-    def ensure_ready(self) -> bool: ...
-
-    def _initialize_engine_and_session(self) -> None: ...
-
-    def close_connections(self, dispose_engine: bool = False) -> None: ...
-
-
-class BrowserManagerProtocol(Protocol):
-    """Protocol describing the subset of BrowserManager used here."""
-
-    browser_needed: bool
-
-    def ensure_driver_live(self, action_name: str) -> bool: ...
-
-    def close_driver(self, reason: Optional[str] = None) -> None: ...
-
-
-class APIManagerProtocol(Protocol):
-    """Protocol describing the subset of APIManager used here."""
-
-    csrf_token: str
-    tree_owner_name: Optional[str]
-
-    def sync_cookies_from_browser(
-        self,
-        browser_manager: BrowserManagerProtocol,
-        *,
-        session_manager: "SessionManager",
-    ) -> bool: ...
 
 
 class ConfigManagerProtocol(Protocol):
@@ -201,24 +175,6 @@ def _get_metrics_bundle() -> Optional[Any]:
     except Exception:  # pragma: no cover - metrics are optional
         logger.debug("Metrics bundle request failed", exc_info=True)
         return None
-
-
-def _get_database_manager(session_manager: "SessionManager") -> Optional[DatabaseManagerProtocol]:
-    """Safely retrieve the session's DatabaseManager-like component."""
-
-    return cast(Optional[DatabaseManagerProtocol], getattr(session_manager, "db_manager", None))
-
-
-def _get_browser_manager(session_manager: "SessionManager") -> Optional[BrowserManagerProtocol]:
-    """Safely retrieve the session's BrowserManager-like component."""
-
-    return cast(Optional[BrowserManagerProtocol], getattr(session_manager, "browser_manager", None))
-
-
-def _get_api_manager(session_manager: "SessionManager") -> Optional[APIManagerProtocol]:
-    """Safely retrieve the session's APIManager-like component."""
-
-    return cast(Optional[APIManagerProtocol], getattr(session_manager, "api_manager", None))
 
 
 def _load_result_row_builders() -> tuple[RowBuilder, RowBuilder]:
@@ -463,11 +419,6 @@ def validate_action_config() -> bool:
 
 
 # Core modules
-from core.action_registry import (
-    ActionMetadata,
-    ActionRequirement,
-    get_action_registry,
-)
 from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
 from database import (
@@ -490,24 +441,7 @@ from utils import (
 config_manager = _create_config_manager()
 config: Any = config_manager.get_config() if config_manager is not None else None
 
-
-def _parse_menu_choice(choice: str) -> tuple[str, list[str]]:
-    """Split raw menu input into the action identifier and trailing arguments."""
-
-    tokens = choice.strip().split()
-    if not tokens:
-        return "", []
-    action_id = tokens[0].lower()
-    return action_id, tokens[1:]
-
-
-def _get_action_metadata(action_id: str) -> Optional[ActionMetadata]:
-    """Return action metadata for the provided identifier."""
-
-    if not action_id:
-        return None
-    registry = get_action_registry()
-    return registry.get_action(action_id)
+configure_action_runner(config=config, metrics_provider=_get_metrics_bundle)
 
 
 def menu() -> str:
@@ -611,422 +545,6 @@ def ensure_caching_initialized() -> bool:
 
 
 # End of ensure_caching_initialized
-
-
-# Helper functions for exec_actn
-
-def _determine_browser_requirement(choice: str, metadata: Optional[ActionMetadata] = None) -> bool:
-    """
-    Determine if action requires a browser based on user choice.
-
-    Args:
-        choice: The user's menu choice (e.g., "10", "11", "6")
-
-    Returns:
-        True if action requires browser, False otherwise
-    """
-    if metadata is None:
-        action_id, _ = _parse_menu_choice(choice)
-        metadata = _get_action_metadata(action_id)
-
-    if metadata:
-        return metadata.browser_requirement != ActionRequirement.NONE
-
-    browserless_choices = {"1", "2", "3", "4", "10"}
-    return choice not in browserless_choices
-
-
-def _determine_required_state(
-    choice: str,
-    requires_browser: bool,
-    metadata: Optional[ActionMetadata] = None,
-) -> str:
-    """
-    Determine the required session state for the action.
-
-    Args:
-        choice: The user's menu choice
-        requires_browser: Whether the action requires a browser
-
-    Returns:
-        Required state: "db_ready", "driver_ready", or "session_ready"
-    """
-    if metadata is None:
-        action_id, _ = _parse_menu_choice(choice)
-        metadata = _get_action_metadata(action_id)
-
-    if metadata:
-        if metadata.browser_requirement == ActionRequirement.NONE:
-            return "db_ready"
-        if metadata.browser_requirement == ActionRequirement.DRIVER_ONLY:
-            return "driver_ready"
-        return "session_ready"
-
-    if not requires_browser:
-        return "db_ready"
-    if choice == "5":
-        return "driver_ready"
-    return "session_ready"
-
-
-def _ensure_required_state(
-    session_manager: SessionManager,
-    required_state: str,
-    action_name: str,
-    choice: str,
-    metadata: Optional[ActionMetadata] = None,
-) -> bool:
-    """Ensure the required session state is achieved."""
-
-    result = True
-
-    if required_state == "db_ready":
-        db_manager = _get_database_manager(session_manager)
-        if db_manager is None:
-            logger.error("Database manager unavailable for action '%s'", action_name)
-            result = False
-        else:
-            result = db_manager.ensure_ready()
-
-    elif required_state == "driver_ready":
-        browser_manager = _get_browser_manager(session_manager)
-        if browser_manager is None:
-            logger.error("Browser manager unavailable for action '%s'", action_name)
-            result = False
-        else:
-            result = browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
-
-    elif required_state == "session_ready":
-        skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
-        if not session_manager.guard_action(required_state, action_name):
-            result = False
-        else:
-            result = session_manager.ensure_session_ready(
-                action_name=f"{action_name} - Setup",
-                skip_csrf=skip_csrf,
-            )
-
-    return result
-
-
-def _prepare_action_arguments(
-    action_func: ActionCallable,
-    session_manager: SessionManager,
-    args: tuple[Any, ...],
-) -> tuple[list[Any], dict[str, Any]]:
-    """Prepare arguments for action function call."""
-
-    func_sig = inspect.signature(action_func)
-    pass_session_manager = "session_manager" in func_sig.parameters
-    action_name = action_func.__name__
-
-    # Handle keyword args specifically for coord function
-    if action_name in {"coord", "gather_dna_matches"} and "start" in func_sig.parameters:
-        start_val: Optional[int] = None
-        if args:
-            potential_start = args[-1]
-            if isinstance(potential_start, int):
-                start_val = potential_start if potential_start > 0 else None
-            elif potential_start is not None:
-                logger.debug(
-                    "Ignoring unexpected non-integer start argument %s for %s",
-                    potential_start,
-                    action_name,
-                )
-        kwargs_for_action: dict[str, Any] = {"start": start_val}
-
-        coord_args: list[Any] = []
-        if pass_session_manager:
-            coord_args.append(session_manager)
-        if action_name == "gather_dna_matches" and "config_schema" in func_sig.parameters:
-            coord_args.append(config)
-
-        return coord_args, kwargs_for_action
-
-    # General case
-    final_args: list[Any] = []
-    if pass_session_manager:
-        final_args.append(session_manager)
-    final_args.extend(args)
-    empty_kwargs: dict[str, Any] = {}
-    return final_args, empty_kwargs
-
-
-def _execute_action_function(
-    action_func: ActionCallable,
-    prepared_args: Sequence[Any],
-    kwargs: dict[str, Any],
-) -> Any:
-    """Execute the action function with prepared arguments."""
-
-    if kwargs:
-        return action_func(*prepared_args, **kwargs)
-    return action_func(*prepared_args)
-
-
-@dataclass
-class _ActionExecutionContext:
-    """Holds execution state for exec_actn orchestration."""
-
-    choice: str
-    action_name: str
-    start_time: float
-    process: psutil.Process
-    mem_before: float
-    result: Any = None
-    exception: BaseException | None = None
-
-    @property
-    def succeeded(self) -> bool:
-        """Return True when the action finished without explicit failure."""
-
-        return self.result is not False and self.exception is None
-
-
-def _initialize_action_context(action_func: ActionCallable, choice: str) -> _ActionExecutionContext:
-    """Create an execution context and emit banner logging."""
-
-    action_name = action_func.__name__
-    start_time = time.time()
-    process = psutil.Process(os.getpid())
-    mem_before = process.memory_info().rss / (1024 * 1024)
-
-    logger.info(f"{'=' * 45}")
-    logger.info(f"Action {choice}: Starting {action_name}...")
-    logger.info(f"{'=' * 45}\n")
-
-    return _ActionExecutionContext(
-        choice=choice,
-        action_name=action_name,
-        start_time=start_time,
-        process=process,
-        mem_before=mem_before,
-    )
-
-
-def _determine_metrics_label(action_result: Any, final_outcome: bool) -> str:
-    """Map action results to analytics labels (success/failure/skipped)."""
-
-    result_label = "success" if final_outcome else "failure"
-
-    if isinstance(action_result, str):
-        candidate = action_result.lower()
-        if candidate == "skipped":
-            return candidate
-
-    if isinstance(action_result, tuple):
-        typed_result = cast(tuple[Any, ...], action_result)
-        if len(typed_result) > 1:
-            label_candidate = typed_result[1]
-            if isinstance(label_candidate, str):
-                normalized = label_candidate.lower()
-                if normalized in {"success", "failure", "skipped"}:
-                    return normalized
-
-    return result_label
-
-
-def _record_action_analytics(
-    context: _ActionExecutionContext,
-    *,
-    duration_sec: float,
-    mem_used_mb: float | None,
-) -> None:
-    """Send analytics + metrics for a completed action."""
-
-    final_outcome = context.succeeded
-
-    try:
-        from analytics import log_event, pop_transient_extras
-
-        extras = pop_transient_extras()
-        log_event(
-            action_name=context.action_name,
-            choice=context.choice,
-            success=bool(final_outcome),
-            duration_sec=duration_sec,
-            mem_used_mb=mem_used_mb,
-            extras=extras,
-        )
-    except Exception as exc:
-        logger.debug(f"Analytics logging skipped: {exc}")
-
-    try:
-        result_label = _determine_metrics_label(context.result, final_outcome)
-        metrics_bundle = _get_metrics_bundle()
-        if metrics_bundle is not None:
-            metrics_bundle.action_processed.inc(context.action_name, result_label)
-            metrics_bundle.action_duration.observe(context.action_name, duration_sec)
-    except Exception:
-        logger.debug("Failed to record action throughput metric", exc_info=True)
-
-
-def _finalize_action_execution(
-    context: _ActionExecutionContext,
-    session_manager: SessionManager,
-    close_sess_after: bool,
-) -> bool:
-    """Centralize exec_actn finalization (logging, analytics, cleanup)."""
-
-    should_close = _should_close_session(
-        context.result,
-        context.exception,
-        close_sess_after,
-        context.action_name,
-    )
-
-    print(" ")  # Spacer for console readability
-
-    if context.result is False:
-        logger.debug(f"Action {context.choice} ({context.action_name}) reported failure.")
-    elif context.exception is not None:
-        logger.debug(
-            f"Action {context.choice} ({context.action_name}) failed due to exception: "
-            f"{type(context.exception).__name__}."
-        )
-
-    logger.debug(
-        f"Final outcome for Action {context.choice} ('{context.action_name}'): {context.succeeded}\n"
-    )
-
-    duration_sec, mem_used_mb = _log_performance_metrics(
-        context.start_time,
-        context.process,
-        context.mem_before,
-        context.choice,
-        context.action_name,
-    )
-
-    _record_action_analytics(context, duration_sec=duration_sec, mem_used_mb=mem_used_mb)
-    _perform_session_cleanup(session_manager, should_close, context.action_name)
-
-    return context.succeeded
-
-
-def _should_close_session(
-    action_result: Any,
-    action_exception: BaseException | None,
-    close_sess_after: bool,
-    action_name: str,
-) -> bool:
-    """Determine if session should be closed. Only close when explicitly requested via close_sess_after flag."""
-    # Never close session on failure - let user decide when to quit
-    if action_result is False or action_exception is not None:
-        logger.debug(f"Action '{action_name}' failed or raised exception. Keeping session open.")
-        return False
-    if close_sess_after:
-        logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
-        return True
-    return False
-
-
-def _log_performance_metrics(
-    start_time: float,
-    process: psutil.Process,
-    mem_before: float,
-    choice: str,
-    action_name: str,
-) -> tuple[float, float | None]:
-    """Log performance metrics for the action and return (duration_sec, mem_used_mb)."""
-    duration = time.time() - start_time
-    hours, remainder = divmod(duration, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    formatted_duration = f"{int(hours)} hr {int(minutes)} min {seconds:.2f} sec"
-
-    mem_used: float | None = None
-    try:
-        mem_after = process.memory_info().rss / (1024 * 1024)
-        mem_used = mem_after - mem_before
-        mem_log = f"Memory used: {mem_used:.1f} MB"
-    except Exception as mem_err:
-        mem_log = f"Memory usage unavailable: {mem_err}"
-
-    logger.info(f"{'=' * 45}")
-    logger.info(f"Action {choice} ({action_name}) finished.")
-    logger.info(f"Duration: {formatted_duration}")
-    logger.info(mem_log)
-    logger.info(f"{'=' * 45}\n")
-    return duration, mem_used
-
-
-def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
-    """Perform session cleanup based on action result."""
-
-    if should_close:
-        if session_manager.browser_needed and session_manager.driver_live:
-            logger.debug("Closing browser session...")
-            session_manager.close_browser()
-            logger.debug("Browser session closed. DB connections kept.")
-        elif action_name in {"all_but_first_actn"}:
-            logger.debug("Closing all connections including database...")
-            session_manager.close_sess(keep_db=False)
-            logger.debug("All connections closed.")
-        return
-
-    if session_manager.driver_live:
-        logger.debug(f"Keeping session live after '{action_name}'.")
-
-
-def exec_actn(
-    action_func: ActionCallable,
-    session_manager: SessionManager,
-    choice: str,
-    close_sess_after: bool = False,
-    *args: Any,
-) -> bool:
-    """
-    Executes an action, ensuring the required session state
-    (driver live, session ready) is met beforehand using SessionManager methods.
-    Leaves the session open unless action fails or close_sess_after is True.
-
-    Args:
-        action_func: The function representing the action to execute.
-        session_manager: The SessionManager instance to manage session state.
-        choice: The user's choice of action.
-        close_sess_after: Flag to close session after action, defaults to False.
-        *args: Additional arguments to pass to the action function.
-
-    Returns:
-        True if action completed successfully, False otherwise.
-    """
-    context = _initialize_action_context(action_func, choice)
-    final_outcome = False
-
-    action_metadata = _get_action_metadata(choice)
-
-    # Determine browser requirement and required state based on user choice
-    requires_browser = _determine_browser_requirement(choice, action_metadata)
-    session_manager.browser_needed = requires_browser
-    required_state = _determine_required_state(choice, requires_browser, action_metadata)
-
-    try:
-        # Ensure Required State
-        state_ok = _ensure_required_state(
-            session_manager,
-            required_state,
-            context.action_name,
-            choice,
-            action_metadata,
-        )
-        if not state_ok:
-            logger.error(f"Failed to achieve required state '{required_state}' for action '{context.action_name}'.")
-            raise Exception(f"Setup failed: Could not achieve state '{required_state}'.")
-
-        # Execute Action
-        prepared_args, kwargs = _prepare_action_arguments(action_func, session_manager, args)
-        context.result = _execute_action_function(action_func, prepared_args, kwargs)
-
-    except Exception as exc:
-        logger.error(f"Exception during action {context.action_name}: {exc}", exc_info=True)
-        context.result = False
-        context.exception = exc
-
-    finally:
-        final_outcome = _finalize_action_execution(context, session_manager, close_sess_after)
-
-    return final_outcome
-
-# End of exec_actn
 
 
 # --- Action Functions
@@ -2812,7 +2330,7 @@ def _run_schema_migrations_action() -> None:
         from core.database_manager import DatabaseManager
 
         db_manager = DatabaseManager()
-        if not db_manager.ensure_ready():
+        if db_manager is None or not db_manager.ensure_ready():
             print("Unable to initialize database engine. See logs for details.")
             return
 
@@ -3371,6 +2889,8 @@ def _initialize_application() -> tuple["SessionManager", Any]:
         logger.info("✅ System sleep prevention active")
     else:
         logger.info("⚠️ System sleep prevention inactive")
+
+    logger.info("✅ Action registry initialized (%d actions)", len(get_action_registry().get_all_actions()))
 
     # Run Chrome/ChromeDriver diagnostics before any browser automation (silent mode)
     try:
