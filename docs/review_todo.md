@@ -28,10 +28,10 @@ Startup immediately sets `SUPPRESS_CONFIG_WARNINGS=1` (`main.py` §12‑16) and
 
    Recommendation: remove the blanket suppression, surface the warnings emitted by `ConfigManager`, and treat noisy modules as bugs to fix rather than silencing them globally.
 
-7. (Priority 7) Improve type-safety coverage
-`pyrightconfig.json` still disables most of the "unknown type" diagnostics (`reportUnknownParameterType`, `reportUnknownVariableType`, `reportUnknownMemberType`, etc. are all set to "none" in lines 32‑48) even though the codebase leans on heavy `Any` usage (e.g., `action6_gather.PageProcessingMetrics` stores `dict[str, Any]`).
+7. (Priority 7) Improve type-safety coverage — 🚧 In Progress Nov 25 2025
+`pyrightconfig.json` has been updated to enable `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings. However, `reportUnknownVariableType` and `reportUnknownMemberType` remain disabled due to high technical debt (950+ warnings).
 
-   Recommendation: re-enable the unknown-type checks incrementally (start with warnings), add missing annotations in hot files (`action6_gather.py`, `main.py`, `action7_inbox.py`), and gate new modules on `reportGeneralTypeIssues` = error once coverage improves.
+   Recommendation: Continue to incrementally enable stricter checks. The next target should be `reportUnknownMemberType` after addressing the underlying type issues in `utils.py` and `relationship_utils.py`.
 
 8. (Priority 8) Remove legacy warning suppression from SessionManager — ✅ Completed Nov 25 2025
 The top of `core/session_manager.py` still redirects `sys.stderr`, installs global `warnings.filterwarnings`, and notes "OBSOLETE" in comments (§18‑43), yet the code path runs every time tests execute. This hides legitimate RuntimeWarnings and complicates debugging.

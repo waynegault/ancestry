@@ -46,6 +46,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Main.py Refactoring (Nov 25)** - Extracted application lifecycle management (startup, shutdown, session pre-authentication) into `core/lifecycle.py`, reducing `main.py` to a focused entry point that delegates to specialized modules.
 - ✅ **Configuration Warning Visibility (Nov 25)** - Removed blanket configuration warning suppression from `main.py` and `core/session_manager.py` so misconfigured `.env` values are properly surfaced to operators instead of being silently swallowed.
 - ✅ **SessionManager Cleanup (Nov 25)** - Removed legacy `sys.stderr` redirection and obsolete warning suppression blocks from `core/session_manager.py`, improving debugging visibility and removing dead code paths.
+- ✅ **Type Safety Hardening (Nov 25)** - Enabled `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings in `pyrightconfig.json`, catching implicit `Any` types in function signatures and generic type arguments.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
