@@ -15,12 +15,12 @@ import sys
 import threading
 import time
 import webbrowser
+from collections.abc import Mapping
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from typing import Any, Mapping, Optional, Protocol, TextIO
-from urllib import request as urllib_request
-
 from logging import StreamHandler
+from pathlib import Path
+from typing import Any, Optional, Protocol, TextIO
+from urllib import request as urllib_request
 
 from logging_config import setup_logging
 
@@ -160,7 +160,7 @@ class MainCLIHelpers:
             class GraphRequestHandler(SimpleHTTPRequestHandler):
                 directory = str(root_dir)
 
-                def log_message(self, format: str, *args: Any) -> None:  # noqa: D401
+                def log_message(self, format: str, *args: Any) -> None:
                     client_host, client_port = getattr(self, "client_address", ("?", "?"))
                     local_logger.debug(
                         "Graph server %s:%s - %s",

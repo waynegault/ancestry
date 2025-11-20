@@ -3,7 +3,14 @@
 
 from __future__ import annotations
 
+import sys
 from importlib import import_module
+from pathlib import Path
+
+if __package__ in {None, ""}:
+    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(_PROJECT_ROOT) not in sys.path:
+        sys.path.insert(0, str(_PROJECT_ROOT))
 
 from standard_imports import setup_module
 

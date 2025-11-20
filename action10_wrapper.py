@@ -1,29 +1,31 @@
-from typing import Any, Callable, Optional, Sequence, cast
-from dataclasses import dataclass
-from pathlib import Path
-from importlib import import_module
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
+from importlib import import_module
+from pathlib import Path
+from typing import Any, Callable, Optional, cast
 
-from core.session_manager import SessionManager
-from core.analytics_helpers import (
-    load_result_row_builders,
-    load_match_analysis_helpers,
-    set_comparison_mode_analytics,
-    MatchList,
-    RowBuilder,
-    MatchAnalyzer,
-    SupplementaryHandler,
-    IDNormalizer,
-)
 from core.action_runner import (
     get_api_manager,
     get_browser_manager,
 )
+from core.analytics_helpers import (
+    IDNormalizer,
+    MatchAnalyzer,
+    MatchList,
+    RowBuilder,
+    SupplementaryHandler,
+    load_match_analysis_helpers,
+    load_result_row_builders,
+    set_comparison_mode_analytics,
+)
+from core.session_manager import SessionManager
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
 
 SearchAPIFunc = Callable[["SessionManager", dict[str, Any], int], MatchList]
+
 
 @dataclass
 class _ComparisonConfig:

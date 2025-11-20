@@ -6,22 +6,23 @@ Handles application startup, initialization, and shutdown procedures.
 
 import os
 import sys
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
-from importlib import import_module
 
-from standard_imports import setup_module
-from core.session_manager import SessionManager
 from core.action_registry import get_action_registry
-from core.config_validation import validate_action_config
-from logging_config import setup_logging
 from core.action_runner import (
     get_api_manager,
     get_browser_manager,
     get_database_manager,
 )
+from core.config_validation import validate_action_config
+from core.session_manager import SessionManager
+from logging_config import setup_logging
+from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
+
 
 def get_windows_console_handles() -> tuple[Optional[Any], Optional[Any]]:
     """Return kernel32/user32 handles when available on Windows."""

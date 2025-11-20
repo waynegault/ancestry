@@ -1,10 +1,12 @@
-from typing import Any, Callable
-from functools import wraps
 import time
+from functools import wraps
+from typing import Any, Callable
+
 from standard_imports import setup_module
 from utils import nav_to_page
 
 logger = setup_module(globals(), __name__)
+
 
 def ensure_navigation_ready(
     session_manager: Any,

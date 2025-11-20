@@ -23,7 +23,18 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 
 
+import importlib
+import sys
+import time
+from importlib import import_module
+from typing import Any, Callable, Optional, Protocol, cast
 
+from action10_wrapper import run_gedcom_then_api_fallback
+from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
+from core.action_registry import (
+    ActionMetadata,
+    get_action_registry,
+)
 from core.action_runner import (
     configure_action_runner,
     exec_actn,
@@ -31,63 +42,34 @@ from core.action_runner import (
     get_database_manager as _get_database_manager,
     parse_menu_choice as _parse_menu_choice,
 )
-from core.action_registry import (
-    ActionMetadata,
-    get_action_registry,
-)
-from core.workflow_actions import (
-    run_core_workflow_action,
-    gather_dna_matches,
-    srch_inbox_actn,
-    send_messages_action,
-    process_productive_messages_action,
-)
-
-# === NEW IMPORTS ===
-
-from core.maintenance_actions import (
-    all_but_first_actn,
-    reset_db_actn,
-    backup_db_actn,
-    restore_db_actn,
-    check_login_actn,
-)
-
-from action10_wrapper import run_gedcom_then_api_fallback
 from core.analytics_helpers import get_metrics_bundle as _get_metrics_bundle
-from ui.menu import render_main_menu
 from core.caching_bootstrap import ensure_caching_initialized
-from core.session_manager import SessionManager
-
 from core.config_validation import validate_action_config
 
-import importlib
-import sys
-import time
-from collections.abc import Mapping
-from importlib import import_module
-from typing import Any, Callable, Optional, Protocol, cast
-
-from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
+# === NEW IMPORTS ===
+from core.maintenance_actions import (
+    all_but_first_actn,
+    backup_db_actn,
+    check_login_actn,
+    reset_db_actn,
+    restore_db_actn,
+)
+from core.session_manager import SessionManager
+from core.workflow_actions import (
+    gather_dna_matches,
+    process_productive_messages_action,
+    run_core_workflow_action,
+    send_messages_action,
+    srch_inbox_actn,
+)
 from test_utilities import create_standard_test_runner
-
-
+from ui.menu import render_main_menu
 
 
 class ConfigManagerProtocol(Protocol):
     """Protocol describing the ConfigManager behavior used here."""
 
     def get_config(self) -> Any: ...
-
-
-class GrafanaCheckerProtocol(Protocol):
-    """Protocol for optional grafana_checker helpers."""
-
-    def ensure_dashboards_imported(self) -> None: ...
-
-    def check_grafana_status(self) -> Mapping[str, Any]: ...
-
-    def ensure_grafana_ready(self, *, auto_setup: bool = False, silent: bool = True) -> None: ...
 
 
 _config_manager_factory: type[ConfigManagerProtocol] | None = None
@@ -166,7 +148,6 @@ def _create_config_manager() -> Optional[ConfigManagerProtocol]:
 # Core modules
 
 
-
 config_manager = _create_config_manager()
 config: Any = config_manager.get_config() if config_manager is not None else None
 
@@ -183,48 +164,6 @@ def menu() -> str:
 
 
 # --- Action Functions
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _check_action_confirmation(choice: str) -> bool:
@@ -378,10 +317,6 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
     return _execute_primary_action(metadata, session_manager, config, arg_tokens)
 
 
-
-
-
-
 def _assign_action_registry_functions() -> None:
     """Attach callable implementations to action registry metadata."""
 
@@ -416,15 +351,16 @@ _assign_action_registry_functions()
 
 
 from core.lifecycle import (
-    set_windows_console_focus,
-    initialize_application,
-    pre_authenticate_session,
-    pre_authenticate_ms_graph,
     check_startup_status,
-    validate_ai_provider_on_startup,
-    display_tree_owner,
     cleanup_session_manager,
+    display_tree_owner,
+    initialize_application,
+    pre_authenticate_ms_graph,
+    pre_authenticate_session,
+    set_windows_console_focus,
+    validate_ai_provider_on_startup,
 )
+
 
 def main() -> None:
     session_manager = None
@@ -584,9 +520,6 @@ def _test_validate_action_config() -> bool:
     except Exception as exc:
         assert "config" in str(exc).lower(), f"validate_action_config failed unexpectedly: {exc}"
     return True
-
-
-
 
 
 def _test_action_integration() -> bool:

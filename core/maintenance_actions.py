@@ -1,19 +1,19 @@
-from typing import Any, Optional
 import gc
+import logging
 import shutil
 import time
-import logging
 from importlib import import_module
 from pathlib import Path
+from typing import Any, Optional
 
-from sqlalchemy import func, text, create_engine, inspect
+from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
 
-from core.session_manager import SessionManager
-from core.database_manager import db_transn, backup_database
+from config.config_manager import ConfigManager
 from core.action_runner import DatabaseManagerProtocol
-
+from core.database_manager import backup_database, db_transn
+from core.session_manager import SessionManager
 from database import (
     Base,
     ConversationLog,
@@ -22,15 +22,15 @@ from database import (
     MessageTemplate,
     Person,
 )
-from utils import log_in, login_status
 from standard_imports import setup_module
-from config.config_manager import ConfigManager
+from utils import log_in, login_status
 
 logger = setup_module(globals(), __name__)
 
 # Initialize config
 config_manager = ConfigManager()
 config = config_manager.get_config()
+
 
 # Action 1 (all_but_first_actn)
 def _delete_table_records(
@@ -215,6 +215,7 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
         temp_manager.return_session(truncate_session)
         return False
 
+
 def _initialize_db_manager_engine(db_manager: DatabaseManagerProtocol) -> tuple[Any, Any]:
     """Ensure the database manager has an initialized engine and session factory."""
 
@@ -227,6 +228,7 @@ def _initialize_db_manager_engine(db_manager: DatabaseManagerProtocol) -> tuple[
     if engine is None or session_factory is None:
         raise SQLAlchemyError("Database manager missing engine or session factory")
     return engine, session_factory
+
 
 def _reinitialize_database_schema(temp_manager: SessionManager) -> bool:
     """Re-initialize database schema by dropping and recreating all tables."""
@@ -480,6 +482,7 @@ def _display_table_statistics() -> None:
 
     except Exception as e:
         logger.warning(f"Could not display table statistics: {e}")
+
 
 def restore_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:  # Added session_manager back
     """
