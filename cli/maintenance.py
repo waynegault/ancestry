@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
-from typing import Any, Optional, Protocol, TextIO
+from typing import Any, ClassVar, Optional, Protocol, TextIO
 from urllib import request as urllib_request
 
 from logging_config import setup_logging
@@ -38,7 +38,7 @@ class GrafanaCheckerProtocol(Protocol):
 class MainCLIHelpers:
     """Container for log/analytics helper actions used by the main menu."""
 
-    _CACHE_KIND_ICONS = {
+    _CACHE_KIND_ICONS: ClassVar[dict[str, str]] = {
         "disk": "📁",
         "memory": "🧠",
         "session": "🔐",
@@ -257,7 +257,8 @@ class MainCLIHelpers:
     # Cache statistics helpers
     # ------------------------------------------------------------------
 
-    def _format_cache_stat_value(self, value: Any) -> str:
+    @staticmethod
+    def _format_cache_stat_value(value: Any) -> str:
         if isinstance(value, float):
             return f"{value:.2f}"
         if isinstance(value, int):
@@ -272,7 +273,8 @@ class MainCLIHelpers:
             return f"{{{preview}}}"
         return str(value)
 
-    def _render_retention_targets(self, targets: Any) -> bool:
+    @staticmethod
+    def _render_retention_targets(targets: Any) -> bool:
         if not (isinstance(targets, list) and targets and isinstance(targets[0], dict)):
             return False
 
@@ -309,7 +311,8 @@ class MainCLIHelpers:
             shown_any = True
         return shown_any
 
-    def _render_health_stats(self, health: Any) -> bool:
+    @staticmethod
+    def _render_health_stats(health: Any) -> bool:
         if not (isinstance(health, dict) and health):
             return False
         score = health.get("overall_score")
