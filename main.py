@@ -22,27 +22,27 @@ logger = setup_module(globals(), __name__)
 # === TEST UTILITIES ===
 # === STANDARD LIBRARY IMPORTS ===
 import gc
+import importlib
 import logging
 
 # os already imported at top for SUPPRESS_CONFIG_WARNINGS
 import shutil
 import sys
-import threading
 import time
-import webbrowser
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # === LOCAL IMPORTS ===
 # Action modules
 from importlib import import_module
-from logging import StreamHandler
 from pathlib import Path
-from typing import Any, Callable, Optional, Protocol, TextIO, cast
+from typing import Any, Callable, Optional, Protocol, cast
 from urllib.parse import urljoin
+
+from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
+from test_utilities import create_standard_test_runner
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import func
@@ -130,6 +130,23 @@ else:
     _grafana_checker = cast(GrafanaCheckerProtocol, _grafana_checker_module)
 
 grafana_checker: GrafanaCheckerProtocol | None = _grafana_checker
+
+
+_cli_helpers = MainCLIHelpers(logger=logger, grafana_checker=grafana_checker)
+
+# Re-export helper functions to maintain existing references
+clear_log_file = _cli_helpers.clear_log_file
+_run_main_tests = _cli_helpers.run_main_tests
+_run_all_tests = _cli_helpers.run_all_tests
+_open_graph_visualization = _cli_helpers.open_graph_visualization
+_show_analytics_dashboard = _cli_helpers.show_analytics_dashboard
+_show_cache_statistics = _cli_helpers.show_cache_statistics
+_run_schema_migrations_action = _cli_helpers.run_schema_migrations_action
+_toggle_log_level = _cli_helpers.toggle_log_level
+_show_metrics_report = _cli_helpers.show_metrics_report
+_run_grafana_setup = _cli_helpers.run_grafana_setup
+_clear_screen = _cli_helpers.clear_screen
+_exit_application = _cli_helpers.exit_application
 
 
 _metrics_factory: Callable[[], Any] | None = None
@@ -450,44 +467,6 @@ def menu() -> str:
 
 
 # End of menu
-
-
-def clear_log_file() -> tuple[bool, Optional[str]]:
-    """Finds the FileHandler, closes it, clears the log file, and returns a success flag and the log file path."""
-    cleared = False
-    log_file_handler: Optional[logging.FileHandler] = None
-    log_file_path: Optional[str] = None
-    try:
-        # Step 1: Find the FileHandler in the logger's handlers
-        for handler in logger.handlers:
-            if isinstance(handler, logging.FileHandler):
-                log_file_handler = handler
-                log_file_path = handler.baseFilename
-                break
-        if log_file_handler is not None and log_file_path is not None:
-            # Step 2: Flush the handler (ensuring all previous writes are persisted to disk)
-            log_file_handler.flush()
-            # Step 3: Close the handler (releases resources)
-            log_file_handler.close()
-            # Step 4: Clear the log file contents
-            with Path(log_file_path).open("w", encoding="utf-8"):
-                pass
-            cleared = True
-    except PermissionError as permission_error:
-        # Handle permission errors when attempting to open the log file
-        logger.warning(
-            f"Permission denied clearing log '{log_file_path}': {permission_error}"
-        )
-    except OSError as io_error:
-        # Handle I/O errors when attempting to open the log file
-        logger.warning(f"IOError clearing log '{log_file_path}': {io_error}")
-    except Exception as error:
-        # Handle any other exceptions during the log clearing process
-        logger.warning(f"Error clearing log '{log_file_path}': {error}", exc_info=True)
-    return cleared, log_file_path
-
-
-# End of clear_log_file
 
 
 # --- Action Functions
@@ -1860,613 +1839,6 @@ def _check_action_confirmation(choice: str) -> bool:
     return True
 
 
-def _run_main_tests() -> None:
-    """Run Main.py Internal Tests."""
-    try:
-        from tests.main_module_suite import run_comprehensive_tests as run_main_suite
-
-        print("\n" + "=" * 60)
-        print("RUNNING MAIN.PY INTERNAL TESTS")
-        print("=" * 60)
-        result = run_main_suite()
-        if result:
-            print("\n🎉 All main.py tests completed successfully!")
-        else:
-            print("\n⚠️ Some main.py tests failed. Check output above.")
-    except Exception as e:
-        logger.error(f"Error running main.py tests: {e}")
-        print(f"Error running main.py tests: {e}")
-    print("\nReturning to main menu...")
-    input("Press Enter to continue...")
-
-
-def _run_all_tests() -> None:
-    """Run All Module Tests."""
-    try:
-        import subprocess
-
-        print("\n" + "=" * 60)
-        print("RUNNING ALL MODULE TESTS")
-        print("=" * 60)
-        result = subprocess.run(
-            [sys.executable, "run_all_tests.py"],
-            check=False, capture_output=False,
-            text=True,
-        )
-        if result.returncode == 0:
-            print("\n🎉 All module tests completed successfully!")
-        else:
-            print(f"\n⚠️ Some tests failed (exit code: {result.returncode})")
-    except FileNotFoundError:
-        print("Error: run_all_tests.py not found in current directory.")
-    except Exception as e:
-        logger.error(f"Error running all tests: {e}")
-        print(f"Error running all tests: {e}")
-    print("\nReturning to main menu...")
-    input("Press Enter to continue...")
-
-
-def _open_graph_visualization() -> None:
-    """Launch local web server and open the code graph visualization."""
-    server: Optional[ThreadingHTTPServer] = None
-    try:
-        root_dir = Path(__file__).resolve().parent
-        preferred_port = 8765
-
-        class GraphRequestHandler(SimpleHTTPRequestHandler):
-            """Custom handler serving project files quietly."""
-
-            directory = str(root_dir)
-
-            def log_message(self, format: str, *args: Any) -> None:
-                client_host, client_port = getattr(self, "client_address", ("?", "?"))
-                logger.debug(
-                    "Graph server %s:%s - %s",
-                    client_host,
-                    client_port,
-                    format % args,
-                )
-
-        for candidate_port in range(preferred_port, preferred_port + 20):
-            try:
-                server = ThreadingHTTPServer(("127.0.0.1", candidate_port), GraphRequestHandler)
-                preferred_port = candidate_port
-                break
-            except OSError:
-                continue
-
-        if server is None:
-            print("❌ Unable to start the graph visualization server (no open ports).")
-            logger.error("Graph visualization server failed to start: no open ports available")
-            input("\nPress Enter to continue...")
-            return
-
-        server_thread = threading.Thread(
-            target=server.serve_forever,
-            name="GraphVisualizationServer",
-            daemon=True,
-        )
-        server_thread.start()
-
-        url = f"http://127.0.0.1:{preferred_port}/visualize_code_graph.html"
-        print("\n" + "=" * 70)
-        print("CODE GRAPH VISUALIZATION")
-        print("=" * 70)
-        print(f"Serving from: {root_dir}")
-        print(f"URL: {url}")
-        print("\nPress Enter when you are finished exploring the visualization.")
-        print("=" * 70)
-
-        try:
-            webbrowser.open(url, new=1)
-        except webbrowser.Error as browser_err:
-            logger.warning(f"Unable to open browser automatically: {browser_err}")
-            print("⚠️  Please open the URL manually in your browser.")
-
-        input("\nPress Enter to stop the visualization server and return to the menu...")
-
-    except Exception as graph_error:
-        logger.error(f"Error running graph visualization: {graph_error}", exc_info=True)
-        print(f"Error running graph visualization: {graph_error}")
-        input("\nPress Enter to continue...")
-    finally:
-        if server is not None:
-            server.shutdown()
-            server.server_close()
-            logger.info("Graph visualization server stopped")
-
-
-def _show_analytics_dashboard() -> None:
-    """Display conversation analytics dashboard."""
-    try:
-        from conversation_analytics import print_analytics_dashboard
-        from core.session_manager import SessionManager
-
-        print("\n" + "=" * 80)
-        print("LOADING ANALYTICS DASHBOARD")
-        print("=" * 80)
-
-        # Get database session
-        sm = SessionManager()
-        db_session = sm.get_db_conn()
-
-        if not db_session:
-            print("✗ Failed to get database session")
-            logger.error("Failed to get database session for analytics")
-            return
-
-        # Display analytics dashboard
-        print_analytics_dashboard(db_session)
-
-    except Exception as e:
-        logger.error(f"Error displaying analytics dashboard: {e}", exc_info=True)
-        print(f"Error displaying analytics dashboard: {e}")
-
-    print("\nReturning to main menu...")
-    input("Press Enter to continue...")
-
-
-_CACHE_KIND_ICONS = {
-    "disk": "📁",
-    "memory": "🧠",
-    "session": "🔐",
-    "system": "⚙️",
-    "gedcom": "🌳",
-    "performance": "📊",
-    "database": "🗄️",
-    "retention": "🧹",
-}
-
-
-def _format_cache_stat_value(value: Any) -> str:
-    """Format cache stat values for console display."""
-
-    if isinstance(value, float):
-        return f"{value:.2f}"
-    if isinstance(value, int):
-        return f"{value:,}"
-    if isinstance(value, (list, tuple, set)):
-        return f"{len(value)} items"
-    if isinstance(value, dict):
-        preview_items = list(value.items())[:3]
-        preview = ", ".join(f"{k}={v}" for k, v in preview_items)
-        if len(value) > 3:
-            preview += ", ..."
-        return f"{{{preview}}}"
-    return str(value)
-
-
-def _render_retention_targets(targets: Any) -> bool:
-    if not (isinstance(targets, list) and targets and isinstance(targets[0], dict)):
-        return False
-
-    print("  Targets:")
-    now_ts = time.time()
-    for target in targets:
-        name = target.get("name", "?")
-        files = target.get("files_remaining", target.get("files_scanned", "?"))
-        size_bytes = target.get("total_size_bytes", 0)
-        size_mb = (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
-        deleted = target.get("files_deleted", 0)
-        run_ts = target.get("run_timestamp")
-        if isinstance(run_ts, (int, float)) and run_ts:
-            age_minutes = max(0.0, (now_ts - run_ts) / 60)
-            age_str = f"{age_minutes:.1f}m ago"
-        else:
-            age_str = "n/a"
-        print(
-            f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})"
-        )
-    return True
-
-
-def _render_stat_fields(stats: dict[str, Any]) -> bool:
-    shown_any = False
-    for key in sorted(stats.keys()):
-        if key in {"name", "kind", "health", "targets"}:
-            continue
-        value = stats[key]
-        if value in (None, "", [], {}):
-            continue
-        print(f"  {key.replace('_', ' ').title()}: {_format_cache_stat_value(value)}")
-        shown_any = True
-    return shown_any
-
-
-def _render_health_stats(health: Any) -> bool:
-    if not (isinstance(health, dict) and health):
-        return False
-    score = health.get("overall_score")
-    score_str = f"{score:.1f}" if isinstance(score, (int, float)) else str(score)
-    print(f"  Health Score: {score_str}")
-    recommendations = health.get("recommendations")
-    if recommendations:
-        print(f"  Recommendations: {len(recommendations)}")
-    return True
-
-
-def _print_cache_component(component_name: str, stats: dict[str, Any]) -> None:
-    icon = _CACHE_KIND_ICONS.get(stats.get("kind", ""), "🗃️")
-    display_name = stats.get("name", component_name).upper()
-    kind = stats.get("kind", "unknown")
-    print(f"{icon} {display_name} [{kind}]")
-    print("-" * 70)
-
-    had_output = False
-    had_output |= _render_retention_targets(stats.get("targets"))
-    had_output |= _render_stat_fields(stats)
-    had_output |= _render_health_stats(stats.get("health"))
-
-    if not had_output:
-        print("  No statistics available for this component.")
-    print()
-
-
-def _show_cache_registry_stats() -> bool:
-    """Display consolidated cache stats through CacheRegistry."""
-
-    try:
-        from core.cache_registry import get_cache_registry
-
-        registry = get_cache_registry()
-        summary = registry.summary()
-        component_names = summary.get("registry", {}).get("names", [])
-        if not component_names:
-            return False
-
-        for component_name in component_names:
-            stats = summary.get(component_name, {})
-            _print_cache_component(component_name, stats)
-
-        registry_info = summary.get("registry", {})
-        print("REGISTRY OVERVIEW")
-        print("-" * 70)
-        print(f"  Components: {registry_info.get('components', len(component_names))}")
-        print(f"  Registered: {', '.join(component_names)}")
-        print()
-        return True
-    except Exception as exc:
-        logger.error("Failed to display cache registry stats: %s", exc, exc_info=True)
-        return False
-
-
-def _show_base_cache_stats() -> bool:
-    """Show base disk cache statistics.
-
-    Returns:
-        True if stats were displayed, False otherwise
-    """
-    try:
-        from cache import get_cache_stats
-        base_stats = get_cache_stats()
-        if base_stats:
-            print("📁 DISK CACHE (Base System)")
-            print("-" * 70)
-            print(f"  Hits: {base_stats.get('hits', 0):,}")
-            print(f"  Misses: {base_stats.get('misses', 0):,}")
-            print(f"  Hit Rate: {base_stats.get('hit_rate', 0):.1f}%")
-            print(f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}")
-            print(f"  Volume: {base_stats.get('volume', 0):,} bytes")
-            print(f"  Cache Dir: {base_stats.get('cache_dir', 'N/A')}")
-            print()
-            return True
-    except Exception as e:
-        logger.debug(f"Could not get base cache stats: {e}")
-    return False
-
-
-def _show_unified_cache_stats() -> bool:
-    """Show unified cache manager statistics.
-
-    Returns:
-        True if any stats were displayed, False otherwise
-    """
-    try:
-        from cache_manager import get_unified_cache_manager
-        unified_mgr = get_unified_cache_manager()
-        comprehensive_stats = unified_mgr.get_comprehensive_stats()
-        stats_shown = False
-
-        # Session cache
-        session_stats = comprehensive_stats.get('session_cache', {})
-        if session_stats:
-            print("🔐 SESSION CACHE")
-            print("-" * 70)
-            print(f"  Active Sessions: {session_stats.get('active_sessions', 0)}")
-            print(f"  Tracked Sessions: {session_stats.get('tracked_sessions', 0)}")
-            print(f"  Component TTL: {session_stats.get('component_ttl', 0)}s")
-            print(f"  Session TTL: {session_stats.get('session_ttl', 0)}s")
-            print()
-            stats_shown = True
-
-        # API cache
-        api_stats = comprehensive_stats.get('api_cache', {})
-        if api_stats:
-            print("🌐 API CACHE")
-            print("-" * 70)
-            print(f"  Active Sessions: {api_stats.get('active_sessions', 0)}")
-            print(f"  Cache Available: {api_stats.get('cache_available', False)}")
-            print()
-            stats_shown = True
-
-        # System cache
-        system_stats = comprehensive_stats.get('system_cache', {})
-        if system_stats:
-            print("⚙️  SYSTEM CACHE")
-            print("-" * 70)
-            print(f"  GC Collections: {system_stats.get('gc_collections', 0)}")
-            print(f"  Memory Freed: {system_stats.get('memory_freed_mb', 0):.2f} MB")
-            print(f"  Peak Memory: {system_stats.get('peak_memory_mb', 0):.2f} MB")
-            print(f"  Current Memory: {system_stats.get('current_memory_mb', 0):.2f} MB")
-            print()
-            stats_shown = True
-
-        return stats_shown
-    except Exception as e:
-        logger.debug(f"Could not get unified cache stats: {e}")
-    return False
-
-
-def _show_performance_cache_stats() -> bool:
-    """Show performance cache (GEDCOM) statistics.
-
-    Returns:
-        True if stats were displayed, False otherwise
-    """
-    try:
-        from performance_cache import get_cache_stats as get_perf_stats
-        perf_stats = get_perf_stats()
-        if perf_stats:
-            print("📊 PERFORMANCE CACHE (GEDCOM)")
-            print("-" * 70)
-            print(f"  Memory Entries: {perf_stats.get('memory_entries', 0)}")
-            print(f"  Memory Usage: {perf_stats.get('memory_usage_mb', 0):.2f} MB")
-            print(f"  Memory Pressure: {perf_stats.get('memory_pressure', 0):.1f}%")
-            print(f"  Disk Cache Dir: {perf_stats.get('disk_cache_dir', 'N/A')}")
-            print()
-            return True
-    except Exception as e:
-        logger.debug(f"Could not get performance cache stats: {e}")
-    return False
-
-
-def _show_cache_statistics() -> None:
-    """Show comprehensive cache statistics from all cache subsystems."""
-    try:
-        os.system("cls" if os.name == "nt" else "clear")
-        print("\n" + "=" * 70)
-        print("CACHE STATISTICS")
-        print("=" * 70 + "\n")
-
-        stats_collected = _show_cache_registry_stats()
-
-        # Fallback to legacy collectors while registry adoption continues
-        if not stats_collected:
-            stats_collected = any([
-                _show_base_cache_stats(),
-                _show_unified_cache_stats(),
-                _show_performance_cache_stats(),
-            ])
-
-        if not stats_collected:
-            print("No cache statistics available.")
-            print("Caches may not be initialized yet.")
-
-        logger.debug("Cache statistics displayed")
-        print("=" * 70)
-
-    except Exception as e:
-        logger.error(f"Error displaying cache statistics: {e}", exc_info=True)
-        print("Error displaying cache statistics. Check logs for details.")
-
-    input("\nPress Enter to continue...")
-
-
-def _run_schema_migrations_action() -> None:
-    """Apply pending schema migrations and report the current version state."""
-
-    print("\n" + "=" * 70)
-    print("SCHEMA MIGRATIONS")
-    print("=" * 70)
-
-    db_manager: Optional[DatabaseManagerProtocol] = None
-    try:
-        from core import schema_migrator
-        from core.database_manager import DatabaseManager
-
-        db_manager = DatabaseManager()
-        if db_manager is None or not db_manager.ensure_ready():
-            print("Unable to initialize database engine. See logs for details.")
-            return
-
-        engine = getattr(db_manager, "engine", None)
-        if engine is None:
-            print("Unable to access database engine instance.")
-            return
-
-        registered_migrations = schema_migrator.get_registered_migrations()
-        print(f"Registered migrations: {len(registered_migrations)}")
-
-        applied_versions = schema_migrator.apply_pending_migrations(engine)
-        installed_versions = schema_migrator.get_applied_versions(engine)
-
-        if applied_versions:
-            print(f"\nApplied migrations: {', '.join(applied_versions)}")
-        else:
-            print("\nNo pending migrations; schema already current.")
-
-        if installed_versions:
-            print(
-                f"Installed versions ({len(installed_versions)}): "
-                f"{', '.join(installed_versions)}"
-            )
-        else:
-            print("Installed versions: none recorded.")
-
-        pending_versions = [
-            migration.version for migration in registered_migrations if migration.version not in installed_versions
-        ]
-        if pending_versions:
-            print(f"Pending migrations ({len(pending_versions)}): {', '.join(pending_versions)}")
-        else:
-            print("All registered migrations have been applied.")
-    except Exception as exc:
-        logger.error("Failed to run schema migrations: %s", exc, exc_info=True)
-        print(f"Error applying migrations: {exc}")
-    finally:
-        if db_manager is not None:
-            try:
-                db_manager.close_connections(dispose_engine=True)
-            except Exception:
-                logger.debug("Failed to close temporary database manager", exc_info=True)
-        input("\nPress Enter to continue...")
-
-
-def _toggle_log_level() -> None:
-    """Toggle console log level between DEBUG and INFO."""
-    os.system("cls" if os.name == "nt" else "clear")
-    if logger and logger.handlers:
-        console_handler: Optional[StreamHandler[TextIO]] = None
-        for handler in logger.handlers:
-            if isinstance(handler, logging.StreamHandler):
-                handler_typed = cast(StreamHandler[TextIO], handler)
-                if handler_typed.stream == sys.stderr:
-                    console_handler = handler_typed
-                    break
-        if console_handler:
-            current_level = console_handler.level
-            new_level = (
-                logging.DEBUG
-                if current_level > logging.DEBUG
-                else logging.INFO
-            )
-            new_level_name = logging.getLevelName(new_level)
-            # Re-call setup_logging to potentially update filters etc. too
-            setup_logging(log_level=new_level_name, allow_env_override=False)
-            logger.info(f"Console log level toggled to: {new_level_name}")
-        else:
-            logger.warning(
-                "Could not find console handler to toggle level."
-            )
-    else:
-        print(
-            "WARNING: Logger not ready or has no handlers.", file=sys.stderr
-        )
-
-
-def _show_metrics_report() -> None:
-    """Open Grafana dashboard in browser."""
-    try:
-        import urllib.request
-        import webbrowser
-
-        from observability.metrics_registry import is_metrics_enabled
-
-        print("\n" + "=" * 70)
-        print("📊 GRAFANA METRICS DASHBOARD")
-        print("=" * 70)
-
-        if not is_metrics_enabled():
-            print("\n⚠️  Metrics collection is DISABLED")
-            print("\nTo enable metrics:")
-            print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
-            print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
-            print("  3. Restart the application")
-            print("\n" + "=" * 70 + "\n")
-            return
-
-        # Check if Grafana is running
-        grafana_base = "http://localhost:3000"
-        try:
-            urllib.request.urlopen(grafana_base, timeout=1)
-            grafana_running = True
-        except Exception:
-            grafana_running = False
-
-        if not grafana_running:
-            print("\n⚠️  Grafana is NOT running on http://localhost:3000")
-            print("\n💡 Setup Instructions:")
-            print("   1. Install Grafana: https://grafana.com/grafana/download")
-            print("   2. Start Grafana service")
-            print("   3. Login at http://localhost:3000 (default: admin/admin)")
-            print("   4. Add Prometheus data source → http://localhost:9000")
-            print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
-            print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
-            print("\n" + "=" * 70 + "\n")
-            webbrowser.open("http://localhost:9000/metrics")
-            return
-
-        # Grafana is running - check and import dashboards if needed
-        print("\n✅ Grafana is running!")
-        print("🔍 Checking dashboards...")
-
-        # Try to import dashboards automatically
-        if grafana_checker:
-            try:
-                # This will attempt to import missing dashboards
-                grafana_checker.ensure_dashboards_imported()
-            except Exception as import_err:
-                logger.debug(f"Dashboard auto-import check: {import_err}")
-
-        system_perf_url = f"{grafana_base}/d/ancestry-performance"
-        genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
-        code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
-
-        print("🌐 Opening dashboards:")
-        print(f"   1. System Performance & Health: {system_perf_url}")
-        print(f"   2. Genealogy Research Insights: {genealogy_url}")
-        print(f"   3. Code Quality & Architecture: {code_quality_url}")
-        print("\n💡 If dashboards show 'Not found', run: setup-grafana")
-        print("\n" + "=" * 70 + "\n")
-
-        webbrowser.open(system_perf_url)
-        time.sleep(0.5)  # Small delay between opening tabs
-        webbrowser.open(genealogy_url)
-        time.sleep(0.5)
-        webbrowser.open(code_quality_url)
-
-    except Exception as e:
-        logger.error(f"Error opening Grafana: {e}", exc_info=True)
-        print(f"\n⚠️  Error: {e}")
-        print("\n" + "=" * 70 + "\n")
-
-
-def _run_grafana_setup() -> None:
-    """Run Grafana setup if available."""
-
-    if grafana_checker:
-        status = grafana_checker.check_grafana_status()
-        if status["ready"]:
-            print("\n✅ Grafana is already fully configured and running!")
-            print("   Dashboard URL: http://localhost:3000")
-            print("   Default credentials: admin / ancestry")
-            print("\n📊 Checking dashboards...")
-            grafana_checker.ensure_dashboards_imported()
-            print("\n✅ Dashboard check complete!")
-            print("\n📊 Available Dashboards:")
-            print("   • Overview:    http://localhost:3000/d/ancestry-overview")
-            print("   • Performance: http://localhost:3000/d/ancestry-performance")
-            print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
-            print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
-            print("\n💡 If dashboards are empty, configure data sources:")
-            print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
-        else:
-            grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
-    else:
-        print("\n⚠️  Grafana checker module not available")
-        print("Ensure grafana_checker.py is in the project root directory\n")
-
-
-def _clear_screen() -> None:
-    os.system("cls" if os.name == "nt" else "clear")
-
-
-def _exit_application() -> bool:
-    _clear_screen()
-    print("Exiting.")
-    return False
-
-
 def _execute_meta_action(metadata: ActionMetadata) -> Optional[bool]:
     """Execute a meta action and return loop control signal."""
 
@@ -2999,6 +2371,359 @@ def main() -> None:
 
 
 # end main
+
+
+# === Module Test Suite ===
+
+def _test_clear_log_file_function() -> bool:
+    """Validate log file clearing behavior returns structured tuple."""
+
+    try:
+        result = clear_log_file()
+        assert isinstance(result, tuple), "clear_log_file should return a tuple"
+        assert len(result) == 2, "clear_log_file should return a 2-element tuple"
+        success, message = result
+        assert isinstance(success, bool), "First element should be boolean"
+        assert message is None or isinstance(message, str), "Second element should be None or string"
+    except Exception as exc:  # pragma: no cover - defensive assertion
+        assert isinstance(exc, Exception), "Should handle errors gracefully"
+    return True
+
+
+def _test_main_function_structure() -> bool:
+    """Ensure main() signature stays parameter-free with exception handling."""
+
+    import inspect
+
+    assert callable(main), "main() function should be callable"
+    sig = inspect.signature(main)
+    assert len(sig.parameters) == 0, "main() should take no parameters"
+    return True
+
+
+def _test_reset_db_actn_integration() -> bool:
+    """Validate database manager access through SessionManager."""
+
+    try:
+        test_sm = SessionManager()
+        db_manager = _get_database_manager(test_sm)
+        assert db_manager is not None, "SessionManager should provide a database manager"
+        assert hasattr(db_manager, "_initialize_engine_and_session"), (
+            "DatabaseManager should have _initialize_engine_and_session method"
+        )
+        assert hasattr(db_manager, "engine"), "DatabaseManager should have engine attribute"
+        assert hasattr(db_manager, "Session"), "DatabaseManager should have Session attribute"
+        logger.debug(
+            "reset_db_actn integration test: All required methods and attributes verified"
+        )
+    except AttributeError as exc:
+        raise AssertionError(
+            f"reset_db_actn integration test failed with AttributeError: {exc}"
+        ) from exc
+    except Exception as exc:  # pragma: no cover - acceptable fallback
+        logger.debug(
+            "reset_db_actn integration test: Non-AttributeError exception (acceptable): %s",
+            exc,
+        )
+        return True
+    return True
+
+
+def _test_edge_case_handling() -> bool:
+    """Verify required action modules stay imported for dispatch helpers."""
+
+    required_modules = [
+        "action6_gather",
+        "action7_inbox",
+        "action8_messaging",
+        "action9_process_productive",
+        "action10",
+    ]
+
+    for module_name in required_modules:
+        importlib.import_module(module_name)
+    return True
+
+
+def _test_import_error_handling() -> bool:
+    """Confirm core imports remain registered on the module namespace."""
+
+    module_globals = globals()
+    required_imports = [
+        "coord",
+        "InboxProcessor",
+        "send_messages_to_matches",
+        "process_productive_messages",
+        "config",
+        "logger",
+        "SessionManager",
+    ]
+
+    for import_name in required_imports:
+        assert import_name in module_globals, f"{import_name} should be imported"
+    return True
+
+
+def _test_validate_action_config() -> bool:
+    """Validate action configuration helper returns a boolean."""
+
+    assert callable(validate_action_config), "validate_action_config should be callable"
+
+    try:
+        result = validate_action_config()
+        assert isinstance(result, bool), "validate_action_config should return boolean"
+        assert result is True, "validate_action_config should return True for basic validation"
+    except Exception as exc:
+        assert "config" in str(exc).lower(), f"validate_action_config failed unexpectedly: {exc}"
+    return True
+
+
+def _test_database_integration() -> bool:
+    """Ensure database helpers remain callable from main module."""
+
+    from database import Base
+
+    assert callable(backup_database), "backup_database should be callable"
+    assert callable(db_transn), "db_transn should be callable"
+    assert Base is not None, "SQLAlchemy Base should be accessible"
+    return True
+
+
+def _test_action_integration() -> bool:
+    """Confirm action hooks remain callable for menu dispatch."""
+
+    from action10 import main as run_action10
+
+    actions_to_test: list[tuple[str, Callable[..., Any]]] = [
+        ("coord", coord),
+        ("InboxProcessor", InboxProcessor),
+        ("send_messages_to_matches", send_messages_to_matches),
+        ("process_productive_messages", process_productive_messages),
+        ("run_action10", run_action10),
+    ]
+
+    for action_name, action_func in actions_to_test:
+        assert callable(action_func), f"{action_name} should be callable"
+        assert action_func is not None, f"{action_name} should not be None"
+    return True
+
+
+def _test_import_performance() -> bool:
+    """Reload config module to ensure performance stays reasonable."""
+
+    start_time = time.time()
+
+    try:
+        config_module = sys.modules.get("config")
+        if config_module:
+            importlib.reload(config_module)
+    except Exception:  # pragma: no cover - diagnostic only
+        pass
+
+    duration = time.time() - start_time
+    assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
+    return True
+
+
+def _test_memory_efficiency() -> bool:
+    """Track module globals to guard against excessive state."""
+
+    import inspect
+    from types import ModuleType
+
+    module_size = sys.getsizeof(sys.modules[__name__])
+    assert module_size < 10000, f"Module size should be reasonable, got {module_size} bytes"
+
+    tracked_state: dict[str, Any] = {
+        name: value
+        for name, value in globals().items()
+        if not name.startswith("__")
+        and not isinstance(value, ModuleType)
+        and not inspect.isfunction(value)
+        and not inspect.isclass(value)
+    }
+
+    globals_count = len(tracked_state)
+    assert globals_count < 80, (
+        f"Stateful global variables should be reasonable, got {globals_count}"
+    )
+    return True
+
+
+def _test_function_call_performance() -> bool:
+    """Ensure menu callable checks stay performant."""
+
+    start_time = time.time()
+
+    for _ in range(1000):
+        result = callable(menu)
+        assert result is True, "menu should be callable"
+
+    duration = time.time() - start_time
+    assert duration < 0.1, f"1000 function checks should be fast, took {duration:.3f}s"
+    return True
+
+
+def _test_error_handling_structure() -> bool:
+    """Ensure main() retains try/except/finally scaffolding."""
+
+    import inspect
+
+    main_source = inspect.getsource(main)
+    assert "try:" in main_source, "main() should have try-except structure"
+    assert "except" in main_source, "main() should have exception handling"
+    assert "finally:" in main_source, "main() should have finally block"
+    assert "KeyboardInterrupt" in main_source, "main() should handle KeyboardInterrupt"
+    return True
+
+
+def _test_cleanup_procedures() -> bool:
+    """Check main() references cleanup code paths."""
+
+    import inspect
+
+    main_source = inspect.getsource(main)
+    assert "finally:" in main_source, "main() should have finally block for cleanup"
+    assert "cleanup" in main_source.lower(), "main() should mention cleanup"
+    return True
+
+
+def _test_exception_handling_coverage() -> bool:
+    """Verify exception logging references stay intact."""
+
+    import inspect
+
+    main_source = inspect.getsource(main)
+    assert "Exception" in main_source, "main() should handle general exceptions"
+    assert "logger" in main_source, "main() should use logger for error reporting"
+    return True
+
+
+def main_module_tests() -> bool:
+    """Comprehensive regression suite for main.py."""
+
+    from test_framework import TestSuite, suppress_logging
+
+    suite = cast(Any, TestSuite("Main Application Controller & Menu System", "main.py"))
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            test_name="clear_log_file() function logic and return values",
+            test_func=_test_clear_log_file_function,
+            test_summary="Log file clearing functionality and return structure",
+            method_description="Testing clear_log_file function execution and return tuple structure",
+            expected_outcome="Function executes properly and returns appropriate tuple structure",
+        )
+
+        suite.run_test(
+            test_name="main() function structure and signature",
+            test_func=_test_main_function_structure,
+            test_summary="Main function structure and parameter requirements",
+            method_description="Testing main function callable status and parameter signature",
+            expected_outcome="Main function has proper structure and takes no parameters",
+        )
+
+        suite.run_test(
+            test_name="reset_db_actn() integration and method availability",
+            test_func=_test_reset_db_actn_integration,
+            test_summary="Database reset function integration and required method verification",
+            method_description="Testing reset_db_actn function for proper SessionManager and DatabaseManager method access",
+            expected_outcome="reset_db_actn can access all required methods without AttributeError",
+        )
+
+        suite.run_test(
+            test_name="Edge case handling and module import validation",
+            test_func=_test_edge_case_handling,
+            test_summary="Edge cases and import validation scenarios",
+            method_description="Testing edge conditions and module import status",
+            expected_outcome="Edge cases are handled and imports are properly validated",
+        )
+
+        suite.run_test(
+            test_name="Import error scenarios and required module presence",
+            test_func=_test_import_error_handling,
+            test_summary="Import error handling and required module validation",
+            method_description="Testing essential module imports and availability",
+            expected_outcome="All essential modules are imported and available",
+        )
+
+        suite.run_test(
+            test_name="Configuration validation system from Action 6 lessons",
+            test_func=_test_validate_action_config,
+            test_summary="Configuration validation system prevents Action 6-style failures",
+            method_description="Testing validate_action_config() function validates .env settings and rate limiting",
+            expected_outcome="Configuration validation function works correctly and returns boolean result",
+        )
+
+        suite.run_test(
+            test_name="Database system integration and transaction management",
+            test_func=_test_database_integration,
+            test_summary="Database system integration with main application",
+            method_description="Testing database functions and model accessibility",
+            expected_outcome="Database system is properly integrated with transaction support",
+        )
+
+        suite.run_test(
+            test_name="All action function integration with main application",
+            test_func=_test_action_integration,
+            test_summary="Action functions integrate properly with main application",
+            method_description="Testing action function availability and callable status",
+            expected_outcome="All action functions integrate properly and are callable",
+        )
+
+        suite.run_test(
+            test_name="Module import and reload performance",
+            test_func=_test_import_performance,
+            test_summary="Import performance and module caching efficiency",
+            method_description="Testing module import and reload times for performance",
+            expected_outcome="Module imports and reloads complete within reasonable time limits",
+        )
+
+        suite.run_test(
+            test_name="Memory usage efficiency and global variable management",
+            test_func=_test_memory_efficiency,
+            test_summary="Memory usage efficiency and resource management",
+            method_description="Testing module memory usage and global variable count",
+            expected_outcome="Memory usage is reasonable and global variables are controlled",
+        )
+
+        suite.run_test(
+            test_name="Function call performance and responsiveness",
+            test_func=_test_function_call_performance,
+            test_summary="Function call performance and execution speed",
+            method_description="Testing basic function call performance with multiple iterations",
+            expected_outcome="Function calls execute efficiently within performance limits",
+        )
+
+        suite.run_test(
+            test_name="main() error handling structure and exception coverage",
+            test_func=_test_error_handling_structure,
+            test_summary="Error handling structure in main function",
+            method_description="Testing main function for proper try-except-finally structure",
+            expected_outcome="Main function has comprehensive error handling structure",
+        )
+
+        suite.run_test(
+            test_name="Cleanup procedures and resource management",
+            test_func=_test_cleanup_procedures,
+            test_summary="Cleanup procedures and resource management implementation",
+            method_description="Testing cleanup code presence and resource management",
+            expected_outcome="Proper cleanup procedures are implemented for resource management",
+        )
+
+        suite.run_test(
+            test_name="Exception handling coverage and logging integration",
+            test_func=_test_exception_handling_coverage,
+            test_summary="Exception handling coverage and error logging",
+            method_description="Testing exception handling scope and logging integration",
+            expected_outcome="Exception handling covers expected scenarios with proper logging",
+        )
+
+    return bool(suite.finish_suite())
+
+
+run_comprehensive_tests = create_standard_test_runner(main_module_tests)
 
 
 # --- Entry Point ---

@@ -41,6 +41,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
 - ✅ **Pyright + Ruff Hardening (Nov 18)** - Pyright now runs in `standard` mode with `reportReturnType`, `reportUnusedVariable`, and `reportDuplicateImport` elevated to errors, while Ruff extends into PLR cyclomatic-complexity/argument-count checks with tuned thresholds so CI blocks regressions immediately.
 - ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
+- ✅ **CLI Maintenance Module (Nov 21)** - Non-essential menu helpers now live in `cli/maintenance.py`, and `main.py` simply instantiates `MainCLIHelpers` and re-exports the bound methods so the entrypoint focuses on action orchestration.
+- ✅ **Main Menu Test Suite Re-embedded (Nov 21)** - The `main.py` regression suite now lives at the bottom of the entrypoint, so tests stay co-located with the code they cover; run it via the main menu helper or `python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"`.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
@@ -50,6 +52,13 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - Actions 6–10 already emit standardized start/final banners including contextual details (pages processed, AI stats, etc.); new actions should follow the same pattern.
 - Shared helpers such as `utils.log_action_status()` delegate to `log_action_banner`, so stand-alone workflows (scripts, utilities) can emit the same structured markers without duplicating formatting logic.
 - Include a compact `details` dict when calling the helper so log greps can filter on keys like `start_page`, `sent`, `errors`, or `reason`.
+
+### Main CLI Helpers
+
+- `cli/maintenance.py` now owns the menu utilities (log clearing, standalone test runners, analytics exporters, cache stats, schema migrations, telemetry toggles, dashboards, graceful exits) through the `MainCLIHelpers` class.
+- `main.py` instantiates `MainCLIHelpers` once, re-exporting the bound methods so the menu wiring stays unchanged while the entrypoint itself remains focused on action orchestration.
+- Add new maintenance commands by implementing a method on `MainCLIHelpers`, wiring it into the helper map, and covering it with regression tests in `main.py`'s `main_module_tests()` suite.
+- The helpers deliberately avoid session management; anything needing browser/API coordination must still flow through `exec_actn()` and `SessionManager`.
 
 ## Actions
 
@@ -165,6 +174,8 @@ python run_all_tests.py --analyze-logs
 
 # Run specific module tests
 python -m action6_gather
+# Main menu regression tests (embedded within main.py)
+python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"
 ```
 
 ### Static Analysis (Lint + Types)
