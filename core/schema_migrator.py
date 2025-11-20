@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import sys
+from argparse import ArgumentParser
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -21,6 +23,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 MigrationFn = Callable[[Engine], None]
+DEFAULT_DB_PATH = Path("Data/ancestry.db")
 
 
 @dataclass(frozen=True)
@@ -131,6 +134,78 @@ def get_applied_versions(engine: Engine) -> list[str]:
     return sorted(_fetch_applied_versions(engine))
 
 
+def _resolve_db_path(path_arg: Optional[str]) -> Path:
+    path = Path(path_arg).expanduser() if path_arg else DEFAULT_DB_PATH
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _build_cli_engine(path_arg: Optional[str]) -> Engine:
+    db_path = _resolve_db_path(path_arg)
+    return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+
+
+def _render_status_table(engine: Engine) -> list[str]:
+    applied = set(_fetch_applied_versions(engine))
+    lines: list[str] = []
+    for migration in get_registered_migrations():
+        state = "applied" if migration.version in applied else "pending"
+        lines.append(f"{migration.version:<16} {state:<8} {migration.description}")
+    return lines
+
+
+def _list_applied_versions(engine: Engine) -> list[str]:
+    return get_applied_versions(engine)
+
+
+def run_cli(argv: Optional[Sequence[str]] = None) -> int:
+    """Simple CLI for applying or inspecting schema migrations."""
+
+    parser = ArgumentParser(description="Schema migration utility")
+    parser.add_argument("--db-path", help="Path to the SQLite database", default=str(DEFAULT_DB_PATH))
+    parser.add_argument("--list", action="store_true", help="List migrations and their status")
+    parser.add_argument("--apply", action="store_true", help="Apply pending migrations (default action)")
+    parser.add_argument("--show-applied", action="store_true", help="Show versions recorded in schema_migrations")
+    parser.add_argument("--run-tests", action="store_true", help="Run module tests instead of CLI actions")
+
+    args = parser.parse_args(list(argv) if argv is not None else sys.argv[1:])
+
+    if args.run_tests:
+        return 0 if schema_migrator_module_tests() else 1
+
+    if not any((args.list, args.apply, args.show_applied)):
+        args.apply = True
+
+    engine = _build_cli_engine(args.db_path)
+
+    if args.list:
+        print("\nRegistered migrations:")
+        for line in _render_status_table(engine):
+            print(f"  {line}")
+
+    if args.show_applied:
+        versions = _list_applied_versions(engine)
+        print("\nApplied versions (sorted):")
+        if versions:
+            for version in versions:
+                print(f"  {version}")
+        else:
+            print("  <none>")
+
+    if args.apply:
+        applied_versions = apply_pending_migrations(engine)
+        if applied_versions:
+            print("\nApplied migrations:")
+            for version in applied_versions:
+                print(f"  {version}")
+        else:
+            print("\nNo pending migrations; schema already current.")
+
+    return 0
+
+
 def _baseline_upgrade(engine: Engine) -> None:
     """Baseline migration that simply records the current schema."""
 
@@ -222,6 +297,6 @@ run_comprehensive_tests = create_standard_test_runner(schema_migrator_module_tes
 
 
 if __name__ == "__main__":
-    if schema_migrator_module_tests():
-        sys.exit(0)
-    sys.exit(1)
+    if len(sys.argv) == 1:
+        sys.exit(0 if schema_migrator_module_tests() else 1)
+    sys.exit(run_cli(sys.argv[1:]))

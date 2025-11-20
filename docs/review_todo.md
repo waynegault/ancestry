@@ -2,6 +2,8 @@
 
 Top 10 improvements (refreshed Nov 19 2025, ordered from highest to lowest priority)
 
+<!-- markdownlint-disable MD029 -->
+
 1a. (Priority 1) Finish migrating to the unified error-handling stack — ✅ Completed Nov 21 2025
 `action7_inbox.py` and `action6_gather.py` now import `api_retry` straight from `core.error_handling`, every decorator application points to the centralized resilience stack, and the legacy `utils.retry_api` implementation plus helper functions were removed. The action modules no longer need interim `DecoratorFactory` casts, giving us a single audited retry pipeline.
 
@@ -13,10 +15,8 @@ Top 10 improvements (refreshed Nov 19 2025, ordered from highest to lowest pri
 3. (Priority 3) Add retention policies for the on-disk Cache/ hierarchy — ✅ Completed Nov 23 2025
 New `cache_retention.CacheRetentionService` enforces age/size/count policies for `Cache/performance`, `Cache/session_checkpoints`, and `Cache/session_state`, publishing per-target metrics via the cache registry. Automatic sweeps run hourly (and immediately when performance cache initializes or session checkpoints/state write to disk), and operators can trigger ad-hoc cleanup through the Cache Statistics screen or `registry.clear("cache_retention")`.
 
-4. (Priority 4) Add database schema versioning
-Schema changes are still applied by calling `Base.metadata.create_all(engine)` at runtime with no migration history (`database.py` §3325‑3365). Any column change requires manual SQL or a destructive reset, which is risky now that production data lives in `Data/ancestry.db`.
-
-   Recommendation: add a lightweight migration runner (Alembic or a custom version table) that tracks applied revisions, ships with roll-forward/rollback scripts, and integrates with the existing `database_manager` utilities.
+4. (Priority 4) Add database schema versioning — ✅ Completed Nov 24 2025
+`core/schema_migrator.py` now registers structured migrations (starting with `0001_baseline`), persists applied versions in the new `schema_migrations` table, and exposes both programmatic helpers plus a CLI (`python core/schema_migrator.py --list/--apply`) for operators. `DatabaseManager` automatically invokes the migrator after ensuring tables exist, and the `migrate-db` meta action in `main.py` surfaces migration status from the menu, so schema upgrades can run without manual SQL or destructive resets.
 
 5. (Priority 5) Break main.py into focused modules
 `main.py` has ballooned to 3,841 lines and still mixes menu rendering, caching bootstrap, exec_actn orchestration, analytics launchers, and CLI helpers (`main.py` §1‑3300). This makes regression isolation difficult and slows onboarding.
@@ -47,3 +47,5 @@ The top of `core/session_manager.py` still redirects `sys.stderr`, installs glob
 Action 6 tracks rich telemetry (`PageProcessingMetrics` in `action6_gather.py` §25‑85 and per-page duration logging in `_prepare_bulk_db_data` §3330‑3380), yet the pipeline remains strictly sequential: every match runs `_process_single_match_for_bulk` one at a time, prefetched data is handled in serial (`_perform_api_prefetches` §2960‑3120), and bulk commits still block on `commit_bulk_data`. Real-world runs continue to hover around 40‑60 s per page under safe rate limits.
 
    Recommendation: use the existing metrics to identify dominant stages, experiment with batched SQLAlchemy `bulk_save_objects`, prefetch caching, or overlapping I/O (while honoring the 0.3 RPS limiter), and set an explicit 30 s/page SLO to measure progress.
+
+<!-- markdownlint-enable MD029 -->

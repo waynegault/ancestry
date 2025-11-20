@@ -80,6 +80,25 @@ HEALTH_CHECK_INTERVAL_PAGES=5
 SESSION_REFRESH_THRESHOLD_MIN=25
 ```
 
+
+#### Schema Migration Workflow
+
+- `core/schema_migrator.py` registers ordered migrations (starting with `0001_baseline`) and records executions in the `schema_migrations` table so every deployment knows which revisions ran against `Data/ancestry.db`.
+- `DatabaseManager` automatically invokes the migrator after ensuring tables exist, and the `migrate-db` meta action inside the main menu prints the same summary for operators who prefer the CLI.
+- Run the standalone utility when you need to inspect or apply changes without launching the full menu:
+
+```powershell
+# List migrations with their applied/pending state
+python core/schema_migrator.py --list
+
+# Apply any pending migrations (default action when flags are omitted)
+python core/schema_migrator.py --apply
+
+# Show the contents of schema_migrations for auditing
+python core/schema_migrator.py --show-applied
+```
+
+All commands accept `--db-path` (defaults to `Data/ancestry.db`) so you can point at backups before promoting schema changes.
 ```bash
 python action6_gather.py
 ```
