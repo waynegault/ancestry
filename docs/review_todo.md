@@ -10,10 +10,10 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
    Recommendation: Continue to incrementally enable stricter checks as needed.
 
-2. (Priority 2) Add genuine integration/e2e tests
-   `run_all_tests.py` executes 58 module-level suites, but there are no scenarios that exercise the end-to-end workflow (`exec_actn` → SessionManager → action chain). The README references `python -m test_action6_cache_integration`, yet that module does not exist.
+2. (Priority 2) Add genuine integration/e2e tests — ✅ Done
+   `run_all_tests.py` now supports an `--integration` flag that executes `test_integration_workflow.py`. This suite mocks `SessionManager`, `DatabaseManager`, and API responses to test the end-to-end workflow of Actions 6, 7, and 9, asserting database state and telemetry side effects.
 
-   Recommendation: Create an integration test package that spins up an in-memory SQLite DB plus mocked API responses, runs Action 6 → 7 → 9 via the real SessionManager, and asserts database plus telemetry side effects. Wire it into `run_all_tests.py --integration`.
+   Recommendation: Continue to expand integration scenarios as new features are added.
 
 3. (Priority 3) Continue profiling Action 6 throughput
    Action 6 tracks rich telemetry (`PageProcessingMetrics`), yet the pipeline remains strictly sequential. Real-world runs hover around 40-60s per page under safe rate limits.

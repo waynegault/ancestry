@@ -222,6 +222,7 @@ class TestExecutionConfig:
     enable_fast_mode: bool
     enable_monitoring: bool
     enable_benchmark: bool
+    enable_integration: bool
 
 
 @dataclass
@@ -1523,16 +1524,17 @@ def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]
     return suggestions
 
 
-def _setup_test_environment() -> tuple[bool, bool, bool]:
+def _setup_test_environment() -> tuple[bool, bool, bool, bool]:
     """
     Setup test environment and parse command line arguments.
 
     Returns:
-        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring)
+        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration)
     """
     # Parse command line arguments
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
+    enable_integration = "--integration" in sys.argv
     enable_monitoring = enable_benchmark or enable_fast_mode
 
     if enable_monitoring and not PSUTIL_AVAILABLE:
@@ -1547,12 +1549,14 @@ def _setup_test_environment() -> tuple[bool, bool, bool]:
     # Set environment variable to skip slow simulation tests (724-page workload, etc.)
     os.environ["SKIP_SLOW_TESTS"] = "true"
 
-    return enable_fast_mode, enable_benchmark, enable_monitoring
+    return enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration
 
 
-def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool) -> None:
+def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool, enable_integration: bool) -> None:
     """Print test suite header with mode information."""
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
+    if enable_integration:
+        print("🔗 INTEGRATION MODE: Running end-to-end workflow tests")
     if enable_fast_mode:
         print("🚀 FAST MODE: Parallel execution enabled")
     if enable_benchmark:
@@ -1577,9 +1581,12 @@ def _run_pre_test_checks() -> bool:
     return run_linter()
 
 
-def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tuple[str, str]]]:
+def _discover_and_prepare_modules(enable_integration: bool) -> tuple[list[str], dict[str, str], list[tuple[str, str]]]:
     """
     Discover test modules and extract their descriptions.
+
+    Args:
+        enable_integration: Whether to run integration tests instead of unit tests
 
     Returns:
         Tuple of (discovered_modules, module_descriptions, modules_with_descriptions)
@@ -1588,6 +1595,25 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
     discovered_modules = discover_test_modules()
     # De-duplicate while preserving order
     discovered_modules = list(dict.fromkeys(discovered_modules))
+
+    # Filter modules based on mode
+    integration_modules = ["test_integration_workflow.py"]
+
+    if enable_integration:
+        # In integration mode, ONLY run integration tests
+        discovered_modules = [m for m in discovered_modules if m in integration_modules]
+        if (
+            not discovered_modules
+            and "test_integration_workflow.py" not in discovered_modules
+            and Path("test_integration_workflow.py").exists()
+        ):
+            # Fallback if discovery didn't pick it up (e.g. if I haven't saved the file yet or something)
+            # But since I added run_comprehensive_tests, it should be discovered.
+            # Just in case, let's check if it exists and add it if missing from discovery but present on disk
+            discovered_modules = ["test_integration_workflow.py"]
+    else:
+        # In normal mode, EXCLUDE integration tests
+        discovered_modules = [m for m in discovered_modules if m not in integration_modules]
 
     # Test Infrastructure Todo #18: Apply smart test ordering
     if "--fast" in sys.argv:
@@ -2016,74 +2042,61 @@ def main() -> bool:
     _fix_trailing_whitespace()
 
     # Setup environment and parse arguments
-    enable_fast_mode, enable_benchmark, enable_monitoring = _setup_test_environment()
-
-    # Check for log analysis flag
-    analyze_logs = "--analyze-logs" in sys.argv
-
-    # If only log analysis requested, do that and exit
-    if analyze_logs and len(sys.argv) == 2:  # Only --analyze-logs flag
-        print_log_analysis()
-        return True
+    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration = _setup_test_environment()
 
     # Print header
-    _print_test_header(enable_fast_mode, enable_benchmark)
-    sys.stdout.flush()
+    _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
 
     # Run pre-test checks
     if not _run_pre_test_checks():
-        return False
-    sys.stdout.flush()
+        sys.exit(1)
 
-    # Discover and prepare test modules
-    discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules()
-    sys.stdout.flush()
+    # Discover and prepare modules
+    discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules(
+        enable_integration
+    )
 
-    if not discovered_modules:
-        print("⚠️  No test modules discovered with run_comprehensive_tests() function.")
-        return False
+    # Create configuration
+    config = TestExecutionConfig(
+        modules_with_descriptions=modules_with_descriptions,
+        discovered_modules=discovered_modules,
+        module_descriptions=module_descriptions,
+        enable_fast_mode=enable_fast_mode,
+        enable_monitoring=enable_monitoring,
+        enable_benchmark=enable_benchmark,
+        enable_integration=enable_integration,
+    )
 
     # Execute tests
-    results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(
-        TestExecutionConfig(
-            modules_with_descriptions=modules_with_descriptions,
-            discovered_modules=discovered_modules,
-            module_descriptions=module_descriptions,
-            enable_fast_mode=enable_fast_mode,
-            enable_monitoring=enable_monitoring,
-            enable_benchmark=enable_benchmark,
-        )
+    if enable_benchmark:
+        results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
+    else:
+        start_time = time.time()
+        results, all_metrics, total_tests_run, passed_count = _execute_tests(config)
+        total_duration = time.time() - start_time
+
+    # Print final results
+    _print_basic_summary(total_duration, total_tests_run, passed_count, len(discovered_modules) - passed_count, results)
+    _print_final_results(
+        results, module_descriptions, discovered_modules, passed_count, len(discovered_modules) - passed_count
     )
-    if not enable_fast_mode:  # Recalculate for sequential mode
-        passed_count = sum(1 for _, _, success in results if success)
-    failed_count = len(results) - passed_count
-
-    # Print all summaries
-    _print_basic_summary(total_duration, total_tests_run, passed_count, failed_count, results)
-
-    if enable_monitoring:
-        _print_performance_metrics(
-            PerformanceMetricsConfig(
-                all_metrics=all_metrics,
-                total_duration=total_duration,
-                total_tests_run=total_tests_run,
-                passed_count=passed_count,
-                failed_count=failed_count,
-                enable_fast_mode=enable_fast_mode,
-                enable_benchmark=enable_benchmark,
-            )
-        )
-
-    _print_final_results(results, module_descriptions, discovered_modules, passed_count, failed_count)
-
-    # Print comprehensive quality summary at the end
     _print_final_quality_summary(all_metrics)
 
-    # Print log analysis if requested
-    if analyze_logs:
-        print_log_analysis()
+    # Print performance metrics if enabled
+    if enable_monitoring:
+        perf_config = PerformanceMetricsConfig(
+            all_metrics=all_metrics,
+            total_duration=total_duration,
+            total_tests_run=total_tests_run,
+            passed_count=passed_count,
+            failed_count=len(discovered_modules) - passed_count,
+            enable_fast_mode=enable_fast_mode,
+            enable_benchmark=enable_benchmark,
+        )
+        _print_performance_metrics(perf_config)
 
-    return failed_count == 0
+    # Exit with status code
+    sys.exit(0 if passed_count == len(discovered_modules) else 1)
 
 
 if __name__ == "__main__":

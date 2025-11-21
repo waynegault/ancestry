@@ -38,7 +38,7 @@ import html
 import re
 import time
 from collections import OrderedDict, deque
-from typing import Any, Callable, Optional, Union, cast, Protocol
+from typing import Any, Callable, Optional, Protocol, Union, cast
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup, Tag

@@ -48,6 +48,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **SessionManager Cleanup (Nov 25)** - Removed legacy `sys.stderr` redirection and obsolete warning suppression blocks from `core/session_manager.py`, improving debugging visibility and removing dead code paths.
 - ✅ **Type Safety Hardening (Nov 25)** - Enabled `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings in `pyrightconfig.json`, catching implicit `Any` types in function signatures and generic type arguments.
 - ✅ **Type Safety Hardening Phase 2 (Nov 21)** - Addressed underlying type issues in `utils.py` and `relationship_utils.py` by introducing `GedcomIndividualProtocol` and improving `SessionManager` forward references.
+- ✅ **Integration Test Suite (Nov 25)** - Added `test_integration_workflow.py` and `run_all_tests.py --integration` to validate end-to-end workflows (Actions 6, 7, 9) with mocked session/database components, ensuring critical paths work together before deployment.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 
@@ -173,6 +174,9 @@ python run_all_tests.py
 
 # Run with parallel execution
 python run_all_tests.py --fast
+
+# Run integration tests (end-to-end workflows)
+python run_all_tests.py --integration
 
 # Run with log analysis
 python run_all_tests.py --analyze-logs
