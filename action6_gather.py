@@ -7221,7 +7221,7 @@ def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Opt
     try:
         if disk_cache:
             # cast to Any to avoid partial unknown warnings from diskcache library
-            from typing import cast, Any
+            from typing import Any, cast
 
             cached_data = cast(Any, disk_cache).get(cache_key)
             if cached_data and isinstance(cached_data, dict):
@@ -7364,7 +7364,7 @@ def _cache_combined_details(combined_data: dict[str, Any], match_uuid: str) -> N
         try:
             if disk_cache:
                 # cast to Any to avoid partial unknown warnings from diskcache library
-                from typing import cast, Any
+                from typing import Any, cast
 
                 cast(Any, disk_cache).set(cache_key, combined_data, expire=3600 * 24)  # 24 hours persistence
                 logger.debug(f"Cached combined details to disk for {match_uuid}")
