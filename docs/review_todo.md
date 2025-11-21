@@ -1,51 +1,27 @@
 # Codebase Review Master Todo
 
-Top 10 improvements (refreshed Nov 19 2025, ordered from highest to lowest priority)
+Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority)
 
 <!-- markdownlint-disable MD029 -->
 
-1a. (Priority 1) Finish migrating to the unified error-handling stack — ✅ Completed Nov 21 2025
-`action7_inbox.py` and `action6_gather.py` now import `api_retry` straight from `core.error_handling`, every decorator application points to the centralized resilience stack, and the legacy `utils.retry_api` implementation plus helper functions were removed. The action modules no longer need interim `DecoratorFactory` casts, giving us a single audited retry pipeline.
+1. (Priority 1) Improve type-safety coverage — 🚧 In Progress
+   `pyrightconfig.json` has been updated to enable `reportUnknownParameterType`, `reportMissingTypeArgument`, and `reportUnknownMemberType` as warnings.
 
-1b.  Monitor `core/error_handling.api_retry` telemetry for the next few production runs and regenerate any derived documentation (e.g., `docs/code_graph.json`) so they stop referencing `utils.retry_api`.
+   Recommendation: Continue to incrementally enable stricter checks. Address the underlying type issues in `utils.py` and `relationship_utils.py` to resolve the remaining warnings.
 
-2. (Priority 2) Wire the action registry into menu/dispatch flows — ✅ Completed Nov 23 2025
-`main.menu()` now renders every primary, meta, and test action straight from `core.action_registry`, and the registry’s metadata drives browser requirements, config injection, input hints, and session gating. The legacy `MENU_OPTIONS`, manual `input().startswith()` parsing, and bespoke `_handle_*` helpers were deleted, so adding a new action only requires a registry entry plus a function binding.
+2. (Priority 2) Add genuine integration/e2e tests
+   `run_all_tests.py` executes 58 module-level suites, but there are no scenarios that exercise the end-to-end workflow (`exec_actn` → SessionManager → action chain). The README references `python -m test_action6_cache_integration`, yet that module does not exist.
 
-3. (Priority 3) Add retention policies for the on-disk Cache/ hierarchy — ✅ Completed Nov 23 2025
-New `cache_retention.CacheRetentionService` enforces age/size/count policies for `Cache/performance`, `Cache/session_checkpoints`, and `Cache/session_state`, publishing per-target metrics via the cache registry. Automatic sweeps run hourly (and immediately when performance cache initializes or session checkpoints/state write to disk), and operators can trigger ad-hoc cleanup through the Cache Statistics screen or `registry.clear("cache_retention")`.
+   Recommendation: Create an integration test package that spins up an in-memory SQLite DB plus mocked API responses, runs Action 6 → 7 → 9 via the real SessionManager, and asserts database plus telemetry side effects. Wire it into `run_all_tests.py --integration`.
 
-4. (Priority 4) Add database schema versioning — ✅ Completed Nov 24 2025
-`core/schema_migrator.py` now registers structured migrations (starting with `0001_baseline`), persists applied versions in the new `schema_migrations` table, and exposes both programmatic helpers plus a CLI (`python core/schema_migrator.py --list/--apply`) for operators. `DatabaseManager` automatically invokes the migrator after ensuring tables exist, and the `migrate-db` meta action in `main.py` surfaces migration status from the menu, so schema upgrades can run without manual SQL or destructive resets.
+3. (Priority 3) Continue profiling Action 6 throughput
+   Action 6 tracks rich telemetry (`PageProcessingMetrics`), yet the pipeline remains strictly sequential. Real-world runs hover around 40-60s per page under safe rate limits.
 
-5. (Priority 5) Break main.py into focused modules — ✅ Completed Nov 25 2025
-`main.py` has been significantly refactored. The `exec_actn` orchestration moved to `core/action_runner.py`. Startup checks, session pre-authentication, and lifecycle management moved to `core/lifecycle.py`. Action wrappers and workflow logic moved to `core/workflow_actions.py`. Maintenance actions moved to `core/maintenance_actions.py`. Configuration validation moved to `core/config_validation.py`. `main.py` now focuses on wiring the SessionManager, Action Registry, and Menu together, reducing its size and complexity.
+   Recommendation: Use existing metrics to identify dominant stages. Experiment with batched SQLAlchemy `bulk_save_objects`, prefetch caching, or overlapping I/O (while honoring the 0.3 RPS limiter). Set an explicit 30s/page SLO.
 
-   Recommendation: continue trimming `main.py` by peeling off the remaining subsystems (caching bootstrap, analytics extras, session warmups) into dedicated modules so the entrypoint just wires SessionManager + the registry together. Once that is done, reassess whether further menu slimming is needed beyond the existing `ui/menu.py` renderer.
+4. (Priority 4) Monitor `core/error_handling.api_retry` telemetry
+   The migration to the unified error-handling stack is complete.
 
-6. (Priority 6) Stop suppressing configuration warnings — ✅ Completed Nov 25 2025
-Startup immediately sets `SUPPRESS_CONFIG_WARNINGS=1` (`main.py` §12‑16) and `_should_suppress_config_warnings()` defaults to hiding validation issues whenever tests or scripts run (`main.py` §336‑344). The same flag is re-applied inside `core/session_manager.py` when tests execute (§18‑44). As a result, misconfigured `.env` values never reach the operator.
-
-   Recommendation: remove the blanket suppression, surface the warnings emitted by `ConfigManager`, and treat noisy modules as bugs to fix rather than silencing them globally.
-
-7. (Priority 7) Improve type-safety coverage — 🚧 In Progress Nov 25 2025
-`pyrightconfig.json` has been updated to enable `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings. However, `reportUnknownVariableType` and `reportUnknownMemberType` remain disabled due to high technical debt (950+ warnings).
-
-   Recommendation: Continue to incrementally enable stricter checks. The next target should be `reportUnknownMemberType` after addressing the underlying type issues in `utils.py` and `relationship_utils.py`.
-
-8. (Priority 8) Remove legacy warning suppression from SessionManager — ✅ Completed Nov 25 2025
-The top of `core/session_manager.py` still redirects `sys.stderr`, installs global `warnings.filterwarnings`, and notes "OBSOLETE" in comments (§18‑43), yet the code path runs every time tests execute. This hides legitimate RuntimeWarnings and complicates debugging.
-
-   Recommendation: delete the stderr redirection/suppression block, ensure tests run via `python core/session_manager.py` work without it, and lean on targeted `warnings.catch_warnings` in the rare helpers that truly need it.
-
-9. (Priority 9) Add genuine integration/e2e tests
-`run_all_tests.py` executes 58 module-level suites, but there are no scenarios that exercise the end-to-end workflow (`exec_actn` → SessionManager → action chain). The README even references `python -m test_action6_cache_integration` (`readme.md` §446‑451), yet that module does not exist in the repo.
-
-   Recommendation: create an integration test package that spins up an in-memory SQLite DB plus mocked API responses, runs Action 6 → 7 → 9 via the real SessionManager, and asserts database plus telemetry side effects. Wire it into `run_all_tests.py --integration` so regressions surface before production runs.
-
-10. (Priority 10) Continue profiling Action 6 throughput
-Action 6 tracks rich telemetry (`PageProcessingMetrics` in `action6_gather.py` §25‑85 and per-page duration logging in `_prepare_bulk_db_data` §3330‑3380), yet the pipeline remains strictly sequential: every match runs `_process_single_match_for_bulk` one at a time, prefetched data is handled in serial (`_perform_api_prefetches` §2960‑3120), and bulk commits still block on `commit_bulk_data`. Real-world runs continue to hover around 40‑60 s per page under safe rate limits.
-
-   Recommendation: use the existing metrics to identify dominant stages, experiment with batched SQLAlchemy `bulk_save_objects`, prefetch caching, or overlapping I/O (while honoring the 0.3 RPS limiter), and set an explicit 30 s/page SLO to measure progress.
+   Recommendation: Monitor telemetry for the next few production runs to ensure stability. Regenerate derived documentation (e.g., `docs/code_graph.json`) to remove references to legacy `utils.retry_api`.
 
 <!-- markdownlint-enable MD029 -->
