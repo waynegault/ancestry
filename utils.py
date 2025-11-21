@@ -148,7 +148,7 @@ def _wait_until_not_present(waiter: "WebDriverWait[Any]", locator: Locator) -> b
     return bool(waiter.until_not(condition))
 
 
-def _get_requests_session(session_manager: SessionManager) -> RequestsSession:
+def _get_requests_session(session_manager: "SessionManager") -> RequestsSession:
     """Return the underlying requests session, with compatibility fallback."""
 
     req_session = getattr(session_manager, "requests_session", None)
@@ -673,7 +673,7 @@ def _get_cookie_file_path() -> Path:
     return Path("ancestry_cookies.json")
 
 
-def _save_login_cookies(session_manager: SessionManager) -> bool:
+def _save_login_cookies(session_manager: "SessionManager") -> bool:
     """Save login cookies to file for session persistence."""
     try:
         driver = session_manager.driver
@@ -702,7 +702,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:
+def _load_login_cookies(session_manager: "SessionManager") -> bool:
     """Load saved login cookies from file."""
     try:
         driver = session_manager.driver
@@ -753,7 +753,7 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def load_login_cookies(session_manager: SessionManager) -> bool:
+def load_login_cookies(session_manager: "SessionManager") -> bool:
     """Public alias so static analyzers see the loader being referenced."""
 
     return _load_login_cookies(session_manager)
@@ -1496,7 +1496,7 @@ def _parse_csrf_token(csrf_token: str, api_description: str) -> str:
     return str(raw_token_val)
 
 
-def _add_csrf_token_header(final_headers: dict[str, str], session_manager: SessionManager, api_description: str) -> None:
+def _add_csrf_token_header(final_headers: dict[str, str], session_manager: "SessionManager", api_description: str) -> None:
     """Add CSRF token header if available."""
     csrf_token = session_manager.csrf_token
     if csrf_token:
@@ -1507,7 +1507,7 @@ def _add_csrf_token_header(final_headers: dict[str, str], session_manager: Sessi
         logger.warning(f"[{api_description}] CSRF token requested but not found in SessionManager.")
 
 
-def _add_user_id_header(final_headers: dict[str, str], session_manager: SessionManager, api_description: str) -> None:
+def _add_user_id_header(final_headers: dict[str, str], session_manager: "SessionManager", api_description: str) -> None:
     """Add User ID header conditionally."""
     exclude_userid_for = {
         "Ancestry Facts JSON Endpoint",
@@ -1521,7 +1521,7 @@ def _add_user_id_header(final_headers: dict[str, str], session_manager: SessionM
 
 
 def _prepare_api_headers(
-    session_manager: SessionManager,  # Assume available
+    session_manager: "SessionManager",  # Assume available
     driver: DriverType,
     api_description: str,
     base_headers: dict[str, str],
@@ -1586,7 +1586,7 @@ def _should_skip_cookie_sync(force_sync: bool, time_since_last_sync: float) -> b
 
 def _validate_driver_for_sync(
     driver: DriverType,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     api_description: str,
     attempt: int
 ) -> bool:
@@ -1612,7 +1612,7 @@ def _validate_driver_for_sync(
 
 
 def _perform_cookie_sync(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     api_description: str,
     attempt: int,
     force_sync: bool,
@@ -1663,7 +1663,7 @@ def _perform_cookie_sync(
 
 
 def _sync_cookies_for_request(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     driver: DriverType,
     api_description: str,
     attempt: int = 1,
@@ -1716,7 +1716,7 @@ def _sync_cookies_for_request(
 
 
 def _get_rate_limiter_from_session(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
 ) -> Optional[RateLimiterProtocol]:
     """Return the adaptive rate limiter attached to the session, if any."""
 
@@ -1727,7 +1727,7 @@ def _get_rate_limiter_from_session(
 
 
 def _apply_rate_limiting(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     api_description: str,
     attempt: int = 1,
 ) -> float:
@@ -1855,7 +1855,7 @@ def _prepare_api_request(
 
 
 def _execute_api_request(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     api_description: str,
     request_params: dict[str, Any],
     attempt: int = 1,
@@ -1901,7 +1901,7 @@ def _execute_api_request(
 
 
 def _validate_api_req_prerequisites(
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     api_description: str,
 ) -> bool:
     """Validate prerequisites for API request."""
@@ -1987,7 +1987,7 @@ def _handle_retryable_status(
     reason: str,
     retry_ctx: RetryContext,
     api_description: str,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
 ) -> tuple[bool, Optional[RequestsResponseTypeOptional], int, float]:
     """
     Handle retryable status codes.
@@ -2065,7 +2065,7 @@ def _handle_error_status(
     status: int,
     reason: str,
     api_description: str,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
 ) -> RequestsResponseTypeOptional:
     """Handle non-retryable error status codes."""
     # For login verification API, use debug level for 401/403 errors
@@ -2215,7 +2215,7 @@ def _handle_response_status(
     response: Any,
     retry_ctx: RetryContext,
     api_description: str,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     force_text_response: bool,
     request_params: dict[str, Any],
     metrics_endpoint: str,
@@ -2459,7 +2459,7 @@ def _execute_request_with_retries(
 def _api_req(
     url: str,
     driver: DriverType,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     method: str = "GET",
     data: Optional[dict[str, Any]] = None,
     json_data: Optional[dict[str, Any]] = None,
@@ -2667,7 +2667,7 @@ def make_ube(driver: DriverType) -> Optional[str]:
 # Helper functions for handle_two_fa
 
 
-def _wait_for_2fa_header(element_wait: "WebDriverWait[Any]", session_manager: SessionManager) -> bool:
+def _wait_for_2fa_header(element_wait: "WebDriverWait[Any]", session_manager: "SessionManager") -> bool:
     """Wait for 2FA page header to appear."""
     try:
         logger.debug(f"Waiting for 2FA page header using selector: '{TWO_STEP_VERIFICATION_HEADER_SELECTOR}'")
@@ -2815,7 +2815,7 @@ def _wait_for_user_2fa_action(driver: WebDriver, code_entry_timeout: int) -> boo
     return False
 
 
-def _verify_2fa_completion(session_manager: SessionManager) -> bool:
+def _verify_2fa_completion(session_manager: "SessionManager") -> bool:
     """Verify that 2FA was completed successfully by checking login status."""
     logger.info("Re-checking login status after potential 2FA submission...")
     time.sleep(1)  # Allow page to settle
@@ -2830,7 +2830,7 @@ def _verify_2fa_completion(session_manager: SessionManager) -> bool:
 
 
 @time_wait("Handle 2FA Page")
-def handle_two_fa(session_manager: SessionManager) -> bool:
+def handle_two_fa(session_manager: "SessionManager") -> bool:
     if session_manager.driver is None:
         logger.error("handle_two_fa: SessionManager driver is None. Cannot proceed.")
         return False
@@ -3412,7 +3412,7 @@ def consent(driver: WebDriver) -> bool:
 # End of consent
 
 
-def _check_initial_login_status(session_manager: SessionManager) -> Optional[str]:
+def _check_initial_login_status(session_manager: "SessionManager") -> Optional[str]:
     """Check if already logged in before attempting login."""
     initial_status = login_status(session_manager, disable_ui_fallback=True)
     if initial_status is True:
@@ -3421,7 +3421,7 @@ def _check_initial_login_status(session_manager: SessionManager) -> Optional[str
     return None
 
 
-def _navigate_to_signin(driver: Any, session_manager: SessionManager, signin_url: str) -> Optional[str]:
+def _navigate_to_signin(driver: Any, session_manager: "SessionManager", signin_url: str) -> Optional[str]:
     """Navigate to sign-in page and verify."""
     if not nav_to_page(driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager):
         logger.debug("Navigation to sign-in page failed/redirected. Checking login status...")
@@ -3533,7 +3533,7 @@ def _detect_2fa_page(driver: Any) -> tuple[bool, Optional[str]]:
     return False, None
 
 
-def _handle_2fa_flow(session_manager: SessionManager) -> str:
+def _handle_2fa_flow(session_manager: "SessionManager") -> str:
     """Handle 2FA verification flow."""
     if handle_two_fa(session_manager):
         logger.info("Two-step verification handled successfully.")
@@ -3546,7 +3546,7 @@ def _handle_2fa_flow(session_manager: SessionManager) -> str:
     return "LOGIN_FAILED_2FA_HANDLING"
 
 
-def _verify_login_no_2fa(driver: Any, session_manager: SessionManager, signin_url: str) -> str:
+def _verify_login_no_2fa(driver: Any, session_manager: "SessionManager", signin_url: str) -> str:
     """Verify login when no 2FA is detected."""
     logger.debug("Checking login status directly (no 2FA detected)...")
     login_check_result = login_status(session_manager, disable_ui_fallback=False)
@@ -3621,7 +3621,7 @@ def _handle_credentials_entry(driver: Any) -> Optional[str]:
 
 def _execute_login_flow(
     driver: Any,
-    session_manager: SessionManager,
+    session_manager: "SessionManager",
     signin_url: str,
 ) -> str:
     """Execute the main login flow. Returns status string."""
@@ -3697,7 +3697,7 @@ def log_in(session_manager: "SessionManager") -> str:
 # End of log_in
 
 
-def _validate_login_status_inputs(session_manager: SessionManager) -> Optional[bool]:
+def _validate_login_status_inputs(session_manager: "SessionManager") -> Optional[bool]:
     """Validate session manager for login status check."""
     if not hasattr(session_manager, 'is_sess_valid') or not hasattr(session_manager, 'driver'):
         logger.error(f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}.")
@@ -3714,7 +3714,7 @@ def _validate_login_status_inputs(session_manager: SessionManager) -> Optional[b
     return True  # Valid
 
 
-def _perform_api_login_check(session_manager: SessionManager) -> Optional[bool]:
+def _perform_api_login_check(session_manager: "SessionManager") -> Optional[bool]:
     """Perform API-based login status check."""
     logger.debug("Performing primary API-based login status check...")
     try:
@@ -3865,7 +3865,7 @@ def _parse_and_normalize_url(url: str) -> Optional[str]:
 
 def _check_browser_session(
     driver: WebDriver,
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
     attempt: int,
 ) -> Optional[WebDriver]:
     """Check browser session and restart if needed. Returns driver or None if failed."""
@@ -3971,7 +3971,7 @@ def _check_for_login_page(driver: WebDriver, target_url_base: str, signin_page_u
         return False
 
 
-def _handle_login_redirect(session_manager: SessionManager) -> str:
+def _handle_login_redirect(session_manager: "SessionManager") -> str:
     """Handle unexpected login page redirect. Returns 'retry' or 'fail'."""
     logger.warning("Landed on Login page unexpectedly. Checking login status first...")
     login_stat = login_status(session_manager, disable_ui_fallback=True)
@@ -3993,7 +3993,7 @@ def _check_signin_redirect(
     target_url_base: str,
     landed_url_base: str,
     signin_page_url_base: str,
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
 ) -> bool:
     """Check if redirect from signin to base URL is valid. Returns True if valid redirect."""
     is_signin_to_base_redirect = (
@@ -4085,7 +4085,7 @@ def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:
 
 def _handle_webdriver_exception(
     driver: WebDriver,
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
 ) -> tuple[str, Optional[WebDriver]]:
     """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
     if session_manager and not is_browser_open(driver):
@@ -4109,7 +4109,7 @@ def _check_url_mismatch_and_handle(
     target_url_base: str,
     signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
 ) -> tuple[Optional[str], Optional[WebDriver]]:
     """
     Check for URL mismatch and handle appropriately.
@@ -4140,7 +4140,7 @@ def _validate_post_navigation(
     selector: str,
     element_timeout: int,
     unavailability_selectors: dict[str, tuple[str, int]],
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
 ) -> tuple[str, Optional[WebDriver]]:
     """
     Validate navigation after landing on page.
@@ -4189,7 +4189,7 @@ def _validate_post_navigation(
 def _perform_navigation_attempt(
     driver: WebDriver,
     nav_config: NavigationConfig,
-    session_manager: SessionManagerType,
+    session_manager: "SessionManager"Type,
     attempt: int,
 ) -> tuple[str, Optional[WebDriver]]:
     """
@@ -4244,7 +4244,7 @@ def nav_to_page(
     driver: WebDriver,
     url: str,
     selector: str = "body",  # CSS selector to wait for as indication of page load success
-    session_manager: SessionManagerType = None,  # Pass SessionManager for context/restart
+    session_manager: "SessionManager"Type = None,  # Pass SessionManager for context/restart
 ) -> bool:
     """
     Navigates the WebDriver to a given URL, waits for a specific element,

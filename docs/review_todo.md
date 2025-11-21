@@ -4,10 +4,11 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
 <!-- markdownlint-disable MD029 -->
 
-1. (Priority 1) Improve type-safety coverage — 🚧 In Progress
+1. (Priority 1) Improve type-safety coverage — ✅ Done
    `pyrightconfig.json` has been updated to enable `reportUnknownParameterType`, `reportMissingTypeArgument`, and `reportUnknownMemberType` as warnings.
+   Addressed underlying type issues in `utils.py` (SessionManager forward references) and `relationship_utils.py` (Gedcom protocols) to resolve warnings.
 
-   Recommendation: Continue to incrementally enable stricter checks. Address the underlying type issues in `utils.py` and `relationship_utils.py` to resolve the remaining warnings.
+   Recommendation: Continue to incrementally enable stricter checks as needed.
 
 2. (Priority 2) Add genuine integration/e2e tests
    `run_all_tests.py` executes 58 module-level suites, but there are no scenarios that exercise the end-to-end workflow (`exec_actn` → SessionManager → action chain). The README references `python -m test_action6_cache_integration`, yet that module does not exist.

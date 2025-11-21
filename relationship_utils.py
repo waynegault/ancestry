@@ -37,7 +37,7 @@ import html
 import re
 import time
 from collections import OrderedDict, deque
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Optional, Union, cast, Protocol
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup, Tag
@@ -58,6 +58,14 @@ from test_framework import (
     TestSuite,
     suppress_logging,
 )
+
+
+class GedcomTagProtocol(Protocol):
+    value: Any
+
+
+class GedcomIndividualProtocol(Protocol):
+    def sub_tag(self, tag: str) -> Optional[GedcomTagProtocol]: ...
 
 
 def _gedcom_helper_stub(*_args: Any, **_kwargs: Any) -> Any:
@@ -627,7 +635,7 @@ def explain_relationship_path(
     reader: Any,
     id_to_parents: dict[str, set[str]],
     id_to_children: dict[str, set[str]],
-    indi_index: dict[str, Any],
+    indi_index: dict[str, Union[GedcomIndividualProtocol, Any]],
     owner_name: str = "Reference Person",
     relationship_type: str = "relative",
 ) -> str:
@@ -939,7 +947,7 @@ def format_api_relationship_path(
     return _try_html_formats(html_content_raw, target_name, owner_name, relationship_type)
 
 
-def _extract_person_basic_info(indi: Any) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
+def _extract_person_basic_info(indi: Union[GedcomIndividualProtocol, Any]) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
     """Extract basic information from a GEDCOM individual."""
     name = _get_full_name(indi)
 
@@ -1017,7 +1025,7 @@ def convert_gedcom_path_to_unified_format(
     reader: Any,
     id_to_parents: dict[str, set[str]],
     id_to_children: dict[str, set[str]],
-    indi_index: dict[str, Any],
+    indi_index: dict[str, Union[GedcomIndividualProtocol, Any]],
 ) -> list[dict[str, Optional[str]]]:  # Value type changed to Optional[str]
     """
     Convert a GEDCOM relationship path to the unified format for relationship_path_unified.
