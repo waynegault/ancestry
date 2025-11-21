@@ -48,45 +48,55 @@ IMPORTANT: Always run tests in venv (virtual environment)
     Windows: .venv\\Scripts\activate
     Linux/Mac: source .venv/bin/activate
 """
+
 from __future__ import annotations
 
 import concurrent.futures
 import json
 import os
+import subprocess
 import sys
+from pathlib import Path
 from types import ModuleType
 
 
-# Check if running in venv and warn if not
-def _check_venv() -> None:
-    """Check if running in a virtual environment and warn if not."""
-    in_venv = (
-        hasattr(sys, 'real_prefix') or
-        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-    )
-    if not in_venv:
-        print("⚠️  WARNING: Not running in virtual environment!")
-        print("   Activate venv first:")
-        print(r"   Windows: .venv\Scripts\activate")
-        print("   Linux/Mac: source .venv/bin/activate")
-        print()
-        response: str = input("Continue anyway? (y/N): ").strip().lower()
-        if response != 'y':
-            print("Exiting. Please activate venv and try again.")
-            sys.exit(1)
-        print()
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    # Check if we're in a virtual environment
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+
+    if in_venv:
+        return
+
+    # Check if .venv exists
+    venv_python = Path('.venv') / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        # Try Unix-style path
+        venv_python = Path('.venv') / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
+            print("   Some tests may fail due to missing dependencies")
+            return
+
+    # Re-run with venv Python
+    print(f"🔄 Re-running tests with venv Python: {venv_python}")
+    print()
+    try:
+        result = subprocess.run([str(venv_python), __file__, *sys.argv[1:]], cwd=Path.cwd(), check=False)
+        sys.exit(result.returncode)
+    except Exception as e:
+        print(f"❌ Failed to restart in venv: {e}")
+        sys.exit(1)
 
 
-_check_venv()
+_ensure_venv()
 import re
-import subprocess
 
 # sys already imported above for venv check
 import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Callable, Final, Optional, TypedDict
 
 try:
@@ -136,40 +146,6 @@ def _fix_trailing_whitespace() -> None:
             pass
 
 
-def _check_and_use_venv() -> bool:
-    """Check if running in venv, and if not, try to re-run with venv Python."""
-    # Check if we're in a virtual environment
-    in_venv = hasattr(sys, 'real_prefix') or (
-        hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
-    )
-
-    if in_venv:
-        return True
-
-    # Check if .venv exists
-    venv_python = Path('.venv') / 'Scripts' / 'python.exe'
-    if not venv_python.exists():
-        # Try Unix-style path
-        venv_python = Path('.venv') / 'bin' / 'python'
-        if not venv_python.exists():
-            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
-            print("   Some tests may fail due to missing dependencies")
-            return False
-
-    # Re-run with venv Python
-    print(f"🔄 Re-running tests with venv Python: {venv_python}")
-    print()
-    result = subprocess.run(
-        [str(venv_python), __file__, *sys.argv[1:]],
-        cwd=Path.cwd(), check=False
-    )
-    sys.exit(result.returncode)
-
-
-# Check and use venv at module load time (before imports that need dependencies)
-_check_and_use_venv()
-
-
 def _invoke_ruff(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess[str]:
     """Run Ruff with the provided arguments and return the completed process."""
     command = [sys.executable, "-m", "ruff", *args]
@@ -207,6 +183,7 @@ def _print_nonempty_lines(output: str, *, limit: int = 25) -> None:
 @dataclass
 class TestExecutionMetrics:
     """Performance metrics for test execution."""
+
     module_name: str
     duration: float
     success: bool
@@ -222,6 +199,7 @@ class TestExecutionMetrics:
 @dataclass
 class TestSuitePerformance:
     """Overall test suite performance metrics."""
+
     total_duration: float
     total_tests: int
     passed_modules: int
@@ -237,6 +215,7 @@ class TestSuitePerformance:
 @dataclass
 class TestExecutionConfig:
     """Configuration for test execution."""
+
     modules_with_descriptions: list[tuple[str, str]]
     discovered_modules: list[str]
     module_descriptions: dict[str, str]
@@ -248,6 +227,7 @@ class TestExecutionConfig:
 @dataclass
 class PerformanceMetricsConfig:
     """Configuration for performance metrics printing."""
+
     all_metrics: list[TestExecutionMetrics]
     total_duration: float
     total_tests_run: int
@@ -259,6 +239,7 @@ class PerformanceMetricsConfig:
 
 class LogTimingEntry(TypedDict):
     """Structured representation for timing entries in log analysis."""
+
     matches: int
     total_seconds: float
     avg_per_match: float
@@ -266,6 +247,7 @@ class LogTimingEntry(TypedDict):
 
 class LogAnalysisData(TypedDict):
     """Structured log analysis results."""
+
     timing: list[LogTimingEntry]
     errors: dict[str, int]
     warnings: int
@@ -277,6 +259,7 @@ class LogAnalysisData(TypedDict):
 
 class LogAnalysisError(TypedDict):
     """Log analysis error payload."""
+
     error: str
 
 
@@ -316,6 +299,7 @@ class TestResultCache:
         """Get hash of module file contents."""
         try:
             import hashlib
+
             module_path = Path(f"{module_name}.py")
             if not module_path.exists():
                 return None
@@ -395,18 +379,11 @@ def optimize_test_order(modules: list[str]) -> list[str]:
 
     # Build optimized order: fast → failed → slow → unknown
     return (
-        [m for m, _ in fast_modules]
-        + [m for m, _ in recently_failed]
-        + [m for m, _ in slow_modules]
-        + unknown_modules
+        [m for m, _ in fast_modules] + [m for m, _ in recently_failed] + [m for m, _ in slow_modules] + unknown_modules
     )
 
 
-def update_test_history(
-    module_name: str,
-    duration: float,
-    success: bool
-) -> None:
+def update_test_history(module_name: str, duration: float, success: bool) -> None:
     """
     Update test execution history for smart ordering.
 
@@ -497,7 +474,7 @@ class PerformanceMonitor:
             "memory_mb": sum(memory_values) / len(memory_values),
             "peak_memory_mb": max(memory_values),
             "cpu_percent": sum(cpu_values) / len(cpu_values),
-            "peak_cpu_percent": max(cpu_values)
+            "peak_cpu_percent": max(cpu_values),
         }
 
     def _monitor_loop(self) -> None:
@@ -509,11 +486,9 @@ class PerformanceMonitor:
                 memory_info = self.process.memory_info()
                 cpu_percent = self.process.cpu_percent()
 
-                self.metrics.append({
-                    "memory_mb": memory_info.rss / (1024 * 1024),
-                    "cpu_percent": cpu_percent,
-                    "timestamp": time.time()
-                })
+                self.metrics.append(
+                    {"memory_mb": memory_info.rss / (1024 * 1024), "cpu_percent": cpu_percent, "timestamp": time.time()}
+                )
 
                 time.sleep(0.1)  # Sample every 100ms
             except Exception:
@@ -544,12 +519,15 @@ def run_linter() -> bool:
 
         # Step 2: blocking rule set (only critical errors, with 30s timeout)
         print("🧹 LINTER: Enforcing critical blocking rules (E722,F821,F811,F823)...")
-        block_res = _invoke_ruff([
-            "check",
-            "--select",
-            "E722,F821,F811,F823",
-            ".",
-        ], timeout=30)
+        block_res = _invoke_ruff(
+            [
+                "check",
+                "--select",
+                "E722,F821,F811,F823",
+                ".",
+            ],
+            timeout=30,
+        )
         if block_res.returncode != 0:
             print("❌ LINTER FAILED (blocking): critical violations found")
             _print_tail(block_res.stdout or block_res.stderr or "")
@@ -557,13 +535,16 @@ def run_linter() -> bool:
 
         # Step 3: non-blocking diagnostics (excluding PLR2004 and PLC0415, with 30s timeout)
         print("🧹 LINTER: Repository diagnostics (non-blocking summary)...")
-        diag_res = _invoke_ruff([
-            "check",
-            "--statistics",
-            "--exit-zero",
-            "--ignore=PLR2004,PLC0415",
-            ".",
-        ], timeout=30)
+        diag_res = _invoke_ruff(
+            [
+                "check",
+                "--statistics",
+                "--exit-zero",
+                "--ignore=PLR2004,PLC0415",
+                ".",
+            ],
+            timeout=30,
+        )
         _print_nonempty_lines(diag_res.stdout)
         return True
     except Exception as e:
@@ -586,10 +567,7 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
         current_dir = Path()
 
         # Check key files for quality
-        key_files = [
-            "action10.py", "utils.py", "main.py",
-            "python_best_practices.py", "code_quality_checker.py"
-        ]
+        key_files = ["action10.py", "utils.py", "main.py", "python_best_practices.py", "code_quality_checker.py"]
 
         quality_scores: list[tuple[str, float]] = []
         total_score = 0
@@ -666,8 +644,7 @@ def _should_skip_interactive_file(python_file: Path) -> bool:
 def _has_test_function(content: str) -> bool:
     """Check if file content has the standardized test function."""
     return (
-        "def run_comprehensive_tests" in content or
-        "run_comprehensive_tests = create_standard_test_runner" in content
+        "def run_comprehensive_tests" in content or "run_comprehensive_tests = create_standard_test_runner" in content
     )
 
 
@@ -784,7 +761,7 @@ def _clean_description_text(description: str, module_base: str) -> str:
     words_to_remove = [module_base.lower(), 'module', 'py']
     for word in words_to_remove:
         if description.lower().startswith(word):
-            description = description[len(word):].strip()
+            description = description[len(word) :].strip()
             if description.startswith('-'):
                 description = description[1:].strip()
 
@@ -812,6 +789,7 @@ def extract_module_description(module_path: str) -> str | None:
     try:
         # Read the file and look for the module docstring
         from pathlib import Path
+
         with Path(module_path).open(encoding='utf-8') as f:
             content = f.read()
 
@@ -838,20 +816,10 @@ def _generate_module_description(module_name: str, description: str | None = Non
     result = None
 
     if "core/" in module_name:
-        component = (
-            module_name.replace("core/", "")
-            .replace(".py", "")
-            .replace("_", " ")
-            .title()
-        )
+        component = module_name.replace("core/", "").replace(".py", "").replace("_", " ").title()
         result = f"Core {component} functionality"
     elif "config/" in module_name:
-        component = (
-            module_name.replace("config/", "")
-            .replace(".py", "")
-            .replace("_", " ")
-            .title()
-        )
+        component = module_name.replace("config/", "").replace(".py", "").replace("_", " ").title()
         result = f"Configuration {component} management"
     elif "action" in module_name:
         action_name = module_name.replace(".py", "").replace("_", " ").title()
@@ -860,9 +828,7 @@ def _generate_module_description(module_name: str, description: str | None = Non
         util_type = module_name.replace("_utils.py", "").replace("_", " ").title()
         result = f"{util_type} utility functions"
     elif module_name.endswith("_manager.py"):
-        manager_type = (
-            module_name.replace("_manager.py", "").replace("_", " ").title()
-        )
+        manager_type = module_name.replace("_manager.py", "").replace("_", " ").title()
         result = f"{manager_type} management system"
     elif module_name.endswith("_cache.py"):
         cache_type = module_name.replace("_cache.py", "").replace("_", " ").title()
@@ -929,6 +895,7 @@ def _try_pattern_tests_passed(stdout_lines: list[str]) -> str:
 def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
     """Pattern 3: Look for Passed/Failed format with ANSI cleanup."""
     import re
+
     passed_count = None
     failed_count = None
     for line in stdout_lines:
@@ -956,6 +923,7 @@ def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
 def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
     """Pattern 4: Look for Python unittest format 'Ran X tests in Y.Zs'."""
     import re
+
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         if "Ran" in clean_line and "tests in" in clean_line:
@@ -974,6 +942,7 @@ def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
 def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
     """Pattern 5: Look for numbered test patterns like 'Test 1:', 'Test 2:', etc."""
     import re
+
     test_numbers: set[int] = set()
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
@@ -994,6 +963,7 @@ def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
 def _try_pattern_number_followed_by_test(stdout_lines: list[str]) -> str:
     """Pattern 6: Look for any number followed by 'test' or 'tests'."""
     import re
+
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         # Look for patterns like "5 tests", "10 test cases", "3 test functions"
@@ -1011,6 +981,7 @@ def _try_pattern_number_followed_by_test(stdout_lines: list[str]) -> str:
 def _try_pattern_all_tests_completed(stdout_lines: list[str]) -> str:
     """Pattern 7: Look for test completion messages with counts."""
     import re
+
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         # Look for patterns like "All X tests passed", "X operations completed"
@@ -1052,6 +1023,7 @@ def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
         Extracted count or None if not found
     """
     import re
+
     clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
     if keyword not in clean_line:
         return None
@@ -1207,6 +1179,7 @@ def _extract_numeric_test_count(test_count: str) -> int:
 
     try:
         import re
+
         match = re.search(r"(\d+)", test_count)
         if match:
             return int(match.group(1))
@@ -1224,11 +1197,7 @@ def _print_failure_details(result: subprocess.CompletedProcess[str], failure_ind
             print(f"      {line}")
     if result.stdout and any(indicator in result.stdout for indicator in failure_indicators):
         stdout_lines = result.stdout.strip().split("\n")
-        failure_lines = [
-            line
-            for line in stdout_lines
-            if any(indicator in line for indicator in failure_indicators)
-        ]
+        failure_lines = [line for line in stdout_lines if any(indicator in line for indicator in failure_indicators)]
         for line in failure_lines[-2:]:  # Show last 2 failure lines
             print(f"      {line}")
 
@@ -1267,9 +1236,7 @@ def _run_quality_analysis(module_name: str):
 
 
 def _create_test_metrics(
-    module_name: str,
-    test_result: dict[str, Any],
-    quality_metrics: Optional[QualityMetrics] = None
+    module_name: str, test_result: dict[str, Any], quality_metrics: Optional[QualityMetrics] = None
 ) -> TestExecutionMetrics:
     """
     Create TestExecutionMetrics object from test result data.
@@ -1289,8 +1256,10 @@ def _create_test_metrics(
         cpu_usage_percent=test_result["perf_metrics"].get("cpu_percent", 0.0),
         start_time=test_result["start_time"],
         end_time=test_result["end_time"],
-        error_message=test_result["result"].stderr if not test_result["success"] and test_result["result"].stderr else None,
-        quality_metrics=quality_metrics
+        error_message=test_result["result"].stderr
+        if not test_result["success"] and test_result["result"].stderr
+        else None,
+        quality_metrics=quality_metrics,
     )
 
 
@@ -1305,7 +1274,7 @@ def _create_error_metrics(module_name: str, error_message: str) -> TestExecution
         cpu_usage_percent=0.0,
         start_time=datetime.now().isoformat(),
         end_time=datetime.now().isoformat(),
-        error_message=error_message
+        error_message=error_message,
     )
 
 
@@ -1332,7 +1301,7 @@ def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.C
             args=cmd,
             returncode=124,  # Standard timeout exit code
             stdout="",
-            stderr=f"Test subprocess timed out after {timeout_seconds}s"
+            stderr=f"Test subprocess timed out after {timeout_seconds}s",
         )
 
     duration = time.time() - start_time
@@ -1362,7 +1331,7 @@ def _print_test_result(
     duration: float,
     test_count: str,
     quality_metrics: Optional[QualityMetrics],
-    result: subprocess.CompletedProcess[str]
+    result: subprocess.CompletedProcess[str],
 ) -> None:
     """Print test result summary with quality info and failure details."""
     status = "✅ PASSED" if success else "❌ FAILED"
@@ -1373,8 +1342,14 @@ def _print_test_result(
 
     if not success:
         failure_indicators = [
-            "❌ FAILED", "Status: FAILED", "AssertionError:", "Exception occurred:",
-            "Test failed:", "❌ Failed: ", "CRITICAL ERROR", "FATAL ERROR",
+            "❌ FAILED",
+            "Status: FAILED",
+            "AssertionError:",
+            "Exception occurred:",
+            "Test failed:",
+            "❌ Failed: ",
+            "CRITICAL ERROR",
+            "FATAL ERROR",
         ]
         _print_failure_details(result, failure_indicators)
 
@@ -1416,7 +1391,7 @@ def run_module_tests(
             "perf_metrics": perf_metrics,
             "result": result,
             "start_time": start_datetime,
-            "end_time": end_datetime
+            "end_time": end_datetime,
         }
         metrics = _create_test_metrics(module_name, test_result, quality_metrics)
 
@@ -1428,7 +1403,9 @@ def run_module_tests(
         return False, 0, error_metrics
 
 
-def run_tests_parallel(modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False) -> tuple[list[TestExecutionMetrics], int, int]:
+def run_tests_parallel(
+    modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False
+) -> tuple[list[TestExecutionMetrics], int, int]:
     """Run tests in parallel for improved performance."""
     all_metrics: list[TestExecutionMetrics] = []
     passed_count = 0
@@ -1480,7 +1457,7 @@ def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performa
         new_entry: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "suite_performance": asdict(suite_performance),
-            "module_metrics": [asdict(m) for m in metrics]
+            "module_metrics": [asdict(m) for m in metrics],
         }
         existing_data.append(new_entry)
 
@@ -1627,9 +1604,7 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
             module_descriptions[module_name] = description
             enhanced_count += 1
 
-    print(
-        f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)"
-    )
+    print(f"📊 Found {len(discovered_modules)} test modules ({enhanced_count} with enhanced descriptions)")
 
     print(f"\n{'=' * 60}")
     print("🧪 RUNNING TESTS")
@@ -1637,14 +1612,15 @@ def _discover_and_prepare_modules() -> tuple[list[str], dict[str, str], list[tup
 
     # Prepare modules with descriptions
     modules_with_descriptions: list[tuple[str, str]] = [
-        (module, module_descriptions.get(module, ""))
-        for module in discovered_modules
+        (module, module_descriptions.get(module, "")) for module in discovered_modules
     ]
 
     return discovered_modules, module_descriptions, modules_with_descriptions
 
 
-def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int]:
+def _execute_tests(
+    config: TestExecutionConfig,
+) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int]:
     """
     Execute tests in parallel or sequential mode.
 
@@ -1659,10 +1635,7 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
         all_metrics, passed_count, total_tests_run = run_tests_parallel(
             config.modules_with_descriptions, config.enable_monitoring
         )
-        results = [
-            (m.module_name, config.module_descriptions.get(m.module_name, ""), m.success)
-            for m in all_metrics
-        ]
+        results = [(m.module_name, config.module_descriptions.get(m.module_name, ""), m.success) for m in all_metrics]
     else:
         print("🔄 Running tests sequentially...")
         sys.stdout.flush()
@@ -1697,7 +1670,9 @@ def _execute_tests(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bo
     return results, all_metrics, total_tests_run, passed_count
 
 
-def _execute_tests_with_timing(config: TestExecutionConfig) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int, float]:
+def _execute_tests_with_timing(
+    config: TestExecutionConfig,
+) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int, float]:
     """Execute tests and measure runtime."""
     start_time = time.time()
     results, all_metrics, total_tests_run, passed_count = _execute_tests(config)
@@ -1709,7 +1684,7 @@ def _print_basic_summary(
     total_tests_run: int,
     passed_count: int,
     failed_count: int,
-    results: list[tuple[str, str, bool]]
+    results: list[tuple[str, str, bool]],
 ) -> None:
     """Print basic test summary statistics."""
     success_rate = (passed_count / len(results)) * 100 if results else 0
@@ -1770,7 +1745,7 @@ def _print_performance_metrics(config: PerformanceMetricsConfig) -> None:
         avg_cpu_usage=avg_cpu,
         peak_cpu_usage=peak_cpu,
         parallel_efficiency=parallel_efficiency,
-        optimization_suggestions=analyze_performance_trends(config.all_metrics)
+        optimization_suggestions=analyze_performance_trends(config.all_metrics),
     )
 
     # Show optimization suggestions
@@ -1793,15 +1768,13 @@ def _print_failed_modules(results: list[tuple[str, str, bool]]) -> None:
                 print(f"   • {module_name}")
 
 
-def _count_enhanced_results(results: list[tuple[str, str, bool]], module_descriptions: dict[str, str]) -> tuple[int, int]:
+def _count_enhanced_results(
+    results: list[tuple[str, str, bool]], module_descriptions: dict[str, str]
+) -> tuple[int, int]:
     """Count enhanced modules that passed and failed."""
-    enhanced_passed = sum(
-        1 for module_name, _, success in results
-        if success and module_name in module_descriptions
-    )
+    enhanced_passed = sum(1 for module_name, _, success in results if success and module_name in module_descriptions)
     enhanced_failed = sum(
-        1 for module_name, _, success in results
-        if not success and module_name in module_descriptions
+        1 for module_name, _, success in results if not success and module_name in module_descriptions
     )
     return enhanced_passed, enhanced_failed
 
@@ -1811,7 +1784,7 @@ def _print_final_results(
     module_descriptions: dict[str, str],
     discovered_modules: list[str],
     passed_count: int,
-    failed_count: int
+    failed_count: int,
 ) -> None:
     """Print final results summary by category."""
     # Show failed modules first if any
@@ -1847,6 +1820,7 @@ def analyze_application_logs(log_path: str | None = None) -> LogAnalysisData | L
         dict: Analysis results including timing stats, error counts, and warnings
     """
     from os import getenv
+
     log_path = log_path or getenv("LOG_FILE", "Logs/app.log")
     log_file = Path(log_path)
 
@@ -2014,7 +1988,9 @@ def _print_final_quality_summary(all_metrics: list[TestExecutionMetrics]) -> Non
     if not all_metrics:
         return
 
-    quality_scores = [m.quality_metrics.quality_score for m in all_metrics if hasattr(m, 'quality_metrics') and m.quality_metrics]
+    quality_scores = [
+        m.quality_metrics.quality_score for m in all_metrics if hasattr(m, 'quality_metrics') and m.quality_metrics
+    ]
     if not quality_scores:
         return
 
@@ -2075,7 +2051,7 @@ def main() -> bool:
             module_descriptions=module_descriptions,
             enable_fast_mode=enable_fast_mode,
             enable_monitoring=enable_monitoring,
-            enable_benchmark=enable_benchmark
+            enable_benchmark=enable_benchmark,
         )
     )
     if not enable_fast_mode:  # Recalculate for sequential mode
@@ -2094,7 +2070,7 @@ def main() -> bool:
                 passed_count=passed_count,
                 failed_count=failed_count,
                 enable_fast_mode=enable_fast_mode,
-                enable_benchmark=enable_benchmark
+                enable_benchmark=enable_benchmark,
             )
         )
 
