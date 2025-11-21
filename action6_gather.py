@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
+from cache import cache as disk_cache
 from core.error_handling import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
 from relationship_utils import (
@@ -7215,6 +7216,18 @@ def _fetch_match_details_api(
 def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Optional[dict[str, Any]]:
     """Check cache for combined details."""
     cache_key = f"combined_details_{match_uuid}"
+
+    # Try disk cache first
+    try:
+        if disk_cache:
+            cached_data = disk_cache.get(cache_key)
+            if cached_data and isinstance(cached_data, dict):
+                _log_api_performance("combined_details_cached", api_start_time, "disk_cache_hit")
+                return cast(dict[str, Any], cached_data)
+    except Exception as disk_exc:
+        logger.debug(f"Disk cache check failed for {match_uuid}: {disk_exc}")
+
+    # Fallback to unified cache
     try:
         cache = get_unified_cache()
         cached_data = cache.get("ancestry", "combined_details", cache_key)
@@ -7222,7 +7235,8 @@ def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Opt
             _log_api_performance("combined_details_cached", api_start_time, "cache_hit")
             return cached_data
     except Exception as cache_exc:
-        logger.debug(f"Cache check failed for {match_uuid}: {cache_exc}")
+        logger.debug(f"Memory cache check failed for {match_uuid}: {cache_exc}")
+
     return None
 
 
@@ -7342,12 +7356,22 @@ def _cache_combined_details(combined_data: dict[str, Any], match_uuid: str) -> N
     """Cache combined details."""
     if combined_data:
         cache_key = f"combined_details_{match_uuid}"
+
+        # Cache to disk (persistent) - Best effort
+        try:
+            if disk_cache:
+                disk_cache.set(cache_key, combined_data, expire=3600 * 24)  # 24 hours persistence
+                logger.debug(f"Cached combined details to disk for {match_uuid}")
+        except Exception as disk_exc:
+            logger.debug(f"Failed to cache combined details to disk for {match_uuid}: {disk_exc}")
+
+        # Cache to memory (fast access) - Critical for session performance
         try:
             cache = get_unified_cache()
             cache.set("ancestry", "combined_details", cache_key, combined_data, ttl=3600)
             logger.debug(f"Cached combined details for {match_uuid}")
         except Exception as cache_exc:
-            logger.debug(f"Failed to cache combined details for {match_uuid}: {cache_exc}")
+            logger.debug(f"Failed to cache combined details to memory for {match_uuid}: {cache_exc}")
 
 
 def _validate_session_for_combined_details(session_manager: SessionManager, match_uuid: str) -> None:

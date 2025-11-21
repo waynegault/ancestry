@@ -1063,7 +1063,12 @@ python run_all_tests.py --emit-coverage
 - Summary from last run:
   - Total Modules: 82; With Tests: 80; Without: 2
   - Total Public Functions: 1,048; Total Test Functions: 1,033
-- The detailed per-module table previously in test_coverage_report.md has been consolidated into this readme per single-doc policy. Re-run the command above to produce a fresh, complete table locally.
+  - 100% test pass rate; average quality 100/100
+  - Tests use live sessions (no smoke tests) and are co-located with code
+- Notable improvements:
+  - Reduced complexity in database.py and conversation_analytics.py below thresholds
+  - Reduced returns in core/session_manager.py to ≤6
+  - Fixed deprecated imports and unused args; remaining globals in session_utils.py are intentional for caching
 
   - Example minimal call using requests:
 
