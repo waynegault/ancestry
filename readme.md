@@ -49,6 +49,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Type Safety Hardening (Nov 25)** - Enabled `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings in `pyrightconfig.json`, catching implicit `Any` types in function signatures and generic type arguments.
 - ✅ **Type Safety Hardening Phase 2 (Nov 21)** - Addressed underlying type issues in `utils.py` and `relationship_utils.py` by introducing `GedcomIndividualProtocol` and improving `SessionManager` forward references.
 - ✅ **Integration Test Suite (Nov 25)** - Added `test_integration_workflow.py` and `run_all_tests.py --integration` to validate end-to-end workflows (Actions 6, 7, 9) with mocked session/database components, ensuring critical paths work together before deployment.
+- ✅ **Code Graph Maintenance Script (Nov 25)** - Added `scripts/maintain_code_graph.py` to programmatically remove stale nodes and edges from `docs/code_graph.json`, ensuring the knowledge graph remains accurate as code evolves.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

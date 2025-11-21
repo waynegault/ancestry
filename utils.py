@@ -3852,7 +3852,7 @@ def _parse_and_normalize_url(url: str) -> Optional[str]:
 
 def _check_browser_session(
     driver: WebDriver,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
     attempt: int,
 ) -> Optional[WebDriver]:
     """Check browser session and restart if needed. Returns driver or None if failed."""
@@ -3978,7 +3978,7 @@ def _check_signin_redirect(
     target_url_base: str,
     landed_url_base: str,
     signin_page_url_base: str,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> bool:
     """Check if redirect from signin to base URL is valid. Returns True if valid redirect."""
     is_signin_to_base_redirect = target_url_base == signin_page_url_base and landed_url_base == urlparse(
@@ -4073,7 +4073,7 @@ def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:
 
 def _handle_webdriver_exception(
     driver: WebDriver,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> tuple[str, Optional[WebDriver]]:
     """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
     if session_manager and not is_browser_open(driver):
@@ -4097,7 +4097,7 @@ def _check_url_mismatch_and_handle(
     target_url_base: str,
     signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> tuple[Optional[str], Optional[WebDriver]]:
     """
     Check for URL mismatch and handle appropriately.
@@ -4128,7 +4128,7 @@ def _validate_post_navigation(
     selector: str,
     element_timeout: int,
     unavailability_selectors: dict[str, tuple[str, int]],
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> tuple[str, Optional[WebDriver]]:
     """
     Validate navigation after landing on page.
@@ -4176,7 +4176,7 @@ def _validate_post_navigation(
 def _perform_navigation_attempt(
     driver: WebDriver,
     nav_config: NavigationConfig,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
     attempt: int,
 ) -> tuple[str, Optional[WebDriver]]:
     """
@@ -4237,7 +4237,7 @@ def nav_to_page(
     driver: WebDriver,
     url: str,
     selector: str = "body",  # CSS selector to wait for as indication of page load success
-    session_manager: "SessionManager" = None,  # Pass SessionManager for context/restart
+    session_manager: Optional["SessionManager"] = None,  # Pass SessionManager for context/restart
 ) -> bool:
     """
     Navigates the WebDriver to a given URL, waits for a specific element,
