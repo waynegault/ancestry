@@ -376,9 +376,9 @@ def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
     """Get scoring weights and date flexibility configuration."""
     # Get scoring weights
     if config_schema:
-        scoring_weights = dict(config_schema.common_scoring_weights)
+        scoring_weights = cast(dict[str, Any], dict(config_schema.common_scoring_weights))
     else:
-        scoring_weights = DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"]
+        scoring_weights = cast(dict[str, Any], DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"])
 
     # Get date flexibility
     if config_schema:
@@ -388,7 +388,7 @@ def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
 
     # Convert to dict format expected by calculate_match_score
     if isinstance(date_flex_value, dict):
-        date_flex = date_flex_value
+        date_flex = cast(dict[str, Any], date_flex_value)
     else:
         date_flex = {"year_match_range": int(date_flex_value) if isinstance(date_flex_value, (int, float)) else 10}
 
@@ -561,10 +561,12 @@ def search_gedcom_for_criteria(
     scoring_weights, date_flex, year_range = _get_scoring_configuration()
 
     # Filter and score individuals
-    scored_matches = []
-    score_cache = {}
+    scored_matches: list[dict[str, Any]] = []
+    score_cache: dict[tuple[int, int], tuple[float, dict[str, Any], list[str]]] = {}
 
-    for indi_id, indi_data in gedcom_data.processed_data_cache.items():
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+
+    for indi_id, indi_data in processed_cache.items():
         try:
             # Extract filter values
             filter_values = _extract_individual_filter_values(indi_data)
@@ -635,7 +637,8 @@ def _get_individual_data(gedcom_data: GedcomData, individual_id: str) -> tuple[s
         raise MissingConfigError(f"Invalid individual ID: {individual_id}")
 
     # Get individual data from cache
-    individual_data = gedcom_data.processed_data_cache.get(individual_id_norm, {})
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    individual_data = processed_cache.get(individual_id_norm, {})
     if not individual_data:
         raise MissingConfigError(f"Individual {individual_id_norm} not found in GEDCOM data")
 
@@ -665,17 +668,20 @@ def _extract_basic_info(individual_id_norm: str, individual_data: dict[str, Any]
 
 def _get_parents(gedcom_data: GedcomData, individual_id_norm: str) -> list[dict[str, Any]]:
     """Get parent information."""
-    parents = []
+    parents: list[dict[str, Any]] = []
+    id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
     parent_ids = (
-        gedcom_data.id_to_parents.get(individual_id_norm, [])
+        id_to_parents.get(individual_id_norm, [])
         if hasattr(gedcom_data, "id_to_parents")
         else []
     )
 
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+
     for parent_id in parent_ids:
         if parent_id is None:
             continue
-        parent_data = gedcom_data.processed_data_cache.get(parent_id, {})
+        parent_data = processed_cache.get(parent_id, {})
         if parent_data:
             gender = parent_data.get("gender", "")
             relationship = "father" if gender == "M" else "mother" if gender == "F" else "parent"
@@ -696,17 +702,20 @@ def _get_parents(gedcom_data: GedcomData, individual_id_norm: str) -> list[dict[
 
 def _get_siblings(gedcom_data: GedcomData, individual_id_norm: str, parent_ids: list[str]) -> list[dict[str, Any]]:
     """Get sibling information."""
-    siblings = []
-    siblings_set = set()
+    siblings: list[dict[str, Any]] = []
+    siblings_set: set[str] = set()
+
+    id_to_children = cast(dict[str, list[str]], getattr(gedcom_data, "id_to_children", {}))
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
 
     for parent_id in parent_ids:
-        parent_children = gedcom_data.id_to_children.get(parent_id, [])
+        parent_children = id_to_children.get(parent_id, [])
         for child_id in parent_children:
             if child_id != individual_id_norm:
                 siblings_set.add(child_id)
 
     for sibling_id in siblings_set:
-        sibling_data = gedcom_data.processed_data_cache.get(sibling_id)
+        sibling_data = processed_cache.get(sibling_id)
         if sibling_data:
             sibling_info = {
                 "id": sibling_id,
@@ -723,7 +732,8 @@ def _get_siblings(gedcom_data: GedcomData, individual_id_norm: str, parent_ids: 
 
 def _get_spouse_info(gedcom_data: GedcomData, spouse_id: str, fam_record: Any) -> dict[str, Any]:
     """Get spouse information including marriage details."""
-    spouse_data = gedcom_data.processed_data_cache.get(spouse_id)
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    spouse_data = processed_cache.get(spouse_id)
     if not spouse_data:
         return {}
 
@@ -754,7 +764,8 @@ def _get_spouse_info(gedcom_data: GedcomData, spouse_id: str, fam_record: Any) -
 
 def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str, Any]]:
     """Get child information."""
-    child_data = gedcom_data.processed_data_cache.get(child_id, {})
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    child_data = processed_cache.get(child_id, {})
     if not child_data:
         return None
 
@@ -783,7 +794,7 @@ def _get_family_record(gedcom_data: GedcomData, fam_id: str) -> Any:
 
     try:
         if hasattr(gedcom_data.reader, "fam_dict"):
-            fam_dict = getattr(gedcom_data.reader, "fam_dict", None)
+            fam_dict = cast(dict[str, Any], getattr(gedcom_data.reader, "fam_dict", {}))
             if fam_dict:
                 fam_record = fam_dict.get(fam_id)
 
@@ -812,7 +823,7 @@ def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Opt
 
 def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> list[dict[str, Any]]:
     """Extract children information from family record."""
-    children = []
+    children: list[dict[str, Any]] = []
 
     for chil_tag in fam_record.sub_tags("CHIL"):
         child_id = normalize_gedcom_id(chil_tag.value)
@@ -843,15 +854,16 @@ def _process_family_record(gedcom_data: GedcomData, fam_record: Any, individual_
 
 def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Get spouses and children information."""
-    spouses = []
-    children = []
+    spouses: list[dict[str, Any]] = []
+    children: list[dict[str, Any]] = []
 
     # Validate gedcom_data has required attributes
     if not _validate_gedcom_data_for_family(gedcom_data):
         return spouses, children
 
     # Get the individual record
-    indi_record = gedcom_data.indi_index.get(individual_id_norm)
+    indi_index = cast(dict[str, Any], getattr(gedcom_data, "indi_index", {}))
+    indi_record = indi_index.get(individual_id_norm)
     if not indi_record:
         return spouses, children
 
@@ -901,8 +913,9 @@ def get_gedcom_family_details(
     # Step 4: Get family relationships
     try:
         # Get parents
+        id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
         parent_ids_raw = (
-            gedcom_data.id_to_parents.get(individual_id_norm, set())
+            id_to_parents.get(individual_id_norm, set())
             if hasattr(gedcom_data, "id_to_parents")
             else set()
         )
@@ -957,8 +970,9 @@ def _get_reference_id() -> Optional[str]:
 
 def _get_individual_name(individual_id_norm: str, gedcom_data: GedcomData) -> str:
     """Get individual name from GEDCOM data."""
-    if individual_id_norm and individual_id_norm in gedcom_data.processed_data_cache:
-        individual_data = gedcom_data.processed_data_cache[individual_id_norm]
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    if individual_id_norm and individual_id_norm in processed_cache:
+        individual_data = processed_cache[individual_id_norm]
         return individual_data.get("full_name_disp", "Individual")
     return "Individual"
 
@@ -972,11 +986,14 @@ def _find_relationship_path(
     if not (individual_id_norm and reference_id_norm):
         return []
 
+    id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
+    id_to_children = cast(dict[str, Any], getattr(gedcom_data, "id_to_children", {}))
+
     return fast_bidirectional_bfs(
         individual_id_norm,
         reference_id_norm,
-        gedcom_data.id_to_parents,
-        gedcom_data.id_to_children,
+        id_to_parents,
+        id_to_children,
         max_depth=25,
         node_limit=150000,
         timeout_sec=45,

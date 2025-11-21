@@ -267,7 +267,7 @@ def test_selector_organization() -> None:
 
 def test_placeholder_selectors() -> None:
     """Test placeholder selectors with template variables are properly formed."""
-    placeholder_selectors = []
+    placeholder_selectors: list[tuple[str, str]] = []
     for name, value in globals().items():
         if isinstance(value, str) and "{" in value and "}" in value:
             placeholder_selectors.append((name, value))
@@ -337,7 +337,7 @@ def test_selector_integrity() -> None:
 def test_special_characters() -> None:
     """Test selectors properly handle special CSS characters and escaping."""
     # Test that selectors with special characters are valid
-    special_selectors = []
+    special_selectors: list[tuple[str, str]] = []
     for name, value in globals().items():
         if isinstance(value, str) and any(
             char in value for char in ["[", "]", ":", "#", "."]

@@ -329,8 +329,10 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
     try:
         # Get all ethnicity column names from DnaMatch table
         # These are dynamically added based on tree owner's DNA regions
+        from typing import cast
+
         from sqlalchemy import inspect
-        inspector = inspect(DnaMatch)
+        inspector = cast(Any, inspect(DnaMatch))
 
         excluded_cols = {
             'people_id', 'cm_dna', 'predicted_relationship',
@@ -477,8 +479,10 @@ def _empty_statistics(profile_id: str) -> dict[str, Any]:
 
 def _get_ethnicity_columns() -> list[str]:
     """Get list of ethnicity column names from DnaMatch table."""
+    from typing import cast
+
     from sqlalchemy import inspect
-    inspector = inspect(DnaMatch)
+    inspector = cast(Any, inspect(DnaMatch))
     excluded_columns = {
         'people_id', 'cm_dna', 'predicted_relationship',
         'relationship_confidence', 'starred', 'viewed',
@@ -494,7 +498,7 @@ def _compare_ethnicity_regions(
     ethnicity_columns: list[str]
 ) -> tuple[list[str], dict[str, dict[str, float]]]:
     """Compare ethnicity regions between owner and match."""
-    shared_regions = []
+    shared_regions: list[str] = []
     region_details = {}
 
     for region in ethnicity_columns:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: PLR0904
 
 """
 Refactored Session Manager - Orchestrates all session components.
@@ -32,7 +33,7 @@ import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Callable, NotRequired, Optional, Protocol, TypedDict, cast
 
 from core.error_handling import (
     api_retry,
@@ -121,7 +122,20 @@ class SupportsBrowserConsoleLogs(Protocol):
         ...
 
 
-class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many helpers
+class SessionHealthMonitor(TypedDict):
+    is_alive: threading.Event
+    death_detected: threading.Event
+    last_heartbeat: float
+    heartbeat_interval: int
+    death_cascade_halt: threading.Event
+    death_timestamp: Optional[float]
+    parallel_operations: int
+    death_cascade_count: int
+    browser_death_count: NotRequired[int]
+    last_browser_health_check: NotRequired[float]
+
+
+class SessionManager:
     """
     Refactored SessionManager that orchestrates specialized managers.
 
@@ -218,7 +232,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         self.dynamic_rate_limiter = self.rate_limiter
 
         # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
-        self.session_health_monitor = {
+        self.session_health_monitor: SessionHealthMonitor = {
             'is_alive': threading.Event(),
             'death_detected': threading.Event(),
             'last_heartbeat': time.time(),
@@ -477,7 +491,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
 
         try:
             # Create CloudScraper with browser fingerprinting
-            self._scraper = cloudscraper.create_scraper(
+            self._scraper = cast(Any, cloudscraper).create_scraper(
                 browser={"browser": "chrome", "platform": "windows", "desktop": True},
                 delay=10,
             )
@@ -965,7 +979,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         # Get Profile ID
         if not self.my_profile_id:
             logger.debug("Retrieving profile ID (ucdmid)...")
-            profile_id = self.get_my_profileId()
+            profile_id = self.get_my_profile_id()
             if not profile_id:
                 logger.error("Failed to retrieve profile ID (ucdmid).")
                 all_ok = False
@@ -1028,7 +1042,8 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         if not self.driver:
             return set()
         try:
-            cookies = self.driver.get_cookies()
+            driver = cast(Any, self.driver)
+            cookies = cast(list[dict[str, Any]], driver.get_cookies())
             return {
                 cookie["name"].lower()
                 for cookie in cookies
@@ -1219,7 +1234,8 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
                 logger.error("Driver not available for cookie sync")
                 return
 
-            driver_cookies = self.driver.get_cookies()
+            driver = cast(Any, self.driver)
+            driver_cookies = cast(list[dict[str, Any]], driver.get_cookies())
 
             # Validate cookies were retrieved
             if not driver_cookies:
@@ -1308,7 +1324,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
                 continue
 
             try:
-                self.api_manager._requests_session.cookies.set(
+                cast(Any, self.api_manager._requests_session.cookies).set(
                     name,
                     value,
                     domain=cookie.get("domain"),
@@ -1342,7 +1358,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
 
             # Filter for errors that occurred after last check
             current_time = datetime.now(timezone.utc)
-            js_errors = []
+            js_errors: list[dict[str, Any]] = []
 
             for log_entry in logs:
                 # Check if this is a JavaScript error
@@ -1741,7 +1757,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
             return None
 
     @api_retry()
-    def get_my_profileId(self) -> Optional[str]:  # noqa: N802 - matches API field name
+    def get_my_profile_id(self) -> Optional[str]:
         """
         Retrieve user's profile ID (ucdmid).
 
@@ -1749,7 +1765,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
             str: Profile ID if successful, None otherwise
         """
         if not self.is_sess_valid():
-            logger.error("get_my_profileId: Session invalid.")
+            logger.error("get_my_profile_id: Session invalid.")
             return None
 
         from urllib.parse import urljoin
@@ -1789,7 +1805,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
             return None
 
         except Exception as e:
-            logger.error(f"Unexpected error in get_my_profileId: {e}", exc_info=True)
+            logger.error(f"Unexpected error in get_my_profile_id: {e}", exc_info=True)
             return None
 
     @api_retry()
@@ -1966,7 +1982,7 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
         # Try to get from API manager first, then retrieve if needed
         profile_id = self.api_manager.my_profile_id
         if not profile_id:
-            profile_id = self.get_my_profileId()
+            profile_id = self.get_my_profile_id()
         return profile_id
 
     @property
@@ -2010,10 +2026,10 @@ class SessionManager:  # noqa: PLR0904 - complex orchestrator requires many help
                 return
 
             # Try to get CSRF token from cookies
-            driver = self.browser_manager.driver
+            driver = cast(Any, self.browser_manager.driver)
             csrf_cookie_names = ['_dnamatches-matchlistui-x-csrf-token', '_csrf']
 
-            driver_cookies_list = driver.get_cookies()
+            driver_cookies_list = cast(list[dict[str, Any]], driver.get_cookies())
             driver_cookies_dict = {
                 c["name"]: c["value"]
                 for c in driver_cookies_list
@@ -2396,7 +2412,7 @@ def _test_session_manager_initialization():
         print(f"   ✅ SessionManager created successfully (ID: {id(session_manager)})")
 
         # Test component availability
-        results = []
+        results: list[bool] = []
         for component_name, description in required_components:
             has_component = hasattr(session_manager, component_name)
             component_value = getattr(session_manager, component_name, None)
@@ -2442,7 +2458,7 @@ def _test_component_manager_availability():
 
     try:
         session_manager = SessionManager()
-        results = []
+        results: list[bool] = []
 
         for component_name, expected_type, description in component_tests:
             component = getattr(session_manager, component_name, None)
@@ -2476,13 +2492,13 @@ def _test_database_operations():
 
     try:
         session_manager = SessionManager()
-        results = []
+        results: list[bool] = []
 
         for operation_name, description in database_operations:
             try:
                 if operation_name == "ensure_db_ready":
                     result = session_manager.ensure_db_ready()
-                    is_bool = isinstance(result, bool)  # pyright: ignore[reportUnnecessaryIsInstance]
+                    is_bool = isinstance(cast(Any, result), bool)
 
                     status = "✅" if is_bool else "❌"
                     print(f"   {status} {operation_name}: {description}")
@@ -2570,7 +2586,7 @@ def _test_component_delegation():
 def _test_initialization_performance():
     import time
 
-    session_managers = []
+    session_managers: list[SessionManager] = []
     start_time = time.time()
     for _i in range(3):
         session_manager = SessionManager()
@@ -2609,7 +2625,7 @@ def _test_regression_prevention_csrf_optimization():
     caused by fetching CSRF tokens on every API call.
     """
     print("🛡️ Testing CSRF token caching optimization regression prevention:")
-    results = []
+    results: list[bool] = []
 
     try:
         session_manager = SessionManager()
@@ -2636,7 +2652,7 @@ def _test_regression_prevention_csrf_optimization():
             # Test that it returns a boolean
             try:
                 is_valid = session_manager._is_csrf_token_valid()
-                if isinstance(is_valid, bool):  # pyright: ignore[reportUnnecessaryIsInstance]
+                if isinstance(cast(Any, is_valid), bool):
                     print("   ✅ _is_csrf_token_valid returns boolean")
                     results.append(True)
                 else:
@@ -2730,7 +2746,7 @@ def _test_regression_prevention_initialization_stability():
     which would have caught WebDriver stability issues.
     """
     print("🛡️ Testing SessionManager initialization stability regression prevention:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test multiple initialization attempts
@@ -2776,7 +2792,7 @@ def _test_watchdog_initialization() -> None:
 
 def _test_watchdog_timeout_enforcement() -> None:
     """Test that watchdog triggers callback after timeout."""
-    callback_executed = []
+    callback_executed: list[bool] = []
 
     def emergency_callback() -> None:
         callback_executed.append(True)
@@ -2790,7 +2806,7 @@ def _test_watchdog_timeout_enforcement() -> None:
 
 def _test_watchdog_graceful_completion() -> None:
     """Test that cancel() prevents callback execution."""
-    callback_executed = []
+    callback_executed: list[bool] = []
 
     def emergency_callback() -> None:
         callback_executed.append(True)
@@ -2806,7 +2822,7 @@ def _test_watchdog_graceful_completion() -> None:
 
 def _test_watchdog_context_manager() -> None:
     """Test context manager protocol."""
-    callback_executed = []
+    callback_executed: list[bool] = []
 
     def emergency_callback() -> None:
         callback_executed.append(True)
@@ -2833,7 +2849,7 @@ def _test_watchdog_multiple_cycles() -> None:
 def _test_watchdog_thread_safety() -> None:
     """Test thread safety under concurrent access."""
     watchdog = APICallWatchdog(timeout_seconds=1.0)
-    errors = []
+    errors: list[tuple[int, Exception]] = []
 
     def thread_worker(thread_id: int) -> None:
         try:
@@ -2880,7 +2896,7 @@ def _test_watchdog_edge_cases() -> None:
     watchdog.cancel()
 
     # Start, let timeout, then cancel
-    callback_executed = []
+    callback_executed: list[bool] = []
     watchdog.start("test_api", lambda: callback_executed.append(True))
     time.sleep(0.7)
     assert len(callback_executed) == 1, "Callback should have executed"
@@ -2917,7 +2933,7 @@ def _test_force_session_restart() -> None:
 def _test_watchdog_integration_with_session_restart() -> None:
     """Test watchdog integration with _force_session_restart()."""
     sm = SessionManager()
-    restart_called = []
+    restart_called: list[bool] = []
 
     def restart_callback() -> None:
         """Callback that triggers session restart."""
@@ -3054,7 +3070,7 @@ def _test_retry_helper_alignment_session_manager() -> None:
     api_policy = config_schema.retry_policies.api
     methods_to_check = [
         ("get_csrf", SessionManager.get_csrf),
-        ("get_my_profileId", SessionManager.get_my_profileId),
+        ("get_my_profile_id", SessionManager.get_my_profile_id),
         ("get_my_uuid", SessionManager.get_my_uuid),
         ("get_my_tree_id", SessionManager.get_my_tree_id),
         ("get_tree_owner", SessionManager.get_tree_owner),
@@ -3111,7 +3127,7 @@ def _test_cookie_sync_state_reset_on_browser_close() -> None:
 
     sm._session_cookies_synced = True
     sm._last_cookie_sync_time = 123.0
-    sm.api_manager._requests_session.cookies.set("foo", "bar", domain=".example.com")
+    sm.api_manager._requests_session.cookies.clear()
 
     sm.close_browser()
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: PLR0904
 
 """
 Comprehensive Health Monitoring & Intelligent System Diagnostics Engine
@@ -51,7 +52,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -128,7 +129,7 @@ class HealthAlert:
     acknowledged: bool = False
 
 
-class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many management helpers
+class SessionHealthMonitor:
     """
     Comprehensive session health monitoring with predictive analytics.
     """
@@ -443,7 +444,7 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
 
     def get_recommended_actions(self) -> list[str]:
         """Get recommended actions based on current health status."""
-        actions = []
+        actions: list[str] = []
         health_score = self.calculate_health_score()
         risk_score = self.predict_session_death_risk()
 
@@ -921,14 +922,16 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
         if not (hasattr(monitor, 'get') or isinstance(monitor, dict)):
             return
 
+        monitor_dict = cast(dict[str, Any], monitor)
+
         # Browser age
-        browser_start_time = monitor.get('browser_start_time') if hasattr(monitor, 'get') else monitor.get('browser_start_time', time.time())
+        browser_start_time = monitor_dict.get('browser_start_time', time.time())
         if browser_start_time:
             browser_age_minutes = (time.time() - browser_start_time) / 60
             self.update_metric("browser_age_minutes", browser_age_minutes)
 
         # Pages since refresh
-        pages_since_refresh = monitor.get('pages_since_refresh') if hasattr(monitor, 'get') else monitor.get('pages_since_refresh', 0)
+        pages_since_refresh = monitor_dict.get('pages_since_refresh', 0)
         if pages_since_refresh is not None:
             self.update_metric("pages_since_refresh", pages_since_refresh)
 
@@ -937,7 +940,8 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
         if not (hasattr(session_monitor, 'get') or isinstance(session_monitor, dict)):
             return
 
-        session_start = session_monitor.get('session_start_time') if hasattr(session_monitor, 'get') else session_monitor.get('session_start_time', time.time())
+        session_monitor_dict = cast(dict[str, Any], session_monitor)
+        session_start = session_monitor_dict.get('session_start_time', time.time())
         if session_start:
             session_age_minutes = (time.time() - session_start) / 60
             self.update_metric("session_age_minutes", session_age_minutes)
@@ -1251,7 +1255,7 @@ class SessionHealthMonitor:  # noqa: PLR0904 - health monitor exposes many manag
             if not checkpoint_dir.exists():
                 return []
 
-            checkpoints = []
+            checkpoints: list[dict[str, Any]] = []
             for checkpoint_file in checkpoint_dir.glob("*.json"):
                 try:
                     # Get file metadata
@@ -1443,7 +1447,7 @@ def integrate_with_action6(action6_module: Any) -> Any:
 
 def get_performance_recommendations(health_score: float, risk_score: float) -> dict[str, Any]:
     """Get specific performance setting recommendations based on health."""
-    recommendations = {
+    recommendations: dict[str, Any] = {
         "max_concurrency": 3,
         "thread_pool_workers": 3,
         "batch_size": 8,
@@ -1611,7 +1615,7 @@ def _get_recovery_recommendations(
     crash_recovery: bool,
 ) -> list[str]:
     """Get recovery recommendations based on available data."""
-    recommendations = []
+    recommendations: list[str] = []
 
     if crash_recovery:
         recommendations.append("Crash recovery state available - consider recovering from last session")

@@ -147,7 +147,7 @@ def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Op
     # Track all templates used
     if template_used:
         templates_json = getattr(metrics, 'templates_used')
-        templates = json.loads(templates_json) if templates_json else []
+        templates: list[str] = json.loads(templates_json) if templates_json else []
         if template_used not in templates:
             templates.append(template_used)
         setattr(metrics, 'templates_used', json.dumps(templates))

@@ -212,7 +212,7 @@ class SessionComponentCache(_TypedBaseCacheModule):
     def __init__(self) -> None:
         super().__init__()
         self.module_name = "session_cache"
-        self._active_sessions = weakref.WeakSet()
+        self._active_sessions: weakref.WeakSet[Any] = weakref.WeakSet()
         self._session_timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
         logger.debug("SessionComponentCache initialized")
@@ -266,12 +266,13 @@ class SessionComponentCache(_TypedBaseCacheModule):
 
             if cached_data is not None and isinstance(cached_data, dict):
                 # Check if component is still valid based on timestamp
-                cache_time = cached_data.get("timestamp", 0)
+                typed_data = cast(dict[str, Any], cached_data)
+                cache_time = typed_data.get("timestamp", 0)
                 age = time.time() - cache_time
 
                 if age < CACHE_CONFIG.component_ttl_seconds:
                     logger.debug(f"Cache HIT for {component_type} (age: {age:.1f}s)")
-                    component = cached_data.get("component")
+                    component = typed_data.get("component")
                     # Return deep copy for mutable objects to prevent cache corruption
                     if isinstance(component, (dict, list)):
                         import copy
@@ -498,9 +499,10 @@ class OptimizedSessionState:
 
             if cached_state and isinstance(cached_state, dict):
                 # Check if state is still valid
-                age = time.time() - cached_state.get("timestamp", 0)
+                typed_state = cast(dict[str, Any], cached_state)
+                age = time.time() - typed_state.get("timestamp", 0)
                 if age < CACHE_CONFIG.session_ttl_seconds:
-                    return cached_state.get("state")
+                    return typed_state.get("state")
 
             return None
         except Exception as e:

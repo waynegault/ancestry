@@ -23,7 +23,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -131,7 +131,7 @@ class APIManager:
         if not path:
             return "root"
 
-        segments = []
+        segments: list[str] = []
         for segment in path.split("/"):
             clean_segment = segment.strip()
             if not clean_segment:
@@ -199,7 +199,7 @@ class APIManager:
         Returns:
             dict: Deduplicated cookies keyed by (name, path)
         """
-        unique_cookies = {}
+        unique_cookies: dict[tuple[str, str], dict[str, Any]] = {}
         for cookie in driver_cookies:
             name = cookie["name"]
             path = cookie.get("path", "/")
@@ -232,7 +232,7 @@ class APIManager:
             unique_cookies: Dictionary of deduplicated cookies
         """
         for cookie in unique_cookies.values():
-            self._requests_session.cookies.set(
+            cast(Any, self._requests_session.cookies).set(
                 cookie["name"],
                 cookie["value"],
                 domain=cookie.get("domain"),
@@ -270,7 +270,7 @@ class APIManager:
             if driver is None:
                 logger.error("Cannot sync cookies: Browser driver is not available.")
                 return False
-            driver_cookies = driver.get_cookies()
+            driver_cookies = cast(Any, driver).get_cookies()
             logger.debug(f"Retrieved {len(driver_cookies)} cookies from browser for API sync.")
 
             # Clear existing cookies to prevent duplicates
@@ -322,11 +322,12 @@ class APIManager:
             for cookie in cookies:
                 try:
                     if isinstance(cookie, dict) and "name" in cookie and "value" in cookie:
-                        self._requests_session.cookies.set(
-                            cookie["name"],
-                            cookie["value"],
-                            domain=cookie.get("domain"),
-                            path=cookie.get("path", "/"),
+                        cookie_dict = cast(dict[str, Any], cookie)
+                        cast(Any, self._requests_session.cookies).set(
+                            cookie_dict["name"],
+                            cookie_dict["value"],
+                            domain=cookie_dict.get("domain"),
+                            path=cookie_dict.get("path", "/"),
                         )
                         loaded += 1
                 except Exception:
@@ -515,7 +516,7 @@ class APIManager:
         if response_data and isinstance(response_data, dict):
             # Check for profile ID in nested data structure
             if "data" in response_data and isinstance(response_data["data"], dict):
-                profile_id = response_data["data"].get(KEY_UCDMID)
+                profile_id = cast(dict[str, Any], response_data["data"]).get(KEY_UCDMID)
             else:
                 # Fallback: check for profile ID at root level
                 profile_id = response_data.get(KEY_UCDMID)
@@ -695,7 +696,7 @@ def _test_api_request_methods() -> bool:
             "get_uuid",
             "clear_identifiers",
         ]
-        available_methods = []
+        available_methods: list[str] = []
         for method_name in api_methods:
             if hasattr(api_manager, method_name):
                 method = getattr(api_manager, method_name)
@@ -725,7 +726,7 @@ def _test_config_integration() -> bool:
     try:
         assert config_schema is not None, "Config schema should be available"
         api_constants = ["API_PATH_CSRF_TOKEN", "API_PATH_PROFILE_ID", "API_PATH_UUID"]
-        constants_defined = []
+        constants_defined: list[str] = []
         for constant in api_constants:
             if constant in globals():
                 constants_defined.append(constant)

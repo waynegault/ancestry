@@ -32,7 +32,7 @@ def load_experiments(log_file: Path, days: int = 7) -> list[dict[str, Any]]:
 
     # Use timezone-aware UTC cutoff so it compares cleanly with parsed ISO timestamps
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    experiments = []
+    experiments: list[dict[str, Any]] = []
 
     with log_file.open(encoding="utf-8") as f:
         for raw_line in f:
@@ -58,7 +58,7 @@ def load_experiments(log_file: Path, days: int = 7) -> list[dict[str, Any]]:
 
 def calculate_median_quality(experiments: list[dict[str, Any]]) -> float | None:
     """Calculate median quality score from experiments."""
-    scores = []
+    scores: list[float] = []
     for exp in experiments:
         if exp.get("parse_success") and "quality_score" in exp:
             score = exp["quality_score"]

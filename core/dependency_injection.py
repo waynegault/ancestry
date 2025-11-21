@@ -494,7 +494,7 @@ class DIScope:
 
     def __init__(self, container_name: str = "default") -> None:
         self.container_name = container_name
-        self._original_registrations = None
+        self._original_registrations: Optional[dict[str, Any]] = None
 
     def __enter__(self) -> DIContainer:
         container = get_container(self.container_name)

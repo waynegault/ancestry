@@ -235,16 +235,16 @@ class CacheRegistry:
         unified_cache.clear()
 
 
-_registry: Optional[CacheRegistry] = None
+class RegistryState:
+    _registry: Optional[CacheRegistry] = None
 
 
 def get_cache_registry() -> CacheRegistry:
     """Return the singleton cache registry instance."""
-    global _registry  # noqa: PLW0603
-    if _registry is None:
-        _registry = CacheRegistry()
-        logger.debug("Cache registry initialized with %d components", len(_registry.component_names()))
-    return _registry
+    if RegistryState._registry is None:
+        RegistryState._registry = CacheRegistry()
+        logger.debug("Cache registry initialized with %d components", len(RegistryState._registry.component_names()))
+    return RegistryState._registry
 
 
 __all__ = ["CacheComponent", "CacheRegistry", "get_cache_registry"]

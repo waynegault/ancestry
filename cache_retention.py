@@ -145,7 +145,7 @@ class CacheRetentionService:
         """Return retention statistics suitable for dashboards."""
 
         self._ensure_recent_auto_run()
-        targets_summary = []
+        targets_summary: list[dict[str, Any]] = []
         for name, target in self._targets.items():
             result = self._last_results.get(name)
             if result is None:
@@ -418,14 +418,14 @@ class CacheRetentionService:
             self.register_target(target)
 
 
-_service: Optional[CacheRetentionService] = None
+class ServiceState:
+    _service: Optional[CacheRetentionService] = None
 
 
 def get_retention_service() -> CacheRetentionService:
-    global _service  # noqa: PLW0603
-    if _service is None:
-        _service = CacheRetentionService()
-    return _service
+    if ServiceState._service is None:
+        ServiceState._service = CacheRetentionService()
+    return ServiceState._service
 
 
 def enforce_retention_now(target: Optional[str] = None) -> dict[str, dict[str, Any]]:

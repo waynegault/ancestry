@@ -232,6 +232,7 @@ from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
 )
+from selenium.webdriver.remote.webdriver import WebDriver
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
@@ -372,9 +373,13 @@ def get_critical_api_failure_threshold(total_pages: int = 100) -> int:
 
 
 CRITICAL_API_FAILURE_THRESHOLD_DEFAULT: Final[int] = 10
-critical_api_failure_threshold: int = (
-    CRITICAL_API_FAILURE_THRESHOLD_DEFAULT  # Dynamically adjusted for each run
-)
+
+
+class Action6State:
+    """Holds mutable state for Action 6."""
+
+    critical_api_failure_threshold: int = CRITICAL_API_FAILURE_THRESHOLD_DEFAULT
+
 
 # Configurable settings from config_schema
 DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
@@ -432,7 +437,7 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
         return [], {}
     metadata: dict[str, Any] = metadata_raw
 
-    regions = metadata.get("tree_owner_regions", [])
+    regions = cast(list[dict[str, Any]], metadata.get("tree_owner_regions", []))
     if not isinstance(regions, list) or not regions:
         logger.debug("No ethnicity regions configured; skipping ethnicity enrichment")
         return [], {}
@@ -797,7 +802,8 @@ def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[st
         logger.warning("Cannot access CSRF cookies: browser driver missing")
         return None
 
-    cookies = driver.get_cookies()
+    driver_typed = cast(WebDriver, driver)
+    cookies = cast(list[dict[str, Any]], cast(Any, driver_typed).get_cookies())
     for cookie_name in csrf_cookie_names:
         for cookie in cookies:
             if cookie['name'] == cookie_name:
@@ -1430,10 +1436,9 @@ def _main_page_processing_loop(
     """Main loop for fetching and processing pages of matches."""
 
     # Calculate dynamic API failure threshold based on total pages to process
-    global critical_api_failure_threshold  # noqa: PLW0603
     dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
-    original_threshold = critical_api_failure_threshold
-    critical_api_failure_threshold = dynamic_threshold
+    original_threshold = Action6State.critical_api_failure_threshold
+    Action6State.critical_api_failure_threshold = dynamic_threshold
     if dynamic_threshold != original_threshold:
         logger.info(
             "Action 6: API failure threshold adjusted to %d for %d-page run (baseline %d)",
@@ -1863,7 +1868,8 @@ def _log_resume_context(state: dict[str, Any], start_page: int) -> None:
     checkpoint_data = state.get("checkpoint_metadata")
     planned_total = None
     if isinstance(checkpoint_data, dict):
-        planned_total = checkpoint_data.get("total_pages_in_run")
+        checkpoint_dict = cast(dict[str, Any], checkpoint_data)
+        planned_total = checkpoint_dict.get("total_pages_in_run")
     logger.info(
         "Checkpoint resume active: starting at page %d (planned total pages: %s)",
         start_page,
@@ -2251,8 +2257,8 @@ def _classify_match_priorities(
     Returns:
         Tuple of (high_priority_uuids, medium_priority_uuids, priority_uuids)
     """
-    high_priority_uuids = set()
-    medium_priority_uuids = set()
+    high_priority_uuids: set[str] = set()
+    medium_priority_uuids: set[str] = set()
 
     log_state: dict[str, int] = {
         "high": 0,
@@ -2842,12 +2848,12 @@ def _enforce_session_health_for_prefetch(
 def _raise_prefetch_threshold_if_needed(stats: _PrefetchStats, exc: Exception | None = None) -> None:
     """Raise when the critical API failure threshold is reached."""
 
-    if stats.critical_failures < critical_api_failure_threshold:
+    if stats.critical_failures < Action6State.critical_api_failure_threshold:
         return
 
     logger.critical(
         f"Exceeded critical API failure threshold ({stats.critical_failures}/"
-        f"{critical_api_failure_threshold}). Halting batch."
+        f"{Action6State.critical_api_failure_threshold}). Halting batch."
     )
     message = f"Critical API failure threshold reached ({stats.critical_failures} failures)."
     if exc is None:
@@ -3491,7 +3497,7 @@ class MemoryOptimizedMatchProcessor:
 
         logger.info(f"Phase 3: Starting memory-optimized processing (Initial: {initial_memory:.1f}MB, Limit: {self.max_memory_mb}MB)")
 
-        processed_matches = []
+        processed_matches: list[dict[str, Any]] = []
         memory_cleanup_threshold = self.max_memory_mb * 0.8  # Clean up at 80% of limit
 
         for i, match in enumerate(matches):
@@ -3544,7 +3550,7 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
     Returns:
         list of filtered person create data (duplicates removed)
     """
-    person_creates_filtered = []
+    person_creates_filtered: list[dict[str, Any]] = []
     seen_profile_ids: set[str] = set()
     skipped_duplicates = 0
 
@@ -3554,8 +3560,8 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
     logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
 
     for p_data in person_creates_raw:
-        profile_id = p_data.get("profile_id")  # Already uppercase from prep if exists
-        uuid_for_log = p_data.get("uuid")  # For logging skipped items
+        profile_id = cast(Optional[str], p_data.get("profile_id"))  # Already uppercase from prep if exists
+        uuid_for_log = cast(Optional[str], p_data.get("uuid"))  # For logging skipped items
 
         if profile_id is None:
             person_creates_filtered.append(p_data)  # Allow creates with null profile ID
@@ -4065,7 +4071,7 @@ def _create_master_id_map(
     return all_person_ids_map
 
 
-def _resolve_person_id(  # noqa: PLR0911
+def _resolve_person_id(
     session: SqlAlchemySession,
     person_uuid: Optional[str],
     all_person_ids_map: dict[str, int],
@@ -4088,36 +4094,34 @@ def _resolve_person_id(  # noqa: PLR0911
 
     # Strategy 1: Check all_person_ids_map
     person_id = all_person_ids_map.get(person_uuid)
-    if person_id:
-        return person_id
 
     # Strategy 2: Check existing_persons_map
-    if existing_persons_map.get(person_uuid):
+    if not person_id and existing_persons_map.get(person_uuid):
         existing_person = existing_persons_map[person_uuid]
         person_id = getattr(existing_person, "id", None)
         if person_id:
             all_person_ids_map[person_uuid] = person_id
             logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (from existing_persons_map)")
-            return person_id
-        logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
-        return None
+        else:
+            logger.warning(f"Person exists in database for UUID {person_uuid} but has no ID attribute")
 
     # Strategy 3: Direct database query as fallback
-    try:
-        db_person = session.query(Person.id).filter(
-            Person.uuid == person_uuid,
-            Person.deleted_at.is_(None)
-        ).first()
-        if db_person:
-            person_id = db_person.id
-            all_person_ids_map[person_uuid] = person_id
-            logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
-            return person_id
-        logger.debug(f"Person UUID {person_uuid} not found in database - will be created in next batch")
-        return None
-    except Exception as e:
-        logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
-        return None
+    if not person_id:
+        try:
+            db_person = session.query(Person.id).filter(
+                Person.uuid == person_uuid,
+                Person.deleted_at.is_(None)
+            ).first()
+            if db_person:
+                person_id = db_person.id
+                all_person_ids_map[person_uuid] = person_id
+                logger.debug(f"Resolved Person ID {person_id} for UUID {person_uuid} (direct DB query)")
+            else:
+                logger.debug(f"Person UUID {person_uuid} not found in database - will be created in next batch")
+        except Exception as e:
+            logger.warning(f"Database query failed for UUID {person_uuid}: {e}")
+
+    return person_id
 
 
 def _get_existing_dna_matches(
@@ -4199,8 +4203,8 @@ def _classify_dna_match_operations(
         Tuple of (insert_data, update_mappings)
     """
     existing_dna_matches_map = _get_existing_dna_matches(session, all_person_ids_map)
-    dna_insert_data = []
-    dna_update_mappings = []
+    dna_insert_data: list[dict[str, Any]] = []
+    dna_update_mappings: list[dict[str, Any]] = []
 
     for dna_data in dna_match_ops:
         person_uuid = dna_data.get("uuid")
@@ -4397,7 +4401,7 @@ def _prepare_family_tree_inserts(
     Returns:
         List of FamilyTree insert data
     """
-    tree_insert_data = []
+    tree_insert_data: list[dict[str, Any]] = []
 
     for tree_data in tree_creates:
         person_uuid = tree_data.get("uuid")
@@ -4427,7 +4431,7 @@ def _prepare_family_tree_updates(
     Returns:
         List of FamilyTree update mappings
     """
-    tree_update_mappings = []
+    tree_update_mappings: list[dict[str, Any]] = []
 
     for tree_data in tree_updates:
         existing_tree_id = tree_data.get("_existing_tree_id")
@@ -4494,7 +4498,7 @@ def _process_family_tree_operations(
         logger.debug("No FamilyTree updates prepared.")
 
 
-def _execute_bulk_db_operations(  # noqa: PLR0911
+def _execute_bulk_db_operations(
     session: SqlAlchemySession,
     prepared_bulk_data: list[dict[str, Any]],
     existing_persons_map: dict[str, Person],  # Needed to potentially map existing IDs
@@ -4565,15 +4569,18 @@ def _execute_bulk_db_operations(  # noqa: PLR0911
             # Use helper function to handle recovery
             # Note: insert_data might not be available in this exception scope, pass None for safe recovery
             return _handle_integrity_error_recovery(session, None)
+
         if "UNIQUE constraint failed: dna_match.people_id" in error_str:
             logger.error("UNIQUE constraint violation: dna_match.people_id already exists. This indicates the code tried to INSERT when it should UPDATE.")
             logger.error(f"Error details: {integrity_err}")
             # Roll back the session to clear the error state
             session.rollback()
             logger.info("Session rolled back. Returning False to indicate failure.")
-            return False
-        logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
+        else:
+            logger.error(f"Other IntegrityError during bulk DB operation: {integrity_err}", exc_info=True)
+
         return False  # Other integrity errors should still fail
+
     except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
         return False  # Indicate failure (rollback handled by db_transn)
@@ -5564,10 +5571,10 @@ def _build_incoming_person_data(
         "administrator_profile_id": person_admin_id,
         "administrator_username": person_admin_username,
         "in_my_tree": match_in_my_tree,
-        "first_name": match.get("first_name"),
+        "first_name": cast(Optional[str], match.get("first_name")),
         "last_logged_in": last_logged_in,
         "contactable": bool(profile_part.get("contactable", True)),
-        "gender": details_part.get("gender"),
+        "gender": cast(Optional[str], details_part.get("gender")),
         "message_link": message_link,
         "birth_year": birth_year,
         "status": PersonStatusEnum.ACTIVE,
@@ -5598,7 +5605,7 @@ def _prepare_person_operation_data(
 
     message_link = _build_message_link(person_profile_id, person_admin_id, config_schema_arg)
     birth_year = _extract_birth_year(prefetched_tree_data)
-    last_logged_in = _normalize_last_logged_in(profile_part.get("last_logged_in_dt"))
+    last_logged_in = _normalize_last_logged_in(cast(Optional[datetime], profile_part.get("last_logged_in_dt")))
 
     incoming_person_data = _build_incoming_person_data(
         match, match_uuid, formatted_match_username, match_in_my_tree,
@@ -5812,7 +5819,7 @@ def _build_dna_dict_base(
     """Build base DNA match dictionary."""
     return {
         "uuid": match_uuid.upper(),
-        "compare_link": match.get("compare_link"),
+        "compare_link": cast(Optional[str], match.get("compare_link")),
         "cm_dna": int(match.get("cm_dna", 0)),
         "predicted_relationship": safe_predicted_relationship,
         "_operation": "create",
@@ -5846,7 +5853,7 @@ def _add_dna_details(
         logger_instance.warning(
             f"{log_ref_short}: DNA needs create/update, but no/limited combined details. Using list data for segments."
         )
-        dna_dict_base["shared_segments"] = match.get("numSharedSegments")
+        dna_dict_base["shared_segments"] = cast(Optional[int], match.get("numSharedSegments"))
 
 
 def _filter_dna_dict(dna_dict_base: dict[str, Any]) -> dict[str, Any]:
@@ -5895,7 +5902,7 @@ def _add_ethnicity_data(
     """Add ethnicity data to DNA match dictionary from prefetched data."""
     if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
         # Use prefetched ethnicity data from sequential API fetch
-        prefetched_ethnicity = match.get("_prefetched_ethnicity")
+        prefetched_ethnicity = cast(Optional[dict[str, Optional[int]]], match.get("_prefetched_ethnicity"))
         if prefetched_ethnicity and isinstance(prefetched_ethnicity, dict):
             ethnicity_updates = _filter_changed_ethnicity_values(existing_dna_match, prefetched_ethnicity)
             if ethnicity_updates:
@@ -6173,10 +6180,10 @@ class _MatchInfo:
 def _extract_match_info(match: dict[str, Any]) -> _MatchInfo:
     """Extract basic information from match data."""
     match_uuid = str(match.get("uuid") or "")
-    match_username_raw = match.get("username")
+    match_username_raw = cast(Optional[str], match.get("username"))
     match_username = format_name(match_username_raw) if match_username_raw else "Unknown"
-    predicted_relationship: Optional[str] = match.get("predicted_relationship")
-    match_in_my_tree = match.get("in_my_tree", False)
+    predicted_relationship = cast(Optional[str], match.get("predicted_relationship"))
+    match_in_my_tree = bool(match.get("in_my_tree"))
     log_ref_short = f"UUID={match_uuid} User='{match_username}'"
     return _MatchInfo(match_uuid, match_username, predicted_relationship, match_in_my_tree, log_ref_short)
 
@@ -6938,7 +6945,7 @@ def _handle_match_list_response(
     return api_response
 
 
-def _parse_total_pages(api_response: dict[str, Any], current_page: int) -> Optional[int]:  # noqa: ARG001
+def _parse_total_pages(api_response: dict[str, Any], _current_page: int) -> Optional[int]:
     """
     Parse total pages from API response.
 
@@ -6969,14 +6976,17 @@ def _filter_valid_matches(match_data_list: list[Any], current_page: int) -> list
     valid_matches_for_processing: list[dict[str, Any]] = []
     skipped_sampleid_count = 0
     for m_idx, m_val in enumerate(match_data_list):
-        if isinstance(m_val, dict) and m_val.get("sampleId"):
-            valid_matches_for_processing.append(m_val)
-        else:
-            skipped_sampleid_count += 1
-            match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
-            logger.warning(
-                f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
-            )
+        if isinstance(m_val, dict):
+            m_dict = cast(dict[str, Any], m_val)
+            if m_dict.get("sampleId"):
+                valid_matches_for_processing.append(m_dict)
+                continue
+
+        skipped_sampleid_count += 1
+        match_log_info = f"(Index: {m_idx}, Data: {str(m_val)[:100]}...)"
+        logger.warning(
+            f"Skipping raw match missing 'sampleId' on page {current_page}. {match_log_info}"
+        )
     if skipped_sampleid_count > 0:
         logger.warning(
             f"Skipped {skipped_sampleid_count} raw matches on page {current_page} due to missing 'sampleId'."
@@ -7499,19 +7509,20 @@ def _ensure_action6_session_ready(
 def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
     """Parse match details API response."""
     if details_response and isinstance(details_response, dict):
-        relationship_part = details_response.get("relationship", {})
+        details_dict = cast(dict[str, Any], details_response)
+        relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
         return {
-            "admin_profile_id": details_response.get("adminUcdmId"),
-            "admin_username": details_response.get("adminDisplayName"),
-            "tester_profile_id": details_response.get("userId"),
-            "tester_username": details_response.get("displayName"),
-            "tester_initials": details_response.get("displayInitials"),
-            "gender": details_response.get("subjectGender"),
+            "admin_profile_id": details_dict.get("adminUcdmId"),
+            "admin_username": details_dict.get("adminDisplayName"),
+            "tester_profile_id": details_dict.get("userId"),
+            "tester_username": details_dict.get("displayName"),
+            "tester_initials": details_dict.get("displayInitials"),
+            "gender": details_dict.get("subjectGender"),
             "shared_segments": relationship_part.get("sharedSegments"),
             "longest_shared_segment": relationship_part.get("longestSharedSegment"),
             "meiosis": relationship_part.get("meiosis"),
-            "from_my_fathers_side": bool(details_response.get("fathersSide", False)),
-            "from_my_mothers_side": bool(details_response.get("mothersSide", False)),
+            "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
+            "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
         }
     if isinstance(details_response, requests.Response):
         logger.error(
@@ -7624,13 +7635,14 @@ def _fetch_profile_details_api(
         )
         if profile_response and isinstance(profile_response, dict):
             logger.debug(f"Successfully fetched /profiles/details for {tester_profile_id}.")
+            profile_dict = cast(dict[str, Any], profile_response)
 
             last_login_dt = None
-            last_login_str = profile_response.get("LastLoginDate")
+            last_login_str = profile_dict.get("LastLoginDate")
             if last_login_str:
                 last_login_dt = _parse_last_login_date(last_login_str, tester_profile_id)
 
-            contactable_val = profile_response.get("IsContactable")
+            contactable_val = profile_dict.get("IsContactable")
             is_contactable = bool(contactable_val) if contactable_val is not None else False
 
             profile_data = {
@@ -7846,7 +7858,8 @@ def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[di
             )
         return None
 
-    person_badged = badge_response.get("personBadged", {})
+    badge_dict = cast(dict[str, Any], badge_response)
+    person_badged = cast(dict[str, Any], badge_dict.get("personBadged", {}))
     if not person_badged:
         logger.warning(
             f"Badge details response for UUID {match_uuid} missing 'personBadged' key."
@@ -7945,8 +7958,8 @@ def _format_kinship_path_for_action6(kinship_persons: list[dict[str, Any]]) -> s
         return "(No relationship path available)"
 
     # Build the relationship path
-    path_lines = []
-    seen_names = set()
+    path_lines: list[str] = []
+    seen_names: set[str] = set()
 
     # Add first person as standalone line with years
     first_person = kinship_persons[0]
@@ -8167,7 +8180,7 @@ def _extract_csrf_from_cookies(
     csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
     try:
         session_manager.sync_cookies_to_requests()
-        driver_cookies_list = driver.get_cookies()
+        driver_cookies_list = cast(list[dict[str, Any]], driver.get_cookies())
         driver_cookies_dict = {
             c["name"]: c["value"]
             for c in driver_cookies_list
@@ -8322,7 +8335,7 @@ def _try_cloudscraper_fallback(
             timeout=(30, 90),  # (connect_timeout, read_timeout) - prevents TCP hangs
         )
         if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
-            data = cs_resp.json()
+            data = cast(dict[str, Any], cs_resp.json())
             return _parse_relationship_probability(
                 data, match_uuid, max_labels_param, sample_id_upper,
                 api_description, api_start_time, session_manager
@@ -8404,7 +8417,8 @@ def _extract_best_prediction(
     labels: list[str] = []
     for path in path_entries:
         if isinstance(path, dict):
-            label_value = path.get("label")
+            path_dict = cast(dict[str, Any], path)
+            label_value = path_dict.get("label")
             if isinstance(label_value, str):
                 labels.append(label_value)
 
@@ -8444,8 +8458,9 @@ def _parse_relationship_probability(
         )
         return None
 
-    prob_data = data_obj.get("matchProbabilityToSampleId", {})
-    predictions = prob_data.get("relationships", {}).get("predictions", [])
+    prob_data = cast(dict[str, Any], data_obj.get("matchProbabilityToSampleId", {}))
+    relationships = cast(dict[str, Any], prob_data.get("relationships", {}))
+    predictions = cast(list[dict[str, Any]], relationships.get("predictions", []))
     if not predictions:
         logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
         return "Distant relationship?"
@@ -9020,7 +9035,7 @@ def _test_combined_details_cache_helpers() -> bool:
 def _test_module_initialization():
     """Test module initialization and state functions with detailed verification"""
     print("📋 Testing Action 6 module initialization:")
-    results = []
+    results: list[bool] = []
 
     # Test _initialize_gather_state function
     print("   • Testing _initialize_gather_state...")
@@ -9281,7 +9296,7 @@ def _test_all_error_class_constructors():
     )
 
     print("   • Test 4: All error class constructors parameter validation")
-    error_classes = [
+    error_classes: list[tuple[Any, dict[str, Any]]] = [
         (APIRateLimitError, {"retry_after": 30}),
         (AuthenticationExpiredError, {}),
         (NetworkTimeoutError, {}),
@@ -9541,7 +9556,7 @@ def _test_regression_prevention_configuration_respect():
     MAX_PAGES=1 were set but ignored by the application.
     """
     print("🛡️ Testing configuration respect regression prevention:")
-    results = []
+    results: list[bool] = []
 
     try:
         from config import config_schema
@@ -9585,7 +9600,7 @@ def _test_dynamic_api_failure_threshold():
     to prevent premature halts on large processing runs while maintaining safety.
     """
     print("🔧 Testing Dynamic API Failure Threshold:")
-    results = []
+    results: list[bool] = []
 
     test_cases = [
         (10, 10),    # 10 pages -> minimum threshold of 10
@@ -9605,7 +9620,7 @@ def _test_dynamic_api_failure_threshold():
 
     print(
         "   Current default threshold: "
-        f"{CRITICAL_API_FAILURE_THRESHOLD_DEFAULT} (runtime: {critical_api_failure_threshold})"
+        f"{CRITICAL_API_FAILURE_THRESHOLD_DEFAULT} (runtime: {Action6State.critical_api_failure_threshold})"
     )
 
     success = all(results)
@@ -9692,7 +9707,9 @@ def _test_cm_relationship_fallback() -> bool:
     inferred_payload = inferred.get("dna_match")
     if not isinstance(inferred_payload, dict):
         inferred_payload = inferred
-    inferred_value = inferred_payload.get("predicted_relationship")
+
+    inferred_dict = cast(dict[str, Any], inferred_payload)
+    inferred_value = inferred_dict.get("predicted_relationship")
     assert isinstance(inferred_value, str)
     assert inferred_value.startswith("1st cousin"), inferred_value
     assert "inferred" in inferred_value
@@ -9717,7 +9734,9 @@ def _test_cm_relationship_fallback() -> bool:
     provided_payload = provided.get("dna_match")
     if not isinstance(provided_payload, dict):
         provided_payload = provided
-    assert provided_payload.get("predicted_relationship") == "3rd cousin"
+
+    provided_dict = cast(dict[str, Any], provided_payload)
+    assert provided_dict.get("predicted_relationship") == "3rd cousin"
 
     print("🎉 cM-based predicted relationship fallback tests passed!")
     return True
@@ -9731,7 +9750,7 @@ def _test_regression_prevention_session_management():
     and property access that caused WebDriver crashes.
     """
     print("🛡️ Testing session management regression prevention:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test SessionManager import and basic attributes

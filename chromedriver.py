@@ -176,8 +176,8 @@ def set_win_size(driver: WebDriver) -> None:
     """Set the window size and position to the right half of the screen, 95% height."""
     try:
         # Get screen dimensions
-        screen_width = driver.execute_script("return screen.width;")
-        screen_height = driver.execute_script("return screen.height;")
+        screen_width = cast(Any, driver).execute_script("return screen.width;")
+        screen_height = cast(Any, driver).execute_script("return screen.height;")
 
         # Calculate window size and position for the right half of the screen
         window_width = screen_width // 2
@@ -187,7 +187,7 @@ def set_win_size(driver: WebDriver) -> None:
         window_x = screen_width // 2  # Position on the right
         window_y = 0  # Position at the top
 
-        driver.set_window_rect(
+        cast(Any, driver).set_window_rect(
             x=window_x, y=window_y, width=window_width, height=window_height
         )
     except Exception as e:
@@ -380,7 +380,7 @@ def _create_chrome_driver(_options: ChromeOptionsType, attempt_num: int) -> Opti
         return None
 
 
-def _configure_driver_post_init(driver: WebDriver, config: Any, user_agent: str, attempt_num: int) -> None:  # noqa: ARG001
+def _configure_driver_post_init(driver: WebDriver, config: Any, _user_agent: str, attempt_num: int) -> None:
     """Configure driver after initialization."""
     # NOTE: CDP user-agent override disabled - Chrome 142+ closes immediately when invoked here.
     # The user-agent is already set via Chrome launch arguments, so no additional override required.
@@ -627,7 +627,7 @@ def test_driver_initialization(headless: bool = True) -> bool:
             try:
                 print("  Testing window management...")
                 set_win_size(driver)
-                window_rect = driver.get_window_rect()
+                window_rect = cast(dict[str, int], cast(Any, driver).get_window_rect())
                 print(
                     f"✓ Window size set: {window_rect['width']}x{window_rect['height']} at position ({window_rect['x']},{window_rect['y']})"
                 )
@@ -638,7 +638,7 @@ def test_driver_initialization(headless: bool = True) -> bool:
             try:
                 print("  Testing tab management...")
                 # Open a new tab
-                driver.execute_script("window.open('about:blank', '_blank');")
+                cast(Any, driver).execute_script("window.open('about:blank', '_blank');")
                 tab_count_before = len(driver.window_handles)
                 print(f"  Created new tab. Total tabs: {tab_count_before}")
 

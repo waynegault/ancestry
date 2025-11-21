@@ -63,7 +63,7 @@ def _generate_vertical_diagram(
     relationship_path: list[dict[str, str]]
 ) -> str:
     """Generate a vertical relationship diagram."""
-    lines = []
+    lines: list[str] = []
     lines.append("Relationship Path:")
     lines.append("=" * 50)
     lines.append("")
@@ -98,7 +98,7 @@ def _generate_horizontal_diagram(
     relationships = [step.get('relationship', '') for step in relationship_path[1:]]
 
     # Build the diagram
-    diagram_parts = []
+    diagram_parts: list[str] = []
     for i, name in enumerate(names):
         if i == 0:
             diagram_parts.append(f"{name} (You)")

@@ -382,7 +382,7 @@ def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Opt
             return False
 
         # Step 3: Build metadata structure
-        tree_owner_regions = []
+        tree_owner_regions: list[dict[str, Any]] = []
         for region in regions:
             region_key = region["key"]
             region_name = region_names.get(region_key, f"Unknown Region {region_key}")

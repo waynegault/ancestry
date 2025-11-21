@@ -779,7 +779,7 @@ def _safe_update_error_context(error: Exception, payload: Optional[dict[str, Any
 
     existing = getattr(error, "context", None)
     if isinstance(existing, dict):
-        existing.update(payload)
+        cast(dict[str, Any], existing).update(payload)
         return
 
     setattr(error, "context", dict(payload))

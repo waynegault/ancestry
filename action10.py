@@ -228,7 +228,7 @@ def detailed_scoring_breakdown(
     reasons: list[str],
 ) -> str:
     """Generate detailed scoring breakdown for test reporting."""
-    breakdown = []
+    breakdown: list[str] = []
     breakdown.append(f"\n{'=' * 80}")
     breakdown.append(f"🔍 DETAILED SCORING BREAKDOWN: {test_name}")
     breakdown.append(f"{'=' * 80}")
@@ -785,7 +785,7 @@ def _evaluate_filter_criteria(
     alive_match = extracted_data["death_date_obj"] is None
 
     # Enforce mandatory place presence/match only when a non-empty criterion value is provided
-    place_checks = []
+    place_checks: list[bool] = []
     bp_crit = filter_criteria.get("birth_place")
     dp_crit = filter_criteria.get("death_place")
     if bp_crit:
@@ -799,7 +799,7 @@ def _evaluate_filter_criteria(
     has_fn = bool(filter_criteria.get("first_name"))
     has_sn = bool(filter_criteria.get("surname"))
     if has_fn or has_sn:
-        checks = []
+        checks: list[bool] = []
         if has_fn:
             checks.append(fn_match_filter)
         if has_sn:
@@ -1211,7 +1211,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
 
 def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[dict[str, Any]]:
     """Convert GEDCOM relative objects to standardized dictionary format."""
-    standardized = []
+    standardized: list[dict[str, Any]] = []
     for relative in relatives:
         if not relative:
             continue
@@ -1656,8 +1656,8 @@ def test_module_initialization() -> None:
         print(f"   • {func_name}")
 
     try:
-        found_functions = []
-        callable_functions = []
+        found_functions: list[str] = []
+        callable_functions: list[str] = []
 
         for func_name in required_functions:
             if func_name in globals():
@@ -1768,8 +1768,8 @@ def test_sanitize_input() -> None:
     ]
 
     print("📋 Testing input sanitization with test cases:")
-    results = []
-    failures = []
+    results: list[bool] = []
+    failures: list[str] = []
 
     for input_val, expected, description in test_cases:
         try:
@@ -1813,8 +1813,8 @@ def test_get_validated_year_input_patch() -> None:
     ]
 
     print("📋 Testing year input validation with formats:")
-    results = []
-    failures = []
+    results: list[bool] = []
+    failures: list[str] = []
 
     for input_val, expected, description in test_inputs:
         try:
@@ -2542,7 +2542,7 @@ def validate_performance_improvements() -> bool:
         results = compare_action10_performance()
 
         # Check targets
-        targets_met = []
+        targets_met: list[bool] = []
 
         # Target 1: Under 20 seconds total
         target_20s = results["comparison"]["optimized_time"] <= 20.0

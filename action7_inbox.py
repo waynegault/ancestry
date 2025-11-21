@@ -370,7 +370,8 @@ class InboxProcessor:
         forward_cursor: Optional[str] = None
         paging_data = response_data.get("paging", {})
         if isinstance(paging_data, Mapping):
-            cursor_value = paging_data.get("forward_cursor")
+            paging_dict = cast(dict[str, Any], paging_data)
+            cursor_value = paging_dict.get("forward_cursor")
             if isinstance(cursor_value, str):
                 forward_cursor = cursor_value
         return all_conversations_processed, forward_cursor
@@ -2182,7 +2183,7 @@ class InboxProcessor:
             )
             return True
 
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             logger.error(f"Error creating follow-up reminder task: {exc}", exc_info=True)
             return False
 

@@ -438,7 +438,7 @@ class ConversationMetrics(Base):
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize ConversationMetrics with proper defaults."""
-        super().__init__(**kwargs)
+        cast(Any, super()).__init__(**kwargs)
         # Initialize integer fields with 0 if not provided
         self._initialize_integer_fields()
         # Initialize boolean fields with False if not provided
@@ -2182,7 +2182,7 @@ def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple
     person_profile_id = str(person_profile_id_raw).upper() if person_profile_id_raw else None
 
     # Create log reference
-    log_parts = []
+    log_parts: list[str] = []
     if person_uuid:
         log_parts.append(f"UUID='{person_uuid}'")
     if person_profile_id:
@@ -2339,7 +2339,7 @@ def get_person_by_uuid(
 
 def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix: str) -> list[dict[str, Any]]:
     """Prepare and validate conversation log data for bulk insert."""
-    log_inserts_mappings = []
+    log_inserts_mappings: list[dict[str, Any]] = []
 
     for data in log_upserts:
         conv_id = data.get("conversation_id")
@@ -2377,13 +2377,14 @@ def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix
 
 def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum]) -> list[dict[str, Any]]:
     """Prepare and validate person update data for bulk update."""
-    person_update_mappings = []
+    person_update_mappings: list[dict[str, Any]] = []
 
     for pid, status_enum in person_updates.items():
         if pid <= 0:
             logger.warning(f"Invalid Person ID '{pid}' in updates. Skipping.")
             continue
         # Validate status enum (type guaranteed by function signature)
+        if not isinstance(status_enum, PersonStatusEnum):
             logger.warning(f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update.")
             continue
 
@@ -2965,14 +2966,14 @@ def test_soft_delete_functionality(session: Session) -> bool:
 
 def _create_test_persons_for_cleanup(session: Session) -> tuple[list[dict[str, str]], list[int]]:
     """Create test persons for cleanup testing."""
-    test_persons = []
+    test_persons: list[dict[str, str]] = []
     for i in range(3):
         test_uuid = f"TEST-CLEANUP-{uuid4()}"
         test_profile_id = f"TEST-CLEANUP-{uuid4()}"
         test_username = f"Test Cleanup User {i} {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
         test_persons.append({"uuid": test_uuid, "profile_id": test_profile_id, "username": test_username})
 
-    created_ids = []
+    created_ids: list[int] = []
     for i, person_data in enumerate(test_persons):
         logger.info(f"Creating test person {i + 1}: ProfileID={person_data['profile_id']}")
         person_id = create_person(session, person_data)
@@ -3491,7 +3492,7 @@ def _test_database_model_definitions() -> None:
     ]
 
     print("📋 Testing database model definitions:")
-    results = []
+    results: list[bool] = []
 
     for model_class, model_name, description in model_tests:
         # Test model existence
@@ -3512,12 +3513,10 @@ def _test_database_model_definitions() -> None:
 
         # Test table definition
         has_table = (
-            hasattr(model_class, "__table__") and model_class.__table__ is not None
+            hasattr(model_class, "__table__") and getattr(model_class, "__table__", None) is not None
         )
         table_name = (
-            model_class.__tablename__
-            if hasattr(model_class, "__tablename__")
-            else "Unknown"
+            getattr(model_class, "__tablename__", "Unknown")
         )
 
         status = "✅" if model_exists and instance_created and has_table else "❌"

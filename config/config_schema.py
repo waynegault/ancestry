@@ -103,7 +103,7 @@ class ConfigValidator:
 
     def _apply_general_rules(self, config: Any) -> list[str]:
         """Apply general validation rules and return errors."""
-        errors = []
+        errors: list[str] = []
         for rule in self.rules:
             error = self._validate_single_rule(config, rule)
             if error:
@@ -112,7 +112,7 @@ class ConfigValidator:
 
     def _apply_environment_rules(self, config: Any, environment: EnvironmentType) -> list[str]:
         """Apply environment-specific validation rules and return errors."""
-        errors = []
+        errors: list[str] = []
         if environment in self.environment_rules:
             for rule in self.environment_rules[environment]:
                 error = self._validate_environment_rule(config, rule, environment)
@@ -124,7 +124,7 @@ class ConfigValidator:
         self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT
     ) -> list[str]:
         """Validate configuration and return list of errors."""
-        errors = []
+        errors: list[str] = []
 
         # Apply general rules
         errors.extend(self._apply_general_rules(config))
@@ -328,7 +328,7 @@ class DatabaseConfig:
         if not self.database_file:
             raise ConfigValidationError("database_file not configured")
 
-        params = []
+        params: list[str] = []
         if self.journal_mode != "DELETE":
             params.append(f"journal_mode={self.journal_mode}")
         if self.foreign_keys:
@@ -578,10 +578,11 @@ class APIConfig:
             logger.warning("Invalid throttle profile for %s; expected dict", endpoint)
             return None
 
-        min_interval_value = self._to_float(profile_data.get("min_interval"), 0.0)
-        max_rate_value = self._to_float(profile_data.get("max_rate"), 0.0)
-        delay_multiplier_value = self._to_float(profile_data.get("delay_multiplier"), 1.0)
-        cooldown_value = self._to_float(profile_data.get("cooldown_after_429"), 0.0)
+        profile_dict: dict[str, Any] = profile_data
+        min_interval_value = self._to_float(profile_dict.get("min_interval"), 0.0)
+        max_rate_value = self._to_float(profile_dict.get("max_rate"), 0.0)
+        delay_multiplier_value = self._to_float(profile_dict.get("delay_multiplier"), 1.0)
+        cooldown_value = self._to_float(profile_dict.get("cooldown_after_429"), 0.0)
 
         delay_multiplier_value = max(1.0, delay_multiplier_value)
         cooldown_value = max(0.0, cooldown_value)
@@ -1001,7 +1002,7 @@ class ConfigSchema:
         Returns:
             List of validation error messages
         """
-        errors = []
+        errors: list[str] = []
 
         try:
             # Validate each sub-config by triggering __post_init__
@@ -1384,7 +1385,7 @@ def _test_performance() -> None:
         start_time = time.time()
 
         # Create multiple configurations
-        configs = []
+        configs: list[ConfigSchema] = []
         for i in range(100):
             config = ConfigSchema(environment="testing", debug_mode=i % 2 == 0)
             configs.append(config)
@@ -1426,8 +1427,10 @@ def _test_function_structure() -> None:
         ]:
             instance = config_class()
             assert hasattr(instance, "__post_init__")
+            # Cast to Any to avoid Pylance issues with dynamic attribute access
+            from typing import cast
             assert_valid_function(
-                instance.__post_init__, f"{config_class.__name__}.__post_init__"
+                cast(Any, instance).__post_init__, f"{cast(Any, config_class).__name__}.__post_init__"
             )
 
 
@@ -1483,7 +1486,7 @@ def _test_rate_limiting_configuration() -> None:
     ]
 
     # Validate conservative settings for API rate limiting compliance
-    issues = []
+    issues: list[str] = []
     for field_name, check_func, issue_type in validation_rules:
         field_value = getattr(api_config, field_name)
         if check_func(field_value):

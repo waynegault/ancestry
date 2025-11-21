@@ -150,7 +150,9 @@ class SessionComponentCache(BaseCacheModule):
             }
 
             # Use existing cache with component TTL
-            cache.set(
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cache_obj.set(
                 cache_key,
                 cache_data,
                 expire=SESSION_CACHE_CONFIG.component_ttl_seconds,
@@ -173,7 +175,9 @@ class SessionComponentCache(BaseCacheModule):
             config_hash = self._get_config_hash()
             cache_key = get_unified_cache_key("session", component_type, config_hash)
 
-            cached_data = cache.get(cache_key, retry=True)
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cached_data = cache_obj.get(cache_key, retry=True)
             if (cached_data and isinstance(cached_data, dict) and
                 all(key in cached_data for key in ["component", "timestamp", "config_hash"])):
                 # Check if cache is still valid
@@ -270,7 +274,9 @@ class APICacheManager(BaseCacheModule):
                 "params": params,
             }
 
-            cache.set(cache_key, cache_data, expire=ttl, retry=True)
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cache_obj.set(cache_key, cache_data, expire=ttl, retry=True)
             self._stats["api_responses_cached"] += 1
             logger.debug(f"Cached API response: {service}.{method}")
             return True
@@ -313,7 +319,10 @@ class APICacheManager(BaseCacheModule):
 
         try:
             cache_key = get_unified_cache_key("api", service, method, str(hash(str(params))))
-            cached_data = cache.get(cache_key, retry=True)
+
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cached_data = cache_obj.get(cache_key, retry=True)
 
             if (cached_data and isinstance(cached_data, dict) and
                 "response" in cached_data and "timestamp" in cached_data):
@@ -356,7 +365,7 @@ class SystemCacheManager(BaseCacheModule):
     """
 
     def __init__(self) -> None:
-        self._memory_stats = {
+        self._memory_stats: dict[str, Any] = {
             "gc_collections": 0,
             "memory_freed_mb": 0.0,
             "peak_memory_mb": 0.0,
@@ -463,7 +472,7 @@ class UnifiedCacheManager:
 
     def warm_all_caches(self) -> bool:
         """Warm all cache subsystems."""
-        results = []
+        results: list[bool] = []
         try:
             results.append(self.session_cache.warm())
         except Exception:

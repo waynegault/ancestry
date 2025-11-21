@@ -280,7 +280,8 @@ class MainCLIHelpers:
 
         print("  Targets:")
         now_ts = time.time()
-        for target in targets:
+        for target_item in targets:
+            target = cast(dict[str, Any], target_item)
             name = target.get("name", "?")
             files = target.get("files_remaining", target.get("files_scanned", "?"))
             size_bytes = target.get("total_size_bytes", 0)
@@ -315,10 +316,12 @@ class MainCLIHelpers:
     def _render_health_stats(health: Any) -> bool:
         if not (isinstance(health, dict) and health):
             return False
-        score = health.get("overall_score")
+
+        health_dict = cast(dict[str, Any], health)
+        score = health_dict.get("overall_score")
         score_str = f"{score:.1f}" if isinstance(score, (int, float)) else str(score)
         print(f"  Health Score: {score_str}")
-        recommendations = health.get("recommendations")
+        recommendations = health_dict.get("recommendations")
         if recommendations:
             print(f"  Recommendations: {len(recommendations)}")
         return True

@@ -454,8 +454,8 @@ def _test_circuit_breaker_thread_safety() -> bool:
     import time
 
     breaker = SessionCircuitBreaker("thread_test", threshold=10)
-    results = []
-    errors = []
+    results: list[str] = []
+    errors: list[str] = []
 
     def worker(thread_id: int) -> None:
         try:
@@ -474,7 +474,7 @@ def _test_circuit_breaker_thread_safety() -> bool:
             errors.append(f"Thread {thread_id}: {e}")
 
     # Create multiple threads
-    threads = []
+    threads: list[threading.Thread] = []
     for i in range(3):
         thread = threading.Thread(target=worker, args=(i,))
         threads.append(thread)
@@ -589,7 +589,7 @@ def circuit_breaker_module_tests() -> bool:
         # Fallback test implementation when test_framework is not available
         print("⚠️  test_framework not available, running basic tests...")
 
-        test_results = []
+        test_results: list[bool] = []
         test_functions = [
             ("Circuit Breaker Initialization", _test_circuit_breaker_initialization),
             ("State Transitions", _test_circuit_breaker_state_transitions),

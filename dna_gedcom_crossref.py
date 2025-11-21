@@ -177,7 +177,7 @@ class DNAGedcomCrossReferencer:
 
     def _extract_gedcom_people(self, gedcom_data: Any) -> list[GedcomPerson]:
         """Extract people data from GEDCOM for cross-referencing."""
-        gedcom_people = []
+        gedcom_people: list[GedcomPerson] = []
 
         try:
             if not gedcom_data or not hasattr(gedcom_data, 'indi_index'):
@@ -226,7 +226,7 @@ class DNAGedcomCrossReferencer:
     ):
         """Analyze a single DNA match against GEDCOM data."""
         try:
-            potential_matches = []
+            potential_matches: list[dict[str, Any]] = []
 
             # Look for name matches
             name_matches = self._find_name_matches(dna_match, gedcom_people)
@@ -266,7 +266,7 @@ class DNAGedcomCrossReferencer:
     @staticmethod
     def _find_name_matches(dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on name similarity."""
-        name_matches = []
+        name_matches: list[dict[str, Any]] = []
 
         dna_name_parts = dna_match.match_name.lower().split()
 
@@ -294,7 +294,7 @@ class DNAGedcomCrossReferencer:
         tree_owner_info: Optional[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Find potential matches based on estimated relationship."""
-        relationship_matches = []
+        relationship_matches: list[dict[str, Any]] = []
 
         if not dna_match.estimated_relationship or not tree_owner_info:
             return relationship_matches
@@ -323,7 +323,7 @@ class DNAGedcomCrossReferencer:
     @staticmethod
     def _find_context_matches(dna_match: DNAMatch, gedcom_people: list[GedcomPerson]) -> list[dict[str, Any]]:
         """Find potential matches based on geographic and temporal context."""
-        context_matches = []
+        context_matches: list[dict[str, Any]] = []
 
         # This would analyze shared ancestors, locations, time periods
         # For now, providing basic framework
@@ -344,7 +344,7 @@ class DNAGedcomCrossReferencer:
     def _deduplicate_and_score_matches(potential_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Remove duplicate matches and calculate final scores."""
         # Group by GEDCOM person
-        person_matches = {}
+        person_matches: dict[str, list[dict[str, Any]]] = {}
 
         for match in potential_matches:
             person_id = match['gedcom_person'].person_id
@@ -353,7 +353,7 @@ class DNAGedcomCrossReferencer:
             person_matches[person_id].append(match)
 
         # Calculate combined scores for each person
-        unique_matches = []
+        unique_matches: list[dict[str, Any]] = []
         for _, matches in person_matches.items():
             # Take the best match for each person
             best_match = max(matches, key=lambda m: m['confidence'])
@@ -370,7 +370,7 @@ class DNAGedcomCrossReferencer:
     @staticmethod
     def _generate_verification_tasks(dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate verification tasks for cross-reference matches."""
-        tasks = []
+        tasks: list[str] = []
 
         for match in matches:
             gedcom_person = match['gedcom_person']
@@ -388,7 +388,7 @@ class DNAGedcomCrossReferencer:
     @staticmethod
     def _generate_research_suggestions(dna_match: DNAMatch, matches: list[dict[str, Any]]) -> list[str]:
         """Generate research suggestions for cross-reference matches."""
-        suggestions = []
+        suggestions: list[str] = []
 
         suggestions.append(f"Compare {dna_match.match_name}'s family tree with potential GEDCOM matches")
         suggestions.append("Look for shared DNA segments to confirm relationship")
@@ -547,7 +547,7 @@ class DNAGedcomCrossReferencer:
 
     def _generate_crossref_recommendations(self) -> list[str]:
         """Generate recommendations based on cross-reference analysis."""
-        recommendations = []
+        recommendations: list[str] = []
 
         high_confidence = len([m for m in self.cross_reference_matches if m.confidence_score > 0.7])
         if high_confidence > 0:

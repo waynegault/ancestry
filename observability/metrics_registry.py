@@ -31,10 +31,11 @@ PROMETHEUS_AVAILABLE = _prometheus_client is not None
 _IMPORT_ERROR: Optional[Exception] = _prometheus_import_error
 
 if _prometheus_client is not None:  # pragma: no cover - runtime wiring
-    CollectorRegistry = _prometheus_client.CollectorRegistry
-    Counter = _prometheus_client.Counter
-    Gauge = _prometheus_client.Gauge
-    Histogram = _prometheus_client.Histogram
+    _client_any = cast(Any, _prometheus_client)
+    CollectorRegistry = _client_any.CollectorRegistry
+    Counter = _client_any.Counter
+    Gauge = _client_any.Gauge
+    Histogram = _client_any.Histogram
 else:  # pragma: no cover - typed fallback when dependency missing
     CollectorRegistry = cast(Any, None)
     Counter = cast(Any, None)

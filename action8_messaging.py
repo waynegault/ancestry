@@ -39,7 +39,6 @@ except ImportError:
 MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 import os
 import sys
 import time
@@ -1448,7 +1447,7 @@ def _validate_system_health(session_manager: Optional[SessionManager]) -> bool:
         # Action 8-specific check: Essential message templates availability
         ensure_message_templates_loaded()
         required_templates = set(MESSAGE_TYPES_ACTION8.keys())
-        missing_templates = []
+        missing_templates: list[str] = []
         for template_key in required_templates:
             if template_key not in MESSAGE_TEMPLATES:
                 missing_templates.append(template_key)
@@ -1689,7 +1688,7 @@ class ResourceManager:
     """
 
     def __init__(self) -> None:
-        self.allocated_resources = []
+        self.allocated_resources: list[tuple[str, Any]] = []
         self.memory_threshold_mb = 250  # Trigger cleanup at 250MB (more appropriate for modern systems)
         self.gc_interval = 50  # Trigger GC every 50 operations
         self.operation_count = 0
@@ -1850,11 +1849,11 @@ class ProactiveApiManager:
             return None
 
         status = response_data[0]
-        if status and "delivered OK" in status:
+        if status and isinstance(status, str) and "delivered OK" in status:
             logger.debug(f"API validation passed: {status}")
             return True
 
-        if status and "error" in status.lower():
+        if status and isinstance(status, str) and "error" in status.lower():
             logger.warning(f"API validation failed: {status}")
             return False
 
@@ -2270,7 +2269,7 @@ def enhance_message_format_data_phase5(
 def _check_halt_signal(session_manager: SessionManager) -> None:
     """Check for halt signal and raise exception if detected."""
     if session_manager.should_halt_operations():
-        cascade_count = session_manager.session_health_monitor.get('death_cascade_count', 0)
+        cascade_count = cast(dict[str, int], session_manager.session_health_monitor).get('death_cascade_count', 0)
         logger.warning(f"🚨 HALT SIGNAL: Skipping person processing due to session death cascade (#{cascade_count})")
         raise MaxApiFailuresExceededError(f"Session death cascade detected (#{cascade_count}) - halting person processing")
 
@@ -2628,9 +2627,9 @@ def _prepare_message_format_data(person: Person, family_tree: Optional[FamilyTre
     except Exception as e:
         logger.warning(f"Could not add Phase 5 enhancements: {e}")
         # Add empty placeholders so templates don't break
-        format_data.setdefault('source_citations', '')
-        format_data.setdefault('relationship_diagram', '')
-        format_data.setdefault('research_suggestions', '')
+        cast(dict[str, Any], format_data).setdefault('source_citations', '')
+        cast(dict[str, Any], format_data).setdefault('relationship_diagram', '')
+        cast(dict[str, Any], format_data).setdefault('research_suggestions', '')
 
     return format_data
 
@@ -3233,7 +3232,7 @@ def _convert_log_object_to_dict(new_log_object: ConversationLog) -> Optional[dic
     try:
         log_dict = {
             c.key: getattr(new_log_object, c.key)
-            for c in sa_inspect(new_log_object).mapper.column_attrs
+            for c in cast(Any, sa_inspect(new_log_object)).mapper.column_attrs
             if hasattr(new_log_object, c.key)
         }
 
@@ -4122,7 +4121,7 @@ def _test_safe_column_value() -> None:
     ]
 
     print("📋 Testing safe column value extraction:")
-    results = []
+    results: list[bool] = []
 
     for obj, attr_name, default, description in test_cases:
         try:
@@ -4151,7 +4150,7 @@ def _test_safe_column_value() -> None:
 def _test_message_template_loading() -> None:
     """Test message template loading functionality."""
     print("📋 Testing message template loading:")
-    results = []
+    results: list[bool] = []
 
     try:
         templates = load_message_templates()
@@ -4182,7 +4181,7 @@ def _test_circuit_breaker_config() -> None:
     import inspect
 
     print("📋 Testing circuit breaker configuration:")
-    results = []
+    results: list[bool] = []
 
     # Get the decorators applied to send_messages_to_matches
     func = send_messages_to_matches
@@ -4219,7 +4218,7 @@ def _test_circuit_breaker_config() -> None:
 def _test_session_death_cascade_detection() -> None:
     """Test session death cascade detection and handling."""
     print("📋 Testing session death cascade detection:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test that MaxApiFailuresExceededError is available
@@ -4254,7 +4253,7 @@ def _test_session_death_cascade_detection() -> None:
 def _test_performance_tracking() -> None:
     """Test performance tracking functionality."""
     print("📋 Testing performance tracking:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test performance tracking function exists
@@ -4301,11 +4300,11 @@ def _test_performance_tracking() -> None:
 def _test_enhanced_error_handling() -> None:
     """Test enhanced error handling patterns."""
     print("📋 Testing enhanced error handling:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test error classes are available
-        error_classes = [
+        error_classes: list[type[Exception]] = [
             BrowserSessionError,
             APIRateLimitError,
             AuthenticationExpiredError,
@@ -4316,7 +4315,7 @@ def _test_enhanced_error_handling() -> None:
             try:
                 # Handle different error class signatures
                 if error_class == MaxApiFailuresExceededError:
-                    test_error = error_class("Test error", context={"source": "Action 8"})
+                    test_error = cast(Any, error_class)("Test error", context={"source": "Action 8"})
                 else:
                     test_error = error_class("Test error")
                 is_exception = isinstance(test_error, Exception)
@@ -4344,7 +4343,7 @@ def _test_enhanced_error_handling() -> None:
 def _test_integration_with_shared_modules() -> None:
     """Test integration with shared modules."""
     print("📋 Testing integration with shared modules:")
-    results = []
+    results: list[bool] = []
 
     try:
         # Test universal session monitor integration (now in SessionManager)
@@ -4474,9 +4473,9 @@ def _test_logger_respects_info_level() -> None:
     class _ListHandler(_logging.Handler):
         def __init__(self) -> None:
             super().__init__()
-            self.records = []
+            self.records: list[_logging.LogRecord] = []
 
-        def emit(self, record: logging.LogRecord) -> None:
+        def emit(self, record: _logging.LogRecord) -> None:
             self.records.append(record)
     lh = _ListHandler()
     lh.setLevel(_logging.DEBUG)
@@ -4500,9 +4499,9 @@ def _test_no_debug_when_info() -> None:
     class _ListHandler(_logging.Handler):
         def __init__(self) -> None:
             super().__init__()
-            self.messages = []
+            self.messages: list[tuple[int, str]] = []
 
-        def emit(self, record: logging.LogRecord) -> None:
+        def emit(self, record: _logging.LogRecord) -> None:
             self.messages.append((record.levelno, record.getMessage()))
     lh = _ListHandler()
     lh.setLevel(_logging.DEBUG)

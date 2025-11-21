@@ -103,7 +103,7 @@ def format_multiple_records(
     records_to_show = records[:max_records]
 
     # Format each record
-    formatted_records = []
+    formatted_records: list[str] = []
     for record in records_to_show:
         record_type = record.get('type', 'Unknown')
         details = record.get('details', {})
@@ -140,7 +140,7 @@ def create_record_sharing_message(
     Returns:
         Complete message text
     """
-    message_parts = []
+    message_parts: list[str] = []
 
     # Add context if provided
     if context:

@@ -106,7 +106,7 @@ class PersonLookupResult:
 
     def _format_family_details(self) -> list[str]:
         """Format family details."""
-        parts = []
+        parts: list[str] = []
         if not self.family_details:
             return parts
 

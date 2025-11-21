@@ -33,7 +33,7 @@ import time
 
 # Note: sys and Path already imported at top of file
 from collections.abc import AsyncGenerator, Generator
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, TypedDict, cast
 from unittest.mock import MagicMock, patch
 
 # === THIRD-PARTY IMPORTS ===
@@ -67,6 +67,19 @@ timeout_protection_decorator = cast(DecoratorFactory, timeout_protection)
 # Initialize config
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
+
+
+class ConnectionStats(TypedDict):
+    total_connections: int
+    active_connections: int
+    failed_connections: int
+    connection_leaks: int
+    query_count: int
+    slow_queries: int
+    total_query_time: float
+    avg_query_time: float
+    pool_overflows: int
+    pool_invalidations: int
 
 
 class DatabaseManager:
@@ -110,7 +123,7 @@ class DatabaseManager:
         self._db_ready: bool = False
 
         # Phase 7.3.2 Enhancement: Performance monitoring
-        self._connection_stats = {
+        self._connection_stats: ConnectionStats = {
             "total_connections": 0,
             "active_connections": 0,
             "failed_connections": 0,
@@ -187,7 +200,7 @@ class DatabaseManager:
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get comprehensive database performance statistics."""
-        stats = self._connection_stats.copy()
+        stats = cast(dict[str, Any], self._connection_stats.copy())
 
         # Calculate derived metrics
         total_requests = stats["total_connections"]

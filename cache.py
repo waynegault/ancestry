@@ -300,7 +300,9 @@ def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
         logger.warning("Cache not initialized - skipping cache read")
         return False, None
     try:
-        cached_value = cache.get(cache_key, default=ENOVAL, retry=True)
+        # Cast cache to Any to avoid type errors
+        cache_obj = cast(Any, cache)
+        cached_value = cache_obj.get(cache_key, default=ENOVAL, retry=True)
         if cached_value is not ENOVAL:
             logger.debug(f"Cache HIT for key: '{cache_key}'")
             get_intelligent_cache_warmer().record_cache_access(cache_key, hit=True)
@@ -320,7 +322,9 @@ def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> Non
         return
     try:
         if check_cache_size_before_add():
-            cache.set(cache_key, result, expire=expire, retry=True)
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cache_obj.set(cache_key, result, expire=expire, retry=True)
             expire_msg = f"with expiry {expire}s" if expire is not None else "with default expiry"
             logger.debug(f"Cached result for key: '{cache_key}' {expire_msg}.")
         else:
@@ -679,9 +683,9 @@ def _collect_lru_keys_to_remove(entries_to_remove: int) -> list[str]:
     if cache is None:
         logger.warning("Cache not initialized - cannot collect keys")
         return []
-    keys_to_remove = []
+    keys_to_remove: list[str] = []
     for key_count, key in enumerate(cache, start=1):
-        keys_to_remove.append(key)
+        keys_to_remove.append(str(key))
         if key_count >= entries_to_remove:
             break
     return keys_to_remove
@@ -695,7 +699,9 @@ def _remove_cache_keys(keys_to_remove: list[str]) -> int:
     removed_count = 0
     for key in keys_to_remove:
         try:
-            cache.delete(key)
+            # Cast cache to Any to avoid type errors
+            cache_obj = cast(Any, cache)
+            cache_obj.delete(key)
             removed_count += 1
             logger.debug(f"Evicted cache key: {key}")
         except Exception as del_error:
@@ -932,7 +938,9 @@ def cache_file_based_on_mtime(
                 )
 
                 # Try to get from cache
-                cached_value: Any = cache.get(final_cache_key, default=ENOVAL, retry=True)
+                # Cast cache to Any to avoid type errors
+                cache_obj = cast(Any, cache)
+                cached_value: Any = cache_obj.get(final_cache_key, default=ENOVAL, retry=True)
 
                 if cached_value is not ENOVAL:
                     logger.debug(f"Cache HIT for file-based key: '{final_cache_key}'")
@@ -941,7 +949,9 @@ def cache_file_based_on_mtime(
 
                 # Execute function and cache result
                 result = func(*args, **kwargs)
-                cache.set(final_cache_key, result, expire=expire, retry=True)
+                # Cast cache to Any to avoid type errors
+                cache_obj = cast(Any, cache)
+                cache_obj.set(final_cache_key, result, expire=expire, retry=True)
                 logger.debug(f"Cached file-based result for key: '{final_cache_key}'")
 
                 return result
@@ -977,7 +987,9 @@ def warm_cache_with_data(
         return False
 
     try:
-        cache.set(cache_key, data, expire=expire, retry=True)
+        # Cast cache to Any to avoid type errors
+        cache_obj = cast(Any, cache)
+        cache_obj.set(cache_key, data, expire=expire, retry=True)
         logger.debug(f"Cache warmed with key: '{cache_key}'")
         return True
     except Exception as e:
@@ -1032,7 +1044,7 @@ class IntelligentCacheWarmer:
 
     def get_warming_candidates(self, max_candidates: int = 20) -> list[str]:
         """Get cache keys that should be warmed based on usage patterns."""
-        candidates = []
+        candidates: list[tuple[str, float]] = []
 
         for cache_key, pattern in self.usage_patterns.items():
             # Calculate warming score based on multiple factors
@@ -1213,10 +1225,10 @@ class CacheDependencyTracker:
 
     def get_dependency_chain(self, cache_key: str) -> list[str]:
         """Get the full dependency chain for a cache key."""
-        chain = []
-        visited = set()
+        chain: list[str] = []
+        visited: set[str] = set()
 
-        def _collect_dependencies(key: str):
+        def _collect_dependencies(key: str) -> None:
             if key in visited:
                 return
             visited.add(key)
@@ -1264,9 +1276,11 @@ def invalidate_cache_pattern(pattern: str) -> int:
     try:
         invalidated = 0
         # Get all keys and filter by pattern
+        # Cast cache to Any to avoid type errors
+        cache_obj = cast(Any, cache)
         for key in list(cache):
             if pattern in str(key):
-                cache.delete(key)
+                cache_obj.delete(key)
                 invalidated += 1
 
         logger.debug(
@@ -1323,15 +1337,17 @@ def _test_basic_cache_operations() -> bool:
     test_key = "test_basic_ops"
     test_value = "test_value_123"
 
-    cache.set(test_key, test_value)
-    retrieved = cache.get(test_key)
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
+    cache_obj.set(test_key, test_value)
+    retrieved = cache_obj.get(test_key)
     assert (
         retrieved == test_value
     ), f"Retrieved value {retrieved} doesn't match set value {test_value}"
 
     # Test delete
-    cache.delete(test_key)
-    retrieved_after_delete = cache.get(test_key)
+    cache_obj.delete(test_key)
+    retrieved_after_delete = cache_obj.get(test_key)
     assert retrieved_after_delete is None, "Value should be None after deletion"
     return True
 
@@ -1366,11 +1382,13 @@ def _test_cache_expiration() -> bool:
     test_key = "test_expiration"
     test_value = "expires_soon"
 
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
     # Set with very short TTL
-    cache.set(test_key, test_value, expire=0.1)  # 100ms
+    cache_obj.set(test_key, test_value, expire=0.1)  # 100ms
 
     # Should be available immediately
-    assert cache.get(test_key) == test_value
+    assert cache_obj.get(test_key) == test_value
 
     # Wait for expiration
     import time
@@ -1378,7 +1396,7 @@ def _test_cache_expiration() -> bool:
     time.sleep(0.2)
 
     # Should be expired
-    expired_value = cache.get(test_key)
+    expired_value = cache_obj.get(test_key)
     assert expired_value is None
     return True
 
@@ -1390,12 +1408,14 @@ def _test_cache_size_management() -> bool:
         return True
 
     # Set multiple values
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
     for i in range(5):
-        cache.set(f"size_test_{i}", f"value_{i}")
+        cache_obj.set(f"size_test_{i}", f"value_{i}")
 
     # Verify they're stored
     for i in range(5):
-        value = cache.get(f"size_test_{i}")
+        value = cache_obj.get(f"size_test_{i}")
         if value is not None:  # May be evicted, that's okay
             assert value == f"value_{i}"
     return True
@@ -1407,19 +1427,21 @@ def _test_cache_clearing() -> bool:
         return True
 
     # Set some test data
-    cache.set("clear_test_1", "data1")
-    cache.set("clear_test_2", "data2")
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
+    cache_obj.set("clear_test_1", "data1")
+    cache_obj.set("clear_test_2", "data2")
 
     # Verify data exists
-    assert cache.get("clear_test_1") == "data1"
-    assert cache.get("clear_test_2") == "data2"
+    assert cache_obj.get("clear_test_1") == "data1"
+    assert cache_obj.get("clear_test_2") == "data2"
 
     # Clear cache
-    cache.clear()
+    cache_obj.clear()
 
     # Verify data is gone
-    assert cache.get("clear_test_1") is None
-    assert cache.get("clear_test_2") is None
+    assert cache_obj.get("clear_test_1") is None
+    assert cache_obj.get("clear_test_2") is None
     return True
 
 
@@ -1430,14 +1452,16 @@ def _test_complex_data_types() -> bool:
 
     # Test dictionary
     test_dict = {"key1": "value1", "nested": {"key2": "value2"}}
-    cache.set("test_dict", test_dict)
-    retrieved_dict = cache.get("test_dict")
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
+    cache_obj.set("test_dict", test_dict)
+    retrieved_dict = cache_obj.get("test_dict")
     assert retrieved_dict == test_dict
 
     # Test list
     test_list = [1, 2, {"nested": "value"}, [3, 4]]
-    cache.set("test_list", test_list)
-    retrieved_list = cache.get("test_list")
+    cache_obj.set("test_list", test_list)
+    retrieved_list = cache_obj.get("test_list")
     assert retrieved_list == test_list
     return True
 
@@ -1452,9 +1476,11 @@ def _test_cache_performance() -> bool:
 
     start_time = time.time()
 
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
     for i in range(100):
-        cache.set(f"perf_test_{i}", f"value_{i}")
-        cache.get(f"perf_test_{i}")
+        cache_obj.set(f"perf_test_{i}", f"value_{i}")
+        cache_obj.get(f"perf_test_{i}")
 
     duration = time.time() - start_time
     assert (
@@ -1469,14 +1495,16 @@ def _test_error_handling() -> bool:
         return True
 
     # Test with None values
-    cache.set("test_none", None)
-    cache.get("test_none")
+    # Cast cache to Any to avoid type errors
+    cache_obj = cast(Any, cache)
+    cache_obj.set("test_none", None)
+    cache_obj.get("test_none")
     # Note: this might be None due to the value OR due to key not found
     # The actual behavior depends on diskcache implementation
 
     # Test with empty string
-    cache.set("test_empty", "")
-    retrieved_empty = cache.get("test_empty")
+    cache_obj.set("test_empty", "")
+    retrieved_empty = cache_obj.get("test_empty")
     assert isinstance(retrieved_empty, str) and not retrieved_empty
     return True
 
@@ -1492,8 +1520,10 @@ def _test_health_monitoring() -> bool:
     # Test cache directory health
     if cache is not None:
         # Basic health check - cache should be operational
-        cache.set("health_test", "healthy")
-        assert cache.get("health_test") == "healthy"
+        # Cast cache to Any to avoid type errors
+        cache_obj = cast(Any, cache)
+        cache_obj.set("health_test", "healthy")
+        assert cache_obj.get("health_test") == "healthy"
     return True
 
 

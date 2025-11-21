@@ -457,7 +457,7 @@ def _process_and_score_suggestions(suggestions: CandidateList, criteria: dict[st
 
 
 def _extract_field_scores_for_display(candidate: CandidateDict) -> FieldScoreDict:
-    fs = candidate.get("field_scores", {}) or {}
+    fs = cast(dict[str, Any], candidate.get("field_scores", {}) or {})
     return {
         "givn_s": int(fs.get("givn", 0)),
         "surn_s": int(fs.get("surn", 0)),
@@ -676,10 +676,10 @@ def _format_kinship_persons_path(kinship_persons: CandidateList, owner_name: str
         return "(No relationship path available)"
 
     # Build the relationship path
-    path_lines = []
+    path_lines: list[str] = []
 
     # Track names we've seen to avoid repeating years
-    seen_names = set()
+    seen_names: set[str] = set()
 
     # Add first person as standalone line with years
     first_person = kinship_persons[0]

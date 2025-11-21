@@ -42,7 +42,7 @@ def extract_test_function_body(content: str) -> Optional[tuple[str, str, int]]:
 
     # Find the function body by tracking indentation
     lines = content[start_pos:].split('\n')
-    body_lines = []
+    body_lines: list[str] = []
     base_indent = None
 
     for line in lines:

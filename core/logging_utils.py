@@ -84,8 +84,8 @@ def ensure_no_duplicate_handlers(logger_instance: logging.Logger) -> None:
     Args:
         logger_instance: The logger to check and clean up
     """
-    seen_handlers = set()
-    handlers_to_remove = []
+    seen_handlers: set[tuple[str, Optional[str]]] = set()
+    handlers_to_remove: list[logging.Handler] = []
 
     for handler in logger_instance.handlers:
         handler_id = (type(handler).__name__, getattr(handler, "baseFilename", None))

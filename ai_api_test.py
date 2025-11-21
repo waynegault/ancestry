@@ -8,7 +8,6 @@ Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercu
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import re
 import subprocess
@@ -29,9 +28,11 @@ OpenAI: Any | None = _OpenAI
 
 genai_import_error: str | None = None
 try:
-    genai = importlib.import_module("google.generativeai")
-except Exception as import_error:  # pragma: no cover - optional dependency
+    from google import genai
+    from google.genai import types as genai_types
+except ImportError as import_error:  # pragma: no cover - optional dependency
     genai = None
+    genai_types = None
     genai_import_error = str(import_error)
 
 try:
@@ -332,7 +333,7 @@ def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
             return TestResult("moonshot", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Moonshot returned an empty response.")
         return TestResult("moonshot", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         messages.append(_format_provider_error("moonshot", exc))
         return TestResult("moonshot", False, endpoint_ok, messages)
 
@@ -375,39 +376,40 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
             return TestResult("deepseek", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Received empty response payload from DeepSeek.")
         return TestResult("deepseek", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         messages.append(_format_provider_error("deepseek", exc))
         return TestResult("deepseek", False, endpoint_ok, messages)
 
 
-def _describe_gemini_models(model_name: str, messages: list[str]) -> None:
-    if genai is None:
+def _describe_gemini_models(client: Any, model_name: str, messages: list[str]) -> None:
+    if client is None:
         return
-    list_models_raw = getattr(genai, "list_models", None)
-    if not callable(list_models_raw):
-        return
-    list_models_fn = cast(ListModelsFn, list_models_raw)
     try:
         messages.append("\n📋 Available Gemini models with generateContent support:")
         model_count = 0
         found_configured = False
-        for model in list_models_fn():
+        # client.models.list() returns an iterator of Model objects
+        for model in client.models.list():
+            # Check supported generation methods if available, otherwise assume it's a model
             methods = getattr(model, "supported_generation_methods", [])
-            if "generateContent" not in methods:
+            if methods and "generateContent" not in methods:
                 continue
+
+            # model.name is usually "models/gemini-1.5-flash"
             name = getattr(model, "name", "").replace("models/", "")
             if not name:
                 continue
+
             marker = " ← CONFIGURED" if name == model_name else ""
             messages.append(f"   • {name}{marker}")
             model_count += 1
             if name == model_name:
                 found_configured = True
-            if model_count >= 5:
+            if model_count >= 10:  # Increased limit slightly
                 messages.append("   ... (additional models available)")
                 break
         if model_count == 0:
-            messages.append("   ⚠️  No models found with generateContent support")
+            messages.append("   ⚠️  No models found")
         elif not found_configured:
             messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
         messages.append("")
@@ -416,18 +418,14 @@ def _describe_gemini_models(model_name: str, messages: list[str]) -> None:
         messages.append("")
 
 
-def _suggest_gemini_model_alternatives(error_msg: str) -> str:
-    if genai is None:
+def _suggest_gemini_model_alternatives(client: Any, error_msg: str) -> str:
+    if client is None:
         return error_msg
-    list_models_raw = getattr(genai, "list_models", None)
-    if not callable(list_models_raw):
-        return error_msg
-    list_models_fn = cast(ListModelsFn, list_models_raw)
     try:
         available_models: list[str] = []
-        for model in list_models_fn():
+        for model in client.models.list():
             methods = getattr(model, "supported_generation_methods", [])
-            if "generateContent" not in methods:
+            if methods and "generateContent" not in methods:
                 continue
             name = getattr(model, "name", "").replace("models/", "")
             if name:
@@ -455,13 +453,16 @@ def _parse_gemini_response(response: Any, messages: list[str]) -> tuple[bool, st
     finish_reason = getattr(candidate, "finish_reason", None)
     safety_ratings = getattr(candidate, "safety_ratings", [])
 
-    if finish_reason and finish_reason != 1:  # 1 = STOP (normal completion)
+    # In new SDK, finish_reason might be 'STOP' or similar string/enum
+    # We'll just log it if it looks abnormal
+    if finish_reason and str(finish_reason) not in {"STOP", "1", "FinishReason.STOP"}:
         messages.append(f"⚠️  Generation stopped with finish_reason: {finish_reason}")
         if safety_ratings:
             messages.append(f"Safety ratings: {safety_ratings}")
 
     text_parts: list[str] = []
-    parts = getattr(getattr(candidate, "content", None), "parts", [])
+    content = getattr(candidate, "content", None)
+    parts = getattr(content, "parts", [])
     for part in parts:
         value = getattr(part, "text", "")
         if value:
@@ -474,6 +475,7 @@ def _parse_gemini_response(response: Any, messages: list[str]) -> tuple[bool, st
         return True, combined, finish_reason_text
 
     messages.append("Gemini response contained no text content.")
+    # prompt_feedback is not always present in new SDK response objects in the same way
     if hasattr(response, "prompt_feedback"):
         messages.append(f"Prompt feedback: {response.prompt_feedback}")
     return False, None, None
@@ -483,13 +485,13 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if genai is None:
         messages.append(
-            "google-generativeai package not available ("
-            f"{genai_import_error or 'Install google-generativeai.'})."
+            "google-genai package not available ("
+            f"{genai_import_error or 'Install google-genai.'})."
         )
         return TestResult("gemini", False, False, messages)
 
     api_key = os.getenv("GOOGLE_API_KEY")
-    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-1.5-flash-latest")
+    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-1.5-flash")
     base_url = os.getenv("GOOGLE_AI_BASE_URL", "")
 
     if not api_key:
@@ -502,40 +504,41 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     else:
         messages.append("Using default Google Generative Language endpoint.")
 
-    configure_fn: Callable[..., Any] | None = getattr(genai, "configure", None)
-    generation_config_cls: Any = getattr(genai, "GenerationConfig", None)
-    generative_model_cls: Any = getattr(genai, "GenerativeModel", None)
-
-    if not callable(configure_fn) or generation_config_cls is None or generative_model_cls is None:
-        messages.append("google-generativeai module is missing required interfaces (configure/GenerativeModel).")
-        return TestResult("gemini", False, endpoint_ok, messages)
-
-    success = False
-    full_output: str | None = None
-    finish_reason_str: str | None = None
-
+    client: Any = None
     try:
-        configure_fn(api_key=api_key)
-        _describe_gemini_models(model_name, messages)
+        # Initialize the client
+        # Note: The new SDK uses 'http_options' for base_url if needed, or just api_key
+        if base_url:
+            client = genai.Client(api_key=api_key, http_options=cast(Any, {'api_endpoint': base_url}))
+        else:
+            client = genai.Client(api_key=api_key)
 
-        model = generative_model_cls(model_name)
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config_cls(
-                candidate_count=1,
-                max_output_tokens=max_tokens,
-                temperature=0.7,
-            ),
+        _describe_gemini_models(client, model_name, messages)
+
+        # Create config
+        config = None
+        if genai_types:
+            config = {
+                "candidateCount": 1,
+                "maxOutputTokens": max_tokens,
+                "temperature": 0.7,
+            }
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=cast(Any, config),
         )
 
         success, full_output, finish_reason_str = _parse_gemini_response(response, messages)
 
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         error_msg = _format_provider_error("gemini", exc)
         lowered = error_msg.lower()
         if "is not found" in lowered or "not supported" in lowered:
-            error_msg = _suggest_gemini_model_alternatives(error_msg)
+            error_msg = _suggest_gemini_model_alternatives(client, error_msg)
         messages.append(error_msg)
+        return TestResult("gemini", False, endpoint_ok, messages)
 
     return TestResult(
         "gemini",
@@ -626,7 +629,7 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
             return TestResult("local_llm", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Local LLM returned an empty response.")
         return TestResult("local_llm", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         error_msg = _format_provider_error("local_llm", exc)
         if "no models loaded" in str(exc).lower():
             error_msg += " Please start LM Studio, load a model (e.g., qwen3-4b-2507), and ensure it's running on the configured endpoint."
@@ -679,7 +682,7 @@ def _test_inception(prompt: str, max_tokens: int) -> TestResult:
             return TestResult("inception", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
         messages.append("Inception Mercury returned an empty response.")
         return TestResult("inception", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         messages.append(_format_provider_error("inception", exc))
         return TestResult("inception", False, endpoint_ok, messages)
 
@@ -722,7 +725,7 @@ def _test_grok(prompt: str, max_tokens: int) -> TestResult:
             return TestResult("grok", True, endpoint_ok, messages, full_output=content, finish_reason=finish_reason)
         messages.append("Grok returned an empty response payload.")
         return TestResult("grok", False, endpoint_ok, messages)
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         messages.append(_format_provider_error("grok", exc))
         return TestResult("grok", False, endpoint_ok, messages)
 

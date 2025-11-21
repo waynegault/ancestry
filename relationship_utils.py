@@ -37,7 +37,7 @@ import html
 import re
 import time
 from collections import OrderedDict, deque
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 # --- Try to import BeautifulSoup ---
 from bs4 import BeautifulSoup, Tag
@@ -716,8 +716,12 @@ def _format_discovery_api_path(json_data: dict[str, Any], target_name: str, owne
     path_steps_json = [f"*   {format_name(target_name)}"]
 
     for step in discovery_path:
-        step_name = format_name(step.get("name", "?"))
-        step_rel = step.get("relationship", "?")
+        if not isinstance(step, dict):
+            continue
+
+        step_dict = cast(dict[str, Any], step)
+        step_name = format_name(step_dict.get("name", "?"))
+        step_rel = step_dict.get("relationship", "?")
         step_rel_display = _get_relationship_term(None, step_rel).capitalize()
         path_steps_json.append(f"    -> is {step_rel_display} of")
         path_steps_json.append(f"*   {step_name}")
@@ -762,8 +766,10 @@ def _should_skip_list_item(item: Any) -> bool:
         if not isinstance(item, Tag):
             return True
 
-        is_hidden = item.get("aria-hidden") == "true"
-        item_classes = item.get("class") or []
+        # Cast to Any to avoid Pyright unknown member type errors with bs4
+        tag_item = cast(Any, item)
+        is_hidden = tag_item.get("aria-hidden") == "true"
+        item_classes = tag_item.get("class") or []
         has_icon_class = isinstance(item_classes, list) and "icon" in item_classes
 
         return is_hidden or has_icon_class
@@ -775,11 +781,12 @@ def _should_skip_list_item(item: Any) -> bool:
 def _extract_name_from_item(item: Any) -> str:
     """Extract name from list item."""
     try:
-        name_elem = item.find("b") if isinstance(item, Tag) else None
+        tag_item = cast(Any, item)
+        name_elem = tag_item.find("b") if isinstance(item, Tag) else None
         if name_elem and hasattr(name_elem, "get_text"):
             return name_elem.get_text(strip=True)
-        if hasattr(item, "string") and item.string:
-            return str(item.string).strip()
+        if hasattr(item, "string") and tag_item.string:
+            return str(tag_item.string).strip()
         return "Unknown"
     except (AttributeError, TypeError):
         logger.debug(f"Error extracting name: {type(item)}")
@@ -789,7 +796,8 @@ def _extract_name_from_item(item: Any) -> str:
 def _extract_relationship_from_item(item: Any) -> str:
     """Extract relationship description from list item."""
     try:
-        rel_elem = item.find("i") if isinstance(item, Tag) else None
+        tag_item = cast(Any, item)
+        rel_elem = tag_item.find("i") if isinstance(item, Tag) else None
         if rel_elem and hasattr(rel_elem, "get_text"):
             return rel_elem.get_text(strip=True)
         return ""
@@ -801,7 +809,8 @@ def _extract_relationship_from_item(item: Any) -> str:
 def _extract_lifespan_from_item(item: Any) -> str:
     """Extract lifespan from list item."""
     try:
-        text_content = item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
+        tag_item = cast(Any, item)
+        text_content = tag_item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
         lifespan_match = re.search(r"(\d{4})-(\d{4}|\bLiving\b|-)", text_content, re.IGNORECASE)
         return lifespan_match.group(0) if lifespan_match else ""
     except (AttributeError, TypeError):
@@ -832,14 +841,15 @@ def _parse_html_relationship_data(html_content_raw: str) -> list[dict[str, str]]
 
     try:
         soup = BeautifulSoup(html_content_decoded, "html.parser")
-        list_items = soup.find_all("li")
+        any_soup = cast(Any, soup)
+        list_items = any_soup.find_all("li")
 
         if not list_items or len(list_items) < 2:
             logger.warning(f"Not enough list items found in HTML: {len(list_items) if list_items else 0}")
             return []
 
         # Extract relationship information from each list item
-        relationship_data = []
+        relationship_data: list[dict[str, str]] = []
         for item in list_items:
             person_data = _extract_person_from_list_item(item)
             if person_data:  # Only add if we got valid data
@@ -1131,12 +1141,14 @@ def convert_discovery_api_path_to_unified_format(
             logger.warning(f"Invalid path step: {step}")
             continue
 
+        step_dict = cast(dict[str, Any], step)
+
         # Get name
-        step_name = step.get("name", "Unknown")
+        step_name = step_dict.get("name", "Unknown")
         current_name = format_name(step_name)
 
         # Parse relationship
-        relationship_text = step.get("relationship", "")
+        relationship_text = step_dict.get("relationship", "")
         relationship_term, gender = _parse_discovery_relationship(relationship_text)
 
         # Add to result
@@ -1590,7 +1602,7 @@ def format_relationship_path_unified(
     header = f"Relationship between {first_name}{first_years} and {owner_name}.\n{target_first_name} is {owner_possessive} {relationship_type}:"
 
     # Format each step in the path with indentation
-    path_lines = []
+    path_lines: list[str] = []
 
     # Keep track of names we've already seen to avoid adding years multiple times
     seen_names = {first_name.lower()}
@@ -1645,7 +1657,7 @@ def relationship_module_tests() -> None:
     """Essential relationship utilities tests for unified framework."""
     import time
 
-    tests = []
+    tests: list[tuple[str, Callable[[], Any]]] = []
 
     # Test 1: Function availability
     def test_function_availability():
@@ -1757,7 +1769,7 @@ def relationship_module_tests() -> None:
     # Run all tests
     suite = TestSuite("Relationship Utils", "relationship_utils.py")
     for test_name, test_func in tests:
-        suite.run_test(test_func, test_name)
+        suite.run_test(test_name, test_func)
     suite.finish_suite()
     # Return nothing (function signature is -> None)
 

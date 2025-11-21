@@ -55,7 +55,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -364,7 +364,7 @@ class MetricRegistry:
 
     def check_for_alerts(self, deviation_threshold_percent: float = 10.0) -> list[PerformanceAlert]:
         """Check for performance degradation vs. baseline."""
-        alerts = []
+        alerts: list[PerformanceAlert] = []
 
         with self._lock:
             for service_name, service_metrics in self.services.items():
@@ -471,7 +471,7 @@ class MetricRegistry:
             for window_key in ("window_1min", "window_5min"):
                 window_stats = stats.get(window_key)
                 if isinstance(window_stats, dict):
-                    avg_value = window_stats.get("avg")
+                    avg_value = cast(dict[str, Any], window_stats).get("avg")
                     if isinstance(avg_value, (int, float)):
                         record_internal_metric_stat(service, metric_name, f"{window_key}_avg", float(avg_value))
         except Exception:
@@ -480,20 +480,22 @@ class MetricRegistry:
 
 
 # Global singleton instance
-_metrics_registry: Optional[MetricRegistry] = None
+class RegistryState:
+    _metrics_registry: Optional[MetricRegistry] = None
+
+
 _registry_lock = threading.Lock()
 
 
 def get_metrics_registry() -> MetricRegistry:
     """Get or create the global metrics registry (singleton pattern)."""
-    global _metrics_registry  # noqa: PLW0603 - Singleton pattern requires global update
 
-    if _metrics_registry is None:
+    if RegistryState._metrics_registry is None:
         with _registry_lock:
-            if _metrics_registry is None:
-                _metrics_registry = MetricRegistry()
+            if RegistryState._metrics_registry is None:
+                RegistryState._metrics_registry = MetricRegistry()
 
-    return _metrics_registry
+    return RegistryState._metrics_registry
 
 
 # Test suite
@@ -562,7 +564,7 @@ def core_metrics_collector_module_tests() -> bool:
     # Test 5: Thread safety
     def test_thread_safety() -> None:
         registry = MetricRegistry()
-        results = []
+        results: list[bool] = []
 
         def record_metrics(service_id: int) -> None:
             for i in range(100):

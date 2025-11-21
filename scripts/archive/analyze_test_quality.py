@@ -73,7 +73,7 @@ class TestQualityAnalyzer:
             self.stats["total_test_functions"] += len(test_functions)
 
             # Analyze each test function
-            module_issues = []
+            module_issues: list[str] = []
             for test_func in test_functions:
                 issues = self._analyze_test_function(test_func, content, filepath)
                 if issues:
@@ -121,7 +121,7 @@ class TestQualityAnalyzer:
         self, test_func: dict[str, Any], _content: str, _filepath: str
     ) -> list[str]:
         """Analyze a single test function for quality issues."""
-        issues = []
+        issues: list[str] = []
         source = test_func["source"]
         name = test_func["name"]
 

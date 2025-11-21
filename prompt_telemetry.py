@@ -113,7 +113,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
                     counts[k] = len(v)
         provider_value = _normalize_provider_value(event_data.provider_name)
         provider_model = _normalize_provider_value(event_data.provider_model)
-        event = {
+        event: dict[str, Any] = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "variant_label": event_data.variant_label,
             "prompt_key": event_data.prompt_key,

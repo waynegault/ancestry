@@ -21,7 +21,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 import psutil
 from tqdm.auto import tqdm
@@ -69,7 +69,7 @@ class ProgressStats:
     def memory_usage_mb() -> float:
         """Get current memory usage in MB"""
         try:
-            process = psutil.Process()
+            process = cast(Any, psutil).Process()
             return process.memory_info().rss / 1024 / 1024
         except Exception:
             return 0.0
@@ -108,7 +108,7 @@ class ProgressIndicator:
         self.leave = resolved_config.leave
 
         self.stats = ProgressStats(total_items=total)
-        self.progress_bar: Optional[tqdm] = None
+        self.progress_bar: Any = None
         self._last_update = 0.0
         self._lock = threading.Lock()
 
@@ -173,7 +173,7 @@ class ProgressIndicator:
         self.progress_bar.n = self.stats.items_processed
 
         # Build status message
-        status_parts = []
+        status_parts: list[str] = []
 
         if custom_status:
             status_parts.append(custom_status)

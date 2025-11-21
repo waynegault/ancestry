@@ -205,7 +205,7 @@ def import_improved_prompts() -> tuple[int, list[str]]:
             return 0, []
 
         imported_count = 0
-        imported_keys = []
+        imported_keys: list[str] = []
 
         # Define prompt files to import
         prompt_files = [
@@ -259,7 +259,7 @@ def validate_prompt_structure(prompts_data: dict[str, Any]) -> tuple[bool, list[
     Returns:
         tuple[bool, list[str]]: (is_valid, list_of_errors)
     """
-    errors = []
+    errors: list[str] = []
 
     # Check required top-level keys
     required_keys = ["version", "last_updated", "prompts"]
@@ -501,7 +501,7 @@ def quick_test() -> dict[str, Any]:
     Returns:
         dict[str, Any]: Test results
     """
-    results = {"passed": 0, "failed": 0, "errors": []}
+    results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
 
     try:
         # Test 1: Load prompts

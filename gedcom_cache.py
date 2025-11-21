@@ -59,7 +59,7 @@ import hashlib
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # --- Local application imports ---
 from cache import (
@@ -230,7 +230,7 @@ class GedcomCacheModule(BaseCacheModule):
     def _check_memory_cache_health() -> tuple[str, list[str], int]:
         """Check memory cache health. Returns (health_status, issues, stale_count)."""
         memory_health = "healthy"
-        memory_issues = []
+        memory_issues: list[str] = []
 
         if len(_MEMORY_CACHE) == 0:
             memory_issues.append("No memory cache entries")
@@ -247,7 +247,7 @@ class GedcomCacheModule(BaseCacheModule):
     def _check_gedcom_file_health() -> tuple[str, list[str]]:
         """Check GEDCOM file accessibility. Returns (health_status, issues)."""
         gedcom_health = "healthy"
-        gedcom_issues = []
+        gedcom_issues: list[str] = []
 
         if config_schema and hasattr(config_schema.database, "gedcom_file_path"):
             gedcom_path = config_schema.database.gedcom_file_path
@@ -370,7 +370,8 @@ def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Opt
 
         if cache is not None:
             from diskcache.core import ENOVAL
-            disk_cached = cache.get(disk_cache_key, default=ENOVAL, retry=True)
+            cache_obj = cast(Any, cache)
+            disk_cached = cache_obj.get(disk_cache_key, default=ENOVAL, retry=True)
             if disk_cached is not ENOVAL:
                 logger.debug("GEDCOM data loaded from disk cache")
                 # Store in memory cache for faster next access
@@ -404,7 +405,8 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
                 "family_maps_build_time": gedcom_data.family_maps_build_time,
                 "data_processing_time": gedcom_data.data_processing_time,
             }
-            cache.set(disk_cache_key, cache_data, expire=86400, retry=True)
+            cache_obj = cast(Any, cache)
+            cache_obj.set(disk_cache_key, cache_data, expire=86400, retry=True)
             logger.debug(
                 f"GEDCOM data cached to disk: {len(cache_data['processed_data_cache'])} individuals, "
                 f"{len(cache_data['id_to_parents'])} parent relationships"
@@ -728,7 +730,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
     Demonstrate practical GEDCOM cache usage with examples.
     Returns demonstration results and performance data.
     """
-    demo_results = {
+    demo_results: dict[str, Any] = {
         "demonstrations": [],
         "start_time": time.time(),
         "performance_summary": {},
@@ -739,7 +741,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
     try:
         # Demo 1: Cache Statistics Display
         stats = get_gedcom_cache_stats()
-        demo_results["demonstrations"].append(
+        cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
             {
                 "name": "Cache Statistics",
                 "description": "Display current GEDCOM cache statistics",
@@ -750,7 +752,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
 
         # Demo 2: Health Status Check
         health = get_gedcom_cache_health()
-        demo_results["demonstrations"].append(
+        cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
             {
                 "name": "Health Status",
                 "description": "Check GEDCOM cache system health",
@@ -774,7 +776,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
                 _store_in_memory_cache(cache_key, demo_data)
                 retrieved_data = _get_from_memory_cache(cache_key)
 
-                demo_results["demonstrations"].append(
+                cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
                     {
                         "name": "Memory Cache Demo",
                         "description": "Store and retrieve data from memory cache",
@@ -794,7 +796,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
         coordination_stats = get_unified_cache_key(
             "gedcom", "coordination_demo", "test_param"
         )
-        demo_results["demonstrations"].append(
+        cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
             {
                 "name": "Cache Coordination",
                 "description": "Demonstrate unified cache key generation",
@@ -804,7 +806,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
         )
 
     except Exception as e:
-        demo_results["demonstrations"].append(
+        cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
             {
                 "name": "Error in Demonstration",
                 "description": f"Error occurred: {e!s}",

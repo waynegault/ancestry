@@ -225,7 +225,9 @@ def _try_get_in_tree_from_cache(
     """
     try:
         if global_cache is not None:
-            cached_in_tree = global_cache.get(cache_key, default=ENOVAL, retry=True)
+            # Cast to Any to avoid type errors with untyped cache methods
+            cache_obj = cast(Any, global_cache)
+            cached_in_tree = cache_obj.get(cache_key, default=ENOVAL, retry=True)
             if cached_in_tree is not ENOVAL:
                 if isinstance(cached_in_tree, set):
                     logger.debug(
@@ -252,7 +254,9 @@ def _save_in_tree_to_cache(
     """Save in-tree status to cache."""
     try:
         if global_cache is not None:
-            global_cache.set(
+            # Cast to Any to avoid type errors with untyped cache methods
+            cache_obj = cast(Any, global_cache)
+            cache_obj.set(
                 cache_key,
                 in_tree_ids,
                 expire=config_schema.cache.memory_cache_ttl,
@@ -390,8 +394,10 @@ def _sync_cookies_to_session(driver: Any, session_manager: SessionManager) -> No
         # Clear and re-sync all cookies to ensure fresh state
         if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
             session_manager.requests_session.cookies.clear()
+            # Cast cookies to Any to avoid type errors with set method
+            cookies_obj = cast(Any, session_manager.requests_session.cookies)
             for cookie in browser_cookies:
-                session_manager.requests_session.cookies.set(
+                cookies_obj.set(
                     cookie['name'],
                     cookie['value'],
                     domain=cookie.get('domain', ''),

@@ -100,7 +100,7 @@ def apply_universal_scoring(
         if date_flexibility is None:
             date_flexibility = {"year_match_range": 5.0}
 
-        scored_results = []
+        scored_results: list[dict[str, Any]] = []
         start_time = time.time()
 
         logger.debug(f"Scoring {len(candidates)} candidates with universal scoring")

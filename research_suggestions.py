@@ -75,7 +75,7 @@ TIME_PERIOD_COLLECTIONS = {
 
 def _extract_location_collections(locations: list[str]) -> list[str]:
     """Extract Ancestry collections based on geographic locations."""
-    collections = []
+    collections: list[str] = []
     for location in locations:
         location_lower = location.lower()
         for region, region_collections in ANCESTRY_COLLECTIONS.items():
@@ -87,7 +87,7 @@ def _extract_location_collections(locations: list[str]) -> list[str]:
 
 def _extract_time_period_collections(time_periods: list[str]) -> list[str]:
     """Extract Ancestry collections based on time periods."""
-    collections = []
+    collections: list[str] = []
     for period in time_periods:
         try:
             year = int(period) if isinstance(period, str) and period.isdigit() else None
@@ -103,7 +103,7 @@ def _extract_time_period_collections(time_periods: list[str]) -> list[str]:
 
 def _generate_record_types(common_ancestors: list[dict[str, Any]]) -> list[str]:
     """Generate specific record type suggestions based on common ancestors."""
-    record_types = []
+    record_types: list[str] = []
     if common_ancestors:
         for ancestor in common_ancestors[:2]:  # Focus on top 2 ancestors
             name = ancestor.get("name", "Unknown")
@@ -123,7 +123,7 @@ def _generate_strategies(
     common_ancestors: list[dict[str, Any]],
 ) -> list[str]:
     """Generate research strategy suggestions."""
-    strategies = []
+    strategies: list[str] = []
 
     if relationship_context:
         strategies.append(
@@ -212,7 +212,7 @@ def _format_research_suggestion_message(
     Returns:
         Formatted message text
     """
-    message_parts = []
+    message_parts: list[str] = []
 
     if collections or record_types:
         message_parts.append(

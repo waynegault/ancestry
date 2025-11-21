@@ -38,7 +38,7 @@ import time
 import weakref
 from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from cache import (
@@ -114,7 +114,7 @@ class APIResponseCache(BaseCacheModule):
     """
 
     def __init__(self) -> None:
-        self._api_stats = {
+        self._api_stats: dict[str, Any] = {
             "ai_requests": 0,
             "ai_cache_hits": 0,
             "ancestry_requests": 0,
@@ -167,7 +167,7 @@ class APIResponseCache(BaseCacheModule):
                 "params_hash": hashlib.md5(str(params).encode()).hexdigest()[:8],
             }
 
-            cache.set(cache_key, cache_data, expire=ttl, retry=True)
+            cast(Any, cache).set(cache_key, cache_data, expire=ttl, retry=True)
             logger.debug(f"Cached {service}.{method} response (TTL: {ttl}s)")
             return True
 
@@ -184,7 +184,7 @@ class APIResponseCache(BaseCacheModule):
 
         try:
             cache_key = self._get_api_cache_key(service, method, params)
-            cached_data = cache.get(cache_key, default=None, retry=True)
+            cached_data = cast(Any, cache).get(cache_key, default=None, retry=True)
 
             if cached_data and isinstance(cached_data, dict):
                 # Update statistics
@@ -195,7 +195,7 @@ class APIResponseCache(BaseCacheModule):
                         self._api_stats["ancestry_cache_hits"] += 1
 
                 logger.debug(f"Cache HIT for {service}.{method}")
-                return cached_data.get("response")
+                return cast(dict[str, Any], cached_data).get("response")
 
             logger.debug(f"Cache MISS for {service}.{method}")
             return None
@@ -235,7 +235,7 @@ class DatabaseQueryCache(BaseCacheModule):
     """
 
     def __init__(self) -> None:
-        self._query_stats = {
+        self._query_stats: dict[str, Any] = {
             "total_queries": 0,
             "cache_hits": 0,
             "cache_misses": 0,
@@ -276,7 +276,7 @@ class DatabaseQueryCache(BaseCacheModule):
                 "params": params,
             }
 
-            cache.set(cache_key, cache_data, expire=ttl, retry=True)
+            cast(Any, cache).set(cache_key, cache_data, expire=ttl, retry=True)
             logger.debug(f"Cached database query result (TTL: {ttl}s)")
             return True
 
@@ -291,14 +291,14 @@ class DatabaseQueryCache(BaseCacheModule):
 
         try:
             cache_key = self._get_query_cache_key(query, params)
-            cached_data = cache.get(cache_key, default=None, retry=True)
+            cached_data = cast(Any, cache).get(cache_key, default=None, retry=True)
 
             if cached_data and isinstance(cached_data, dict):
                 with self._lock:
                     self._query_stats["cache_hits"] += 1
 
                 logger.debug("Database query cache HIT")
-                return cached_data.get("result")
+                return cast(dict[str, Any], cached_data).get("result")
 
             with self._lock:
                 self._query_stats["cache_misses"] += 1
@@ -320,7 +320,7 @@ class MemoryOptimizer(BaseCacheModule):
     """
 
     def __init__(self) -> None:
-        self._memory_stats = {
+        self._memory_stats: dict[str, Any] = {
             "gc_collections": 0,
             "memory_freed_mb": 0.0,
             "peak_memory_mb": 0.0,
@@ -332,9 +332,11 @@ class MemoryOptimizer(BaseCacheModule):
     def get_memory_usage_mb(self) -> float:
         """Get current memory usage in MB"""
         try:
+            from typing import cast
+
             import psutil
 
-            process = psutil.Process()
+            process = cast(Any, psutil).Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
 
             with self._lock:
@@ -582,18 +584,20 @@ def clear_system_caches() -> dict[str, Union[int, str]]:
         # Clear API cache entries
         cleared_api = 0
         if cache:
+            cache_obj = cast(Any, cache)
             for key in list(cache):
                 if str(key).startswith("api_"):
-                    cache.delete(key)
+                    cache_obj.delete(key)
                     cleared_api += 1
         results["api_cache"] = cleared_api
 
         # Clear database cache entries
         cleared_db = 0
         if cache:
+            cache_obj = cast(Any, cache)
             for key in list(cache):
                 if str(key).startswith("db_query_"):
-                    cache.delete(key)
+                    cache_obj.delete(key)
                     cleared_db += 1
         results["database_cache"] = cleared_db
 

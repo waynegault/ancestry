@@ -28,7 +28,7 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import (
@@ -177,7 +177,7 @@ class BrowserManager:
                     return False
                 logger.debug("Attempting fallback browser minimize via off-screen positioning")
                 _safe_resize(self.driver, 1, 1)
-                self.driver.set_window_position(-2000, -2000)
+                cast(Any, self.driver).set_window_position(-2000, -2000)
                 logger.info("✅ Browser minimized using off-screen positioning fallback")
                 self._restore_terminal_focus()
                 return True
@@ -367,7 +367,7 @@ class BrowserManager:
                     logger.error("WebDriver became None during cookie check")
                     return False
 
-                cookies: list[dict[str, Any]] = self.driver.get_cookies()
+                cookies: list[dict[str, Any]] = cast(Any, self.driver).get_cookies()
                 current_cookies_lower = {
                     cookie["name"].lower()
                     for cookie in cookies
@@ -401,7 +401,7 @@ class BrowserManager:
             original_handle = self.driver.current_window_handle
 
             # Create new tab
-            self.driver.execute_script("window.open('', '_blank');")
+            cast(Any, self.driver).execute_script("window.open('', '_blank');")
 
             # Switch to new tab
             handles = self.driver.window_handles

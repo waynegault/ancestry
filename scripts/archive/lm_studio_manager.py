@@ -17,7 +17,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -74,7 +74,7 @@ class LMStudioManager:
         Returns:
             True if process found, False otherwise
         """
-        for proc in psutil.process_iter(['name']):
+        for proc in cast(Any, psutil).process_iter(['name']):
             try:
                 proc_name = proc.info['name']
                 if proc_name:

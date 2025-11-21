@@ -425,16 +425,16 @@ class UnifiedCacheManager:
 
 
 # Global cache instance (singleton pattern)
-_unified_cache: Optional[UnifiedCacheManager] = None
+class CacheState:
+    _unified_cache: Optional[UnifiedCacheManager] = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:
     """Get or create the global unified cache instance (singleton)."""
-    global _unified_cache  # noqa: PLW0603 - Singleton pattern requires global
-    if _unified_cache is None:
-        _unified_cache = UnifiedCacheManager()
+    if CacheState._unified_cache is None:
+        CacheState._unified_cache = UnifiedCacheManager()
         logger.info("🚀 Unified cache manager initialized")
-    return _unified_cache
+    return CacheState._unified_cache
 
 
 def create_ancestry_cache_config() -> dict[str, int]:
@@ -833,8 +833,8 @@ def _test_cache_thread_safety() -> bool:
     cache = get_unified_cache()
     cache.clear()
 
-    results = []
-    errors = []
+    results: list[str] = []
+    errors: list[str] = []
 
     def worker(thread_id: int) -> None:
         try:
@@ -858,7 +858,7 @@ def _test_cache_thread_safety() -> bool:
             errors.append(f"Thread {thread_id}: Exception {e}")
 
     # Create multiple threads
-    threads = []
+    threads: list[threading.Thread] = []
     for i in range(5):
         thread = threading.Thread(target=worker, args=(i,))
         threads.append(thread)

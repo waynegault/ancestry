@@ -44,6 +44,7 @@ class ResearchPriority:
     estimated_effort: str = "medium"  # 'low', 'medium', 'high'
     success_probability: float = 0.5  # 0.0 to 1.0
     dependency_bonus: float = 0.0  # Bonus score for prerequisite dependencies
+    workflow_bonus: float = 0.0  # Bonus score for workflow optimization
 
 
 @dataclass
@@ -382,7 +383,7 @@ class IntelligentResearchPrioritizer:
 
     def _apply_location_clustering_bonus(self) -> None:
         """Apply workflow bonuses for location clustering."""
-        location_groups = defaultdict(list)
+        location_groups: dict[str, list[ResearchPriority]] = defaultdict(list)
         for priority in self.research_priorities:
             location = self._extract_location_from_context(priority.research_context)
             if location:
@@ -396,7 +397,7 @@ class IntelligentResearchPrioritizer:
 
     def _apply_person_clustering_bonus(self) -> None:
         """Apply workflow bonuses for person clustering."""
-        person_groups = defaultdict(list)
+        person_groups: dict[str, list[ResearchPriority]] = defaultdict(list)
         for priority in self.research_priorities:
             if priority.target_people:
                 for person in priority.target_people:
@@ -990,7 +991,7 @@ def test_cluster_generation_and_efficiency() -> None:
     """Location cluster with multiple items should yield cluster_research task with efficiency >0.7."""
     prioritizer = IntelligentResearchPrioritizer()
     # Provide multiple gaps referencing Scotland via description keyword extraction
-    gaps = []
+    gaps: list[dict[str, Any]] = []
     for i in range(4):
         gaps.append({"person_id": f"I{i}", "person_name": f"Person{i}", "gap_type": "missing_places", "description": f"Missing birth location Scotland for Person{i}", "priority": "medium", "research_suggestions": []})
     gedcom = {

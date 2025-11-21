@@ -18,7 +18,7 @@ standard library modules for safety.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 # Minimal constants for expected keys used across the codebase
 STRUCTURED_KEYS = [
@@ -45,7 +45,7 @@ def _dedupe_list_str(items: Any) -> list[str]:
     if not isinstance(items, list):
         return []
     out: list[str] = []
-    seen = set()
+    seen: set[str] = set()
     for it in items:
         if it is None:
             continue
@@ -250,7 +250,7 @@ def _validate_location(location: str) -> str:
     # Handle comma-separated locations (City, State, Country)
     if "," in loc:
         parts = [part.strip() for part in loc.split(",")]
-        normalized_parts = []
+        normalized_parts: list[str] = []
         for part in parts:
             part_lower = part.lower()
             if part_lower in location_map:
@@ -265,18 +265,27 @@ def _validate_location(location: str) -> str:
 def _ensure_extracted_data_container(resp: Any) -> dict[str, Any]:
     if not isinstance(resp, dict):
         resp = {}
-    extracted = resp.get("extracted_data")
+
+    # Cast to dict[str, Any] for type safety
+    resp_dict = cast(dict[str, Any], resp)
+
+    extracted = resp_dict.get("extracted_data")
     if not isinstance(extracted, dict):
         extracted = {}
+
+    # Cast to dict[str, Any]
+    extracted_dict = cast(dict[str, Any], extracted)
+
     # Ensure structured keys exist
     for key in STRUCTURED_KEYS:
-        if key not in extracted or extracted[key] is None:
-            extracted[key] = []
-    resp["extracted_data"] = extracted
+        if key not in extracted_dict or extracted_dict[key] is None:
+            extracted_dict[key] = []
+
+    resp_dict["extracted_data"] = extracted_dict
     # Ensure suggested_tasks exists as list[str]
-    tasks = resp.get("suggested_tasks", [])
-    resp["suggested_tasks"] = _dedupe_list_str(tasks)
-    return resp
+    tasks = resp_dict.get("suggested_tasks", [])
+    resp_dict["suggested_tasks"] = _dedupe_list_str(tasks)
+    return resp_dict
 
 
 def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
@@ -296,20 +305,24 @@ def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
         struct_list = extracted.get(struct_key)
         if not isinstance(struct_list, list):
             struct_list = []
+
+        # Cast to list[Any] for appending
+        struct_list_typed = cast(list[Any], struct_list)
+
         for v in _dedupe_list_str(legacy_vals):
             if struct_key == "structured_names":
-                struct_list.append({"full_name": v, "nicknames": []})
+                struct_list_typed.append({"full_name": v, "nicknames": []})
             elif struct_key == "locations":
-                struct_list.append({"place": v, "context": "", "time_period": ""})
+                struct_list_typed.append({"place": v, "context": "", "time_period": ""})
             elif struct_key == "vital_records":
-                struct_list.append({
+                struct_list_typed.append({
                     "person": "",
                     "event_type": "",
                     "date": v,
                     "place": "",
                     "certainty": "unknown",
                 })
-        extracted[struct_key] = struct_list
+        extracted[struct_key] = struct_list_typed
 
 
 # Helper functions for normalize_extracted_data
@@ -332,19 +345,22 @@ def _normalize_vital_records(vital_records: Any) -> None:
         if not isinstance(record, dict):
             continue
 
+        # Cast to dict[str, Any]
+        record_dict = cast(dict[str, Any], record)
+
         # Normalize dates
-        if record.get("date"):
-            record["date"] = _validate_and_normalize_date(str(record["date"]))
+        if record_dict.get("date"):
+            record_dict["date"] = _validate_and_normalize_date(str(record_dict["date"]))
 
         # Normalize locations
-        if record.get("place"):
-            record["place"] = _validate_location(str(record["place"]))
+        if record_dict.get("place"):
+            record_dict["place"] = _validate_location(str(record_dict["place"]))
 
         # Validate event types
-        if record.get("event_type"):
-            event_type = str(record["event_type"]).lower().strip()
+        if record_dict.get("event_type"):
+            event_type = str(record_dict["event_type"]).lower().strip()
             if event_type in valid_events:
-                record["event_type"] = event_type
+                record_dict["event_type"] = event_type
 
 
 def _normalize_relationships(relationships: Any) -> None:
@@ -356,19 +372,22 @@ def _normalize_relationships(relationships: Any) -> None:
         if not isinstance(relationship, dict):
             continue
 
+        # Cast to dict[str, Any]
+        rel_dict = cast(dict[str, Any], relationship)
+
         # Normalize relationship type
-        if relationship.get("relationship"):
-            relationship["relationship"] = _validate_relationship(str(relationship["relationship"]))
+        if rel_dict.get("relationship"):
+            rel_dict["relationship"] = _validate_relationship(str(rel_dict["relationship"]))
 
         # Ensure person names are properly formatted
         for person_key in ["person1", "person2"]:
-            if relationship.get(person_key):
-                name = str(relationship[person_key]).strip()
+            if rel_dict.get(person_key):
+                name = str(rel_dict[person_key]).strip()
                 # Basic name validation - ensure it's not just whitespace or numbers
                 if name and not name.isdigit() and len(name) > 1:
-                    relationship[person_key] = name
+                    rel_dict[person_key] = name
                 else:
-                    relationship[person_key] = ""
+                    rel_dict[person_key] = ""
 
 
 def _normalize_locations(locations: Any) -> None:
@@ -380,13 +399,16 @@ def _normalize_locations(locations: Any) -> None:
         if not isinstance(location, dict):
             continue
 
+        # Cast to dict[str, Any]
+        loc_dict = cast(dict[str, Any], location)
+
         # Normalize place names
-        if location.get("place"):
-            location["place"] = _validate_location(str(location["place"]))
+        if loc_dict.get("place"):
+            loc_dict["place"] = _validate_location(str(loc_dict["place"]))
 
         # Normalize time periods
-        if location.get("time_period"):
-            location["time_period"] = _validate_and_normalize_date(str(location["time_period"]))
+        if loc_dict.get("time_period"):
+            loc_dict["time_period"] = _validate_and_normalize_date(str(loc_dict["time_period"]))
 
 
 def _normalize_structured_names(structured_names: Any) -> None:
@@ -398,18 +420,21 @@ def _normalize_structured_names(structured_names: Any) -> None:
         if not isinstance(name_entry, dict):
             continue
 
+        # Cast to dict[str, Any]
+        name_dict = cast(dict[str, Any], name_entry)
+
         # Ensure full_name is properly formatted
-        if name_entry.get("full_name"):
-            full_name = str(name_entry["full_name"]).strip()
+        if name_dict.get("full_name"):
+            full_name = str(name_dict["full_name"]).strip()
             # Basic name validation
             if full_name and not full_name.isdigit() and len(full_name) > 1:
-                name_entry["full_name"] = full_name
+                name_dict["full_name"] = full_name
             else:
-                name_entry["full_name"] = ""
+                name_dict["full_name"] = ""
 
         # Ensure nicknames is a list
-        if "nicknames" not in name_entry or not isinstance(name_entry["nicknames"], list):
-            name_entry["nicknames"] = []
+        if "nicknames" not in name_dict or not isinstance(name_dict["nicknames"], list):
+            name_dict["nicknames"] = []
 
 
 def normalize_extracted_data(extracted: Any) -> dict[str, Any]:
@@ -420,19 +445,22 @@ def normalize_extracted_data(extracted: Any) -> dict[str, Any]:
     if not isinstance(extracted, dict):
         extracted = {}
 
+    # Cast to dict[str, Any]
+    extracted_dict = cast(dict[str, Any], extracted)
+
     # Ensure all structured keys exist
-    _ensure_structured_keys(extracted)
+    _ensure_structured_keys(extracted_dict)
 
     # Promote legacy flat fields conservatively
-    _promote_legacy_fields(extracted)
+    _promote_legacy_fields(extracted_dict)
 
     # Apply genealogical validation and normalization
-    _normalize_vital_records(extracted.get("vital_records", []))
-    _normalize_relationships(extracted.get("relationships", []))
-    _normalize_locations(extracted.get("locations", []))
-    _normalize_structured_names(extracted.get("structured_names", []))
+    _normalize_vital_records(extracted_dict.get("vital_records", []))
+    _normalize_relationships(extracted_dict.get("relationships", []))
+    _normalize_locations(extracted_dict.get("locations", []))
+    _normalize_structured_names(extracted_dict.get("structured_names", []))
 
-    return extracted
+    return extracted_dict
 
 
 def normalize_ai_response(ai_resp: Any) -> dict[str, Any]:

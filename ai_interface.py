@@ -55,7 +55,7 @@ import logging
 import sys  # Not strictly used but often good for system-level interactions
 import time
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, TypedDict, cast
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -93,7 +93,9 @@ except Exception:
     genai_errors = None
     genai_types = None
 
-genai_available = genai is not None and hasattr(genai, "Client")
+genai_available = False
+if genai is not None:
+    genai_available = hasattr(genai, "Client")
 if not genai_available:
     logging.warning(
         "Google GenAI library not found or incomplete. Gemini functionality disabled."
@@ -123,7 +125,18 @@ from cache_manager import cached_api_call
 from config.config_manager import ConfigManager
 
 if TYPE_CHECKING:
+    from typing import TypedDict
+
     from core.session_manager import SessionManager
+
+    class HealthStatus(TypedDict):
+        overall_health: str
+        ai_provider: str
+        api_key_configured: bool
+        prompts_loaded: bool
+        dependencies_available: bool
+        test_call_successful: bool
+        errors: list[str]
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -466,29 +479,29 @@ def _list_available_gemini_models() -> list[str]:
     List all available Gemini models with generateContent support.
 
     Returns:
-        List of model names (e.g., ["gemini-2.5-flash", "gemini-2.5-pro-preview-03-25"])
+        List of model names (e.g., ["gemini-2.0-flash", "gemini-1.5-pro"])
         Returns empty list if listing fails or genai is not available.
     """
-    if not genai_available:
+    if not genai_available or genai is None:
         return []
 
-    list_models_obj = getattr(genai, "list_models", None)
-    if not callable(list_models_obj):
-        logger.debug("genai.list_models() not available in this SDK version")
+    api_key = getattr(config_schema.api, "google_api_key", None)
+    if not api_key:
         return []
-    list_models_fn = cast(ListModelsFn, list_models_obj)
 
     try:
-        models = []
-        for model in list_models_fn():
-            if hasattr(model, "supported_generation_methods"):
-                methods = getattr(model, "supported_generation_methods", [])
-                if "generateContent" in methods:
-                    # Strip "models/" prefix for easier use
-                    model_name = getattr(model, "name", "")
-                    normalized_name = model_name.replace("models/", "")
-                    if normalized_name:
-                        models.append(normalized_name)
+        client = genai.Client(api_key=api_key)
+        models: list[str] = []
+        # client.models.list() returns an iterator of Model objects
+        for model in client.models.list():
+            # Check if generateContent is supported (if attribute exists)
+            # In google-genai v1, we might assume listed models are usable or check capabilities if available
+            # For now, we'll list all and filter by name convention if needed
+            model_name = getattr(model, "name", "")
+            # name usually comes as "models/gemini-..."
+            normalized_name = model_name.replace("models/", "")
+            if normalized_name:
+                models.append(normalized_name)
         return models
     except Exception as e:
         logger.debug(f"Failed to list Gemini models: {e}")
@@ -530,14 +543,14 @@ def _validate_gemini_model_exists(model_name: str) -> bool:
 
 def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
     """
-    Initialize Gemini model with validation.
+    Initialize Gemini client with validation.
 
     Args:
         api_key: Google API key
-        model_name: Model name (e.g., "gemini-2.5-flash")
+        model_name: Model name (e.g., "gemini-2.0-flash")
 
     Returns:
-        Initialized model instance or None if validation/initialization fails
+        Initialized Client instance or None if validation/initialization fails
     """
     # Validate model exists before attempting API call
     if not _validate_gemini_model_exists(model_name):
@@ -548,53 +561,54 @@ def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
             logger.error(f"💡 Or choose from: {', '.join(available[:3])}")
         return None
 
-    configure_fn = getattr(genai, "configure", None)
-    model_cls = getattr(genai, "GenerativeModel", None)
-    if not callable(configure_fn) or model_cls is None:
-        logger.error("_call_ai_model: Gemini SDK missing configure/GenerativeModel")
+    if genai is None or not hasattr(genai, "Client"):
+        logger.error("_call_ai_model: Gemini SDK missing Client")
         return None
 
     try:
-        configure_fn(api_key=api_key)
-        model_factory = cast(GenerativeModelFactory, model_cls)
-        model = model_factory(model_name)
-        logger.debug(f"✅ Gemini model '{model_name}' initialized successfully")
-        return model
+        client = cast(Any, genai).Client(api_key=api_key)
+        logger.debug(f"✅ Gemini client initialized successfully for model '{model_name}'")
+        return client
     except Exception as e:
-        logger.error(f"_call_ai_model: Failed initializing Gemini model '{model_name}': {e}")
-        # Suggest available models on failure
-        available = _list_available_gemini_models()
-        if available:
-            logger.error(f"💡 Available models: {', '.join(available[:3])}")
+        logger.error(f"_call_ai_model: Failed initializing Gemini client: {e}")
         return None
 
 
 def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any | None:
     """Create Gemini generation config."""
-    generation_config_cls = getattr(genai, "GenerationConfig", None)
-    if generation_config_cls is None:
+    if genai_types is None:
         return None
 
+    config_cls = getattr(genai_types, "GenerateContentConfig", None)
+    if config_cls is None:
+        # Fallback to dict if class not found
+        return {
+            "candidateCount": 1,
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+        }
+
     try:
-        generation_config_factory = cast(Callable[..., Any], generation_config_cls)
-        return generation_config_factory(
-            candidate_count=1,
-            max_output_tokens=max_tokens,
+        return config_cls(
+            candidateCount=1,
+            maxOutputTokens=max_tokens,
             temperature=temperature,
         )
     except Exception:
         return None
 
 
-def _generate_gemini_content(model: Any, full_prompt: str, generation_config: Any | None) -> Any | None:
+def _generate_gemini_content(client: Any, model_name: str, full_prompt: str, generation_config: Any | None) -> Any | None:
     """Generate content using Gemini model."""
-    generate_content = getattr(model, "generate_content", None)
-    if not callable(generate_content):
+    if not client or not hasattr(client, "models"):
         return None
 
     try:
-        generate_content_fn = cast(Callable[..., Any], generate_content)
-        return generate_content_fn(full_prompt, generation_config=generation_config)
+        return client.models.generate_content(
+            model=model_name,
+            contents=full_prompt,
+            config=generation_config
+        )
     except Exception as e:
         logger.error(f"Gemini generation failed: {e}")
         return None
@@ -634,9 +648,9 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     if not api_key or not model_name:
         return None
 
-    # Initialize model
-    model = _initialize_gemini_model(api_key, model_name)
-    if not model:
+    # Initialize client
+    client = _initialize_gemini_model(api_key, model_name)
+    if not client:
         return None
 
     # Prepare prompt and config
@@ -644,13 +658,13 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     generation_config = _create_gemini_generation_config(max_tokens, temperature)
 
     # Generate content
-    response = _generate_gemini_content(model, full_prompt, generation_config)
+    response = _generate_gemini_content(client, model_name, full_prompt, generation_config)
 
     # Extract and return response text
     return _extract_gemini_response_text(response)
 
 
-def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:  # noqa: ARG001
+def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, _response_format_type: str | None) -> str | None:
     """
     Call Local LLM model via LM Studio OpenAI-compatible API.
 
@@ -1256,7 +1270,7 @@ def _check_nested_structure(parsed_json: dict[str, Any], salvaged: dict[str, Any
 
 def _transform_flat_to_nested(parsed_json: dict[str, Any]) -> dict[str, Any]:
     """Transform flat structure to nested structure."""
-    extracted_data = {}
+    extracted_data: dict[str, list[Any]] = {}
     key_mapping = {
         "mentioned_names": "mentioned_names",
         "dates": "mentioned_dates",
@@ -2578,7 +2592,7 @@ def ai_interface_module_tests() -> bool:
             lambda: _check_api_key_and_dependencies(config_schema.ai_provider.lower())[1],
             "Required AI libraries are available",
             "Test library availability",
-            "Verify openai or google.generativeai libraries are installed",
+            "Verify openai or google.genai libraries are installed",
         )
 
         # === INTEGRATION TESTS (Require Live Session) ===
@@ -2665,12 +2679,12 @@ def _determine_overall_health(api_key_configured: bool, prompts_loaded: bool, de
     return "unhealthy"
 
 
-def quick_health_check(session_manager: SessionManager) -> dict[str, Any]:
+def quick_health_check(session_manager: SessionManager) -> HealthStatus:
     """
     Performs a quick health check of the AI interface.
     Returns a dictionary with health status information.
     """
-    health_status = {
+    health_status: HealthStatus = {
         "overall_health": "unknown",
         "ai_provider": config_schema.ai_provider,
         "api_key_configured": False,

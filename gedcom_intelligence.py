@@ -400,7 +400,7 @@ class GedcomIntelligenceAnalyzer:
 
     def _generate_research_priorities(self) -> list[str]:
         """Generate prioritized research recommendations."""
-        priorities = []
+        priorities: list[str] = []
 
         high_priority_gaps = [gap for gap in self.gaps_identified if gap.priority == "high"]
         critical_conflicts = [conflict for conflict in self.conflicts_identified if conflict.severity == "critical"]
@@ -427,7 +427,7 @@ class GedcomIntelligenceAnalyzer:
 
     def _generate_ai_recommendations(self) -> list[str]:
         """Generate AI-powered recommendations for research."""
-        recommendations = []
+        recommendations: list[str] = []
 
         if len(self.gaps_identified) > len(self.conflicts_identified):
             recommendations.append("Focus on filling information gaps before resolving conflicts")
@@ -516,7 +516,7 @@ class GedcomIntelligenceAnalyzer:
 
     def _find_location_clusters(self, gedcom_data: Any) -> dict[str, list[str]]:
         """Find clusters of people in same locations."""
-        location_clusters = {}
+        location_clusters: dict[str, list[str]] = {}
 
         for person_id, person_record in gedcom_data.indi_index.items():
             birth_place = self._extract_birth_place(person_record)
@@ -530,7 +530,7 @@ class GedcomIntelligenceAnalyzer:
 
     def _find_common_surnames(self, gedcom_data: Any) -> list[str]:
         """Find most common surnames in the tree."""
-        surname_counts = {}
+        surname_counts: dict[str, int] = {}
 
         for person_record in gedcom_data.indi_index.values():
             name = self._extract_person_name(person_record)

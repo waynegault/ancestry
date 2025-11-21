@@ -450,8 +450,8 @@ class ApiRateLimiter:
     def __init__(self, max_calls_per_minute: int = 60, max_calls_per_hour: int = 1000) -> None:
         self.max_calls_per_minute = max_calls_per_minute
         self.max_calls_per_hour = max_calls_per_hour
-        self.minute_calls = []
-        self.hour_calls = []
+        self.minute_calls: list[datetime] = []
+        self.hour_calls: list[datetime] = []
 
     def can_make_request(self) -> bool:
         """Check if we can make a request without exceeding rate limits."""
@@ -459,10 +459,10 @@ class ApiRateLimiter:
 
         # Clean old entries
         self.minute_calls = [
-            t for t in self.minute_calls if (current_time - t).seconds < 60
+            t for t in self.minute_calls if (current_time - t).total_seconds() < 60
         ]
         self.hour_calls = [
-            t for t in self.hour_calls if (current_time - t).seconds < 3600
+            t for t in self.hour_calls if (current_time - t).total_seconds() < 3600
         ]
 
         # Check limits
@@ -486,12 +486,12 @@ class ApiRateLimiter:
         # Check minute limit
         if len(self.minute_calls) >= self.max_calls_per_minute:
             oldest_minute_call = min(self.minute_calls)
-            return max(0, 60 - (current_time - oldest_minute_call).seconds)
+            return max(0, 60 - (current_time - oldest_minute_call).total_seconds())
 
         # Check hour limit
         if len(self.hour_calls) >= self.max_calls_per_hour:
             oldest_hour_call = min(self.hour_calls)
-            return max(0, 3600 - (current_time - oldest_hour_call).seconds)
+            return max(0, 3600 - (current_time - oldest_hour_call).total_seconds())
 
         return 0.0
 
@@ -508,7 +508,7 @@ def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> Optional[s
     """Try to extract name from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
-        return person_info.get("personName")
+        return cast(dict[str, Any], person_info).get("personName")
     return None
 
 
@@ -526,11 +526,11 @@ def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> Optional[
     person_facts_list = facts_data.get("PersonFacts", [])
     if isinstance(person_facts_list, list):
         name_fact = next(
-            (f for f in person_facts_list if isinstance(f, dict) and f.get("TypeString") == "Name"),
+            (f for f in person_facts_list if isinstance(f, dict) and cast(dict[str, Any], f).get("TypeString") == "Name"),
             None,
         )
-        if name_fact and name_fact.get("Value"):
-            return name_fact.get("Value")
+        if name_fact and cast(dict[str, Any], name_fact).get("Value"):
+            return cast(dict[str, Any], name_fact).get("Value")
     return None
 
 
@@ -642,7 +642,7 @@ def _try_extract_gender_from_person_info(facts_data: dict[str, Any]) -> Optional
     """Try to extract gender from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
-        return person_info.get("gender")
+        return cast(dict[str, Any], person_info).get("gender")
     return None
 
 
@@ -661,12 +661,12 @@ def _try_extract_gender_from_person_facts(facts_data: dict[str, Any]) -> Optiona
         return None
 
     gender_fact = next(
-        (f for f in person_facts_list if isinstance(f, dict) and f.get("TypeString") == "Gender"),
+        (f for f in person_facts_list if isinstance(f, dict) and cast(dict[str, Any], f).get("TypeString") == "Gender"),
         None,
     )
 
-    if gender_fact and gender_fact.get("Value"):
-        return gender_fact.get("Value")
+    if gender_fact and cast(dict[str, Any], gender_fact).get("Value"):
+        return cast(dict[str, Any], gender_fact).get("Value")
     return None
 
 
@@ -758,7 +758,7 @@ def _try_extract_living_from_person_info(facts_data: dict[str, Any]) -> Optional
     """Try to extract living status from person info in facts_data."""
     person_info = facts_data.get("person", {})
     if isinstance(person_info, dict):
-        return person_info.get("isLiving")
+        return cast(dict[str, Any], person_info).get("isLiving")
     return None
 
 
@@ -882,8 +882,8 @@ def _extract_from_person_facts(
             f
             for f in person_facts_list
             if isinstance(f, dict)
-            and f.get("TypeString") == facts_user_key
-            and not f.get("IsAlternate")
+            and cast(dict[str, Any], f).get("TypeString") == facts_user_key
+            and not cast(dict[str, Any], f).get("IsAlternate")
         ),
         None,
     )
@@ -891,8 +891,9 @@ def _extract_from_person_facts(
     if not event_fact:
         return None, None, None, False
 
-    date_str = event_fact.get("Date")
-    place_str = event_fact.get("Place")
+    event_fact_dict = cast(dict[str, Any], event_fact)
+    date_str = event_fact_dict.get("Date")
+    place_str = event_fact_dict.get("Place")
     date_obj = None
 
     logger.debug(
@@ -900,7 +901,7 @@ def _extract_from_person_facts(
     )
 
     # Try to parse date from ParsedDate structure
-    parsed_date_data = event_fact.get("ParsedDate")
+    parsed_date_data = event_fact_dict.get("ParsedDate")
     if isinstance(parsed_date_data, dict):
         temp_date_str = _build_date_string_from_parsed_data(parsed_date_data)
         if temp_date_str:
@@ -923,14 +924,16 @@ def _extract_from_structured_facts(
     if not isinstance(fact_group, dict):
         return None, None, False
 
+    fact_group_dict = cast(dict[str, Any], fact_group)
+
     date_str = None
     place_str = None
 
-    date_info = fact_group.get("date", {})
+    date_info = cast(dict[str, Any], fact_group_dict.get("date", {}))
     if isinstance(date_info, dict):
         date_str = date_info.get("normalized", date_info.get("original"))
 
-    place_info = fact_group.get("place", {})
+    place_info = cast(dict[str, Any], fact_group_dict.get("place", {}))
     if isinstance(place_info, dict):
         place_str = place_info.get("placeName")
 
@@ -944,8 +947,9 @@ def _extract_from_alternative_facts(
     event_fact_alt = facts_data.get(app_api_key)
 
     if event_fact_alt and isinstance(event_fact_alt, dict):
-        date_str = event_fact_alt.get("normalized", event_fact_alt.get("date"))
-        place_str = event_fact_alt.get("place")
+        event_fact_alt_dict = cast(dict[str, Any], event_fact_alt)
+        date_str = event_fact_alt_dict.get("normalized", event_fact_alt_dict.get("date"))
+        place_str = event_fact_alt_dict.get("place")
         return date_str, place_str, True
     if isinstance(event_fact_alt, str):
         return event_fact_alt, None, True
@@ -982,8 +986,9 @@ def _extract_from_event_info_card(
         place_str = parts[1].strip() if len(parts) > 1 else None
         return date_str, place_str
     if isinstance(event_info_card, dict):
-        date_str = event_info_card.get("date")
-        place_str = event_info_card.get("place")
+        event_info_card_dict = cast(dict[str, Any], event_info_card)
+        date_str = event_info_card_dict.get("date")
+        place_str = event_info_card_dict.get("place")
         return date_str, place_str
 
     return None, None
@@ -1184,7 +1189,8 @@ def _update_details_from_facts(details: dict[str, Any], facts_data: Optional[dic
     if not details["user_id"]:
         person_info = facts_data.get("person", {})
         if isinstance(person_info, dict):
-            details["user_id"] = person_info.get("userId", details["user_id"])
+            person_info_dict = cast(dict[str, Any], person_info)
+            details["user_id"] = person_info_dict.get("userId", details["user_id"])
 
 
 def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
@@ -1377,7 +1383,7 @@ def _validate_suggest_response(suggest_response: Any, api_description: str) -> O
     """Validate and process suggest API response."""
     if isinstance(suggest_response, list):
         if PYDANTIC_AVAILABLE and suggest_response:
-            validated_results = []
+            validated_results: list[dict[str, Any]] = []
             validation_errors = 0
 
             for item in suggest_response:
@@ -1609,7 +1615,6 @@ def call_suggest_api(
     owner_facts_referer = _get_owner_referer(session_manager, base_url)
 
     timeouts_used = timeouts if timeouts else [20, 30, 60]
-    len(timeouts_used)
     logger.info(f"Attempting {api_description} search: {suggest_url}")
 
     result = _execute_suggest_api_with_retries(
@@ -2056,7 +2061,7 @@ def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[
     surname = search_criteria.get("surname") or search_criteria.get("surname_raw", "")
 
     # Combine first and last name for the 'name' parameter
-    name_parts = []
+    name_parts: list[str] = []
     if first_name:
         name_parts.append(first_name)
     if surname:
@@ -2105,8 +2110,9 @@ def _extract_name_parts(person_raw: dict[str, Any]) -> tuple[str, str, str]:
     if isinstance(names_list, list) and names_list:
         name_obj = names_list[0]
         if isinstance(name_obj, dict):
-            first_name_part = name_obj.get("g", "").strip()
-            surname_part = name_obj.get("s", "").strip()
+            name_obj_dict = cast(dict[str, Any], name_obj)
+            first_name_part = str(name_obj_dict.get("g", "")).strip()
+            surname_part = str(name_obj_dict.get("s", "")).strip()
 
             if first_name_part and surname_part:
                 full_name = f"{first_name_part} {surname_part}"
@@ -2162,7 +2168,7 @@ def _extract_birth_event(event: dict[str, Any]) -> tuple[int | None, str | None,
             birth_year, birth_date_str = None, None
 
         place_obj = event.get("p", {})
-        birth_place = place_obj.get("n", "") if isinstance(place_obj, dict) else None
+        birth_place = cast(dict[str, Any], place_obj).get("n", "") if isinstance(place_obj, dict) else None
 
     return birth_year, birth_date_str, birth_place
 
@@ -2184,7 +2190,7 @@ def _extract_death_event(event: dict[str, Any]) -> tuple[int | None, str | None,
             death_year, death_date_str = None, None
 
         place_obj = event.get("p", {})
-        death_place = place_obj.get("n", "") if isinstance(place_obj, dict) else None
+        death_place = cast(dict[str, Any], place_obj).get("n", "") if isinstance(place_obj, dict) else None
 
     return death_year, death_date_str, death_place
 
@@ -2196,7 +2202,7 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
     Converts raw API response with Names, Events, gid fields into standardized format
     with FullName, GivenName, Surname, PersonId, etc.
     """
-    parsed_results = []
+    parsed_results: list[dict[str, Any]] = []
     logger.debug(f"Parsing {len(treesui_response)} items from TreesUI List API response.")
 
     for idx, person_raw in enumerate(treesui_response):
@@ -2224,7 +2230,8 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
                     if not isinstance(event, dict):
                         continue
 
-                    event_type = event.get("t", "")
+                    event_dict = cast(dict[str, Any], event)
+                    event_type = event_dict.get("t", "")
 
                     # Handle both old format ("B", "D") and new format ("Birth", "Death")
                     if event_type in {"B", "Birth"}:
@@ -2461,8 +2468,9 @@ def call_relation_ladder_with_labels_api(
         )
 
         if isinstance(response, dict) and "kinshipPersons" in response:
-            logger.debug(f"{api_description} call successful, found {len(response.get('kinshipPersons', []))} persons in path")
-            return response
+            response_dict = cast(dict[str, Any], response)
+            logger.debug(f"{api_description} call successful, found {len(response_dict.get('kinshipPersons', []))} persons in path")
+            return response_dict
         logger.error(f"{api_description} returned unexpected format: {type(response)}")
         return None
 
@@ -2482,7 +2490,7 @@ def _validate_message_response(
     if is_initial:
         api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
         msg_details = api_response.get(KEY_MESSAGE, {})
-        api_author = str(msg_details.get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
+        api_author = str(cast(dict[str, Any], msg_details).get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
 
         if api_conv_id and api_author == my_profile_id_upper:
             return True, api_conv_id, SEND_ERROR_UNKNOWN
@@ -2698,11 +2706,12 @@ def _process_profile_response(profile_response: Any, profile_id: str) -> Optiona
         except Exception as validation_err:
             logger.warning(f"Profile Details API response validation warning: {validation_err}")
 
+    profile_response_dict = cast(dict[str, Any], profile_response)
     logger.debug(f"Successfully fetched profile details for {profile_id}.")
     return {
-        "first_name": _extract_first_name(profile_response, profile_id),
-        "last_logged_in_dt": _parse_last_login_date(profile_response, profile_id),
-        "contactable": bool(profile_response.get(KEY_IS_CONTACTABLE)),
+        "first_name": _extract_first_name(profile_response_dict, profile_id),
+        "last_logged_in_dt": _parse_last_login_date(profile_response_dict, profile_id),
+        "contactable": bool(profile_response_dict.get(KEY_IS_CONTACTABLE)),
     }
 
 
@@ -2831,8 +2840,8 @@ def _validate_header_trees_response(response_data: Any, api_description: str) ->
             logger.warning(f"{api_description} call failed (_api_req returned None).")
         else:
             status = str(response_data.status_code) if isinstance(response_data, requests.Response) else "N/A"
-            logger.warning(f"Unexpected response format from {api_description} (Type: {type(response_data)}, Status: {status}).")
-            logger.debug(f"Full {api_description} response data: {response_data!s}")
+            logger.warning(f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None.")
+            logger.debug(f"Response received: {response_data!s}")
         return None
 
     # New format: {"trees": [{"id": "...", "name": "..."}]}
@@ -2866,18 +2875,20 @@ def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, ap
         if not isinstance(item, dict):
             continue
 
+        item_dict = cast(dict[str, Any], item)
+
         # New format: {"id": "...", "name": "..."}
-        if "name" in item and item.get("name") == tree_name_config:
-            tree_id = item.get("id")
+        if "name" in item_dict and item_dict.get("name") == tree_name_config:
+            tree_id = item_dict.get("id")
             if tree_id:
-                logger.debug(f"Found tree ID '{tree_id}' for TREE_NAME '{tree_name_config}' (new format)")
+                logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (new format).")
                 return str(tree_id)
 
         # Old format: {"text": "...", "url": "..."}
-        if KEY_TEXT in item and item.get(KEY_TEXT) == tree_name_config:
-            tree_id = _parse_tree_id_from_url(item.get(KEY_URL), tree_name_config)
+        if KEY_TEXT in item_dict and item_dict.get(KEY_TEXT) == tree_name_config:
+            tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
             if tree_id:
-                logger.debug(f"Found tree ID '{tree_id}' for TREE_NAME '{tree_name_config}' (old format)")
+                logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (old format)")
                 return tree_id
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
@@ -2962,13 +2973,15 @@ def _extract_tree_owner_from_response(response_data: Any, tree_id: str, api_desc
         except Exception as validation_err:
             logger.warning(f"Tree Owner API response validation warning: {validation_err}")
 
-    owner_data = response_data.get(KEY_OWNER)
+    response_dict = cast(dict[str, Any], response_data)
+    owner_data = response_dict.get(KEY_OWNER)
     if not owner_data or not isinstance(owner_data, dict):
         logger.warning(f"Could not find '{KEY_OWNER}' data in {api_description} response for tree {tree_id}.")
         logger.debug(f"Full {api_description} response data: {response_data}")
         return None
 
-    display_name = owner_data.get(KEY_DISPLAY_NAME)
+    owner_dict = cast(dict[str, Any], owner_data)
+    display_name = owner_dict.get(KEY_DISPLAY_NAME)
     if display_name and isinstance(display_name, str):
         logger.debug(f"Found tree owner '{display_name}' for tree ID {tree_id}.")
         return display_name
@@ -3263,7 +3276,7 @@ def _run_initialization_tests(suite: "TestSuite") -> None:
         ]
 
         print("📋 Testing API utilities module imports:")
-        results = []
+        results: list[bool] = []
 
         for module_name, description in required_modules:
             # Check if module is imported or available
@@ -3427,9 +3440,8 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
             # Verify that invalid JSON raises appropriate exceptions
             try:
                 json.loads(invalid_json)
-                # If we get here, the JSON was valid (shouldn't happen for our test cases)
-                if invalid_json:  # Empty string is valid JSON in some contexts
-                    raise AssertionError(f"Expected JSONDecodeError for: {invalid_json}")
+                # If we get here, the JSON was valid
+                raise AssertionError(f"Expected JSONDecodeError for: {invalid_json}")
             except (json.JSONDecodeError, TypeError):
                 # Expected - invalid JSON should raise an exception
                 pass
@@ -3597,7 +3609,8 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         start_time = time.time()
         processed_count = 0
         for item in test_data:
-            if item.get("year", 0) > 1950:
+            item_dict = cast(dict[str, Any], item)
+            if item_dict.get("year", 0) > 1950:
                 processed_count += 1
         end_time = time.time()
 
@@ -3658,7 +3671,8 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
 
         for invalid_data in invalid_data_cases:
             assert isinstance(invalid_data, dict), "Test data should be dictionary"
-            person_id = invalid_data.get("PersonId")
+            invalid_data_dict = cast(dict[str, Any], invalid_data)
+            person_id = invalid_data_dict.get("PersonId")
             # Validate that we can detect various invalid PersonId scenarios
             is_empty = not person_id
             is_wrong_type = isinstance(person_id, int)

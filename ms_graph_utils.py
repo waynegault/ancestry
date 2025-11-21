@@ -26,7 +26,7 @@ import json
 import os
 import sys  # Used for sys.exit in main block
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 # --- Third-party imports ---
 import msal  # MSAL library for authentication
@@ -107,7 +107,7 @@ if cache_filepath:
     try:
         if cache_filepath.exists():
             logger.debug(f"Loading MSAL cache from: {cache_filepath}")
-            persistent_cache.deserialize(cache_filepath.read_text(encoding="utf-8"))
+            cast(Any, persistent_cache).deserialize(cache_filepath.read_text(encoding="utf-8"))
             logger.debug("MSAL token cache loaded successfully.")
         else:
             logger.debug("MSAL cache file not found. Starting with empty cache.")
@@ -285,7 +285,7 @@ def acquire_token_device_flow() -> Optional[str]:
 
     # Wait for user authentication
     try:
-        result = app.acquire_token_by_device_flow(flow)
+        result = cast(Any, app).acquire_token_by_device_flow(flow)
     except Exception as flow_acquire_e:
         logger.error(f"Error acquiring token via device flow: {flow_acquire_e}", exc_info=True)
         result = None
@@ -310,7 +310,7 @@ def _process_list_query_response(lists_data: dict[str, Any], list_name: str) -> 
         logger.debug(f"API response for list query: {lists_data}")
         return None
 
-    first_match = value_list[0]
+    first_match = cast(dict[str, Any], value_list[0])
     list_id = first_match.get("id")
     if list_id:
         return list_id

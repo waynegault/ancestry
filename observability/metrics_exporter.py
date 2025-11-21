@@ -110,10 +110,10 @@ except Exception as exc:  # pragma: no cover - handled gracefully
     _PROM_CLIENT_STATE.import_error = exc
 else:
     _PROM_CLIENT_STATE.server_available = True
-    _PROM_CLIENT_STATE.start_http_server = _prometheus_client.start_http_server
+    _PROM_CLIENT_STATE.start_http_server = cast(Any, _prometheus_client).start_http_server
 
 PROMETHEUS_SERVER_AVAILABLE = _PROM_CLIENT_STATE.server_available
-start_http_server = _PROM_CLIENT_STATE.start_http_server
+start_http_server: Callable[..., Any] | None = _PROM_CLIENT_STATE.start_http_server
 _IMPORT_ERROR = _PROM_CLIENT_STATE.import_error
 
 if TYPE_CHECKING:  # pragma: no cover - typing hints only
@@ -153,7 +153,12 @@ PROMETHEUS_AVAILABLE = _prometheus_available
 logger = setup_module(globals(), __name__)
 
 _EXPORTER_LOCK = threading.RLock()
-_runtime_observability: Optional[ObservabilityConfig] = None
+
+
+class ObservabilityState:
+    _runtime_observability: Optional[ObservabilityConfig] = None
+
+
 _DEFAULT_PROMETHEUS_BINARY = Path("C:/Programs/Prometheus/prometheus.exe")
 
 
@@ -195,7 +200,7 @@ def _start_prometheus_server() -> bool:
                 return True  # Already running
             state.process = None
 
-        settings = _runtime_observability
+        settings = ObservabilityState._runtime_observability
         auto_start_enabled = True if settings is None else bool(settings.auto_start_prometheus)
         if not auto_start_enabled:
             logger.debug("Prometheus auto-start disabled via configuration")
@@ -507,5 +512,4 @@ __all__ = [
 def apply_observability_settings(settings: Optional[ObservabilityConfig]) -> None:
     """Store the latest Observability configuration for exporter helpers."""
 
-    global _runtime_observability  # noqa: PLW0603
-    _runtime_observability = settings
+    ObservabilityState._runtime_observability = settings

@@ -126,7 +126,7 @@ def _check_lm_studio_running() -> bool:
     """
     import psutil
 
-    for proc in psutil.process_iter(['name']):
+    for proc in cast(Any, psutil).process_iter(['name']):
         try:
             proc_name = proc.info['name'].lower()
             if 'lm studio' in proc_name or 'lmstudio' in proc_name:

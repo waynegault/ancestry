@@ -27,7 +27,7 @@ auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, cast
 
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
@@ -497,7 +497,7 @@ def _process_suggest_results(suggest_results: list[dict[str, Any]], search_crite
     """Process suggest API results and return scored matches."""
     scoring_weights = config_schema.common_scoring_weights
     date_flex = {"year_match_range": config_schema.date_flexibility}
-    scored_matches = []
+    scored_matches: list[dict[str, Any]] = []
 
     for suggestion in suggest_results[:max_suggestions]:
         match_record = _process_suggest_result(suggestion, search_criteria, scoring_weights, date_flex)
@@ -784,9 +784,10 @@ def _extract_person_info_from_target(target_person: dict[str, Any], result: dict
     # Extract birth date
     bdate = target_person.get("bDate", {})
     if bdate and isinstance(bdate, dict):
-        year = bdate.get("year")
-        month = bdate.get("month")
-        day = bdate.get("day")
+        bdate_dict = cast(dict[str, Any], bdate)
+        year = bdate_dict.get("year")
+        month = bdate_dict.get("month")
+        day = bdate_dict.get("day")
         if year:
             result["birth_year"] = year
             result["birth_date"] = _format_date(day, month, year)
@@ -794,9 +795,10 @@ def _extract_person_info_from_target(target_person: dict[str, Any], result: dict
     # Extract death date
     ddate = target_person.get("dDate", {})
     if ddate and isinstance(ddate, dict):
-        year = ddate.get("year")
-        month = ddate.get("month")
-        day = ddate.get("day")
+        ddate_dict = cast(dict[str, Any], ddate)
+        year = ddate_dict.get("year")
+        month = ddate_dict.get("month")
+        day = ddate_dict.get("day")
         if year:
             result["death_year"] = year
             result["death_date"] = _format_date(day, month, year)
@@ -833,8 +835,8 @@ def _format_person_from_relationship_data(person_obj: dict[str, Any]) -> dict[st
     bdate = person_obj.get("bDate", {})
     ddate = person_obj.get("dDate", {})
 
-    birth_year = bdate.get("year") if isinstance(bdate, dict) else None
-    death_year = ddate.get("year") if isinstance(ddate, dict) else None
+    birth_year = cast(dict[str, Any], bdate).get("year") if isinstance(bdate, dict) else None
+    death_year = cast(dict[str, Any], ddate).get("year") if isinstance(ddate, dict) else None
 
     # Return standardized dict format (matches display_family_members expectations)
     return {
@@ -879,10 +881,11 @@ def _debug_log_facts_structure(facts_data: Any) -> None:
 def _get_data_section_from_facts(facts_data: Any) -> dict[str, Any]:
     """Return the primary data section containing relationship arrays."""
     if isinstance(facts_data, dict):
-        person_section = facts_data.get("person")
+        facts_dict = cast(dict[str, Any], facts_data)
+        person_section = facts_dict.get("person")
         if isinstance(person_section, dict):
             return person_section
-        return facts_data
+        return facts_dict
     return {}
 
 

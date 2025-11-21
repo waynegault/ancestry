@@ -252,7 +252,7 @@ class ExtractedData(BaseModel):
 
     def get_all_names(self) -> list[str]:
         """Get all names from structured fields."""
-        names = []
+        names: list[str] = []
         for name_data in self.structured_names:
             names.append(name_data.full_name)
             names.extend(name_data.nicknames)
@@ -260,7 +260,7 @@ class ExtractedData(BaseModel):
 
     def get_all_locations(self) -> list[str]:
         """Get all locations from structured fields."""
-        locations = []
+        locations: list[str] = []
         for vital_record in self.vital_records:
             if vital_record.place:
                 locations.append(vital_record.place)
@@ -917,7 +917,7 @@ class PersonProcessor:
             return []
 
         logger.info(f"Looking up {len(mentioned_people)} mentioned people for {person.username}")
-        lookup_results = []
+        lookup_results: list[PersonLookupResult] = []
         people_found_count = 0
 
         for person_data in mentioned_people:
@@ -1010,7 +1010,7 @@ class PersonProcessor:
     @staticmethod
     def _build_search_criteria_from_person_data(person_data: dict[str, Any]) -> Optional[dict[str, Any]]:
         """Build search criteria from extracted person data."""
-        search_criteria = {}
+        search_criteria: dict[str, Any] = {}
 
         if person_data.get("first_name"):
             search_criteria["first_name"] = person_data["first_name"].lower()
@@ -1721,7 +1721,7 @@ class PersonProcessor:
         if not lookup_results:
             return "No people found in records."
 
-        formatted_parts = []
+        formatted_parts: list[str] = []
 
         for result in lookup_results:
             if result.found:
@@ -2896,7 +2896,7 @@ def _salvage_extracted_data(
         logger.warning(f"{log_prefix}: AI response missing 'extracted_data' dictionary. Using defaults.")
         return result
 
-    extracted_data_raw = ai_response["extracted_data"]
+    extracted_data_raw = cast(dict[str, Any], ai_response["extracted_data"])
 
     # Process each expected key
     for key in result:
@@ -2996,7 +2996,6 @@ def _process_ai_response(ai_response: Any, log_prefix: str) -> dict[str, Any]:
 def _format_context_for_ai_extraction(
     context_logs: list[ConversationLog],
     # my_pid_lower parameter is kept for compatibility but not used
-    # pylint: disable=unused-argument
     _: str = "",  # Renamed to underscore to indicate unused parameter
 ) -> str:
     """
@@ -3012,7 +3011,7 @@ def _format_context_for_ai_extraction(
         A formatted string representing the conversation history.
     """
     # Step 1: Initialize list for formatted lines
-    context_lines = []
+    context_lines: list[str] = []
     # Step 2: Get truncation limit from config
     max_words = config_schema.ai_context_message_max_words
 
@@ -3172,7 +3171,8 @@ def _format_genealogical_data_for_ai(
     formatted_lines = ["Family Tree Search Results:"]
     for result in genealogical_data.get("results", [])[:3]:  # Limit to top 3
         if isinstance(result, dict):
-            name = result.get("name", "Unknown")
+            result_dict = cast(dict[str, Any], result)
+            name = result_dict.get("name", "Unknown")
             formatted_lines.append(f"- {name}")
 
     return "\n".join(formatted_lines)
@@ -3190,7 +3190,7 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
         )
         dates = extracted_data.get("extracted_data", {}).get("mentioned_dates", [])
 
-        summary_parts = []
+        summary_parts: list[str] = []
 
         if names:
             summary_parts.append(f"information about {', '.join(names[:2])}")

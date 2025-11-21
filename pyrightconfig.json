@@ -63,7 +63,7 @@
   "reportUnknownArgumentType": "none",
   "reportUnknownLambdaType": "none",
   "reportUnknownVariableType": "none",
-  "reportUnknownMemberType": "none",
+  "reportUnknownMemberType": "warning",
   "reportMissingModuleSource": "none",
   "reportImportCycles": "none",
   "reportUninitializedInstanceVariable": "none",
@@ -85,12 +85,12 @@
   "stubPath": "",
   "venvPath": ".",
   "venv": ".venv",
-  "pythonVersion": "3.12",
+  "pythonVersion": "3.13",
   "pythonPlatform": "Windows",
   "executionEnvironments": [
     {
       "root": ".",
-      "pythonVersion": "3.12",
+      "pythonVersion": "3.13",
       "pythonPlatform": "Windows",
       "extraPaths": [
         ".",

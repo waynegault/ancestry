@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 logger = logging.getLogger(__name__)
 
@@ -50,21 +50,22 @@ def _print_family_member(member: dict[str, Any]) -> None:
 
 def _deduplicate_members(members: list[Any]) -> list[dict[str, Any]]:
     """Deduplicate family members by (name, birth_year, death_year)."""
-    seen = set()
-    deduped = []
+    seen: set[tuple[str, Any, Any]] = set()
+    deduped: list[dict[str, Any]] = []
     for m in members:
         if not isinstance(m, dict):
             continue
-        key = (str(m.get("name", "")).strip().lower(), m.get("birth_year"), m.get("death_year"))
+        m_dict = cast(dict[str, Any], m)
+        key = (str(m_dict.get("name", "")).strip().lower(), m_dict.get("birth_year"), m_dict.get("death_year"))
         if key not in seen:
             seen.add(key)
-            deduped.append(m)
+            deduped.append(m_dict)
     return deduped
 
 
 def _filter_valid_members(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Filter out placeholder/blank names."""
-    valid = []
+    valid: list[dict[str, Any]] = []
     for m in members:
         name = str(m.get("name", "")).strip()
         if name and name.lower() not in {"unknown", "-", "n/a", "none", "?", "null"}:
