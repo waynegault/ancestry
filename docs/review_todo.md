@@ -15,8 +15,10 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
    Recommendation: Continue to expand integration scenarios as new features are added.
 
-3. (Priority 3) Continue profiling Action 6 throughput
+3. (Priority 3) Continue profiling Action 6 throughput — 🚧 In Progress
    Action 6 tracks rich telemetry (`PageProcessingMetrics`), yet the pipeline remains strictly sequential. Real-world runs hover around 40-60s per page under safe rate limits.
+
+   Update (Nov 21 2025): Added granular timing logs to `_fetch_combined_details` to profile individual API calls (match details vs profile details). This will help pinpoint if the profile fetch is a significant bottleneck.
 
    Recommendation: Use existing metrics to identify dominant stages. Experiment with batched SQLAlchemy `bulk_save_objects`, prefetch caching, or overlapping I/O (while honoring the 0.3 RPS limiter). Set an explicit 30s/page SLO.
 
