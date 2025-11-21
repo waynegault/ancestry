@@ -24,9 +24,12 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
    Recommendation: Monitor logs to verify cache hit rates and overall page processing time reduction.
 
-4. (Priority 4) Monitor `core/error_handling.api_retry` telemetry
+4. (Priority 4) Monitor `core/error_handling.api_retry` telemetry — ✅ Done
    The migration to the unified error-handling stack is complete.
 
-   Recommendation: Monitor telemetry for the next few production runs to ensure stability. Regenerate derived documentation (e.g., `docs/code_graph.json`) to remove references to legacy `utils.retry_api`.
+   Update (Nov 21 2025):
+   - Regenerated `docs/code_graph.json` to remove stale references to legacy `utils.retry_api`.
+
+   Recommendation: Monitor telemetry for the next few production runs to ensure stability.
 
 <!-- markdownlint-enable MD029 -->

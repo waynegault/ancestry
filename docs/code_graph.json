@@ -1,10 +1,10 @@
 {
   "metadata": {
     "schemaVersion": "1.0",
-    "generatedAt": "2025-11-17T00:00:00Z",
+    "generatedAt": "2025-11-21T17:53:43.442530Z",
     "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
     "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
-    "recentUpdates": "2025-11-17: Documentation quality improvement - 10 modules simplified (400+ lines of verbose jargon removed), all Pylance errors resolved (genealogical_normalization.py, ms_graph_utils.py type safety improvements). Previous: Test infrastructure standardization (22/22 modules), temp file helpers consolidated (4 modules migrated), Grafana setup automation, code quality improvements.",
+    "recentUpdates": "2025-11-21: Removed legacy utils.retry_api references. 2025-11-17: Documentation quality improvement - 10 modules simplified (400+ lines of verbose jargon removed), all Pylance errors resolved (genealogical_normalization.py, ms_graph_utils.py type safety improvements). Previous: Test infrastructure standardization (22/22 modules), temp file helpers consolidated (4 modules migrated), Grafana setup automation, code quality improvements.",
     "documentation": {
       "primary": "README.md - Comprehensive project documentation with Phase 2 docstring improvements",
       "codebase": "visualize_code_graph.html - Interactive code visualization",
@@ -56,14 +56,14 @@
       "summary": "Warms optional system caches to speed up subsequent automation workflows.",
       "mechanism": "Imports core.system_cache.warm_system_caches when available, logging debug output on missing module or failures and returning the helper result.",
       "quality": "stable",
-        "concerns": [
-          "Import-time failures are swallowed with False result; consider surfacing to telemetry."
-        ],
-        "opportunities": [
-          "Record initialization duration for performance tracking."
-        ],
-        "tests": null,
-        "notes": "Supports ensure_caching_initialized on-demand warming."
+      "concerns": [
+        "Import-time failures are swallowed with False result; consider surfacing to telemetry."
+      ],
+      "opportunities": [
+        "Record initialization duration for performance tracking."
+      ],
+      "tests": null,
+      "notes": "Supports ensure_caching_initialized on-demand warming."
     },
     {
       "id": "function:main.ensure_caching_initialized",
@@ -3107,23 +3107,6 @@
       ],
       "tests": null,
       "notes": "Complements status code path by handling network/timeout exceptions."
-    },
-    {
-      "id": "function:utils.retry_api",
-      "type": "function",
-      "name": "retry_api",
-      "path": "utils.py",
-      "summary": "Decorator factory wrapping API callables with configurable retry logic across status codes and exceptions.",
-      "mechanism": "Builds retry state from _get_retry_config, evaluates responses via _should_retry_status_code, and uses _handle_status_code_retry/_handle_exception_retry to control looping before returning response or raising error.",
-      "quality": "stable",
-      "concerns": [
-        "Synchronous implementation unsuitable for async functions; also assumes responses expose status_code attribute."
-      ],
-      "opportunities": [
-        "Provide async-friendly variant or allow pluggable sleep/response adapters."
-      ],
-      "tests": null,
-      "notes": "Widely used for resilient API operations outside the newer SessionManager pipeline."
     },
     {
       "id": "function:utils._extract_driver_from_args",
@@ -16534,7 +16517,7 @@
       "quality": "stable",
       "concerns": [
         "Still contains leading slashes on some endpoints while others are relative; callers must normalize to avoid double slashes.",
-        "Constants are string literals only—no typed wrappers—so refactors in consumers can silently break substitution placeholders."
+        "Constants are string literals only\u2014no typed wrappers\u2014so refactors in consumers can silently break substitution placeholders."
       ],
       "opportunities": [
         "Generate typed client helpers from this module so placeholders are enforced at call sites.",
@@ -17214,9 +17197,9 @@
       "mechanism": "Defines _test_* helpers that import action6/action7/action9, database models, session/rate limiting modules, and configuration artifacts; each returns booleans consumed by a TestSuite in module_tests, with __main__ wiring into create_standard_test_runner for CLI execution.",
       "quality": "alpha",
       "concerns": [
-        "Assertions only confirm symbols exist—not that workflows run end to end or share data correctly.",
+        "Assertions only confirm symbols exist\u2014not that workflows run end to end or share data correctly.",
         "Rate limiter check scrapes source text via inspect.getsource, which can break when utils grows large or is zipped.",
-  "Action 8 messaging is not covered, so regressions there could slip through despite \"integration\" naming."
+        "Action 8 messaging is not covered, so regressions there could slip through despite \"integration\" naming."
       ],
       "opportunities": [
         "Replace existence checks with scenario tests that drive exec_actn across actions using fixtures.",
@@ -17336,7 +17319,7 @@
       "type": "file",
       "name": "lm_studio_manager.py",
       "path": "lm_studio_manager.py",
-      "summary": "Manages local LM Studio lifecycle—detecting running processes, launching the desktop app, and verifying its HTTP API is ready.",
+      "summary": "Manages local LM Studio lifecycle\u2014detecting running processes, launching the desktop app, and verifying its HTTP API is ready.",
       "mechanism": "LMStudioManager wraps psutil process scans, requests-based health checks, and subprocess launches; create_manager_from_config pulls tuned defaults from config.api while module_tests exercises init/detection/health-check paths via TestSuite.",
       "quality": "beta",
       "concerns": [
@@ -17361,7 +17344,7 @@
       "mechanism": "Defines ObjectPool with acquire/release semantics backed by deque plus fast_json_loads wrapper around json.loads that returns None on errors; TestSuite-driven memory_utils_module_tests validate both behaviors and feed create_standard_test_runner.",
       "quality": "beta",
       "concerns": [
-        "ObjectPool lacks thread safety—shared use across worker threads could race.",
+        "ObjectPool lacks thread safety\u2014shared use across worker threads could race.",
         "fast_json_loads swallows exceptions silently, so upstream callers need telemetry to spot malformed inputs.",
         "Factory return type is untyped; inconsistent objects can slip in and break pooling expectations."
       ],
@@ -17383,7 +17366,7 @@
       "quality": "alpha",
       "concerns": [
         "Template loading depends on global session registration; runs outside exec_actn will fail silently and return empty templates.",
-        "Personalization registry has little input validation—unexpected extracted_data shapes can bubble into broken prose.",
+        "Personalization registry has little input validation\u2014unexpected extracted_data shapes can bubble into broken prose.",
         "Effectiveness tracking currently in-memory; restarts reset metrics so optimization never converges."
       ],
       "opportunities": [
@@ -17403,7 +17386,7 @@
       "mechanism": "Loads config/.env secrets, sets up persistent SerializableTokenCache, exposes token acquisition/refresh helpers, list/task CRUD wrappers, and unit tests mocking msal/requests via TestSuite before wiring into create_standard_test_runner.",
       "quality": "alpha",
       "concerns": [
-        "Bootstraps msal + dotenv at import time—missing env vars trigger critical logs and set globals to None, complicating mocking.",
+        "Bootstraps msal + dotenv at import time\u2014missing env vars trigger critical logs and set globals to None, complicating mocking.",
         "Device flow instructions write to stdout; integrating in headless automation may need alternative UX.",
         "Token cache path depends on config.database.data_dir; misconfigured paths silently degrade to in-memory cache."
       ],
@@ -17413,7 +17396,7 @@
         "Refactor to class-based wrapper so SessionManager can inject credentials and centralize retry logic."
       ],
       "tests": "run_comprehensive_tests",
-      "notes": "Action9 task generation calls into this when USERS_ENABLE_MS_GRAPH true—ensure MS_GRAPH_CLIENT_ID present and device flow completed."
+      "notes": "Action9 task generation calls into this when USERS_ENABLE_MS_GRAPH true\u2014ensure MS_GRAPH_CLIENT_ID present and device flow completed."
     },
     {
       "id": "file:my_selectors.py",
@@ -17424,7 +17407,7 @@
       "mechanism": "Defines page-scoped constant selectors plus my_selectors_module_tests TestSuite that validates naming, formatting, and coverage heuristics for critical flows (login, matches, messaging).",
       "quality": "beta",
       "concerns": [
-        "Selectors rely on English labels and brittle DOM positions—regional UI strings will break :contains filters.",
+        "Selectors rely on English labels and brittle DOM positions\u2014regional UI strings will break :contains filters.",
         "No automatic verification against live site, so drift may go unnoticed until runtime failures.",
         "Module imports the test framework on load just to declare constants, adding unnecessary dependencies during production runs."
       ],
@@ -17488,7 +17471,7 @@
       "quality": "beta",
       "concerns": [
         "Confidence heuristics are simplistic (thresholded by match_score) and may mislead prioritization logic.",
-        "Factories assume standard key names from action10/11—schema shifts will silently drop data.",
+        "Factories assume standard key names from action10/11\u2014schema shifts will silently drop data.",
         "Format strings embed English phrases, limiting internationalization."
       ],
       "opportunities": [
@@ -17625,7 +17608,7 @@
       "quality": "beta",
       "concerns": [
         "Depends on prompt_telemetry file format; schema changes with missing quality_score break gating silently.",
-        "Baseline stored in Logs/quality_baseline.json with no retention/versioning—old baselines may go stale."
+        "Baseline stored in Logs/quality_baseline.json with no retention/versioning\u2014old baselines may go stale."
       ],
       "opportunities": [
         "Add machine-readable (JSON) summary alongside human-friendly prints to simplify CI consumption.",
@@ -17779,7 +17762,7 @@
       "quality": "beta",
       "concerns": [
         "Formatting logic assumes ASCII bullet and newline conventions; HTML channels may need alternative markup.",
-        "No direct integration with database lookups—callers must supply sanitized record_details.",
+        "No direct integration with database lookups\u2014callers must supply sanitized record_details.",
         "URL validation is minimal (startswith('http')); could accept unsafe protocols if not filtered upstream."
       ],
       "opportunities": [
@@ -17842,7 +17825,7 @@
       "quality": "beta",
       "concerns": [
         "Prompts hardcode English copy; localization requires duplication.",
-        "Input lists accepted as raw strings without sanitation—malformed values may leak into prompts.",
+        "Input lists accepted as raw strings without sanitation\u2014malformed values may leak into prompts.",
         "Module imports logging + standard_imports despite being pure string builder."
       ],
       "opportunities": [
@@ -17863,7 +17846,7 @@
       "quality": "alpha",
       "concerns": [
         "Relies on placeholder heuristics (_calculate_line_completeness, etc.) returning canned values, so outputs lack fidelity.",
-        "Logging claims AI-powered insights though actual implementation uses simple loops—risk of over-promising.",
+        "Logging claims AI-powered insights though actual implementation uses simple loops\u2014risk of over-promising.",
         "No integration yet with downstream task pipelines; results may silently rot."
       ],
       "opportunities": [
@@ -17927,7 +17910,7 @@
       "concerns": [
         "capture_io assumes the wrapped test returns a truthy bool, so suites returning non-bool data get coerced into False and flagged.",
         "format_test_failure uses inspect.getsourcelines which can throw for dynamically defined functions or lambdas, partially caught but still noisy.",
-        "No structured logging/export yet—reports only surface via stdout; integration with prompt_telemetry or Logs folder missing."
+        "No structured logging/export yet\u2014reports only surface via stdout; integration with prompt_telemetry or Logs folder missing."
       ],
       "opportunities": [
         "Emit JSON diagnostics alongside human-readable output so analytics tooling can ingest failures.",
@@ -17966,7 +17949,7 @@
       "quality": "reference",
       "concerns": [
         "Educational module still executes real guardrails (parse_year) that mirror production folders; duplication may drift from canonical logic.",
-        "sys.path mutation replicates pattern from other examples—should be kept in sync if repo layout changes."
+        "sys.path mutation replicates pattern from other examples\u2014should be kept in sync if repo layout changes."
       ],
       "opportunities": [
         "Link from onboarding docs to highlight how to assert on message content and chained exceptions.",
@@ -17986,7 +17969,7 @@
       "concerns": [
         "Direct session.commit inside utility can clash with caller-managed transactions, risking partial rollbacks.",
         "Ethnicity column discovery inspects table each call; no memoization so repeated invocations hit metadata.",
-        "Cache expiration hard-coded at 24h with no invalidation when data changes—stats can stale."
+        "Cache expiration hard-coded at 24h with no invalidation when data changes\u2014stats can stale."
       ],
       "opportunities": [
         "Leverage SessionManager db context to reuse transactions and centralize commits.",
@@ -22255,12 +22238,6 @@
       "description": "Module handles retry flow for exceptions"
     },
     {
-      "source": "module:utils",
-      "target": "function:utils.retry_api",
-      "type": "defines",
-      "description": "Module exposes configurable API retry decorator"
-    },
-    {
       "source": "class:utils.CircuitBreaker",
       "target": "method:CircuitBreaker.__init__",
       "type": "defines",
@@ -22633,12 +22610,6 @@
       "description": "Ensures retry decorator reachable"
     },
     {
-      "source": "function:utils.run_comprehensive_tests",
-      "target": "function:utils.retry_api",
-      "type": "calls",
-      "description": "Ensures retry_api decorator reachable"
-    },
-    {
       "source": "function:action6_gather._emit_final_summary",
       "target": "function:utils.log_final_summary",
       "type": "calls",
@@ -22979,30 +22950,6 @@
       "target": "function:utils._calculate_sleep_time",
       "type": "calls",
       "description": "Computes backoff delay for retryable exceptions"
-    },
-    {
-      "source": "function:utils.retry_api",
-      "target": "function:utils._get_retry_config",
-      "type": "calls",
-      "description": "Loads retry parameters before entering loop"
-    },
-    {
-      "source": "function:utils.retry_api",
-      "target": "function:utils._should_retry_status_code",
-      "type": "calls",
-      "description": "Tests responses against retryable status codes"
-    },
-    {
-      "source": "function:utils.retry_api",
-      "target": "function:utils._handle_status_code_retry",
-      "type": "calls",
-      "description": "Handles retry flow for retryable HTTP statuses"
-    },
-    {
-      "source": "function:utils.retry_api",
-      "target": "function:utils._handle_exception_retry",
-      "type": "calls",
-      "description": "Handles retry flow when exceptions occur"
     },
     {
       "source": "class:core.session_manager.SessionManager",
