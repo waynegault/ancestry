@@ -3,6 +3,7 @@
 Maintenance script for docs/code_graph.json.
 Allows removing stale nodes and edges programmatically.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -30,9 +31,7 @@ def remove_node(graph: dict[str, Any], node_id: str) -> bool:
 
     # Remove edges connected to this node
     edges = graph.get("links", [])
-    graph["links"] = [
-        e for e in edges if e.get("source") != node_id and e.get("target") != node_id
-    ]
+    graph["links"] = [e for e in edges if e.get("source") != node_id and e.get("target") != node_id]
 
     print(f"Removed node '{node_id}' and associated edges.")
     return True
