@@ -35,7 +35,7 @@ try {
     Write-Host "  ✓ Password reset successful`n" -ForegroundColor Green
 } catch {
     Write-Host "  ✗ Password reset failed: $_`n" -ForegroundColor Red
-    
+
     # Try to start service anyway
     Write-Host "Starting Grafana service..." -ForegroundColor Yellow
     Start-Service -Name "Grafana"

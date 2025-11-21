@@ -439,7 +439,7 @@ _check_session_health_proactive(session_manager, current_page)
 
 ### Low AI Quality Scores
 - **Symptom**: Quality scores consistently <70 in telemetry logs
-- **Diagnosis**: 
+- **Diagnosis**:
   ```bash
   python prompt_telemetry.py --stats  # Check median scores
   Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions

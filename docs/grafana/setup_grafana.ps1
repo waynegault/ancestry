@@ -34,7 +34,7 @@ function Test-Administrator {
 # Download file with progress
 function Download-File {
     param($url, $output)
-    
+
     try {
         $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
@@ -49,7 +49,7 @@ function Download-File {
 # Main installation workflow
 function Install-Grafana {
     Write-Step "Automated Grafana Setup"
-    
+
     # 1. Check admin privileges
     if (-not (Test-Administrator)) {
         Write-Error-Custom "Administrator privileges required"
@@ -58,51 +58,51 @@ function Install-Grafana {
         return $false
     }
     Write-Success "Running with Administrator privileges"
-    
+
     # 2. Check if Grafana already installed
     if (Test-Path "$GRAFANA_BIN\grafana-cli.exe") {
         Write-Success "Grafana already installed at: $GRAFANA_INSTALL_PATH"
-        
+
         # Verify service exists
         $service = Get-Service -Name "Grafana" -ErrorAction SilentlyContinue
         if ($service) {
             Write-Success "Grafana service registered"
-            
+
             # Ensure service is running
             if ($service.Status -ne "Running") {
                 Write-Info "Starting Grafana service..."
                 Start-Service -Name "Grafana"
                 Start-Sleep -Seconds 3
             }
-            
+
             if ((Get-Service -Name "Grafana").Status -eq "Running") {
                 Write-Success "Grafana service is running"
             }
         }
-        
+
         return $true
     }
-    
+
     # 3. Download Grafana installer
     if (-not $SkipDownload) {
         Write-Step "Downloading Grafana v$GRAFANA_VERSION"
         $installerPath = "$env:TEMP\grafana-installer.msi"
-        
+
         if (Download-File -url $GRAFANA_INSTALLER_URL -output $installerPath) {
             Write-Success "Downloaded to: $installerPath"
         } else {
             return $false
         }
-        
+
         # 4. Install Grafana silently
         Write-Step "Installing Grafana..."
         Write-Info "This may take 2-3 minutes..."
-        
+
         try {
             $msiArgs = "/i `"$installerPath`" /quiet /norestart"
             Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -NoNewWindow
             Write-Success "Grafana installed successfully"
-            
+
             # Clean up installer
             Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
         } catch {
@@ -110,12 +110,12 @@ function Install-Grafana {
             return $false
         }
     }
-    
+
     # 5. Wait for installation to complete
     Write-Info "Verifying installation..."
     $maxAttempts = 10
     $attempt = 0
-    
+
     while ($attempt -lt $maxAttempts) {
         if (Test-Path "$GRAFANA_BIN\grafana-cli.exe") {
             Write-Success "Installation verified"
@@ -124,30 +124,30 @@ function Install-Grafana {
         $attempt++
         Start-Sleep -Seconds 2
     }
-    
+
     if ($attempt -eq $maxAttempts) {
         Write-Error-Custom "Installation verification timeout"
         return $false
     }
-    
+
     # 6. Start Grafana service
     Write-Step "Starting Grafana service"
-    
+
     try {
         $service = Get-Service -Name "Grafana" -ErrorAction SilentlyContinue
         if (-not $service) {
             Write-Error-Custom "Grafana service not found after installation"
             return $false
         }
-        
+
         if ($service.Status -ne "Running") {
             Start-Service -Name "Grafana"
             Start-Sleep -Seconds 5
         }
-        
+
         # Set to start automatically
         Set-Service -Name "Grafana" -StartupType Automatic
-        
+
         $service = Get-Service -Name "Grafana"
         if ($service.Status -eq "Running") {
             Write-Success "Grafana service started (http://localhost:3000)"
@@ -159,40 +159,40 @@ function Install-Grafana {
         Write-Error-Custom "Service startup failed: $_"
         return $false
     }
-    
+
     return $true
 }
 
 # Install plugins
 function Install-Plugins {
     Write-Step "Installing Grafana plugins"
-    
+
     # Ensure Grafana is installed
     if (-not (Test-Path "$GRAFANA_BIN\grafana-cli.exe")) {
         Write-Error-Custom "Grafana not found. Run installation first."
         return $false
     }
-    
+
     # Stop service for plugin installation
     Write-Info "Stopping Grafana service for plugin installation..."
     Stop-Service -Name "Grafana" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
-    
+
     # Set permissions on plugins directory
     $pluginsDir = "$GRAFANA_DATA\plugins"
     if (-not (Test-Path $pluginsDir)) {
         New-Item -ItemType Directory -Path $pluginsDir -Force | Out-Null
     }
-    
+
     $acl = Get-Acl $pluginsDir
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
         "Users", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
     )
     $acl.SetAccessRule($rule)
     Set-Acl $pluginsDir $acl
-    
+
     Set-Location $GRAFANA_BIN
-    
+
     # Install SQLite plugin
     Write-Info "Installing SQLite datasource plugin..."
     try {
@@ -201,7 +201,7 @@ function Install-Plugins {
     } catch {
         Write-Error-Custom "SQLite plugin installation failed: $_"
     }
-    
+
     # Install Node Graph plugin (for code architecture visualization)
     Write-Info "Installing Node Graph panel plugin..."
     try {
@@ -210,12 +210,12 @@ function Install-Plugins {
     } catch {
         Write-Info "Node Graph plugin may already be built-in (OK)"
     }
-    
+
     # Restart service
     Write-Info "Restarting Grafana service..."
     Start-Service -Name "Grafana"
     Start-Sleep -Seconds 5
-    
+
     if ((Get-Service -Name "Grafana").Status -eq "Running") {
         Write-Success "Plugins installed and service restarted"
         return $true
@@ -228,12 +228,12 @@ function Install-Plugins {
 # Configure data sources via Grafana API
 function Configure-DataSources {
     Write-Step "Configuring data sources"
-    
+
     # Wait for Grafana API to be ready
     Write-Info "Waiting for Grafana API..."
     $maxAttempts = 30
     $attempt = 0
-    
+
     while ($attempt -lt $maxAttempts) {
         try {
             $response = Invoke-WebRequest -Uri "http://localhost:3000/api/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
@@ -247,16 +247,16 @@ function Configure-DataSources {
         $attempt++
         Start-Sleep -Seconds 2
     }
-    
+
     if ($attempt -eq $maxAttempts) {
         Write-Error-Custom "Grafana API timeout"
         return $false
     }
-    
+
     # Try both default and custom credentials
     $credentials = @("admin:admin", "admin:ancestry")
     $headers = $null
-    
+
     foreach ($cred in $credentials) {
         try {
             $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($cred))
@@ -272,12 +272,12 @@ function Configure-DataSources {
             # Try next credential
         }
     }
-    
+
     if (-not $headers) {
         Write-Error-Custom "Could not authenticate with any credentials"
         return $false
     }
-    
+
     # Check if Prometheus data source exists
     Write-Info "Configuring Prometheus data source..."
     try {
@@ -288,10 +288,10 @@ function Configure-DataSources {
             access = "proxy"
             isDefault = $true
         } | ConvertTo-Json
-        
+
         $response = Invoke-RestMethod -Uri "http://localhost:3000/api/datasources" `
             -Method Post -Headers $headers -Body $prometheusDatasource -ErrorAction SilentlyContinue
-        
+
         Write-Success "Prometheus data source configured"
     } catch {
         if ($_.Exception.Response.StatusCode -eq 409) {
@@ -300,7 +300,7 @@ function Configure-DataSources {
             Write-Info "Prometheus data source: Manual configuration needed"
         }
     }
-    
+
     # Check if SQLite data source exists
     Write-Info "Configuring SQLite data source..."
     try {
@@ -311,10 +311,10 @@ function Configure-DataSources {
                 path = $DB_PATH
             }
         } | ConvertTo-Json
-        
+
         $response = Invoke-RestMethod -Uri "http://localhost:3000/api/datasources" `
             -Method Post -Headers $headers -Body $sqliteDatasource -ErrorAction SilentlyContinue
-        
+
         Write-Success "SQLite data source configured"
     } catch {
         if ($_.Exception.Response.StatusCode -eq 409) {
@@ -323,25 +323,25 @@ function Configure-DataSources {
             Write-Info "SQLite data source: Manual configuration needed"
         }
     }
-    
+
     return $true
 }
 
 # Import dashboards
 function Import-Dashboards {
     Write-Step "Importing dashboards"
-    
+
     $dashboards = @(
         @{file="ancestry_overview.json"; name="Ancestry Automation Overview"},
         @{file="system_performance.json"; name="System Performance & Health"},
         @{file="genealogy_insights.json"; name="Genealogy Research Insights"},
         @{file="code_quality.json"; name="Code Quality & Architecture"}
     )
-    
+
     # Try both default and custom credentials
     $credentials = @("admin:admin", "admin:ancestry")
     $headers = $null
-    
+
     foreach ($cred in $credentials) {
         try {
             $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($cred))
@@ -356,23 +356,23 @@ function Import-Dashboards {
             # Try next credential
         }
     }
-    
+
     if (-not $headers) {
         Write-Info "Could not authenticate for dashboard import"
         return $false
     }
-    
+
     foreach ($dash in $dashboards) {
         $dashPath = Join-Path $DASHBOARDS_PATH $dash.file
-        
+
         if (-not (Test-Path $dashPath)) {
             Write-Info "$($dash.name): File not found, skipping"
             continue
         }
-        
+
         try {
             $dashboardJson = Get-Content $dashPath -Raw | ConvertFrom-Json
-            
+
             $importPayload = @{
                 dashboard = $dashboardJson
                 overwrite = $true
@@ -381,16 +381,16 @@ function Import-Dashboards {
                     @{name="DS_SQLITE"; type="datasource"; pluginId="frser-sqlite-datasource"; value="SQLite"}
                 )
             } | ConvertTo-Json -Depth 20
-            
+
             $response = Invoke-RestMethod -Uri "http://localhost:3000/api/dashboards/import" `
                 -Method Post -Headers $headers -Body $importPayload -ErrorAction Stop
-            
+
             Write-Success "$($dash.name) imported"
         } catch {
             Write-Info "$($dash.name): $_"
         }
     }
-    
+
     return $true
 }
 
@@ -401,29 +401,29 @@ function Main {
         Write-Host "   Ancestry Research Platform - Grafana Automated Setup" -ForegroundColor Cyan
         Write-Host ("="*70) + "`n" -ForegroundColor Cyan
     }
-    
+
     $success = $true
-    
+
     # Install Grafana
     if (-not (Install-Grafana)) {
         $success = $false
     }
-    
+
     # Install plugins
     if ($success -and -not (Install-Plugins)) {
         $success = $false
     }
-    
+
     # Configure data sources
     if ($success) {
         Configure-DataSources | Out-Null
     }
-    
+
     # Import dashboards
     if ($success) {
         Import-Dashboards | Out-Null
     }
-    
+
     if (-not $Silent) {
         Write-Host "`n" + ("="*70) -ForegroundColor Cyan
         if ($success) {
@@ -439,7 +439,7 @@ function Main {
             Write-Host "`n  Please check manual configuration steps in QUICK_START.md`n" -ForegroundColor Yellow
         }
     }
-    
+
     return $success
 }
 
