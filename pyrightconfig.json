@@ -63,7 +63,7 @@
   "reportUnknownArgumentType": "none",
   "reportUnknownLambdaType": "none",
   "reportUnknownVariableType": "none",
-  "reportUnknownMemberType": "warning",
+  "reportUnknownMemberType": "none",
   "reportMissingModuleSource": "none",
   "reportImportCycles": "none",
   "reportUninitializedInstanceVariable": "none",

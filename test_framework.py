@@ -49,7 +49,7 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, patch
 
 # Export commonly used testing utilities
@@ -962,14 +962,14 @@ def test_function_availability(required_functions: list[str], globals_dict: dict
     For behavior validation, use test_function_behavior() or module-specific tests.
 
     Args:
-        required_functions: List of function names to test
+        required_functions: list of function names to test
         globals_dict: globals() dictionary from the calling module
         module_name: Name of the module being tested (for display)
 
     Returns:
         List of boolean results for each function test
     """
-    results: List[bool] = []
+    results: list[bool] = []
     print(f"\n🔍 Testing {module_name} Function Availability:")
 
     for func_name in required_functions:
@@ -1021,7 +1021,7 @@ def test_function_behavior(
 
     Args:
         func_name: Name of the function to test
-        test_cases: List of (args_tuple, expected_result) pairs
+        test_cases: list of (args_tuple, expected_result) pairs
         globals_dict: globals() dictionary from the calling module
         allow_exceptions: Tuple of exception types that are acceptable
 

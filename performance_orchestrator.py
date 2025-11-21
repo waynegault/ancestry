@@ -65,7 +65,7 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from functools import lru_cache, wraps
-from typing import Any, Callable, DefaultDict, Deque, Dict, List, Optional, Set
+from typing import Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 import psutil
@@ -95,9 +95,9 @@ class OptimizationResult:
 class SmartQueryOptimizer:
     """Analyzes and optimizes database query performance."""
 
-    query_cache: Dict[str, Any]
-    slow_queries: Deque[Dict[str, Any]]
-    query_stats: DefaultDict[str, Dict[str, float | int]]
+    query_cache: dict[str, Any]
+    slow_queries: deque[dict[str, Any]]
+    query_stats: defaultdict[str, dict[str, float | int]]
 
     def __init__(self) -> None:
         self.query_cache = {}
@@ -116,7 +116,7 @@ class SmartQueryOptimizer:
 
             # Track slow queries (> 100ms)
             if execution_time > 0.1:
-                entry: Dict[str, Any] = {
+                entry: dict[str, Any] = {
                     "query": query,
                     "time": execution_time,
                     "timestamp": time.time()
@@ -324,8 +324,8 @@ class APIBatchCoordinator:
 class ModuleLoadOptimizer:
     """Optimizes module loading and initialization times."""
 
-    load_times: Dict[str, List[float]]
-    optimization_applied: Set[str]
+    load_times: dict[str, list[float]]
+    optimization_applied: set[str]
 
     def __init__(self) -> None:
         self.load_times = {}

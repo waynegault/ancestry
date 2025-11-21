@@ -1,5 +1,5 @@
 from collections import deque
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 
 class A:
