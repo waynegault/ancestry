@@ -24,6 +24,7 @@ try:
     import json
 
     from database import DnaMatch, Person, TreeStatisticsCache
+
     logger.debug("Successfully imported database models for tree statistics.")
 except ImportError as e:
     logger.error(f"Failed to import database models: {e}")
@@ -183,6 +184,7 @@ def _validate_profile_owner(session: Session, profile_id: str) -> bool:
 
     # Check if this is the tree owner (not a DNA match)
     from session_utils import get_global_session
+
     session_manager = get_global_session()
     tree_owner_id = session_manager.my_profile_id if session_manager else None
 
@@ -201,40 +203,22 @@ def _validate_profile_owner(session: Session, profile_id: str) -> bool:
 def _calculate_match_counts(session: Session) -> tuple[int, int, int]:
     """Calculate total, in-tree, and out-of-tree match counts."""
     total_matches = session.query(func.count(DnaMatch.people_id)).scalar() or 0
-    in_tree_count = (
-        session.query(func.count(Person.id))
-        .filter(Person.in_my_tree == 1)
-        .scalar() or 0
-    )
+    in_tree_count = session.query(func.count(Person.id)).filter(Person.in_my_tree == 1).scalar() or 0
     out_tree_count = total_matches - in_tree_count
     return total_matches, in_tree_count, out_tree_count
 
 
 def _calculate_relationship_tiers(session: Session) -> tuple[int, int, int]:
     """Calculate close, moderate, and distant match counts based on cM DNA shared."""
-    close_matches = (
-        session.query(func.count(DnaMatch.people_id))
-        .filter(DnaMatch.cm_dna >= 100)
-        .scalar() or 0
-    )
+    close_matches = session.query(func.count(DnaMatch.people_id)).filter(DnaMatch.cm_dna >= 100).scalar() or 0
     moderate_matches = (
-        session.query(func.count(DnaMatch.people_id))
-        .filter(DnaMatch.cm_dna >= 20, DnaMatch.cm_dna < 100)
-        .scalar() or 0
+        session.query(func.count(DnaMatch.people_id)).filter(DnaMatch.cm_dna >= 20, DnaMatch.cm_dna < 100).scalar() or 0
     )
-    distant_matches = (
-        session.query(func.count(DnaMatch.people_id))
-        .filter(DnaMatch.cm_dna < 20)
-        .scalar() or 0
-    )
+    distant_matches = session.query(func.count(DnaMatch.people_id)).filter(DnaMatch.cm_dna < 20).scalar() or 0
     return close_matches, moderate_matches, distant_matches
 
 
-def calculate_tree_statistics(
-    session: Session,
-    profile_id: str,
-    force_refresh: bool = False
-) -> dict[str, Any]:
+def calculate_tree_statistics(session: Session, profile_id: str, force_refresh: bool = False) -> dict[str, Any]:
     """
     Calculate comprehensive tree statistics for a given profile.
 
@@ -302,7 +286,7 @@ def calculate_tree_statistics(
             'distant_matches': distant_matches,
             'ethnicity_regions': ethnicity_regions,
             'calculated_at': datetime.now(timezone.utc),
-            'profile_id': profile_id
+            'profile_id': profile_id,
         }
 
         # Save to cache
@@ -332,18 +316,24 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
         from typing import cast
 
         from sqlalchemy import inspect
+
         inspector = cast(Any, inspect(DnaMatch))
 
         excluded_cols = {
-            'people_id', 'cm_dna', 'predicted_relationship',
-            'relationship_confidence', 'starred', 'viewed',
-            'note', 'tree_size', 'common_ancestors',
-            'shared_matches_count', 'created_at', 'updated_at'
+            'people_id',
+            'cm_dna',
+            'predicted_relationship',
+            'relationship_confidence',
+            'starred',
+            'viewed',
+            'note',
+            'tree_size',
+            'common_ancestors',
+            'shared_matches_count',
+            'created_at',
+            'updated_at',
         }
-        ethnicity_columns = [
-            col.name for col in inspector.columns
-            if col.name not in excluded_cols
-        ]
+        ethnicity_columns = [col.name for col in inspector.columns if col.name not in excluded_cols]
 
         # Count non-null values for each ethnicity column
         ethnicity_distribution = {}
@@ -351,7 +341,8 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
             count = (
                 session.query(func.count(getattr(DnaMatch, col_name)))
                 .filter(getattr(DnaMatch, col_name).isnot(None))
-                .scalar() or 0
+                .scalar()
+                or 0
             )
             if count > 0:
                 ethnicity_distribution[col_name] = count
@@ -371,9 +362,7 @@ def _get_cached_statistics(session: Session, profile_id: str) -> Optional[dict[s
     Returns None if cache miss or expired.
     """
     try:
-        cache_entry = session.query(TreeStatisticsCache).filter(
-            TreeStatisticsCache.profile_id == profile_id
-        ).first()
+        cache_entry = session.query(TreeStatisticsCache).filter(TreeStatisticsCache.profile_id == profile_id).first()
 
         if cache_entry is None:
             return None
@@ -399,7 +388,7 @@ def _get_cached_statistics(session: Session, profile_id: str) -> Optional[dict[s
             'distant_matches': cache_entry.distant_matches,
             'ethnicity_regions': ethnicity_regions,
             'calculated_at': cache_entry.calculated_at,
-            'profile_id': profile_id
+            'profile_id': profile_id,
         }
 
     except Exception as e:
@@ -414,9 +403,7 @@ def _save_to_cache(session: Session, profile_id: str, statistics: dict[str, Any]
         ethnicity_json = json.dumps(statistics['ethnicity_regions'])
 
         # Check if cache entry exists
-        cache_entry = session.query(TreeStatisticsCache).filter(
-            TreeStatisticsCache.profile_id == profile_id
-        ).first()
+        cache_entry = session.query(TreeStatisticsCache).filter(TreeStatisticsCache.profile_id == profile_id).first()
 
         if cache_entry is not None:
             # Update existing entry
@@ -440,7 +427,7 @@ def _save_to_cache(session: Session, profile_id: str, statistics: dict[str, Any]
                 moderate_matches=statistics['moderate_matches'],
                 distant_matches=statistics['distant_matches'],
                 ethnicity_regions=ethnicity_json,
-                calculated_at=statistics['calculated_at']
+                calculated_at=statistics['calculated_at'],
             )
             session.add(cache_entry)
 
@@ -473,7 +460,7 @@ def _empty_statistics(profile_id: str) -> dict[str, Any]:
         'distant_matches': 0,
         'ethnicity_regions': {},
         'calculated_at': datetime.now(timezone.utc),
-        'profile_id': profile_id
+        'profile_id': profile_id,
     }
 
 
@@ -482,20 +469,27 @@ def _get_ethnicity_columns() -> list[str]:
     from typing import cast
 
     from sqlalchemy import inspect
+
     inspector = cast(Any, inspect(DnaMatch))
     excluded_columns = {
-        'people_id', 'cm_dna', 'predicted_relationship',
-        'relationship_confidence', 'starred', 'viewed',
-        'note', 'tree_size', 'common_ancestors',
-        'shared_matches_count', 'created_at', 'updated_at'
+        'people_id',
+        'cm_dna',
+        'predicted_relationship',
+        'relationship_confidence',
+        'starred',
+        'viewed',
+        'note',
+        'tree_size',
+        'common_ancestors',
+        'shared_matches_count',
+        'created_at',
+        'updated_at',
     }
     return [col.name for col in inspector.columns if col.name not in excluded_columns]
 
 
 def _compare_ethnicity_regions(
-    owner_dna: DnaMatch,
-    match_dna: DnaMatch,
-    ethnicity_columns: list[str]
+    owner_dna: DnaMatch, match_dna: DnaMatch, ethnicity_columns: list[str]
 ) -> tuple[list[str], dict[str, dict[str, float]]]:
     """Compare ethnicity regions between owner and match."""
     shared_regions: list[str] = []
@@ -515,7 +509,7 @@ def _compare_ethnicity_regions(
                     region_details[region] = {
                         'owner_percentage': owner_pct_float,
                         'match_percentage': match_pct_float,
-                        'difference': abs(owner_pct_float - match_pct_float)
+                        'difference': abs(owner_pct_float - match_pct_float),
                     }
             except (ValueError, TypeError):
                 # Skip regions with invalid percentage values
@@ -529,10 +523,7 @@ def _calculate_similarity_score(region_details: dict[str, dict[str, float]]) -> 
     if not region_details:
         return 0.0
 
-    return sum(
-        min(details['owner_percentage'], details['match_percentage'])
-        for details in region_details.values()
-    )
+    return sum(min(details['owner_percentage'], details['match_percentage']) for details in region_details.values())
 
 
 def _find_top_shared_region(region_details: dict[str, dict[str, float]]) -> Optional[str]:
@@ -542,15 +533,11 @@ def _find_top_shared_region(region_details: dict[str, dict[str, float]]) -> Opti
 
     return max(
         region_details.keys(),
-        key=lambda r: region_details[r]['owner_percentage'] + region_details[r]['match_percentage']
+        key=lambda r: region_details[r]['owner_percentage'] + region_details[r]['match_percentage'],
     )
 
 
-def calculate_ethnicity_commonality(
-    session: Session,
-    owner_profile_id: str,
-    match_person_id: int
-) -> dict[str, Any]:
+def calculate_ethnicity_commonality(session: Session, owner_profile_id: str, match_person_id: int) -> dict[str, Any]:
     """
     Calculate ethnicity commonality between tree owner and a DNA match.
 
@@ -571,13 +558,12 @@ def calculate_ethnicity_commonality(
             'calculated_at': datetime
         }
     """
-    logger.debug(
-        f"Calculating ethnicity commonality: owner={owner_profile_id}, match={match_person_id}"
-    )
+    logger.debug(f"Calculating ethnicity commonality: owner={owner_profile_id}, match={match_person_id}")
 
     try:
         # Check if owner_profile_id is the tree owner (not in Person table)
         from session_utils import get_global_session
+
         session_manager = get_global_session()
         tree_owner_id = session_manager.my_profile_id if session_manager else None
 
@@ -590,25 +576,19 @@ def calculate_ethnicity_commonality(
             # Their ethnicity data is stored in ethnicity_regions.json
             # For now, return empty commonality since we need to implement
             # a different approach to compare tree owner's ethnicity
-            logger.debug(f"Owner {owner_profile_id} is tree owner (not in DNA matches) - ethnicity comparison not yet implemented")
+            # logger.debug(f"Owner {owner_profile_id} is tree owner (not in DNA matches) - ethnicity comparison not yet implemented")
             return _empty_ethnicity_commonality()
 
         # Get owner's DNA match record (to get their ethnicity data)
-        owner_person = session.query(Person).filter(
-            Person.profile_id == owner_profile_id
-        ).first()
+        owner_person = session.query(Person).filter(Person.profile_id == owner_profile_id).first()
         if not owner_person:
             logger.error(f"Owner person not found in database: {owner_profile_id}")
             return _empty_ethnicity_commonality()
 
-        owner_dna = session.query(DnaMatch).filter(
-            DnaMatch.people_id == owner_person.id
-        ).first()
+        owner_dna = session.query(DnaMatch).filter(DnaMatch.people_id == owner_person.id).first()
 
         # Get match's DNA record
-        match_dna = session.query(DnaMatch).filter(
-            DnaMatch.people_id == match_person_id
-        ).first()
+        match_dna = session.query(DnaMatch).filter(DnaMatch.people_id == match_person_id).first()
 
         if not owner_dna or not match_dna:
             logger.debug("No DNA data available for comparison")
@@ -616,9 +596,7 @@ def calculate_ethnicity_commonality(
 
         # Get ethnicity columns and compare regions
         ethnicity_columns = _get_ethnicity_columns()
-        shared_regions, region_details = _compare_ethnicity_regions(
-            owner_dna, match_dna, ethnicity_columns
-        )
+        shared_regions, region_details = _compare_ethnicity_regions(owner_dna, match_dna, ethnicity_columns)
 
         # Calculate similarity score and find top region
         similarity_score = _calculate_similarity_score(region_details)
@@ -629,13 +607,10 @@ def calculate_ethnicity_commonality(
             'region_details': region_details,
             'similarity_score': similarity_score,
             'top_shared_region': top_shared_region,
-            'calculated_at': datetime.now(timezone.utc)
+            'calculated_at': datetime.now(timezone.utc),
         }
 
-        logger.debug(
-            f"Ethnicity commonality: {len(shared_regions)} shared regions, "
-            f"similarity={similarity_score:.1f}%"
-        )
+        logger.debug(f"Ethnicity commonality: {len(shared_regions)} shared regions, similarity={similarity_score:.1f}%")
 
         return result
 
@@ -651,7 +626,7 @@ def _empty_ethnicity_commonality() -> dict[str, Any]:
         'region_details': {},
         'similarity_score': 0.0,
         'top_shared_region': None,
-        'calculated_at': datetime.now(timezone.utc)
+        'calculated_at': datetime.now(timezone.utc),
     }
 
 
@@ -670,6 +645,7 @@ def _test_statistics_functions_available() -> None:
 def _test_calculate_tree_statistics_with_valid_profile() -> None:
     """Test calculate_tree_statistics with valid profile_id."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -677,6 +653,7 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
@@ -698,8 +675,9 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
         assert stats['total_matches'] >= 0, "Total matches should be non-negative"
         assert stats['in_tree_count'] >= 0, "In tree count should be non-negative"
         assert stats['out_tree_count'] >= 0, "Out tree count should be non-negative"
-        assert stats['in_tree_count'] + stats['out_tree_count'] <= stats['total_matches'], \
+        assert stats['in_tree_count'] + stats['out_tree_count'] <= stats['total_matches'], (
             "In tree + out tree should not exceed total matches"
+        )
     finally:
         session.close()
 
@@ -707,6 +685,7 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
 def _test_calculate_tree_statistics_with_invalid_profile() -> None:
     """Test calculate_tree_statistics with invalid profile_id."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -741,6 +720,7 @@ def _test_empty_statistics_structure() -> None:
 def _test_statistics_cache_hit() -> None:
     """Test that statistics are cached and reused."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -748,6 +728,7 @@ def _test_statistics_cache_hit() -> None:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
@@ -770,6 +751,7 @@ def _test_statistics_cache_hit() -> None:
 def _test_statistics_match_counts() -> None:
     """Test that match counts add up correctly."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -777,17 +759,20 @@ def _test_statistics_match_counts() -> None:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
 
         # Verify counts add up
-        assert stats['in_tree_count'] + stats['out_tree_count'] == stats['total_matches'], \
+        assert stats['in_tree_count'] + stats['out_tree_count'] == stats['total_matches'], (
             "in_tree + out_tree should equal total_matches"
+        )
 
-        assert stats['close_matches'] + stats['moderate_matches'] + stats['distant_matches'] == stats['total_matches'], \
-            "close + moderate + distant should equal total_matches"
+        assert (
+            stats['close_matches'] + stats['moderate_matches'] + stats['distant_matches'] == stats['total_matches']
+        ), "close + moderate + distant should equal total_matches"
     finally:
         session.close()
 
@@ -808,6 +793,7 @@ def _test_empty_ethnicity_commonality_structure() -> None:
 def _test_calculate_ethnicity_commonality_with_no_data() -> None:
     """Test calculate_ethnicity_commonality with no ethnicity data - should handle gracefully."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -847,6 +833,7 @@ def _test_calculate_ethnicity_commonality_with_no_data() -> None:
 def _test_statistics_with_tree_owner() -> None:
     """Test that tree owner profile is handled gracefully."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -854,6 +841,7 @@ def _test_statistics_with_tree_owner() -> None:
         # Use tree owner profile_id from session manager or .env fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
@@ -870,6 +858,7 @@ def _test_statistics_with_tree_owner() -> None:
 def _test_statistics_timestamp_format() -> None:
     """Test that calculated_at timestamp is in correct format."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -877,6 +866,7 @@ def _test_statistics_timestamp_format() -> None:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
@@ -892,6 +882,7 @@ def _test_statistics_timestamp_format() -> None:
 def _test_statistics_ethnicity_regions_structure() -> None:
     """Test that ethnicity_regions structure is correct."""
     from core.database_manager import DatabaseManager
+
     dm = DatabaseManager()
     session = dm.get_session()
     assert session is not None, "Session should not be None"
@@ -899,6 +890,7 @@ def _test_statistics_ethnicity_regions_structure() -> None:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
         from session_utils import get_global_session
+
         sm = get_global_session()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
@@ -924,7 +916,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_functions_available,
         "All tree statistics functions available",
         "calculate_tree_statistics(), calculate_ethnicity_commonality()",
-        "Verify all required functions exist in module"
+        "Verify all required functions exist in module",
     )
 
     # Category 2: Tree Statistics Tests
@@ -933,7 +925,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_calculate_tree_statistics_with_valid_profile,
         "Tree statistics calculated correctly for valid profile",
         "calculate_tree_statistics()",
-        "Tests with tree owner profile ID from .env"
+        "Tests with tree owner profile ID from .env",
     )
 
     suite.run_test(
@@ -941,7 +933,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_calculate_tree_statistics_with_invalid_profile,
         "Invalid profile returns empty statistics",
         "calculate_tree_statistics()",
-        "Tests with non-existent profile ID"
+        "Tests with non-existent profile ID",
     )
 
     suite.run_test(
@@ -949,7 +941,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_empty_statistics_structure,
         "Empty statistics structure is correct",
         "_empty_statistics()",
-        "Verifies all required fields and default values"
+        "Verifies all required fields and default values",
     )
 
     # Category 3: Caching Tests
@@ -958,7 +950,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_cache_hit,
         "Statistics are cached and reused",
         "calculate_tree_statistics()",
-        "Tests that consecutive calls use cached data"
+        "Tests that consecutive calls use cached data",
     )
 
     # Category 4: Data Validation Tests
@@ -967,7 +959,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_match_counts,
         "Match counts add up correctly",
         "calculate_tree_statistics()",
-        "Verifies in_tree + out_tree = total and close + moderate + distant = total"
+        "Verifies in_tree + out_tree = total and close + moderate + distant = total",
     )
 
     suite.run_test(
@@ -975,7 +967,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_timestamp_format,
         "Timestamp format is correct",
         "calculate_tree_statistics()",
-        "Verifies calculated_at is datetime object"
+        "Verifies calculated_at is datetime object",
     )
 
     suite.run_test(
@@ -983,7 +975,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_ethnicity_regions_structure,
         "Ethnicity regions structure is correct",
         "calculate_tree_statistics()",
-        "Verifies ethnicity_regions is dict"
+        "Verifies ethnicity_regions is dict",
     )
 
     # Category 5: Ethnicity Commonality Tests
@@ -992,7 +984,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_empty_ethnicity_commonality_structure,
         "Empty ethnicity commonality structure is correct",
         "_empty_ethnicity_commonality()",
-        "Verifies all required fields and default values"
+        "Verifies all required fields and default values",
     )
 
     suite.run_test(
@@ -1000,7 +992,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_calculate_ethnicity_commonality_with_no_data,
         "No ethnicity data returns empty commonality",
         "calculate_ethnicity_commonality()",
-        "Tests with invalid profile and person IDs"
+        "Tests with invalid profile and person IDs",
     )
 
     # Category 6: Edge Cases
@@ -1009,7 +1001,7 @@ def tree_stats_utils_module_tests() -> bool:
         _test_statistics_with_tree_owner,
         "Tree owner profile handled gracefully",
         "calculate_tree_statistics()",
-        "Tests that tree owner (not in DNA matches) is handled correctly"
+        "Tests that tree owner (not in DNA matches) is handled correctly",
     )
 
     return suite.finish_suite()
@@ -1023,4 +1015,5 @@ run_comprehensive_tests = create_standard_test_runner(tree_stats_utils_module_te
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

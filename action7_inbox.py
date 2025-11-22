@@ -2348,7 +2348,7 @@ class InboxProcessor:
         recent_logs = (
             session.query(ConversationLog)
             .filter(ConversationLog.people_id == people_id)
-            .order_by(ConversationLog.timestamp.asc())
+            .order_by(ConversationLog.latest_timestamp.asc())
             .all()
         )
         if not recent_logs:

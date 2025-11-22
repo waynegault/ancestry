@@ -159,9 +159,7 @@ class PerformanceMonitor:
         """Start background performance monitoring."""
         if self._monitor_thread is None or not self._monitor_thread.is_alive():
             self._stop_monitoring = False
-            self._monitor_thread = threading.Thread(
-                target=self._background_monitor, daemon=True
-            )
+            self._monitor_thread = threading.Thread(target=self._background_monitor, daemon=True)
             self._monitor_thread.start()
             logger.debug("Background performance monitoring started")
 
@@ -268,9 +266,7 @@ class PerformanceMonitor:
                 # Update profile
                 with self._lock:
                     if function_name not in self.function_profiles:
-                        self.function_profiles[function_name] = FunctionProfile(
-                            function_name
-                        )
+                        self.function_profiles[function_name] = FunctionProfile(function_name)
 
                     profile = self.function_profiles[function_name]
                     profile.call_count += 1
@@ -299,9 +295,7 @@ class PerformanceMonitor:
                 )
 
                 # Check for slow functions
-                if execution_time * 1000 > self.alert_thresholds.get(
-                    "function_time_ms", 5000
-                ):
+                if execution_time * 1000 > self.alert_thresholds.get("function_time_ms", 5000):
                     self._create_alert(
                         AlertLevel.WARNING,
                         f"Slow function execution: {function_name}",
@@ -336,11 +330,7 @@ class PerformanceMonitor:
             threshold = self.alert_thresholds.get(metric_name)
 
             if threshold is not None and avg_value > threshold:
-                alert_level = (
-                    AlertLevel.CRITICAL
-                    if avg_value > threshold * 1.5
-                    else AlertLevel.WARNING
-                )
+                alert_level = AlertLevel.CRITICAL if avg_value > threshold * 1.5 else AlertLevel.WARNING
                 self._create_alert(
                     alert_level,
                     f"High {metric_name}: {avg_value:.2f}",
@@ -394,9 +384,7 @@ class PerformanceMonitor:
             "database_query_time_ms": f"Slow database queries ({value:.0f}ms). Consider: 1) Adding indexes, 2) Query optimization, 3) Connection pooling",
             "api_response_time_ms": f"Slow API responses ({value:.0f}ms). Consider: 1) Response caching, 2) Request batching, 3) Timeout optimization",
         }
-        return recommendations.get(
-            metric_name, f"Performance issue detected with {metric_name}: {value}"
-        )
+        return recommendations.get(metric_name, f"Performance issue detected with {metric_name}: {value}")
 
     def get_report(self, hours: int = 24) -> dict[str, Any]:
         """Generate comprehensive performance report."""
@@ -432,12 +420,8 @@ class PerformanceMonitor:
                 "max_time": profile.max_time,
                 "error_count": profile.error_count,
                 "error_rate": profile.error_count / max(profile.call_count, 1),
-                "avg_memory_usage": (
-                    statistics.mean(profile.memory_usage) if profile.memory_usage else 0
-                ),
-                "last_called": (
-                    profile.last_called.isoformat() if profile.last_called else None
-                ),
+                "avg_memory_usage": (statistics.mean(profile.memory_usage) if profile.memory_usage else 0),
+                "last_called": (profile.last_called.isoformat() if profile.last_called else None),
             }
 
         return {
@@ -448,15 +432,9 @@ class PerformanceMonitor:
                 "total_metrics": len(recent_metrics),
                 "total_alerts": len(recent_alerts),
                 "alert_breakdown": {
-                    "critical": len(
-                        [a for a in recent_alerts if a.level == AlertLevel.CRITICAL]
-                    ),
-                    "warning": len(
-                        [a for a in recent_alerts if a.level == AlertLevel.WARNING]
-                    ),
-                    "info": len(
-                        [a for a in recent_alerts if a.level == AlertLevel.INFO]
-                    ),
+                    "critical": len([a for a in recent_alerts if a.level == AlertLevel.CRITICAL]),
+                    "warning": len([a for a in recent_alerts if a.level == AlertLevel.WARNING]),
+                    "info": len([a for a in recent_alerts if a.level == AlertLevel.INFO]),
                 },
                 "functions_monitored": len(self.function_profiles),
                 "monitoring_enabled": self.enabled,
@@ -476,14 +454,9 @@ class PerformanceMonitor:
                 "python_version": sys.version,
                 "cpu_count": psutil.cpu_count(),
                 "memory_total_gb": psutil.virtual_memory().total / 1024 / 1024 / 1024,
-                "disk_total_gb": psutil.disk_usage(str(Path.cwd())).total
-                / 1024
-                / 1024
-                / 1024,
+                "disk_total_gb": psutil.disk_usage(str(Path.cwd())).total / 1024 / 1024 / 1024,
             },
-            "recommendations": self._generate_recommendations(
-                stats_summary, function_summary
-            ),
+            "recommendations": self._generate_recommendations(stats_summary, function_summary),
         }
 
     @staticmethod
@@ -497,9 +470,7 @@ class PerformanceMonitor:
         # Check for high error rates
         for name, profile in function_summary.items():
             if profile.get("error_rate", 0) > 0.1:
-                recommendations.append(
-                    f"High error rate in {name}: consider error handling improvements"
-                )
+                recommendations.append(f"High error rate in {name}: consider error handling improvements")
 
         # Check for slow functions
         for name, profile in function_summary.items():
@@ -511,14 +482,10 @@ class PerformanceMonitor:
         # Check for memory usage patterns
         for name, stats in stats_summary.items():
             if "memory" in name.lower() and stats.get("avg", 0) > 500:
-                recommendations.append(
-                    f"High memory usage detected for {name}: consider memory optimization"
-                )
+                recommendations.append(f"High memory usage detected for {name}: consider memory optimization")
 
         if not recommendations:
-            recommendations.append(
-                "Performance metrics look good - no immediate optimizations needed"
-            )
+            recommendations.append("Performance metrics look good - no immediate optimizations needed")
 
         return recommendations
 
@@ -569,7 +536,7 @@ class PerformanceMonitor:
                 "total_queries": total_queries,
                 "cache_size": cache_size,
                 "maxsize": maxsize,
-            }
+            },
         )
 
         # Check if hit rate is below target threshold (60%)
@@ -580,8 +547,7 @@ class PerformanceMonitor:
             )
         elif total_queries >= 10:
             logger.debug(
-                f"✓ {cache_name} hit rate: {hit_rate:.1f}% "
-                f"(hits: {hits}, misses: {misses}, queries: {total_queries})"
+                f"✓ {cache_name} hit rate: {hit_rate:.1f}% (hits: {hits}, misses: {misses}, queries: {total_queries})"
             )
 
 
@@ -609,6 +575,7 @@ if __name__ != "__main__":
 # ADVANCED PERFORMANCE MONITORING CLASSES
 # ==============================================
 
+
 class AdvancedPerformanceMonitor:
     """
     Phase 11.2: Advanced Performance Monitoring Dashboard
@@ -624,6 +591,7 @@ class AdvancedPerformanceMonitor:
         self.system_health_score: float = 100.0
         self.monitoring_active = False
         self._monitor_thread: Optional[threading.Thread] = None
+        self.start_time = 0.0
 
         # Performance thresholds
         self.thresholds = {
@@ -631,7 +599,7 @@ class AdvancedPerformanceMonitor:
             "memory_usage": {"warning": 80.0, "critical": 95.0},
             "api_response_time": {"warning": 2.0, "critical": 5.0},
             "test_execution_time": {"warning": 300.0, "critical": 600.0},
-            "cache_hit_rate": {"warning": 60.0, "critical": 40.0}
+            "cache_hit_rate": {"warning": 60.0, "critical": 40.0},
         }
 
     def start_advanced_monitoring(self) -> bool:
@@ -642,10 +610,9 @@ class AdvancedPerformanceMonitor:
 
         try:
             self.monitoring_active = True
+            self.start_time = time.time()
             self._monitor_thread = threading.Thread(
-                target=self._advanced_monitoring_loop,
-                daemon=True,
-                name="AdvancedPerformanceMonitor"
+                target=self._advanced_monitoring_loop, daemon=True, name="AdvancedPerformanceMonitor"
             )
             self._monitor_thread.start()
             logger.debug("🚀 Advanced performance monitoring started")
@@ -659,15 +626,44 @@ class AdvancedPerformanceMonitor:
     def stop_advanced_monitoring(self) -> dict[str, Any]:
         """Stop advanced monitoring and return final analysis."""
         self.monitoring_active = False
+        end_time = time.time()
+        duration = end_time - self.start_time if self.start_time > 0 else 0.0
 
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5.0)
+
+        # Calculate summary metrics
+        peak_memory = 0.0
+        api_calls = 0
+        total_errors = 0
+
+        for entry in self.performance_history:
+            # Check for memory usage in system metrics
+            if (
+                "system" in entry and "memory_mb" in entry["system"]
+            ):  # Wait, structure is system: {memory_percent...} process: {memory_mb...}
+                pass
+
+            if "process" in entry and "memory_mb" in entry["process"]:
+                peak_memory = max(peak_memory, entry["process"]["memory_mb"])
+
+            if entry.get("type") == "api_call":
+                api_calls += 1
+
+            if "error" in entry or entry.get("status") == "error":
+                total_errors += 1
 
         return {
             "final_health_score": self.system_health_score,
             "total_recommendations": len(self.optimization_recommendations),
             "performance_samples": len(self.performance_history),
-            "monitoring_duration": time.time()
+            "monitoring_duration": duration,
+            # Compatibility keys for Action 8
+            "total_runtime": f"{duration:.2f}s",
+            "peak_memory_mb": peak_memory,
+            "total_operations": len(self.performance_history),
+            "api_calls": api_calls,
+            "total_errors": total_errors,
         }
 
     def _advanced_monitoring_loop(self) -> None:
@@ -714,18 +710,18 @@ class AdvancedPerformanceMonitor:
                     "memory_percent": memory.percent,
                     "memory_available_gb": memory.available / (1024**3),
                     "disk_percent": disk.percent,
-                    "disk_free_gb": disk.free / (1024**3)
+                    "disk_free_gb": disk.free / (1024**3),
                 },
                 "process": {
                     "cpu_percent": process_cpu,
                     "memory_mb": process_memory.rss / (1024**2),
-                    "memory_percent": (process_memory.rss / memory.total) * 100
+                    "memory_percent": (process_memory.rss / memory.total) * 100,
                 },
                 "application": {
                     "cache_stats": self._get_cache_statistics(),
                     "database_connections": self._get_database_connections(),
-                    "api_stats": self._get_api_statistics()
-                }
+                    "api_stats": self._get_api_statistics(),
+                },
             }
         except Exception as e:
             logger.error(f"Error collecting metrics: {e}")
@@ -741,26 +737,30 @@ class AdvancedPerformanceMonitor:
         # Analyze CPU trend
         cpu_values = [m.get("system", {}).get("cpu_percent", 0) for m in recent_metrics]
         if cpu_values and statistics.mean(cpu_values) > self.thresholds["cpu_usage"]["warning"]:
-            self._add_recommendation({
-                "type": "cpu_optimization",
-                "severity": "warning",
-                "message": "High CPU usage detected",
-                "recommendation": "Consider reducing concurrent operations or optimizing algorithms",
-                "current_value": statistics.mean(cpu_values),
-                "threshold": self.thresholds["cpu_usage"]["warning"]
-            })
+            self._add_recommendation(
+                {
+                    "type": "cpu_optimization",
+                    "severity": "warning",
+                    "message": "High CPU usage detected",
+                    "recommendation": "Consider reducing concurrent operations or optimizing algorithms",
+                    "current_value": statistics.mean(cpu_values),
+                    "threshold": self.thresholds["cpu_usage"]["warning"],
+                }
+            )
 
         # Analyze memory trend
         memory_values = [m.get("system", {}).get("memory_percent", 0) for m in recent_metrics]
         if memory_values and statistics.mean(memory_values) > self.thresholds["memory_usage"]["warning"]:
-            self._add_recommendation({
-                "type": "memory_optimization",
-                "severity": "warning",
-                "message": "High memory usage detected",
-                "recommendation": "Consider implementing memory cleanup or reducing cache sizes",
-                "current_value": statistics.mean(memory_values),
-                "threshold": self.thresholds["memory_usage"]["warning"]
-            })
+            self._add_recommendation(
+                {
+                    "type": "memory_optimization",
+                    "severity": "warning",
+                    "message": "High memory usage detected",
+                    "recommendation": "Consider implementing memory cleanup or reducing cache sizes",
+                    "current_value": statistics.mean(memory_values),
+                    "threshold": self.thresholds["memory_usage"]["warning"],
+                }
+            )
 
     def _calculate_system_health_score(self) -> None:
         """Calculate overall system health score (0-100)."""
@@ -798,8 +798,9 @@ class AdvancedPerformanceMonitor:
         """Add optimization recommendation, avoiding duplicates."""
         # Check for existing similar recommendation
         for existing in self.optimization_recommendations:
-            if (existing.get("type") == recommendation.get("type") and
-                existing.get("severity") == recommendation.get("severity")):
+            if existing.get("type") == recommendation.get("type") and existing.get("severity") == recommendation.get(
+                "severity"
+            ):
                 return  # Avoid duplicate
 
         recommendation["timestamp"] = datetime.now().isoformat()
@@ -850,12 +851,7 @@ class AdvancedPerformanceMonitor:
         """Get API performance statistics."""
         try:
             # This would integrate with actual API monitoring
-            return {
-                "total_requests": 100,
-                "average_response_time": 1.2,
-                "success_rate": 98.5,
-                "rate_limit_hits": 2
-            }
+            return {"total_requests": 100, "average_response_time": 1.2, "success_rate": 98.5, "rate_limit_hits": 2}
         except Exception:
             return {}
 
@@ -891,14 +887,16 @@ class AdvancedPerformanceMonitor:
                 dashboard.append(f"   {severity_icon} {rec.get('message', 'N/A')}")
                 dashboard.append(f"      → {rec.get('recommendation', 'N/A')}")
 
-        dashboard.extend([
-            "",
-            "📊 PERFORMANCE TRENDS:",
-            self._generate_trend_summary(),
-            "",
-            f"🎯 Monitoring Status: {'Active' if self.monitoring_active else 'Stopped'}",
-            "=" * 60
-        ])
+        dashboard.extend(
+            [
+                "",
+                "📊 PERFORMANCE TRENDS:",
+                self._generate_trend_summary(),
+                "",
+                f"🎯 Monitoring Status: {'Active' if self.monitoring_active else 'Stopped'}",
+                "=" * 60,
+            ]
+        )
 
         return "\n".join(dashboard)
 
@@ -915,7 +913,7 @@ class AdvancedPerformanceMonitor:
 
         trend_lines = [
             f"   Average CPU (last 10 samples): {avg_cpu:.1f}%",
-            f"   Average Memory (last 10 samples): {avg_memory:.1f}%"
+            f"   Average Memory (last 10 samples): {avg_memory:.1f}%",
         ]
 
         # Trend indicators
@@ -927,21 +925,18 @@ class AdvancedPerformanceMonitor:
             cpu_trend = "📈" if avg_cpu > old_cpu else "📉" if avg_cpu < old_cpu else "➡️"
             memory_trend = "📈" if avg_memory > old_memory else "📉" if avg_memory < old_memory else "➡️"
 
-            trend_lines.extend([
-                f"   CPU Trend: {cpu_trend} ({avg_cpu - old_cpu:+.1f}%)",
-                f"   Memory Trend: {memory_trend} ({avg_memory - old_memory:+.1f}%)"
-            ])
+            trend_lines.extend(
+                [
+                    f"   CPU Trend: {cpu_trend} ({avg_cpu - old_cpu:+.1f}%)",
+                    f"   Memory Trend: {memory_trend} ({avg_memory - old_memory:+.1f}%)",
+                ]
+            )
 
         return "\n".join(trend_lines)
 
     def validate_configuration(self) -> dict[str, Any]:
         """Validate current configuration and suggest optimizations."""
-        validation_results: dict[str, Any] = {
-            "status": "valid",
-            "issues": [],
-            "recommendations": [],
-            "score": 100
-        }
+        validation_results: dict[str, Any] = {"status": "valid", "issues": [], "recommendations": [], "score": 100}
 
         try:
             # Load current configuration
@@ -965,16 +960,22 @@ class AdvancedPerformanceMonitor:
 
             if initial_delay > 2.0:
                 validation_results["issues"].append(f"API delay very conservative: {initial_delay}s")
-                validation_results["recommendations"].append("Consider reducing initial_delay to 1.0s for better throughput")
+                validation_results["recommendations"].append(
+                    "Consider reducing initial_delay to 1.0s for better throughput"
+                )
                 validation_results["score"] -= 10
 
             if max_pages == 1:
                 validation_results["issues"].append("MAX_PAGES=1 limits data gathering")
-                validation_results["recommendations"].append("Consider increasing max_pages to 5-10 for better data collection")
+                validation_results["recommendations"].append(
+                    "Consider increasing max_pages to 5-10 for better data collection"
+                )
                 validation_results["score"] -= 15
 
             if batch_size < 10:
-                validation_results["recommendations"].append(f"Batch size {batch_size} could be increased to 10-15 for better efficiency")
+                validation_results["recommendations"].append(
+                    f"Batch size {batch_size} could be increased to 10-15 for better efficiency"
+                )
                 validation_results["score"] -= 5
 
             # Validate cache settings
@@ -1013,7 +1014,7 @@ def track_api_performance(api_name: str, duration: float, status: str = "unknown
             "api_name": api_name,
             "duration": duration,
             "status": status,
-            "type": "api_call"
+            "type": "api_call",
         }
 
         _advanced_monitor.performance_history.append(performance_data)
@@ -1111,6 +1112,7 @@ def _test_function_profiling() -> None:
     @monitor.profile_function
     def profiled_function(x: int, y: int = 10) -> int:
         import time
+
         time.sleep(0.001)  # Small sleep for timing
         return x + y
 
@@ -1163,7 +1165,7 @@ def _test_alert_generation() -> None:
         current_value=100.0,
         threshold=50.0,
         timestamp=datetime.now(),
-        recommendation="Optimize this metric"
+        recommendation="Optimize this metric",
     )
     assert critical_alert.level == AlertLevel.CRITICAL
     assert "Critical" in critical_alert.message
@@ -1237,6 +1239,7 @@ def _test_memory_monitoring() -> None:
     import os
 
     import psutil
+
     process = psutil.Process(os.getpid())
     memory_mb = process.memory_info().rss / 1024 / 1024
 
@@ -1369,7 +1372,7 @@ def performance_monitor_module_tests() -> bool:
         test_performance_monitor_initialization,
         "Performance monitor initializes correctly with default and custom settings",
         "Test PerformanceMonitor initialization with various configuration options",
-        "Verify monitor initialization creates proper state and accepts custom parameters"
+        "Verify monitor initialization creates proper state and accepts custom parameters",
     )
 
     suite.run_test(
@@ -1377,7 +1380,7 @@ def performance_monitor_module_tests() -> bool:
         test_metric_recording_and_retrieval,
         "Performance metrics are recorded and retrieved accurately with metadata",
         "Test record_metric and get_metrics_by_category with various data types",
-        "Verify metric recording stores data correctly with timestamps and metadata"
+        "Verify metric recording stores data correctly with timestamps and metadata",
     )
 
     suite.run_test(
@@ -1385,7 +1388,7 @@ def performance_monitor_module_tests() -> bool:
         test_function_profiling,
         "Function profiling tracks execution time and call counts accurately",
         "Test profile_function decorator with multiple function calls",
-        "Verify profiling data includes call count, total time, and average time"
+        "Verify profiling data includes call count, total time, and average time",
     )
 
     suite.run_test(
@@ -1393,7 +1396,7 @@ def performance_monitor_module_tests() -> bool:
         test_alert_generation,
         "Performance alerts are generated when thresholds are exceeded",
         "Test alert generation with custom thresholds and alert levels",
-        "Verify alerts contain proper metadata and recommendations"
+        "Verify alerts contain proper metadata and recommendations",
     )
 
     suite.run_test(
@@ -1401,7 +1404,7 @@ def performance_monitor_module_tests() -> bool:
         test_performance_statistics,
         "Performance statistics are calculated correctly from recorded metrics",
         "Test statistics calculation with multiple metrics",
-        "Verify average, min, max calculations are accurate"
+        "Verify average, min, max calculations are accurate",
     )
 
     suite.run_test(
@@ -1409,7 +1412,7 @@ def performance_monitor_module_tests() -> bool:
         test_advanced_monitoring,
         "Advanced monitoring features track system health and performance",
         "Test advanced monitor initialization and performance tracking",
-        "Verify dashboard generation and health score calculation"
+        "Verify dashboard generation and health score calculation",
     )
 
     suite.run_test(
@@ -1417,7 +1420,7 @@ def performance_monitor_module_tests() -> bool:
         test_configuration_validation,
         "System configuration validation identifies issues and provides recommendations",
         "Test validate_system_configuration function",
-        "Verify validation results include status, score, issues, and recommendations"
+        "Verify validation results include status, score, issues, and recommendations",
     )
 
     suite.run_test(
@@ -1425,7 +1428,7 @@ def performance_monitor_module_tests() -> bool:
         test_memory_monitoring,
         "Memory usage monitoring tracks system resource consumption",
         "Test memory metric recording and retrieval",
-        "Verify memory metrics are recorded with accurate values"
+        "Verify memory metrics are recorded with accurate values",
     )
 
     suite.run_test(
@@ -1433,7 +1436,7 @@ def performance_monitor_module_tests() -> bool:
         test_performance_optimization,
         "Performance optimization recommendations are generated from metrics",
         "Test optimization suggestion generation",
-        "Verify metrics are categorized correctly for optimization analysis"
+        "Verify metrics are categorized correctly for optimization analysis",
     )
 
     suite.run_test(
@@ -1441,7 +1444,7 @@ def performance_monitor_module_tests() -> bool:
         test_global_performance_functions,
         "Global performance monitoring functions work correctly",
         "Test track_api_performance and advanced monitoring start/stop",
-        "Verify global functions integrate with advanced monitor"
+        "Verify global functions integrate with advanced monitor",
     )
 
     suite.run_test(
@@ -1449,7 +1452,7 @@ def performance_monitor_module_tests() -> bool:
         test_error_handling,
         "Performance monitoring handles errors gracefully",
         "Test error handling with invalid inputs and function exceptions",
-        "Verify monitoring continues despite errors"
+        "Verify monitoring continues despite errors",
     )
 
     # Removed smoke test: Function availability
@@ -1488,6 +1491,7 @@ run_comprehensive_tests = create_standard_test_runner(performance_monitor_module
 
 if __name__ == "__main__":
     import sys
+
     print("🧪 Running Performance Monitor Comprehensive Tests...")
     success = performance_monitor_module_tests()
     sys.exit(0 if success else 1)
