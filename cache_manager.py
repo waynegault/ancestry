@@ -77,6 +77,7 @@ from test_framework import TestSuite
 @dataclass
 class SessionCacheConfig:
     """Configuration for session caching behavior"""
+
     session_ttl_seconds: int = 300  # 5 minutes
     component_ttl_seconds: int = 600  # 10 minutes
     enable_component_reuse: bool = True
@@ -86,6 +87,7 @@ class SessionCacheConfig:
 @dataclass
 class SystemCacheConfig:
     """Advanced system-wide cache configuration"""
+
     # API Response Caching
     api_response_ttl: int = 1800  # 30 minutes for API responses
     ai_analysis_ttl: int = 3600  # 1 hour for AI analysis results
@@ -115,6 +117,7 @@ AI_CACHE_EXPIRE = 86400  # 24 hours for AI responses (they're expensive!)
 # ==============================================
 # SESSION CACHE MANAGER
 # ==============================================
+
 
 class SessionComponentCache(BaseCacheModule):
     """
@@ -178,8 +181,11 @@ class SessionComponentCache(BaseCacheModule):
             # Cast cache to Any to avoid type errors
             cache_obj = cast(Any, cache)
             cached_data = cache_obj.get(cache_key, retry=True)
-            if (cached_data and isinstance(cached_data, dict) and
-                all(key in cached_data for key in ["component", "timestamp", "config_hash"])):
+            if (
+                cached_data
+                and isinstance(cached_data, dict)
+                and all(key in cached_data for key in ["component", "timestamp", "config_hash"])
+            ):
                 # Check if cache is still valid
                 age = time.time() - cached_data["timestamp"]
                 if age < SESSION_CACHE_CONFIG.component_ttl_seconds:
@@ -200,6 +206,7 @@ class SessionComponentCache(BaseCacheModule):
         """Generate configuration hash for cache key uniqueness"""
         try:
             import os
+
             config_data = {
                 "session_ttl": SESSION_CACHE_CONFIG.session_ttl_seconds,
                 "component_ttl": SESSION_CACHE_CONFIG.component_ttl_seconds,
@@ -214,17 +221,20 @@ class SessionComponentCache(BaseCacheModule):
     def get_stats(self) -> dict[str, Any]:
         """Get comprehensive cache statistics"""
         base_stats = self._stats.copy()
-        base_stats.update({
-            "active_sessions": len(self._active_sessions),
-            "cache_available": cache is not None,
-            "session_tracking": SESSION_CACHE_CONFIG.track_session_lifecycle,
-        })
+        base_stats.update(
+            {
+                "active_sessions": len(self._active_sessions),
+                "cache_available": cache is not None,
+                "session_tracking": SESSION_CACHE_CONFIG.track_session_lifecycle,
+            }
+        )
         return base_stats
 
 
 # ==============================================
 # API CACHE MANAGER
 # ==============================================
+
 
 class APICacheManager(BaseCacheModule):
     """
@@ -248,8 +258,9 @@ class APICacheManager(BaseCacheModule):
         params_hash = hashlib.md5(sorted_params.encode()).hexdigest()[:12]
         return f"api_{endpoint}_{params_hash}"
 
-    def cache_api_response(self, service: str, method: str, params: dict[str, Any],
-                          response: Any, ttl: Optional[int] = None) -> bool:
+    def cache_api_response(
+        self, service: str, method: str, params: dict[str, Any], response: Any, ttl: Optional[int] = None
+    ) -> bool:
         """Cache an API response with intelligent TTL management."""
         if not cache:
             return False
@@ -257,7 +268,9 @@ class APICacheManager(BaseCacheModule):
         try:
             # Check if response is serializable (basic types only)
             if not self._is_serializable(response):
-                logger.debug(f"Skipping cache for non-serializable response type: {type(response).__name__} for {service}.{method}")
+                logger.debug(
+                    f"Skipping cache for non-serializable response type: {type(response).__name__} for {service}.{method}"
+                )
                 return False
 
             # Determine TTL based on service type
@@ -266,12 +279,15 @@ class APICacheManager(BaseCacheModule):
 
             cache_key = get_unified_cache_key("api", service, method, str(hash(str(params))))
 
+            # Sanitize params to ensure they are serializable
+            sanitized_params = self._sanitize_params(params)
+
             cache_data = {
                 "response": response,
                 "timestamp": time.time(),
                 "service": service,
                 "method": method,
-                "params": params,
+                "params": sanitized_params,
             }
 
             # Cast cache to Any to avoid type errors
@@ -284,6 +300,17 @@ class APICacheManager(BaseCacheModule):
         except Exception as e:
             logger.debug(f"Error caching API response for {service}.{method}: {e}")
             return False
+
+    def _sanitize_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Sanitize parameters to ensure they are serializable."""
+        sanitized = {}
+        for k, v in params.items():
+            if self._is_serializable(v):
+                sanitized[k] = v
+            else:
+                # Convert non-serializable objects to string representation
+                sanitized[k] = str(v)
+        return sanitized
 
     def _is_serializable(self, obj: Any) -> bool:
         """Check if an object is serializable (safe to cache).
@@ -304,10 +331,7 @@ class APICacheManager(BaseCacheModule):
             return all(self._is_serializable(item) for item in obj)
 
         if isinstance(obj, dict):
-            return all(
-                self._is_serializable(k) and self._is_serializable(v)
-                for k, v in obj.items()
-            )
+            return all(self._is_serializable(k) and self._is_serializable(v) for k, v in obj.items())
 
         # Reject everything else (objects, connections, etc.)
         return False
@@ -324,8 +348,12 @@ class APICacheManager(BaseCacheModule):
             cache_obj = cast(Any, cache)
             cached_data = cache_obj.get(cache_key, retry=True)
 
-            if (cached_data and isinstance(cached_data, dict) and
-                "response" in cached_data and "timestamp" in cached_data):
+            if (
+                cached_data
+                and isinstance(cached_data, dict)
+                and "response" in cached_data
+                and "timestamp" in cached_data
+            ):
                 self._stats["api_cache_hits"] += 1
                 logger.debug(f"API cache hit: {service}.{method}")
                 return cached_data["response"]
@@ -357,6 +385,7 @@ class APICacheManager(BaseCacheModule):
 # ==============================================
 # SYSTEM CACHE MANAGER
 # ==============================================
+
 
 class SystemCacheManager(BaseCacheModule):
     """
@@ -403,6 +432,7 @@ class SystemCacheManager(BaseCacheModule):
         """Get current memory usage in MB."""
         try:
             import psutil
+
             process = psutil.Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
             self._memory_stats["current_memory_mb"] = memory_mb
@@ -446,6 +476,7 @@ class SystemCacheManager(BaseCacheModule):
 # UNIFIED CACHE MANAGER
 # ==============================================
 
+
 class UnifiedCacheManager:
     """
     Unified cache manager that coordinates all cache subsystems.
@@ -467,7 +498,7 @@ class UnifiedCacheManager:
                 "total_cache_systems": 3,
                 "cache_infrastructure_available": cache is not None,
                 "timestamp": time.time(),
-            }
+            },
         }
 
     def warm_all_caches(self) -> bool:
@@ -497,6 +528,7 @@ _unified_cache_manager = UnifiedCacheManager()
 # ==============================================
 # PUBLIC API FUNCTIONS
 # ==============================================
+
 
 def get_unified_cache_manager() -> UnifiedCacheManager:
     """Get the global unified cache manager instance."""
@@ -533,6 +565,7 @@ R = TypeVar("R")
 
 def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to cache expensive session components."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -545,12 +578,15 @@ def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], 
             result = func(*args, **kwargs)
             _unified_cache_manager.session_cache.cache_component(component_type, result)
             return result
+
         return cast(Callable[P, R], wrapper)
+
     return decorator
 
 
 def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to cache API calls with TTL."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -568,13 +604,16 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]],
             result = func(*args, **kwargs)
             _unified_cache_manager.api_cache.cache_api_response(service, method, kwargs, result, ttl)
             return result
+
         return cast(Callable[P, R], wrapper)
+
     return decorator
 
 
 # ==============================================
 # LEGACY COMPATIBILITY FUNCTIONS
 # ==============================================
+
 
 # For backward compatibility with existing code
 def cache_session_component(component_type: str, component: Any) -> bool:
@@ -745,7 +784,11 @@ def cache_manager_module_tests() -> bool:
     suite.start_suite()
 
     tests = [
-        ("Cache Manager Initialization", _test_cache_manager_initialization, "Should initialize cache manager with required methods"),
+        (
+            "Cache Manager Initialization",
+            _test_cache_manager_initialization,
+            "Should initialize cache manager with required methods",
+        ),
         ("Basic Cache Operations", _test_cache_operations, "Should support set/get operations"),
         ("Cache Statistics", _test_cache_statistics, "Should track cache metrics"),
         ("Cache Invalidation", _test_cache_invalidation, "Should support cache invalidation"),

@@ -31,9 +31,7 @@ def log_basic_configuration_values(config: Any) -> None:
     logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
     logger.info(f"  MAX_INBOX: {config.max_inbox}")
     logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
-    logger.info(
-        f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s"
-    )
+    logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
 
     match_throughput = getattr(config.api, "target_match_throughput", 0.0)
     if match_throughput > 0:
@@ -64,8 +62,8 @@ def warn_if_unsafe_profile(speed_profile: str, allow_unsafe: bool, suppress_warn
     if not (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
         return
 
-    # "squeeze" profile is now considered a safe baseline (validated 2025-11-22)
-    if speed_profile == "squeeze":
+    # "baseline" profile is now considered a safe baseline (validated 2025-11-22)
+    if speed_profile == "baseline":
         return
 
     profile_label = speed_profile or "custom"
@@ -152,6 +150,7 @@ def load_and_validate_config_schema() -> Any | None:
     """Load and validate configuration schema."""
     try:
         from config import config_schema
+
         logger.debug("Configuration loaded successfully")
         return config_schema
     except ImportError as e:

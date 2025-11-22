@@ -428,7 +428,7 @@ class APIConfig:
     # Conservative rate to prevent 429 errors with 72-second penalties
     # Sequential processing only - no parallel execution to prevent burst requests
     rate_limit_enabled: bool = True
-    requests_per_second: float = 0.3  # Conservative rate validated for zero 429 errors
+    requests_per_second: float = 1.5  # Tuned down from 2.0 to prevent 429s (Baseline: 1.5)
     burst_limit: int = 4  # Allows better burst efficiency while maintaining stability
     speed_profile: str = "safe"  # Controls rate limiting behavior presets (safe, balanced, max)
     allow_unsafe_rate_limit: bool = False  # Explicit opt-in for disabling safety clamps
@@ -463,8 +463,8 @@ class APIConfig:
     # Unified Adaptive Rate Limiter Settings (Token Bucket)
     token_bucket_capacity: float = 10.0  # Token bucket capacity for burst handling (replaces burst_limit)
     token_bucket_fill_rate: float = 2.0  # Tokens added per second (Deprecated: use requests_per_second)
-    rate_limiter_429_backoff: float = 0.85  # Multiplier applied to rate on 429 error (15% reduction)
-    rate_limiter_success_factor: float = 1.02  # Multiplier applied to rate on success (2% increase)
+    rate_limiter_429_backoff: float = 0.90  # Multiplier applied to rate on 429 error (10% reduction - Softer backoff)
+    rate_limiter_success_factor: float = 1.05  # Multiplier applied to rate on success (5% increase - Faster recovery)
     rate_limiter_min_rate: float = 0.1  # Minimum allowed requests per second
     rate_limiter_max_rate: float = 0.5  # Maximum allowed requests per second (Conservative default)
 

@@ -98,16 +98,19 @@ else:
 
 class BrowserSessionError(BrowserErrorBaseError):
     """Browser session-specific errors."""
+
     pass
 
 
 class APIRateLimitError(APIErrorBaseError):
     """API rate limit specific errors."""
+
     pass
 
 
 class AuthenticationExpiredError(AuthenticationErrorBaseError):
     """Authentication expiration specific errors."""
+
     pass
 
 
@@ -228,47 +231,27 @@ class InboxProcessor:
         """Initializes the InboxProcessor."""
         # Step 1: Store SessionManager and Rate Limiter
         self.session_manager = session_manager
-        self.rate_limiter = (
-            session_manager.rate_limiter
-        )  # Use manager's limiter
+        self.rate_limiter = session_manager.rate_limiter  # Use manager's limiter
 
         # Step 2: Load Configuration Settings
-        self.max_inbox_limit = getattr(
-            config_schema, "max_inbox", 0
-        )  # Max conversations to process (0=unlimited)
+        self.max_inbox_limit = getattr(config_schema, "max_inbox", 0)  # Max conversations to process (0=unlimited)
         # Determine batch size, ensuring it doesn't exceed the overall limit if one is set
-        default_batch = min(
-            getattr(config_schema, "batch_size", 50), 50
-        )  # Default batch size, capped at 50
-        self.api_batch_size = (
-            min(default_batch, self.max_inbox_limit)
-            if self.max_inbox_limit > 0
-            else default_batch
-        )
+        default_batch = min(getattr(config_schema, "batch_size", 50), 50)  # Default batch size, capped at 50
+        self.api_batch_size = min(default_batch, self.max_inbox_limit) if self.max_inbox_limit > 0 else default_batch
         # AI Provider setting
         self.ai_provider = getattr(config_schema, "ai_provider", "")
         # AI Context settings
-        self.ai_context_msg_count = getattr(
-            config_schema, "ai_context_messages_count", 5
-        )
-        self.ai_context_max_words = getattr(
-            config_schema, "ai_context_message_max_words", 100
-        )  # Correct assignment
-        self.ai_context_window_messages = getattr(
-            config_schema, "ai_context_window_messages", 6
-        )
+        self.ai_context_msg_count = getattr(config_schema, "ai_context_messages_count", 5)
+        self.ai_context_max_words = getattr(config_schema, "ai_context_message_max_words", 100)  # Correct assignment
+        self.ai_context_window_messages = getattr(config_schema, "ai_context_window_messages", 6)
 
         # Add input validation
         if self.ai_context_msg_count <= 0:
-            logger.warning(
-                f"AI context message count ({self.ai_context_msg_count}) invalid, using default of 10"
-            )
+            logger.warning(f"AI context message count ({self.ai_context_msg_count}) invalid, using default of 10")
             self.ai_context_msg_count = 10
 
         if self.ai_context_max_words <= 0:
-            logger.warning(
-                f"AI context max words ({self.ai_context_max_words}) invalid, using default of 100"
-            )
+            logger.warning(f"AI context max words ({self.ai_context_max_words}) invalid, using default of 100")
             self.ai_context_max_words = 100
 
         # Add statistics tracking
@@ -356,16 +339,12 @@ class InboxProcessor:
                         type(conv_data_raw),
                     )
                     continue
-                conv_dict: dict[str, Any] = {
-                    str(key): value for key, value in conv_data_raw.items()
-                }
+                conv_dict: dict[str, Any] = {str(key): value for key, value in conv_data_raw.items()}
                 info = self._extract_conversation_info(conv_dict, my_profile_id)
                 if info:
                     all_conversations_processed.append(info)
         else:
-            logger.warning(
-                "_get_all_conversations_api: 'conversations' key not found or not a list in API response."
-            )
+            logger.warning("_get_all_conversations_api: 'conversations' key not found or not a list in API response.")
 
         forward_cursor: Optional[str] = None
         paging_data = response_data.get("paging", {})
@@ -435,7 +414,9 @@ class InboxProcessor:
             response_data_typed = cast(dict[str, Any], response_data)
             result = self._process_conversations_response(response_data_typed, my_profile_id)
             if result[0]:
-                logger.debug(f"Successfully fetched {len(result[0])} conversations, next_cursor={'present' if result[1] else 'None'}")
+                logger.debug(
+                    f"Successfully fetched {len(result[0])} conversations, next_cursor={'present' if result[1] else 'None'}"
+                )
             return result
 
         except WebDriverException as e:
@@ -448,9 +429,7 @@ class InboxProcessor:
     # End of _get_all_conversations_api
 
     @staticmethod
-    def _validate_conversation_data(
-        conv_data: Mapping[str, Any]
-    ) -> Optional[tuple[str, dict[str, Any]]]:
+    def _validate_conversation_data(conv_data: Mapping[str, Any]) -> Optional[tuple[str, dict[str, Any]]]:
         """Validate conversation data and extract basic info."""
         conversation_id = str(conv_data.get("id", "")).strip()
         last_message_data_raw = conv_data.get("last_message", {})
@@ -467,9 +446,7 @@ class InboxProcessor:
         return conversation_id, last_message_data
 
     @staticmethod
-    def _parse_message_timestamp(
-        last_message_data: Mapping[str, Any], conversation_id: str
-    ) -> Optional[datetime]:
+    def _parse_message_timestamp(last_message_data: Mapping[str, Any], conversation_id: str) -> Optional[datetime]:
         """Parse and validate message timestamp."""
         last_msg_ts_unix = last_message_data.get("created")
 
@@ -519,9 +496,7 @@ class InboxProcessor:
         )
         return None
 
-    def _extract_conversation_info(
-        self, conv_data: dict[str, Any], my_profile_id: str
-    ) -> Optional[dict[str, Any]]:
+    def _extract_conversation_info(self, conv_data: dict[str, Any], my_profile_id: str) -> Optional[dict[str, Any]]:
         """
         Extracts and formats key information from a single conversation overview dictionary.
 
@@ -590,11 +565,7 @@ class InboxProcessor:
         contextual_headers = getattr(config_schema.api, "contextual_headers", {}).get(api_description, {})
         headers: HeadersDict = {}
         if isinstance(contextual_headers, Mapping):
-            headers = {
-                str(k): str(v)
-                for k, v in contextual_headers.items()
-                if v is not None
-            }
+            headers = {str(k): str(v) for k, v in contextual_headers.items() if v is not None}
         elif contextual_headers:
             logger.warning(
                 "Expected dict-like structure for contextual headers, got %s",
@@ -610,9 +581,7 @@ class InboxProcessor:
         return url, headers
 
     @staticmethod
-    def _process_context_messages(
-        messages_batch: Sequence[Any], conversation_id: str
-    ) -> list[dict[str, Any]]:
+    def _process_context_messages(messages_batch: Sequence[Any], conversation_id: str) -> list[dict[str, Any]]:
         """Process and format message data from API response."""
         context_messages: list[dict[str, Any]] = []
 
@@ -647,9 +616,7 @@ class InboxProcessor:
 
     @cached_api_call("ancestry", ttl=600)
     @api_retry(max_attempts=2)
-    def _fetch_conversation_context(
-        self, conversation_id: str
-    ) -> Optional[list[dict[str, Any]]]:
+    def _fetch_conversation_context(self, conversation_id: str) -> Optional[list[dict[str, Any]]]:
         """
         Fetches the last N messages (defined by config) for a specific conversation ID
         to provide context for AI classification.
@@ -689,7 +656,9 @@ class InboxProcessor:
 
             # Validate response
             if not isinstance(response_data, dict):
-                logger.warning(f"{api_description}: Bad response type {type(response_data)} for ConvID {conversation_id}.")
+                logger.warning(
+                    f"{api_description}: Bad response type {type(response_data)} for ConvID {conversation_id}."
+                )
                 return None
 
             response_dict = cast(dict[str, Any], response_data)
@@ -711,9 +680,7 @@ class InboxProcessor:
 
     # End of _fetch_conversation_context
 
-    def _format_context_for_ai(
-        self, context_messages: Sequence[dict[str, Any]], my_pid_lower: str
-    ) -> str:
+    def _format_context_for_ai(self, context_messages: Sequence[dict[str, Any]], my_pid_lower: str) -> str:
         """
         Formats a list of message dictionaries (sorted oldest to newest) into a
         single string suitable for the AI classification prompt. Truncates long messages.
@@ -751,9 +718,7 @@ class InboxProcessor:
     # End of _format_context_for_ai
 
     @staticmethod
-    def _lookup_person_in_db(
-        session: DbSession, profile_id: str, log_ref: str
-    ) -> tuple[Optional[Person], bool]:
+    def _lookup_person_in_db(session: DbSession, profile_id: str, log_ref: str) -> tuple[Optional[Person], bool]:
         """Look up person in database by profile ID.
 
         Returns:
@@ -773,10 +738,7 @@ class InboxProcessor:
             )
             return person, False  # Success (found or not found)
         except SQLAlchemyError as e:
-            logger.error(
-                f"DB error looking up Person {log_ref}: {type(e).__name__}: {e}",
-                exc_info=True
-            )
+            logger.error(f"DB error looking up Person {log_ref}: {type(e).__name__}: {e}", exc_info=True)
             return None, True  # Error occurred
 
     @staticmethod
@@ -790,9 +752,7 @@ class InboxProcessor:
         formatted_username = format_name(username_to_use)
         current_username = safe_column_value(person, "username", "Unknown")
         if current_username == "Unknown" or current_username != formatted_username:
-            logger.debug(
-                f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'."
-            )
+            logger.debug(f"Updating username for {log_ref} from '{current_username}' to '{formatted_username}'.")
             person.username = formatted_username
             updated = True
 
@@ -823,7 +783,7 @@ class InboxProcessor:
             except SQLAlchemyError as upd_err:
                 logger.error(
                     f"DB SQLAlchemyError flushing update for Person {log_ref}: {type(upd_err).__name__}: {upd_err}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 session.rollback()
                 return "error"
@@ -879,15 +839,12 @@ class InboxProcessor:
         except SQLAlchemyError as create_err:
             logger.error(
                 f"DB SQLAlchemyError creating Person {log_ref}: {type(create_err).__name__}: {create_err}",
-                exc_info=True
+                exc_info=True,
             )
             session.rollback()
             return None, "error"
         except Exception as e:
-            logger.critical(
-                f"Unexpected error creating Person {log_ref}: {type(e).__name__}: {e}",
-                exc_info=True
-            )
+            logger.critical(f"Unexpected error creating Person {log_ref}: {type(e).__name__}: {e}", exc_info=True)
             session.rollback()
             return None, "error"
 
@@ -968,9 +925,7 @@ class InboxProcessor:
             # Order by descending timestamp, handle NULLs last, take the first result
             # EXCLUDE dry run conversations (they don't exist in the real API)
             latest_entry = (
-                session.query(
-                    ConversationLog.conversation_id, ConversationLog.latest_timestamp
-                )
+                session.query(ConversationLog.conversation_id, ConversationLog.latest_timestamp)
                 .filter(~ConversationLog.conversation_id.like('dryrun_%'))
                 .order_by(ConversationLog.latest_timestamp.desc().nullslast())
                 .first()
@@ -1004,9 +959,7 @@ class InboxProcessor:
                     )
             else:
                 # Step 4: Log if table is empty
-                logger.debug(
-                    "ConversationLog table appears empty. Comparator not created."
-                )
+                logger.debug("ConversationLog table appears empty. Comparator not created.")
 
         # Step 5: Handle errors during query
         except Exception as e:
@@ -1032,6 +985,7 @@ class InboxProcessor:
         # Clear any prior cancellation signals at the start of a new run
         try:
             from core.cancellation import clear_cancel
+
             clear_cancel()
         except Exception:
             pass
@@ -1114,9 +1068,7 @@ class InboxProcessor:
                 items_processed,
                 session_deaths,
                 session_recoveries,
-            ) = (
-                self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
-            )
+            ) = self._run_inbox_processing_loop(session, comp_conv_id, comp_ts, my_pid_lower)
 
             # Log unified summary
             self._log_unified_summary(
@@ -1169,6 +1121,7 @@ class InboxProcessor:
             # Ensure session is closed
             if session:
                 from contextlib import suppress
+
                 with suppress(Exception):
                     session.close()
 
@@ -1190,11 +1143,7 @@ class InboxProcessor:
         return session, comp_conv_id, comp_ts
 
     def _run_inbox_processing_loop(
-        self,
-        session: DbSession,
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        my_pid_lower: str
+        self, session: DbSession, comp_conv_id: Optional[str], comp_ts: Optional[datetime], my_pid_lower: str
     ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
         """Run the main inbox processing loop.
 
@@ -1205,18 +1154,14 @@ class InboxProcessor:
         print()
 
         # Process inbox without progress bar (batch-level logging only, like Action 6)
-        return self._process_inbox_loop(
-            session, comp_conv_id, comp_ts, my_pid_lower
-        )
+        return self._process_inbox_loop(session, comp_conv_id, comp_ts, my_pid_lower)
 
     def get_statistics(self) -> dict[str, Any]:
         """Return processing statistics for monitoring and debugging."""
         stats = self.stats.copy()
         # Only calculate duration if both timestamps are not None
         if stats.get("start_time") is not None and stats.get("end_time") is not None:
-            stats["duration_seconds"] = (
-                stats["end_time"] - stats["start_time"]
-            ).total_seconds()
+            stats["duration_seconds"] = (stats["end_time"] - stats["start_time"]).total_seconds()
         return stats
 
     @staticmethod
@@ -1313,9 +1258,7 @@ class InboxProcessor:
                     .all()
                 )
                 existing_persons_map = {
-                    safe_column_value(p, "profile_id").upper(): p
-                    for p in persons
-                    if safe_column_value(p, "profile_id")
+                    safe_column_value(p, "profile_id").upper(): p for p in persons if safe_column_value(p, "profile_id")
                 }
                 logger.debug(
                     f"[Batch {current_batch_num}] Prefetched {len(existing_persons_map)}/{len(batch_profile_ids)} "
@@ -1323,9 +1266,7 @@ class InboxProcessor:
                 )
 
             if batch_conv_ids:
-                logs = session.query(ConversationLog).filter(
-                    ConversationLog.conversation_id.in_(batch_conv_ids)
-                ).all()
+                logs = session.query(ConversationLog).filter(ConversationLog.conversation_id.in_(batch_conv_ids)).all()
 
                 for log in logs:
                     timestamp = safe_column_value(log, "latest_timestamp", None)
@@ -1335,11 +1276,7 @@ class InboxProcessor:
                 existing_conv_logs = {
                     (
                         str(safe_column_value(log, "conversation_id")),
-                        (
-                            str(safe_column_value(log, "direction").name)
-                            if safe_column_value(log, "direction")
-                            else ""
-                        ),
+                        (str(safe_column_value(log, "direction").name) if safe_column_value(log, "direction") else ""),
                     ): log
                     for log in logs
                     if safe_column_value(log, "direction")
@@ -1356,9 +1293,7 @@ class InboxProcessor:
             return {}, {}, "DB Prefetch Error"
 
     @staticmethod
-    def _extract_conversation_identifiers(
-        conversation_info: dict[str, Any]
-    ) -> tuple[str, str, Optional[datetime]]:
+    def _extract_conversation_identifiers(conversation_info: dict[str, Any]) -> tuple[str, str, Optional[datetime]]:
         """Extract key identifiers from conversation info."""
         profile_id_upper = str(conversation_info.get("profile_id", "UNKNOWN")).upper()
         api_conv_id = str(conversation_info.get("conversation_id", ""))
@@ -1368,9 +1303,7 @@ class InboxProcessor:
         return profile_id_upper, api_conv_id, api_latest_ts_aware
 
     @staticmethod
-    def _should_skip_invalid(
-        api_conv_id: Optional[str], profile_id_upper: str
-    ) -> bool:
+    def _should_skip_invalid(api_conv_id: Optional[str], profile_id_upper: str) -> bool:
         """Check if conversation should be skipped due to invalid data."""
         return not api_conv_id or profile_id_upper == "UNKNOWN"
 
@@ -1529,15 +1462,42 @@ class InboxProcessor:
 
             txt = last_user.lower()
             actionable_cues = (
-                "share", "send", "attach", "tree", "record", "certificate",
-                "born", "married", "died", "parents", "ancestor", "where", "how",
-                "i will", "i'll", "i can", "i'll send", "i can share", "link"
+                "share",
+                "send",
+                "attach",
+                "tree",
+                "record",
+                "certificate",
+                "born",
+                "married",
+                "died",
+                "parents",
+                "ancestor",
+                "where",
+                "how",
+                "i will",
+                "i'll",
+                "i can",
+                "i'll send",
+                "i can share",
+                "link",
+                "collaborate",
+                "research",
+                "info",
+                "information",
+                "yes",
+                "interested",
+                "dna",
+                "match",
+                "cousin",
+                "family",
+                "relation",
             )
 
             if not any(cue in txt for cue in actionable_cues):
-                return "ENTHUSIASTIC" if any(
-                    k in txt for k in ("thanks", "thank you", "cheers", "take care")
-                ) else "OTHER"
+                return (
+                    "ENTHUSIASTIC" if any(k in txt for k in ("thanks", "thank you", "cheers", "take care")) else "OTHER"
+                )
 
             return label
         except Exception:
@@ -1553,9 +1513,7 @@ class InboxProcessor:
         formatted_context = self._format_context_for_ai(context_messages, my_pid_lower)
 
         if not self.session_manager.is_sess_valid():
-            raise WebDriverException(
-                f"Session invalid before AI classification call for ConvID {api_conv_id}"
-            )
+            raise WebDriverException(f"Session invalid before AI classification call for ConvID {api_conv_id}")
 
         @with_api_recovery(max_attempts=3, base_delay=2.0)
         def _classify_with_recovery(context: str = formatted_context) -> Optional[str]:
@@ -1612,7 +1570,8 @@ class InboxProcessor:
         """Check if conversation is COLLABORATION_ACTIVE (4+ exchanges, recent, productive)."""
         if total_exchanges >= 4 and days_since_last <= 14:
             productive_count = sum(
-                1 for log in conv_logs[-4:]  # Last 4 messages
+                1
+                for log in conv_logs[-4:]  # Last 4 messages
                 if log.ai_sentiment == "PRODUCTIVE"
             )
             return productive_count >= 2
@@ -1626,9 +1585,7 @@ class InboxProcessor:
     ) -> bool:
         """Check if conversation is INFORMATION_SHARED (2+ exchanges, productive)."""
         if total_exchanges >= 2:
-            productive_count = sum(
-                1 for log in conv_logs if log.ai_sentiment == "PRODUCTIVE"
-            )
+            productive_count = sum(1 for log in conv_logs if log.ai_sentiment == "PRODUCTIVE")
             return productive_count >= 1 or ai_sentiment == "PRODUCTIVE"
         return False
 
@@ -1723,9 +1680,7 @@ class InboxProcessor:
         ai_sentiment: Optional[str],
         conversation_phase: Optional[Any],
     ) -> bool:
-        return (ai_sentiment in {"DESIST", "UNINTERESTED"}) or (
-            conversation_phase == ConversationPhaseEnum.CLOSED
-        )
+        return (ai_sentiment in {"DESIST", "UNINTERESTED"}) or (conversation_phase == ConversationPhaseEnum.CLOSED)
 
     @staticmethod
     def _normalize_conversation_history(
@@ -1986,9 +1941,7 @@ class InboxProcessor:
             )
             conversation_history_str = self._build_follow_up_history(normalized_history)
 
-            logger.debug(
-                "Analyzing follow-up requirements for conversation %s", conversation_id
-            )
+            logger.debug("Analyzing follow-up requirements for conversation %s", conversation_id)
             heuristic_result = self._analyze_follow_up_requirements(
                 conversation_history_str,
                 latest_message,
@@ -2127,9 +2080,7 @@ class InboxProcessor:
             True if task created successfully, False otherwise
         """
         try:
-            logger.debug(
-                "Preparing follow-up reminder task for conversation %s", conversation_id
-            )
+            logger.debug("Preparing follow-up reminder task for conversation %s", conversation_id)
             import ms_graph_utils
         except Exception as exc:  # pragma: no cover - import errors
             logger.error(f"MS Graph utilities unavailable: {exc}", exc_info=True)
@@ -2209,9 +2160,7 @@ class InboxProcessor:
             "conversation_id": api_conv_id,
             "direction": direction,
             "people_id": people_id,
-            "latest_message_content": message_content[
-                : getattr(config_schema, "message_truncation_length", 1000)
-            ],
+            "latest_message_content": message_content[: getattr(config_schema, "message_truncation_length", 1000)],
             "latest_timestamp": timestamp,
             "ai_sentiment": ai_sentiment,
             "conversation_phase": conversation_phase,
@@ -2423,9 +2372,7 @@ class InboxProcessor:
     ) -> None:
         """Upsert conversation state from AI engagement result."""
         state: Optional[ConversationState] = (
-            session.query(ConversationState)
-            .filter(ConversationState.people_id == people_id)
-            .one_or_none()
+            session.query(ConversationState).filter(ConversationState.people_id == people_id).one_or_none()
         )
         if not state:
             state = ConversationState(people_id=people_id)
@@ -2544,9 +2491,7 @@ class InboxProcessor:
             return final_logs, final_persons
         except ConnectionError as conn_err:
             if "Session death cascade detected" in str(conn_err):
-                logger.critical(
-                    f"SESSION DEATH CASCADE in Action 7 {exception_type} save: {conn_err}"
-                )
+                logger.critical(f"SESSION DEATH CASCADE in Action 7 {exception_type} save: {conn_err}")
                 raise MaxApiFailuresExceededError(
                     f"Session death cascade detected in Action 7 {exception_type} save"
                 ) from None
@@ -2558,6 +2503,7 @@ class InboxProcessor:
         """Check if cancellation was requested by timeout wrapper."""
         try:
             from core.cancellation import is_cancel_requested
+
             return is_cancel_requested()
         except Exception:
             return False
@@ -2601,9 +2547,7 @@ class InboxProcessor:
             logger.debug(f"Processing new/updated IN message for {api_conv_id} (timestamp: {ctx_ts_in_aware})")
 
             logger.debug(f"Attempting AI classification for conversation {api_conv_id}")
-            ai_sentiment_result = self._classify_message_with_ai(
-                context_messages, ctx.my_pid_lower, api_conv_id
-            )
+            ai_sentiment_result = self._classify_message_with_ai(context_messages, ctx.my_pid_lower, api_conv_id)
 
             if ai_sentiment_result:
                 ai_classified_count += 1
@@ -2631,14 +2575,20 @@ class InboxProcessor:
             )
 
             upsert_dict_in = self._create_conversation_log_upsert(
-                api_conv_id, MessageDirectionEnum.IN, people_id,
-                latest_ctx_in.get("content", ""), ctx_ts_in_aware, ai_sentiment_result,
+                api_conv_id,
+                MessageDirectionEnum.IN,
+                people_id,
+                latest_ctx_in.get("content", ""),
+                ctx_ts_in_aware,
+                ai_sentiment_result,
                 conversation_phase=conversation_phase,
                 follow_up_due_date=follow_up_data.get("follow_up_due_date"),
                 awaiting_response_from=follow_up_data.get("awaiting_response_from"),
             )
             ctx.conv_log_upserts_dicts.append(upsert_dict_in)
-            logger.debug(f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
+            logger.debug(
+                f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}"
+            )
 
             # Priority 1 Todo #5: Create MS To-Do reminder task if follow-up required
             if follow_up_data.get("follow_up_required") and follow_up_data.get("reminder_task_title"):
@@ -2663,7 +2613,9 @@ class InboxProcessor:
 
             self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
         else:
-            logger.debug(f"IN message for {api_conv_id} is not newer than DB (API: {ctx_ts_in_aware}, DB: {db_latest_ts_in_compare})")
+            logger.debug(
+                f"IN message for {api_conv_id} is not newer than DB (API: {ctx_ts_in_aware}, DB: {db_latest_ts_in_compare})"
+            )
 
         return ai_classified_count
 
@@ -2698,12 +2650,17 @@ class InboxProcessor:
             )
 
             upsert_dict_out = self._create_conversation_log_upsert(
-                api_conv_id, MessageDirectionEnum.OUT, people_id,
-                str(latest_ctx_out.get("content", "")), ctx_ts_out_aware,
+                api_conv_id,
+                MessageDirectionEnum.OUT,
+                people_id,
+                str(latest_ctx_out.get("content", "")),
+                ctx_ts_out_aware,
                 conversation_phase=conversation_phase,
             )
             ctx.conv_log_upserts_dicts.append(upsert_dict_out)
-            logger.debug(f"Created OUT message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
+            logger.debug(
+                f"Created OUT message log entry for conversation {api_conv_id} with phase: {conversation_phase}"
+            )
 
             # Track analytics for sent message
             db_session = self.session_manager.get_db_conn()
@@ -2714,7 +2671,9 @@ class InboxProcessor:
             ):
                 self._register_engagement_assessment(ctx.state)
         else:
-            logger.debug(f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})")
+            logger.debug(
+                f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})"
+            )
 
     def _check_inbox_limit(self, items_processed: int) -> tuple[bool, Optional[str]]:
         """Check if inbox limit reached. Returns (should_stop, stop_reason)."""
@@ -2745,8 +2704,8 @@ class InboxProcessor:
             items_processed_before_stop += 1
 
             # Extract conversation identifiers
-            profile_id_upper, api_conv_id, api_latest_ts_aware = (
-                self._extract_conversation_identifiers(conversation_info)
+            profile_id_upper, api_conv_id, api_latest_ts_aware = self._extract_conversation_identifiers(
+                conversation_info
             )
 
             # Skip invalid conversations
@@ -2757,8 +2716,12 @@ class InboxProcessor:
 
             # Determine if conversation needs fetching
             needs_fetch, should_stop, fetch_stop_reason = self._determine_fetch_need(
-                api_conv_id, ctx.comp_conv_id, ctx.comp_ts, api_latest_ts_aware,
-                ctx.existing_conv_logs, ctx.min_aware_dt,
+                api_conv_id,
+                ctx.comp_conv_id,
+                ctx.comp_ts,
+                api_latest_ts_aware,
+                ctx.existing_conv_logs,
+                ctx.min_aware_dt,
             )
 
             if should_stop:
@@ -2809,62 +2772,26 @@ class InboxProcessor:
     ) -> dict[str, Optional[list[dict[str, Any]]]]:
         """Fetch conversation contexts for all conversations in the list.
 
-        Phase 3 Optimization: Supports parallel fetching based on parallel_workers config.
-        - If parallel_workers <= 1: Sequential fetching
-        - If parallel_workers > 1: Parallel fetching with ThreadPoolExecutor
+        Phase 3 Optimization: Enforce sequential fetching to prevent rate limit violations.
+        Parallel execution has been removed to comply with strict 429 error prevention policy.
 
         Returns: dict mapping api_conv_id -> context_messages (or None if fetch failed)
         """
-        parallel_workers = getattr(config_schema, 'parallel_workers', 1)
-
         # Extract conversation IDs
         conv_ids = [
             self._extract_conversation_identifiers(conv)[1]  # api_conv_id
             for conv in conversations_needing_fetch
         ]
 
-        # Sequential fetching (parallel_workers <= 1)
-        if parallel_workers <= 1:
-            logger.debug(f"[Context Fetch] Sequential mode: fetching {len(conv_ids)} conversations")
-            context_map: dict[str, Optional[list[dict[str, Any]]]] = {}
-            for api_conv_id in conv_ids:
-                conv_id, context = self._fetch_single_conversation_context(api_conv_id)
-                context_map[conv_id] = context
-
-            successful = len([v for v in context_map.values() if v is not None])
-            logger.debug(f"[Context Fetch] Sequential complete: {successful}/{len(conv_ids)} successful")
-            return context_map
-
-        # Parallel fetching (parallel_workers > 1)
-        logger.debug(
-            f"[Context Fetch] Parallel mode: fetching {len(conv_ids)} conversations "
-            f"with {parallel_workers} workers"
-        )
+        logger.debug(f"[Context Fetch] Sequential mode: fetching {len(conv_ids)} conversations")
         context_map: dict[str, Optional[list[dict[str, Any]]]] = {}
 
-        with ThreadPoolExecutor(max_workers=parallel_workers) as executor:
-            # Submit all fetch tasks
-            futures = {
-                executor.submit(self._fetch_single_conversation_context, conv_id): conv_id
-                for conv_id in conv_ids
-            }
-
-            # Collect results as they complete
-            for future in as_completed(futures):
-                try:
-                    conv_id, context = future.result()
-                    context_map[conv_id] = context
-                except Exception as e:
-                    conv_id = futures[future]
-                    logger.error(f"Exception in parallel fetch for {conv_id}: {e}")
-                    context_map[conv_id] = None
+        for api_conv_id in conv_ids:
+            conv_id, context = self._fetch_single_conversation_context(api_conv_id)
+            context_map[conv_id] = context
 
         successful = len([v for v in context_map.values() if v is not None])
-        failed = len(conv_ids) - successful
-        logger.debug(
-            f"[Context Fetch] Parallel complete: {successful}/{len(conv_ids)} successful"
-            + (f", {failed} failed" if failed > 0 else "")
-        )
+        logger.debug(f"[Context Fetch] Sequential complete: {successful}/{len(conv_ids)} successful")
         return context_map
 
     def _second_pass_process_conversations(
@@ -2893,8 +2820,11 @@ class InboxProcessor:
 
             # Lookup or create person
             person, person_status = self._lookup_or_create_person(
-                session, profile_id_upper, conversation_info.get("username", "Unknown"),
-                api_conv_id, existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
+                session,
+                profile_id_upper,
+                conversation_info.get("username", "Unknown"),
+                api_conv_id,
+                existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
             )
             if not person or not safe_column_value(person, "id"):
                 logger.error(
@@ -2910,20 +2840,22 @@ class InboxProcessor:
 
             # Find latest IN and OUT messages
             latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, ctx.my_pid_lower)
-            logger.debug(f"Found latest messages for {api_conv_id}: IN={'present' if latest_ctx_in else 'None'}, OUT={'present' if latest_ctx_out else 'None'}")
+            logger.debug(
+                f"Found latest messages for {api_conv_id}: IN={'present' if latest_ctx_in else 'None'}, OUT={'present' if latest_ctx_out else 'None'}"
+            )
 
             # Process IN and OUT messages
             ai_classified_count = self._process_in_message(
                 latest_ctx_in, api_conv_id, people_id, ctx, context_messages, ai_classified_count
             )
 
-            self._process_out_message(
-                latest_ctx_out, api_conv_id, people_id, ctx
-            )
+            self._process_out_message(latest_ctx_out, api_conv_id, people_id, ctx)
 
             logger.debug(f"Second pass: Completed processing conversation {api_conv_id}")
 
-        logger.debug(f"Second pass complete: {len(conversations_needing_fetch)} processed, {error_count} errors, {ai_classified_count} AI classifications")
+        logger.debug(
+            f"Second pass complete: {len(conversations_needing_fetch)} processed, {error_count} errors, {ai_classified_count} AI classifications"
+        )
         return error_count, ai_classified_count
 
     def _process_single_conversation(
@@ -2937,9 +2869,7 @@ class InboxProcessor:
         error_count_delta = 0
 
         # Extract conversation identifiers
-        profile_id_upper, api_conv_id, api_latest_ts_aware = (
-            self._extract_conversation_identifiers(conversation_info)
-        )
+        profile_id_upper, api_conv_id, api_latest_ts_aware = self._extract_conversation_identifiers(conversation_info)
 
         logger.debug(f"Processing conversation {api_conv_id} for profile {profile_id_upper}")
 
@@ -2950,8 +2880,12 @@ class InboxProcessor:
 
         # Determine if conversation needs fetching
         needs_fetch, should_stop, fetch_stop_reason = self._determine_fetch_need(
-            api_conv_id, ctx.comp_conv_id, ctx.comp_ts, api_latest_ts_aware,
-            ctx.existing_conv_logs, ctx.min_aware_dt,
+            api_conv_id,
+            ctx.comp_conv_id,
+            ctx.comp_ts,
+            api_latest_ts_aware,
+            ctx.existing_conv_logs,
+            ctx.min_aware_dt,
         )
 
         if should_stop:
@@ -2978,8 +2912,11 @@ class InboxProcessor:
 
         # Lookup or create person
         person, _ = self._lookup_or_create_person(
-            session, profile_id_upper, conversation_info.get("username", "Unknown"),
-            api_conv_id, existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
+            session,
+            profile_id_upper,
+            conversation_info.get("username", "Unknown"),
+            api_conv_id,
+            existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
         )
         if not person or not safe_column_value(person, "id"):
             logger.error(f"Failed person lookup/create for ConvID {api_conv_id}. Skipping item.")
@@ -2990,16 +2927,16 @@ class InboxProcessor:
 
         # Find latest IN and OUT messages
         latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, ctx.my_pid_lower)
-        logger.debug(f"Found latest messages for {api_conv_id}: IN={'present' if latest_ctx_in else 'None'}, OUT={'present' if latest_ctx_out else 'None'}")
+        logger.debug(
+            f"Found latest messages for {api_conv_id}: IN={'present' if latest_ctx_in else 'None'}, OUT={'present' if latest_ctx_out else 'None'}"
+        )
 
         # Process IN and OUT messages
         ai_classified_count = self._process_in_message(
             latest_ctx_in, api_conv_id, people_id, ctx, context_messages, ai_classified_count
         )
 
-        self._process_out_message(
-            latest_ctx_out, api_conv_id, people_id, ctx
-        )
+        self._process_out_message(latest_ctx_out, api_conv_id, people_id, ctx)
 
         logger.debug(f"Completed processing conversation {api_conv_id}")
 
@@ -3063,13 +3000,15 @@ class InboxProcessor:
 
         # Progress bar updates removed - simple increment only at main loop level (matching Action 6/7/8/9)
 
-        logger.debug(f"Batch complete: {len(conversations_needing_fetch)} processed, {len(skip_map)} skipped, {error_count} errors")
+        logger.debug(
+            f"Batch complete: {len(conversations_needing_fetch)} processed, {len(skip_map)} skipped, {error_count} errors"
+        )
         return False, None
 
     @staticmethod
-    def _extract_state_variables(state: dict[str, Any]) -> tuple[
-        int, int, int, int, int, int, int, int, int, bool, Optional[str], Optional[str], int, int, int
-    ]:
+    def _extract_state_variables(
+        state: dict[str, Any],
+    ) -> tuple[int, int, int, int, int, int, int, int, int, bool, Optional[str], Optional[str], int, int, int]:
         """Extract state variables for easier access. Returns tuple of all state variables."""
         return (
             state["ai_classified_count"],
@@ -3166,8 +3105,8 @@ class InboxProcessor:
             return True, stop_reason_check, [], None
 
         # Fetch and validate batch
-        should_stop, stop_reason_check, all_conversations_batch, next_cursor_from_api = (
-            self._fetch_and_validate_batch(current_limit, state["next_cursor"])
+        should_stop, stop_reason_check, all_conversations_batch, next_cursor_from_api = self._fetch_and_validate_batch(
+            current_limit, state["next_cursor"]
         )
         if should_stop:
             return True, stop_reason_check, [], None
@@ -3191,8 +3130,8 @@ class InboxProcessor:
         """Handle batch processing and commit. Returns (should_stop, stop_reason)."""
 
         # Prefetch batch data
-        existing_persons_map, existing_conv_logs, prefetch_error = (
-            self._prefetch_batch_data(session, all_conversations_batch, state["current_batch_num"])
+        existing_persons_map, existing_conv_logs, prefetch_error = self._prefetch_batch_data(
+            session, all_conversations_batch, state["current_batch_num"]
         )
         if prefetch_error:
             return True, prefetch_error
@@ -3238,8 +3177,8 @@ class InboxProcessor:
 
         # Check if batch processing should stop
         if batch_stop:
-            logger.debug(f"Batch processing stopped: {batch_stop_reason or 'Comparator Found'}")
-            return True, batch_stop_reason or "Comparator Found"
+            logger.debug(f"Batch processing stopped: {batch_stop_reason}")
+            return True, batch_stop_reason
 
         return False, None
 
@@ -3258,9 +3197,7 @@ class InboxProcessor:
         # Log batch start removed - will only log batch completion like Action 6
 
         # Fetch and process batch
-        should_stop, stop_reason, all_conversations_batch, next_cursor_from_api = (
-            self._fetch_and_process_batch(state)
-        )
+        should_stop, stop_reason, all_conversations_batch, next_cursor_from_api = self._fetch_and_process_batch(state)
         if should_stop:
             logger.debug(f"Batch fetch indicated stop: {stop_reason}")
             return True, stop_reason
@@ -3321,8 +3258,12 @@ class InboxProcessor:
             state["error_count_this_loop"] += 1
 
         final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
-            exception, exception_type, session,
-            state["conv_log_upserts_dicts"], state["person_updates"], state["current_batch_num"]
+            exception,
+            exception_type,
+            session,
+            state["conv_log_upserts_dicts"],
+            state["person_updates"],
+            state["current_batch_num"],
         )
         state["status_updated_count"] += final_persons
         state["logs_processed_in_run"] += final_logs
@@ -3334,7 +3275,7 @@ class InboxProcessor:
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],  # Aware datetime
         my_pid_lower: str,
-         # Accept progress bar instance
+        # Accept progress bar instance
     ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
         """Run the core inbox processing loop.
 
@@ -3369,18 +3310,17 @@ class InboxProcessor:
                 break
 
             except Exception as e_main:
-                state["stop_reason"], _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
-                state["stop_processing"] = True
-                return (
-                    state["stop_reason"],
-                    state["total_processed_api_items"],
-                    state["ai_classified_count"],
-                    state["engagement_assessment_count"],
-                    state["status_updated_count"],
-                    state["items_processed_before_stop"],
-                    state["session_deaths"],
-                    state["session_recoveries"],
-                )
+                state["error_count_this_loop"] += 1
+                stop_reason, _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
+
+                if state["error_count_this_loop"] > 5:
+                    logger.critical(f"Too many errors ({state['error_count_this_loop']}) in inbox loop. Stopping.")
+                    state["stop_reason"] = stop_reason
+                    state["stop_processing"] = True
+                    break
+
+                logger.warning(f"Recoverable error in inbox loop (Count: {state['error_count_this_loop']}): {e_main}")
+                # Continue loop
 
         # --- End Main Loop (while not stop_processing) ---
 
@@ -3388,13 +3328,13 @@ class InboxProcessor:
         if (
             not state["stop_reason"]
             or state["stop_reason"]
-                            in {
-                                "Comparator Found",
-                                "No Change",
-                                f"Inbox Limit ({self.max_inbox_limit})",
-                                "End of Inbox Reached (Empty Batch, No Cursor)",
-                                "End of Inbox Reached (No Next Cursor)",
-                        }
+            in {
+                "Comparator Found",
+                "No Change",
+                f"Inbox Limit ({self.max_inbox_limit})",
+                "End of Inbox Reached (Empty Batch, No Cursor)",
+                "End of Inbox Reached (No Next Cursor)",
+            }
         ) and (state["conv_log_upserts_dicts"] or state["person_updates"]):
             logger.debug("Performing final commit at end of processing loop...")
             final_logs_saved, final_persons_updated = commit_bulk_data(
@@ -3493,6 +3433,7 @@ class InboxProcessor:
                 "end_time": datetime.now(timezone.utc),
             }
         )
+
     # End of _log_unified_summary
 
 
@@ -3502,7 +3443,7 @@ class InboxProcessor:
 # Migrated to use centralized session_utils.py (reduces 88 lines to 1 import!)
 from session_utils import ensure_session_for_tests_sm_only as _ensure_session_for_tests
 
-# Removed smoke test: _test_class_and_methods_available - only checked callable() and hasattr()
+# Removed smoke test: _test_class_and_methods_available
 
 
 def _test_inbox_processor_initialization() -> None:
@@ -3522,6 +3463,7 @@ def _test_inbox_processor_initialization() -> None:
 def _test_fetch_first_page_conversations() -> None:
     """Test fetching first page of conversations from API."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3550,6 +3492,7 @@ def _test_fetch_first_page_conversations() -> None:
 def _test_conversation_database_storage() -> None:
     """Test conversations are stored in database."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3586,6 +3529,7 @@ def _test_conversation_database_storage() -> None:
 def _test_conversation_parsing() -> None:
     """Test conversation data is parsed correctly from API."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3624,6 +3568,7 @@ def _test_conversation_parsing() -> None:
 def _test_ai_classification() -> None:
     """Test AI classification of messages."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3654,6 +3599,7 @@ def _test_ai_classification() -> None:
 def _test_person_status_updates() -> None:
     """Test person status updates from conversations."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3684,6 +3630,7 @@ def _test_person_status_updates() -> None:
 def _test_stop_on_unchanged_conversation() -> None:
     """Test processing stops when encountering unchanged conversation (comparator match)."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3708,8 +3655,7 @@ def _test_stop_on_unchanged_conversation() -> None:
 
     # Second run should process fewer or equal conversations
     # (stops when comparator detects no changes)
-    assert processed2 <= processed1, \
-        f"Second run should process <= conversations (got {processed2} vs {processed1})"
+    assert processed2 <= processed1, f"Second run should process <= conversations (got {processed2} vs {processed1})"
 
     logger.info(f"First run: {processed1} conversations, Second run: {processed2} conversations")
     logger.info("Comparator logic working (stops on unchanged conversations)")
@@ -3720,6 +3666,7 @@ def _test_stop_on_unchanged_conversation() -> None:
 def _test_summary_logging() -> None:
     """Test summary logging produces expected output."""
     import os
+
     skip_live_tests = os.getenv("SKIP_LIVE_API_TESTS", "false").lower() == "true"
     if skip_live_tests:
         logger.info("Skipping live test (SKIP_LIVE_API_TESTS=true)")
@@ -3740,8 +3687,7 @@ def _test_summary_logging() -> None:
     assert "conversations_processed" in result, "Result should have conversations_processed"
     assert "conversations_fetched" in result, "Result should have conversations_fetched"
 
-    logger.info(f"Summary: {result['conversations_processed']} processed, "
-               f"{result['conversations_fetched']} fetched")
+    logger.info(f"Summary: {result['conversations_processed']} processed, {result['conversations_fetched']} fetched")
 
     return
 
@@ -3749,6 +3695,7 @@ def _test_summary_logging() -> None:
 def _test_error_recovery() -> None:
     """Test error recovery mechanisms."""
     from unittest.mock import MagicMock
+
     sm = MagicMock()
     processor = InboxProcessor(sm)
 
@@ -3791,9 +3738,7 @@ def _test_clarify_ambiguous_intent() -> None:
 
     # Test Case 1: Entity ambiguity detection
     entities_ambiguous: dict[str, Any] = {
-        "mentioned_people": [
-            {"name": "Mary Smith", "birth_year": None, "birth_place": None, "relationship": None}
-        ],
+        "mentioned_people": [{"name": "Mary Smith", "birth_year": None, "birth_place": None, "relationship": None}],
         "locations": [{"place": "Scotland", "context": "birthplace"}],
     }
 
