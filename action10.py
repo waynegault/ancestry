@@ -93,6 +93,7 @@ from config import config_schema
 from core.error_handling import MissingConfigError
 
 # Import GEDCOM utilities
+import gedcom_utils
 from gedcom_utils import (
     GedcomData,
     calculate_match_score,
@@ -117,6 +118,7 @@ from universal_scoring import calculate_display_bonuses
 # --- Module-level GEDCOM cache for tests ---
 class _GedcomCacheState:
     """Manages GEDCOM cache state for tests."""
+
     cache: Optional[GedcomData] = None
 
 
@@ -127,8 +129,7 @@ def _get_gedcom_utils_module() -> ModuleType:
 
 
 def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
-    normalizer = getattr(_get_gedcom_utils_module(), "_normalize_id")
-    return normalizer(value)
+    return gedcom_utils._normalize_id(value)
 
 
 FAMILY_INFO_KEYWORDS = (
@@ -143,13 +144,18 @@ FAMILY_INFO_KEYWORDS = (
 def get_cached_gedcom() -> Optional[GedcomData]:
     """Load GEDCOM data once and cache it for all tests"""
     if _GedcomCacheState.cache is None:
-        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+        gedcom_path = (
+            config_schema.database.gedcom_file_path
+            if config_schema and config_schema.database.gedcom_file_path
+            else None
+        )
         if gedcom_path and Path(gedcom_path).exists():
             print(f"📂 Loading GEDCOM: {Path(gedcom_path).name}")
             _GedcomCacheState.cache = load_gedcom_data(Path(gedcom_path))
             if _GedcomCacheState.cache:
                 print(f"✅ GEDCOM loaded: {len(_GedcomCacheState.cache.indi_index)} individuals")
     return _GedcomCacheState.cache
+
 
 # === REMOVED: Mock mode is no longer used - all tests use real GEDCOM data ===
 # Mock mode was removed to ensure tests validate real conditions and fail appropriately
@@ -169,8 +175,13 @@ def _format_candidate_data(candidate_data: dict[str, Any]) -> list[str]:
     """Format candidate data for breakdown display."""
     lines = ["\n👤 CANDIDATE DATA:"]
     key_fields = [
-        "first_name", "surname", "gender_norm", "birth_year",
-        "birth_place_disp", "death_year", "death_place",
+        "first_name",
+        "surname",
+        "gender_norm",
+        "birth_year",
+        "birth_place_disp",
+        "death_year",
+        "death_place",
     ]
     for key in key_fields:
         if key in candidate_data:
@@ -296,6 +307,7 @@ def _format_test_person_analysis(field_scores: dict[str, int], total_score: floa
 # --- Helper Functions ---
 # Import centralized string validation utility
 
+
 def sanitize_input(value: str) -> Optional[str]:
     """
     Sanitize user input for safe processing in genealogical searches.
@@ -325,6 +337,7 @@ def _try_dateparser_parsing(value: str) -> Optional[int]:
     """Try to parse value using dateparser library."""
     try:
         import dateparser
+
         parsed_date = dateparser.parse(value)
         if parsed_date:
             year = parsed_date.year
@@ -345,9 +358,7 @@ def _try_regex_year_extraction(value: str) -> Optional[int]:
     return None
 
 
-def get_validated_year_input(
-    prompt: str, default: Optional[int] = None
-) -> Optional[int]:
+def get_validated_year_input(prompt: str, default: Optional[int] = None) -> Optional[int]:
     """Get and validate a year input with optional default."""
     display_default = f" [{default}]" if default else " [YYYY]"
     value = input(f"{prompt}{display_default}: ").strip()
@@ -374,51 +385,32 @@ def parse_command_line_args() -> argparse.Namespace:
     parser.add_argument("--auto-input", nargs="+", help="Automated inputs for testing")
     parser.add_argument("--reference-id", help="Override reference person ID")
     parser.add_argument("--gedcom-file", help="Path to GEDCOM file")
-    parser.add_argument(
-        "--max-results", type=int, default=3, help="Maximum results to display"
-    )
+    parser.add_argument("--max-results", type=int, default=3, help="Maximum results to display")
     return parser.parse_args()
 
 
 def _validate_gedcom_file_path() -> Path:
     """Validate and return GEDCOM file path."""
-    gedcom_file_path_config = (
-        config_schema.database.gedcom_file_path if config_schema else None
-    )
+    gedcom_file_path_config = config_schema.database.gedcom_file_path if config_schema else None
 
-    if (
-        not gedcom_file_path_config
-        or not gedcom_file_path_config.is_file()
-    ):
-        logger.error(
-            f"GEDCOM file path missing or invalid: {gedcom_file_path_config}"
-        )
-        raise MissingConfigError(
-            f"GEDCOM_FILE_PATH not configured or file not found: {gedcom_file_path_config}"
-        )
+    if not gedcom_file_path_config or not gedcom_file_path_config.is_file():
+        logger.error(f"GEDCOM file path missing or invalid: {gedcom_file_path_config}")
+        raise MissingConfigError(f"GEDCOM_FILE_PATH not configured or file not found: {gedcom_file_path_config}")
 
     return gedcom_file_path_config
 
 
 def _get_reference_person_info() -> tuple[Optional[str], str]:
     """Get reference person ID and name from config."""
-    reference_person_id_raw = (
-        config_schema.reference_person_id if config_schema else None
-    )
-    reference_person_name = (
-        config_schema.reference_person_name if config_schema else "Reference Person"
-    )
+    reference_person_id_raw = config_schema.reference_person_id if config_schema else None
+    reference_person_name = config_schema.reference_person_name if config_schema else "Reference Person"
     return reference_person_id_raw, reference_person_name
 
 
 def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
     """Get scoring weights, date flexibility, and max results from config."""
-    date_flexibility_value = (
-        config_schema.date_flexibility if config_schema else 2
-    )  # Default flexibility
-    date_flex = {
-        "year_match_range": int(date_flexibility_value)
-    }  # Convert to expected dictionary structure
+    date_flexibility_value = config_schema.date_flexibility if config_schema else 2  # Default flexibility
+    date_flex = {"year_match_range": int(date_flexibility_value)}  # Convert to expected dictionary structure
 
     scoring_weights = (
         dict(config_schema.common_scoring_weights)
@@ -427,7 +419,7 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
             "name_match": 50,
             "birth_year_match": 30,
             "birth_place_match": 20,
-                "death_year_match": 25,
+            "death_year_match": 25,
             "death_place_match": 15,
         }
     )
@@ -438,15 +430,9 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
     return date_flex, scoring_weights, max_display_results
 
 
-def _log_configuration(
-    gedcom_file_path: Path,
-    reference_person_id: Optional[str],
-    reference_person_name: str
-) -> None:
+def _log_configuration(gedcom_file_path: Path, reference_person_id: Optional[str], reference_person_name: str) -> None:
     """Log configuration details."""
-    logger.debug(
-        f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}"
-    )
+    logger.debug(f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}")
     logger.debug(f"Configured REFERENCE_PERSON_ID: {reference_person_id}")
     logger.debug(f"Configured REFERENCE_PERSON_NAME: {reference_person_name}")
     logger.debug(f"Using GEDCOM file: {gedcom_file_path.name}")
@@ -619,9 +605,7 @@ def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
         try:
             birth_date_obj_crit = datetime(criteria["birth_year"], 1, 1, tzinfo=timezone.utc)
         except ValueError:
-            logger.warning(
-                f"Cannot create date object for birth year {criteria['birth_year']}."
-            )
+            logger.warning(f"Cannot create date object for birth year {criteria['birth_year']}.")
             criteria["birth_year"] = None
 
     death_date_obj_crit: Optional[datetime] = None
@@ -629,9 +613,7 @@ def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
         try:
             death_date_obj_crit = datetime(criteria["death_year"], 1, 1, tzinfo=timezone.utc)
         except ValueError:
-            logger.warning(
-                f"Cannot create date object for death year {criteria['death_year']}."
-            )
+            logger.warning(f"Cannot create date object for death year {criteria['death_year']}.")
             criteria["death_year"] = None
 
     criteria["birth_date_obj"] = birth_date_obj_crit
@@ -668,9 +650,7 @@ def get_user_criteria(
     return scoring_criteria, filter_criteria
 
 
-def log_criteria_summary(
-    scoring_criteria: dict[str, Any], date_flex: dict[str, Any]
-) -> None:
+def log_criteria_summary(scoring_criteria: dict[str, Any], date_flex: dict[str, Any]) -> None:
     """Log summary of criteria to be used."""
     logger.debug("--- Final Scoring Criteria Used ---")
     for k, v in scoring_criteria.items():
@@ -679,14 +659,10 @@ def log_criteria_summary(
 
     year_range = date_flex.get("year_match_range", 10)
     logger.debug(f"\n--- OR Filter Logic (Year Range: +/- {year_range}) ---")
-    logger.debug(
-        "  Individuals will be scored if ANY filter criteria met or if alive."
-    )
+    logger.debug("  Individuals will be scored if ANY filter criteria met or if alive.")
 
 
-def matches_criterion(
-    criterion_name: str, filter_criteria: dict[str, Any], candidate_value: Any
-) -> bool:
+def matches_criterion(criterion_name: str, filter_criteria: dict[str, Any], candidate_value: Any) -> bool:
     """Check if a candidate value matches a criterion (case-insensitive for strings)."""
     criterion = filter_criteria.get(criterion_name)
     if isinstance(criterion, str):
@@ -702,9 +678,7 @@ def matches_year_criterion(
 ) -> bool:
     """Check if a candidate year matches a year criterion within range."""
     criterion = filter_criteria.get(criterion_name)
-    return bool(
-        criterion and candidate_value and abs(candidate_value - criterion) <= year_range
-    )
+    return bool(criterion and candidate_value and abs(candidate_value - criterion) <= year_range)
 
 
 def calculate_match_score_cached(
@@ -719,12 +693,8 @@ def calculate_match_score_cached(
         cache = {}
     # Create a hash key from the relevant parts of the inputs
     # We use a tuple of immutable representations of the data
-    criterion_hash = tuple(
-        sorted((k, str(v)) for k, v in search_criteria.items() if v is not None)
-    )
-    candidate_hash = tuple(
-        sorted((k, str(v)) for k, v in candidate_data.items() if k in search_criteria)
-    )
+    criterion_hash = tuple(sorted((k, str(v)) for k, v in search_criteria.items() if v is not None))
+    candidate_hash = tuple(sorted((k, str(v)) for k, v in candidate_data.items() if k in search_criteria))
     cache_key = (criterion_hash, candidate_hash)
 
     if cache_key not in cache:
@@ -751,24 +721,16 @@ def _extract_individual_data(indi_data: dict[str, Any]) -> dict[str, Any]:
         "sex_lower": indi_data.get("gender_norm"),
         "birth_year": indi_data.get("birth_year"),
         "birth_place_lower": (
-            indi_data.get("birth_place_disp", "").lower()
-            if indi_data.get("birth_place_disp")
-            else None
+            indi_data.get("birth_place_disp", "").lower() if indi_data.get("birth_place_disp") else None
         ),
         "death_place_lower": (
-            indi_data.get("death_place_disp", "").lower()
-            if indi_data.get("death_place_disp")
-            else None
+            indi_data.get("death_place_disp", "").lower() if indi_data.get("death_place_disp") else None
         ),
         "death_date_obj": indi_data.get("death_date_obj"),
     }
 
 
-def _evaluate_filter_criteria(
-    extracted_data: dict[str, Any],
-    filter_criteria: dict[str, Any],
-    year_range: int
-) -> bool:
+def _evaluate_filter_criteria(extracted_data: dict[str, Any], filter_criteria: dict[str, Any], year_range: int) -> bool:
     """Evaluate if individual passes filter criteria.
 
     Policy:
@@ -858,17 +820,13 @@ def _process_individual(
                 cache=score_cache,
             )
 
-            return _create_match_data(
-                indi_id_norm, indi_data, total_score, field_scores, reasons
-            )
+            return _create_match_data(indi_id_norm, indi_data, total_score, field_scores, reasons)
     except ValueError as ve:
         logger.error(f"Value error processing individual {indi_id_norm}: {ve}")
     except KeyError as ke:
         logger.error(f"Missing key for individual {indi_id_norm}: {ke}")
     except Exception as ex:
-        logger.error(
-            f"Error processing individual {indi_id_norm}: {ex}", exc_info=True
-        )
+        logger.error(f"Error processing individual {indi_id_norm}: {ex}", exc_info=True)
 
     return None
 
@@ -881,9 +839,7 @@ def filter_and_score_individuals(
     date_flex: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Filter and score individuals based on criteria using universal scoring."""
-    logger.debug(
-        "--- Filtering and Scoring Individuals (using universal scoring) ---"
-    )
+    logger.debug("--- Filtering and Scoring Individuals (using universal scoring) ---")
     processing_start_time = time.time()
 
     # Get the year range for matching from configuration
@@ -903,9 +859,7 @@ def filter_and_score_individuals(
         # Show progress updates
         if processed % progress_interval == 0:
             percent_done = (processed / total_records) * 100
-            logger.debug(
-                f"Processing: {percent_done:.1f}% complete ({processed}/{total_records})"
-            )
+            logger.debug(f"Processing: {percent_done:.1f}% complete ({processed}/{total_records})")
 
         match_data = _process_individual(
             indi_id_norm,
@@ -923,9 +877,7 @@ def filter_and_score_individuals(
 
     processing_duration = time.time() - processing_start_time
     logger.debug(f"Filtering & Scoring completed in {processing_duration:.2f}s.")
-    logger.debug(
-        f"Found {len(scored_matches)} individual(s) matching OR criteria and scored."
-    )
+    logger.debug(f"Found {len(scored_matches)} individual(s) matching OR criteria and scored.")
 
     return sorted(scored_matches, key=lambda x: x["total_score"], reverse=True)
 
@@ -1010,7 +962,9 @@ def _format_name_display(candidate: dict[str, Any], scores: dict[str, int]) -> s
     return f"{name_disp_short} {name_score_str}"
 
 
-def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
+def _format_birth_displays(
+    candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]
+) -> tuple[str, str]:
     """Format birth date and place displays with scores."""
     # Birth date display
     bdate_disp = str(candidate.get("birth_date", "N/A"))
@@ -1020,9 +974,7 @@ def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bo
     # Birth place display
     bplace_disp_val = candidate.get("birth_place", "N/A")
     bplace_disp_str = str(bplace_disp_val) if bplace_disp_val is not None else "N/A"
-    bplace_disp_short = bplace_disp_str[:20] + (
-        "..." if len(bplace_disp_str) > 20 else ""
-    )
+    bplace_disp_short = bplace_disp_str[:20] + ("..." if len(bplace_disp_str) > 20 else "")
     bplace_with_score = f"{bplace_disp_short} [{scores['bplace_s']}]"
     if bonuses["birth_bonus_s_disp"] > 0:
         bplace_with_score += f" [+{bonuses['birth_bonus_s_disp']}]"
@@ -1030,7 +982,9 @@ def _format_birth_displays(candidate: dict[str, Any], scores: dict[str, int], bo
     return bdate_with_score, bplace_with_score
 
 
-def _format_death_displays(candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]) -> tuple[str, str]:
+def _format_death_displays(
+    candidate: dict[str, Any], scores: dict[str, int], bonuses: dict[str, int]
+) -> tuple[str, str]:
     """Format death date and place displays with scores."""
     # Death date display
     ddate_disp = str(candidate.get("death_date", "N/A"))
@@ -1040,9 +994,7 @@ def _format_death_displays(candidate: dict[str, Any], scores: dict[str, int], bo
     # Death place display
     dplace_disp_val = candidate.get("death_place", "N/A")
     dplace_disp_str = str(dplace_disp_val) if dplace_disp_val is not None else "N/A"
-    dplace_disp_short = dplace_disp_str[:20] + (
-        "..." if len(dplace_disp_str) > 20 else ""
-    )
+    dplace_disp_short = dplace_disp_str[:20] + ("..." if len(dplace_disp_str) > 20 else "")
     dplace_with_score = f"{dplace_disp_short} [{scores['dplace_s']}]"
     if bonuses["death_bonus_s_disp"] > 0:
         dplace_with_score += f" [+{bonuses['death_bonus_s_disp']}]"
@@ -1089,9 +1041,7 @@ def _display_results_table(table_data: list[list[str]], headers: list[str]) -> N
             print(" | ".join(row))
 
 
-def display_top_matches(
-    scored_matches: list[dict[str, Any]], max_results: int
-) -> Optional[dict[str, Any]]:
+def display_top_matches(scored_matches: list[dict[str, Any]], max_results: int) -> Optional[dict[str, Any]]:
     """Display top matching results and return the top match."""
     print(f"\n=== Top {max_results} Matches Found ===")
 
@@ -1100,9 +1050,7 @@ def display_top_matches(
         return None
 
     display_matches = scored_matches[:max_results]
-    logger.debug(
-        f"Displaying top {len(display_matches)} of {len(scored_matches)} scored matches:"
-    )
+    logger.debug(f"Displaying top {len(display_matches)} of {len(scored_matches)} scored matches:")
 
     # Prepare table data
     headers = [
@@ -1122,9 +1070,7 @@ def display_top_matches(
     _display_results_table(table_data, headers)
 
     if len(scored_matches) > len(display_matches):
-        logger.debug(
-            f"... and {len(scored_matches) - len(display_matches)} more matches not shown."
-        )
+        logger.debug(f"... and {len(scored_matches) - len(display_matches)} more matches not shown.")
 
     return scored_matches[0] if scored_matches else None
 
@@ -1157,6 +1103,7 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
 def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
     """Extract year from a specific regex pattern."""
     import re
+
     match = re.search(pattern, years_part)
     if match:
         try:
@@ -1191,7 +1138,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
     if "(" not in name or ")" not in name:
         return name, None, None
 
-    years_part = name[name.find("(") + 1:name.find(")")]
+    years_part = name[name.find("(") + 1 : name.find(")")]
 
     # Try to extract birth year from "b. <date>" pattern
     birth_year = _extract_year_from_pattern(years_part, r'b\.\s+.*?(\d{4})')
@@ -1204,7 +1151,7 @@ def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[in
         birth_year, death_year = _extract_years_from_range(years_part)
 
     # Remove years from name
-    clean_name = name[:name.find("(")].strip()
+    clean_name = name[: name.find("(")].strip()
 
     return clean_name, birth_year, death_year
 
@@ -1225,11 +1172,13 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[d
         # Extract years from the formatted string
         clean_name, birth_year, death_year = _extract_years_from_name(name)
 
-        standardized.append({
-            "name": clean_name,
-            "birth_year": birth_year,
-            "death_year": death_year,
-        })
+        standardized.append(
+            {
+                "name": clean_name,
+                "birth_year": birth_year,
+                "death_year": death_year,
+            }
+        )
 
     return standardized
 
@@ -1329,18 +1278,12 @@ def analyze_top_match(
     top_match_norm_id = top_match.get("id")
     top_match_indi = gedcom_data.find_individual_by_id(top_match_norm_id)
     if not top_match_indi:
-        logger.error(
-            f"Could not retrieve Individual record for top match ID: {top_match_norm_id}"
-        )
+        logger.error(f"Could not retrieve Individual record for top match ID: {top_match_norm_id}")
         return
 
-    display_name, birth_year, death_year = _derive_display_fields(
-        gedcom_data, top_match, top_match_norm_id
-    )
+    display_name, birth_year, death_year = _derive_display_fields(gedcom_data, top_match, top_match_norm_id)
     family_data = _build_family_data_dict(gedcom_data, top_match_indi)
-    unified_path = _compute_unified_path_if_possible(
-        gedcom_data, top_match_norm_id, reference_person_id_norm
-    )
+    unified_path = _compute_unified_path_if_possible(gedcom_data, top_match_norm_id, reference_person_id_norm)
 
     present_post_selection(
         display_name=display_name,
@@ -1442,11 +1385,7 @@ def main() -> bool:
             return False
 
         # Analyze top match
-        reference_person_id_norm = (
-            normalize_gedcom_id(reference_person_id_raw)
-            if reference_person_id_raw
-            else None
-        )
+        reference_person_id_norm = normalize_gedcom_id(reference_person_id_raw) if reference_person_id_raw else None
         analyze_top_match(
             gedcom_data,
             top_match,
@@ -1494,9 +1433,7 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
         os.environ["GEDCOM_FILE_PATH"] = test_gedcom
         logger.info(f"Using minimal test GEDCOM: {test_gedcom}")
 
-    suite = TestSuite(
-        "Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py"
-    )
+    suite = TestSuite("Action 10 - GEDCOM Analysis & Relationship Path Calculation", "action10.py")
     suite.start_suite()
 
     return original_gedcom, suite
@@ -1536,7 +1473,12 @@ def _load_test_person_data_from_env() -> dict[str, Any]:
     }
 
 
-def _register_input_validation_tests(suite: Any, debug_wrapper: Callable[..., Any], test_sanitize_input: Callable[[], None], test_get_validated_year_input_patch: Callable[[], None]) -> None:
+def _register_input_validation_tests(
+    suite: Any,
+    debug_wrapper: Callable[..., Any],
+    test_sanitize_input: Callable[[], None],
+    test_get_validated_year_input_patch: Callable[[], None],
+) -> None:
     """Register input validation and parsing tests."""
     suite.run_test(
         "Input Sanitization",
@@ -1554,7 +1496,9 @@ def _register_input_validation_tests(suite: Any, debug_wrapper: Callable[..., An
     )
 
 
-def _register_scoring_tests(suite: Any, debug_wrapper: Callable[..., Any], test_fraser_gault_scoring_algorithm: Callable[[], None]) -> None:
+def _register_scoring_tests(
+    suite: Any, debug_wrapper: Callable[..., Any], test_fraser_gault_scoring_algorithm: Callable[[], None]
+) -> None:
     """Register scoring algorithm tests."""
     suite.run_test(
         "Test Person Scoring Algorithm",
@@ -1565,7 +1509,12 @@ def _register_scoring_tests(suite: Any, debug_wrapper: Callable[..., Any], test_
     )
 
 
-def _register_relationship_tests(suite: Any, debug_wrapper: Callable[..., Any], test_family_relationship_analysis: Callable[[], None], test_relationship_path_calculation: Callable[[], None]) -> None:
+def _register_relationship_tests(
+    suite: Any,
+    debug_wrapper: Callable[..., Any],
+    test_family_relationship_analysis: Callable[[], None],
+    test_relationship_path_calculation: Callable[[], None],
+) -> None:
     """Register family relationship and path calculation tests."""
     suite.run_test(
         "Family Relationship Analysis",
@@ -1583,7 +1532,9 @@ def _register_relationship_tests(suite: Any, debug_wrapper: Callable[..., Any], 
     )
 
 
-def _register_api_search_tests(suite: Any, debug_wrapper: Callable[..., Any], test_api_search_peter_fraser: Callable[[], None]) -> None:
+def _register_api_search_tests(
+    suite: Any, debug_wrapper: Callable[..., Any], test_api_search_peter_fraser: Callable[[], None]
+) -> None:
     """Register API search tests."""
     suite.run_test(
         "API Search - Peter Fraser 1893",
@@ -1617,7 +1568,7 @@ def _search_for_person(gedcom_data: Any, search_criteria: dict[str, Any]) -> lis
             search_criteria,
             search_criteria,
             dict(config_schema.common_scoring_weights),
-            {"year_match_range": 5.0}
+            {"year_match_range": 5.0},
         )
 
 
@@ -1627,7 +1578,9 @@ def _validate_score_result(score: int, expected_score: int, test_name: str) -> N
 
     print(f"\n{Colors.BOLD}{Colors.WHITE}✅ Test Validation:{Colors.RESET}")
     print(f"   Score ≥ 50: {Colors.GREEN if score >= 50 else Colors.RED}{score >= 50}{Colors.RESET}")
-    print(f"   Expected score validation: {Colors.GREEN if score == expected_score else Colors.RED}{score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {score})")
+    print(
+        f"   Expected score validation: {Colors.GREEN if score == expected_score else Colors.RED}{score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {score})"
+    )
     print(f"   Final Score: {Colors.BOLD}{Colors.YELLOW}{score}{Colors.RESET}")
 
     assert score >= 50, f"{test_name} should score at least 50, got {score}"
@@ -1675,21 +1628,17 @@ def test_module_initialization() -> None:
         config_has_api = hasattr(config_schema, "api")
 
         print("📊 Results:")
-        print(
-            f"   Functions found: {len(found_functions)}/{len(required_functions)}"
-        )
-        print(
-            f"   Functions callable: {len(callable_functions)}/{len(found_functions)}"
-        )
+        print(f"   Functions found: {len(found_functions)}/{len(required_functions)}")
+        print(f"   Functions callable: {len(callable_functions)}/{len(found_functions)}")
         print(f"   Config available: {config_available}")
         print(f"   Config has API: {config_has_api}")
 
-        assert len(found_functions) == len(
-            required_functions
-        ), f"Missing functions: {set(required_functions) - set(found_functions)}"
-        assert len(callable_functions) == len(
-            found_functions
-        ), f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
+        assert len(found_functions) == len(required_functions), (
+            f"Missing functions: {set(required_functions) - set(found_functions)}"
+        )
+        assert len(callable_functions) == len(found_functions), (
+            f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
+        )
         assert config_available, "Configuration schema not available"
 
         # Return True explicitly (not part of TestSuite, standalone function)
@@ -1704,12 +1653,8 @@ def test_config_defaults() -> None:
 
     try:
         # Get actual values
-        date_flexibility_value = (
-            config_schema.date_flexibility if config_schema else 2
-        )
-        scoring_weights = (
-            dict(config_schema.common_scoring_weights) if config_schema else {}
-        )
+        date_flexibility_value = config_schema.date_flexibility if config_schema else 2
+        scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
 
         # Expected values
         expected_date_flexibility = 5.0
@@ -1723,9 +1668,7 @@ def test_config_defaults() -> None:
             "gender_match",
         ]
 
-        print(
-            f"   • Date flexibility: Expected {expected_date_flexibility}, Got {date_flexibility_value}"
-        )
+        print(f"   • Date flexibility: Expected {expected_date_flexibility}, Got {date_flexibility_value}")
         print(f"   • Scoring weights type: {type(scoring_weights).__name__}")
         print(f"   • Scoring weights count: {len(scoring_weights)} keys")
 
@@ -1735,20 +1678,14 @@ def test_config_defaults() -> None:
             print(f"   • {key}: {weight}")
 
         print("📊 Results:")
-        print(
-            f"   Date flexibility correct: {date_flexibility_value == expected_date_flexibility}"
-        )
+        print(f"   Date flexibility correct: {date_flexibility_value == expected_date_flexibility}")
         print(f"   Scoring weights is dict: {type(scoring_weights).__name__ == 'dict'}")
-        print(
-            f"   Has required weight keys: {all(key in scoring_weights for key in expected_weight_keys)}"
-        )
+        print(f"   Has required weight keys: {all(key in scoring_weights for key in expected_weight_keys)}")
 
-        assert (
-            date_flexibility_value == expected_date_flexibility
-        ), f"Date flexibility should be {expected_date_flexibility}, got {date_flexibility_value}"
-        assert isinstance(
-            scoring_weights, dict
-        ), f"Scoring weights should be dict, got {type(scoring_weights)}"
+        assert date_flexibility_value == expected_date_flexibility, (
+            f"Date flexibility should be {expected_date_flexibility}, got {date_flexibility_value}"
+        )
+        assert isinstance(scoring_weights, dict), f"Scoring weights should be dict, got {type(scoring_weights)}"
         assert len(scoring_weights) > 0, "Scoring weights should not be empty"
 
         # Return nothing (part of TestSuite)
@@ -1778,9 +1715,7 @@ def test_sanitize_input() -> None:
             status = "✅" if passed else "❌"
 
             print(f"   {status} {description}")
-            print(
-                f"      Input: '{input_val}' → Output: '{actual}' (Expected: '{expected}')"
-            )
+            print(f"      Input: '{input_val}' → Output: '{actual}' (Expected: '{expected}')")
 
             results.append(passed)
             if not passed:
@@ -1831,9 +1766,7 @@ def test_get_validated_year_input_patch() -> None:
                 status = "✅" if passed else "❌"
 
                 print(f"   {status} {description}")
-                print(
-                    f"      Input: '{input_val}' → Output: {actual} (Expected: {expected})"
-                )
+                print(f"      Input: '{input_val}' → Output: {actual} (Expected: {expected})")
 
             results.append(passed)
             if not passed:
@@ -1844,9 +1777,7 @@ def test_get_validated_year_input_patch() -> None:
             results.append(False)
             failures.append(f"Exception for '{input_val}': {e}")
 
-    print(
-        f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly"
-    )
+    print(f"📊 Results: {sum(results)}/{len(results)} input formats validated correctly")
 
     # Fail if any tests failed
     if failures:
@@ -1880,7 +1811,19 @@ def test_fraser_gault_scoring_algorithm() -> None:
 
     if not field_scores:
         # Fallback to default scoring pattern
-        field_scores = {'givn': 25, 'surn': 25, 'byear': 25, 'bdate': 0, 'bplace': 25, 'bbonus': 25, 'dyear': 0, 'ddate': 25, 'dplace': 25, 'dbonus': 25, 'bonus': 25}
+        field_scores = {
+            'givn': 25,
+            'surn': 25,
+            'byear': 25,
+            'bdate': 0,
+            'bplace': 25,
+            'bbonus': 25,
+            'dyear': 0,
+            'ddate': 25,
+            'dplace': 25,
+            'dbonus': 25,
+            'bonus': 25,
+        }
 
     print(format_score_breakdown_table(field_scores, int(score)))
     print(f"   Has field scores: {Colors.GREEN if field_scores else Colors.RED}{bool(field_scores)}{Colors.RESET}")
@@ -1901,9 +1844,7 @@ def test_display_relatives_fraser() -> None:
     load_dotenv()
 
     gedcom_path = (
-        config_schema.database.gedcom_file_path
-        if config_schema and config_schema.database.gedcom_file_path
-        else None
+        config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
     )
     assert gedcom_path is not None, "GEDCOM_FILE_PATH must be configured for this test"
 
@@ -1923,14 +1864,10 @@ def test_display_relatives_fraser() -> None:
     }
 
     scoring_criteria = search_criteria.copy()
-    scoring_weights = (
-        dict(config_schema.common_scoring_weights) if config_schema else {}
-    )
+    scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else {}
     date_flex = {"year_match_range": 5}
 
-    results = filter_and_score_individuals(
-        gedcom_data, search_criteria, scoring_criteria, scoring_weights, date_flex
-    )
+    results = filter_and_score_individuals(gedcom_data, search_criteria, scoring_criteria, scoring_weights, date_flex)
 
     if not results:
         print("⚠️ Fraser Gault not found, skipping relatives test")
@@ -1947,13 +1884,9 @@ def test_display_relatives_fraser() -> None:
         display_relatives(gedcom_data, fraser_individual)
         # Check that relatives information was displayed
 
-        assert (
-            len(dummy_logger.lines) > 0
-        ), "Should display some relatives information"
+        assert len(dummy_logger.lines) > 0, "Should display some relatives information"
 
-    print(
-        f"✅ Display relatives test completed for {fraser_data.get('full_name_disp', 'Fraser Gault')}"
-    )
+    print(f"✅ Display relatives test completed for {fraser_data.get('full_name_disp', 'Fraser Gault')}")
     # Return nothing (part of TestSuite)
 
 
@@ -1991,31 +1924,21 @@ def test_analyze_top_match_fraser() -> None:
         assert results, f"Test person {full_name} must be found in GEDCOM"
 
         top_match = results[0]
-        reference_person_id = (
-            config_schema.reference_person_id if config_schema else "I102281560836"
-        )
+        reference_person_id = config_schema.reference_person_id if config_schema else "I102281560836"
 
         # Test analyze_top_match with real data
         with mock_logger_context(globals()) as dummy_logger:
-            analyze_top_match(
-                gedcom_data, top_match, reference_person_id, "Wayne Gordon Gault"
-            )
+            analyze_top_match(gedcom_data, top_match, reference_person_id, "Wayne Gordon Gault")
 
             # Check that family details were logged
             log_content = "\n".join(dummy_logger.lines)
             assert "Fraser" in log_content, "Should mention Fraser in analysis"
             assert "Gault" in log_content, "Should mention Gault in analysis"
 
-            found_family_info = any(
-                keyword in log_content for keyword in FAMILY_INFO_KEYWORDS
-            )
-            assert (
-                found_family_info
-            ), f"Should contain family information. Log content: {log_content[:200]}..."
+            found_family_info = any(keyword in log_content for keyword in FAMILY_INFO_KEYWORDS)
+            assert found_family_info, f"Should contain family information. Log content: {log_content[:200]}..."
 
-        print(
-            f"✅ Analyzed Fraser Gault: {top_match.get('full_name_disp')} successfully"
-        )
+        print(f"✅ Analyzed Fraser Gault: {top_match.get('full_name_disp')} successfully")
         # Return nothing (part of TestSuite)
 
     except Exception as e:
@@ -2028,6 +1951,7 @@ def _get_test_person_config() -> dict[str, Any]:
     import os
 
     from dotenv import load_dotenv
+
     load_dotenv()
 
     return {
@@ -2036,7 +1960,7 @@ def _get_test_person_config() -> dict[str, Any]:
         "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
         "gender": os.getenv("TEST_PERSON_GENDER", "m"),
         "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
-        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235"))
+        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235")),
     }
 
 
@@ -2051,7 +1975,9 @@ def _print_search_criteria(config: dict[str, Any]) -> None:
     print("   • Death Place contains: null")
 
 
-def _print_search_results(results: list[dict[str, Any]], search_time: float, expected_score: int, test_name: str) -> None:
+def _print_search_results(
+    results: list[dict[str, Any]], search_time: float, expected_score: int, test_name: str
+) -> None:
     """Print search results and validate performance."""
     print("\n📊 Search Results:")
     print(f"   Search time: {search_time:.3f}s")
@@ -2062,7 +1988,9 @@ def _print_search_results(results: list[dict[str, Any]], search_time: float, exp
         actual_score = top_result.get('total_score', 0)
         print(f"   Top match: {top_result.get('full_name_disp')} (Score: {actual_score})")
         print(f"   Score validation: {actual_score >= 50}")
-        print(f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})")
+        print(
+            f"   Expected score validation: {actual_score == expected_score} (Expected: {expected_score}, Actual: {actual_score})"
+        )
 
         performance_ok = search_time < 5.0
         print(f"   Performance validation: {performance_ok} (< 5.0s)")
@@ -2089,7 +2017,9 @@ def test_real_search_performance_and_accuracy() -> None:
     print(f"Expected: {config['first_name']} {config['last_name']} found with consistent scoring and good performance")
 
     # Load real GEDCOM data from configuration
-    gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+    gedcom_path = (
+        config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+    )
     if not gedcom_path or not Path(gedcom_path).exists():
         print(f"{Colors.YELLOW}⚠️ GEDCOM_FILE_PATH not configured or file not found, skipping test{Colors.RESET}")
         return  # Return nothing (part of TestSuite)
@@ -2111,7 +2041,7 @@ def test_real_search_performance_and_accuracy() -> None:
         "birth_year": config['birth_year'],
         "birth_place": config['birth_place'],
         "death_year": None,
-        "death_place": None
+        "death_place": None,
     }
 
     _print_search_criteria(config)
@@ -2119,9 +2049,11 @@ def test_real_search_performance_and_accuracy() -> None:
 
     start_time = time.time()
     results = filter_and_score_individuals(
-        gedcom_data, search_criteria, search_criteria,
+        gedcom_data,
+        search_criteria,
+        search_criteria,
         dict(config_schema.common_scoring_weights),
-        {"year_match_range": 5}
+        {"year_match_range": 5},
     )
     search_time = time.time() - start_time
 
@@ -2159,17 +2091,13 @@ def test_family_relationship_analysis() -> None:
         "first_name": test_first_name.lower(),
         "surname": test_last_name.lower(),
         "birth_year": test_birth_year,
-        "birth_place": test_birth_place  # Add birth place for consistent scoring
+        "birth_place": test_birth_place,  # Add birth place for consistent scoring
     }
 
     print(f"\n🔍 Locating {test_first_name} {test_last_name}...")
 
     person_results = filter_and_score_individuals(
-        gedcom_data,
-        person_search,
-        person_search,
-        dict(config_schema.common_scoring_weights),
-        {"year_match_range": 5}
+        gedcom_data, person_search, person_search, dict(config_schema.common_scoring_weights), {"year_match_range": 5}
     )
 
     if not person_results:
@@ -2271,6 +2199,7 @@ def test_api_search_peter_fraser() -> None:
     except Exception as e:
         print(f"{Colors.RED}❌ API search test failed: {e}{Colors.RESET}")
         import traceback
+
         traceback.print_exc()
         raise  # Fail test on exception
 
@@ -2286,9 +2215,7 @@ def test_relationship_path_calculation() -> None:
     config = _get_test_person_config()
 
     # Get tree owner data from configuration
-    reference_person_name: str = (
-        config_schema.reference_person_name if config_schema else "Tree Owner"
-    )
+    reference_person_name: str = config_schema.reference_person_name if config_schema else "Tree Owner"
 
     # Use cached GEDCOM data (already loaded in Test 3)
     gedcom_data = get_cached_gedcom()
@@ -2303,17 +2230,13 @@ def test_relationship_path_calculation() -> None:
         "first_name": config['first_name'].lower(),
         "surname": config['last_name'].lower(),
         "birth_year": config['birth_year'],
-        "birth_place": config['birth_place']
+        "birth_place": config['birth_place'],
     }
 
     print(f"\n🔍 Locating {config['first_name']} {config['last_name']}...")
 
     person_results = filter_and_score_individuals(
-        gedcom_data,
-        person_search,
-        person_search,
-        dict(config_schema.common_scoring_weights),
-        {"year_match_range": 5}
+        gedcom_data, person_search, person_search, dict(config_schema.common_scoring_weights), {"year_match_range": 5}
     )
 
     if not person_results:
@@ -2418,9 +2341,7 @@ def test_main_patch() -> None:
 def _test_retry_helper_alignment_action10() -> None:
     """Ensure action10.main leverages the telemetry-derived API retry helper."""
     helper_name = getattr(main, "__retry_helper__", None)
-    assert helper_name == "api_retry", (
-        f"action10.main should use api_retry helper, found: {helper_name}"
-    )
+    assert helper_name == "api_retry", f"action10.main should use api_retry helper, found: {helper_name}"
 
 
 @fast_test_cache
@@ -2449,7 +2370,9 @@ def action10_module_tests() -> bool:
     skip_slow_tests = os.environ.get("SKIP_SLOW_TESTS", "").lower() == "true"
     if not skip_slow_tests:
         _register_scoring_tests(suite, debug_wrapper, test_fraser_gault_scoring_algorithm)
-        _register_relationship_tests(suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation)
+        _register_relationship_tests(
+            suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation
+        )
         _register_api_search_tests(suite, debug_wrapper, test_api_search_peter_fraser)
     else:
         logger.info("⏭️  Skipping GEDCOM-dependent tests (SKIP_SLOW_TESTS=true) - running in parallel mode")
@@ -2555,9 +2478,7 @@ def validate_performance_improvements() -> bool:
         logger.info(f"✓ 4x speedup target: {'PASS' if target_4x else 'FAIL'}")
 
         # Target 3: Cache effectiveness (handle ultra-fast times)
-        cache_effective = (
-            results["optimized"]["cache_speedup"] >= 1.1
-        )  # Lowered threshold for ultra-fast operations
+        cache_effective = results["optimized"]["cache_speedup"] >= 1.1  # Lowered threshold for ultra-fast operations
         targets_met.append(cache_effective)
         logger.info(f"✓ Cache effectiveness: {'PASS' if cache_effective else 'FAIL'}")
 
@@ -2618,6 +2539,7 @@ if __name__ == "__main__":
     # Suppress all performance monitoring during tests
     import os
     import traceback  # Use centralized path management - already handled at module level
+
     os.environ['DISABLE_PERFORMANCE_MONITORING'] = '1'
 
     from logging_config import setup_logging
@@ -2631,7 +2553,13 @@ if __name__ == "__main__":
     null_handler = logging.NullHandler()
 
     # Disable all performance-related loggers more aggressively
-    for logger_name in ['performa', 'performance', 'performance_monitor', 'performance_orchestrator', 'performance_wrapper']:
+    for logger_name in [
+        'performa',
+        'performance',
+        'performance_monitor',
+        'performance_orchestrator',
+        'performance_wrapper',
+    ]:
         perf_logger = logging.getLogger(logger_name)
         perf_logger.handlers = [null_handler]
         perf_logger.setLevel(logging.CRITICAL + 1)  # Above critical
@@ -2677,9 +2605,7 @@ if __name__ == "__main__":
             # Prefer the module-local suite when present
             success = action10_module_tests()
         except Exception:
-            print(
-                "\n[ERROR] Unhandled exception during Action 10 tests:", file=sys.stderr
-            )
+            print("\n[ERROR] Unhandled exception during Action 10 tests:", file=sys.stderr)
             traceback.print_exc()
             success = False
 

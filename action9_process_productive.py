@@ -71,12 +71,8 @@ from utils import format_name
 
 # === CONSTANTS ===
 PRODUCTIVE_SENTIMENT = "PRODUCTIVE"  # Sentiment string set by Action 7
-OTHER_SENTIMENT = (
-    "OTHER"  # Sentiment string for messages that don't fit other categories
-)
-ACKNOWLEDGEMENT_MESSAGE_TYPE = (
-    "Productive_Reply_Acknowledgement"  # Key in messages.json
-)
+OTHER_SENTIMENT = "OTHER"  # Sentiment string for messages that don't fit other categories
+ACKNOWLEDGEMENT_MESSAGE_TYPE = "Productive_Reply_Acknowledgement"  # Key in messages.json
 CUSTOM_RESPONSE_MESSAGE_TYPE = "Automated_Genealogy_Response"  # Key in messages.json
 
 # Keywords that indicate no response should be sent
@@ -287,6 +283,7 @@ class AIResponse(BaseModel):
 # Global variable to cache the GEDCOM data
 class _GedcomDataCache:
     """Manages cached GEDCOM data state."""
+
     data: Optional[Any] = None
 
 
@@ -312,9 +309,7 @@ def get_gedcom_data() -> Optional[Any]:
 
     # Check if GEDCOM file exists
     if not gedcom_path.exists():
-        logger.warning(
-            f"GEDCOM file not found at {gedcom_path}. Cannot load GEDCOM file."
-        )
+        logger.warning(f"GEDCOM file not found at {gedcom_path}. Cannot load GEDCOM file.")
         return None
 
     # Load GEDCOM data
@@ -326,9 +321,7 @@ def get_gedcom_data() -> Optional[Any]:
         if _GedcomDataCache.data:
             logger.debug("GEDCOM file loaded successfully and cached for reuse.")
             # Log some stats about the loaded data
-            logger.debug(
-                f"  Index size: {len(getattr(_GedcomDataCache.data, 'indi_index', {}))}"
-            )
+            logger.debug(f"  Index size: {len(getattr(_GedcomDataCache.data, 'indi_index', {}))}")
             logger.debug(
                 f"  Pre-processed cache size: {len(getattr(_GedcomDataCache.data, 'processed_data_cache', {}))}"
             )
@@ -434,9 +427,7 @@ def _ensure_task_list_id(state: MSGraphState) -> bool:
     logger.debug(f"Resolving MS To-Do list '{state.list_name}' for enhanced task creation...")
     state.list_id = ms_graph_utils.get_todo_list_id(state.token, state.list_name)
     if not state.list_id:
-        logger.warning(
-            f"MS To-Do list '{state.list_name}' not found; skipping enhanced task creation."
-        )
+        logger.warning(f"MS To-Do list '{state.list_name}' not found; skipping enhanced task creation.")
         return False
     return True
 
@@ -648,11 +639,7 @@ class PersonProcessor:
         self.db_state = db_state
         self.msg_config = msg_config
         self.ms_state = ms_state
-        self.my_pid_lower = (
-            session_manager.my_profile_id.lower()
-            if session_manager.my_profile_id
-            else ""
-        )
+        self.my_pid_lower = session_manager.my_profile_id.lower() if session_manager.my_profile_id else ""
         self._ai_cache: dict[str, tuple[dict[str, Any], list[str]]] = {}
 
     def process_person(self, person: Person) -> tuple[bool, str]:
@@ -717,18 +704,14 @@ class PersonProcessor:
 
         return success, status
 
-    def _get_context_logs(
-        self, person: Person, log_prefix: str
-    ) -> Optional[list[ConversationLog]]:
+    def _get_context_logs(self, person: Person, log_prefix: str) -> Optional[list[ConversationLog]]:
         """Get message context for the person."""
         if self.db_state.session is None:
             logger.error(f"Database session is None for {log_prefix}")
             return None
         context_logs = _get_message_context(self.db_state.session, person.id)
         if not context_logs:
-            logger.warning(
-                f"Skipping {log_prefix}: Failed to retrieve message context."
-            )
+            logger.warning(f"Skipping {log_prefix}: Failed to retrieve message context.")
         return context_logs
 
     def _should_skip_person(
@@ -758,17 +741,13 @@ class PersonProcessor:
             return True, None
 
         # Check if custom reply already sent
-        custom_reply_sent_at = safe_column_value(
-            latest_message, "custom_reply_sent_at", None
-        )
+        custom_reply_sent_at = safe_column_value(latest_message, "custom_reply_sent_at", None)
         if custom_reply_sent_at is not None:
             logger.info(f"{log_prefix}: Custom reply already sent. Skipping.")
             return True, latest_message
 
         # Check for exclusion keywords
-        latest_message_content = safe_column_value(
-            latest_message, "latest_message_content", ""
-        )
+        latest_message_content = safe_column_value(latest_message, "latest_message_content", "")
         if should_exclude_message(latest_message_content):
             logger.info(f"{log_prefix}: Message contains exclusion keyword. Skipping.")
             return True, latest_message
@@ -782,9 +761,7 @@ class PersonProcessor:
         return False, latest_message
 
     @staticmethod
-    def _get_latest_incoming_message(
-        context_logs: list[ConversationLog]
-    ) -> Optional[ConversationLog]:
+    def _get_latest_incoming_message(context_logs: list[ConversationLog]) -> Optional[ConversationLog]:
         """Get the latest incoming message from context logs."""
         for log in reversed(context_logs):
             direction = safe_column_value(log, "direction", None)
@@ -793,9 +770,7 @@ class PersonProcessor:
         return None
 
     @staticmethod
-    def _should_bypass_ai_extraction(
-        latest_message: ConversationLog, log_prefix: str
-    ) -> bool:
+    def _should_bypass_ai_extraction(latest_message: ConversationLog, log_prefix: str) -> bool:
         """Determine if AI extraction can be skipped for low-detail OTHER replies."""
 
         ai_sentiment = safe_column_value(latest_message, "ai_sentiment", None)
@@ -838,16 +813,12 @@ class PersonProcessor:
             return None
 
         # Format context for AI
-        formatted_context = _format_context_for_ai_extraction(
-            context_logs, self.my_pid_lower
-        )
+        formatted_context = _format_context_for_ai_extraction(context_logs, self.my_pid_lower)
 
         # Allow fast-path skip for low-information OTHER replies
         if self._should_bypass_ai_extraction(latest_message, log_prefix):
             default_structure = _get_default_ai_response_structure()
-            logger.info(
-                f"{log_prefix}: Skipping AI extraction for low-detail 'OTHER' reply."
-            )
+            logger.info(f"{log_prefix}: Skipping AI extraction for low-detail 'OTHER' reply.")
             return (
                 deepcopy(default_structure["extracted_data"]),
                 list(default_structure["suggested_tasks"]),
@@ -859,17 +830,13 @@ class PersonProcessor:
         cache_key = f"{ai_provider}:{context_hash}"
         cached_result = self._ai_cache.get(cache_key)
         if cached_result:
-            logger.debug(
-                f"{log_prefix}: Using cached AI extraction result (hash {context_hash[:8]})."
-            )
+            logger.debug(f"{log_prefix}: Using cached AI extraction result (hash {context_hash[:8]}).")
             cached_data, cached_tasks = cached_result
             return deepcopy(cached_data), list(cached_tasks)
 
         # Call AI
         logger.debug(f"Calling AI for {person.username}...")
-        ai_response = extract_genealogical_entities(
-            formatted_context, self.session_manager
-        )
+        ai_response = extract_genealogical_entities(formatted_context, self.session_manager)
 
         # Process AI response
         processed_response = _process_ai_response(ai_response, f"{person.username}")
@@ -878,14 +845,10 @@ class PersonProcessor:
 
         # Log results
         if suggested_tasks:
-            logger.debug(
-                f"Processed {len(suggested_tasks)} tasks for {person.username}"
-            )
+            logger.debug(f"Processed {len(suggested_tasks)} tasks for {person.username}")
 
         entity_counts = {k: len(v) for k, v in extracted_data.items()}
-        logger.debug(
-            f"Extracted entities for {person.username}: {json.dumps(entity_counts)}"
-        )
+        logger.debug(f"Extracted entities for {person.username}: {json.dumps(entity_counts)}")
 
         # Cache result for this context to avoid repeated AI calls during the run
         self._ai_cache[cache_key] = (
@@ -895,9 +858,7 @@ class PersonProcessor:
 
         return extracted_data, suggested_tasks
 
-    def _lookup_mentioned_people(
-        self, extracted_data: dict[str, Any], person: Person
-    ) -> list[PersonLookupResult]:
+    def _lookup_mentioned_people(self, extracted_data: dict[str, Any], person: Person) -> list[PersonLookupResult]:
         """
         Look up people mentioned in the conversation using Action 10 (GEDCOM) and Action 11 (API).
 
@@ -931,7 +892,9 @@ class PersonProcessor:
                 logger.info(f"Found {person_name} in GEDCOM with score {gedcom_result.match_score}")
                 lookup_results.append(gedcom_result)
                 people_found_count += 1
-                self._track_person_lookup_analytics(person, person_name, gedcom_result.match_score, "GEDCOM", found=True)
+                self._track_person_lookup_analytics(
+                    person, person_name, gedcom_result.match_score, "GEDCOM", found=True
+                )
                 continue
 
             # If not found in GEDCOM, try API search (Action 11)
@@ -947,10 +910,7 @@ class PersonProcessor:
 
             # Not found in GEDCOM or API
             logger.debug(f"{person_name} not found in GEDCOM or API")
-            not_found = create_not_found_result(
-                person_name,
-                reason="Person not found in GEDCOM file or API"
-            )
+            not_found = create_not_found_result(person_name, reason="Person not found in GEDCOM file or API")
             lookup_results.append(not_found)
             self._track_person_lookup_analytics(person, person_name, None, "GEDCOM+API", found=False)
 
@@ -966,7 +926,8 @@ class PersonProcessor:
                 return
 
             event_desc = (
-                f"Found {person_name} in {source} (score: {match_score})" if found
+                f"Found {person_name} in {source} (score: {match_score})"
+                if found
                 else f"Person {person_name} not found in {source}"
             )
             event_data: dict[str, Any] = {"person_name": person_name, "source": source}
@@ -995,7 +956,11 @@ class PersonProcessor:
         """Load GEDCOM data from configured path."""
         from gedcom_cache import load_gedcom_with_aggressive_caching
 
-        gedcom_path = config_schema.database.gedcom_file_path if config_schema and config_schema.database.gedcom_file_path else None
+        gedcom_path = (
+            config_schema.database.gedcom_file_path
+            if config_schema and config_schema.database.gedcom_file_path
+            else None
+        )
         if not gedcom_path:
             logger.warning("GEDCOM file path not configured, skipping GEDCOM search")
             return None
@@ -1081,9 +1046,7 @@ class PersonProcessor:
                 return None
 
             # Get relationship path using gedcom_search_utils
-            relationship_path = self._get_relationship_path_for_person(
-                gedcom_data, top_result.get("id")
-            )
+            relationship_path = self._get_relationship_path_for_person(gedcom_data, top_result.get("id"))
 
             # Create PersonLookupResult from GEDCOM data
             return create_result_from_gedcom(
@@ -1097,9 +1060,7 @@ class PersonProcessor:
             return None
 
     @staticmethod
-    def _get_relationship_path_for_person(
-        gedcom_data: Any, person_id: Optional[str]
-    ) -> Optional[str]:
+    def _get_relationship_path_for_person(gedcom_data: Any, person_id: Optional[str]) -> Optional[str]:
         """
         Get relationship path between found person and reference person.
 
@@ -1119,9 +1080,7 @@ class PersonProcessor:
 
             # Get reference person ID from config
             reference_id = (
-                config_schema.reference_person_id
-                if config_schema and config_schema.reference_person_id
-                else None
+                config_schema.reference_person_id if config_schema and config_schema.reference_person_id else None
             )
 
             if not reference_id:
@@ -1272,9 +1231,7 @@ class PersonProcessor:
         return min(score, 100)
 
     @staticmethod
-    def _calculate_next_contact_date(
-        person: Person, engagement_score: int
-    ) -> Optional[datetime]:
+    def _calculate_next_contact_date(person: Person, engagement_score: int) -> Optional[datetime]:
         """
         Calculate next contact date based on engagement score and status transitions.
 
@@ -1348,11 +1305,7 @@ class PersonProcessor:
                 return
 
             # Get or create conversation state
-            conv_state = (
-                self.db_state.session.query(ConversationState)
-                .filter_by(people_id=person.id)
-                .first()
-            )
+            conv_state = self.db_state.session.query(ConversationState).filter_by(people_id=person.id).first()
 
             if conv_state is None:
                 conv_state = ConversationState(people_id=person.id)
@@ -1386,9 +1339,7 @@ class PersonProcessor:
 
             # Phase 4: Calculate next contact date based on engagement and status
             current_engagement = safe_column_value(conv_state, "engagement_score", 0)
-            next_contact_date = self._calculate_next_contact_date(
-                person, current_engagement
-            )
+            next_contact_date = self._calculate_next_contact_date(person, current_engagement)
             if next_contact_date:
                 conv_state.next_action_date = next_contact_date
                 conv_state.next_action = "send_follow_up"
@@ -1440,17 +1391,13 @@ class PersonProcessor:
         self._initialize_ms_graph()
 
         if not self.ms_state.token or not self.ms_state.list_id:
-            logger.warning(
-                f"{log_prefix}: Skipping MS task creation - MS Auth/List ID unavailable."
-            )
+            logger.warning(f"{log_prefix}: Skipping MS task creation - MS Auth/List ID unavailable.")
             return True
 
         # Check dry run mode
         app_mode = config_schema.app_mode
         if app_mode == "dry_run":
-            logger.info(
-                f"{log_prefix}: DRY RUN - Skipping MS To-Do task creation for {len(suggested_tasks)} tasks."
-            )
+            logger.info(f"{log_prefix}: DRY RUN - Skipping MS To-Do task creation for {len(suggested_tasks)} tasks.")
             return True
 
         return False
@@ -1476,7 +1423,9 @@ class PersonProcessor:
             rel_lower = person.predicted_relationship.lower()
 
             # High priority: Close relatives (1st-2nd cousins, immediate family)
-            if any(term in rel_lower for term in ["1st", "2nd", "parent", "sibling", "child", "grandparent", "grandchild"]):
+            if any(
+                term in rel_lower for term in ["1st", "2nd", "parent", "sibling", "child", "grandparent", "grandchild"]
+            ):
                 importance = "high"
                 due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")  # 1 week
                 categories.append("Close Relative")
@@ -1494,9 +1443,9 @@ class PersonProcessor:
                 categories.append("Distant Relative")
 
         # Adjust based on tree status
-        if person.tree_status == "in_tree":
+        if person.in_my_tree:
             categories.append("In Tree")
-        elif person.tree_status == "out_tree":
+        else:
             categories.append("Out of Tree")
 
         return importance, due_date, categories
@@ -1505,7 +1454,9 @@ class PersonProcessor:
     def _add_person_urls(task_body_parts: list[str], person: Person) -> None:
         """Add Ancestry profile and DNA comparison URLs to task body."""
         if person.profile_id:
-            task_body_parts.append(f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}")
+            task_body_parts.append(
+                f"Ancestry Profile: https://www.ancestry.com/secure/member/profile?id={person.profile_id}"
+            )
 
         if person.dna_match and hasattr(person.dna_match, 'compare_link'):
             task_body_parts.append(f"DNA Comparison: {person.dna_match.compare_link}")
@@ -1555,7 +1506,9 @@ class PersonProcessor:
 
         return task_body_parts
 
-    def _submit_task_to_ms_graph(self, task_title: str, task_body: str, importance: str, due_date: Optional[str], categories: list[str]) -> bool:
+    def _submit_task_to_ms_graph(
+        self, task_title: str, task_body: str, importance: str, due_date: Optional[str], categories: list[str]
+    ) -> bool:
         """Submit task to MS Graph and return success status."""
         if self.ms_state.token and self.ms_state.list_id:
             task_id = ms_graph_utils.create_todo_task(
@@ -1601,9 +1554,7 @@ class PersonProcessor:
         task_ok = self._submit_task_to_ms_graph(task_title, task_body, importance, due_date, categories)
 
         if not task_ok:
-            logger.warning(
-                f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'"
-            )
+            logger.warning(f"{log_prefix}: Failed to create MS task: '{task_desc[:100]}...'")
 
         return task_ok
 
@@ -1622,9 +1573,7 @@ class PersonProcessor:
         # Create tasks
         logger.info(f"{log_prefix}: Creating {len(suggested_tasks)} MS To-Do tasks...")
         for task_index, task_desc in enumerate(suggested_tasks):
-            self._create_single_ms_task(
-                person, task_desc, task_index, len(suggested_tasks), log_prefix
-            )
+            self._create_single_ms_task(person, task_desc, task_index, len(suggested_tasks), log_prefix)
 
     def _initialize_ms_graph(self) -> None:
         """Initialize MS Graph authentication and list ID if needed."""
@@ -1638,16 +1587,10 @@ class PersonProcessor:
                 logger.warning("MS Graph token not available (authentication may have been skipped at startup).")
 
         if self.ms_state.token and not self.ms_state.list_id:
-            logger.debug(
-                f"Looking up MS To-Do List ID for '{self.ms_state.list_name}'..."
-            )
-            self.ms_state.list_id = ms_graph_utils.get_todo_list_id(
-                self.ms_state.token, self.ms_state.list_name
-            )
+            logger.debug(f"Looking up MS To-Do List ID for '{self.ms_state.list_name}'...")
+            self.ms_state.list_id = ms_graph_utils.get_todo_list_id(self.ms_state.token, self.ms_state.list_name)
             if not self.ms_state.list_id:
-                logger.warning(
-                    f"Failed to find MS To-Do list '{self.ms_state.list_name}'. Tasks will not be created."
-                )
+                logger.warning(f"Failed to find MS To-Do list '{self.ms_state.list_name}'. Tasks will not be created.")
 
     def _handle_message_response(
         self,
@@ -1665,9 +1608,7 @@ class PersonProcessor:
         if ai_sentiment == OTHER_SENTIMENT:
             mentioned_names = extracted_data.get("mentioned_names", [])
             if not mentioned_names:
-                logger.info(
-                    f"{log_prefix}: Message is 'OTHER' with no names. Marking as processed."
-                )
+                logger.info(f"{log_prefix}: Message is 'OTHER' with no names. Marking as processed.")
                 self._mark_message_processed(latest_message)
                 return True  # Successfully handled (by skipping)
 
@@ -1681,9 +1622,7 @@ class PersonProcessor:
         )
 
         # Format message (custom or standard acknowledgment)
-        message_text, message_type_id = self._format_message(
-            person, extracted_data, custom_reply, log_prefix
-        )
+        message_text, message_type_id = self._format_message(person, extracted_data, custom_reply, log_prefix)
         # Apply filtering and send message
         return self._send_message(
             person,
@@ -1737,11 +1676,7 @@ class PersonProcessor:
 
         conv_state = None
         if self.db_state.session:
-            conv_state = (
-                self.db_state.session.query(ConversationState)
-                .filter_by(people_id=person.id)
-                .first()
-            )
+            conv_state = self.db_state.session.query(ConversationState).filter_by(people_id=person.id).first()
 
         if conv_state:
             conversation_phase = safe_column_value(conv_state, "conversation_phase", "initial_outreach")
@@ -1761,7 +1696,9 @@ class PersonProcessor:
         """Get DNA data, tree statistics, and relationship path for a person."""
         dna_data = ""
         if person.dna_match:
-            dna_data = f"DNA Match: {person.dna_match.shared_dna_cm} cM shared, Confidence: {person.dna_match.confidence}"
+            dna_data = (
+                f"DNA Match: {person.dna_match.shared_dna_cm} cM shared, Confidence: {person.dna_match.confidence}"
+            )
 
         tree_stats = ""
         if person.family_tree:
@@ -1783,9 +1720,7 @@ class PersonProcessor:
     ) -> Optional[str]:
         """Generate contextual reply using Phase 3 dialogue engine."""
         # Get conversation state
-        conversation_phase, engagement_score, last_topic, pending_questions = (
-            self._get_conversation_state_data(person)
-        )
+        conversation_phase, engagement_score, last_topic, pending_questions = self._get_conversation_state_data(person)
 
         # Format lookup results
         lookup_results_str = self._format_lookup_results_for_ai(lookup_results)
@@ -1819,9 +1754,20 @@ class PersonProcessor:
     def _score_relationship_path(response_lower: str, lookup_results: list[PersonLookupResult]) -> int:
         """Score relationship path specificity (30 points max)."""
         relationship_keywords = [
-            "cousin", "great-grandfather", "great-grandmother", "grandfather", "grandmother",
-            "2nd cousin", "3rd cousin", "4th cousin", "once removed", "twice removed",
-            "through", "common ancestor", "descended from", "related through"
+            "cousin",
+            "great-grandfather",
+            "great-grandmother",
+            "grandfather",
+            "grandmother",
+            "2nd cousin",
+            "3rd cousin",
+            "4th cousin",
+            "once removed",
+            "twice removed",
+            "through",
+            "common ancestor",
+            "descended from",
+            "related through",
         ]
         relationship_count = sum(1 for keyword in relationship_keywords if keyword in response_lower)
 
@@ -1840,8 +1786,36 @@ class PersonProcessor:
         """Score genealogical evidence citations (25 points max)."""
         evidence_patterns = {
             "years": len([w for w in response_text.split() if w.isdigit() and len(w) == 4 and 1700 < int(w) < 2025]),
-            "places": sum(1 for place in ["Scotland", "England", "Ireland", "Wales", "Aberdeen", "Banff", "Edinburgh", "Glasgow", "county", "parish"] if place.lower() in response_lower),
-            "record_types": sum(1 for record in ["census", "birth record", "death record", "marriage record", "baptism", "burial", "certificate", "register"] if record.lower() in response_lower),
+            "places": sum(
+                1
+                for place in [
+                    "Scotland",
+                    "England",
+                    "Ireland",
+                    "Wales",
+                    "Aberdeen",
+                    "Banff",
+                    "Edinburgh",
+                    "Glasgow",
+                    "county",
+                    "parish",
+                ]
+                if place.lower() in response_lower
+            ),
+            "record_types": sum(
+                1
+                for record in [
+                    "census",
+                    "birth record",
+                    "death record",
+                    "marriage record",
+                    "baptism",
+                    "burial",
+                    "certificate",
+                    "register",
+                ]
+                if record.lower() in response_lower
+            ),
             "dates": response_text.count("(") if "(" in response_text else 0,  # Parenthetical dates like "(1850-1920)"
         }
         total_evidence = sum(evidence_patterns.values())
@@ -1860,16 +1834,36 @@ class PersonProcessor:
     def _score_actionable_steps(response_text: str, response_lower: str) -> int:
         """Score actionable next steps (25 points max)."""
         action_verbs = [
-            "search for", "look for", "check", "verify", "find", "locate", "review",
-            "examine", "compare", "confirm", "investigate", "explore", "research"
+            "search for",
+            "look for",
+            "check",
+            "verify",
+            "find",
+            "locate",
+            "review",
+            "examine",
+            "compare",
+            "confirm",
+            "investigate",
+            "explore",
+            "research",
         ]
         action_verb_count = sum(1 for verb in action_verbs if verb in response_lower)
 
         question_count = response_text.count("?")
 
         next_step_phrases = [
-            "next step", "would you like", "can you share", "do you have", "could you",
-            "would it help", "i can", "i'll", "let me know", "if you", "when you"
+            "next step",
+            "would you like",
+            "can you share",
+            "do you have",
+            "could you",
+            "would it help",
+            "i can",
+            "i'll",
+            "let me know",
+            "if you",
+            "when you",
         ]
         next_step_count = sum(1 for phrase in next_step_phrases if phrase in response_lower)
 
@@ -1896,14 +1890,29 @@ class PersonProcessor:
 
         # Check for warm language
         warm_words = [
-            "thank you", "thanks", "wonderful", "exciting", "great", "pleased", "happy",
-            "appreciate", "interesting", "fascinating", "amazing", "delighted"
+            "thank you",
+            "thanks",
+            "wonderful",
+            "exciting",
+            "great",
+            "pleased",
+            "happy",
+            "appreciate",
+            "interesting",
+            "fascinating",
+            "amazing",
+            "delighted",
         ]
         warm_count = sum(1 for word in warm_words if word in response_lower)
 
         # Check for acknowledgment phrases
         acknowledgment_phrases = [
-            "you mentioned", "you said", "your message", "your question", "your great", "your ancestor"
+            "you mentioned",
+            "you said",
+            "your message",
+            "your question",
+            "your great",
+            "your ancestor",
         ]
         acknowledgment_count = sum(1 for phrase in acknowledgment_phrases if phrase in response_lower)
 
@@ -1991,9 +2000,7 @@ class PersonProcessor:
             logger.info(f"{log_prefix}: Using {len(lookup_results)} lookup results for contextual reply")
 
             if not config_schema.custom_response_enabled:
-                logger.info(
-                    f"{log_prefix}: Custom replies disabled via config. Using standard."
-                )
+                logger.info(f"{log_prefix}: Custom replies disabled via config. Using standard.")
                 return None
 
             # Generate contextual reply using Phase 3 dialogue engine
@@ -2032,9 +2039,7 @@ class PersonProcessor:
                         logger.warning(f"{log_prefix}: Failed to log quality score to analytics: {e}")
 
             else:
-                logger.warning(
-                    f"{log_prefix}: Failed to generate contextual reply. Will fall back to standard reply."
-                )
+                logger.warning(f"{log_prefix}: Failed to generate contextual reply. Will fall back to standard reply.")
 
             return custom_reply
 
@@ -2043,31 +2048,21 @@ class PersonProcessor:
         person_details = _identify_and_get_person_details(log_prefix)
 
         if not person_details:
-            logger.debug(
-                f"{log_prefix}: No person identified. Will use standard acknowledgement."
-            )
+            logger.debug(f"{log_prefix}: No person identified. Will use standard acknowledgement.")
             return None
 
         # Check if custom responses are enabled
         if not config_schema.custom_response_enabled:
-            logger.info(
-                f"{log_prefix}: Custom replies disabled via config. Using standard."
-            )
+            logger.info(f"{log_prefix}: Custom replies disabled via config. Using standard.")
             return None
 
         # Format genealogical data
-        genealogical_data_str = _format_genealogical_data_for_ai(
-            person_details.get("details", {})
-        )
+        genealogical_data_str = _format_genealogical_data_for_ai(person_details.get("details", {}))
         # Get user's last message
-        user_last_message = safe_column_value(
-            latest_message, "latest_message_content", ""
-        )
+        user_last_message = safe_column_value(latest_message, "latest_message_content", "")
 
         # Format context
-        formatted_context = _format_context_for_ai_extraction(
-            context_logs, self.my_pid_lower
-        )
+        formatted_context = _format_context_for_ai_extraction(context_logs, self.my_pid_lower)
 
         # Generate custom reply using standard genealogical reply (fallback)
         custom_reply = generate_genealogical_reply(
@@ -2080,9 +2075,7 @@ class PersonProcessor:
         if custom_reply:
             logger.info(f"{log_prefix}: Generated custom genealogical reply.")
         else:
-            logger.warning(
-                f"{log_prefix}: Failed to generate custom reply. Will fall back."
-            )
+            logger.warning(f"{log_prefix}: Failed to generate custom reply. Will fall back.")
 
         return custom_reply
 
@@ -2110,7 +2103,9 @@ class PersonProcessor:
         name_to_use = format_name(first_name or username)
         summary_for_ack = _generate_ack_summary(extracted_data)
         if self.msg_config.templates and ACKNOWLEDGEMENT_MESSAGE_TYPE in self.msg_config.templates:
-            msg = self.msg_config.templates[ACKNOWLEDGEMENT_MESSAGE_TYPE].format(name=name_to_use, summary=summary_for_ack)
+            msg = self.msg_config.templates[ACKNOWLEDGEMENT_MESSAGE_TYPE].format(
+                name=name_to_use, summary=summary_for_ack
+            )
         else:
             user_name = getattr(config_schema, "user_name", "Tree Owner")
             msg = f"Dear {name_to_use},\n\nThank you for your message!\n\n{user_name}"
@@ -2125,7 +2120,9 @@ class PersonProcessor:
             lines.append(f"\nOur relationship appears to be: {rel_str}.")
 
     @staticmethod
-    def _build_relationship_diagram_line(person: Person, extracted_data: dict[str, Any], log_prefix: str) -> Optional[str]:
+    def _build_relationship_diagram_line(
+        person: Person, extracted_data: dict[str, Any], log_prefix: str
+    ) -> Optional[str]:
         rel_path = extracted_data.get("relationship_path")
         if not (isinstance(rel_path, list) and rel_path):
             return None
@@ -2198,9 +2195,7 @@ class PersonProcessor:
         """Format the message text and determine message type ID, with Phase 5 enrichments."""
         try:
             # 1) Base message
-            message_text, message_type_id = self._compose_base_message(
-                person, extracted_data, custom_reply, log_prefix
-            )
+            message_text, message_type_id = self._compose_base_message(person, extracted_data, custom_reply, log_prefix)
 
             # 2) Conditional enrichments (Phase 5 policy)
             if getattr(config_schema, "enable_task_enrichment", False):
@@ -2276,24 +2271,16 @@ class PersonProcessor:
                 return False, "skipped (config_error)"
             if current_profile_id != str(testing_profile_id):
                 return False, f"skipped (testing_mode_filter: not {testing_profile_id})"
-        elif (
-            app_mode == "production"
-            and testing_profile_id
-            and current_profile_id == str(testing_profile_id)
-        ):
+        elif app_mode == "production" and testing_profile_id and current_profile_id == str(testing_profile_id):
             return False, f"skipped (production_mode_filter: is {testing_profile_id})"
 
         return True, ""
 
     @staticmethod
-    def _get_conversation_id(
-        context_logs: list[ConversationLog], log_prefix: str
-    ) -> Optional[str]:
+    def _get_conversation_id(context_logs: list[ConversationLog], log_prefix: str) -> Optional[str]:
         """Get conversation ID from context logs."""
         if not context_logs:
-            logger.error(
-                f"{log_prefix}: No context logs available for conversation ID."
-            )
+            logger.error(f"{log_prefix}: No context logs available for conversation ID.")
             return None
 
         raw_conv_id_value: Any = getattr(context_logs[-1], "conversation_id", None)
@@ -2304,9 +2291,7 @@ class PersonProcessor:
         try:
             return str(raw_conv_id_value)
         except Exception as e:
-            logger.error(
-                f"{log_prefix}: Failed to convert conversation ID to string: {e}"
-            )
+            logger.error(f"{log_prefix}: Failed to convert conversation ID to string: {e}")
             return None
 
     @staticmethod
@@ -2339,11 +2324,7 @@ class PersonProcessor:
         log_prefix: str,
     ) -> None:
         """Update custom_reply_sent_at timestamp if this was a custom reply."""
-        if (
-            custom_reply
-            and latest_message
-            and message_type_id == self.msg_config.custom_reply_msg_type_id
-        ):
+        if custom_reply and latest_message and message_type_id == self.msg_config.custom_reply_msg_type_id:
             try:
                 if self.db_state.session:
                     setattr(latest_message, "custom_reply_sent_at", datetime.now(timezone.utc))
@@ -2373,9 +2354,7 @@ class PersonProcessor:
         """Stage database updates for the processed message."""
 
         if not effective_conv_id:
-            logger.error(
-                f"{log_prefix}: effective_conv_id is None. Cannot stage log entry."
-            )
+            logger.error(f"{log_prefix}: effective_conv_id is None. Cannot stage log entry.")
             return False
 
         # Handle successful sends
@@ -2385,16 +2364,12 @@ class PersonProcessor:
                 person_id_int = int(str(person.id))
 
                 # Prepare and stage log data
-                log_data = self._create_log_data(
-                    person, message_text, message_type_id, send_status, effective_conv_id
-                )
+                log_data = self._create_log_data(person, message_text, message_type_id, send_status, effective_conv_id)
                 if self.db_state.logs_to_add is not None:
                     self.db_state.logs_to_add.append(log_data)
 
                 # Update custom_reply_sent_at if needed
-                self._update_custom_reply_timestamp(
-                    custom_reply, latest_message, message_type_id, log_prefix
-                )
+                self._update_custom_reply_timestamp(custom_reply, latest_message, message_type_id, log_prefix)
 
                 # Stage person for archiving
                 self._stage_person_for_archive(person_id_int, log_prefix)
@@ -2418,9 +2393,7 @@ class BatchCommitManager:
     def should_commit(self) -> bool:
         """Check if a commit should be triggered."""
         logs_count = len(self.db_state.logs_to_add) if self.db_state.logs_to_add else 0
-        updates_count = (
-            len(self.db_state.person_updates) if self.db_state.person_updates else 0
-        )
+        updates_count = len(self.db_state.person_updates) if self.db_state.person_updates else 0
         total_pending = logs_count + updates_count
         return total_pending >= self.db_state.commit_threshold
 
@@ -2435,15 +2408,9 @@ class BatchCommitManager:
             return True, 0, 0
 
         try:
-            logs_count = (
-                len(self.db_state.logs_to_add) if self.db_state.logs_to_add else 0
-            )
-            updates_count = (
-                len(self.db_state.person_updates) if self.db_state.person_updates else 0
-            )
-            logger.info(
-                f"Committing batch {batch_num} ({logs_count} logs, {updates_count} person updates)"
-            )
+            logs_count = len(self.db_state.logs_to_add) if self.db_state.logs_to_add else 0
+            updates_count = len(self.db_state.person_updates) if self.db_state.person_updates else 0
+            logger.info(f"Committing batch {batch_num} ({logs_count} logs, {updates_count} person updates)")
 
             if not self.db_state.session:
                 logger.error(f"Database session is None for batch {batch_num}")
@@ -2468,9 +2435,7 @@ class BatchCommitManager:
             return True, logs_committed, persons_updated
 
         except Exception as e:
-            logger.error(
-                f"Database commit failed for batch {batch_num}: {e}", exc_info=True
-            )
+            logger.error(f"Database commit failed for batch {batch_num}: {e}", exc_info=True)
             return False, 0, 0
 
 
@@ -2520,9 +2485,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             return False
 
         # Step 2: Query candidates
-        candidates = _query_candidates(
-            db_state, msg_config, config_schema.max_productive_to_process
-        )
+        candidates = _query_candidates(db_state, msg_config, config_schema.max_productive_to_process)
         if not candidates:
             logger.info("Action 9: No eligible candidates found.")
             return True
@@ -2552,9 +2515,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         )
 
         # Step 3: Process candidates
-        success = _process_candidates(
-            session_manager, candidates, state, ms_state, db_state, msg_config
-        )
+        success = _process_candidates(session_manager, candidates, state, ms_state, db_state, msg_config)
 
         # Step 4: Final commit
         _final_commit(db_state, state)
@@ -2579,9 +2540,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
         return success
 
     except Exception as e:
-        logger.critical(
-            f"Critical error in process_productive_messages: {e}", exc_info=True
-        )
+        logger.critical(f"Critical error in process_productive_messages: {e}", exc_info=True)
         log_action_banner(
             action_name="Process Productive",
             action_number=9,
@@ -2596,9 +2555,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
             session_manager.return_session(db_state.session)
 
 
-def _setup_configuration(
-    session_manager: SessionManager, db_state: DatabaseState, msg_config: MessageConfig
-) -> bool:
+def _setup_configuration(session_manager: SessionManager, db_state: DatabaseState, msg_config: MessageConfig) -> bool:
     """Setup configuration, templates, and database session."""
 
     # Load templates
@@ -2614,9 +2571,7 @@ def _setup_configuration(
         return False
     # Get message type IDs
     if not db_state.session:
-        logger.critical(
-            "Action 9: Database session is None when querying message types."
-        )
+        logger.critical("Action 9: Database session is None when querying message types.")
         return False
 
     ack_msg_type_obj = (
@@ -2625,9 +2580,7 @@ def _setup_configuration(
         .scalar()
     )
     if not ack_msg_type_obj:
-        logger.critical(
-            f"Action 9: MessageTemplate '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB."
-        )
+        logger.critical(f"Action 9: MessageTemplate '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in DB.")
         return False
     msg_config.ack_msg_type_id = ack_msg_type_obj
 
@@ -2640,17 +2593,13 @@ def _setup_configuration(
     if custom_reply_msg_type_obj:
         msg_config.custom_reply_msg_type_id = custom_reply_msg_type_obj
     else:
-        logger.warning(
-            f"Action 9: MessageTemplate '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB."
-        )
+        logger.warning(f"Action 9: MessageTemplate '{CUSTOM_RESPONSE_MESSAGE_TYPE}' not found in DB.")
 
     return True
 
 
 # @cached_database_query(ttl=300)  # 5-minute cache for candidate queries - module doesn't exist yet
-def _query_candidates(
-    db_state: DatabaseState, msg_config: MessageConfig, limit: int
-) -> list[Person]:
+def _query_candidates(db_state: DatabaseState, msg_config: MessageConfig, limit: int) -> list[Person]:
     """Query for candidate persons to process."""
 
     if not db_state.session:
@@ -2712,10 +2661,7 @@ def _query_candidates(
         .filter(
             Person.status == PersonStatusEnum.ACTIVE,
             (latest_ack_out_log_subq.c.max_ack_out_ts.is_(None))
-            | (
-                latest_ack_out_log_subq.c.max_ack_out_ts
-                < latest_in_log_subq.c.max_in_ts
-            ),
+            | (latest_ack_out_log_subq.c.max_ack_out_ts < latest_in_log_subq.c.max_in_ts),
             # Phase 4: Respect next_action_date for adaptive follow-up timing
             or_(
                 ConversationState.next_action_date.is_(None),
@@ -2754,9 +2700,7 @@ def _process_candidates(
             # Skip remaining candidates if critical DB error occurred
             remaining = state.total_candidates - state.processed_count
             state.skipped_count += remaining
-            logger.warning(
-                f"Skipping remaining {remaining} candidates due to DB error."
-            )
+            logger.warning(f"Skipping remaining {remaining} candidates due to DB error.")
             break
 
         state.processed_count += 1
@@ -2785,9 +2729,7 @@ def _process_candidates(
         # Check for batch commit
         if commit_manager.should_commit():
             state.batch_num += 1
-            commit_success, _, _ = (
-                commit_manager.commit_batch(state.batch_num)
-            )
+            commit_success, _, _ = commit_manager.commit_batch(state.batch_num)
 
             if not commit_success:
                 logger.critical(f"Critical: Batch {state.batch_num} commit failed!")
@@ -2811,21 +2753,15 @@ def _process_candidates(
 def _final_commit(db_state: DatabaseState, state: ProcessingState):
     """Perform final commit of any remaining data."""
 
-    if not state.critical_db_error_occurred and (
-        db_state.logs_to_add or db_state.person_updates
-    ):
+    if not state.critical_db_error_occurred and (db_state.logs_to_add or db_state.person_updates):
         state.batch_num += 1
         commit_manager = BatchCommitManager(db_state)
 
         logs_count = len(db_state.logs_to_add) if db_state.logs_to_add else 0
         updates_count = len(db_state.person_updates) if db_state.person_updates else 0
-        logger.info(
-            f"Committing final batch ({logs_count} logs, {updates_count} person updates)"
-        )
+        logger.info(f"Committing final batch ({logs_count} logs, {updates_count} person updates)")
 
-        commit_success, logs_committed, persons_updated = commit_manager.commit_batch(
-            state.batch_num
-        )
+        commit_success, logs_committed, persons_updated = commit_manager.commit_batch(state.batch_num)
 
         if not commit_success:
             logger.error("Final batch commit failed!")
@@ -2858,6 +2794,7 @@ def _log_summary(state: ProcessingState):
 
 # Helper functions for _process_ai_response
 
+
 def _get_default_ai_response_structure() -> dict[str, Any]:
     """Get the default empty structure for AI response."""
     return {
@@ -2872,9 +2809,7 @@ def _get_default_ai_response_structure() -> dict[str, Any]:
     }
 
 
-def _validate_with_pydantic(
-    ai_response: dict[str, Any], log_prefix: str
-) -> Optional[dict[str, Any]]:
+def _validate_with_pydantic(ai_response: dict[str, Any], log_prefix: str) -> Optional[dict[str, Any]]:
     """Try to validate AI response with Pydantic schema."""
     try:
         validated_response = AIResponse.model_validate(ai_response)
@@ -2886,9 +2821,7 @@ def _validate_with_pydantic(
         return None
 
 
-def _salvage_extracted_data(
-    ai_response: dict[str, Any], log_prefix: str
-) -> dict[str, list[Any]]:
+def _salvage_extracted_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, list[Any]]:
     """Try to salvage extracted_data from malformed AI response."""
     result = _get_default_ai_response_structure()["extracted_data"]
 
@@ -2904,20 +2837,14 @@ def _salvage_extracted_data(
 
         # Ensure it's a list and contains only strings
         if isinstance(value, list):
-            result[key] = [
-                str(item)
-                for item in value
-                if item is not None and isinstance(item, (str, int, float))
-            ]
+            result[key] = [str(item) for item in value if item is not None and isinstance(item, (str, int, float))]
         else:
             logger.warning(f"{log_prefix}: AI response 'extracted_data.{key}' is not a list. Using empty list.")
 
     return result
 
 
-def _salvage_suggested_tasks(
-    ai_response: dict[str, Any], log_prefix: str
-) -> list[Any]:
+def _salvage_suggested_tasks(ai_response: dict[str, Any], log_prefix: str) -> list[Any]:
     """Try to salvage suggested_tasks from malformed AI response."""
     if "suggested_tasks" not in ai_response:
         logger.warning(f"{log_prefix}: AI response missing 'suggested_tasks' list. Using empty list.")
@@ -2929,16 +2856,10 @@ def _salvage_suggested_tasks(
         logger.warning(f"{log_prefix}: AI response 'suggested_tasks' is not a list. Using empty list.")
         return []
 
-    return [
-        str(item)
-        for item in tasks_raw
-        if item is not None and isinstance(item, (str, int, float))
-    ]
+    return [str(item) for item in tasks_raw if item is not None and isinstance(item, (str, int, float))]
 
 
-def _salvage_partial_data(
-    ai_response: dict[str, Any], log_prefix: str
-) -> dict[str, Any]:
+def _salvage_partial_data(ai_response: dict[str, Any], log_prefix: str) -> dict[str, Any]:
     """Try to salvage partial data from malformed AI response."""
     try:
         extracted_data = _salvage_extracted_data(ai_response, log_prefix)
@@ -3132,9 +3053,7 @@ def _load_templates_for_action9() -> dict[str, str]:
 
         # Check if the required template exists
         if not templates or ACKNOWLEDGEMENT_MESSAGE_TYPE not in templates:
-            logger.error(
-                f"Required template '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in templates."
-            )
+            logger.error(f"Required template '{ACKNOWLEDGEMENT_MESSAGE_TYPE}' not found in templates.")
             return {}
 
         return templates
@@ -3146,21 +3065,15 @@ def _load_templates_for_action9() -> dict[str, str]:
 # REMOVED: _search_ancestry_tree - Dead code, use search_persons from person_search instead
 
 
-def _identify_and_get_person_details(
-    log_prefix: str
-) -> Optional[dict[str, Any]]:
+def _identify_and_get_person_details(log_prefix: str) -> Optional[dict[str, Any]]:
     """
     Simplified version that returns None (no person details found).
     """
-    logger.debug(
-        f"{log_prefix}: _identify_and_get_person_details - returning None (simplified version)"
-    )
+    logger.debug(f"{log_prefix}: _identify_and_get_person_details - returning None (simplified version)")
     return None
 
 
-def _format_genealogical_data_for_ai(
-    genealogical_data: dict[str, Any]
-) -> str:
+def _format_genealogical_data_for_ai(genealogical_data: dict[str, Any]) -> str:
     """
     Simplified version that formats genealogical data for AI consumption.
     """
@@ -3185,9 +3098,7 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
     try:
         # Get mentioned names
         names = extracted_data.get("extracted_data", {}).get("mentioned_names", [])
-        locations = extracted_data.get("extracted_data", {}).get(
-            "mentioned_locations", []
-        )
+        locations = extracted_data.get("extracted_data", {}).get("mentioned_locations", [])
         dates = extracted_data.get("extracted_data", {}).get("mentioned_dates", [])
 
         summary_parts: list[str] = []
@@ -3211,13 +3122,23 @@ def _generate_ack_summary(extracted_data: dict[str, Any]) -> str:
 # PHASE 5 RESEARCH ASSISTANT FEATURES
 # ==============================================
 
+
 def _check_close_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
     """Check if relationship is close (high priority)."""
     close_relationships = [
-        "parent", "child", "sibling", "brother", "sister",
-        "uncle", "aunt", "nephew", "niece",
-        "1st cousin", "first cousin",
-        "2nd cousin", "second cousin"
+        "parent",
+        "child",
+        "sibling",
+        "brother",
+        "sister",
+        "uncle",
+        "aunt",
+        "nephew",
+        "niece",
+        "1st cousin",
+        "first cousin",
+        "2nd cousin",
+        "second cousin",
     ]
     for close_rel in close_relationships:
         if close_rel in relationship_lower:
@@ -3227,10 +3148,7 @@ def _check_close_relationship(relationship_lower: str) -> Optional[tuple[str, in
 
 def _check_medium_relationship(relationship_lower: str) -> Optional[tuple[str, int]]:
     """Check if relationship is medium (normal priority)."""
-    medium_relationships = [
-        "3rd cousin", "third cousin",
-        "4th cousin", "fourth cousin"
-    ]
+    medium_relationships = ["3rd cousin", "third cousin", "4th cousin", "fourth cousin"]
     for medium_rel in medium_relationships:
         if medium_rel in relationship_lower:
             return "normal", 14
@@ -3256,8 +3174,7 @@ def _calculate_priority_from_dna(shared_dna_cm: Optional[float]) -> tuple[str, i
 
 
 def calculate_task_priority_from_relationship(
-    relationship: Optional[str],
-    shared_dna_cm: Optional[float] = None
+    relationship: Optional[str], shared_dna_cm: Optional[float] = None
 ) -> tuple[str, int]:
     """
     Calculate MS To-Do task priority and due date offset based on relationship closeness.
@@ -3333,9 +3250,7 @@ def create_enhanced_research_task(
         )
 
         if not _ensure_enhanced_task_ms_graph_state(_ENHANCED_TASK_STATE):
-            logger.info(
-                f"Enhanced task creation skipped for {person_name}: MS Graph unavailable."
-            )
+            logger.info(f"Enhanced task creation skipped for {person_name}: MS Graph unavailable.")
             return None
 
         return _submit_enhanced_task(_ENHANCED_TASK_STATE, payload, person_name)
@@ -3349,7 +3264,7 @@ def generate_ai_response_prompt(
     person_name: str,
     their_message: str,
     relationship_info: Optional[dict[str, Any]] = None,
-    missing_info: Optional[list[str]] = None
+    missing_info: Optional[list[str]] = None,
 ) -> str:
     """
     Generate an AI prompt for responding to a conversation.
@@ -3373,16 +3288,12 @@ def generate_ai_response_prompt(
         if missing_info:
             relationship = relationship_info.get('relationship') if relationship_info else None
             return create_research_guidance_prompt(
-                person_name=person_name,
-                relationship=relationship,
-                missing_info=missing_info
+                person_name=person_name, relationship=relationship, missing_info=missing_info
             )
 
         # Otherwise use conversation response prompt
         return create_conversation_response_prompt(
-            person_name=person_name,
-            their_message=their_message,
-            relationship_info=relationship_info
+            person_name=person_name, their_message=their_message, relationship_info=relationship_info
         )
 
     except Exception as e:
@@ -3391,9 +3302,7 @@ def generate_ai_response_prompt(
 
 
 def format_response_with_records(
-    person_name: str,
-    records: list[dict[str, Any]],
-    context: str = "I found these records that might be helpful:"
+    person_name: str, records: list[dict[str, Any]], context: str = "I found these records that might be helpful:"
 ) -> str:
     """
     Format a response that includes record sharing.
@@ -3408,6 +3317,7 @@ def format_response_with_records(
     """
     try:
         from record_sharing import create_record_sharing_message
+
         return create_record_sharing_message(person_name, records, context)
     except Exception as e:
         logger.error(f"Failed to format response with records: {e}")
@@ -3415,9 +3325,7 @@ def format_response_with_records(
 
 
 def format_response_with_relationship_diagram(
-    from_name: str,
-    to_name: str,
-    relationship_path: list[dict[str, str]]
+    from_name: str, to_name: str, relationship_path: list[dict[str, str]]
 ) -> str:
     """
     Format a response that includes a relationship diagram.
@@ -3432,10 +3340,8 @@ def format_response_with_relationship_diagram(
     """
     try:
         from relationship_diagram import format_relationship_for_message
-        return format_relationship_for_message(
-            from_name, to_name, relationship_path,
-            include_diagram=True
-        )
+
+        return format_relationship_for_message(from_name, to_name, relationship_path, include_diagram=True)
     except Exception as e:
         logger.error(f"Failed to format response with relationship diagram: {e}")
         return f"Our relationship: {from_name} → {to_name}"
@@ -3450,6 +3356,7 @@ def format_response_with_relationship_diagram(
 
 def _test_core_functionality() -> None:
     """Test all core utility functions"""
+
     # Test safe_column_value function with a simple object
     class TestObj:
         def __init__(self) -> None:
@@ -3483,9 +3390,9 @@ def _test_ai_processing_functions() -> None:
             "mentioned_locations": ["Scotland"],
             "mentioned_dates": ["1850"],
             "potential_relationships": [],
-            "key_facts": []
+            "key_facts": [],
         },
-        "suggested_tasks": ["Research John Doe"]
+        "suggested_tasks": ["Research John Doe"],
     }
     result = _process_ai_response(valid_response, "TEST")
     assert isinstance(result, dict), "Should return dictionary"
@@ -3495,15 +3402,16 @@ def _test_ai_processing_functions() -> None:
     assert isinstance(result["extracted_data"], dict), "Extracted data should be dict"
     assert isinstance(result["suggested_tasks"], list), "Suggested tasks should be list"
     # Verify function processes data (doesn't just return empty defaults)
-    assert len(result["extracted_data"]) > 0 or len(result["suggested_tasks"]) > 0, \
+    assert len(result["extracted_data"]) > 0 or len(result["suggested_tasks"]) > 0, (
         "Should process at least some data from valid response"
+    )
 
     # Test _generate_ack_summary function
     test_data = {
         "extracted_data": {
             "mentioned_names": ["Test Person 12345"],
             "mentioned_locations": ["Scotland"],
-            "mentioned_dates": ["1985"]
+            "mentioned_dates": ["1985"],
         }
     }
     result = _generate_ack_summary(test_data)
@@ -3592,10 +3500,7 @@ def _test_enhanced_task_creation() -> None:
 
     # Create test processor instance
     processor = PersonProcessor(
-        session_manager=mock_session_manager,
-        db_state=mock_db_state,
-        msg_config=mock_msg_config,
-        ms_state=mock_ms_state
+        session_manager=mock_session_manager, db_state=mock_db_state, msg_config=mock_msg_config, ms_state=mock_ms_state
     )
 
     def _build_person(
@@ -3673,9 +3578,7 @@ def _test_enhanced_task_creation() -> None:
     for case in cases:
         person = _build_person(**case["person_kwargs"])
         importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)
-        assert importance == case["expected_importance"], (
-            f"Unexpected priority for {person.username}: {importance}"
-        )
+        assert importance == case["expected_importance"], f"Unexpected priority for {person.username}: {importance}"
         for category in case["required_categories"]:
             assert category in categories, f"{category} should appear for {person.username}"
         if case["due_date_required"]:
@@ -3711,6 +3614,7 @@ def _test_database_session_availability() -> bool:
             raise RuntimeError("Failed to get database session")
 
         from database import Person
+
         person_count = db_session.query(Person).count()
         logger.info(f"✅ Database session available with {person_count} persons in database")
 
@@ -3740,6 +3644,7 @@ def _test_message_templates_available() -> bool:
             raise RuntimeError("Failed to get database session")
 
         from database import MessageTemplate
+
         templates = db_session.query(MessageTemplate).all()
         template_count = len(templates)
 
@@ -3760,6 +3665,7 @@ def _test_message_templates_available() -> bool:
 
 # === PHASE 5 INTEGRATION TESTS ===
 
+
 def _test_response_quality_scoring() -> None:
     """Test response quality scoring system."""
     from unittest.mock import MagicMock
@@ -3768,10 +3674,7 @@ def _test_response_quality_scoring() -> None:
 
     # Create mock PersonProcessor with correct constructor signature
     processor = PersonProcessor(
-        session_manager=MagicMock(),
-        db_state=MagicMock(),
-        msg_config=MagicMock(),
-        ms_state=MagicMock()
+        session_manager=MagicMock(), db_state=MagicMock(), msg_config=MagicMock(), ms_state=MagicMock()
     )
 
     # Create mock person
@@ -3798,19 +3701,10 @@ def _test_response_quality_scoring() -> None:
     compare notes on the Fraser connection.
     """
 
-    lookup_results = [
-        PersonLookupResult(
-            found=True,
-            name="William Gault",
-            birth_year=1820,
-            source='gedcom'
-        )
-    ]
+    lookup_results = [PersonLookupResult(found=True, name="William Gault", birth_year=1820, source='gedcom')]
 
     score1 = processor._score_response_quality(
-        response_text=high_quality_response,
-        lookup_results=lookup_results,
-        person=mock_person
+        response_text=high_quality_response, lookup_results=lookup_results, person=mock_person
     )
 
     assert 80 <= score1 <= 100, f"High-quality response scored {score1}, expected 80-100"
@@ -3825,9 +3719,7 @@ def _test_response_quality_scoring() -> None:
     """
 
     score2 = processor._score_response_quality(
-        response_text=medium_quality_response,
-        lookup_results=[],
-        person=mock_person
+        response_text=medium_quality_response, lookup_results=[], person=mock_person
     )
 
     assert 40 <= score2 <= 79, f"Medium-quality response scored {score2}, expected 40-79"
@@ -3839,31 +3731,21 @@ def _test_response_quality_scoring() -> None:
     """
 
     score3 = processor._score_response_quality(
-        response_text=low_quality_response,
-        lookup_results=[],
-        person=mock_person
+        response_text=low_quality_response, lookup_results=[], person=mock_person
     )
 
     assert 0 <= score3 <= 49, f"Low-quality response scored {score3}, expected 0-49"
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
 
     # Test Case 4: Edge case - empty response
-    score4 = processor._score_response_quality(
-        response_text="",
-        lookup_results=[],
-        person=mock_person
-    )
+    score4 = processor._score_response_quality(response_text="", lookup_results=[], person=mock_person)
 
     assert score4 == 0, f"Empty response scored {score4}, expected 0"
     logger.info(f"✓ Empty response scored {score4:.1f}/100")
 
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
-    score5 = processor._score_response_quality(
-        response_text=very_long_response,
-        lookup_results=[],
-        person=mock_person
-    )
+    score5 = processor._score_response_quality(response_text=very_long_response, lookup_results=[], person=mock_person)
 
     # Should have penalty applied for being too long (>500 words)
     logger.info(f"✓ Very long response scored {score5:.1f}/100 (penalty applied)")
@@ -3880,14 +3762,12 @@ def _test_response_quality_scoring() -> None:
             death_year=1892,
             death_place="Nova Scotia",
             relationship_path='3rd cousin once removed',
-            source='gedcom'
+            source='gedcom',
         )
     ]
 
     score6 = processor._score_response_quality(
-        response_text=unused_lookup_response,
-        lookup_results=rich_lookup_results,
-        person=mock_person
+        response_text=unused_lookup_response, lookup_results=rich_lookup_results, person=mock_person
     )
 
     # Should have penalty for not using rich lookup data
@@ -3922,11 +3802,7 @@ def _test_calculate_task_priority_from_relationship() -> None:
 def _test_create_enhanced_research_task() -> None:
     """Test enhanced research task creation."""
     # Should not crash even if MS Graph not available
-    create_enhanced_research_task(
-        person_name="John Smith",
-        relationship="2nd cousin",
-        shared_dna_cm=98.0
-    )
+    create_enhanced_research_task(person_name="John Smith", relationship="2nd cousin", shared_dna_cm=98.0)
 
     # Task ID might be None if MS Graph not configured, but function should not crash
     logger.info("✓ Enhanced research task creation test passed")
@@ -3937,7 +3813,7 @@ def _test_generate_ai_response_prompt() -> None:
     prompt = generate_ai_response_prompt(
         person_name="John Smith",
         their_message="Do you have info about William Gault?",
-        relationship_info={'relationship': '3rd cousin', 'shared_dna_cm': 98.0}
+        relationship_info={'relationship': '3rd cousin', 'shared_dna_cm': 98.0},
     )
 
     assert "John Smith" in prompt
@@ -3949,14 +3825,7 @@ def _test_generate_ai_response_prompt() -> None:
 def _test_format_response_with_records() -> None:
     """Test response formatting with records."""
     records = [
-        {
-            'type': 'Birth',
-            'details': {
-                'date': '1941',
-                'place': 'Banff, Scotland',
-                'source': 'Birth Certificate'
-            }
-        }
+        {'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland', 'source': 'Birth Certificate'}}
     ]
 
     response = format_response_with_records("Fraser Gault", records)
@@ -3968,10 +3837,7 @@ def _test_format_response_with_records() -> None:
 
 def _test_format_response_with_relationship_diagram() -> None:
     """Test response formatting with relationship diagram."""
-    path = [
-        {'name': 'Wayne Gault', 'relationship': 'self'},
-        {'name': 'Fraser Gault', 'relationship': 'father'}
-    ]
+    path = [{'name': 'Wayne Gault', 'relationship': 'self'}, {'name': 'Fraser Gault', 'relationship': 'father'}]
 
     response = format_response_with_relationship_diagram("Wayne", "Fraser", path)
     assert "Wayne" in response or "Fraser" in response
@@ -3982,9 +3848,7 @@ def _test_format_response_with_relationship_diagram() -> None:
 def _test_retry_helper_alignment_action9() -> None:
     """Ensure process_productive_messages uses the centralized API retry helper."""
     helper_name = getattr(process_productive_messages, "__retry_helper__", None)
-    assert helper_name == "api_retry", (
-        f"process_productive_messages should use api_retry helper, found: {helper_name}"
-    )
+    assert helper_name == "api_retry", f"process_productive_messages should use api_retry helper, found: {helper_name}"
 
 
 # ==============================================
@@ -4010,107 +3874,126 @@ def action9_process_productive_module_tests() -> bool:
     # Define all tests in a data structure to reduce complexity
     tests: list[tuple[str, Callable[[], Any], str, str, str]] = [
         # Removed smoke test: Module constants, classes, and function availability
-
-        ("safe_column_value(), should_exclude_message() core functions",
+        (
+            "safe_column_value(), should_exclude_message() core functions",
             _test_core_functionality,
-         "All core functions execute correctly with proper data handling and validation",
-         "Core utility and message filtering functionality",
-         "Testing attribute extraction, message filtering, and core utility functions"),
-
-        ("_process_ai_response(), _generate_ack_summary() AI processing",
+            "All core functions execute correctly with proper data handling and validation",
+            "Core utility and message filtering functionality",
+            "Testing attribute extraction, message filtering, and core utility functions",
+        ),
+        (
+            "_process_ai_response(), _generate_ack_summary() AI processing",
             _test_ai_processing_functions,
-         "AI processing functions handle response data correctly and generate summaries",
-         "AI response processing and summary generation functions",
-         "Testing AI response parsing, data extraction, and summary generation functionality"),
-
-        ("ALL functions with edge case inputs",
+            "AI processing functions handle response data correctly and generate summaries",
+            "AI response processing and summary generation functions",
+            "Testing AI response parsing, data extraction, and summary generation functionality",
+        ),
+        (
+            "ALL functions with edge case inputs",
             _test_edge_cases,
-         "All functions handle edge cases gracefully without crashes or unexpected behavior",
-         "Edge case handling across all AI processing functions",
-         "Testing functions with empty, None, invalid, and boundary condition inputs"),
-
-        ("get_gedcom_data(), _load_templates_for_action9() integration",
+            "All functions handle edge cases gracefully without crashes or unexpected behavior",
+            "Edge case handling across all AI processing functions",
+            "Testing functions with empty, None, invalid, and boundary condition inputs",
+        ),
+        (
+            "get_gedcom_data(), _load_templates_for_action9() integration",
             _test_integration,
-         "Integration functions work correctly with external data sources and templates",
-         "Integration with GEDCOM data and template systems",
-         "Testing integration with genealogical data cache and message template loading"),
-
-        ("Circuit breaker configuration validation",
+            "Integration functions work correctly with external data sources and templates",
+            "Integration with GEDCOM data and template systems",
+            "Testing integration with genealogical data cache and message template loading",
+        ),
+        (
+            "Circuit breaker configuration validation",
             _test_circuit_breaker_config,
-         "Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
-         "Circuit breaker decorator configuration reflects improved error handling",
-         "Testing process_productive_messages() has proper circuit breaker configuration for production resilience"),
-
-        ("Retry helper alignment",
+            "Circuit breaker decorators properly applied with Action 6 lessons (failure_threshold=10, backoff_factor=4.0)",
+            "Circuit breaker decorator configuration reflects improved error handling",
+            "Testing process_productive_messages() has proper circuit breaker configuration for production resilience",
+        ),
+        (
+            "Retry helper alignment",
             _test_retry_helper_alignment_action9,
-         "process_productive_messages() uses api_retry helper derived from telemetry",
-         "Retry helper configuration",
-         "Verifies process_productive_messages() is decorated with api_retry helper for consistent policy tuning"),
-
-        ("Error handling for AI processing and utility functions",
+            "process_productive_messages() uses api_retry helper derived from telemetry",
+            "Retry helper configuration",
+            "Verifies process_productive_messages() is decorated with api_retry helper for consistent policy tuning",
+        ),
+        (
+            "Error handling for AI processing and utility functions",
             _test_error_handling,
-         "All error conditions handled gracefully with appropriate fallback responses",
-         "Error handling and recovery functionality for AI operations",
-         "Testing error scenarios with invalid data, exceptions, and malformed responses"),
-
-        ("Enhanced MS To-Do task creation with priority and due dates",
+            "All error conditions handled gracefully with appropriate fallback responses",
+            "Error handling and recovery functionality for AI operations",
+            "Testing error scenarios with invalid data, exceptions, and malformed responses",
+        ),
+        (
+            "Enhanced MS To-Do task creation with priority and due dates",
             _test_enhanced_task_creation,
-         "Task priority and due dates calculated correctly based on relationship closeness",
-         "Phase 5.3 enhanced task creation with relationship-based priority",
-         "Testing _calculate_task_priority_and_due_date() with various relationship types"),
-
-        ("Phase 5: Response quality scoring (0-100 scale)",
+            "Task priority and due dates calculated correctly based on relationship closeness",
+            "Phase 5.3 enhanced task creation with relationship-based priority",
+            "Testing _calculate_task_priority_and_due_date() with various relationship types",
+        ),
+        (
+            "Phase 5: Response quality scoring (0-100 scale)",
             _test_response_quality_scoring,
-         "Quality scores calculated correctly based on relationship specificity, evidence, actionability, personalization",
-         "Phase 5 response quality scoring with 4-component evaluation",
-         "Testing _score_response_quality() with high/medium/low quality responses and edge cases"),
-
-          ("Phase 5: Task priority calculation",
+            "Quality scores calculated correctly based on relationship specificity, evidence, actionability, personalization",
+            "Phase 5 response quality scoring with 4-component evaluation",
+            "Testing _score_response_quality() with high/medium/low quality responses and edge cases",
+        ),
+        (
+            "Phase 5: Task priority calculation",
             _test_calculate_task_priority_from_relationship,
-         "Task priorities calculated correctly from relationships and DNA",
-         "Phase 5 task priority calculation",
-         "Testing calculate_task_priority_from_relationship() with various inputs"),
-
-          ("Phase 5: Enhanced research task creation",
+            "Task priorities calculated correctly from relationships and DNA",
+            "Phase 5 task priority calculation",
+            "Testing calculate_task_priority_from_relationship() with various inputs",
+        ),
+        (
+            "Phase 5: Enhanced research task creation",
             _test_create_enhanced_research_task,
-         "Enhanced tasks created successfully with priority and due dates",
-         "Phase 5 enhanced task creation",
-         "Testing create_enhanced_research_task() functionality"),
-
-        ("Phase 5: AI response prompt generation",
-         _test_generate_ai_response_prompt,
-         "AI prompts generated correctly for conversation responses",
-         "Phase 5 AI prompt generation",
-         "Testing generate_ai_response_prompt() functionality"),
-
-        ("Phase 5: Response formatting with records",
-         _test_format_response_with_records,
-         "Responses formatted correctly with record sharing",
-         "Phase 5 record sharing in responses",
-         "Testing format_response_with_records() functionality"),
-
-        ("Phase 5: Response formatting with relationship diagrams",
-         _test_format_response_with_relationship_diagram,
-         "Responses formatted correctly with relationship diagrams",
-         "Phase 5 relationship diagrams in responses",
-         "Testing format_response_with_relationship_diagram() functionality"),
+            "Enhanced tasks created successfully with priority and due dates",
+            "Phase 5 enhanced task creation",
+            "Testing create_enhanced_research_task() functionality",
+        ),
+        (
+            "Phase 5: AI response prompt generation",
+            _test_generate_ai_response_prompt,
+            "AI prompts generated correctly for conversation responses",
+            "Phase 5 AI prompt generation",
+            "Testing generate_ai_response_prompt() functionality",
+        ),
+        (
+            "Phase 5: Response formatting with records",
+            _test_format_response_with_records,
+            "Responses formatted correctly with record sharing",
+            "Phase 5 record sharing in responses",
+            "Testing format_response_with_records() functionality",
+        ),
+        (
+            "Phase 5: Response formatting with relationship diagrams",
+            _test_format_response_with_relationship_diagram,
+            "Responses formatted correctly with relationship diagrams",
+            "Phase 5 relationship diagrams in responses",
+            "Testing format_response_with_relationship_diagram() functionality",
+        ),
     ]
 
     # Only add database session tests if not skipping live API tests
     if not skip_live_api_tests:
-        tests.extend([
-            ("Database session availability (real authenticated session)",
-             _test_database_session_availability,
-             "Database session is available and functional with real Ancestry authentication",
-             "Real authenticated session database connectivity",
-             "Testing database session establishment with valid Ancestry credentials"),
-
-            ("Message templates available (real authenticated session)",
-             _test_message_templates_available,
-             "Message templates are loaded and available in database with real authentication",
-             "Real authenticated session message template loading",
-             "Testing message template availability with valid Ancestry session"),
-        ])
+        tests.extend(
+            [
+                (
+                    "Database session availability (real authenticated session)",
+                    _test_database_session_availability,
+                    "Database session is available and functional with real Ancestry authentication",
+                    "Real authenticated session database connectivity",
+                    "Testing database session establishment with valid Ancestry credentials",
+                ),
+                (
+                    "Message templates available (real authenticated session)",
+                    _test_message_templates_available,
+                    "Message templates are loaded and available in database with real authentication",
+                    "Real authenticated session message template loading",
+                    "Testing message template availability with valid Ancestry session",
+                ),
+            ]
+        )
     else:
         logger.info("⏭️  Skipping live API tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
 
@@ -4127,8 +4010,6 @@ run_comprehensive_tests = create_standard_test_runner(action9_process_productive
 
 
 if __name__ == "__main__":
-    print(
-        "🤖 Running Action 9 - AI Message Processing & Data Extraction comprehensive test suite..."
-    )
+    print("🤖 Running Action 9 - AI Message Processing & Data Extraction comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

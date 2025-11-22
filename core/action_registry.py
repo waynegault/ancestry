@@ -26,6 +26,7 @@ logger = setup_module(globals(), __name__)
 
 class ActionCategory(Enum):
     """Categories of actions based on their primary function."""
+
     DATABASE = "database"
     WORKFLOW = "workflow"
     BROWSER = "browser"
@@ -35,7 +36,8 @@ class ActionCategory(Enum):
 
 class ActionRequirement(Enum):
     """Browser requirements for actions."""
-    NONE = "none"           # No browser needed
+
+    NONE = "none"  # No browser needed
     DRIVER_ONLY = "driver"  # Browser driver needed, no session
     FULL_SESSION = "session"  # Full browser session needed
 
@@ -48,6 +50,7 @@ class ActionMetadata:
     This dataclass provides a single source of truth for action properties,
     replacing scattered helper lists throughout the codebase.
     """
+
     id: str
     name: str
     description: str
@@ -167,263 +170,304 @@ class ActionRegistry:
             logger.warning("Action registry already initialized")
             return
 
-        logger.info("Initializing default action registry...")
-
         # Import action functions - these will be registered lazily to avoid circular imports
         # The actual function references will be set during registration
 
         # Database Actions (Browserless)
-        self.register(ActionMetadata(
-            id="0",
-            name="Delete All Except First Person",
-            description="Delete all people except the test profile (database-only operation)",
-            function=None,  # Will be set during registration
-            category=ActionCategory.DATABASE,
-            browser_requirement=ActionRequirement.NONE,
-            requires_confirmation=True,
-            confirmation_message="delete all people except first person (test profile)",
-            menu_order=0,
-        ))
+        self.register(
+            ActionMetadata(
+                id="0",
+                name="Delete All Except First Person",
+                description="Delete all people except the test profile (database-only operation)",
+                function=None,  # Will be set during registration
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                requires_confirmation=True,
+                confirmation_message="delete all people except first person (test profile)",
+                menu_order=0,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="2",
-            name="Reset Database",
-            description="Completely reset the database by deleting and recreating all tables",
-            function=None,
-            category=ActionCategory.DATABASE,
-            browser_requirement=ActionRequirement.NONE,
-            requires_confirmation=True,
-            confirmation_message="COMPLETELY reset the database (deletes data)",
-            menu_order=2,
-        ))
+        self.register(
+            ActionMetadata(
+                id="2",
+                name="Reset Database",
+                description="Completely reset the database by deleting and recreating all tables",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                requires_confirmation=True,
+                confirmation_message="COMPLETELY reset the database (deletes data)",
+                menu_order=2,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="3",
-            name="Backup Database",
-            description="Create a backup of the current database",
-            function=None,
-            category=ActionCategory.DATABASE,
-            browser_requirement=ActionRequirement.NONE,
-            menu_order=3,
-        ))
+        self.register(
+            ActionMetadata(
+                id="3",
+                name="Backup Database",
+                description="Create a backup of the current database",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                menu_order=3,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="4",
-            name="Restore Database",
-            description="Restore database from backup (overwrites current data)",
-            function=None,
-            category=ActionCategory.DATABASE,
-            browser_requirement=ActionRequirement.NONE,
-            requires_confirmation=True,
-            confirmation_message="restore database from backup (overwrites data)",
-            menu_order=4,
-        ))
+        self.register(
+            ActionMetadata(
+                id="4",
+                name="Restore Database",
+                description="Restore database from backup (overwrites current data)",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                requires_confirmation=True,
+                confirmation_message="restore database from backup (overwrites data)",
+                menu_order=4,
+            )
+        )
 
         # Workflow Actions
-        self.register(ActionMetadata(
-            id="1",
-            name="Run Full Workflow",
-            description="Run complete workflow: Action 7 → Action 9 → Action 8",
-            function=None,
-            category=ActionCategory.WORKFLOW,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            close_session_after=True,
-            enable_caching=True,
-            menu_order=1,
-        ))
+        self.register(
+            ActionMetadata(
+                id="1",
+                name="Run Full Workflow",
+                description="Run complete workflow: Action 7 → Action 9 → Action 8",
+                function=None,
+                category=ActionCategory.WORKFLOW,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                close_session_after=True,
+                enable_caching=True,
+                menu_order=1,
+            )
+        )
 
         # Browser Actions
-        self.register(ActionMetadata(
-            id="5",
-            name="Check Login Status",
-            description="Check current login status and display all identifiers",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.DRIVER_ONLY,
-            menu_order=5,
-        ))
+        self.register(
+            ActionMetadata(
+                id="5",
+                name="Check Login Status",
+                description="Check current login status and display all identifiers",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.DRIVER_ONLY,
+                menu_order=5,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="6",
-            name="Gather DNA Matches",
-            description="Automated DNA match harvesting from Ancestry.com",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            max_args=1,  # Optional start page
-            input_hint="[start page]",
-            inject_config=True,
-            menu_order=6,
-        ))
+        self.register(
+            ActionMetadata(
+                id="6",
+                name="Gather DNA Matches",
+                description="Automated DNA match harvesting from Ancestry.com",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                max_args=1,  # Optional start page
+                input_hint="[start page]",
+                inject_config=True,
+                menu_order=6,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="7",
-            name="Search Inbox",
-            description="Process and analyze inbox messages with AI classification",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            menu_order=7,
-        ))
+        self.register(
+            ActionMetadata(
+                id="7",
+                name="Search Inbox",
+                description="Process and analyze inbox messages with AI classification",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                menu_order=7,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="8",
-            name="Send Messages",
-            description="Send AI-powered messages to DNA matches with context awareness",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            menu_order=8,
-        ))
+        self.register(
+            ActionMetadata(
+                id="8",
+                name="Send Messages",
+                description="Send AI-powered messages to DNA matches with context awareness",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                menu_order=8,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="9",
-            name="Process Productive Messages",
-            description="Manage ongoing productive conversations with automated follow-ups",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            enable_caching=True,
-            menu_order=9,
-        ))
+        self.register(
+            ActionMetadata(
+                id="9",
+                name="Process Productive Messages",
+                description="Manage ongoing productive conversations with automated follow-ups",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                enable_caching=True,
+                menu_order=9,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="10",
-            name="Compare: GEDCOM vs API",
-            description="Side-by-side comparison of GEDCOM and API search results",
-            function=None,
-            category=ActionCategory.BROWSER,
-            browser_requirement=ActionRequirement.FULL_SESSION,
-            enable_caching=True,
-            skip_csrf_check=True,
-            menu_order=10,
-        ))
+        self.register(
+            ActionMetadata(
+                id="10",
+                name="Compare: GEDCOM vs API",
+                description="Side-by-side comparison of GEDCOM and API search results",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                enable_caching=True,
+                skip_csrf_check=True,
+                menu_order=10,
+            )
+        )
 
         # Test Actions
-        self.register(ActionMetadata(
-            id="test",
-            name="Run Main.py Internal Tests",
-            description="Run comprehensive tests for main.py functionality",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_test_action=True,
-            menu_order=1000,
-        ))
+        self.register(
+            ActionMetadata(
+                id="test",
+                name="Run Main.py Internal Tests",
+                description="Run comprehensive tests for main.py functionality",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_test_action=True,
+                menu_order=1000,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="testall",
-            name="Run All Module Tests",
-            description="Run all module tests across the entire codebase",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_test_action=True,
-            menu_order=1010,
-        ))
+        self.register(
+            ActionMetadata(
+                id="testall",
+                name="Run All Module Tests",
+                description="Run all module tests across the entire codebase",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_test_action=True,
+                menu_order=1010,
+            )
+        )
 
         # Meta Actions
-        self.register(ActionMetadata(
-            id="analytics",
-            name="View Conversation Analytics Dashboard",
-            description="Display conversation analytics dashboard with insights",
-            function=None,
-            category=ActionCategory.ANALYTICS,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=100,
-        ))
+        self.register(
+            ActionMetadata(
+                id="analytics",
+                name="View Conversation Analytics Dashboard",
+                description="Display conversation analytics dashboard with insights",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=100,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="metrics",
-            name="View Prometheus Metrics Report",
-            description="Open the local Prometheus/Grafana metrics view",
-            function=None,
-            category=ActionCategory.ANALYTICS,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=110,
-        ))
+        self.register(
+            ActionMetadata(
+                id="metrics",
+                name="View Prometheus Metrics Report",
+                description="Open the local Prometheus/Grafana metrics view",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=110,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="setup-grafana",
-            name="Run Automated Grafana Setup",
-            description="Validate Grafana installation and import dashboards",
-            function=None,
-            category=ActionCategory.ANALYTICS,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=120,
-        ))
+        self.register(
+            ActionMetadata(
+                id="setup-grafana",
+                name="Run Automated Grafana Setup",
+                description="Validate Grafana installation and import dashboards",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=120,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="graph",
-            name="Open Code Graph Visualization",
-            description="Launch the interactive repository dependency graph",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=130,
-        ))
+        self.register(
+            ActionMetadata(
+                id="graph",
+                name="Open Code Graph Visualization",
+                description="Launch the interactive repository dependency graph",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=130,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="s",
-            name="Show Cache Statistics",
-            description="Display comprehensive cache statistics from all subsystems",
-            function=None,
-            category=ActionCategory.ANALYTICS,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=140,
-        ))
+        self.register(
+            ActionMetadata(
+                id="s",
+                name="Show Cache Statistics",
+                description="Display comprehensive cache statistics from all subsystems",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=140,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="t",
-            name="Toggle Console Log Level",
-            description="Toggle between INFO and DEBUG log levels",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=150,
-        ))
+        self.register(
+            ActionMetadata(
+                id="t",
+                name="Toggle Console Log Level",
+                description="Toggle between INFO and DEBUG log levels",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=150,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="c",
-            name="Clear Screen",
-            description="Clear the console screen",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=160,
-        ))
+        self.register(
+            ActionMetadata(
+                id="c",
+                name="Clear Screen",
+                description="Clear the console screen",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=160,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="migrate-db",
-            name="Apply Schema Migrations",
-            description="Run pending database schema migrations and show status",
-            function=None,
-            category=ActionCategory.DATABASE,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=170,
-        ))
+        self.register(
+            ActionMetadata(
+                id="migrate-db",
+                name="Apply Schema Migrations",
+                description="Run pending database schema migrations and show status",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=170,
+            )
+        )
 
-        self.register(ActionMetadata(
-            id="q",
-            name="Exit",
-            description="Exit the application",
-            function=None,
-            category=ActionCategory.UTILITY,
-            browser_requirement=ActionRequirement.NONE,
-            is_meta_action=True,
-            menu_order=170,
-        ))
+        self.register(
+            ActionMetadata(
+                id="q",
+                name="Exit",
+                description="Exit the application",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=170,
+            )
+        )
 
         self._initialized = True
-        logger.info(f"Action registry initialized with {len(self._actions)} actions")
 
 
 # Global registry instance
@@ -713,8 +757,10 @@ def action_registry_module_tests() -> bool:
 
 try:
     from test_utilities import create_standard_test_runner
+
     run_comprehensive_tests = create_standard_test_runner(action_registry_module_tests)
 except ImportError:  # pragma: no cover - fallback for minimal test environments
+
     def run_comprehensive_tests() -> bool:
         return action_registry_module_tests()
 

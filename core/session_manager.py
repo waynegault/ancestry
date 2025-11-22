@@ -92,6 +92,7 @@ def _load_utils_module() -> Any:
 
     return importlib.import_module("utils")
 
+
 # === MODULE CONSTANTS ===
 # Use global cached config instance
 
@@ -240,7 +241,7 @@ class SessionManager:
             'death_cascade_halt': threading.Event(),
             'death_timestamp': None,
             'parallel_operations': 0,
-            'death_cascade_count': 0
+            'death_cascade_count': 0,
         }
         self.session_health_monitor['is_alive'].set()  # Initially alive
 
@@ -269,15 +270,11 @@ class SessionManager:
         self._ensure_metrics_exporter()
 
         init_time = time.time() - start_time
-        logger.debug(
-            f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}"
-        )
+        logger.debug(f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}")
 
     @staticmethod
     @cached_database_manager()
-    def _get_cached_database_manager(
-        db_path: Optional[str] = None
-    ) -> "DatabaseManager":
+    def _get_cached_database_manager(db_path: Optional[str] = None) -> "DatabaseManager":
         """Get cached DatabaseManager instance"""
         logger.debug("Creating/retrieving DatabaseManager from cache")
         return DatabaseManager(db_path)
@@ -313,16 +310,24 @@ class SessionManager:
         batch_threshold = self._resolve_batch_threshold()
         success_threshold = self._determine_success_threshold(batch_threshold)
 
-        safe_rps, allow_aggressive, desired_rate = self._determine_rate_profile()
-        min_fill_rate, max_fill_rate = self._compute_fill_rates(
-            safe_rps, allow_aggressive, desired_rate
-        )
+        # Resolve rates using consolidated configuration
+        min_fill_rate = getattr(config_schema.api, "rate_limiter_min_rate", 0.1)
+        max_fill_rate = getattr(config_schema.api, "rate_limiter_max_rate", 0.5)
+
+        # Legacy support: requests_per_second acts as initial rate
+        initial_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
+
+        # Ensure initial rate is within bounds
+        initial_fill_rate = max(min_fill_rate, min(initial_rps, max_fill_rate))
 
         endpoint_profiles = self._build_endpoint_profile_config()
         self._log_endpoint_rate_cap(endpoint_profiles)
 
         bucket_capacity = getattr(config_schema.api, "token_bucket_capacity", 10.0)
-        initial_fill_rate = min(safe_rps, max_fill_rate)
+
+        # New parameters for tuning
+        rate_limiter_429_backoff = getattr(config_schema.api, "rate_limiter_429_backoff", 0.85)
+        rate_limiter_success_factor = getattr(config_schema.api, "rate_limiter_success_factor", 1.02)
 
         limiter = get_rate_limiter(
             initial_fill_rate=initial_fill_rate,
@@ -331,12 +336,16 @@ class SessionManager:
             max_fill_rate=max_fill_rate,
             capacity=bucket_capacity,
             endpoint_profiles=endpoint_profiles,
+            rate_limiter_429_backoff=rate_limiter_429_backoff,
+            rate_limiter_success_factor=rate_limiter_success_factor,
         )
 
         if limiter:
             logger.debug(
-                "AdaptiveRateLimiter bound to session (success_threshold=%d)",
+                "AdaptiveRateLimiter bound to session (success_threshold=%d, backoff=%.2f, success_factor=%.2f)",
                 limiter.success_threshold,
+                rate_limiter_429_backoff,
+                rate_limiter_success_factor,
             )
 
         return limiter
@@ -380,39 +389,12 @@ class SessionManager:
             return configured_threshold
         return max(batch_threshold, 10)
 
-    @staticmethod
-    def _determine_rate_profile() -> tuple[float, bool, float]:
-        """Resolve rate profile, aggressive allowances, and desired fill rate."""
-
-        safe_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
-        speed_profile = str(getattr(config_schema.api, "speed_profile", "safe")).lower()
-        allow_unsafe = bool(getattr(config_schema.api, "allow_unsafe_rate_limit", False))
-        allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-        desired_rate = getattr(config_schema.api, "token_bucket_fill_rate", None) or safe_rps
-        return safe_rps, allow_aggressive, desired_rate
-
-    @staticmethod
-    def _compute_fill_rates(
-        safe_rps: float, allow_aggressive: bool, desired_rate: float
-    ) -> tuple[float, float]:
-        """Calculate min/max fill rates with safeguards."""
-
-        min_fill_rate = max(0.05, safe_rps * 0.25)
-        max_fill_rate = desired_rate if allow_aggressive else safe_rps
-
-        if max_fill_rate < min_fill_rate:
-            min_fill_rate = max(0.05, max_fill_rate * 0.5)
-
-        return min_fill_rate, max_fill_rate
-
     def _log_endpoint_rate_cap(self, endpoint_profiles: dict[str, dict[str, Any]]) -> None:
         """Log derived endpoint rate caps for observability."""
 
         endpoint_rate_cap = self._calculate_endpoint_rate_cap(endpoint_profiles)
         if endpoint_rate_cap is not None:
-            logger.debug(
-                "Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap
-            )
+            logger.debug("Endpoint-specific throttle floor detected: %.3f req/s", endpoint_rate_cap)
 
     @staticmethod
     def _build_endpoint_profile_config() -> dict[str, dict[str, Any]]:
@@ -445,7 +427,9 @@ class SessionManager:
 
             if candidate_rates:
                 cap_candidate = min(candidate_rates)
-                endpoint_rate_cap = cap_candidate if endpoint_rate_cap is None else min(endpoint_rate_cap, cap_candidate)
+                endpoint_rate_cap = (
+                    cap_candidate if endpoint_rate_cap is None else min(endpoint_rate_cap, cap_candidate)
+                )
 
         return endpoint_rate_cap
 
@@ -462,7 +446,7 @@ class SessionManager:
         adapter = HTTPAdapter(
             pool_connections=20,
             pool_maxsize=50,
-            max_retries=0  # Application handles retries
+            max_retries=0,  # Application handles retries
         )
 
         # Apply adapter to API manager's requests session
@@ -631,7 +615,10 @@ class SessionManager:
             self.request_recovery(f"{action_name} reset from DEGRADED state")
             return True
 
-        if current_state == SessionLifecycleState.UNINITIALIZED and normalized_required in {"driver_ready", "session_ready"}:
+        if current_state == SessionLifecycleState.UNINITIALIZED and normalized_required in {
+            "driver_ready",
+            "session_ready",
+        }:
             logger.debug(
                 "Action %s will bootstrap session lifecycle (state=%s)",
                 action_name,
@@ -660,9 +647,7 @@ class SessionManager:
 
         # Validate that the cached state is still accurate
         if self.browser_manager.browser_needed and not self.browser_manager.is_session_valid():
-            logger.debug(
-                f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)"
-            )
+            logger.debug(f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)")
             self._last_readiness_check = None
             self._transition_state(
                 SessionLifecycleState.DEGRADED,
@@ -670,9 +655,7 @@ class SessionManager:
             )
             return False
 
-        logger.debug(
-            f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})"
-        )
+        logger.debug(f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})")
         return True
 
     def _perform_readiness_validation(self, action_name: Optional[str], skip_csrf: bool) -> bool:
@@ -765,9 +748,7 @@ class SessionManager:
         self._last_readiness_check = time.time()
 
         check_time = time.time() - start_time
-        logger.debug(
-            f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}"
-        )
+        logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         self._update_session_metrics()
         return readiness_ok
 
@@ -998,7 +979,9 @@ class SessionManager:
             try:
                 tree_id = self.get_my_tree_id()
                 if not tree_id:
-                    logger.error(f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID.")
+                    logger.error(
+                        f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID."
+                    )
                     all_ok = False
             except ImportError as tree_id_imp_err:
                 logger.error(f"Failed to retrieve tree ID due to import error: {tree_id_imp_err}")
@@ -1044,19 +1027,11 @@ class SessionManager:
         try:
             driver = cast(Any, self.driver)
             cookies = cast(list[dict[str, Any]], driver.get_cookies())
-            return {
-                cookie["name"].lower()
-                for cookie in cookies
-                if "name" in cookie
-            }
+            return {cookie["name"].lower() for cookie in cookies if "name" in cookie}
         except Exception:
             return set()
 
-    def _check_cookies_available(
-        self,
-        required_lower: set[str],
-        last_missing_str: str
-    ) -> tuple[bool, str]:
+    def _check_cookies_available(self, required_lower: set[str], last_missing_str: str) -> tuple[bool, str]:
         """Check if required cookies are available.
 
         Args:
@@ -1079,10 +1054,7 @@ class SessionManager:
 
         return False, missing_str
 
-    def _perform_final_cookie_check(
-        self,
-        cookie_names: list[str]
-    ) -> bool:
+    def _perform_final_cookie_check(self, cookie_names: list[str]) -> bool:
         """Perform final cookie check after timeout.
 
         Args:
@@ -1097,10 +1069,7 @@ class SessionManager:
                 return False
 
             current_cookies_lower = self._get_current_cookie_names()
-            missing_final = [
-                name for name in cookie_names
-                if name.lower() not in current_cookies_lower
-            ]
+            missing_final = [name for name in cookie_names if name.lower() not in current_cookies_lower]
 
             if missing_final:
                 logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
@@ -1143,9 +1112,7 @@ class SessionManager:
                     logger.warning("Driver became None while waiting for cookies.")
                     return False
 
-                all_found, last_missing_str = self._check_cookies_available(
-                    required_lower, last_missing_str
-                )
+                all_found, last_missing_str = self._check_cookies_available(required_lower, last_missing_str)
                 if all_found:
                     logger.debug(f"All required cookies found: {cookie_names}.")
                     return True
@@ -1364,19 +1331,18 @@ class SessionManager:
                 # Check if this is a JavaScript error
                 if log_entry.get('level') in {'SEVERE', 'ERROR'}:
                     # Parse timestamp (browser logs use milliseconds since epoch)
-                    log_timestamp = datetime.fromtimestamp(
-                        log_entry.get('timestamp', 0) / 1000,
-                        tz=timezone.utc
-                    )
+                    log_timestamp = datetime.fromtimestamp(log_entry.get('timestamp', 0) / 1000, tz=timezone.utc)
 
                     # Only include errors since last check
                     if log_timestamp > self.last_js_error_check:
-                        js_errors.append({
-                            'timestamp': log_timestamp,
-                            'level': log_entry.get('level'),
-                            'message': log_entry.get('message', ''),
-                            'source': log_entry.get('source', '')
-                        })
+                        js_errors.append(
+                            {
+                                'timestamp': log_timestamp,
+                                'level': log_entry.get('level'),
+                                'message': log_entry.get('message', ''),
+                                'source': log_entry.get('source', ''),
+                            }
+                        )
 
             # Update last check time
             self.last_js_error_check = current_time
@@ -1403,10 +1369,12 @@ class SessionManager:
 
         # Count critical errors (those that might affect functionality)
         critical_errors = [
-            error for error in errors
-            if any(keyword in error['message'].lower() for keyword in [
-                'uncaught', 'reference error', 'type error', 'syntax error'
-            ])
+            error
+            for error in errors
+            if any(
+                keyword in error['message'].lower()
+                for keyword in ['uncaught', 'reference error', 'type error', 'syntax error']
+            )
         ]
 
         if critical_errors:
@@ -1473,7 +1441,9 @@ class SessionManager:
 
         # Check if driver exists and is responsive
         if not self.browser_manager.is_session_valid():
-            self.session_health_monitor['browser_death_count'] = self.session_health_monitor.get('browser_death_count', 0) + 1
+            self.session_health_monitor['browser_death_count'] = (
+                self.session_health_monitor.get('browser_death_count', 0) + 1
+            )
             logger.warning(f"🚨 Browser death detected (count: {self.session_health_monitor['browser_death_count']})")
             return False
 
@@ -1523,6 +1493,7 @@ class SessionManager:
 
                     # Test database connectivity with timeout
                     from sqlalchemy import text
+
                     result = db_session.execute(text("SELECT 1")).scalar()
                     if result != 1:
                         logger.critical(f"🚨 {action_name}: Database query returned unexpected result")
@@ -1565,9 +1536,7 @@ class SessionManager:
                 f"🚨 {action_name}: CASCADE DETECTED before {operation_name}: "
                 f"Session death cascade #{cascade_count} - halting operation"
             )
-            raise Exception(
-                f"Session death cascade detected before {operation_name} (#{cascade_count})"
-            )
+            raise Exception(f"Session death cascade detected before {operation_name} (#{cascade_count})")
 
     def close_sess(self, keep_db: bool = False):
         """
@@ -1684,10 +1653,7 @@ class SessionManager:
         >>> watchdog.start("relationship_prob",
         ...               lambda: session_manager._force_session_restart("API timeout"))
         """
-        logger.critical(
-            f"🚨 FORCE SESSION RESTART triggered: {reason} - "
-            "killing browser and clearing caches"
-        )
+        logger.critical(f"🚨 FORCE SESSION RESTART triggered: {reason} - killing browser and clearing caches")
 
         try:
             self._cleanup_browser()
@@ -1720,6 +1686,7 @@ class SessionManager:
             return None
 
         from urllib.parse import urljoin
+
         csrf_token_url = urljoin(config_schema.api.base_url, "discoveryui-matches/parents/api/csrfToken")
         logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
 
@@ -1769,6 +1736,7 @@ class SessionManager:
             return None
 
         from urllib.parse import urljoin
+
         url = urljoin(config_schema.api.base_url, "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid")
         logger.debug("Attempting to fetch own profile ID (ucdmid)...")
 
@@ -1824,6 +1792,7 @@ class SessionManager:
             return None
 
         from urllib.parse import urljoin
+
         url = urljoin(config_schema.api.base_url, API_PATH_UUID_NAVHEADER)
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
 
@@ -1883,9 +1852,7 @@ class SessionManager:
 
         logger.debug(f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils...")
         try:
-            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(
-                self, tree_name_config
-            )
+            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(self, tree_name_config)
             if my_tree_id_val:
                 # Store in API manager
                 self.api_manager.my_tree_id = my_tree_id_val
@@ -1952,9 +1919,7 @@ class SessionManager:
 
     def cls_db_conn(self, keep_db: bool = True) -> None:
         """Close database connections."""
-        self.db_manager.close_connections(
-            dispose_engine=not keep_db
-        )  # Browser delegation methods
+        self.db_manager.close_connections(dispose_engine=not keep_db)  # Browser delegation methods
 
     def invalidate_csrf_cache(self) -> None:
         """Invalidate cached CSRF token (useful on auth errors)."""
@@ -2039,6 +2004,7 @@ class SessionManager:
             for name in csrf_cookie_names:
                 if driver_cookies_dict.get(name):
                     from urllib.parse import unquote
+
                     csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
 
                     # Cache the token
@@ -2111,9 +2077,7 @@ class SessionManager:
     def is_ready(self) -> bool:
         """Check if the session manager is ready for work."""
         db_ready = self.db_manager.is_ready
-        browser_ready = (
-            not self.browser_manager.browser_needed or self.browser_manager.driver_live
-        )
+        browser_ready = not self.browser_manager.browser_needed or self.browser_manager.driver_live
         api_ready = self.api_manager.has_essential_identifiers
         return db_ready and browser_ready and api_ready
 
@@ -2183,15 +2147,9 @@ class SessionManager:
                 "session_ready": self.session_ready,
                 "session_age": self.session_age_seconds,
                 "last_readiness_check_age": (
-                    time.time() - self._last_readiness_check
-                    if self._last_readiness_check
-                    else None
+                    time.time() - self._last_readiness_check if self._last_readiness_check else None
                 ),
-                "db_ready": (
-                    self.db_manager.is_ready
-                    if hasattr(self.db_manager, "is_ready")
-                    else False
-                ),
+                "db_ready": (self.db_manager.is_ready if hasattr(self.db_manager, "is_ready") else False),
                 "browser_needed": self.browser_manager.browser_needed,
                 "driver_live": self.browser_manager.driver_live,
             }
@@ -2291,10 +2249,7 @@ class APICallWatchdog:
         """
         with self._lock:
             if self.is_active:
-                logger.warning(
-                    f"Watchdog already active for '{self._api_name}', "
-                    "cancelling previous timer"
-                )
+                logger.warning(f"Watchdog already active for '{self._api_name}', cancelling previous timer")
                 self._cancel_unsafe()
 
             self._api_name = api_name
@@ -2313,10 +2268,7 @@ class APICallWatchdog:
             self.timer.start()
             self.is_active = True
 
-            logger.debug(
-                f"Watchdog started for '{api_name}' "
-                f"(timeout: {self.timeout_seconds}s)"
-            )
+            logger.debug(f"Watchdog started for '{api_name}' (timeout: {self.timeout_seconds}s)")
 
     def cancel(self) -> None:
         """
@@ -2366,10 +2318,7 @@ class APICallWatchdog:
                 self._cancel_unsafe()
 
             def timeout_handler() -> None:
-                logger.critical(
-                    f"🚨 WATCHDOG TIMEOUT: {api_name} exceeded "
-                    f"{self.timeout_seconds}s limit"
-                )
+                logger.critical(f"🚨 WATCHDOG TIMEOUT: {api_name} exceeded {self.timeout_seconds}s limit")
                 if callback:
                     callback()
 
@@ -2513,9 +2462,7 @@ def _test_database_operations():
 
                     status = "✅" if has_conn else "❌"
                     print(f"   {status} {operation_name}: {description}")
-                    print(
-                        f"      Connection: {type(conn).__name__ if conn else 'None'}"
-                    )
+                    print(f"      Connection: {type(conn).__name__ if conn else 'None'}")
 
                     results.append(True)  # Just test it doesn't crash
 
@@ -2529,9 +2476,7 @@ def _test_database_operations():
 
                     status = "✅" if has_context else "❌"
                     print(f"   {status} {operation_name}: {description}")
-                    print(
-                        f"      Context: {type(context).__name__ if context else 'None'}"
-                    )
+                    print(f"      Context: {type(context).__name__ if context else 'None'}")
 
                     results.append(True)  # Just test it doesn't crash
 
@@ -2539,9 +2484,7 @@ def _test_database_operations():
                 print(f"   ❌ {operation_name}: Exception {e}")
                 results.append(False)
 
-        print(
-            f"📊 Results: {sum(results)}/{len(results)} database operations successful"
-        )
+        print(f"📊 Results: {sum(results)}/{len(results)} database operations successful")
         return True
 
     except Exception as e:
@@ -2594,9 +2537,7 @@ def _test_initialization_performance():
     end_time = time.time()
     total_time = end_time - start_time
     max_time = 5.0
-    assert (
-        total_time < max_time
-    ), f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
+    assert total_time < max_time, f"3 optimized initializations took {total_time:.3f}s, should be under {max_time}s"
     for sm in session_managers:
         with contextlib.suppress(Exception):
             sm.close_sess(keep_db=True)
@@ -2704,7 +2645,7 @@ def _test_regression_prevention_property_access():
             ('csrf_token', 'CSRF token string'),
             ('my_uuid', 'user UUID string'),
             ('my_tree_id', 'tree ID string'),
-            ('session_ready', 'session ready boolean')
+            ('session_ready', 'session ready boolean'),
         ]
 
         for prop, description in properties_to_test:
@@ -2730,9 +2671,7 @@ def _test_regression_prevention_property_access():
     success = all(results)
     if not success:
         failure_summary = " | ".join(failure_details) or "Unknown property failures"
-        raise AssertionError(
-            f"SessionManager property regression test failures: {failure_summary}"
-        )
+        raise AssertionError(f"SessionManager property regression test failures: {failure_summary}")
 
     print("🎉 SessionManager property access regression test passed!")
     return True
@@ -3180,9 +3119,7 @@ def core_session_manager_module_tests() -> bool:
 
     # Warnings already suppressed at module level when __name__ == "__main__"
     with suppress_logging():
-        suite = TestSuite(
-            "Session Manager & Component Coordination", "session_manager.py"
-        )
+        suite = TestSuite("Session Manager & Component Coordination", "session_manager.py")
         suite.start_suite()
         suite.run_test(
             "SessionManager Initialization",

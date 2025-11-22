@@ -329,7 +329,9 @@ class _AIQualityHistogramProxy:
         metric = self._metric
         if metric is None:
             return
-        metric.labels(provider=provider or "unknown", prompt_key=prompt_key or "unknown", variant=variant or "default").observe(max(score, 0.0))
+        metric.labels(
+            provider=provider or "unknown", prompt_key=prompt_key or "unknown", variant=variant or "default"
+        ).observe(max(score, 0.0))
 
 
 class _AIParseResultCounterProxy:
@@ -418,7 +420,7 @@ class MetricsRegistry:
 
             if not PROMETHEUS_AVAILABLE:
                 if not self._import_logged:
-                    logger.warning(
+                    logger.debug(
                         "Prometheus client unavailable; metrics disabled (%s)",
                         _IMPORT_ERROR,
                     )

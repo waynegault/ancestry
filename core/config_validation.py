@@ -64,6 +64,10 @@ def warn_if_unsafe_profile(speed_profile: str, allow_unsafe: bool, suppress_warn
     if not (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
         return
 
+    # "squeeze" profile is now considered a safe baseline (validated 2025-11-22)
+    if speed_profile == "squeeze":
+        return
+
     profile_label = speed_profile or "custom"
     logger.warning(
         "  Unsafe API speed profile '%s' active; safety clamps relaxed. Monitor for 429 errors.",

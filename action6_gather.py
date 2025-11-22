@@ -224,12 +224,8 @@ from urllib.parse import unquote, urlencode, urljoin, urlparse
 integrate_with_action6(sys.modules[__name__])
 
 # === THIRD-PARTY IMPORTS ===
-try:
-    from cloudscraper.exceptions import CloudflareException as CloudflareChallengeError
-except Exception:  # pragma: no cover - fallback when submodule unavailable
-    CloudflareChallengeError = Exception
 import requests
-from requests.exceptions import ConnectionError, RequestException
+from requests.exceptions import ConnectionError
 from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
@@ -2628,6 +2624,7 @@ def _prefetch_relationship_probability(
     batch_relationship_prob_data: dict[str, Optional[str]],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
 ) -> None:
     """Fetch relationship probability for priority matches."""
 
@@ -2641,6 +2638,7 @@ def _prefetch_relationship_probability(
         plan.high_priority_uuids,
         plan.priority_uuids,
         batch_relationship_prob_data,
+        batch_combined_details,
     )
     endpoint_durations["relationship_prob"] += time.time() - rel_start
     endpoint_counts["relationship_prob"] += 1
@@ -2702,25 +2700,47 @@ def _prefetch_ethnicity_data(
     endpoint_counts["ethnicity"] += 1
 
 
-def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats) -> None:
-    """Emit throttled progress updates for lengthy prefetches."""
+def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats, start_time: float) -> None:
+    """Emit progress updates for lengthy prefetches with ETA."""
 
-    if num_candidates < 40:
+    # Always log progress for visibility, but throttle frequency
+    should_log = False
+
+    # Log every item if small batch
+    if num_candidates <= 5:
+        should_log = True
+    # Log every 5 items for larger batches
+    elif processed_count % 5 == 0:
+        should_log = True
+    # Always log the last item
+    elif processed_count == num_candidates:
+        should_log = True
+
+    if not should_log:
         return
 
-    progress = processed_count / max(num_candidates, 1)
-    while (
-        stats.next_progress_threshold_index < len(PREFETCH_PROGRESS_THRESHOLDS)
-        and progress >= PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index]
-    ):
-        percent = int(PREFETCH_PROGRESS_THRESHOLDS[stats.next_progress_threshold_index] * 100)
-        logger.info(
-            "📊 Prefetch %d%% complete (%d/%d)",
-            percent,
-            processed_count,
-            num_candidates,
-        )
-        stats.next_progress_threshold_index += 1
+    elapsed = time.time() - start_time
+    avg_time = elapsed / max(processed_count, 1)
+    remaining = num_candidates - processed_count
+    eta_seconds = remaining * avg_time
+
+    # Format ETA
+    if eta_seconds < 60:
+        eta_str = f"{eta_seconds:.0f}s"
+    else:
+        eta_str = f"{eta_seconds / 60:.1f}m"
+
+    percent = int((processed_count / num_candidates) * 100)
+
+    logger.info(
+        "📊 Prefetch %d/%d (%d%%) | Elapsed: %.1fs | Avg: %.1fs/match | ETA: %s",
+        processed_count,
+        num_candidates,
+        percent,
+        elapsed,
+        avg_time,
+        eta_str,
+    )
 
 
 def _identify_badge_candidates(
@@ -2797,16 +2817,25 @@ def _fetch_optional_relationship_data(
     high_priority_uuids: set[str],
     priority_uuids: set[str],
     batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_combined_details: dict[str, Optional[dict[str, Any]]],
 ) -> None:
     """Fetch relationship probability when priority thresholds demand it."""
 
     if uuid_val not in priority_uuids:
         return
 
+    # OPTIMIZATION: Extract from combined details if available
+    combined_data = batch_combined_details.get(uuid_val)
+    if combined_data and combined_data.get("relationship_str"):
+        batch_relationship_prob_data[uuid_val] = cast(str, combined_data.get("relationship_str"))
+        return
+
     try:
-        max_labels = 3 if uuid_val in high_priority_uuids else 2
-        rel_prob_result = _fetch_batch_relationship_prob(session_manager, uuid_val, max_labels)
-        batch_relationship_prob_data[uuid_val] = rel_prob_result
+        # If not found in combined details, we can't fetch it separately anymore
+        # as the standalone endpoint is redundant/broken.
+        # Just log a debug message.
+        logger.debug(f"Relationship string not found in combined details for {uuid_val[:8]}")
+        batch_relationship_prob_data[uuid_val] = None
     except Exception as exc:  # pragma: no cover - logging only
         logger.error(
             f"Exception fetching relationship prob for {uuid_val[:8]}: {exc}",
@@ -2926,10 +2955,23 @@ def _fetch_ladder_details_for_badges(
     return enriched_tree_data, ladder_call_count
 
 
-def _log_prefetch_summary(fetch_duration: float, stats: _PrefetchStats) -> None:
-    """Summarize prefetch work after completion."""
+def _log_prefetch_summary(
+    fetch_duration: float,
+    stats: _PrefetchStats,
+    endpoint_durations: dict[str, float],
+    endpoint_counts: dict[str, int],
+) -> None:
+    """Summarize prefetch work after completion with detailed metrics."""
 
-    logger.debug(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
+    logger.info(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
+
+    # Log detailed breakdown
+    logger.info("🔬 API Performance Breakdown:")
+    for endpoint, duration in endpoint_durations.items():
+        count = endpoint_counts.get(endpoint, 0)
+        if count > 0:
+            avg = duration / count
+            logger.info(f"   - {endpoint:<20}: {count:>3} calls | {duration:>6.2f}s total | {avg:>5.2f}s avg")
 
     if not ENABLE_ETHNICITY_ENRICHMENT:
         logger.debug("🧬 Ethnicity enrichment disabled; skipping summary metrics.")
@@ -3021,6 +3063,7 @@ def _perform_api_prefetches(
             batch_relationship_prob_data,
             endpoint_durations,
             endpoint_counts,
+            batch_combined_details,
         )
 
         _prefetch_badge_metadata(
@@ -3041,7 +3084,7 @@ def _perform_api_prefetches(
             endpoint_counts,
         )
 
-        _log_prefetch_progress(processed_count, plan.num_candidates, plan.stats)
+        _log_prefetch_progress(processed_count, plan.num_candidates, plan.stats, fetch_start_time)
 
     ladder_start = time.time()
     batch_tree_data, ladder_calls = _fetch_ladder_details_for_badges(
@@ -3053,7 +3096,7 @@ def _perform_api_prefetches(
     endpoint_counts["ladder_details"] += ladder_calls
 
     fetch_duration = time.time() - fetch_start_time
-    _log_prefetch_summary(fetch_duration, plan.stats)
+    _log_prefetch_summary(fetch_duration, plan.stats, endpoint_durations, endpoint_counts)
 
     return (
         {
@@ -3332,7 +3375,7 @@ def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_b
         adapted_size = max(8, base_batch_size // 2)
         logger.info(f"Multiple slow calls ({recent_slow_calls}), reducing batch size to {adapted_size}")
     elif avg_response_time < 3.0 and recent_slow_calls == 0:  # Fast server
-        adapted_size = min(25, int(base_batch_size * 1.5))
+        adapted_size = min(50, int(base_batch_size * 1.5))
         logger.debug(f"Server fast ({avg_response_time:.1f}s avg), increasing batch size to {adapted_size}")
     else:
         adapted_size = base_batch_size
@@ -7151,6 +7194,41 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
     if details_response and isinstance(details_response, dict):
         details_dict = cast(dict[str, Any], details_response)
         relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
+
+        # Extract relationship predictions
+        predictions = details_dict.get("predictions", [])
+        relationship_str = None
+
+        if predictions:
+            valid_preds = []
+            for candidate in predictions:
+                if (
+                    isinstance(candidate, dict)
+                    and "distributionProbability" in candidate
+                    and "pathsToMatch" in candidate
+                ):
+                    valid_preds.append(candidate)
+
+            if valid_preds:
+                best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+                top_prob_raw = best_pred.get("distributionProbability", 0.0)
+                top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
+
+                paths_raw = best_pred.get("pathsToMatch", [])
+                path_entries = paths_raw if isinstance(paths_raw, Sequence) else []
+
+                labels = []
+                for path in path_entries:
+                    if isinstance(path, dict):
+                        label_value = path.get("label")
+                        if isinstance(label_value, str):
+                            labels.append(label_value)
+
+                max_labels_param = 2  # Default used in action6
+                final_labels = labels[:max_labels_param]
+                relationship_str_val = " or ".join(map(str, final_labels))
+                relationship_str = f"{relationship_str_val} [{top_prob:.1f}%]"
+
         return {
             "admin_profile_id": details_dict.get("adminUcdmId"),
             "admin_username": details_dict.get("adminDisplayName"),
@@ -7163,6 +7241,7 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
             "meiosis": relationship_part.get("meiosis"),
             "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
             "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
+            "relationship_str": relationship_str,
         }
     if isinstance(details_response, requests.Response):
         logger.error(
@@ -7762,484 +7841,7 @@ def _fetch_batch_ladder(
 # ============================================================================
 
 
-@api_retry(
-    retry_on=[
-        requests.exceptions.RequestException,
-        ConnectionError,
-        CloudflareChallengeError,
-    ]
-)
-def _get_cached_csrf_token(session_manager: SessionManager, api_description: str) -> Optional[str]:
-    """Get cached CSRF token if available."""
-    if session_manager.is_csrf_token_valid() and session_manager._cached_csrf_token:
-        logger.debug(
-            "Using cached CSRF token for %s (performance optimized).",
-            api_description,
-        )
-        return session_manager._cached_csrf_token
-    return None
-
-
-def _extract_csrf_from_cookies(session_manager: SessionManager, driver: Any, api_description: str) -> Optional[str]:
-    """Extract CSRF token from driver cookies."""
-    csrf_cookie_names = ("_dnamatches-matchlistui-x-csrf-token", "_csrf")
-    try:
-        session_manager.sync_cookies_to_requests()
-        driver_cookies_list = cast(list[dict[str, Any]], driver.get_cookies())
-        driver_cookies_dict = {
-            c["name"]: c["value"] for c in driver_cookies_list if isinstance(c, dict) and "name" in c and "value" in c
-        }
-        for name in csrf_cookie_names:
-            if driver_cookies_dict.get(name):
-                csrf_token_val = unquote(driver_cookies_dict[name]).split("|")[0]
-
-                import time
-
-                session_manager._cached_csrf_token = csrf_token_val
-                session_manager._csrf_cache_time = time.time()
-
-                logger.debug(f"Retrieved and cached CSRF token '{name}' from driver cookies for {api_description}.")
-                return csrf_token_val
-    except Exception as csrf_e:
-        logger.warning(f"Error processing cookies/CSRF for {api_description}: {csrf_e}")
-    return None
-
-
-def _get_csrf_token_for_relationship_prob(
-    session_manager: SessionManager, driver: Any, api_description: str
-) -> Optional[str]:
-    """Get CSRF token for relationship probability API."""
-    cached_token = _get_cached_csrf_token(session_manager, api_description)
-    if cached_token:
-        return cached_token
-
-    cookie_token = _extract_csrf_from_cookies(session_manager, driver, api_description)
-    if cookie_token:
-        return cookie_token
-
-    if session_manager.csrf_token:
-        logger.warning(f"{api_description}: Using potentially stale CSRF from SessionManager.")
-        return session_manager.csrf_token
-
-    return None
-
-
-def _check_relationship_prob_cache(match_uuid: str, max_labels_param: int, api_start_time: float) -> Optional[str]:
-    """Check cache for relationship probability."""
-    cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-    try:
-        cache = get_unified_cache()
-        cached_data = cache.get("ancestry", "relationship_prob", cache_key)
-        if cached_data is not None and isinstance(cached_data, str):
-            _log_api_performance("relationship_prob_cached", api_start_time, "cache_hit")
-            return cached_data
-    except Exception as cache_exc:
-        logger.debug(f"Relationship prob cache check failed for {match_uuid[:8]}: {cache_exc}")
-    return None
-
-
-def _try_get_fallback(
-    rel_url: str,
-    driver: Any,
-    session_manager: SessionManager,
-    rel_headers: dict[str, str],
-    referer_url: str,
-    api_description: str,
-    match_uuid: str,
-    max_labels_param: int,
-    sample_id_upper: str,
-    api_start_time: float,
-) -> Optional[str]:
-    """Try GET fallback for relationship probability."""
-    get_resp = _call_api_request(
-        url=rel_url,
-        driver=driver,
-        session_manager=session_manager,
-        method="GET",
-        headers=rel_headers,
-        referer_url=referer_url,
-        api_description=f"{api_description} (GET Fallback)",
-        timeout=config_schema.selenium.api_timeout,
-        allow_redirects=True,
-        use_csrf_token=False,
-    )
-    if isinstance(get_resp, dict):
-        return _parse_relationship_probability(
-            get_resp, match_uuid, max_labels_param, sample_id_upper, api_description, api_start_time, session_manager
-        )
-    return None
-
-
-def _try_csrf_refresh_fallback(
-    rel_url: str,
-    driver: Any,
-    session_manager: SessionManager,
-    rel_headers: dict[str, str],
-    referer_url: str,
-    api_description: str,
-    match_uuid: str,
-    max_labels_param: int,
-    sample_id_upper: str,
-    api_start_time: float,
-) -> Optional[str]:
-    """Try CSRF refresh fallback for relationship probability."""
-    try:
-        fresh_csrf = session_manager.get_csrf()
-        if fresh_csrf:
-            rel_headers["X-CSRF-Token"] = fresh_csrf
-            logger.debug("Refreshed CSRF token. Retrying POST for probability...")
-            api_resp2 = _call_api_request(
-                url=rel_url,
-                driver=driver,
-                session_manager=session_manager,
-                method="POST",
-                headers=rel_headers,
-                referer_url=referer_url,
-                api_description=f"{api_description} (Retry with fresh CSRF)",
-                timeout=config_schema.selenium.api_timeout,
-                allow_redirects=True,
-                use_csrf_token=False,
-                json={},
-            )
-            if isinstance(api_resp2, dict):
-                return _parse_relationship_probability(
-                    api_resp2,
-                    match_uuid,
-                    max_labels_param,
-                    sample_id_upper,
-                    api_description,
-                    api_start_time,
-                    session_manager,
-                )
-    except Exception as csrf_refresh_err:
-        logger.debug(f"{api_description}: CSRF refresh attempt failed: {csrf_refresh_err}")
-    return None
-
-
-def _try_cloudscraper_fallback(
-    rel_url: str,
-    scraper: Any,
-    rel_headers: dict[str, str],
-    api_description: str,
-    match_uuid: str,
-    max_labels_param: int,
-    sample_id_upper: str,
-    api_start_time: float,
-    session_manager: SessionManager,
-) -> Optional[str]:
-    """Try cloudscraper fallback for relationship probability."""
-    try:
-        logger.debug(f"{api_description}: Falling back to cloudscraper with redirects enabled...")
-        cs_resp = scraper.post(
-            rel_url,
-            headers=rel_headers,
-            json={},
-            allow_redirects=True,
-            timeout=(30, 90),  # (connect_timeout, read_timeout) - prevents TCP hangs
-        )
-        if cs_resp.ok and cs_resp.headers.get("content-type", "").lower().startswith("application/json"):
-            data = cast(dict[str, Any], cs_resp.json())
-            return _parse_relationship_probability(
-                data, match_uuid, max_labels_param, sample_id_upper, api_description, api_start_time, session_manager
-            )
-    except Exception as cs_e:
-        logger.debug(f"{api_description}: Cloudscraper fallback failed: {cs_e}")
-    return None
-
-
-def _try_relationship_prob_fallbacks(
-    api_resp: Any,
-    rel_url: str,
-    driver: Any,
-    session_manager: SessionManager,
-    rel_headers: dict[str, str],
-    referer_url: str,
-    api_description: str,
-    scraper: Any,
-    match_uuid: str,
-    max_labels_param: int,
-    sample_id_upper: str,
-    api_start_time: float,
-) -> Optional[str]:
-    """Try fallback methods for fetching relationship probability."""
-    if isinstance(api_resp, requests.Response):
-        status = api_resp.status_code
-        if 300 <= status < 400:
-            logger.debug(f"{api_description}: Redirect {status}. Retrying with GET...")
-        elif not api_resp.ok:
-            logger.debug(f"{api_description}: Non-OK {status}. Will attempt CSRF refresh + retry.")
-
-    result = _try_get_fallback(
-        rel_url,
-        driver,
-        session_manager,
-        rel_headers,
-        referer_url,
-        api_description,
-        match_uuid,
-        max_labels_param,
-        sample_id_upper,
-        api_start_time,
-    )
-    if result:
-        return result
-
-    result = _try_csrf_refresh_fallback(
-        rel_url,
-        driver,
-        session_manager,
-        rel_headers,
-        referer_url,
-        api_description,
-        match_uuid,
-        max_labels_param,
-        sample_id_upper,
-        api_start_time,
-    )
-    if result:
-        return result
-
-    return _try_cloudscraper_fallback(
-        rel_url,
-        scraper,
-        rel_headers,
-        api_description,
-        match_uuid,
-        max_labels_param,
-        sample_id_upper,
-        api_start_time,
-        session_manager,
-    )
-
-
-def _extract_best_prediction(
-    predictions: Sequence[Any],
-    sample_id_upper: str,
-    api_description: str,
-) -> Optional[tuple[float, list[str]]]:
-    """Extract the most likely prediction from an API response payload."""
-
-    valid_preds: list[dict[str, Any]] = []
-    for candidate in predictions:
-        if isinstance(candidate, dict) and "distributionProbability" in candidate and "pathsToMatch" in candidate:
-            valid_preds.append(candidate)
-
-    if not valid_preds:
-        logger.debug(f"{api_description}: No valid prediction paths for {sample_id_upper}.")
-        return None
-
-    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-    top_prob_raw = best_pred.get("distributionProbability", 0.0)
-    top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
-
-    paths_raw = best_pred.get("pathsToMatch", [])
-    path_entries: Sequence[Any] = paths_raw if isinstance(paths_raw, Sequence) else []
-
-    labels: list[str] = []
-    for path in path_entries:
-        if isinstance(path, dict):
-            path_dict = cast(dict[str, Any], path)
-            label_value = path_dict.get("label")
-            if isinstance(label_value, str):
-                labels.append(label_value)
-
-    if not labels:
-        logger.debug(
-            f"{api_description}: Prediction for {sample_id_upper}, but labels missing. Top prob: {top_prob:.1f}%"
-        )
-        return None
-
-    return top_prob, labels
-
-
-def _cache_relationship_result(match_uuid: str, max_labels_param: int, result: str) -> None:
-    """Cache relationship probability result."""
-    try:
-        cache = get_unified_cache()
-        cache_key = f"relationship_prob_{match_uuid}_{max_labels_param}"
-        cache.set("ancestry", "relationship_prob", cache_key, result, ttl=7200)
-        logger.debug(f"Cached relationship probability for {match_uuid[:8]}")
-    except Exception as cache_exc:
-        logger.debug(f"Failed to cache relationship prob for {match_uuid[:8]}: {cache_exc}")
-
-
-def _parse_relationship_probability(
-    data_obj: dict[str, Any],
-    match_uuid: str,
-    max_labels_param: int,
-    sample_id_upper: str,
-    api_description: str,
-    api_start_time: float,
-    session_manager: SessionManager,
-) -> Optional[str]:
-    """Parse relationship probability from API response."""
-    if "matchProbabilityToSampleId" not in data_obj:
-        logger.debug(
-            f"{api_description}: Unexpected structure for {sample_id_upper}. Keys: {list(data_obj.keys())[:5]}"
-        )
-        return None
-
-    prob_data = cast(dict[str, Any], data_obj.get("matchProbabilityToSampleId", {}))
-    relationships = cast(dict[str, Any], prob_data.get("relationships", {}))
-    predictions = cast(list[dict[str, Any]], relationships.get("predictions", []))
-    if not predictions:
-        logger.debug(f"No relationship predictions found for {sample_id_upper}. Marking as Distant.")
-        return "Distant relationship?"
-
-    prediction_result = _extract_best_prediction(predictions, sample_id_upper, api_description)
-    if prediction_result is None:
-        return None
-
-    top_prob, labels = prediction_result
-    # Note: API returns probability already as percentage (e.g., 99.0), not decimal (0.99)
-    # So we don't multiply by 100.0
-    top_prob_display = top_prob
-    final_labels = labels[:max_labels_param]
-    relationship_str = " or ".join(map(str, final_labels))
-    result = f"{relationship_str} [{top_prob_display:.1f}%]"
-
-    _cache_relationship_result(match_uuid, max_labels_param, result)
-    _log_api_performance("relationship_prob", api_start_time, "success", session_manager)
-    return result
-
-
-def _validate_relationship_prob_session(
-    session_manager: SessionManager, match_uuid: str, api_start_time: float
-) -> tuple[str, Any, Any]:
-    """Validate session and return required components."""
-    my_uuid = session_manager.my_uuid
-    driver = session_manager.driver
-    scraper = session_manager.scraper
-
-    if not my_uuid or not match_uuid:
-        logger.warning("_fetch_batch_relationship_prob: Missing my_uuid or match_uuid.")
-        _log_api_performance("relationship_prob", api_start_time, "error_missing_uuid")
-        raise ValueError("Missing my_uuid or match_uuid")
-    if not scraper:
-        logger.error("_fetch_batch_relationship_prob: SessionManager scraper not initialized.")
-        raise ConnectionError("SessionManager scraper not initialized.")
-    if not driver or not session_manager.is_sess_valid():
-        logger.error(f"_fetch_batch_relationship_prob: Driver/session invalid for UUID {match_uuid}.")
-        raise ConnectionError(f"WebDriver session invalid for relationship probability fetch (UUID: {match_uuid})")
-    return my_uuid, driver, scraper
-
-
-def _fetch_batch_relationship_prob(
-    session_manager: SessionManager, match_uuid: str, max_labels_param: int = 2
-) -> Optional[str]:
-    """
-    Fetches the predicted relationship probability distribution for a match using
-    the shared cloudscraper instance to potentially bypass Cloudflare challenges.
-
-    Args:
-        session_manager: The active SessionManager instance.
-        match_uuid: The UUID (Sample ID) of the match to fetch probability for.
-        max_labels_param: The maximum number of relationship labels to include in the result string.
-
-    Returns:
-        A formatted string like "1st cousin [95.5%]" or "Distant relationship?",
-        or None if the fetch fails.
-    """
-    import time as time_module
-
-    api_start_time = time_module.time()
-
-    cached_result = _check_relationship_prob_cache(match_uuid, max_labels_param, api_start_time)
-    if cached_result is not None:
-        return cached_result
-
-    try:
-        my_uuid, driver, scraper = _validate_relationship_prob_session(session_manager, match_uuid, api_start_time)
-    except (ValueError, ConnectionError):
-        return None
-
-    my_uuid_upper = my_uuid.upper()
-    sample_id_upper = match_uuid.upper()
-    rel_url = urljoin(
-        config_schema.api.base_url,
-        f"discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}",
-    )
-    referer_url = urljoin(config_schema.api.base_url, "/discoveryui-matches/list/")
-    api_description = "Match Probability API (Cloudscraper)"
-    rel_headers = {
-        "Accept": "application/json",
-        "Referer": referer_url,
-        "Origin": config_schema.api.base_url.rstrip("/"),
-        "User-Agent": random.choice(config_schema.api.user_agents),
-    }
-
-    csrf_token_val = _get_csrf_token_for_relationship_prob(session_manager, driver, api_description)
-    if csrf_token_val:
-        rel_headers["X-CSRF-Token"] = csrf_token_val
-    else:
-        logger.error(f"{api_description}: Failed to add CSRF token to headers. Returning None.")
-        return None
-
-    try:
-        rel_headers["X-Requested-With"] = "XMLHttpRequest"
-
-        api_resp = _call_api_request(
-            url=rel_url,
-            driver=driver,
-            session_manager=session_manager,
-            method="POST",
-            headers=rel_headers,
-            referer_url=referer_url,
-            api_description=api_description,
-            timeout=config_schema.selenium.api_timeout,
-            allow_redirects=True,
-            use_csrf_token=False,
-            json={},
-        )
-
-        if isinstance(api_resp, dict):
-            parsed = _parse_relationship_probability(
-                api_resp,
-                match_uuid,
-                max_labels_param,
-                sample_id_upper,
-                api_description,
-                api_start_time,
-                session_manager,
-            )
-            if parsed:
-                return parsed
-        # Try alternative methods if first attempt failed
-        result = _try_relationship_prob_fallbacks(
-            api_resp,
-            rel_url,
-            driver,
-            session_manager,
-            rel_headers,
-            referer_url,
-            api_description,
-            scraper,
-            match_uuid,
-            max_labels_param,
-            sample_id_upper,
-            api_start_time,
-        )
-        if result:
-            return result
-
-        logger.debug(f"{api_description}: Unable to retrieve probability data for {sample_id_upper}.")
-        return None
-
-    except CloudflareChallengeError as cf_e:
-        logger.error(f"{api_description}: Cloudflare challenge failed for {sample_id_upper}: {cf_e}")
-        raise
-    except requests.exceptions.RequestException as req_e:
-        logger.error(f"{api_description}: RequestException for {sample_id_upper}: {req_e}")
-        raise
-    except Exception as e:
-        logger.error(
-            f"{api_description}: Unexpected error for {sample_id_upper}: {type(e).__name__} - {e}",
-            exc_info=True,
-        )
-        raise RequestException(f"Unexpected Fetch Error: {type(e).__name__}") from e
-
-
-# End of _fetch_batch_relationship_prob
+# Redundant API functions removed (relationship probability is now extracted from match details)
 
 
 # ------------------------------------------------------------------------------

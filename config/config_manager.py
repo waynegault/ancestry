@@ -166,9 +166,7 @@ class ConfigManager:
             # Validate configuration
             validation_errors = config.validate()
             if validation_errors:
-                raise ValidationError(
-                    f"Configuration validation failed: {validation_errors}"
-                )
+                raise ValidationError(f"Configuration validation failed: {validation_errors}")
 
             try:
                 configure_metrics(getattr(config, "observability", None))
@@ -181,9 +179,7 @@ class ConfigManager:
             if self.config_file:
                 self._file_modification_time = self.config_file.stat().st_mtime
 
-            logger.debug(
-                f"Configuration loaded successfully for environment: {self.environment}"
-            )
+            logger.debug(f"Configuration loaded successfully for environment: {self.environment}")
             return config
 
         except Exception as e:
@@ -205,6 +201,7 @@ class ConfigManager:
         safe_rps = 0.3
         self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
         self._align_token_bucket_fill_rate(api, unsafe_requested)
+        self._align_rate_limiter_max_rate(api, unsafe_requested)
 
     @staticmethod
     def _unsafe_rate_limit_requested(api: Any, speed_profile: str) -> bool:
@@ -286,6 +283,30 @@ class ConfigManager:
 
         api.token_bucket_fill_rate = target_rps
 
+    def _align_rate_limiter_max_rate(self, api: Any, unsafe_requested: bool) -> None:
+        """Keep rate limiter max rate aligned with the enforced RPS."""
+        if unsafe_requested:
+            return
+
+        target_rps = getattr(api, "requests_per_second", 0.3)
+        max_rate = getattr(api, "rate_limiter_max_rate", target_rps)
+
+        # If max_rate is significantly higher than target_rps (e.g. > 1.5x), clamp it
+        # We allow some headroom (e.g. 0.5 vs 0.3) for adaptive speedup, but not 3.0 vs 0.3
+        limit = target_rps * 2.0  # Allow 2x speedup (0.3 -> 0.6)
+
+        if max_rate > limit:
+            if not getattr(type(self), "_rate_limiter_max_clamp_logged", False):
+                logger.info(
+                    "Rate limiter max rate %.2f significantly higher than requests_per_second %.2f; clamping to %.2f",
+                    max_rate,
+                    target_rps,
+                    limit,
+                )
+                setattr(type(self), "_rate_limiter_max_clamp_logged", True)
+
+            api.rate_limiter_max_rate = limit
+
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:
         """
         Get the current configuration.
@@ -318,9 +339,7 @@ class ConfigManager:
         self._file_modification_time = None
         return self.load_config()
 
-    def validate_config(
-        self, config_data: Optional[dict[str, Any]] = None
-    ) -> list[str]:
+    def validate_config(self, config_data: Optional[dict[str, Any]] = None) -> list[str]:
         """
         Validate configuration data.
 
@@ -363,9 +382,7 @@ class ConfigManager:
             self.environment = original_env
             self._config_cache = None  # Clear cache to avoid confusion
 
-    def export_config(
-        self, output_file: Union[str, Path], format: str = "json"
-    ) -> bool:
+    def export_config(self, output_file: Union[str, Path], format: str = "json") -> bool:
         """
         Export current configuration to file.
 
@@ -416,6 +433,7 @@ class ConfigManager:
         # Add basic auto-detected batch size
         try:
             import psutil
+
             cpu_count = psutil.cpu_count(logical=True) or 4
             base_config["batch_size"] = min(cpu_count * 2, 20)  # Adaptive batch size
         except Exception:
@@ -431,7 +449,6 @@ class ConfigManager:
             Dictionary with auto-detected configuration values
         """
         try:
-
             import psutil
 
             # System capabilities
@@ -513,7 +530,9 @@ class ConfigManager:
                 "max_productive_to_process": min(cpu_count * 10, 100),  # Scale with CPU
             }
 
-            logger.debug(f"Auto-detected configuration: CPU={cpu_count}, RAM={memory_gb:.1f}GB, Disk={disk_space_gb:.1f}GB")
+            logger.debug(
+                f"Auto-detected configuration: CPU={cpu_count}, RAM={memory_gb:.1f}GB, Disk={disk_space_gb:.1f}GB"
+            )
             return auto_detected
 
         except Exception as e:
@@ -521,7 +540,9 @@ class ConfigManager:
             return {}
 
     @staticmethod
-    def _check_minimum_requirements(cpu_count: int, memory_gb: float, disk_space_gb: float, validation_results: dict[str, Any]) -> None:
+    def _check_minimum_requirements(
+        cpu_count: int, memory_gb: float, disk_space_gb: float, validation_results: dict[str, Any]
+    ) -> None:
         """Check minimum system requirements and update validation results."""
         if cpu_count < 2:
             validation_results["warnings"].append(
@@ -529,9 +550,7 @@ class ConfigManager:
             )
 
         if memory_gb < 4:
-            validation_results["errors"].append(
-                f"Insufficient memory ({memory_gb:.1f}GB). Minimum 4GB required."
-            )
+            validation_results["errors"].append(f"Insufficient memory ({memory_gb:.1f}GB). Minimum 4GB required.")
             validation_results["valid"] = False
 
         if disk_space_gb < 1:
@@ -561,6 +580,7 @@ class ConfigManager:
         # Check Python dependencies
         try:
             from importlib.util import find_spec
+
             deps = ["requests", "selenium", "sqlalchemy"]
             validation_results["dependencies_ok"] = all(find_spec(d) is not None for d in deps)
         except Exception as e:
@@ -570,9 +590,7 @@ class ConfigManager:
         # Check Chrome/ChromeDriver availability
         chrome_available = shutil.which("chrome") or shutil.which("google-chrome") or shutil.which("chromium")
         if not chrome_available:
-            validation_results["warnings"].append(
-                "Chrome browser not found in PATH. Selenium automation may not work."
-            )
+            validation_results["warnings"].append("Chrome browser not found in PATH. Selenium automation may not work.")
 
     def validate_system_requirements(self) -> dict[str, Any]:
         """
@@ -584,13 +602,7 @@ class ConfigManager:
         try:
             import psutil
 
-            validation_results = {
-                "valid": True,
-                "warnings": [],
-                "errors": [],
-                "recommendations": [],
-                "system_info": {}
-            }
+            validation_results = {"valid": True, "warnings": [], "errors": [], "recommendations": [], "system_info": {}}
 
             # Check system resources
             cpu_count = psutil.cpu_count(logical=True) or 1
@@ -600,7 +612,7 @@ class ConfigManager:
             validation_results["system_info"] = {
                 "cpu_cores": cpu_count,
                 "memory_gb": round(memory_gb, 1),
-                "free_disk_gb": round(disk_space_gb, 1)
+                "free_disk_gb": round(disk_space_gb, 1),
             }
 
             # Perform validation checks
@@ -616,7 +628,7 @@ class ConfigManager:
                 "errors": [f"System validation failed: {e}"],
                 "warnings": [],
                 "recommendations": [],
-                "system_info": {}
+                "system_info": {},
             }
 
     @staticmethod
@@ -1059,6 +1071,12 @@ class ConfigManager:
         self._set_float_config(config, "api", "target_match_throughput", "TARGET_MATCH_THROUGHPUT")
         self._set_float_config(config, "api", "max_throughput_catchup_delay", "MAX_THROUGHPUT_CATCHUP_DELAY")
 
+        # New consolidated rate limiter settings
+        self._set_float_config(config, "api", "rate_limiter_429_backoff", "RATE_LIMITER_429_BACKOFF")
+        self._set_float_config(config, "api", "rate_limiter_success_factor", "RATE_LIMITER_SUCCESS_FACTOR")
+        self._set_float_config(config, "api", "rate_limiter_min_rate", "RATE_LIMITER_MIN_RATE")
+        self._set_float_config(config, "api", "rate_limiter_max_rate", "RATE_LIMITER_MAX_RATE")
+
         # Boolean configurations
         self._set_bool_config(config, "api", "rate_limit_enabled", "RATE_LIMIT_ENABLED")
         self._set_bool_config(config, "api", "allow_unsafe_rate_limit", "ALLOW_UNSAFE_RATE_LIMIT")
@@ -1263,9 +1281,7 @@ class ConfigManager:
 
         return config
 
-    def _merge_configs(
-        self, base: dict[str, Any], override: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _merge_configs(self, base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         """
         Merge two configuration dictionaries.
 
@@ -1279,11 +1295,7 @@ class ConfigManager:
         result = copy.deepcopy(base)
 
         for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._merge_configs(result[key], value)
             else:
                 result[key] = value
@@ -1391,6 +1403,7 @@ def _test_invalid_config_data():
 def _test_config_file_integration():
     """Test configuration file integration."""
     from test_utilities import temp_file
+
     # Test with temporary config file
     with temp_file(suffix='.yaml', mode='w+') as temp_f:
         temp_f.write_text("test: value\n", encoding="utf-8")
@@ -1409,6 +1422,7 @@ def _test_environment_integration():
 def _test_config_access_performance():
     """Test configuration access performance."""
     import time
+
     manager = ConfigManager(auto_load=False)
 
     start = time.time()
@@ -1524,7 +1538,7 @@ def config_manager_module_tests() -> bool:
         test_config_manager_initialization,
         "ConfigManager initializes correctly with valid environment",
         "Test ConfigManager class instantiation and initialization",
-        "Verify ConfigManager can be instantiated and has valid environment"
+        "Verify ConfigManager can be instantiated and has valid environment",
     )
 
     suite.run_test(
@@ -1532,7 +1546,7 @@ def config_manager_module_tests() -> bool:
         test_config_validation,
         "Configuration validation methods are available",
         "Test configuration validation functionality",
-        "Verify validate_config and load_config methods exist"
+        "Verify validate_config and load_config methods exist",
     )
 
     suite.run_test(
@@ -1540,7 +1554,7 @@ def config_manager_module_tests() -> bool:
         test_config_loading,
         "Configuration loading works correctly",
         "Test configuration loading functionality",
-        "Verify get_config method exists"
+        "Verify get_config method exists",
     )
 
     suite.run_test(
@@ -1548,7 +1562,7 @@ def config_manager_module_tests() -> bool:
         test_config_access,
         "Configuration values can be accessed",
         "Test configuration value access",
-        "Verify config access methods are available"
+        "Verify config access methods are available",
     )
 
     suite.run_test(
@@ -1556,7 +1570,7 @@ def config_manager_module_tests() -> bool:
         test_missing_config_handling,
         "Missing configuration is handled gracefully",
         "Test handling of missing configuration",
-        "Verify system handles missing config without crashing"
+        "Verify system handles missing config without crashing",
     )
 
     suite.run_test(
@@ -1564,7 +1578,7 @@ def config_manager_module_tests() -> bool:
         test_invalid_config_data,
         "Invalid configuration data is handled gracefully",
         "Test handling of invalid configuration data",
-        "Verify system handles invalid data without crashing"
+        "Verify system handles invalid data without crashing",
     )
 
     suite.run_test(
@@ -1572,7 +1586,7 @@ def config_manager_module_tests() -> bool:
         test_config_file_integration,
         "Configuration file integration works correctly",
         "Test configuration file loading and integration",
-        "Verify system can work with temporary config files"
+        "Verify system can work with temporary config files",
     )
 
     suite.run_test(
@@ -1580,7 +1594,7 @@ def config_manager_module_tests() -> bool:
         test_environment_integration,
         "Environment variable integration works correctly",
         "Test environment variable handling",
-        "Verify environment attribute exists"
+        "Verify environment attribute exists",
     )
 
     suite.run_test(
@@ -1588,7 +1602,7 @@ def config_manager_module_tests() -> bool:
         test_config_access_performance,
         "Configuration access is performant",
         "Test configuration access performance",
-        "Verify 100 config accesses take less than 1 second"
+        "Verify 100 config accesses take less than 1 second",
     )
 
     suite.run_test(
@@ -1596,7 +1610,7 @@ def config_manager_module_tests() -> bool:
         test_config_error_handling,
         "Configuration errors are handled gracefully",
         "Test configuration error handling",
-        "Verify system handles errors without crashing"
+        "Verify system handles errors without crashing",
     )
 
     suite.run_test(
@@ -1604,7 +1618,7 @@ def config_manager_module_tests() -> bool:
         test_requests_per_second_loading,
         "REQUESTS_PER_SECOND loads from environment correctly",
         "Test REQUESTS_PER_SECOND environment variable loading",
-        "Verify default 0.4, custom values, and invalid value handling"
+        "Verify default 0.4, custom values, and invalid value handling",
     )
 
     return suite.finish_suite()
@@ -1612,6 +1626,7 @@ def config_manager_module_tests() -> bool:
 
 if __name__ == "__main__":
     import sys
+
     print("🧪 Running Config Manager Comprehensive Tests...")
     success = config_manager_module_tests()
     sys.exit(0 if success else 1)

@@ -84,6 +84,7 @@ BS4_AVAILABLE = False
 _pydantic_available = False
 try:
     from importlib.util import find_spec as _find_spec
+
     _pydantic_available = _find_spec("pydantic") is not None
 except Exception:
     pass
@@ -201,15 +202,11 @@ API_PATH_TREE_OWNER_INFO = "api/uhome/secure/rest/user/tree-info"
 
 # Person API endpoints
 API_PATH_PERSON_PICKER_SUGGEST = "api/person-picker/suggest/{tree_id}"
-API_PATH_PERSON_FACTS_USER = (
-    "family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}"
-)
+API_PATH_PERSON_FACTS_USER = "family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}"
 API_PATH_EDIT_RELATIONSHIPS = (
     "family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
 )
-API_PATH_PERSON_GETLADDER = (
-    "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
-)
+API_PATH_PERSON_GETLADDER = "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 API_PATH_RELATION_LADDER_WITH_LABELS = (
     "family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"
 )
@@ -268,6 +265,7 @@ class PersonSuggestResponse:
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
+
         result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
@@ -328,6 +326,7 @@ class TreeOwnerResponse:
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
+
         result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
@@ -353,6 +352,7 @@ class PersonFactsResponse:
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
+
         result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
@@ -375,6 +375,7 @@ class GetLadderResponse:
     def dict(self, exclude_none: bool = False) -> dict[str, Any]:
         """Convert to dictionary format with optional None exclusion."""
         from dataclasses import asdict
+
         result = asdict(self)
         if exclude_none:
             result = {k: v for k, v in result.items() if v is not None}
@@ -458,12 +459,8 @@ class ApiRateLimiter:
         current_time = datetime.now()
 
         # Clean old entries
-        self.minute_calls = [
-            t for t in self.minute_calls if (current_time - t).total_seconds() < 60
-        ]
-        self.hour_calls = [
-            t for t in self.hour_calls if (current_time - t).total_seconds() < 3600
-        ]
+        self.minute_calls = [t for t in self.minute_calls if (current_time - t).total_seconds() < 60]
+        self.hour_calls = [t for t in self.hour_calls if (current_time - t).total_seconds() < 3600]
 
         # Check limits
         if len(self.minute_calls) >= self.max_calls_per_minute:
@@ -504,6 +501,7 @@ rate_limiter = ApiRateLimiter()
 
 # Sub-helpers for _extract_name_from_api_details
 
+
 def _try_extract_name_from_person_info(facts_data: dict[str, Any]) -> Optional[str]:
     """Try to extract name from person info in facts_data."""
     person_info = facts_data.get("person", {})
@@ -526,7 +524,11 @@ def _try_extract_name_from_person_facts(facts_data: dict[str, Any]) -> Optional[
     person_facts_list = facts_data.get("PersonFacts", [])
     if isinstance(person_facts_list, list):
         name_fact = next(
-            (f for f in person_facts_list if isinstance(f, dict) and cast(dict[str, Any], f).get("TypeString") == "Name"),
+            (
+                f
+                for f in person_facts_list
+                if isinstance(f, dict) and cast(dict[str, Any], f).get("TypeString") == "Name"
+            ),
             None,
         )
         if name_fact and cast(dict[str, Any], name_fact).get("Value"):
@@ -587,9 +589,7 @@ def _extract_name_from_person_card(person_card: dict[str, Any]) -> Optional[str]
     return person_card.get("name")
 
 
-def _extract_name_from_api_details(
-    person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]
-) -> str:
+def _extract_name_from_api_details(person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> str:
     """
     Extract and format a person's name from Ancestry API response data.
 
@@ -637,6 +637,7 @@ def _extract_name_from_api_details(
 
 
 # Helper functions for _extract_gender_from_api_details
+
 
 def _try_extract_gender_from_person_info(facts_data: dict[str, Any]) -> Optional[str]:
     """Try to extract gender from person info in facts_data."""
@@ -754,6 +755,7 @@ def _extract_gender_from_api_details(
 
 # Helper functions for _extract_living_status_from_api_details
 
+
 def _try_extract_living_from_person_info(facts_data: dict[str, Any]) -> Optional[bool]:
     """Try to extract living status from person info in facts_data."""
     person_info = facts_data.get("person", {})
@@ -829,6 +831,7 @@ def _extract_living_status_from_api_details(
 
 # Helper functions for _extract_event_from_api_details
 
+
 def _build_event_keys(event_type: str) -> dict[str, str]:
     """Build all the key names needed for event extraction."""
     event_key_lower = event_type.lower()
@@ -860,7 +863,9 @@ def _build_date_string_from_parsed_data(parsed_date_data: dict[str, Any]) -> Opt
     return temp_date_str
 
 
-def _try_parse_date_object(date_str: str, parser: Callable[[Optional[str]], Optional[datetime]], event_type: str) -> Optional[datetime]:
+def _try_parse_date_object(
+    date_str: str, parser: Callable[[Optional[str]], Optional[datetime]], event_type: str
+) -> Optional[datetime]:
     """Try to parse a date string into a datetime object."""
     try:
         return parser(date_str)
@@ -870,7 +875,10 @@ def _try_parse_date_object(date_str: str, parser: Callable[[Optional[str]], Opti
 
 
 def _extract_from_person_facts(
-    facts_data: dict[str, Any], facts_user_key: str, event_type: str, parser: Callable[[Optional[str]], Optional[datetime]]
+    facts_data: dict[str, Any],
+    facts_user_key: str,
+    event_type: str,
+    parser: Callable[[Optional[str]], Optional[datetime]],
 ) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
     """Extract event data from PersonFacts list."""
     person_facts_list = facts_data.get("PersonFacts", [])
@@ -896,9 +904,7 @@ def _extract_from_person_facts(
     place_str = event_fact_dict.get("Place")
     date_obj = None
 
-    logger.debug(
-        f"Found primary {event_type} fact in PersonFacts: Date='{date_str}', Place='{place_str}'"
-    )
+    logger.debug(f"Found primary {event_type} fact in PersonFacts: Date='{date_str}', Place='{place_str}'")
 
     # Try to parse date from ParsedDate structure
     parsed_date_data = event_fact_dict.get("ParsedDate")
@@ -966,9 +972,7 @@ def _extract_from_suggest_api(
 
     if suggest_year:
         date_str = str(suggest_year)
-        logger.debug(
-            f"Using Suggest API keys for {event_type}: Year='{date_str}', Place='{suggest_place}'"
-        )
+        logger.debug(f"Using Suggest API keys for {event_type}: Year='{date_str}', Place='{suggest_place}'")
         return date_str, suggest_place
 
     return None, None
@@ -998,7 +1002,7 @@ def _extract_from_facts_data(
     facts_data: Optional[dict[str, Any]],
     keys: dict[str, str],
     event_type: str,
-    parser: Callable[[Optional[str]], Optional[datetime]]
+    parser: Callable[[Optional[str]], Optional[datetime]],
 ) -> tuple[Optional[str], Optional[str], Optional[datetime], bool]:
     """Extract event data from facts_data using multiple strategies."""
     date_str: Optional[str] = None
@@ -1016,15 +1020,11 @@ def _extract_from_facts_data(
 
     # Strategy 2: Structured facts data with date/place objects
     if not found_in_facts:
-        date_str, place_str, found_in_facts = _extract_from_structured_facts(
-            facts_data, keys["app_api_facts"]
-        )
+        date_str, place_str, found_in_facts = _extract_from_structured_facts(facts_data, keys["app_api_facts"])
 
     # Strategy 3: Alternative event fact formats
     if not found_in_facts:
-        date_str, place_str, found_in_facts = _extract_from_alternative_facts(
-            facts_data, keys["app_api"]
-        )
+        date_str, place_str, found_in_facts = _extract_from_alternative_facts(facts_data, keys["app_api"])
 
     return date_str, place_str, date_obj, found_in_facts
 
@@ -1034,7 +1034,7 @@ def _extract_from_person_card(
     keys: dict[str, str],
     event_type: str,
     current_date_str: Optional[str],
-    current_place_str: Optional[str]
+    current_place_str: Optional[str],
 ) -> tuple[Optional[str], Optional[str]]:
     """Extract event data from person_card using multiple strategies."""
     date_str = current_date_str
@@ -1050,9 +1050,7 @@ def _extract_from_person_card(
         place_str = suggest_place
     else:
         # Strategy 5: Concatenated event info strings
-        card_date, card_place = _extract_from_event_info_card(
-            person_card, keys["event_lower"]
-        )
+        card_date, card_place = _extract_from_event_info_card(person_card, keys["event_lower"])
         if card_date:
             date_str = card_date
         if card_place and place_str is None:
@@ -1102,9 +1100,7 @@ def _extract_event_from_api_details(
     keys = _build_event_keys(event_type)
 
     # Try to extract from facts_data using multiple strategies
-    date_str, place_str, date_obj, found_in_facts = _extract_from_facts_data(
-        facts_data, keys, event_type, parser
-    )
+    date_str, place_str, date_obj, found_in_facts = _extract_from_facts_data(facts_data, keys, event_type, parser)
 
     # Try to extract from person_card if not found in facts_data
     if not found_in_facts and person_card:
@@ -1120,9 +1116,7 @@ def _extract_event_from_api_details(
 # End of _extract_event_from_api_details
 
 
-def _generate_person_link(
-    person_id: Optional[str], tree_id: Optional[str], base_url: str
-) -> str:
+def _generate_person_link(person_id: Optional[str], tree_id: Optional[str], base_url: str) -> str:
     """
     Generate an appropriate Ancestry.com URL for viewing a person's details.
 
@@ -1193,13 +1187,15 @@ def _update_details_from_facts(details: dict[str, Any], facts_data: Optional[dic
             details["user_id"] = person_info_dict.get("userId", details["user_id"])
 
 
-def _extract_and_format_dates(details: dict[str, Any], person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]) -> None:
+def _extract_and_format_dates(
+    details: dict[str, Any], person_card: dict[str, Any], facts_data: Optional[dict[str, Any]]
+) -> None:
     """Extract and format birth and death dates."""
-    birth_date_raw, details["birth_place"], details["api_birth_obj"] = (
-        _extract_event_from_api_details("Birth", person_card, facts_data)
+    birth_date_raw, details["birth_place"], details["api_birth_obj"] = _extract_event_from_api_details(
+        "Birth", person_card, facts_data
     )
-    death_date_raw, details["death_place"], details["api_death_obj"] = (
-        _extract_event_from_api_details("Death", person_card, facts_data)
+    death_date_raw, details["death_place"], details["api_death_obj"] = _extract_event_from_api_details(
+        "Death", person_card, facts_data
     )
 
     cleaner = _get_clean_display_date_callable()
@@ -1285,9 +1281,7 @@ def _get_api_timeout(default: int = 60) -> int:
         if config_timeout > 0:
             timeout_value = int(config_timeout)
         else:
-            logger.warning(
-                f"Invalid API_TIMEOUT value in config ({config_timeout}), using default {default}s."
-            )
+            logger.warning(f"Invalid API_TIMEOUT value in config ({config_timeout}), using default {default}s.")
         # End of if/else
     # End of if
     return timeout_value
@@ -1318,15 +1312,11 @@ def _get_owner_referer(session_manager: "SessionManager", base_url: str) -> str:
     owner_profile_id = getattr(session_manager, "my_profile_id", None)
     owner_tree_id = getattr(session_manager, "my_tree_id", None)
     if owner_profile_id and owner_tree_id:
-        referer_path = (
-            f"/family-tree/tree/{owner_tree_id}/person/{owner_profile_id}/facts"
-        )
+        referer_path = f"/family-tree/tree/{owner_tree_id}/person/{owner_profile_id}/facts"
         referer = urljoin(base_url.rstrip("/") + "/", referer_path.lstrip("/"))
         logger.debug(f"Using owner facts page as referer: {referer}")
         return referer
-    logger.warning(
-        "Owner profile/tree ID missing in session. Using base URL as referer."
-    )
+    logger.warning("Owner profile/tree ID missing in session. Using base URL as referer.")
     return base_url.rstrip("/") + "/"
     # End of if/else
 
@@ -1341,9 +1331,7 @@ def _validate_suggest_api_inputs(owner_tree_id: str):
     """Validate inputs for suggest API call."""
     if not _api_request_available():
         logger.critical("Suggest API call failed: _api_req function unavailable (Import Failed?).")
-        raise AncestryError(
-            "_api_req function not available from utils - Check module imports and dependencies"
-        )
+        raise AncestryError("_api_req function not available from utils - Check module imports and dependencies")
 
     if not owner_tree_id:
         raise AncestryError("owner_tree_id is required for suggest API - Provide a valid tree ID")
@@ -1356,6 +1344,7 @@ def _apply_rate_limiting(api_description: str):
             wait_time = rate_limiter.wait_time_until_available()
             logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
             import time
+
             time.sleep(wait_time)
         rate_limiter.record_request()
 
@@ -1412,11 +1401,7 @@ def _validate_suggest_response(suggest_response: Any, api_description: str) -> O
 
 
 def _make_suggest_api_request(
-    suggest_url: str,
-    session_manager: "SessionManager",
-    owner_facts_referer: str,
-    timeout: int,
-    api_description: str
+    suggest_url: str, session_manager: "SessionManager", owner_facts_referer: str, timeout: int, api_description: str
 ) -> Any:
     """Make a single suggest API request."""
     custom_headers = {
@@ -1441,7 +1426,9 @@ def _make_suggest_api_request(
     )
 
 
-def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception):
+def _handle_suggest_timeout(
+    timeout: int, attempt: int, max_attempts: int, suggest_url: str, api_description: str, timeout_err: Exception
+):
     """Handle timeout exception for suggest API."""
     timeout_error = NetworkTimeoutError(
         f"API request timed out after {timeout}s",
@@ -1459,9 +1446,12 @@ def _handle_suggest_timeout(timeout: int, attempt: int, max_attempts: int, sugge
         raise timeout_error from timeout_err
 
 
-def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str):
+def _handle_suggest_rate_limit(
+    req_err: Exception, attempt: int, max_attempts: int, api_description: str, suggest_url: str
+):
     """Handle rate limit (429) exception for suggest API."""
     import time
+
     rate_limit_delay = 5.0 * (2 ** (attempt - 1))
     rate_limit_delay = min(rate_limit_delay, 300.0)
     logger.warning(
@@ -1477,10 +1467,7 @@ def _handle_suggest_rate_limit(req_err: Exception, attempt: int, max_attempts: i
 
 
 def _try_direct_suggest_fallback(
-    suggest_url: str,
-    session_manager: "SessionManager",
-    owner_facts_referer: str,
-    api_description: str
+    suggest_url: str, session_manager: "SessionManager", owner_facts_referer: str, api_description: str
 ) -> Optional[list[dict[str, Any]]]:
     """Try direct requests fallback for suggest API."""
     logger.warning(f"{api_description} failed via _api_req. Attempting direct requests fallback.")
@@ -1537,7 +1524,7 @@ def _execute_suggest_api_with_retries(
     session_manager: "SessionManager",
     owner_facts_referer: str,
     timeouts_used: list[int],
-    api_description: str
+    api_description: str,
 ) -> Optional[list[dict[str, Any]]]:
     """Execute Suggest API with retry logic."""
     max_attempts = len(timeouts_used)
@@ -1560,7 +1547,9 @@ def _execute_suggest_api_with_retries(
                 return validated_response
 
             if suggest_response is None:
-                logger.warning(f"{api_description} call using _api_req returned None on attempt {attempt}/{max_attempts}.")
+                logger.warning(
+                    f"{api_description} call using _api_req returned None on attempt {attempt}/{max_attempts}."
+                )
             else:
                 suggest_response = None
                 break
@@ -1642,15 +1631,11 @@ def _validate_facts_api_prerequisites(
 ) -> bool:
     """Validate prerequisites for Facts API call."""
     if not _api_request_available():
-        logger.critical(
-            "Facts API call failed: _api_req function unavailable (Import Failed?)."
-        )
+        logger.critical("Facts API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
 
     if not all([owner_profile_id, api_person_id, api_tree_id]):
-        logger.error(
-            "Facts API call failed: owner_profile_id, api_person_id, and api_tree_id are required."
-        )
+        logger.error("Facts API call failed: owner_profile_id, api_person_id, and api_tree_id are required.")
         return False
 
     return True
@@ -1696,16 +1681,12 @@ def _try_direct_facts_request(
         if direct_response_obj.status_code == 200:
             facts_data_raw = direct_response_obj.json()
             if not isinstance(facts_data_raw, dict):
-                logger.warning(
-                    f"Direct facts request OK (200) but returned non-dict data: {type(facts_data_raw)}"
-                )
+                logger.warning(f"Direct facts request OK (200) but returned non-dict data: {type(facts_data_raw)}")
                 logger.debug(f"Response content: {direct_response_obj.text[:500]}")
                 return None
             logger.info(f"{api_description} call successful via direct request.")
             return facts_data_raw
-        logger.warning(
-            f"Direct facts request failed: Status {direct_response_obj.status_code}"
-        )
+        logger.warning(f"Direct facts request failed: Status {direct_response_obj.status_code}")
         logger.debug(f"Response content: {direct_response_obj.text[:500]}")
         return None
 
@@ -1730,15 +1711,11 @@ def _try_fallback_facts_request(
     api_description: str,
 ) -> Optional[dict[str, Any]]:
     """Try fallback facts request using _api_req."""
-    logger.warning(
-        f"{api_description} direct request failed. Trying _api_req fallback."
-    )
+    logger.warning(f"{api_description} direct request failed. Trying _api_req fallback.")
 
     max_attempts = len(fallback_timeouts)
     for attempt, timeout in enumerate(fallback_timeouts, 1):
-        logger.debug(
-            f"{api_description} _api_req attempt {attempt}/{max_attempts} with timeout {timeout}s"
-        )
+        logger.debug(f"{api_description} _api_req attempt {attempt}/{max_attempts} with timeout {timeout}s")
         try:
             custom_headers = {
                 "Accept": "application/json",
@@ -1759,21 +1736,13 @@ def _try_fallback_facts_request(
                 timeout=timeout,
             )
             if isinstance(api_response, dict):
-                logger.info(
-                    f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts})."
-                )
+                logger.info(f"{api_description} call successful via _api_req (attempt {attempt}/{max_attempts}).")
                 return api_response
             if api_response is None:
-                logger.warning(
-                    f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
-                )
+                logger.warning(f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts}).")
             else:
-                logger.warning(
-                    f"{api_description} _api_req returned unexpected type: {type(api_response)}"
-                )
-                logger.debug(
-                    f"Unexpected Response Value: {str(api_response)[:500]}"
-                )
+                logger.warning(f"{api_description} _api_req returned unexpected type: {type(api_response)}")
+                logger.debug(f"Unexpected Response Value: {str(api_response)[:500]}")
         except requests.exceptions.Timeout:
             logger.warning(
                 f"{api_description} _api_req call timed out after {timeout}s on attempt {attempt}/{max_attempts}."
@@ -1795,16 +1764,12 @@ def _validate_and_extract_facts_data(
 ) -> Optional[dict[str, Any]]:
     """Validate and extract person research data from facts API response."""
     if not isinstance(facts_data_raw, dict):
-        logger.error(
-            f"Failed to fetch valid {api_description} data after all attempts."
-        )
+        logger.error(f"Failed to fetch valid {api_description} data after all attempts.")
         return None
 
     person_research_data = facts_data_raw.get("data", {}).get("personResearch")
     if not isinstance(person_research_data, dict) or not person_research_data:
-        logger.error(
-            f"{api_description} response received, but missing 'data.personResearch' dictionary."
-        )
+        logger.error(f"{api_description} response received, but missing 'data.personResearch' dictionary.")
         logger.debug(f"Full raw response keys: {list(facts_data_raw.keys())}")
         if "data" in facts_data_raw and isinstance(facts_data_raw["data"], dict):
             logger.debug(f"'data' sub-keys: {list(facts_data_raw['data'].keys())}")
@@ -1821,9 +1786,7 @@ def _validate_and_extract_facts_data(
             logger.warning(f"Facts API response validation warning: {validation_err}")
             # Continue with original data if validation fails
 
-    logger.info(
-        f"Successfully fetched and extracted 'personResearch' data for PersonID {api_person_id}."
-    )
+    logger.info(f"Successfully fetched and extracted 'personResearch' data for PersonID {api_person_id}.")
     return person_research_data
 
 
@@ -1838,9 +1801,7 @@ def call_facts_user_api(
         logger.error("Facts API call failed: Missing required API identifiers")
         return None
 
-    if not _validate_facts_api_prerequisites(
-        api_ids.owner_profile_id, api_ids.api_person_id, api_ids.api_tree_id
-    ):
+    if not _validate_facts_api_prerequisites(api_ids.owner_profile_id, api_ids.api_person_id, api_ids.api_tree_id):
         return None
 
     api_description = "Person Facts User API"
@@ -1888,6 +1849,7 @@ def _process_getladder_response(relationship_data: Any, api_description: str) ->
     if PYDANTIC_AVAILABLE:
         try:
             import json
+
             parsed_data = json.loads(relationship_data)
             GetLadderResponse(**parsed_data)
             logger.debug("GetLadder API response validation successful")
@@ -1915,18 +1877,12 @@ def call_getladder_api(
     api_description = "Get Tree Ladder API"
     _apply_rate_limiting(api_description)
 
-    formatted_path = API_PATH_PERSON_GETLADDER.format(
-        tree_id=owner_tree_id, person_id=target_person_id
-    )
+    formatted_path = API_PATH_PERSON_GETLADDER.format(tree_id=owner_tree_id, person_id=target_person_id)
     ladder_api_url_base = urljoin(base_url.rstrip("/") + "/", formatted_path)
     query_params = urlencode({"callback": "no"})
     ladder_api_url = f"{ladder_api_url_base}?{query_params}"
-    ladder_referer_path = (
-        f"/family-tree/person/tree/{owner_tree_id}/person/{target_person_id}/facts"
-    )
-    ladder_referer = urljoin(
-        base_url.rstrip("/") + "/", ladder_referer_path.lstrip("/")
-    )
+    ladder_referer_path = f"/family-tree/person/tree/{owner_tree_id}/person/{target_person_id}/facts"
+    ladder_referer = urljoin(base_url.rstrip("/") + "/", ladder_referer_path.lstrip("/"))
     api_timeout_val = timeout if timeout else _get_api_timeout(20)
     logger.debug(f"Attempting {api_description} call: {ladder_api_url}")
 
@@ -2004,7 +1960,9 @@ def call_discovery_relationship_api(
         logger.critical("Discovery Relationship API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
     if not all([owner_profile_id, selected_person_global_id]):
-        logger.error("Discovery Relationship API call failed: owner_profile_id and selected_person_global_id are required.")
+        logger.error(
+            "Discovery Relationship API call failed: owner_profile_id and selected_person_global_id are required."
+        )
         return None
 
     api_description = "Discovery Relationship API"
@@ -2077,7 +2035,7 @@ def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[
         f"name={quote(full_name)}",
         "limit=100",
         "fields=EVENTS,GENDERS,NAMES",
-        "isGetFullPersonObject=true"
+        "isGetFullPersonObject=true",
     ]
 
     treesui_params = "&".join(treesui_params_list)
@@ -2309,9 +2267,7 @@ def call_treesui_list_api(
 
     treesui_response = None
     for attempt, timeout in enumerate(timeouts_used, 1):
-        logger.debug(
-            f"{api_description} attempt {attempt}/{max_attempts} with timeout {timeout}s"
-        )
+        logger.debug(f"{api_description} attempt {attempt}/{max_attempts} with timeout {timeout}s")
         try:
             custom_headers = {
                 "Accept": "application/json",
@@ -2338,13 +2294,9 @@ def call_treesui_list_api(
                 # Parse the raw response into standardized format
                 return _parse_treesui_list_response(treesui_response)
             if treesui_response is None:
-                logger.warning(
-                    f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts})."
-                )
+                logger.warning(f"{api_description} _api_req returned None (attempt {attempt}/{max_attempts}).")
             else:
-                logger.error(
-                    f"{api_description} returned unexpected format via _api_req: {type(treesui_response)}"
-                )
+                logger.error(f"{api_description} returned unexpected format via _api_req: {type(treesui_response)}")
                 logger.debug(f"Unexpected Response: {str(treesui_response)[:500]}")
                 return None
             # End of if/elif/else
@@ -2448,9 +2400,7 @@ def call_relation_ladder_with_labels_api(
     api_timeout_val = timeout if timeout is not None else 30
 
     # Build URL
-    formatted_path = API_PATH_RELATION_LADDER_WITH_LABELS.format(
-        user_id=user_id, tree_id=tree_id, person_id=person_id
-    )
+    formatted_path = API_PATH_RELATION_LADDER_WITH_LABELS.format(user_id=user_id, tree_id=tree_id, person_id=person_id)
     relation_ladder_url = urljoin(base_url.rstrip("/") + "/", formatted_path)
 
     logger.debug(f"Attempting {api_description} call: {relation_ladder_url}")
@@ -2469,7 +2419,9 @@ def call_relation_ladder_with_labels_api(
 
         if isinstance(response, dict) and "kinshipPersons" in response:
             response_dict = cast(dict[str, Any], response)
-            logger.debug(f"{api_description} call successful, found {len(response_dict.get('kinshipPersons', []))} persons in path")
+            logger.debug(
+                f"{api_description} call successful, found {len(response_dict.get('kinshipPersons', []))} persons in path"
+            )
             return response_dict
         logger.error(f"{api_description} returned unexpected format: {type(response)}")
         return None
@@ -2484,18 +2436,24 @@ def _validate_message_response(
     is_initial: bool,
     existing_conv_id: Optional[str],
     my_profile_id_upper: str,
-    log_prefix: str
+    log_prefix: str,
 ) -> tuple[bool, Optional[str], str]:
     """Validate message API response. Returns (post_ok, conversation_id, message_status)."""
     if is_initial:
         api_conv_id = str(api_response.get(KEY_CONVERSATION_ID, ""))
         msg_details = api_response.get(KEY_MESSAGE, {})
-        api_author = str(cast(dict[str, Any], msg_details).get(KEY_AUTHOR, "")).upper() if isinstance(msg_details, dict) else None
+        api_author = (
+            str(cast(dict[str, Any], msg_details).get(KEY_AUTHOR, "")).upper()
+            if isinstance(msg_details, dict)
+            else None
+        )
 
         if api_conv_id and api_author == my_profile_id_upper:
             return True, api_conv_id, SEND_ERROR_UNKNOWN
 
-        logger.error(f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+        logger.error(
+            f"{log_prefix}: API initial response format invalid (ConvID: '{api_conv_id}', Author: '{api_author}', Expected Author: '{my_profile_id_upper}')."
+        )
         logger.debug(f"API Response: {api_response}")
         return False, None, SEND_ERROR_VALIDATION_FAILED
 
@@ -2504,7 +2462,9 @@ def _validate_message_response(
     if api_author == my_profile_id_upper:
         return True, existing_conv_id, SEND_ERROR_UNKNOWN
 
-    logger.error(f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{my_profile_id_upper}').")
+    logger.error(
+        f"{log_prefix}: API follow-up author validation failed (Author: '{api_author}', Expected Author: '{my_profile_id_upper}')."
+    )
     logger.debug(f"API Response: {api_response}")
     return False, None, SEND_ERROR_VALIDATION_FAILED
 
@@ -2516,7 +2476,7 @@ def _process_send_message_response(
     my_profile_id_upper: str,
     person: "Person",
     send_api_desc: str,
-    log_prefix: str
+    log_prefix: str,
 ) -> tuple[str, Optional[str]]:
     """Process send message API response and return status and conversation ID."""
     message_status = SEND_ERROR_UNKNOWN
@@ -2530,6 +2490,7 @@ def _process_send_message_response(
         message_status = f"send_error (http_{api_response.status_code})"
         logger.error(f"{log_prefix}: API POST ({send_api_desc}) failed with status {api_response.status_code}.")
         from contextlib import suppress
+
         with suppress(Exception):
             logger.debug(f"Error response body: {api_response.text[:500]}")
     elif isinstance(api_response, dict):
@@ -2539,13 +2500,19 @@ def _process_send_message_response(
             )
             if post_ok:
                 message_status = SEND_SUCCESS_DELIVERED
-                logger.info(f"{log_prefix}: Message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')} successful (ConvID: {new_conversation_id_from_api}).")
+                logger.info(
+                    f"{log_prefix}: Message send to {getattr(person, 'username', None) or getattr(person, 'profile_id', 'Unknown')} successful (ConvID: {new_conversation_id_from_api})."
+                )
         except Exception as parse_err:
-            logger.error(f"{log_prefix}: Error parsing successful API response ({send_api_desc}): {parse_err}", exc_info=True)
+            logger.error(
+                f"{log_prefix}: Error parsing successful API response ({send_api_desc}): {parse_err}", exc_info=True
+            )
             logger.debug(f"API Response received: {api_response}")
             message_status = SEND_ERROR_UNEXPECTED_FORMAT
     else:
-        logger.error(f"{log_prefix}: API call ({send_api_desc}) unexpected success format. Type:{type(api_response)}, Resp:{str(api_response)[:200]}")
+        logger.error(
+            f"{log_prefix}: API call ({send_api_desc}) unexpected success format. Type:{type(api_response)}, Resp:{str(api_response)[:200]}"
+        )
         message_status = SEND_ERROR_UNEXPECTED_FORMAT
 
     if not post_ok and message_status == SEND_ERROR_UNKNOWN:
@@ -2560,7 +2527,7 @@ def _prepare_send_message_request(
     my_profile_id_lower: str,
     recipient_profile_id_upper: str,
     existing_conv_id: Optional[str],
-    log_prefix: str
+    log_prefix: str,
 ) -> Optional[tuple[str, dict[str, Any], str, dict[str, Any]]]:
     """Prepare API request data for sending message. Returns (url, payload, description, headers) or None."""
     try:
@@ -2599,10 +2566,7 @@ def _prepare_send_message_request(
 
 
 def _validate_send_message_request(
-    session_manager: "SessionManager",
-    person: "Person",
-    message_text: str,
-    log_prefix: str
+    session_manager: "SessionManager", person: "Person", message_text: str, log_prefix: str
 ) -> Optional[tuple[str, Optional[str]]]:
     """Validate send message request. Returns error tuple if invalid, None if valid."""
     if not session_manager or not session_manager.my_profile_id:
@@ -2620,7 +2584,9 @@ def _validate_send_message_request(
     return None
 
 
-def _handle_dry_run_mode(person: "Person", existing_conv_id: Optional[str], log_prefix: str) -> tuple[str, Optional[str]]:
+def _handle_dry_run_mode(
+    person: "Person", existing_conv_id: Optional[str], log_prefix: str
+) -> tuple[str, Optional[str]]:
     """Handle dry run mode for message sending."""
     message_status = SEND_SUCCESS_DRY_RUN
     effective_conv_id = existing_conv_id or f"dryrun_{uuid.uuid4()}"
@@ -2679,8 +2645,7 @@ def call_send_message_api(
 
     is_initial = not existing_conv_id
     return _process_send_message_response(
-        api_response, is_initial, existing_conv_id, MY_PROFILE_ID_UPPER,
-        person, send_api_desc, log_prefix
+        api_response, is_initial, existing_conv_id, MY_PROFILE_ID_UPPER, person, send_api_desc, log_prefix
     )
 
 
@@ -2695,7 +2660,9 @@ def _process_profile_response(profile_response: Any, profile_id: str) -> Optiona
         elif profile_response is None:
             logger.warning(f"Failed profile details fetch for {profile_id} (_api_req returned None).")
         else:
-            logger.warning(f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)}).")
+            logger.warning(
+                f"Failed profile details fetch for {profile_id} (Invalid response type: {type(profile_response)})."
+            )
         return None
 
     # Validate response with Pydantic if available
@@ -2765,9 +2732,7 @@ def _validate_profile_request(session_manager: "SessionManager", profile_id: str
     return True
 
 
-def call_profile_details_api(
-    session_manager: "SessionManager", profile_id: str
-) -> Optional[dict[str, Any]]:
+def call_profile_details_api(session_manager: "SessionManager", profile_id: str) -> Optional[dict[str, Any]]:
     if not _validate_profile_request(session_manager, profile_id):
         return None
 
@@ -2781,9 +2746,7 @@ def call_profile_details_api(
     )
     referer_url = urljoin(base_url_cfg, "/messaging/")
 
-    logger.debug(
-        f"Fetching profile details ({api_description}) for Profile ID {profile_id}..."
-    )
+    logger.debug(f"Fetching profile details ({api_description}) for Profile ID {profile_id}...")
 
     try:
         profile_response = _call_api_request(
@@ -2840,7 +2803,9 @@ def _validate_header_trees_response(response_data: Any, api_description: str) ->
             logger.warning(f"{api_description} call failed (_api_req returned None).")
         else:
             status = str(response_data.status_code) if isinstance(response_data, requests.Response) else "N/A"
-            logger.warning(f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None.")
+            logger.warning(
+                f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
+            )
             logger.debug(f"Response received: {response_data!s}")
         return None
 
@@ -2881,14 +2846,14 @@ def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, ap
         if "name" in item_dict and item_dict.get("name") == tree_name_config:
             tree_id = item_dict.get("id")
             if tree_id:
-                logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (new format).")
+                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (new format).")
                 return str(tree_id)
 
         # Old format: {"text": "...", "url": "..."}
         if KEY_TEXT in item_dict and item_dict.get(KEY_TEXT) == tree_name_config:
             tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
             if tree_id:
-                logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (old format)")
+                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (old format)")
                 return tree_id
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
@@ -2909,9 +2874,7 @@ def _validate_header_trees_request(session_manager: "SessionManager", tree_name_
     return True
 
 
-def call_header_trees_api_for_tree_id(
-    session_manager: "SessionManager", tree_name_config: str
-) -> Optional[str]:
+def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_name_config: str) -> Optional[str]:
     if not _validate_header_trees_request(session_manager, tree_name_config):
         return None
 
@@ -2961,7 +2924,9 @@ def _extract_tree_owner_from_response(response_data: Any, tree_id: str, api_desc
             logger.warning(f"{api_description} call failed (_api_req returned None).")
         else:
             status = str(response_data.status_code) if isinstance(response_data, requests.Response) else "N/A"
-            logger.warning(f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None.")
+            logger.warning(
+                f"{api_description} call returned unexpected data (Type: {type(response_data)}, Status: {status}) or None."
+            )
             logger.debug(f"Response received: {response_data!s}")
         return None
 
@@ -3005,9 +2970,7 @@ def _validate_tree_owner_request(session_manager: "SessionManager", tree_id: str
     return True
 
 
-def call_tree_owner_api(
-    session_manager: "SessionManager", tree_id: str
-) -> Optional[str]:
+def call_tree_owner_api(session_manager: "SessionManager", tree_id: str) -> Optional[str]:
     if not _validate_tree_owner_request(session_manager, tree_id):
         return None
 
@@ -3017,9 +2980,7 @@ def call_tree_owner_api(
 
     _apply_rate_limiting(api_description)
 
-    logger.debug(
-        f"Attempting to fetch tree owner name for tree ID: {tree_id} via {api_description}..."
-    )
+    logger.debug(f"Attempting to fetch tree owner name for tree ID: {tree_id} via {api_description}...")
 
     try:
         response_data = _call_api_request(
@@ -3033,9 +2994,7 @@ def call_tree_owner_api(
 
         return _extract_tree_owner_from_response(response_data, tree_id, api_description)
     except Exception as e:
-        logger.error(
-            f"Error during {api_description} for tree {tree_id}: {e}", exc_info=True
-        )
+        logger.error(f"Error during {api_description} for tree {tree_id}: {e}", exc_info=True)
         return None
     # End of try/except
 
@@ -3062,7 +3021,7 @@ def call_enhanced_api(
     method: str = "GET",
     data: Optional[dict[str, Any]] = None,
     api_description: str = "Enhanced API Call",
-    use_csrf_token: bool = True
+    use_csrf_token: bool = True,
 ) -> Optional[dict[str, Any]]:
     """
     Call an enhanced API endpoint with full browser-like authentication.
@@ -3092,11 +3051,7 @@ def call_enhanced_api(
         # Construct full URL
         base_url = config_schema.api.base_url.rstrip('/')
         # Format endpoint with provided IDs
-        formatted_endpoint = endpoint.format(
-            user_id=user_id,
-            tree_id=tree_id,
-            person_id=person_id
-        )
+        formatted_endpoint = endpoint.format(user_id=user_id, tree_id=tree_id, person_id=person_id)
         url = f"{base_url}{formatted_endpoint}"
         referer_url = f"{base_url}/family-tree/person/tree/{tree_id}/person/{person_id}/facts"
 
@@ -3121,11 +3076,7 @@ def call_enhanced_api(
             use_csrf_token=use_csrf_token,
             timeout=30,
             # Pass additional parameters for enhanced headers
-            headers={
-                "_use_enhanced_headers": "true",
-                "_tree_id": tree_id,
-                "_person_id": person_id
-            }
+            headers={"_use_enhanced_headers": "true", "_tree_id": tree_id, "_person_id": person_id},
         )
         duration = time.time() - start_time
 
@@ -3141,10 +3092,7 @@ def call_enhanced_api(
 
 
 def call_edit_relationships_api(
-    session_manager: "SessionManager",
-    user_id: str,
-    tree_id: str,
-    person_id: str
+    session_manager: "SessionManager", user_id: str, tree_id: str, person_id: str
 ) -> Optional[dict[str, Any]]:
     """
     Call the edit relationships API endpoint to get family relationship data.
@@ -3166,15 +3114,12 @@ def call_edit_relationships_api(
         tree_id=tree_id,
         person_id=person_id,
         api_description="Edit Relationships API",
-        use_csrf_token=False  # Disable CSRF token for cleaner logging
+        use_csrf_token=False,  # Disable CSRF token for cleaner logging
     )
 
 
 def call_relationship_ladder_api(
-    session_manager: "SessionManager",
-    user_id: str,
-    tree_id: str,
-    person_id: str
+    session_manager: "SessionManager", user_id: str, tree_id: str, person_id: str
 ) -> Optional[dict[str, Any]]:
     """
     Call the enhanced relationship ladder API endpoint to get kinship relationship data.
@@ -3199,7 +3144,7 @@ def call_relationship_ladder_api(
         tree_id=tree_id,
         person_id=person_id,
         api_description="Enhanced Relationship Ladder API",
-        use_csrf_token=False  # Disable CSRF token for cleaner logging
+        use_csrf_token=False,  # Disable CSRF token for cleaner logging
     )
 
 
@@ -3232,10 +3177,7 @@ def get_relationship_path_data(
 
         # Call the enhanced relationship ladder API
         result = call_relationship_ladder_api(
-            session_manager=session_manager,
-            user_id=user_id,
-            tree_id=tree_id,
-            person_id=person_id
+            session_manager=session_manager, user_id=user_id, tree_id=tree_id, person_id=person_id
         )
 
         if result:
@@ -3247,7 +3189,7 @@ def get_relationship_path_data(
                     "person_id": person_id,
                     "reference_person_id": result.get("mePid"),
                     "kinship_persons": kinship_persons,
-                    "raw_data": result
+                    "raw_data": result,
                 }
             logger.warning(f"No kinship persons found in relationship data for {person_id}")
             return None
@@ -3261,6 +3203,7 @@ def get_relationship_path_data(
 
 def _run_initialization_tests(suite: "TestSuite") -> None:
     """Run initialization tests for api_utils module."""
+
     def test_module_imports():
         """Test all required modules and dependencies are properly imported with detailed verification."""
         required_modules = [
@@ -3283,11 +3226,7 @@ def _run_initialization_tests(suite: "TestSuite") -> None:
             module_imported = (
                 module_name in sys.modules
                 or module_name in globals()
-                or any(
-                    module_name in str(item)
-                    for item in globals().values()
-                    if hasattr(item, "__module__")
-                )
+                or any(module_name in str(item) for item in globals().values() if hasattr(item, "__module__"))
             )
 
             # Additional check for datetime and urllib.parse
@@ -3314,9 +3253,7 @@ def _run_initialization_tests(suite: "TestSuite") -> None:
         """Test optional dependencies are properly detected."""
         # Test pydantic availability detection
         assert PYDANTIC_AVAILABLE is not None, "PYDANTIC_AVAILABLE should be defined"
-        assert isinstance(
-            PYDANTIC_AVAILABLE, bool
-        ), "PYDANTIC_AVAILABLE should be boolean"
+        assert isinstance(PYDANTIC_AVAILABLE, bool), "PYDANTIC_AVAILABLE should be boolean"
 
         # Test BeautifulSoup availability detection
         assert BS4_AVAILABLE is not None, "BS4_AVAILABLE should be defined"
@@ -3356,6 +3293,7 @@ def _run_initialization_tests(suite: "TestSuite") -> None:
 
 def _run_core_functionality_tests(suite: "TestSuite") -> None:
     """Run core functionality tests for api_utils module."""
+
     def test_person_detail_parsing():
         """Test parsing of person detail data structures."""
         test_person_data = {
@@ -3427,6 +3365,7 @@ def _run_core_functionality_tests(suite: "TestSuite") -> None:
 
 def _run_edge_case_tests(suite: "TestSuite") -> None:
     """Run edge case tests for api_utils module."""
+
     def test_invalid_json_handling():
         """Test handling of invalid JSON responses."""
         invalid_json_strings = [
@@ -3502,6 +3441,7 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
 
 def _run_integration_tests(suite: "TestSuite") -> None:
     """Run integration tests for api_utils module."""
+
     def test_config_integration():
         """Test integration with configuration management."""
         try:
@@ -3561,6 +3501,7 @@ def _run_integration_tests(suite: "TestSuite") -> None:
 
 def _run_performance_tests(suite: "TestSuite") -> None:
     """Run performance tests for api_utils module."""
+
     def test_json_parsing_performance():
         """Test JSON parsing performance with large data sets."""
 
@@ -3574,9 +3515,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         end_time = time.time()
 
         parsing_time = end_time - start_time
-        assert (
-            parsing_time < 1.0
-        ), f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
+        assert parsing_time < 1.0, f"JSON parsing took {parsing_time:.3f}s, should be < 1.0s"
         assert isinstance(parsed, dict), "Parsed result should be dictionary"
 
     def test_url_encoding_performance():
@@ -3590,9 +3529,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         end_time = time.time()
 
         encoding_time = end_time - start_time
-        assert (
-            encoding_time < 0.1
-        ), f"URL encoding took {encoding_time:.3f}s, should be < 0.1s"
+        assert encoding_time < 0.1, f"URL encoding took {encoding_time:.3f}s, should be < 0.1s"
 
     def test_data_processing_efficiency():
         """Test efficiency of data processing operations."""
@@ -3615,9 +3552,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
         end_time = time.time()
 
         processing_time = end_time - start_time
-        assert (
-            processing_time < 0.05
-        ), f"Data processing took {processing_time:.3f}s, should be < 0.05s"
+        assert processing_time < 0.05, f"Data processing took {processing_time:.3f}s, should be < 0.05s"
         assert processed_count > 0, "Should process some items"
 
     suite.run_test(
@@ -3647,6 +3582,7 @@ def _run_performance_tests(suite: "TestSuite") -> None:
 
 def _run_error_handling_tests(suite: "TestSuite") -> None:
     """Run error handling tests for api_utils module."""
+
     def test_network_error_simulation():
         """Test handling of network-related errors."""
         network_errors = [
@@ -3656,9 +3592,7 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
         ]
 
         for error in network_errors:
-            assert isinstance(
-                error, requests.exceptions.RequestException
-            ), "Should be request exception"
+            assert isinstance(error, requests.exceptions.RequestException), "Should be request exception"
 
     def test_data_validation_errors():
         """Test handling of data validation errors."""
@@ -3688,7 +3622,9 @@ def _run_error_handling_tests(suite: "TestSuite") -> None:
 
         for config_case in missing_config_cases:
             is_none = config_case is None
-            is_empty_or_incomplete = isinstance(config_case, dict) and (not config_case or "base_url" not in config_case)
+            is_empty_or_incomplete = isinstance(config_case, dict) and (
+                not config_case or "base_url" not in config_case
+            )
             assert is_none or is_empty_or_incomplete, "Config validation should detect missing/invalid config"
 
     suite.run_test(
@@ -3720,6 +3656,7 @@ def _run_regression_guard_tests(suite: "TestSuite") -> None:
     """Tests that ensure known-good endpoint constants do not drift.
     If any path changes accidentally, this will fail fast.
     """
+
     def test_endpoint_constants_exact():
         assert API_PATH_SEND_MESSAGE_NEW == "app-api/express/v2/conversations/message"
         assert API_PATH_SEND_MESSAGE_EXISTING == "app-api/express/v2/conversations/{conv_id}"

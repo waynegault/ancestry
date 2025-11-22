@@ -107,9 +107,7 @@ def check_startup_status(session_manager: SessionManager) -> None:
         browser_manager = get_browser_manager(session_manager)
         if session_manager.is_sess_valid() and api_manager and browser_manager:
             logger.debug("Syncing browser cookies to API session during warmup...")
-            synced = api_manager.sync_cookies_from_browser(
-                browser_manager, session_manager=session_manager
-            )
+            synced = api_manager.sync_cookies_from_browser(browser_manager, session_manager=session_manager)
             if synced:
                 logger.info("✅ Cookies refreshed and OK")
             else:
@@ -241,17 +239,13 @@ def validate_ai_provider_on_startup() -> None:
     if ai_provider == "local_llm":
         _validate_local_llm_config(config_schema)
     elif ai_provider == "deepseek":
-        _validate_cloud_provider("DeepSeek", config_schema.api.deepseek_api_key,
-                                config_schema.api.deepseek_ai_model)
+        _validate_cloud_provider("DeepSeek", config_schema.api.deepseek_api_key, config_schema.api.deepseek_ai_model)
     elif ai_provider == "gemini":
-        _validate_cloud_provider("Gemini", config_schema.api.google_api_key,
-                                config_schema.api.google_ai_model)
+        _validate_cloud_provider("Gemini", config_schema.api.google_api_key, config_schema.api.google_ai_model)
     elif ai_provider == "moonshot":
-        _validate_cloud_provider("Moonshot", config_schema.api.moonshot_api_key,
-                                config_schema.api.moonshot_ai_model)
+        _validate_cloud_provider("Moonshot", config_schema.api.moonshot_api_key, config_schema.api.moonshot_ai_model)
     elif ai_provider == "inception":
-        _validate_cloud_provider("Inception", config_schema.api.inception_api_key,
-                                config_schema.api.inception_ai_model)
+        _validate_cloud_provider("Inception", config_schema.api.inception_api_key, config_schema.api.inception_ai_model)
     else:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
 
@@ -265,7 +259,16 @@ def display_tree_owner(session_manager: SessionManager) -> None:
             owner_name = api_manager.tree_owner_name
             if owner_name:
                 print("")
-                logger.info(f"Tree owner name: {owner_name}\n")
+                logger.info(f"Tree owner name: {owner_name}")
+
+            # Display tree ID if available
+            tree_id = api_manager.my_tree_id
+            if tree_id:
+                from config.config_manager import ConfigManager
+
+                cfg = ConfigManager().get_config()
+                tree_name = cfg.tree_name
+                logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name}'")
     except Exception:
         pass  # Silently ignore - not critical for startup
 
@@ -308,6 +311,7 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
     # Run Chrome/ChromeDriver diagnostics before any browser automation (silent mode)
     try:
         from diagnose_chrome import run_silent_diagnostic
+
         success, message = run_silent_diagnostic()
         if success:
             logger.info("✅ Chrome/ChromeDriver OK")
@@ -335,6 +339,7 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
     session_manager = SessionManager()
 
     from session_utils import set_global_session
+
     set_global_session(session_manager)
     logger.debug("✅ SessionManager registered as global session")
 
@@ -352,10 +357,7 @@ def pre_authenticate_session() -> None:
 
         # Authenticate session - this will start browser if needed
         logger.debug("Pre-authenticating global session for immediate availability...")
-        session_manager, uuid = get_authenticated_session(
-            action_name="Main Menu Initialization",
-            skip_csrf=False
-        )
+        session_manager, uuid = get_authenticated_session(action_name="Main Menu Initialization", skip_csrf=False)
 
         # Verify session is actually ready
         if session_manager and session_manager.session_ready:
@@ -373,6 +375,7 @@ def pre_authenticate_ms_graph() -> None:
     """Pre-authenticate MS Graph for MS To-Do integration."""
     try:
         from ms_graph_utils import acquire_token_device_flow
+
         logger.debug("Attempting MS Graph authentication at startup...")
         ms_token = acquire_token_device_flow()
         if ms_token:

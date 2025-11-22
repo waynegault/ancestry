@@ -87,9 +87,7 @@ class ConfigValidator:
         return None
 
     @staticmethod
-    def _validate_environment_rule(
-        config: Any, rule: ValidationRule, environment: EnvironmentType
-    ) -> Optional[str]:
+    def _validate_environment_rule(config: Any, rule: ValidationRule, environment: EnvironmentType) -> Optional[str]:
         """Validate an environment-specific rule. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -120,9 +118,7 @@ class ConfigValidator:
                     errors.append(error)
         return errors
 
-    def validate(
-        self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT
-    ) -> list[str]:
+    def validate(self, config: Any, environment: EnvironmentType = EnvironmentType.DEVELOPMENT) -> list[str]:
         """Validate configuration and return list of errors."""
         errors: list[str] = []
 
@@ -190,9 +186,7 @@ class DatabaseConfig:
         errors = validator.validate(self, self._get_environment())
 
         if errors:
-            error_msg = "Database configuration validation failed:\n" + "\n".join(
-                f"  - {error}" for error in errors
-            )
+            error_msg = "Database configuration validation failed:\n" + "\n".join(f"  - {error}" for error in errors)
             logger.error(error_msg)
             raise ConfigValidationError(error_msg)
 
@@ -207,9 +201,7 @@ class DatabaseConfig:
         # Create directories if they don't exist
         self._ensure_directories()
 
-        logger.debug(
-            f"Database configuration validated successfully for {self._get_environment().value} environment"
-        )
+        logger.debug(f"Database configuration validated successfully for {self._get_environment().value} environment")
 
     @staticmethod
     def _get_validator() -> ConfigValidator:
@@ -244,8 +236,7 @@ class DatabaseConfig:
         validator.add_rule(
             ValidationRule(
                 "journal_mode",
-                lambda x: x
-                in {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"},
+                lambda x: x in {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"},
                 "journal_mode must be one of: DELETE, TRUNCATE, PERSIST, MEMORY, WAL, OFF",
             )
         )
@@ -310,9 +301,7 @@ class DatabaseConfig:
         try:
             return EnvironmentType(env_str)
         except ValueError:
-            logger.warning(
-                f"Unknown environment '{env_str}', defaulting to development"
-            )
+            logger.warning(f"Unknown environment '{env_str}', defaulting to development")
             return EnvironmentType.DEVELOPMENT
 
     def _ensure_directories(self) -> None:
@@ -447,7 +436,9 @@ class APIConfig:
     accept_language: str = "en-US,en;q=0.9"
     target_match_throughput: float = 1.0  # Target matches processed per second (0 disables pacing)
     max_throughput_catchup_delay: float = 5.0  # Max pacing delay inserted per page (seconds)
-    token_bucket_success_threshold: Optional[int] = None  # Successes required before speeding up (auto-calculated when None)
+    token_bucket_success_threshold: Optional[int] = (
+        None  # Successes required before speeding up (auto-calculated when None)
+    )
 
     # Concurrency - REMOVED: Parallel processing eliminated for API safety
     # Sequential processing only to prevent 429 rate limiting errors
@@ -466,10 +457,16 @@ class APIConfig:
     # Timing settings - Adaptive rate limiting parameters
     initial_delay: float = 1.0  # Starting delay between requests (seconds) - optimized for 2 workers
     max_delay: float = 15.0  # Maximum delay on rate limiting (seconds) - reduced for faster recovery
-    backoff_factor: float = 1.5  # Multiplier for increasing delay on errors
-    decrease_factor: float = 0.95  # Multiplier for decreasing delay on success
-    token_bucket_capacity: float = 10.0  # Token bucket capacity for burst handling
-    token_bucket_fill_rate: float = 2.0  # Tokens added per second
+    backoff_factor: float = 1.5  # Multiplier for increasing delay on errors (Legacy delay-based)
+    decrease_factor: float = 0.95  # Multiplier for decreasing delay on success (Legacy delay-based)
+
+    # Unified Adaptive Rate Limiter Settings (Token Bucket)
+    token_bucket_capacity: float = 10.0  # Token bucket capacity for burst handling (replaces burst_limit)
+    token_bucket_fill_rate: float = 2.0  # Tokens added per second (Deprecated: use requests_per_second)
+    rate_limiter_429_backoff: float = 0.85  # Multiplier applied to rate on 429 error (15% reduction)
+    rate_limiter_success_factor: float = 1.02  # Multiplier applied to rate on success (2% increase)
+    rate_limiter_min_rate: float = 0.1  # Minimum allowed requests per second
+    rate_limiter_max_rate: float = 0.5  # Maximum allowed requests per second (Conservative default)
 
     # Tree settings
     tree_name: Optional[str] = None
@@ -497,14 +494,10 @@ class APIConfig:
     )
 
     # Retry settings
-    retry_status_codes: list[int] = field(
-        default_factory=lambda: [429, 500, 502, 503, 504]
-    )
+    retry_status_codes: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
 
     # API Headers
-    api_contextual_headers: dict[str, dict[str, Optional[str]]] = field(
-        default_factory=dict
-    )
+    api_contextual_headers: dict[str, dict[str, Optional[str]]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -520,8 +513,7 @@ class APIConfig:
         validations: list[tuple[Callable[[], bool], str]] = [
             (lambda: bool(base_url_value), "base_url is required"),
             (
-                lambda: isinstance(base_url_value, str)
-                and base_url_value.startswith(("http://", "https://")),
+                lambda: isinstance(base_url_value, str) and base_url_value.startswith(("http://", "https://")),
                 "base_url must start with http:// or https://",
             ),
             (lambda: self.request_timeout > 0, "request_timeout must be positive"),
@@ -823,9 +815,7 @@ class ConfigSchema:
     action6_coord_timeout_seconds: int = 14400  # 4 hours
     enable_action6_checkpointing: bool = True
     action6_checkpoint_max_age_hours: int = 24
-    action6_checkpoint_file: Path = field(
-        default_factory=lambda: Path("Cache/action6_checkpoint.json")
-    )
+    action6_checkpoint_file: Path = field(default_factory=lambda: Path("Cache/action6_checkpoint.json"))
 
     # API search settings
     name_flexibility: float = 0.8
@@ -850,7 +840,9 @@ class ConfigSchema:
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message
 
     # Proactive refresh settings
-    proactive_refresh_cooldown_seconds: int = 300  # Minimum seconds between proactive session refreshes to avoid per-page loops
+    proactive_refresh_cooldown_seconds: int = (
+        300  # Minimum seconds between proactive session refreshes to avoid per-page loops
+    )
 
     # User settings
     user_name: str = "Tree Owner"
@@ -862,8 +854,12 @@ class ConfigSchema:
     max_productive_to_process: int = 50
     max_inbox: int = 100
     person_refresh_days: int = 14  # Skip re-fetching person details if updated within this many days (0 = always fetch)
-    conversation_refresh_hours: int = 24  # Skip re-processing conversations if processed within this many hours (0 = always process)
-    parallel_workers: int = 1  # Number of parallel workers for Action 6 match detail fetching (1=sequential, 2-3=parallel)
+    conversation_refresh_hours: int = (
+        24  # Skip re-processing conversations if processed within this many hours (0 = always process)
+    )
+    parallel_workers: int = (
+        1  # Number of parallel workers for Action 6 match detail fetching (1=sequential, 2-3=parallel)
+    )
 
     # Engagement-based messaging timing (Phase 4.1)
     engagement_high_threshold: int = 70  # High engagement score threshold (0-100)
@@ -901,9 +897,7 @@ class ConfigSchema:
     testing_profile_id: Optional[str] = None
     testing_uuid: Optional[str] = None
     testing_username: Optional[str] = None
-    reference_person_id: Optional[str] = (
-        None  # Fields with complex defaults (must come last)
-    )
+    reference_person_id: Optional[str] = None  # Fields with complex defaults (must come last)
     common_scoring_weights: dict[str, float] = field(
         default_factory=lambda: {
             # --- Name Weights ---
@@ -975,10 +969,7 @@ class ConfigSchema:
             "test": TestConfig,
         }
 
-        built_configs = {
-            key: builder(**data.get(key, {}))
-            for key, builder in sub_config_builders.items()
-        }
+        built_configs = {key: builder(**data.get(key, {})) for key, builder in sub_config_builders.items()}
 
         retry_policy_data = data.get("retry_policies", {})
         retry_policy_config = RetryPoliciesConfig(
@@ -1031,6 +1022,7 @@ class ConfigSchema:
 
 # === Module-level test functions for config_schema_module_tests ===
 
+
 def _test_database_config() -> None:
     """Test DatabaseConfig creation and validation."""
     # Test default creation
@@ -1040,9 +1032,7 @@ def _test_database_config() -> None:
     assert db_config.backup_enabled is True
 
     # Test custom values
-    custom_config = DatabaseConfig(
-        pool_size=20, journal_mode="DELETE", backup_enabled=False
-    )
+    custom_config = DatabaseConfig(pool_size=20, journal_mode="DELETE", backup_enabled=False)
     assert custom_config.pool_size == 20
     assert custom_config.journal_mode == "DELETE"  # Test validation errors
     try:
@@ -1070,9 +1060,7 @@ def _test_selenium_config() -> None:
         assert selenium_config.window_size == "1920,1080"
 
         # Test custom values
-        custom_config = SeleniumConfig(
-            headless_mode=True, debug_port=9223, window_size="1366,768"
-        )
+        custom_config = SeleniumConfig(headless_mode=True, debug_port=9223, window_size="1366,768")
         assert custom_config.headless_mode is True
         assert custom_config.debug_port == 9223
 
@@ -1136,9 +1124,7 @@ def _test_logging_config() -> None:
         assert logging_config.max_log_size_mb == 10
 
         # Test custom values
-        custom_config = LoggingConfig(
-            log_level="DEBUG", enable_console_logging=False, max_log_size_mb=20
-        )
+        custom_config = LoggingConfig(log_level="DEBUG", enable_console_logging=False, max_log_size_mb=20)
         assert custom_config.log_level == "DEBUG"
         assert custom_config.enable_console_logging is False
 
@@ -1164,7 +1150,9 @@ def _test_retry_policy_config() -> None:
     assert default_config.api.backoff_factor > 1.0
     # Override API policy to ensure custom values stick
     custom = RetryPoliciesConfig(
-        api=RetryChannelConfig(max_attempts=2, initial_delay_seconds=0.5, backoff_factor=1.5, max_delay_seconds=10.0, jitter_seconds=0.1)
+        api=RetryChannelConfig(
+            max_attempts=2, initial_delay_seconds=0.5, backoff_factor=1.5, max_delay_seconds=10.0, jitter_seconds=0.1
+        )
     )
     assert custom.api.max_attempts == 2
     assert custom.api.initial_delay_seconds == 0.5
@@ -1208,9 +1196,7 @@ def _test_security_config() -> None:
         assert security_config.encryption_enabled is True
         assert security_config.use_system_keyring is True
         assert security_config.session_timeout_minutes == 120  # Test custom values
-        custom_config = SecurityConfig(
-            encryption_enabled=False, session_timeout_minutes=60
-        )
+        custom_config = SecurityConfig(encryption_enabled=False, session_timeout_minutes=60)
         assert custom_config.encryption_enabled is False
         assert custom_config.session_timeout_minutes == 60
 
@@ -1400,9 +1386,7 @@ def _test_performance() -> None:
             ConfigSchema.from_dict(config_dict)
 
         serialization_time = time.time() - start_time
-        logger.info(
-            f"Serialized/deserialized 10 configs in {serialization_time:.4f} seconds"
-        )
+        logger.info(f"Serialized/deserialized 10 configs in {serialization_time:.4f} seconds")
 
 
 def _test_function_structure() -> None:
@@ -1429,6 +1413,7 @@ def _test_function_structure() -> None:
             assert hasattr(instance, "__post_init__")
             # Cast to Any to avoid Pylance issues with dynamic attribute access
             from typing import cast
+
             assert_valid_function(
                 cast(Any, instance).__post_init__, f"{cast(Any, config_class).__name__}.__post_init__"
             )
@@ -1476,7 +1461,11 @@ def _test_rate_limiting_configuration() -> None:
     # Updated for Phase 2 optimization (October 2025)
     # RPS increased to 5.0 with circuit breaker protection
     validation_rules = [
-        ("requests_per_second", lambda v: v > 10.0, "too high"),  # 5.0 RPS is safe with circuit breaker; Ancestry API allows 10-20 RPS
+        (
+            "requests_per_second",
+            lambda v: v > 10.0,
+            "too high",
+        ),  # 5.0 RPS is safe with circuit breaker; Ancestry API allows 10-20 RPS
         ("max_concurrency", lambda v: v > 1, "too high"),  # Sequential processing only
         ("burst_limit", lambda v: v > 4, "too high"),
         ("max_retries", lambda v: v < 5, "too low"),

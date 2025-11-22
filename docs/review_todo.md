@@ -45,4 +45,6 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
    Recommendation: Keep this document updated as the system evolves.
 
+5. sending JSON to an llm is inefficient. Instead, convert data going to an llm to TOON format. See https://github.com/toon-format/toon
+
 <!-- markdownlint-enable MD029 -->

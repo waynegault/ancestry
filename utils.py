@@ -1364,6 +1364,8 @@ def get_rate_limiter(
     max_fill_rate: Optional[float] = None,
     capacity: Optional[float] = None,
     endpoint_profiles: Optional[dict[str, Any]] = None,
+    rate_limiter_429_backoff: Optional[float] = None,
+    rate_limiter_success_factor: Optional[float] = None,
 ):
     """Return the global AdaptiveRateLimiter singleton.
 
@@ -1385,6 +1387,8 @@ def get_rate_limiter(
         max_fill_rate=max_fill_rate,
         capacity=capacity,
         endpoint_profiles=endpoint_profiles,
+        rate_limiter_429_backoff=rate_limiter_429_backoff,
+        rate_limiter_success_factor=rate_limiter_success_factor,
     )
 
 

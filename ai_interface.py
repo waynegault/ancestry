@@ -81,7 +81,7 @@ AuthenticationError: Any | None = _AuthenticationError
 APIError: Any | None = _APIError
 openai_available = OpenAI is not None
 if not openai_available:
-    logging.warning("OpenAI library not found. DeepSeek functionality disabled.")
+    logger.debug("OpenAI library not found. DeepSeek functionality disabled.")
 
 # Attempt Google Gemini import
 try:
@@ -97,9 +97,7 @@ genai_available = False
 if genai is not None:
     genai_available = hasattr(genai, "Client")
 if not genai_available:
-    logging.warning(
-        "Google GenAI library not found or incomplete. Gemini functionality disabled."
-    )
+    logger.debug("Google GenAI library not found or incomplete. Gemini functionality disabled.")
 
 # Attempt Grok (xAI) import
 try:
@@ -115,7 +113,7 @@ xai_system_message: Callable[..., Any] | None = _xai_system_message
 xai_user_message: Callable[..., Any] | None = _xai_user_message
 xai_available = XAIClient is not None
 if not xai_available:
-    logging.warning("xai-sdk library not found. Grok functionality disabled.")
+    logger.debug("xai-sdk library not found. Grok functionality disabled.")
 
 # === LOCAL IMPORTS ===
 import contextlib
@@ -137,6 +135,7 @@ if TYPE_CHECKING:
         dependencies_available: bool
         test_call_successful: bool
         errors: list[str]
+
 
 # === MODULE CONFIGURATION ===
 # Initialize config
@@ -168,6 +167,8 @@ else:
     def get_prompt(prompt_key: str) -> str | None:
         _ = prompt_key  # Fallback stub - parameter required for API compatibility
         return None
+
+
 _get_prompt_with_experiment: Callable[..., str | None] | None = None
 _get_prompt_version: Callable[[str], str | None] | None = None
 try:
@@ -190,6 +191,7 @@ except Exception:
 
     def load_prompts() -> dict[str, Any]:
         return {"prompts": {}}
+
 
 # Based on the prompt from the original ai_interface.py (and updated with more categories from ai_prompts.json example)
 EXPECTED_INTENT_CATEGORIES = {
@@ -340,6 +342,7 @@ Your response should be ONLY the message text, with no additional formatting, ex
 
 # --- Private Helper for AI Calls ---
 
+
 def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None:
     """Apply rate limiting before AI API call."""
     try:
@@ -350,7 +353,9 @@ def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None
                 if isinstance(wait_time, (int, float)) and wait_time > 0.1:
                     logger.debug(f"AI API rate limit wait: {float(wait_time):.2f}s for {provider}")
         else:
-            logger.warning("_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting.")
+            logger.warning(
+                "_call_ai_model: SessionManager or rate limiter not available. Proceeding without rate limiting."
+            )
     except Exception:
         logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
 
@@ -360,7 +365,7 @@ def _build_deepseek_request_params(
     messages: list[dict[str, str]],
     max_tokens: int,
     temperature: float,
-    response_format_type: str | None
+    response_format_type: str | None,
 ) -> dict[str, Any]:
     """Build request parameters for DeepSeek API call."""
     request_params: dict[str, Any] = {
@@ -375,7 +380,9 @@ def _build_deepseek_request_params(
     return request_params
 
 
-def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
+def _call_deepseek_model(
+    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
+) -> str | None:
     """Call DeepSeek AI model."""
     if not openai_available or OpenAI is None:
         logger.error("_call_ai_model: OpenAI library not available for DeepSeek.")
@@ -403,7 +410,9 @@ def _call_deepseek_model(system_prompt: str, user_content: str, max_tokens: int,
     return None
 
 
-def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
+def _call_moonshot_model(
+    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
+) -> str | None:
     """Call Moonshot (Kimi) AI model using OpenAI-compatible endpoint."""
     if not openai_available or OpenAI is None:
         logger.error("_call_ai_model: OpenAI library not available for Moonshot.")
@@ -448,6 +457,7 @@ def _call_moonshot_model(system_prompt: str, user_content: str, max_tokens: int,
 
 
 # Helper functions for _call_gemini_model
+
 
 def _validate_gemini_availability() -> bool:
     """Validate Gemini library is available."""
@@ -598,17 +608,15 @@ def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any
         return None
 
 
-def _generate_gemini_content(client: Any, model_name: str, full_prompt: str, generation_config: Any | None) -> Any | None:
+def _generate_gemini_content(
+    client: Any, model_name: str, full_prompt: str, generation_config: Any | None
+) -> Any | None:
     """Generate content using Gemini model."""
     if not client or not hasattr(client, "models"):
         return None
 
     try:
-        return client.models.generate_content(
-            model=model_name,
-            contents=full_prompt,
-            config=generation_config
-        )
+        return client.models.generate_content(model=model_name, contents=full_prompt, config=generation_config)
     except Exception as e:
         logger.error(f"Gemini generation failed: {e}")
         return None
@@ -664,7 +672,9 @@ def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, t
     return _extract_gemini_response_text(response)
 
 
-def _call_local_llm_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, _response_format_type: str | None) -> str | None:
+def _call_local_llm_model(
+    system_prompt: str, user_content: str, max_tokens: int, temperature: float, _response_format_type: str | None
+) -> str | None:
     """
     Call Local LLM model via LM Studio OpenAI-compatible API.
 
@@ -784,7 +794,9 @@ def _handle_rate_limit_error(session_manager: SessionManager, source: str | None
             pass
 
 
-def _call_inception_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None) -> str | None:
+def _call_inception_model(
+    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
+) -> str | None:
     """
     Call Inception Mercury model via OpenAI-compatible API.
 
@@ -937,8 +949,12 @@ def _call_grok_model(
 
 
 def _route_ai_provider_call(
-    provider: str, system_prompt: str, user_content: str,
-    max_tokens: int, temperature: float, response_format_type: str | None
+    provider: str,
+    system_prompt: str,
+    user_content: str,
+    max_tokens: int,
+    temperature: float,
+    response_format_type: str | None,
 ) -> str | None:
     """Route call to appropriate AI provider."""
     result: str | None = None
@@ -1022,7 +1038,9 @@ def _handle_api_errors(e: Exception, provider: str) -> None:
     if APIConnectionError and isinstance(e, APIConnectionError):
         logger.error(f"AI Connection Error ({provider}): {e}")
     elif APIError and isinstance(e, APIError):
-        logger.error(f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}")
+        logger.error(
+            f"AI API Error ({provider}): Status={getattr(e, 'status_code', 'N/A')}, Message={getattr(e, 'message', str(e))}"
+        )
     elif genai_errors and hasattr(genai_errors, "GoogleAPIError") and isinstance(e, genai_errors.GoogleAPIError):
         logger.error(f"Google API Error (Gemini): {e}")
 
@@ -1030,9 +1048,15 @@ def _handle_api_errors(e: Exception, provider: str) -> None:
 def _handle_internal_errors(e: Exception, provider: str) -> None:
     """Handle internal/unexpected errors."""
     if isinstance(e, AttributeError):
-        logger.critical(f"AttributeError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
+        logger.critical(
+            f"AttributeError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}",
+            exc_info=True,
+        )
     elif isinstance(e, NameError):
-        logger.critical(f"NameError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}", exc_info=True)
+        logger.critical(
+            f"NameError during AI call ({provider}): {e}. Lib loaded: OpenAI={openai_available}, Gemini={genai_available}",
+            exc_info=True,
+        )
     else:
         logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
 
@@ -1068,7 +1092,9 @@ def _call_ai_model(
         _apply_rate_limiting(session_manager, active_provider)
 
         try:
-            result = _route_ai_provider_call(active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type)
+            result = _route_ai_provider_call(
+                active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
+            )
             if active_provider != provider:
                 logger.warning(
                     "AI provider '%s' failed, successfully fell back to '%s'.",
@@ -1080,9 +1106,8 @@ def _call_ai_model(
             last_exception = exc
             _handle_ai_exceptions(exc, active_provider, session_manager)
 
-            should_try_fallback = (
-                idx < len(provider_chain) - 1
-                and _should_fallback_to_next_provider(active_provider, exc)
+            should_try_fallback = idx < len(provider_chain) - 1 and _should_fallback_to_next_provider(
+                active_provider, exc
             )
 
             if should_try_fallback:
@@ -1110,9 +1135,7 @@ def _call_ai_model(
 
 
 @cached_api_call("ai", ttl=3600)  # Cache AI responses for 1 hour
-def classify_message_intent(
-    context_history: str, session_manager: SessionManager
-) -> str | None:
+def classify_message_intent(context_history: str, session_manager: SessionManager) -> str | None:
     """
     Classifies the intent of the LAST USER message within the provided context history.
     """
@@ -1121,9 +1144,7 @@ def classify_message_intent(
         logger.error("classify_message_intent: AI_PROVIDER not configured.")
         return None
     if not context_history:
-        logger.warning(
-            "classify_message_intent: Received empty context history. Defaulting to OTHER."
-        )
+        logger.warning("classify_message_intent: Received empty context history. Defaulting to OTHER.")
         return "OTHER"
 
     system_prompt = FALLBACK_INTENT_PROMPT
@@ -1133,13 +1154,9 @@ def classify_message_intent(
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'intent_classification' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'intent_classification' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'intent_classification' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'intent_classification' prompt: {e}, using fallback.")
 
     start_time = time.time()
     raw_classification = _call_ai_model(
@@ -1155,13 +1172,9 @@ def classify_message_intent(
     if raw_classification:
         processed_classification = raw_classification.strip().upper()
         if processed_classification in EXPECTED_INTENT_CATEGORIES:
-            logger.debug(
-                f"AI intent classification: '{processed_classification}' (Took {duration:.2f}s)"
-            )
+            logger.debug(f"AI intent classification: '{processed_classification}' (Took {duration:.2f}s)")
             return processed_classification
-        logger.warning(
-            f"AI returned unexpected classification: '{raw_classification}'. Defaulting to OTHER."
-        )
+        logger.warning(f"AI returned unexpected classification: '{raw_classification}'. Defaulting to OTHER.")
         return "OTHER"
     logger.error(f"AI intent classification failed. (Took {duration:.2f}s)")
     return None
@@ -1170,6 +1183,7 @@ def classify_message_intent(
 # End of classify_message_intent
 
 # Helper functions for extract_genealogical_entities
+
 
 def _get_extraction_prompt(session_manager: SessionManager) -> str:
     """Get extraction prompt from JSON or fallback."""
@@ -1198,11 +1212,11 @@ def _clean_json_response(response_str: str) -> str:
     """Clean AI response string by removing markdown code blocks."""
     cleaned = response_str.strip()
     if cleaned.startswith("```json"):
-        cleaned = cleaned[len("```json"):].strip()
+        cleaned = cleaned[len("```json") :].strip()
     elif cleaned.startswith("```"):
-        cleaned = cleaned[len("```"):].strip()
+        cleaned = cleaned[len("```") :].strip()
     if cleaned.endswith("```"):
-        cleaned = cleaned[:-len("```")].strip()
+        cleaned = cleaned[: -len("```")].strip()
     return cleaned
 
 
@@ -1211,16 +1225,31 @@ def _compute_component_coverage(parsed_json: dict[str, Any]) -> float | None:
     try:
         extracted_component = parsed_json.get("extracted_data", {})
         structured_keys = [
-            "structured_names", "vital_records", "relationships", "locations", "occupations",
-            "research_questions", "documents_mentioned", "dna_information"
+            "structured_names",
+            "vital_records",
+            "relationships",
+            "locations",
+            "occupations",
+            "research_questions",
+            "documents_mentioned",
+            "dna_information",
         ]
-        non_empty = sum(1 for k in structured_keys if isinstance(extracted_component.get(k), list) and extracted_component.get(k))
+        non_empty = sum(
+            1 for k in structured_keys if isinstance(extracted_component.get(k), list) and extracted_component.get(k)
+        )
         return (non_empty / len(structured_keys)) if structured_keys else 0.0
     except Exception:
         return None
 
 
-def _record_extraction_telemetry(system_prompt: str, parsed_json: dict[str, Any] | None, cleaned_response_str: str | None, session_manager: SessionManager, parse_success: bool, error: str | None = None) -> None:
+def _record_extraction_telemetry(
+    system_prompt: str,
+    parsed_json: dict[str, Any] | None,
+    cleaned_response_str: str | None,
+    session_manager: SessionManager,
+    parse_success: bool,
+    error: str | None = None,
+) -> None:
     """Record extraction telemetry event."""
     if _record_extraction_experiment_event is None or _get_prompt_version is None:
         return
@@ -1313,9 +1342,7 @@ def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: d
     return salvaged
 
 
-def extract_genealogical_entities(
-    context_history: str, session_manager: SessionManager
-) -> dict[str, Any] | None:
+def extract_genealogical_entities(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Extracts genealogical entities and suggests follow-up tasks.
     Expects AI to return JSON: {"extracted_data": {...}, "suggested_tasks": [...]}.
@@ -1339,8 +1366,8 @@ def extract_genealogical_entities(
         provider=ai_provider,
         system_prompt=system_prompt,
         user_content=context_history,
-    session_manager=session_manager,
-    max_tokens=1800,  # Reduced to speed up extraction while keeping high detail
+        session_manager=session_manager,
+        max_tokens=1800,  # Reduced to speed up extraction while keeping high detail
         temperature=0.2,
         response_format_type="json_object",  # For DeepSeek
     )
@@ -1358,19 +1385,34 @@ def extract_genealogical_entities(
                 and isinstance(parsed_json["suggested_tasks"], list)
             ):
                 logger.info(f"AI extraction successful. (Took {duration:.2f}s)")
-                _record_extraction_telemetry(system_prompt, parsed_json, cleaned_response_str, session_manager, parse_success=True)
+                _record_extraction_telemetry(
+                    system_prompt, parsed_json, cleaned_response_str, session_manager, parse_success=True
+                )
                 return parsed_json
-            logger.warning(f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}")
+            logger.warning(
+                f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}"
+            )
             salvaged = _salvage_flat_structure(parsed_json, default_empty_result)
-            _record_extraction_telemetry(system_prompt, salvaged, cleaned_response_str, session_manager, parse_success=False, error="structure_salvaged")
+            _record_extraction_telemetry(
+                system_prompt,
+                salvaged,
+                cleaned_response_str,
+                session_manager,
+                parse_success=False,
+                error="structure_salvaged",
+            )
             return salvaged
         except json.JSONDecodeError as e:
             logger.error(f"AI extraction response was not valid JSON: {e}. Response: {ai_response_str[:500]}")
-            _record_extraction_telemetry(system_prompt, None, ai_response_str, session_manager, parse_success=False, error=str(e)[:120])
+            _record_extraction_telemetry(
+                system_prompt, None, ai_response_str, session_manager, parse_success=False, error=str(e)[:120]
+            )
             return default_empty_result
     else:
         logger.error(f"AI extraction failed or returned empty. (Took {duration:.2f}s)")
-        _record_extraction_telemetry(system_prompt, None, None, session_manager, parse_success=False, error="empty_response")
+        _record_extraction_telemetry(
+            system_prompt, None, None, session_manager, parse_success=False, error="empty_response"
+        )
         return default_empty_result
 
 
@@ -1391,9 +1433,7 @@ def generate_genealogical_reply(
         logger.error("generate_genealogical_reply: AI_PROVIDER not configured.")
         return None
     if not all([conversation_context, user_last_message, genealogical_data_str]):
-        logger.error(
-            "generate_genealogical_reply: One or more required inputs are empty."
-        )
+        logger.error("generate_genealogical_reply: One or more required inputs are empty.")
         return None
 
     system_prompt_template = get_fallback_reply_prompt()
@@ -1403,13 +1443,9 @@ def generate_genealogical_reply(
             if loaded_prompt:
                 system_prompt_template = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'genealogical_reply' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'genealogical_reply' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'genealogical_reply' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'genealogical_reply' prompt: {e}, using fallback.")
 
     # The prompt itself is the system message; user_content can be minimal.
     # The template includes placeholders for {conversation_context}, {user_message}, {genealogical_data}
@@ -1420,16 +1456,10 @@ def generate_genealogical_reply(
             genealogical_data=genealogical_data_str,
         )
     except KeyError as ke:
-        logger.error(
-            f"Prompt formatting error for genealogical_reply. Missing key: {ke}. Using unformatted prompt."
-        )
-        final_system_prompt = (
-            system_prompt_template  # Fallback to unformatted if keys missing
-        )
+        logger.error(f"Prompt formatting error for genealogical_reply. Missing key: {ke}. Using unformatted prompt.")
+        final_system_prompt = system_prompt_template  # Fallback to unformatted if keys missing
     except Exception as fe:
-        logger.error(
-            f"Unexpected error formatting genealogical_reply prompt: {fe}. Using unformatted prompt."
-        )
+        logger.error(f"Unexpected error formatting genealogical_reply prompt: {fe}. Using unformatted prompt.")
         final_system_prompt = system_prompt_template
 
     start_time = time.time()
@@ -1462,13 +1492,9 @@ def _load_dialogue_prompt(log_prefix: str) -> str | None:
         loaded_prompt = get_prompt("genealogical_dialogue_response")
         if loaded_prompt:
             return loaded_prompt
-        logger.warning(
-            f"{log_prefix}: Failed to load 'genealogical_dialogue_response' prompt from JSON."
-        )
+        logger.warning(f"{log_prefix}: Failed to load 'genealogical_dialogue_response' prompt from JSON.")
     except Exception as e:
-        logger.warning(
-            f"{log_prefix}: Error loading 'genealogical_dialogue_response' prompt: {e}"
-        )
+        logger.warning(f"{log_prefix}: Error loading 'genealogical_dialogue_response' prompt: {e}")
     return None
 
 
@@ -1512,8 +1538,14 @@ def _format_dialogue_prompt(
     """Format dialogue prompt with all context variables."""
     try:
         defaults = _get_dialogue_defaults(
-            conversation_history, lookup_results, dna_data, tree_statistics,
-            relationship_path, conversation_phase, last_topic, pending_questions
+            conversation_history,
+            lookup_results,
+            dna_data,
+            tree_statistics,
+            relationship_path,
+            conversation_phase,
+            last_topic,
+            pending_questions,
         )
         defaults["user_message"] = user_message
         defaults["engagement_score"] = engagement_score
@@ -1573,9 +1605,7 @@ def generate_contextual_response(
     # Load prompt template
     system_prompt_template = _load_dialogue_prompt(log_prefix)
     if not system_prompt_template:
-        logger.error(
-            f"{log_prefix}: genealogical_dialogue_response prompt not available."
-        )
+        logger.error(f"{log_prefix}: genealogical_dialogue_response prompt not available.")
         return None
 
     # Format prompt with context
@@ -1611,13 +1641,9 @@ def generate_contextual_response(
     duration = time.time() - start_time
 
     if response_text:
-        logger.info(
-            f"{log_prefix}: Contextual response generation successful. (Took {duration:.2f}s)"
-        )
+        logger.info(f"{log_prefix}: Contextual response generation successful. (Took {duration:.2f}s)")
     else:
-        logger.error(
-            f"{log_prefix}: Contextual response generation failed. (Took {duration:.2f}s)"
-        )
+        logger.error(f"{log_prefix}: Contextual response generation failed. (Took {duration:.2f}s)")
 
     return response_text
 
@@ -1671,7 +1697,9 @@ def assess_engagement(
         return None
 
 
-def _format_clarification_prompt(prompt: str, user_message: str, extracted_entities: dict[str, Any], ambiguity_context: str) -> str | None:
+def _format_clarification_prompt(
+    prompt: str, user_message: str, extracted_entities: dict[str, Any], ambiguity_context: str
+) -> str | None:
     """Format clarification prompt with user data."""
     try:
         return prompt.format(
@@ -1817,16 +1845,10 @@ def extract_with_custom_prompt(
             parsed_json = json.loads(cleaned_response_str)
             return {"extracted_data": parsed_json}
         except json.JSONDecodeError:
-            logger.warning(
-                "Custom extraction response was not valid JSON. Returning as text."
-            )
-            return {
-                "extracted_data": ai_response_str
-            }  # Return raw string under 'extracted_data'
+            logger.warning("Custom extraction response was not valid JSON. Returning as text.")
+            return {"extracted_data": ai_response_str}  # Return raw string under 'extracted_data'
     else:
-        logger.error(
-            f"AI custom extraction failed or returned empty. (Took {duration:.2f}s)"
-        )
+        logger.error(f"AI custom extraction failed or returned empty. (Took {duration:.2f}s)")
         return None
 
 
@@ -1859,14 +1881,10 @@ def generate_with_custom_prompt(
             genealogical_data=genealogical_data_str,
         )
     except KeyError as ke:
-        logger.error(
-            f"Custom prompt formatting error. Missing key: {ke}. Using unformatted custom prompt."
-        )
+        logger.error(f"Custom prompt formatting error. Missing key: {ke}. Using unformatted custom prompt.")
         final_system_prompt = custom_prompt  # Fallback to unformatted if keys missing
     except Exception as fe:
-        logger.error(
-            f"Unexpected error formatting custom prompt: {fe}. Using unformatted custom prompt."
-        )
+        logger.error(f"Unexpected error formatting custom prompt: {fe}. Using unformatted custom prompt.")
         final_system_prompt = custom_prompt
 
     start_time = time.time()
@@ -1883,9 +1901,7 @@ def generate_with_custom_prompt(
     if reply_text:
         logger.info(f"AI custom generation successful. (Took {duration:.2f}s)")
     else:
-        logger.error(
-            f"AI custom generation failed or returned empty. (Took {duration:.2f}s)"
-        )
+        logger.error(f"AI custom generation failed or returned empty. (Took {duration:.2f}s)")
     return reply_text
 
 
@@ -1894,9 +1910,7 @@ def generate_with_custom_prompt(
 # --- Specialized Genealogical Analysis Functions ---
 
 
-def analyze_dna_match_conversation(
-    context_history: str, session_manager: SessionManager
-) -> dict[str, Any] | None:
+def analyze_dna_match_conversation(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Analyzes conversations about DNA matches using specialized DNA analysis prompt.
     Returns structured data focused on DNA match information and genetic genealogy.
@@ -1909,9 +1923,7 @@ def analyze_dna_match_conversation(
         return default_empty_result
 
     if not context_history:
-        logger.warning(
-            "analyze_dna_match_conversation: Empty context. Returning empty structure."
-        )
+        logger.warning("analyze_dna_match_conversation: Empty context. Returning empty structure.")
         return default_empty_result
 
     # Get DNA match analysis prompt
@@ -1922,13 +1934,9 @@ def analyze_dna_match_conversation(
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'dna_match_analysis' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'dna_match_analysis' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'dna_match_analysis' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'dna_match_analysis' prompt: {e}, using fallback.")
 
     start_time = time.time()
     ai_response_str = _call_ai_model(
@@ -1955,9 +1963,7 @@ def analyze_dna_match_conversation(
         return default_empty_result
 
 
-def verify_family_tree_connections(
-    context_history: str, session_manager: SessionManager
-) -> dict[str, Any] | None:
+def verify_family_tree_connections(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Analyzes conversations for family tree verification needs and conflicts.
     Returns structured data focused on verification requirements and conflict resolution.
@@ -1970,9 +1976,7 @@ def verify_family_tree_connections(
         return default_empty_result
 
     if not context_history:
-        logger.warning(
-            "verify_family_tree_connections: Empty context. Returning empty structure."
-        )
+        logger.warning("verify_family_tree_connections: Empty context. Returning empty structure.")
         return default_empty_result
 
     # Get family tree verification prompt
@@ -1983,13 +1987,9 @@ def verify_family_tree_connections(
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'family_tree_verification' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'family_tree_verification' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'family_tree_verification' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'family_tree_verification' prompt: {e}, using fallback.")
 
     start_time = time.time()
     ai_response_str = _call_ai_model(
@@ -2016,9 +2016,7 @@ def verify_family_tree_connections(
         return default_empty_result
 
 
-def generate_record_research_strategy(
-    context_history: str, session_manager: SessionManager
-) -> dict[str, Any] | None:
+def generate_record_research_strategy(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Analyzes conversations to suggest specific genealogical record research strategies.
     Returns structured data focused on record search opportunities and research plans.
@@ -2031,9 +2029,7 @@ def generate_record_research_strategy(
         return default_empty_result
 
     if not context_history:
-        logger.warning(
-            "generate_record_research_strategy: Empty context. Returning empty structure."
-        )
+        logger.warning("generate_record_research_strategy: Empty context. Returning empty structure.")
         return default_empty_result
 
     # Get record research guidance prompt
@@ -2044,13 +2040,9 @@ def generate_record_research_strategy(
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
-                logger.warning(
-                    "Failed to load 'record_research_guidance' prompt from JSON, using fallback."
-                )
+                logger.warning("Failed to load 'record_research_guidance' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(
-                f"Error loading 'record_research_guidance' prompt: {e}, using fallback."
-            )
+            logger.warning(f"Error loading 'record_research_guidance' prompt: {e}, using fallback.")
 
     start_time = time.time()
     ai_response_str = _call_ai_model(
@@ -2289,7 +2281,9 @@ def test_configuration() -> bool:
 def _validate_extraction_task_structure(prompt_content: str) -> bool:
     """Validate extraction_task prompt structure."""
     has_nested_structure = "suggested_tasks" in prompt_content and "extracted_data" in prompt_content
-    has_flat_structure = "mentioned_names" in prompt_content and "dates" in prompt_content and "locations" in prompt_content
+    has_flat_structure = (
+        "mentioned_names" in prompt_content and "dates" in prompt_content and "locations" in prompt_content
+    )
 
     if has_nested_structure or has_flat_structure:
         structure_type = "nested" if has_nested_structure else "flat"
@@ -2383,9 +2377,7 @@ def test_pydantic_compatibility() -> bool:
         extracted = ai_response.extracted_data
         all_names = extracted.get_all_names()
         all_locations = extracted.get_all_locations()
-        logger.info(
-            f"✅ Nested fields accessible: names={len(all_names)}, locations={len(all_locations)}"
-        )
+        logger.info(f"✅ Nested fields accessible: names={len(all_names)}, locations={len(all_locations)}")
 
         return True
 
@@ -2461,7 +2453,9 @@ def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
 
 def _test_reply_generation(session_manager: SessionManager) -> bool:
     """Test AI reply generation functionality."""
-    test_genealogical_data = "Person: John Smith, Born: 1880 Aberdeen Scotland, Occupation: Fisherman, Relationship: Great-grandfather"
+    test_genealogical_data = (
+        "Person: John Smith, Born: 1880 Aberdeen Scotland, Occupation: Fisherman, Relationship: Great-grandfather"
+    )
     logger.info("Testing genealogical reply generation...")
     reply_result = generate_genealogical_reply(
         "Previous conversation context",
@@ -2598,6 +2592,7 @@ def ai_interface_module_tests() -> bool:
         # === INTEGRATION TESTS (Require Live Session) ===
         # Skip live tests if SKIP_LIVE_API_TESTS is set (parallel test mode)
         import os
+
         skip_live = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
         if not skip_live:
@@ -2659,7 +2654,9 @@ def _check_prompts_loaded(errors: list[str]) -> bool:
         return False
 
 
-def _perform_test_call(session_manager: SessionManager, api_key_configured: bool, dependencies_available: bool, errors: list[str]) -> bool:
+def _perform_test_call(
+    session_manager: SessionManager, api_key_configured: bool, dependencies_available: bool, errors: list[str]
+) -> bool:
     """Perform a quick test call if configuration looks good."""
     if not (api_key_configured and dependencies_available):
         return False
@@ -2672,7 +2669,9 @@ def _perform_test_call(session_manager: SessionManager, api_key_configured: bool
         return False
 
 
-def _determine_overall_health(api_key_configured: bool, prompts_loaded: bool, dependencies_available: bool, test_call_successful: bool) -> str:
+def _determine_overall_health(
+    api_key_configured: bool, prompts_loaded: bool, dependencies_available: bool, test_call_successful: bool
+) -> str:
     """Determine overall health status based on checks."""
     if api_key_configured and prompts_loaded and dependencies_available:
         return "healthy" if test_call_successful else "degraded"
@@ -2697,7 +2696,9 @@ def quick_health_check(session_manager: SessionManager) -> HealthStatus:
     try:
         # Check API key and dependencies
         ai_provider = config_schema.ai_provider.lower()
-        health_status["api_key_configured"], health_status["dependencies_available"] = _check_api_key_and_dependencies(ai_provider)
+        health_status["api_key_configured"], health_status["dependencies_available"] = _check_api_key_and_dependencies(
+            ai_provider
+        )
 
         # Check prompts
         health_status["prompts_loaded"] = _check_prompts_loaded(health_status["errors"])
@@ -2707,7 +2708,7 @@ def quick_health_check(session_manager: SessionManager) -> HealthStatus:
             session_manager,
             health_status["api_key_configured"],
             health_status["dependencies_available"],
-            health_status["errors"]
+            health_status["errors"],
         )
 
         # Determine overall health
@@ -2715,7 +2716,7 @@ def quick_health_check(session_manager: SessionManager) -> HealthStatus:
             health_status["api_key_configured"],
             health_status["prompts_loaded"],
             health_status["dependencies_available"],
-            health_status["test_call_successful"]
+            health_status["test_call_successful"],
         )
 
     except Exception as e:
@@ -2754,24 +2755,18 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
     if result1 and result1 in EXPECTED_INTENT_CATEGORIES:
         logger.info(f"Intent classification test 1 PASSED. Result: {result1}")
     else:
-        logger.error(
-            f"Intent classification test 1 FAILED. Expected valid category, got: {result1}"
-        )
+        logger.error(f"Intent classification test 1 FAILED. Expected valid category, got: {result1}")
         all_passed = False
 
     result2 = classify_message_intent(test_context_2, session_manager)
     if result2 and result2 in EXPECTED_INTENT_CATEGORIES:
         logger.info(f"Intent classification test 2 PASSED. Result: {result2}")
     else:
-        logger.error(
-            f"Intent classification test 2 FAILED. Expected valid category, got: {result2}"
-        )
+        logger.error(f"Intent classification test 2 FAILED. Expected valid category, got: {result2}")
         all_passed = False
 
     logger.info("--- Testing Data Extraction & Task Suggestion ---")
-    extraction_result = extract_genealogical_entities(
-        extraction_conversation_test, session_manager
-    )
+    extraction_result = extract_genealogical_entities(extraction_conversation_test, session_manager)
 
     if (
         extraction_result
@@ -2779,19 +2774,13 @@ USER: Alexander's parents were John Simpson and Elizabeth Cruickshank. They marr
         and isinstance(extraction_result.get("suggested_tasks"), list)
     ):
         logger.info("Data extraction test PASSED structure validation.")
-        logger.info(
-            f"Extracted data: {json.dumps(extraction_result['extracted_data'], indent=2)}"
-        )
+        logger.info(f"Extracted data: {json.dumps(extraction_result['extracted_data'], indent=2)}")
         logger.info(f"Suggested tasks: {extraction_result['suggested_tasks']}")
         if not extraction_result["suggested_tasks"]:
-            logger.warning(
-                "AI did not suggest any tasks for the extraction test context. Prompt may need adjustment."
-            )
+            logger.warning("AI did not suggest any tasks for the extraction test context. Prompt may need adjustment.")
             # This is not a failure of the function itself, but a note on prompt effectiveness.
     else:
-        logger.error(
-            f"Data extraction test FAILED. Invalid structure or None result. Got: {extraction_result}"
-        )
+        logger.error(f"Data extraction test FAILED. Invalid structure or None result. Got: {extraction_result}")
         all_passed = False
 
     if all_passed:
