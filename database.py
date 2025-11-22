@@ -1069,6 +1069,22 @@ class Person(Base):
         "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
     )
 
+    # --- Properties ---
+    @property
+    def tree_status(self) -> str:
+        """Returns 'in_tree' if person is in tree, else 'out_tree'."""
+        return "in_tree" if self.in_my_tree else "out_tree"
+
+    @property
+    def predicted_relationship(self) -> Optional[str]:
+        """Returns predicted relationship from DNA match if available."""
+        return self.dna_match.predicted_relationship if self.dna_match else None
+
+    @property
+    def shared_dna_cm(self) -> Optional[int]:
+        """Returns shared DNA cM from DNA match if available."""
+        return self.dna_match.cm_dna if self.dna_match else None
+
 
 # End of Person class
 
