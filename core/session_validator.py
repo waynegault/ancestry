@@ -84,9 +84,7 @@ class SessionValidator:
 
     def _verify_login_and_url(self, browser_manager: Any, session_manager: Any, attempt: int) -> tuple[bool, str]:
         """Ensure login is valid and URL state is acceptable."""
-        login_success, login_error = self._check_login_and_attempt_relogin(
-            browser_manager, session_manager, attempt
-        )
+        login_success, login_error = self._check_login_and_attempt_relogin(browser_manager, session_manager, attempt)
         if not login_success:
             return False, login_error or "Login validation failed"
 
@@ -105,9 +103,7 @@ class SessionValidator:
         action_name: Optional[str],
     ) -> tuple[bool, str]:
         """Validate browser cookies and synchronize them to API sessions."""
-        cookies_success, cookies_error = self._check_essential_cookies(
-            browser_manager, action_name
-        )
+        cookies_success, cookies_error = self._check_essential_cookies(browser_manager, action_name)
         if not cookies_success:
             return False, cookies_error or "Essential cookies missing"
 
@@ -132,9 +128,7 @@ class SessionValidator:
         return True, ""
 
     @staticmethod
-    def _handle_check_exception(
-        exception: Exception, attempt: int, browser_manager: Any
-    ) -> tuple[bool, str]:
+    def _handle_check_exception(exception: Exception, attempt: int, browser_manager: Any) -> tuple[bool, str]:
         """Handle exceptions during checks. Returns (should_abort, error_message)."""
         if isinstance(exception, WebDriverException):
             logger.error(
@@ -144,9 +138,7 @@ class SessionValidator:
             error_msg = f"WebDriverException: {exception}"
 
             if not browser_manager.is_session_valid():
-                logger.error(
-                    "Session invalid during readiness check. Aborting checks."
-                )
+                logger.error("Session invalid during readiness check. Aborting checks.")
                 return True, error_msg  # Abort
 
             return False, error_msg  # Don't abort, retry
@@ -181,9 +173,7 @@ class SessionValidator:
         Returns:
             bool: True if all checks pass, False otherwise
         """
-        logger.debug(
-            f"Starting readiness checks for: {action_name or 'Unknown Action'}"
-        )
+        logger.debug(f"Starting readiness checks for: {action_name or 'Unknown Action'}")
         last_check_error = "Unknown error"
 
         for attempt in range(1, max_attempts + 1):
@@ -192,8 +182,7 @@ class SessionValidator:
             try:
                 # Perform all checks
                 success, error = self._perform_all_checks(
-                    browser_manager, api_manager, session_manager,
-                    action_name, skip_csrf, attempt
+                    browser_manager, api_manager, session_manager, action_name, skip_csrf, attempt
                 )
 
                 if success:
@@ -203,9 +192,7 @@ class SessionValidator:
                 last_check_error = error
 
             except Exception as exc:
-                should_abort, error_msg = self._handle_check_exception(
-                    exc, attempt, browser_manager
-                )
+                should_abort, error_msg = self._handle_check_exception(exc, attempt, browser_manager)
                 last_check_error = error_msg
 
                 if should_abort:
@@ -214,11 +201,10 @@ class SessionValidator:
             # Wait before next attempt (except on last attempt)
             if attempt < max_attempts:
                 import time
+
                 time.sleep(5)  # Increased from 2 to 5 seconds for better stability
 
-        logger.error(
-            f"All {max_attempts} readiness check attempts failed. Last Error: {last_check_error}"
-        )
+        logger.error(f"All {max_attempts} readiness check attempts failed. Last Error: {last_check_error}")
         return False
 
     def _check_login_and_attempt_relogin(
@@ -253,13 +239,9 @@ class SessionValidator:
             # Browser may have valid cookies, but requests session doesn't yet
             self._sync_cookies_for_login(session_manager)
 
-            login_result = login_status(
-                session_manager, disable_ui_fallback=True
-            )  # Use API-only check
+            login_result = login_status(session_manager, disable_ui_fallback=True)  # Use API-only check
 
-            return self._process_login_result(
-                login_result, browser_manager, session_manager
-            )
+            return self._process_login_result(login_result, browser_manager, session_manager)
 
         except Exception as e:
             error_msg = f"Exception during login check: {e}"
@@ -314,9 +296,7 @@ class SessionValidator:
             return True, None
 
         if login_result is False:
-            logger.warning(
-                "Login status check: User is NOT logged in. Attempting relogin..."
-            )
+            logger.warning("Login status check: User is NOT logged in. Attempting relogin...")
             if self._attempt_relogin(browser_manager, session_manager):
                 return True, None
             error_msg = "Relogin failed"
@@ -433,6 +413,7 @@ class SessionValidator:
             "run_side_by_side_search_wrapper": "Action 10 compare - cookie check skipped (no 'trees' required)",
             "run_merged_search_wrapper": "Action 10 compare - cookie check skipped (no 'trees' required)",
             "run_gedcom_then_api_fallback": "Action 10 compare - cookie check skipped (no 'trees' required)",
+            "action10_api_test": "Action 10 API Test - cookie check skipped (no 'trees' required)",
             "run_action11": "API-based operation",
             "api_report": "API-based operation",
             "refresh": "Browser refresh verification - deferring to later checks",
@@ -501,10 +482,7 @@ class SessionValidator:
         """
         try:
             # CRITICAL FIX: Pass session_manager to enable automatic recovery on cookie sync failures
-            sync_success = api_manager.sync_cookies_from_browser(
-                browser_manager,
-                session_manager=session_manager
-            )
+            sync_success = api_manager.sync_cookies_from_browser(browser_manager, session_manager=session_manager)
             if not sync_success:
                 error_msg = "Failed to sync cookies to requests session"
                 logger.error(error_msg)
@@ -552,9 +530,7 @@ class SessionValidator:
             return True, None
 
     @staticmethod
-    def validate_session_cookies(
-        browser_manager: Any, required_cookies: list[str]
-    ) -> bool:
+    def validate_session_cookies(browser_manager: Any, required_cookies: list[str]) -> bool:
         """
         Validate that required cookies are present.
 
@@ -601,15 +577,11 @@ class SessionValidator:
             if api_login_status is False:
                 logger.warning("Login verification failed (API method).")
                 return False
-            logger.error(
-                "Login verification failed critically (API returned None)."
-            )
+            logger.error("Login verification failed critically (API returned None).")
             return False
 
         except Exception as e:
-            logger.error(
-                f"Unexpected error during login verification: {e}", exc_info=True
-            )
+            logger.error(f"Unexpected error during login verification: {e}", exc_info=True)
             return False
 
 
@@ -617,17 +589,11 @@ class SessionValidator:
 def _test_session_validator_initialization() -> bool:
     validator = SessionValidator()
     assert validator is not None, "SessionValidator should initialize"
-    assert hasattr(
-        validator, "last_js_error_check"
-    ), "Should have last_js_error_check attribute"
-    assert (
-        validator.last_js_error_check is not None
-    ), "last_js_error_check should be initialized"
+    assert hasattr(validator, "last_js_error_check"), "Should have last_js_error_check attribute"
+    assert validator.last_js_error_check is not None, "last_js_error_check should be initialized"
     from datetime import datetime
 
-    assert isinstance(
-        validator.last_js_error_check, datetime
-    ), "last_js_error_check should be datetime"
+    assert isinstance(validator.last_js_error_check, datetime), "last_js_error_check should be datetime"
     return True
 
 
@@ -637,23 +603,15 @@ def _test_readiness_checks_success() -> bool:
     validator = SessionValidator()
     mock_browser = Mock()
     mock_api = Mock()
-    with patch.object(
-        validator, "_check_login_and_attempt_relogin", return_value=(True, None)
-    ), patch.object(
-        validator, "_check_and_handle_url", return_value=True
-    ), patch.object(
-        validator, "_check_essential_cookies", return_value=(True, None)
-    ), patch.object(
-        validator, "_sync_cookies_to_requests", return_value=(True, None)
-    ), patch.object(
-        validator, "_check_csrf_token", return_value=(True, None)
+    with (
+        patch.object(validator, "_check_login_and_attempt_relogin", return_value=(True, None)),
+        patch.object(validator, "_check_and_handle_url", return_value=True),
+        patch.object(validator, "_check_essential_cookies", return_value=(True, None)),
+        patch.object(validator, "_sync_cookies_to_requests", return_value=(True, None)),
+        patch.object(validator, "_check_csrf_token", return_value=(True, None)),
     ):
-        result = validator.perform_readiness_checks(
-            mock_browser, mock_api, "test_action"
-        )
-        assert (
-            result is True
-        ), "Readiness checks should succeed when all sub-checks pass"
+        result = validator.perform_readiness_checks(mock_browser, mock_api, "test_action")
+        assert result is True, "Readiness checks should succeed when all sub-checks pass"
     return True
 
 
@@ -715,9 +673,7 @@ def _test_initialization_performance() -> bool:
         SessionValidator()
     end_time = time.time()
     total_time = end_time - start_time
-    assert (
-        total_time < 1.0
-    ), f"100 initializations took {total_time:.3f}s, should be under 1s"
+    assert total_time < 1.0, f"100 initializations took {total_time:.3f}s, should be under 1s"
     return True
 
 
@@ -733,9 +689,7 @@ def _test_webdriver_exception_handling() -> bool:
     with patch.object(validator, "_check_login_and_attempt_relogin") as mock_login:
         mock_login.side_effect = WebDriverException("Browser crashed")
         mock_browser.is_session_valid.return_value = True
-        result = validator.perform_readiness_checks(
-            mock_browser, mock_api, mock_session, max_attempts=1
-        )
+        result = validator.perform_readiness_checks(mock_browser, mock_api, mock_session, max_attempts=1)
         assert result is False, "Should fail when WebDriverException occurs"
     return True
 
@@ -855,9 +809,7 @@ def session_validator_module_tests() -> bool:
     from test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
-        suite = TestSuite(
-            "Session Validation & Readiness Checks", "session_validator.py"
-        )
+        suite = TestSuite("Session Validation & Readiness Checks", "session_validator.py")
         suite.start_suite()
         suite.run_test(
             "SessionValidator Initialization",

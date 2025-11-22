@@ -2246,6 +2246,9 @@ def call_treesui_list_api(
     search_criteria: dict[str, Any],
     timeouts: Optional[list[int]] = None,
 ) -> Optional[list[dict[str, Any]]]:
+    if not session_manager:
+        logger.error("TreesUI List API call failed: session_manager is None.")
+        return None
     if not _api_request_available():
         logger.critical("TreesUI List API call failed: _api_req function unavailable (Import Failed?).")
         raise ImportError("_api_req function not available from utils")
@@ -2836,25 +2839,37 @@ def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, ap
     if not items:
         return None
 
+    # Normalize config name for flexible matching
+    target_name_lower = tree_name_config.lower().strip()
+
     for item in items:
         if not isinstance(item, dict):
             continue
 
         item_dict = cast(dict[str, Any], item)
 
-        # New format: {"id": "...", "name": "..."}
-        if "name" in item_dict and item_dict.get("name") == tree_name_config:
-            tree_id = item_dict.get("id")
-            if tree_id:
-                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (new format).")
+        # Check for tree ID in various fields (id, treeId, or from url)
+        tree_id = item_dict.get("id") or item_dict.get("treeId")
+        if not tree_id and KEY_URL in item_dict:
+            tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
+
+        if not tree_id:
+            continue
+
+        # Check for name match in various fields (name, text, title)
+        name = item_dict.get("name") or item_dict.get(KEY_TEXT) or item_dict.get("title")
+        if name and isinstance(name, str):
+            name_lower = name.lower().strip()
+
+            # Exact match
+            if name_lower == target_name_lower:
+                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (exact match).")
                 return str(tree_id)
 
-        # Old format: {"text": "...", "url": "..."}
-        if KEY_TEXT in item_dict and item_dict.get(KEY_TEXT) == tree_name_config:
-            tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
-            if tree_id:
-                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (old format)")
-                return tree_id
+            # Flexible match (containment)
+            if target_name_lower in name_lower or name_lower in target_name_lower:
+                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (flexible match with '{name}').")
+                return str(tree_id)
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
     return None
@@ -2879,15 +2894,13 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
         return None
 
     base_url_cfg = config_schema.api.base_url or "https://www.ancestry.com"
-    url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_HEADER_TREES)
-    api_description = "Header Trees API (Nav Data)"
 
+    # Strategy 1: Try primary API (usually ?rights=own)
+    primary_url = urljoin(base_url_cfg.rstrip("/") + "/", API_PATH_HEADER_TREES)
+    api_description = "Header Trees API (Primary)"
     _apply_rate_limiting(api_description)
-    referer_url = urljoin(base_url_cfg.rstrip("/") + "/", "family-tree/trees")
 
-    logger.debug(
-        f"Attempting to fetch tree ID for TREE_NAME='{tree_name_config}' via {api_description} ({API_PATH_HEADER_TREES}). Referer: {referer_url}"
-    )
+    referer_url = urljoin(base_url_cfg.rstrip("/") + "/", "family-tree/trees")
 
     custom_headers = {
         "Accept": "application/json",
@@ -2896,8 +2909,9 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
     }
 
     try:
+        logger.debug(f"Attempting to fetch tree ID via {api_description}...")
         response_data = _call_api_request(
-            url=url,
+            url=primary_url,
             driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
@@ -2907,9 +2921,35 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
             referer_url=referer_url,
         )
 
-        return _extract_tree_id_from_response(response_data, tree_name_config, api_description)
+        tree_id = _extract_tree_id_from_response(response_data, tree_name_config, api_description)
+        if tree_id:
+            return tree_id
+
+        # Strategy 2: Try fallback API (without ?rights=own) if primary failed to find tree
+        logger.info(f"Tree '{tree_name_config}' not found in primary API. Trying fallback API...")
+
+        # Construct fallback URL by removing query parameters
+        fallback_path = API_PATH_HEADER_TREES.split("?")[0]
+        fallback_url = urljoin(base_url_cfg.rstrip("/") + "/", fallback_path)
+        api_description_fallback = "Header Trees API (Fallback)"
+
+        _apply_rate_limiting(api_description_fallback)
+
+        response_data_fallback = _call_api_request(
+            url=fallback_url,
+            driver=session_manager.driver,
+            session_manager=session_manager,
+            method="GET",
+            headers=custom_headers,
+            use_csrf_token=False,
+            api_description=api_description_fallback,
+            referer_url=referer_url,
+        )
+
+        return _extract_tree_id_from_response(response_data_fallback, tree_name_config, api_description_fallback)
+
     except Exception as e:
-        logger.error(f"Error during {api_description}: {e}", exc_info=True)
+        logger.error(f"Error during tree ID lookup: {e}", exc_info=True)
         return None
     # End of try/except
 

@@ -1533,15 +1533,15 @@ def _register_relationship_tests(
 
 
 def _register_api_search_tests(
-    suite: Any, debug_wrapper: Callable[..., Any], test_api_search_peter_fraser: Callable[[], None]
+    suite: Any, debug_wrapper: Callable[..., Any], test_api_search_test_person: Callable[[], None]
 ) -> None:
     """Register API search tests."""
     suite.run_test(
-        "API Search - Peter Fraser 1893",
-        debug_wrapper(test_api_search_peter_fraser),
-        "Tests API search for Peter Fraser born 1893 in Fyvie using TreesUI List API.",
+        "API Search - Test Person (.env)",
+        debug_wrapper(test_api_search_test_person),
+        "Tests API search for person defined in .env using TreesUI List API.",
         "Test API search with real person data to validate parsing and scoring.",
-        "Search for Peter Fraser (b. 1893, Fyvie) via API and verify results are properly parsed and scored.",
+        "Search for test person via API and verify results are properly parsed and scored.",
     )
 
 
@@ -2133,8 +2133,8 @@ def test_family_relationship_analysis() -> None:
         raise  # Fail test on exception
 
 
-def test_api_search_peter_fraser() -> None:
-    """Test API search for Peter Fraser born 1893 in Fyvie"""
+def test_api_search_test_person() -> None:
+    """Test API search for test person defined in .env"""
     import os
 
     from test_framework import Colors
@@ -2145,10 +2145,13 @@ def test_api_search_peter_fraser() -> None:
         print(f"{Colors.YELLOW}⏭️  Skipping live API test (SKIP_LIVE_API_TESTS=true){Colors.RESET}")
         return  # Return nothing (part of TestSuite)
 
+    # Get test person config
+    config = _get_test_person_config()
+
     print(f"\n{Colors.CYAN}🔍 Testing API Search:{Colors.RESET}")
-    print("   Person: Peter Fraser")
-    print("   Birth Year: 1893")
-    print("   Birth Place: Fyvie")
+    print(f"   Person: {config['first_name']} {config['last_name']}")
+    print(f"   Birth Year: {config['birth_year']}")
+    print(f"   Birth Place: {config.get('birth_place', 'Unknown')}")
 
     try:
         # Import API search function
@@ -2158,12 +2161,18 @@ def test_api_search_peter_fraser() -> None:
         # Get global session (must be initialized by main.py)
         session_manager = get_global_session()
 
+        if not session_manager:
+            print(
+                f"{Colors.YELLOW}⚠️ Skipping API test: No global session available (run via main.py to test){Colors.RESET}"
+            )
+            return
+
         # Create search criteria
         search_criteria = {
-            "first_name": "peter",
-            "surname": "fraser",
-            "birth_year": 1893,
-            "birth_place": "fyvie",
+            "first_name": config["first_name"].lower(),
+            "surname": config["last_name"].lower(),
+            "birth_year": config["birth_year"],
+            "birth_place": config.get("birth_place", "").lower(),
         }
 
         # Perform API search
@@ -2174,25 +2183,26 @@ def test_api_search_peter_fraser() -> None:
         print(f"\n{Colors.CYAN}📊 Results:{Colors.RESET}")
         print(f"   Total matches: {len(results)}")
 
-        if results:
-            top_result = results[0]
-            print(f"   Top match: {top_result.get('name', 'Unknown')}")
-            print(f"   Person ID: {top_result.get('id', 'Unknown')}")
-            print(f"   Birth: {top_result.get('birth_date', 'N/A')} in {top_result.get('birth_place', 'N/A')}")
-            print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
-            print(f"   Score: {top_result.get('score', 0)}")
+        if not results:
+            print(f"{Colors.RED}❌ No matches found (API returned empty or failed){Colors.RESET}")
+            raise AssertionError("No matches found (API returned empty or failed)")
 
-            # Validate that we got proper data (not "Unknown_0")
-            assert top_result.get('name') != "Unknown", "Name should be parsed correctly, not 'Unknown'"
-            assert top_result.get('id') != "Unknown_0", "Person ID should be parsed correctly, not 'Unknown_0'"
-            assert top_result.get('score', 0) > 0, "Score should be greater than 0"
+        top_result = results[0]
+        print(f"   Top match: {top_result.get('name', 'Unknown')}")
+        print(f"   Person ID: {top_result.get('id', 'Unknown')}")
+        print(f"   Birth: {top_result.get('birth_date', 'N/A')} in {top_result.get('birth_place', 'N/A')}")
+        print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
+        print(f"   Score: {top_result.get('score', 0)}")
 
-            print(f"\n{Colors.GREEN}✅ API search test passed{Colors.RESET}")
-            print(f"   • Name parsed correctly: {top_result.get('name')}")
-            print(f"   • Person ID extracted: {top_result.get('id')}")
-            print(f"   • Results scored properly: {top_result.get('score')} points")
-        else:
-            print(f"{Colors.YELLOW}⚠️ No matches found (API may have returned empty results){Colors.RESET}")
+        # Validate that we got proper data (not "Unknown_0")
+        assert top_result.get('name') != "Unknown", "Name should be parsed correctly, not 'Unknown'"
+        assert top_result.get('id') != "Unknown_0", "Person ID should be parsed correctly, not 'Unknown_0'"
+        assert top_result.get('score', 0) > 0, "Score should be greater than 0"
+
+        print(f"\n{Colors.GREEN}✅ API search test passed{Colors.RESET}")
+        print(f"   • Name parsed correctly: {top_result.get('name')}")
+        print(f"   • Person ID extracted: {top_result.get('id')}")
+        print(f"   • Results scored properly: {top_result.get('score')} points")
 
         # Return nothing (part of TestSuite)
 
@@ -2373,7 +2383,7 @@ def action10_module_tests() -> bool:
         _register_relationship_tests(
             suite, debug_wrapper, test_family_relationship_analysis, test_relationship_path_calculation
         )
-        _register_api_search_tests(suite, debug_wrapper, test_api_search_peter_fraser)
+        _register_api_search_tests(suite, debug_wrapper, test_api_search_test_person)
     else:
         logger.info("⏭️  Skipping GEDCOM-dependent tests (SKIP_SLOW_TESTS=true) - running in parallel mode")
 
@@ -2601,6 +2611,26 @@ if __name__ == "__main__":
             success = False
     else:
         print("🧪 Running Action 10 comprehensive test suite...")
+
+        # Initialize session for tests if running standalone
+        from core.session_manager import SessionManager
+        from session_utils import get_global_session, set_global_session
+
+        if not get_global_session():
+            print("⚙️ Initializing global session for standalone tests...")
+            try:
+                # Create a session manager (this may launch browser if needed by tests)
+                sm = SessionManager()
+                # Ensure session is ready (logs in if needed)
+                # Use 'action10_api_test' to allow skipping strict 'trees' cookie check if configured
+                if not sm.ensure_session_ready(action_name="action10_api_test"):
+                    print("⚠️ Failed to ensure session is ready - API tests may fail")
+                set_global_session(sm)
+                print("✅ Global session initialized")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize session: {e}")
+                print("   Some tests requiring API/Browser access may be skipped.")
+
         try:
             # Prefer the module-local suite when present
             success = action10_module_tests()
@@ -2608,6 +2638,12 @@ if __name__ == "__main__":
             print("\n[ERROR] Unhandled exception during Action 10 tests:", file=sys.stderr)
             traceback.print_exc()
             success = False
+        finally:
+            # Cleanup session if we created it
+            sm = get_global_session()
+            if sm:
+                print("🧹 Closing session...")
+                sm.close_sess()
 
     sys.exit(0 if success else 1)
 

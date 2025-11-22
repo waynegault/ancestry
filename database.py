@@ -450,9 +450,13 @@ class ConversationMetrics(Base):
     def _initialize_integer_fields(self) -> None:
         """Initialize integer fields with 0 if not provided."""
         integer_fields = [
-            'messages_sent', 'messages_received', 'current_engagement_score',
-            'max_engagement_score', 'people_looked_up', 'people_found',
-            'research_tasks_created'
+            'messages_sent',
+            'messages_received',
+            'current_engagement_score',
+            'max_engagement_score',
+            'people_looked_up',
+            'people_found',
+            'research_tasks_created',
         ]
         for field in integer_fields:
             if getattr(self, field) is None:
@@ -572,7 +576,7 @@ class MessageTemplate(Base):
         index=True,
         comment="Unique key identifying the template (e.g., 'In_Tree-Initial').",
     )
-# template_name removed - can be generated from template_key as needed
+    # template_name removed - can be generated from template_key as needed
     subject_line: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
@@ -951,9 +955,7 @@ class Person(Base):
     __tablename__ = "people"
 
     # --- Columns ---
-    id: Mapped[int] = mapped_column(
-        Integer, primary_key=True, comment="Unique identifier for the person record."
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Unique identifier for the person record.")
     uuid: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
@@ -977,9 +979,7 @@ class Person(Base):
     first_name: Mapped[Optional[str]] = mapped_column(
         String, nullable=True, comment="First name extracted from username or profile."
     )
-    gender: Mapped[Optional[str]] = mapped_column(
-        String(1), nullable=True, comment="Gender ('M' or 'F'), if known."
-    )
+    gender: Mapped[Optional[str]] = mapped_column(String(1), nullable=True, comment="Gender ('M' or 'F'), if known.")
     birth_year: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Birth year, if known (often from tree)."
     )
@@ -1088,6 +1088,7 @@ class Person(Base):
 
 # End of Person class
 
+
 # ----------------------------------------------------------------------
 # API Search Cache Table (Priority 1 Todo #10)
 # ----------------------------------------------------------------------
@@ -1105,37 +1106,26 @@ class ApiSearchCache(Base):
     __tablename__ = "api_search_cache"
 
     # --- Columns ---
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        comment="Unique identifier for the cache entry."
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, comment="Unique identifier for the cache entry.")
 
     search_criteria_hash: Mapped[str] = mapped_column(
         String(64),  # SHA256 hash length
         nullable=False,
         unique=True,
         index=True,
-        comment="SHA256 hash of normalized search criteria for fast lookup."
+        comment="SHA256 hash of normalized search criteria for fast lookup.",
     )
 
     search_criteria_json: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        comment="JSON blob of actual search criteria for debugging and audit."
+        Text, nullable=False, comment="JSON blob of actual search criteria for debugging and audit."
     )
 
     result_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Number of results returned by the API search."
+        Integer, nullable=False, default=0, comment="Number of results returned by the API search."
     )
 
     api_response_cached: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Cached API response as JSON blob for quick retrieval."
+        Text, nullable=True, comment="Cached API response as JSON blob for quick retrieval."
     )
 
     search_timestamp: Mapped[datetime] = mapped_column(
@@ -1143,27 +1133,22 @@ class ApiSearchCache(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         index=True,
-        comment="Timestamp when the API search was performed (UTC)."
+        comment="Timestamp when the API search was performed (UTC).",
     )
 
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         index=True,
-        comment="Timestamp when this cache entry expires (7 days from search_timestamp)."
+        comment="Timestamp when this cache entry expires (7 days from search_timestamp).",
     )
 
     hit_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Number of times this cached result has been used (cache hits)."
+        Integer, nullable=False, default=0, comment="Number of times this cached result has been used (cache hits)."
     )
 
     last_hit_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        comment="Timestamp of the most recent cache hit (UTC)."
+        DateTime(timezone=True), nullable=True, comment="Timestamp of the most recent cache hit (UTC)."
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -1234,6 +1219,7 @@ def _create_views(target: Any, connection: Connection, **kw: Any) -> None:
 
 # Helper functions for create_person
 
+
 def _validate_person_required_fields(person_data: dict[str, Any]) -> bool:
     """Validate required fields for person creation."""
     required_keys = ("username",)
@@ -1254,7 +1240,9 @@ def _prepare_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[s
     return profile_id_upper, uuid_upper, username, log_ref
 
 
-def _check_existing_person(session: Session, profile_id_upper: Optional[str], uuid_upper: Optional[str], log_ref: str) -> bool:
+def _check_existing_person(
+    session: Session, profile_id_upper: Optional[str], uuid_upper: Optional[str], log_ref: str
+) -> bool:
     """Check if person already exists by profile_id or uuid. Returns True if exists."""
     if profile_id_upper:
         existing_by_profile = session.query(Person.id).filter(Person.profile_id == profile_id_upper).scalar()
@@ -1293,8 +1281,12 @@ def _prepare_person_status(person_data: dict[str, Any], log_ref: str) -> PersonS
         return PersonStatusEnum.ACTIVE
 
 
-def _build_person_args(person_data: dict[str, Any], identifiers: MatchIdentifiers,
-                       last_logged_in_dt: Optional[datetime], status_enum: PersonStatusEnum) -> dict[str, Any]:
+def _build_person_args(
+    person_data: dict[str, Any],
+    identifiers: MatchIdentifiers,
+    last_logged_in_dt: Optional[datetime],
+    status_enum: PersonStatusEnum,
+) -> dict[str, Any]:
     """Build arguments dictionary for Person model."""
     return {
         "uuid": identifiers.uuid,
@@ -1364,7 +1356,9 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
         logger.debug(f"Proceeding with Person creation for {log_ref}.")
         last_logged_in_dt = _prepare_person_datetime(person_data)
         status_enum = _prepare_person_status(person_data, log_ref)
-        identifiers = MatchIdentifiers(uuid=uuid_upper, username=username, in_my_tree=False, log_ref_short=log_ref, profile_id=profile_id_upper)
+        identifiers = MatchIdentifiers(
+            uuid=uuid_upper, username=username, in_my_tree=False, log_ref_short=log_ref, profile_id=profile_id_upper
+        )
         new_person_args = _build_person_args(person_data, identifiers, last_logged_in_dt, status_enum)
 
         # Step 5: Create and add the new Person
@@ -1399,6 +1393,7 @@ def create_person(session: Session, person_data: dict[str, Any]) -> int:
 
 
 # Helper functions for create_or_update_dna_match
+
 
 def _validate_dna_match_people_id(match_data: dict[str, Any]) -> tuple[Optional[int], str]:
     """Validate people_id from match data."""
@@ -1448,7 +1443,9 @@ def _validate_dna_match_data(match_data: dict[str, Any], people_id: int, log_ref
 
     # Optional fields
     validated_data["shared_segments"] = _validate_optional_numeric(match_data.get("shared_segments"))
-    validated_data["longest_shared_segment"] = _validate_optional_numeric(match_data.get("longest_shared_segment"), allow_float=True)
+    validated_data["longest_shared_segment"] = _validate_optional_numeric(
+        match_data.get("longest_shared_segment"), allow_float=True
+    )
     validated_data["meiosis"] = _validate_optional_numeric(match_data.get("meiosis"))
     validated_data["from_my_fathers_side"] = bool(match_data.get("from_my_fathers_side"))
     validated_data["from_my_mothers_side"] = bool(match_data.get("from_my_mothers_side"))
@@ -1486,7 +1483,9 @@ def _compare_field_values(old_value: Any, new_value: Any) -> bool:
     return old_value != new_value
 
 
-def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str, session: Session) -> bool:
+def _update_existing_dna_match(
+    existing_dna_match: DnaMatch, validated_data: dict[str, Any], log_ref: str, session: Session
+) -> bool:
     """Update existing DNA match record if changes detected."""
     updated = False
     ethnicity_updates = {}
@@ -1514,6 +1513,7 @@ def _update_existing_dna_match(existing_dna_match: DnaMatch, validated_data: dic
     if ethnicity_updates:
         try:
             from sqlalchemy import text
+
             # Build raw SQL UPDATE statement
             set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_updates])
             sql = f"UPDATE dna_match SET {set_clauses} WHERE id = :id"
@@ -1588,6 +1588,7 @@ def create_or_update_dna_match(
             if ethnicity_data:
                 try:
                     from sqlalchemy import text
+
                     set_clauses = ", ".join([f"{col} = :{col}" for col in ethnicity_data])
                     sql = f"UPDATE dna_match SET {set_clauses} WHERE people_id = :people_id"
                     params = {**ethnicity_data, "people_id": people_id}
@@ -1610,9 +1611,7 @@ def create_or_update_dna_match(
     except SQLAlchemyError as e:
         logger.error(f"DB error create/update DNA Match {log_ref}: {e}", exc_info=True)
     except Exception as e:
-        logger.error(
-            f"Unexpected error create/update DNA Match {log_ref}: {e}", exc_info=True
-        )
+        logger.error(f"Unexpected error create/update DNA Match {log_ref}: {e}", exc_info=True)
 
     return result
 
@@ -1632,7 +1631,9 @@ def _prepare_family_tree_args(tree_data: dict[str, Any], people_id: int) -> dict
     return valid_tree_args
 
 
-def _update_family_tree_if_changed(existing_tree: FamilyTree, valid_tree_args: dict[str, Any], log_ref: str) -> Literal["updated", "skipped"]:
+def _update_family_tree_if_changed(
+    existing_tree: FamilyTree, valid_tree_args: dict[str, Any], log_ref: str
+) -> Literal["updated", "skipped"]:
     """Update existing family tree if changes detected."""
     updated = False
     for field, new_value in valid_tree_args.items():
@@ -1712,23 +1713,19 @@ def create_or_update_family_tree(
 # End of create_or_update_family_tree
 
 
-def _validate_person_identifiers(person_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+def _validate_person_identifiers(
+    person_data: dict[str, Any],
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """Validate and extract mandatory person identifiers."""
     uuid_raw = person_data.get("uuid")
     uuid_val = str(uuid_raw).upper() if uuid_raw else None
     username_val = person_data.get("username")
 
     if not uuid_val or not username_val:
-        logger.error(
-            f"Cannot create/update person: UUID or Username missing. Data: {person_data}"
-        )
+        logger.error(f"Cannot create/update person: UUID or Username missing. Data: {person_data}")
         return None, None, None, None
 
-    profile_id_val = (
-        str(person_data.get("profile_id")).upper()
-        if person_data.get("profile_id")
-        else None
-    )
+    profile_id_val = str(person_data.get("profile_id")).upper() if person_data.get("profile_id") else None
     log_ref = f"UUID={uuid_val} / ProfileID={profile_id_val or 'NULL'} / User='{username_val}'"
 
     return uuid_val, username_val, profile_id_val, log_ref
@@ -1747,9 +1744,7 @@ def _compare_datetime_field(current_value: Any, new_value: Any) -> tuple[bool, A
     new_dt_utc = None
     if isinstance(new_value, datetime):
         new_dt_utc = (
-            new_value.astimezone(timezone.utc)
-            if new_value.tzinfo
-            else new_value.replace(tzinfo=timezone.utc)
+            new_value.astimezone(timezone.utc) if new_value.tzinfo else new_value.replace(tzinfo=timezone.utc)
         ).replace(microsecond=0)
 
     if new_dt_utc != current_dt_utc:
@@ -1770,9 +1765,7 @@ def _compare_status_field(current_value: Any, new_value: Any, log_ref: str) -> t
         try:
             new_enum = PersonStatusEnum(str(new_value).upper())
         except ValueError:
-            logger.warning(
-                f"Invalid status value '{new_value}' for update {log_ref}. Skipping status update."
-            )
+            logger.warning(f"Invalid status value '{new_value}' for update {log_ref}. Skipping status update.")
             return False, current_value
 
     if new_enum is not None and new_enum != current_enum:
@@ -1788,9 +1781,7 @@ def _compare_birth_year_field(current_value: Any, new_value: Any, log_ref: str) 
             value_to_set = int(new_value)
             return True, value_to_set
         except (ValueError, TypeError):
-            logger.warning(
-                f"Invalid birth_year '{new_value}' for update {log_ref}. Skipping."
-            )
+            logger.warning(f"Invalid birth_year '{new_value}' for update {log_ref}. Skipping.")
 
     return False, current_value
 
@@ -1845,7 +1836,9 @@ def _compare_field_values_with_context(key: str, current_value: Any, new_value: 
     return False, current_value
 
 
-def _prepare_person_update_fields(person_data: dict[str, Any], profile_id_val: Optional[str], username_val: str) -> dict[str, Any]:
+def _prepare_person_update_fields(
+    person_data: dict[str, Any], profile_id_val: Optional[str], username_val: str
+) -> dict[str, Any]:
     """
     Prepare fields to update for a person.
     Excludes None values for fields that will be updated later by additional API calls.
@@ -1951,7 +1944,9 @@ def create_or_update_person(
                     result_person = new_person_obj
                     result_status = "created"
                 else:
-                    logger.error(f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report.")
+                    logger.error(
+                        f"Failed to fetch newly created person {log_ref} ID {new_person_id} after successful creation report."
+                    )
                     with contextlib.suppress(Exception):
                         session.rollback()
             else:
@@ -1998,17 +1993,13 @@ def get_person_by_profile_id_and_username(
     """
     # Step 1: Validate inputs
     if not profile_id or not username:
-        logger.warning(
-            "get_person_by_profile_id_and_username: profile_id and username required."
-        )
+        logger.warning("get_person_by_profile_id_and_username: profile_id and username required.")
         return None
     # Step 2: Query database
     try:
         query = session.query(Person).filter(
-            func.upper(Person.profile_id)
-            == profile_id.upper(),  # Case-insensitive profile ID compare
-            Person.username
-            == username,  # Case-sensitive username compare (default SQLite)
+            func.upper(Person.profile_id) == profile_id.upper(),  # Case-insensitive profile ID compare
+            Person.username == username,  # Case-sensitive username compare (default SQLite)
         )
 
         # Apply deleted filter unless include_deleted is True
@@ -2033,9 +2024,7 @@ def get_person_by_profile_id_and_username(
 # End of get_person_by_profile_id_and_username
 
 
-def get_person_by_profile_id(
-    session: Session, profile_id: str, include_deleted: bool = False
-) -> Optional[Person]:
+def get_person_by_profile_id(session: Session, profile_id: str, include_deleted: bool = False) -> Optional[Person]:
     """
     Retrieves a Person record based on profile_id (case-insensitive).
 
@@ -2056,9 +2045,7 @@ def get_person_by_profile_id(
     try:
         # Use func.upper for case-insensitive comparison if needed (depends on DB collation)
         # For SQLite, default is often case-sensitive, so explicit upper is safer.
-        query = session.query(Person).filter(
-            func.upper(Person.profile_id) == profile_id.upper()
-        )
+        query = session.query(Person).filter(func.upper(Person.profile_id) == profile_id.upper())
 
         # Apply deleted filter unless include_deleted is True
         if not include_deleted:
@@ -2103,8 +2090,7 @@ def _build_person_query(session: Session, profile_id: str, username: str, includ
         session.query(Person)
         .options(joinedload(Person.dna_match))  # Eager load DnaMatch relationship
         .filter(
-            func.upper(Person.profile_id)
-            == profile_id.upper(),  # Case-insensitive profile ID
+            func.upper(Person.profile_id) == profile_id.upper(),  # Case-insensitive profile ID
             Person.username == username,  # Case-sensitive username
         )
     )
@@ -2188,7 +2174,9 @@ def exclude_deleted_persons(query: Query[Any]) -> Query[Any]:
 # End of exclude_deleted_persons
 
 
-def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str], str]:
+def _extract_and_normalize_identifiers(
+    identifier_data: dict[str, Any],
+) -> tuple[Optional[str], Optional[str], Optional[str], str]:
     """Extract and normalize person identifiers from data."""
     person_uuid_raw = identifier_data.get("uuid")
     person_profile_id_raw = identifier_data.get("profile_id")
@@ -2210,7 +2198,9 @@ def _extract_and_normalize_identifiers(identifier_data: dict[str, Any]) -> tuple
     return person_uuid, person_profile_id, person_username, log_ref
 
 
-def _disambiguate_by_username(potential_matches: list[Person], person_username: str, person_profile_id: str, log_ref: str) -> Optional[Person]:
+def _disambiguate_by_username(
+    potential_matches: list[Person], person_username: str, person_profile_id: str, log_ref: str
+) -> Optional[Person]:
     """Disambiguate multiple profile ID matches using username."""
     found_by_username: Optional[Person] = None
     username_match_count = 0
@@ -2221,18 +2211,26 @@ def _disambiguate_by_username(potential_matches: list[Person], person_username: 
             username_match_count += 1
 
     if username_match_count == 1 and found_by_username:
-        logger.info(f"Disambiguated multiple ProfileID matches using exact Username '{person_username}' for {log_ref} (ID: {found_by_username.id}).")
+        logger.info(
+            f"Disambiguated multiple ProfileID matches using exact Username '{person_username}' for {log_ref} (ID: {found_by_username.id})."
+        )
         return found_by_username
 
     if username_match_count > 1:
-        logger.error(f"CRITICAL AMBIGUITY: Found {username_match_count} people matching BOTH ProfileID {person_profile_id} AND Username '{person_username}'. Cannot reliably identify.")
+        logger.error(
+            f"CRITICAL AMBIGUITY: Found {username_match_count} people matching BOTH ProfileID {person_profile_id} AND Username '{person_username}'. Cannot reliably identify."
+        )
         return None
 
-    logger.warning(f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'.")
+    logger.warning(
+        f"Multiple matches for ProfileID {person_profile_id}, but none matched exact Username '{person_username}'."
+    )
     return None
 
 
-def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username: Optional[str], log_ref: str) -> Optional[Person]:
+def _find_by_profile_id(
+    base_query: Any, person_profile_id: str, person_username: Optional[str], log_ref: str
+) -> Optional[Person]:
     """Find person by profile ID, with username disambiguation if needed."""
     potential_matches = base_query.filter(Person.profile_id == person_profile_id).all()
 
@@ -2243,7 +2241,9 @@ def _find_by_profile_id(base_query: Any, person_profile_id: str, person_username
         return potential_matches[0]
 
     # Multiple matches found
-    logger.warning(f"Multiple ({len(potential_matches)}) people found for Profile ID: {person_profile_id}. Attempting disambiguation...")
+    logger.warning(
+        f"Multiple ({len(potential_matches)}) people found for Profile ID: {person_profile_id}. Attempting disambiguation..."
+    )
 
     if person_username:
         return _disambiguate_by_username(potential_matches, person_username, person_profile_id, log_ref)
@@ -2303,9 +2303,7 @@ def find_existing_person(
 # End of find_existing_person
 
 
-def get_person_by_uuid(
-    session: Session, uuid: str, include_deleted: bool = False
-) -> Optional[Person]:
+def get_person_by_uuid(session: Session, uuid: str, include_deleted: bool = False) -> Optional[Person]:
     """
     Retrieves a Person record based on their UUID (case-insensitive), eager loading related data.
 
@@ -2342,9 +2340,7 @@ def get_person_by_uuid(
         logger.error(f"DB error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
     except Exception as e:
-        logger.error(
-            f"Unexpected error retrieving person by UUID {uuid}: {e}", exc_info=True
-        )
+        logger.error(f"Unexpected error retrieving person by UUID {uuid}: {e}", exc_info=True)
         return None
 
 
@@ -2365,7 +2361,9 @@ def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix
 
         # Basic validation
         if not all([conv_id, direction_input, people_id, isinstance(ts_val, datetime)]):
-            logger.error(f"{log_prefix}Skipping invalid log data (missing keys/ts): ConvID={conv_id}, Dir={direction_input}, PID={people_id}, TS={ts_val}")
+            logger.error(
+                f"{log_prefix}Skipping invalid log data (missing keys/ts): ConvID={conv_id}, Dir={direction_input}, PID={people_id}, TS={ts_val}"
+            )
             continue
 
         # Normalize direction to Enum
@@ -2380,7 +2378,11 @@ def _prepare_conversation_log_data(log_upserts: list[dict[str, Any]], log_prefix
 
         # Normalize timestamp to aware UTC
         if ts_val is not None:
-            aware_timestamp = ts_val.astimezone(timezone.utc) if hasattr(ts_val, "tzinfo") and ts_val.tzinfo else ts_val.replace(tzinfo=timezone.utc)
+            aware_timestamp = (
+                ts_val.astimezone(timezone.utc)
+                if hasattr(ts_val, "tzinfo") and ts_val.tzinfo
+                else ts_val.replace(tzinfo=timezone.utc)
+            )
             data["latest_timestamp"] = aware_timestamp
         else:
             data["latest_timestamp"] = datetime.now(timezone.utc)
@@ -2404,11 +2406,13 @@ def _prepare_person_update_data(person_updates: dict[int, PersonStatusEnum]) -> 
             logger.warning(f"Invalid status type '{type(status_enum)}' for Person ID {pid}. Skipping update.")
             continue
 
-        person_update_mappings.append({
-            "id": pid,
-            "status": status_enum,
-            "updated_at": datetime.now(timezone.utc),
-        })
+        person_update_mappings.append(
+            {
+                "id": pid,
+                "status": status_enum,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
 
     return person_update_mappings
 
@@ -2434,6 +2438,7 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
 
     # Update conversation_metrics for each person with a new log entry
     from conversation_analytics import update_conversation_metrics
+
     for log_data in log_inserts_mappings:
         people_id = log_data.get("people_id")
         direction = log_data.get("direction")
@@ -2446,7 +2451,9 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
                     message_received=(direction == MessageDirectionEnum.IN),
                 )
             except Exception as metrics_err:
-                logger.warning(f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}")
+                logger.warning(
+                    f"{log_prefix}Failed to update conversation_metrics for person {people_id}: {metrics_err}"
+                )
 
     return processed_logs_count
 
@@ -2466,6 +2473,7 @@ def _process_person_updates(sess: Session, person_updates: dict[int, PersonStatu
     logger.debug(f"{log_prefix}Attempting bulk update for {len(person_update_mappings)} persons...")
     try:
         from sqlalchemy import inspect
+
         sess.bulk_update_mappings(inspect(Person), person_update_mappings)
         updated_person_count = len(person_update_mappings)
         logger.debug(f"{log_prefix}Bulk update successful for {updated_person_count} persons.")
@@ -2561,9 +2569,7 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
 
         # Step 3: Handle case where person not found
         if not person:
-            logger.warning(
-                f"soft_delete_person: Person {log_ref} not found or already deleted. Cannot soft-delete."
-            )
+            logger.warning(f"soft_delete_person: Person {log_ref} not found or already deleted. Cannot soft-delete.")
             return False  # Indicate person wasn't found
 
         # Step 4: Set the deleted_at timestamp
@@ -2573,9 +2579,7 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
         person.deleted_at = datetime.now(timezone.utc)
         person.status = PersonStatusEnum.ARCHIVE  # Also set status to ARCHIVE
         session.flush()  # Apply changes to session state immediately
-        logger.info(
-            f"Soft-deleted Person ID {person_id_for_log} ({log_ref}) successfully."
-        )
+        logger.info(f"Soft-deleted Person ID {person_id_for_log} ({log_ref}) successfully.")
         return True  # Indicate success
 
     # Step 5: Handle database errors
@@ -2586,9 +2590,7 @@ def soft_delete_person(session: Session, profile_id: str, username: str) -> bool
         return False
     # Step 6: Handle unexpected errors
     except Exception as e:
-        logger.critical(
-            f"Unexpected error soft_delete_person {log_ref}: {e}", exc_info=True
-        )
+        logger.critical(f"Unexpected error soft_delete_person {log_ref}: {e}", exc_info=True)
         with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
         return False
@@ -2632,21 +2634,15 @@ def hard_delete_person(session: Session, profile_id: str, username: str) -> bool
 
         # Step 3: Handle case where person not found
         if not person:
-            logger.warning(
-                f"hard_delete_person: Person {log_ref} not found. Cannot delete."
-            )
+            logger.warning(f"hard_delete_person: Person {log_ref} not found. Cannot delete.")
             return False  # Indicate person wasn't found
 
         # Step 4: Delete the person object (cascades should handle related records)
         person_id_for_log = person.id  # Get ID for logging before deletion
-        logger.info(
-            f"Permanently deleting Person ID {person_id_for_log} ({log_ref})..."
-        )
+        logger.info(f"Permanently deleting Person ID {person_id_for_log} ({log_ref})...")
         session.delete(person)
         session.flush()  # Apply deletion to session state immediately
-        logger.info(
-            f"Permanently deleted Person ID {person_id_for_log} ({log_ref}) successfully."
-        )
+        logger.info(f"Permanently deleted Person ID {person_id_for_log} ({log_ref}) successfully.")
         return True  # Indicate success
 
     # Step 5: Handle database errors
@@ -2657,9 +2653,7 @@ def hard_delete_person(session: Session, profile_id: str, username: str) -> bool
         return False
     # Step 6: Handle unexpected errors
     except Exception as e:
-        logger.critical(
-            f"Unexpected error hard_delete_person {log_ref}: {e}", exc_info=True
-        )
+        logger.critical(f"Unexpected error hard_delete_person {log_ref}: {e}", exc_info=True)
         with contextlib.suppress(Exception):
             session.rollback()  # Attempt rollback
         return False
@@ -2668,9 +2662,7 @@ def hard_delete_person(session: Session, profile_id: str, username: str) -> bool
 # End of hard_delete_person
 
 
-def delete_person(
-    session: Session, profile_id: str, username: str, soft_delete: bool = True
-) -> bool:
+def delete_person(session: Session, profile_id: str, username: str, soft_delete: bool = True) -> bool:
     """
     Deletes a Person record identified by profile_id and username.
     By default, performs a soft delete (sets deleted_at timestamp) to preserve data.
@@ -2744,9 +2736,7 @@ def _handle_deletion_error(e: Exception, db_path: Path, attempt: int) -> Excepti
     return e
 
 
-def delete_database(
-    db_path: Path, max_attempts: int = 5
-):
+def delete_database(db_path: Path, max_attempts: int = 5):
     """
     Deletes the physical database file with retry logic.
 
@@ -2790,9 +2780,7 @@ def delete_database(
 # --- Cleanup Functions ---
 
 
-def cleanup_soft_deleted_records(
-    session: Session, older_than_days: int = 30
-) -> dict[str, int]:
+def cleanup_soft_deleted_records(session: Session, older_than_days: int = 30) -> dict[str, int]:
     """
     Permanently deletes Person records (and their related records through cascade)
     that were soft-deleted more than the specified number of days ago.
@@ -2819,15 +2807,11 @@ def cleanup_soft_deleted_records(
         to_delete = session.query(Person).filter(Person.deleted_at < cutoff_date).all()
 
         if not to_delete:
-            logger.info(
-                f"No soft-deleted records older than {older_than_days} days found."
-            )
+            logger.info(f"No soft-deleted records older than {older_than_days} days found.")
             return deleted_counts
 
         # Log the number of records to be deleted
-        logger.info(
-            f"Found {len(to_delete)} soft-deleted Person records older than {older_than_days} days."
-        )
+        logger.info(f"Found {len(to_delete)} soft-deleted Person records older than {older_than_days} days.")
 
         # Delete each record
         for person in to_delete:
@@ -2842,9 +2826,7 @@ def cleanup_soft_deleted_records(
 
         # Flush changes to the session
         session.flush()
-        logger.info(
-            f"Permanently deleted {deleted_counts['people']} soft-deleted Person records."
-        )
+        logger.info(f"Permanently deleted {deleted_counts['people']} soft-deleted Person records.")
 
         return deleted_counts
 
@@ -2854,9 +2836,7 @@ def cleanup_soft_deleted_records(
             session.rollback()
         return deleted_counts
     except Exception as e:
-        logger.critical(
-            f"Unexpected error cleaning up soft-deleted records: {e}", exc_info=True
-        )
+        logger.critical(f"Unexpected error cleaning up soft-deleted records: {e}", exc_info=True)
         with contextlib.suppress(Exception):
             session.rollback()
         return deleted_counts
@@ -2871,7 +2851,12 @@ def cleanup_soft_deleted_records(
 def _create_and_verify_test_person(session: Session, test_uuid: str, test_profile_id: str, test_username: str) -> bool:
     """Create and verify test person."""
     logger.info(f"Creating test person: UUID={test_uuid}, ProfileID={test_profile_id}, Username={test_username}")
-    person_data = {"uuid": test_uuid, "profile_id": test_profile_id, "username": test_username, "status": PersonStatusEnum.ACTIVE}
+    person_data = {
+        "uuid": test_uuid,
+        "profile_id": test_profile_id,
+        "username": test_username,
+        "status": PersonStatusEnum.ACTIVE,
+    }
 
     person_id = create_person(session, person_data)
     if person_id == 0:
@@ -2901,7 +2886,9 @@ def _verify_soft_delete_state(session: Session, test_profile_id: str) -> bool:
     # Verify found with include_deleted=True
     person = get_person_by_profile_id(session, test_profile_id, include_deleted=True)
     if not person:
-        logger.error(f"Test person with ProfileID={test_profile_id} not found after soft-delete with include_deleted=True.")
+        logger.error(
+            f"Test person with ProfileID={test_profile_id} not found after soft-delete with include_deleted=True."
+        )
         return False
     logger.info("Verified test person found with include_deleted=True after soft-delete.")
 
@@ -2913,7 +2900,9 @@ def _verify_soft_delete_state(session: Session, test_profile_id: str) -> bool:
 
     # Verify status is ARCHIVE
     if getattr(person, "status", None) != PersonStatusEnum.ARCHIVE:
-        logger.error(f"Test person with ProfileID={test_profile_id} has status {person.status} instead of ARCHIVE after soft-delete.")
+        logger.error(
+            f"Test person with ProfileID={test_profile_id} has status {person.status} instead of ARCHIVE after soft-delete."
+        )
         return False
     logger.info("Verified test person has status ARCHIVE after soft-delete.")
 
@@ -3024,7 +3013,9 @@ def _soft_delete_test_persons_with_timestamps(session: Session, test_persons: li
     session.flush()
 
 
-def _verify_cleanup_results(session: Session, test_persons: list[dict[str, str]], deleted_counts: dict[str, int]) -> bool:
+def _verify_cleanup_results(
+    session: Session, test_persons: list[dict[str, str]], deleted_counts: dict[str, int]
+) -> bool:
     """Verify cleanup results match expectations."""
     if deleted_counts["people"] != 1:
         logger.error(f"Expected 1 person to be deleted, but got {deleted_counts['people']}.")
@@ -3124,7 +3115,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "other",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "DNA_Match_Specific",
@@ -3133,7 +3124,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "other",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Enhanced_In_Tree-Initial",
@@ -3142,7 +3133,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Enhanced_Out_Tree-Initial",
@@ -3151,7 +3142,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Enhanced_Productive_Reply",
@@ -3160,7 +3151,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "other",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Final_Reminder",
@@ -3169,7 +3160,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "reminder",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Follow_Up",
@@ -3178,7 +3169,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "follow_up",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Initial",
@@ -3187,7 +3178,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Initial_Confident",
@@ -3196,7 +3187,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Initial_Short",
@@ -3205,7 +3196,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "In_Tree-Initial_for_was_Out_Tree",
@@ -3214,7 +3205,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "in_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Out_Tree-Final_Reminder",
@@ -3223,7 +3214,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "reminder",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Out_Tree-Follow_Up",
@@ -3232,7 +3223,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "follow_up",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Out_Tree-Initial",
@@ -3241,7 +3232,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Out_Tree-Initial_Exploratory",
@@ -3250,7 +3241,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Out_Tree-Initial_Short",
@@ -3259,7 +3250,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "initial",
             "tree_status": "out_tree",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Productive_Reply_Acknowledgement",
@@ -3268,7 +3259,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "acknowledgement",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "Record_Research_Collaboration",
@@ -3277,7 +3268,7 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "other",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
+            "version": 1,
         },
         {
             "template_key": "User_Requested_Desist",
@@ -3286,8 +3277,8 @@ def _get_default_message_templates() -> list[dict[str, Any]]:
             "template_category": "desist",
             "tree_status": "universal",
             "is_active": True,
-            "version": 1
-        }
+            "version": 1,
+        },
     ]
 
 
@@ -3317,12 +3308,8 @@ if __name__ == "__main__":
             stream=sys.stderr,
         )
         standalone_logger = logging.getLogger("db_standalone_fallback")
-        standalone_logger.error(
-            f"Error setting up main logger: {log_err}. Using fallback."
-        )
-        standalone_logger.info(
-            "--- Starting database.py standalone run (Fallback Logging) ---"
-        )
+        standalone_logger.error(f"Error setting up main logger: {log_err}. Using fallback.")
+        standalone_logger.info("--- Starting database.py standalone run (Fallback Logging) ---")
 
     engine = None  # Initialize engine variable
 
@@ -3331,22 +3318,16 @@ if __name__ == "__main__":
         if config_schema:
             db_path_obj = config_schema.database.database_file
             if db_path_obj is None:
-                standalone_logger.error(
-                    "DATABASE_FILE is not configured. Using in-memory database."
-                )
+                standalone_logger.error("DATABASE_FILE is not configured. Using in-memory database.")
                 db_path_str = ":memory:"
             else:
                 db_path_str = str(db_path_obj.resolve())
         else:
-            standalone_logger.error(
-                "Config instance not available. Using in-memory database."
-            )
+            standalone_logger.error("Config instance not available. Using in-memory database.")
             db_path_str = ":memory:"
 
         standalone_logger.info(f"Target database file: {db_path_str}")
-        engine = create_engine(
-            f"sqlite:///{db_path_str}", echo=False
-        )  # echo=True for verbose SQL
+        engine = create_engine(f"sqlite:///{db_path_str}", echo=False)  # echo=True for verbose SQL
 
         # Step 3: Add PRAGMA event listener for new connections
         @event.listens_for(engine, "connect")
@@ -3356,30 +3337,22 @@ if __name__ == "__main__":
             try:
                 cursor.execute("PRAGMA journal_mode=WAL;")
                 cursor.execute("PRAGMA foreign_keys=ON;")
-                standalone_logger.debug(
-                    "PRAGMA settings (WAL, Foreign Keys) applied for new connection."
-                )
+                standalone_logger.debug("PRAGMA settings (WAL, Foreign Keys) applied for new connection.")
             except Exception as pragma_e:
-                standalone_logger.error(
-                    f"Failed setting PRAGMA in standalone: {pragma_e}"
-                )
+                standalone_logger.error(f"Failed setting PRAGMA in standalone: {pragma_e}")
             finally:
                 cursor.close()
 
         # End of enable_sqlite_settings_standalone listener
 
         # Step 4: Create tables and views if they don't exist
-        standalone_logger.info(
-            "Checking/Creating database schema (tables and views)..."
-        )
+        standalone_logger.info("Checking/Creating database schema (tables and views)...")
         try:
             # The 'after_create' event listener (_create_views) handles view creation automatically
             Base.metadata.create_all(engine)
             standalone_logger.info("Base.metadata.create_all() executed successfully.")
         except Exception as create_err:
-            standalone_logger.error(
-                f"Error during schema creation: {create_err}", exc_info=True
-            )
+            standalone_logger.error(f"Error during schema creation: {create_err}", exc_info=True)
             # Optionally exit if schema creation fails critically
             # sys.exit(1)
 
@@ -3388,6 +3361,7 @@ if __name__ == "__main__":
         seed_session = None
         try:
             from sqlalchemy.orm import sessionmaker
+
             SessionLocal = sessionmaker(bind=engine)
             seed_session = SessionLocal()
 
@@ -3409,39 +3383,27 @@ if __name__ == "__main__":
                 standalone_logger.info(f"MessageTemplate table already populated: {existing_count} templates found")
 
         except Exception as seed_err:
-            standalone_logger.error(
-                f"Error during MessageTemplate seeding: {seed_err}", exc_info=True
-            )
+            standalone_logger.error(f"Error during MessageTemplate seeding: {seed_err}", exc_info=True)
         finally:
             # Ensure seed session is closed
             if seed_session:
                 try:
                     # Run tests for soft delete functionality
-                    standalone_logger.info(
-                        "Running tests for soft delete functionality..."
-                    )
+                    standalone_logger.info("Running tests for soft delete functionality...")
                     with db_transn(seed_session) as sess:
                         # Test soft delete functionality
                         soft_delete_test_result = test_soft_delete_functionality(sess)
                         if soft_delete_test_result:
-                            standalone_logger.info(
-                                "Soft delete functionality tests PASSED."
-                            )
+                            standalone_logger.info("Soft delete functionality tests PASSED.")
                         else:
-                            standalone_logger.error(
-                                "Soft delete functionality tests FAILED."
-                            )
+                            standalone_logger.error("Soft delete functionality tests FAILED.")
 
                         # Test cleanup of soft-deleted records
                         cleanup_test_result = test_cleanup_soft_deleted_records(sess)
                         if cleanup_test_result:
-                            standalone_logger.info(
-                                "Cleanup of soft-deleted records tests PASSED."
-                            )
+                            standalone_logger.info("Cleanup of soft-deleted records tests PASSED.")
                         else:
-                            standalone_logger.error(
-                                "Cleanup of soft-deleted records tests FAILED."
-                            )
+                            standalone_logger.error("Cleanup of soft-deleted records tests FAILED.")
 
                         # Print summary of test results
                         standalone_logger.info("=== Test Summary ===")
@@ -3458,24 +3420,18 @@ if __name__ == "__main__":
 
                         # If any test failed, log a warning
                         if not (soft_delete_test_result and cleanup_test_result):
-                            standalone_logger.warning(
-                                "Some tests failed. See logs for details."
-                            )
+                            standalone_logger.warning("Some tests failed. See logs for details.")
 
                     standalone_logger.info("Tests completed.")
 
                     # Close the session
                     seed_session.close()
                 except Exception as close_err:
-                    standalone_logger.warning(
-                        f"Error during tests or closing seed session: {close_err}"
-                    )
+                    standalone_logger.warning(f"Error during tests or closing seed session: {close_err}")
 
     # Step 6: Handle any exceptions during the setup process
     except Exception as e:
-        standalone_logger.critical(
-            f"CRITICAL error during standalone database setup: {e}", exc_info=True
-        )
+        standalone_logger.critical(f"CRITICAL error during standalone database setup: {e}", exc_info=True)
 
     # Step 7: Clean up the engine connection pool
     finally:
@@ -3524,22 +3480,17 @@ def _test_database_model_definitions() -> None:
         except Exception as e:
             print(f"   ❌ {model_name} instantiation failed: {e}")
             import traceback
+
             traceback.print_exc()
             instance_created = False
 
         # Test table definition
-        has_table = (
-            hasattr(model_class, "__table__") and getattr(model_class, "__table__", None) is not None
-        )
-        table_name = (
-            getattr(model_class, "__tablename__", "Unknown")
-        )
+        has_table = hasattr(model_class, "__table__") and getattr(model_class, "__table__", None) is not None
+        table_name = getattr(model_class, "__tablename__", "Unknown")
 
         status = "✅" if model_exists and instance_created and has_table else "❌"
         print(f"   {status} {model_name}: {description}")
-        print(
-            f"      Exists: {model_exists}, Instantiable: {instance_created}, Table: {table_name}"
-        )
+        print(f"      Exists: {model_exists}, Instantiable: {instance_created}, Table: {table_name}")
 
         test_passed = model_exists and instance_created and has_table
         results.append(test_passed)
@@ -3548,37 +3499,21 @@ def _test_database_model_definitions() -> None:
         assert instance_created, f"{model_name} model should be instantiable"
         assert has_table, f"{model_name} should have table definition"
 
-    print(
-        f"📊 Results: {sum(results)}/{len(results)} database models properly defined"
-    )
+    print(f"📊 Results: {sum(results)}/{len(results)} database models properly defined")
 
 
 def _test_enum_definitions() -> None:
     """Test that required enum values are properly defined."""
     # Test PersonStatusEnum
-    assert hasattr(
-        PersonStatusEnum, "ACTIVE"
-    ), "PersonStatusEnum should have ACTIVE status"
-    assert hasattr(
-        PersonStatusEnum, "ARCHIVE"
-    ), "PersonStatusEnum should have ARCHIVE status"
-    assert hasattr(
-        PersonStatusEnum, "DESIST"
-    ), "PersonStatusEnum should have DESIST status"
-    assert hasattr(
-        PersonStatusEnum, "BLOCKED"
-    ), "PersonStatusEnum should have BLOCKED status"
-    assert hasattr(
-        PersonStatusEnum, "DEAD"
-    ), "PersonStatusEnum should have DEAD status"
+    assert hasattr(PersonStatusEnum, "ACTIVE"), "PersonStatusEnum should have ACTIVE status"
+    assert hasattr(PersonStatusEnum, "ARCHIVE"), "PersonStatusEnum should have ARCHIVE status"
+    assert hasattr(PersonStatusEnum, "DESIST"), "PersonStatusEnum should have DESIST status"
+    assert hasattr(PersonStatusEnum, "BLOCKED"), "PersonStatusEnum should have BLOCKED status"
+    assert hasattr(PersonStatusEnum, "DEAD"), "PersonStatusEnum should have DEAD status"
 
     # Test MessageDirectionEnum
-    assert hasattr(
-        MessageDirectionEnum, "IN"
-    ), "MessageDirectionEnum should have IN"
-    assert hasattr(
-        MessageDirectionEnum, "OUT"
-    ), "MessageDirectionEnum should have OUT"
+    assert hasattr(MessageDirectionEnum, "IN"), "MessageDirectionEnum should have IN"
+    assert hasattr(MessageDirectionEnum, "OUT"), "MessageDirectionEnum should have OUT"
 
     # Test RoleType
     assert hasattr(RoleType, "AUTHOR"), "RoleType should have AUTHOR"
@@ -3693,6 +3628,7 @@ def _test_schema_integration() -> None:
 def _test_model_creation_performance() -> None:
     """Test model creation performance."""
     import time
+
     start_time = time.time()
 
     # Create multiple model instances (Person requires username)
@@ -3747,58 +3683,97 @@ def database_module_tests() -> bool:
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Database Model Definitions", test_database_model_definitions,
-         "5 database models tested: Person, DnaMatch, FamilyTree, MessageTemplate, ConversationLog - all exist, instantiable, with table definitions.",
-         "Test that all required ORM models exist and can be instantiated with detailed verification.",
-         "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables."),
-        ("Enum Value Definitions", test_enum_definitions,
-         "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
-         "Test enum definitions for status management and message direction handling",
-         "Verify that enum classes have required status values and direction indicators"),
-        ("Database Base Setup", test_database_base_setup,
-         "SQLAlchemy Base is properly configured with metadata and registry",
-         "Test that SQLAlchemy base is properly configured",
-         "Verify Base has metadata, registry, and proper declarative setup"),
-        ("Transaction Context Manager", test_transaction_context_manager,
-         "Transaction context manager handles commits and rollbacks correctly",
-         "Test transaction context manager functionality",
-         "Verify proper transaction handling with commit/rollback support"),
-        ("Model Attributes", test_model_attributes,
-         "All database models have required attributes and relationships",
-         "Test that models have expected attributes",
-         "Verify Person, DnaMatch, FamilyTree models have correct columns and relationships"),
-        ("Database Utilities", test_database_utilities,
-         "Database utility functions work correctly",
-         "Test database utility functions",
-         "Verify helper functions for database operations"),
-        ("Enum Edge Cases", test_enum_edge_cases,
-         "Enum definitions handle edge cases properly",
-         "Test enum edge case handling",
-         "Verify enum validation and error handling"),
-        ("Model Instantiation Edge Cases", test_model_instantiation_edge_cases,
-         "Models handle edge cases during instantiation",
-         "Test model instantiation edge cases",
-         "Verify models handle None values, empty strings, and invalid data"),
-        ("Model Relationships", test_model_relationships,
-         "Model relationships are properly defined and functional",
-         "Test model relationship definitions",
-         "Verify foreign keys, back references, and relationship integrity"),
-        ("Schema Integration", test_schema_integration,
-         "Database schema integrates properly with application",
-         "Test schema integration",
-         "Verify schema compatibility and migration support"),
-        ("Model Creation Performance", test_model_creation_performance,
-         "Model creation performs within acceptable limits",
-         "Test model creation performance",
-         "Verify model instantiation is efficient"),
-        ("Import Error Handling", test_import_error_handling,
-         "Module handles import errors gracefully",
-         "Test handling of missing dependencies",
-         "Verify graceful degradation when optional dependencies unavailable"),
-        ("Configuration Error Handling", test_configuration_error_handling,
-         "Module handles configuration dependencies correctly",
-         "Test handling of configuration and logging dependencies",
-         "Verify that required configuration and logging components are available"),
+        (
+            "Database Model Definitions",
+            test_database_model_definitions,
+            "5 database models tested: Person, DnaMatch, FamilyTree, MessageTemplate, ConversationLog - all exist, instantiable, with table definitions.",
+            "Test that all required ORM models exist and can be instantiated with detailed verification.",
+            "Verify Person→people, DnaMatch→dna_match, FamilyTree→family_tree, MessageTemplate→message_templates, ConversationLog→conversation_log tables.",
+        ),
+        (
+            "Enum Value Definitions",
+            test_enum_definitions,
+            "All required enum values (PersonStatusEnum, MessageDirectionEnum, RoleType) are properly defined",
+            "Test enum definitions for status management and message direction handling",
+            "Verify that enum classes have required status values and direction indicators",
+        ),
+        (
+            "Database Base Setup",
+            test_database_base_setup,
+            "SQLAlchemy Base is properly configured with metadata and registry",
+            "Test that SQLAlchemy base is properly configured",
+            "Verify Base has metadata, registry, and proper declarative setup",
+        ),
+        (
+            "Transaction Context Manager",
+            test_transaction_context_manager,
+            "Transaction context manager handles commits and rollbacks correctly",
+            "Test transaction context manager functionality",
+            "Verify proper transaction handling with commit/rollback support",
+        ),
+        (
+            "Model Attributes",
+            test_model_attributes,
+            "All database models have required attributes and relationships",
+            "Test that models have expected attributes",
+            "Verify Person, DnaMatch, FamilyTree models have correct columns and relationships",
+        ),
+        (
+            "Database Utilities",
+            test_database_utilities,
+            "Database utility functions work correctly",
+            "Test database utility functions",
+            "Verify helper functions for database operations",
+        ),
+        (
+            "Enum Edge Cases",
+            test_enum_edge_cases,
+            "Enum definitions handle edge cases properly",
+            "Test enum edge case handling",
+            "Verify enum validation and error handling",
+        ),
+        (
+            "Model Instantiation Edge Cases",
+            test_model_instantiation_edge_cases,
+            "Models handle edge cases during instantiation",
+            "Test model instantiation edge cases",
+            "Verify models handle None values, empty strings, and invalid data",
+        ),
+        (
+            "Model Relationships",
+            test_model_relationships,
+            "Model relationships are properly defined and functional",
+            "Test model relationship definitions",
+            "Verify foreign keys, back references, and relationship integrity",
+        ),
+        (
+            "Schema Integration",
+            test_schema_integration,
+            "Database schema integrates properly with application",
+            "Test schema integration",
+            "Verify schema compatibility and migration support",
+        ),
+        (
+            "Model Creation Performance",
+            test_model_creation_performance,
+            "Model creation performs within acceptable limits",
+            "Test model creation performance",
+            "Verify model instantiation is efficient",
+        ),
+        (
+            "Import Error Handling",
+            test_import_error_handling,
+            "Module handles import errors gracefully",
+            "Test handling of missing dependencies",
+            "Verify graceful degradation when optional dependencies unavailable",
+        ),
+        (
+            "Configuration Error Handling",
+            test_configuration_error_handling,
+            "Module handles configuration dependencies correctly",
+            "Test handling of configuration and logging dependencies",
+            "Verify that required configuration and logging components are available",
+        ),
     ]
 
     # Run all tests from the list

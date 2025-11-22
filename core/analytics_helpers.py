@@ -29,7 +29,7 @@ def load_match_analysis_helpers() -> tuple[IDNormalizer, MatchAnalyzer, Suppleme
 
     action10_module = import_module("action10")
     api_search_module = import_module("api_search_core")
-    normalize_id = cast(IDNormalizer, getattr(action10_module, "_normalize_id"))
+    normalize_id = cast(IDNormalizer, getattr(action10_module, "normalize_gedcom_id"))
     analyze_top_match = cast(MatchAnalyzer, getattr(action10_module, "analyze_top_match"))
     handle_supplementary = cast(
         SupplementaryHandler,

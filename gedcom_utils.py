@@ -40,6 +40,7 @@ Provides the essential GEDCOM processing infrastructure that enables sophisticat
 genealogical analysis, relationship discovery, and family tree intelligence for
 professional genealogical research and family history exploration.
 """
+
 from __future__ import annotations
 
 # === CORE INFRASTRUCTURE ===
@@ -84,9 +85,7 @@ except ImportError:
     _GedcomRecord = type(None)
     _GedcomName = type(None)
     _GedcomNameRec = type(None)
-    print(
-        "ERROR: ged4py library not found. This script requires ged4py (`pip install ged4py`)"
-    )
+    print("ERROR: ged4py library not found. This script requires ged4py (`pip install ged4py`)")
 
 GedcomReader = _GedcomReader
 Individual = _GedcomIndividual
@@ -103,9 +102,7 @@ try:
 except ImportError:
     dateparser = None
     _dateparser_available = False
-    print(
-        "WARNING: dateparser library not found. Date parsing will be limited. Run 'pip install dateparser'"
-    )
+    print("WARNING: dateparser library not found. Date parsing will be limited. Run 'pip install dateparser'")
 
 DATEPARSER_AVAILABLE = _dateparser_available
 
@@ -206,11 +203,7 @@ def _is_individual(obj: Any) -> bool:
 
     # We can't use isinstance with Any, so we need to check for specific attributes
     # This is a heuristic approach to identify Individual objects
-    return (
-        hasattr(obj, "xref_id")
-        and hasattr(obj, "tag")
-        and getattr(obj, "tag", "") == TAG_INDI
-    )
+    return hasattr(obj, "xref_id") and hasattr(obj, "tag") and getattr(obj, "tag", "") == TAG_INDI
 
 
 def _is_record(obj: Any) -> bool:
@@ -242,9 +235,7 @@ def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
     # Try fallback regex for partial GEDCOM IDs
     search_match = re.search(r"([IFSNMCXO][0-9\-]+)", xref_id.strip().upper())
     if search_match:
-        logger.debug(
-            f"Normalized ID '{search_match.group(1)}' using fallback regex from '{xref_id}'."
-        )
+        logger.debug(f"Normalized ID '{search_match.group(1)}' using fallback regex from '{xref_id}'.")
         return search_match.group(1)
 
     # For pure numeric strings, return as-is (handle raw numeric IDs)
@@ -266,14 +257,13 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
     elif hasattr(raw_id, "xref_id") and (_is_record(raw_id) or _is_individual(raw_id)):
         id_to_normalize = getattr(raw_id, "xref_id", None)
     else:
-        logger.debug(
-            f"extract_and_fix_id: Invalid input type '{type(raw_id).__name__}'."
-        )
+        logger.debug(f"extract_and_fix_id: Invalid input type '{type(raw_id).__name__}'.")
         return None
     return _normalize_id(id_to_normalize)
 
 
 # Helper functions for _get_full_name
+
 
 def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[GedcomIndividualType], str]:
     """Validate and extract individual from input, handling wrapped values."""
@@ -410,6 +400,7 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
 
 # Helper functions for _parse_date
 
+
 def _validate_and_normalize_date_string(date_str: Optional[str]) -> Optional[str]:
     """Validate and perform initial normalization of date string."""
     if not date_str:
@@ -516,9 +507,18 @@ def _try_dateparser(cleaned_str: str) -> Optional[datetime]:
 def _try_strptime_formats(cleaned_str: str) -> Optional[datetime]:
     """Try parsing with various strptime formats."""
     formats = [
-        "%d %b %Y", "%d %B %Y", "%b %Y", "%B %Y", "%Y",
-        "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d",
-        "%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d", "%B %d %Y",
+        "%d %b %Y",
+        "%d %B %Y",
+        "%b %Y",
+        "%B %Y",
+        "%Y",
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+        "%Y/%m/%d",
+        "%d-%b-%Y",
+        "%d-%m-%Y",
+        "%Y-%m-%d",
+        "%B %d %Y",
     ]
 
     for fmt in formats:
@@ -754,13 +754,9 @@ def _get_event_info(
         place_str = _extract_place_from_event(event_record)
 
     except AttributeError as ae:
-        logger.debug(
-            f"Attribute error getting event '{event_tag}' for {indi_id_log}: {ae}"
-        )
+        logger.debug(f"Attribute error getting event '{event_tag}' for {indi_id_log}: {ae}")
     except Exception as e:
-        logger.error(
-            f"Error accessing event {event_tag} for @{indi_id_log}@: {e}", exc_info=True
-        )
+        logger.error(f"Error accessing event {event_tag} for @{indi_id_log}@: {e}", exc_info=True)
     return date_obj, date_str, place_str
 
 
@@ -782,11 +778,7 @@ def get_person_sources(individual: GedcomIndividualType) -> dict[str, list[str]]
             'other': ['Marriage Record']
         }
     """
-    sources_by_event: dict[str, list[str]] = {
-        'birth': [],
-        'death': [],
-        'other': []
-    }
+    sources_by_event: dict[str, list[str]] = {'birth': [], 'death': [], 'other': []}
 
     try:
         # Validate individual
@@ -816,9 +808,7 @@ def get_person_sources(individual: GedcomIndividualType) -> dict[str, list[str]]
 
 def format_life_dates(indi: GedcomIndividualType) -> str:  # ... implementation ...
     if not _is_individual(indi):
-        logger.warning(
-            f"format_life_dates called with non-Individual type: {type(indi)}"
-        )
+        logger.warning(f"format_life_dates called with non-Individual type: {type(indi)}")
         return ""
     _, b_date_str, _ = _get_event_info(indi, TAG_BIRTH)
     _, d_date_str, _ = _get_event_info(indi, TAG_DEATH)
@@ -873,9 +863,7 @@ def format_full_life_details(
     indi: GedcomIndividualType,
 ) -> tuple[str, str]:  # ... implementation ...
     if not _is_individual(indi):
-        logger.warning(
-            f"format_full_life_details called with non-Individual type: {type(indi)}"
-        )
+        logger.warning(f"format_full_life_details called with non-Individual type: {type(indi)}")
         return "(Error: Invalid data)", ""
     _, b_date_str, b_place = _get_event_info(indi, TAG_BIRTH)
     b_date_str_cleaned = _clean_display_date(b_date_str)
@@ -886,7 +874,9 @@ def format_full_life_details(
     d_place_cleaned = d_place if d_place != "N/A" else "(Place unknown)"
     death_info = ""
     if d_date_str_cleaned != "N/A" or d_place != "N/A":
-        death_info = f"   Died: {d_date_str_cleaned if d_date_str_cleaned != 'N/A' else '(Date unknown)'} in {d_place_cleaned}"
+        death_info = (
+            f"   Died: {d_date_str_cleaned if d_date_str_cleaned != 'N/A' else '(Date unknown)'} in {d_place_cleaned}"
+        )
     return birth_info, death_info
 
 
@@ -894,13 +884,9 @@ def format_relative_info(relative: Any) -> str:  # ... implementation ...
     indi_obj: Optional[GedcomIndividualType] = None
     if _is_individual(relative):
         indi_obj = relative
-    elif hasattr(relative, "value") and _is_individual(
-        getattr(relative, "value", None)
-    ):
+    elif hasattr(relative, "value") and _is_individual(getattr(relative, "value", None)):
         indi_obj = relative.value
-    elif hasattr(relative, "xref_id") and isinstance(
-        getattr(relative, "xref_id", None), str
-    ):
+    elif hasattr(relative, "xref_id") and isinstance(getattr(relative, "xref_id", None), str):
         norm_id = extract_and_fix_id(relative)
         return f"  - (Relative Data: ID={norm_id or 'N/A'}, Type={type(relative).__name__})"
     else:
@@ -946,7 +932,9 @@ def _initialize_bfs_queues(start_id: str, end_id: str) -> tuple[Any, Any, dict[s
     return queue_fwd, queue_bwd, visited_fwd, visited_bwd
 
 
-def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visited_fwd: dict[str, Any], queue_fwd: deque[Any]) -> None:
+def _add_node_to_forward_queue(
+    node_id: str, path: list[str], depth: int, visited_fwd: dict[str, Any], queue_fwd: deque[Any]
+) -> None:
     """Add a node to the forward search queue if not already visited."""
     if node_id not in visited_fwd:
         new_path = [*path, node_id]
@@ -954,7 +942,14 @@ def _add_node_to_forward_queue(node_id: str, path: list[str], depth: int, visite
         queue_fwd.append((node_id, depth, new_path))
 
 
-def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_fwd: dict[str, Any], queue_fwd: deque[Any]) -> None:
+def _expand_forward_siblings(
+    graph: GraphContext,
+    current_id: str,
+    path: list[str],
+    depth: int,
+    visited_fwd: dict[str, Any],
+    queue_fwd: deque[Any],
+) -> None:
     """Expand to siblings in forward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -964,8 +959,9 @@ def _expand_forward_siblings(graph: GraphContext, current_id: str, path: list[st
                 queue_fwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
-                        visited_fwd: dict[str, Any], queue_fwd: deque[Any], max_depth: int):
+def _expand_forward_node(
+    graph: GraphContext, depth: int, path: list[str], visited_fwd: dict[str, Any], queue_fwd: deque[Any], max_depth: int
+):
     """Expand a node in the forward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -987,7 +983,9 @@ def _expand_forward_node(graph: GraphContext, depth: int, path: list[str],
     _expand_forward_siblings(graph, current_id, path, depth, visited_fwd, queue_fwd)
 
 
-def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visited_bwd: dict[str, Any], queue_bwd: deque[Any]) -> None:
+def _add_node_to_backward_queue(
+    node_id: str, path: list[str], depth: int, visited_bwd: dict[str, Any], queue_bwd: deque[Any]
+) -> None:
     """Add a node to the backward search queue if not already visited."""
     if node_id not in visited_bwd:
         new_path = [node_id, *path]
@@ -995,7 +993,14 @@ def _add_node_to_backward_queue(node_id: str, path: list[str], depth: int, visit
         queue_bwd.append((node_id, depth, new_path))
 
 
-def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[str], depth: int, visited_bwd: dict[str, Any], queue_bwd: deque[Any]) -> None:
+def _expand_backward_siblings(
+    graph: GraphContext,
+    current_id: str,
+    path: list[str],
+    depth: int,
+    visited_bwd: dict[str, Any],
+    queue_bwd: deque[Any],
+) -> None:
     """Expand to siblings in backward direction through parents."""
     for parent_id in graph.id_to_parents.get(current_id, set()):
         for sibling_id in graph.id_to_children.get(parent_id, set()):
@@ -1005,8 +1010,9 @@ def _expand_backward_siblings(graph: GraphContext, current_id: str, path: list[s
                 queue_bwd.append((sibling_id, depth + 2, new_path))
 
 
-def _expand_backward_node(graph: GraphContext, depth: int, path: list[str],
-                         visited_bwd: dict[str, Any], queue_bwd: deque[Any], max_depth: int):
+def _expand_backward_node(
+    graph: GraphContext, depth: int, path: list[str], visited_bwd: dict[str, Any], queue_bwd: deque[Any], max_depth: int
+):
     """Expand a node in the backward direction during BFS."""
     # Stop expanding if we've reached max depth
     if depth >= max_depth:
@@ -1069,9 +1075,7 @@ def fast_bidirectional_bfs(
     # Convert lists to sets for _find_direct_relationship
     id_to_parents_set = {k: set(v) for k, v in id_to_parents.items()}
     id_to_children_set = {k: set(v) for k, v in id_to_children.items()}
-    direct_path = _call_find_direct_relationship(
-        start_id, end_id, id_to_parents_set, id_to_children_set
-    )
+    direct_path = _call_find_direct_relationship(start_id, end_id, id_to_parents_set, id_to_children_set)
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
         return direct_path
@@ -1092,14 +1096,12 @@ def fast_bidirectional_bfs(
 
         # Process forward queue (from start)
         processed += _process_forward_queue_item(
-            queue_fwd, visited_bwd, visited_fwd, all_paths,
-            id_to_parents, id_to_children, max_depth
+            queue_fwd, visited_bwd, visited_fwd, all_paths, id_to_parents, id_to_children, max_depth
         )
 
         # Process backward queue (from end)
         processed += _process_backward_queue_item(
-            queue_bwd, visited_fwd, visited_bwd, all_paths,
-            id_to_parents, id_to_children, max_depth
+            queue_bwd, visited_fwd, visited_bwd, all_paths, id_to_parents, id_to_children, max_depth
         )
 
     # Select the best path from found paths
@@ -1113,7 +1115,7 @@ def _process_forward_queue_item(
     all_paths: list[Any],
     id_to_parents: Any,
     id_to_children: Any,
-    max_depth: int
+    max_depth: int,
 ) -> int:
     """
     Process one item from the forward queue.
@@ -1133,17 +1135,11 @@ def _process_forward_queue_item(
         # Combine paths (remove duplicate meeting point)
         combined_path = path + bwd_path[1:]
         all_paths.append(combined_path)
-        logger.debug(
-            f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-        )
+        logger.debug(f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes")
         return 1
 
     # Expand this node in forward direction
-    graph_ctx = GraphContext(
-        id_to_parents=id_to_parents,
-        id_to_children=id_to_children,
-        current_id=current_id
-    )
+    graph_ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children, current_id=current_id)
     _expand_forward_node(graph_ctx, depth, path, visited_fwd, queue_fwd, max_depth)
     return 1
 
@@ -1155,7 +1151,7 @@ def _process_backward_queue_item(
     all_paths: list[Any],
     id_to_parents: Any,
     id_to_children: Any,
-    max_depth: int
+    max_depth: int,
 ) -> int:
     """
     Process one item from the backward queue.
@@ -1175,17 +1171,11 @@ def _process_backward_queue_item(
         # Combine paths (remove duplicate meeting point)
         combined_path = fwd_path + path[1:]
         all_paths.append(combined_path)
-        logger.debug(
-            f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes"
-        )
+        logger.debug(f"[FastBiBFS] Path found via {current_id}: {len(combined_path)} nodes")
         return 1
 
     # Expand this node in backward direction
-    graph_ctx = GraphContext(
-        id_to_parents=id_to_parents,
-        id_to_children=id_to_children,
-        current_id=current_id
-    )
+    graph_ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children, current_id=current_id)
     _expand_backward_node(graph_ctx, depth, path, visited_bwd, queue_bwd, max_depth)
     return 1
 
@@ -1206,8 +1196,9 @@ def _check_search_limits(start_time: float, timeout_sec: int, processed: int, no
     return False
 
 
-def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
-                     id_to_parents: Any, id_to_children: Any) -> list[str]:
+def _select_best_path(
+    all_paths: list[list[str]], start_id: str, end_id: str, id_to_parents: Any, id_to_children: Any
+) -> list[str]:
     """Select the best path from a list of found paths based on relationship directness."""
     # If we found paths, select the best one
     if all_paths:
@@ -1218,15 +1209,11 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
             # Calculate score based on path properties
             direct_relationships = 0
             for i in range(len(path) - 1):
-                if _call_has_direct_relationship(
-                    path[i], path[i + 1], id_to_parents, id_to_children
-                ):
+                if _call_has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
                     direct_relationships += 1
 
             # Calculate score: prefer paths with more direct relationships and shorter length
-            directness_score = (
-                direct_relationships / (len(path) - 1) if len(path) > 1 else 0
-            )
+            directness_score = direct_relationships / (len(path) - 1) if len(path) > 1 else 0
             length_penalty = len(path) / 10  # Slight penalty for longer paths
             score = directness_score - length_penalty
 
@@ -1237,9 +1224,7 @@ def _select_best_path(all_paths: list[list[str]], start_id: str, end_id: str,
 
         # Return the path with the highest score
         best_path = scored_paths[0][0]
-        logger.debug(
-            f"[FastBiBFS] Selected best path: {len(best_path)} nodes with score {scored_paths[0][1]:.2f}"
-        )
+        logger.debug(f"[FastBiBFS] Selected best path: {len(best_path)} nodes with score {scored_paths[0][1]:.2f}")
         return best_path
 
     # If we didn't find any paths, try a more aggressive search
@@ -1328,13 +1313,17 @@ def _determine_grandchild_relationship(sex_char: Optional[str], name: str, birth
 
 def _determine_great_grandparent_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
     """Determine great-grandparent relationship phrase based on gender."""
-    grandparent_label = "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
+    grandparent_label = (
+        "great-grandfather" if sex_char == "M" else "great-grandmother" if sex_char == "F" else "great-grandparent"
+    )
     return f"whose {grandparent_label} is {name}{birth_year}"
 
 
 def _determine_great_grandchild_relationship(sex_char: Optional[str], name: str, birth_year: str) -> str:
     """Determine great-grandchild relationship phrase based on gender."""
-    grandchild_label = "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
+    grandchild_label = (
+        "great-grandson" if sex_char == "M" else "great-granddaughter" if sex_char == "F" else "great-grandchild"
+    )
     return f"whose {grandchild_label} is {name}{birth_year}"
 
 
@@ -1356,17 +1345,47 @@ def _check_relationship_type(
     """
     # Data-driven relationship checking
     relationship_checks = {
-        "parent": (lambda: id_b in id_to_parents.get(id_a, set()), lambda: _determine_parent_relationship(sex_char, name_b, birth_year_b)),
-        "child": (lambda: id_b in id_to_children.get(id_a, set()), lambda: _determine_child_relationship(sex_char, name_b, birth_year_b)),
-        "sibling": (lambda: _are_siblings(id_a, id_b, id_to_parents), lambda: _determine_sibling_relationship(sex_char, name_b, birth_year_b)),
-        "spouse": (lambda: _are_spouses(id_a, id_b, reader), lambda: _determine_spouse_relationship(sex_char, name_b, birth_year_b)),
-        "aunt_uncle": (lambda: _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b)),
-        "niece_nephew": (lambda: _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children), lambda: _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b)),
+        "parent": (
+            lambda: id_b in id_to_parents.get(id_a, set()),
+            lambda: _determine_parent_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "child": (
+            lambda: id_b in id_to_children.get(id_a, set()),
+            lambda: _determine_child_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "sibling": (
+            lambda: _are_siblings(id_a, id_b, id_to_parents),
+            lambda: _determine_sibling_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "spouse": (
+            lambda: _are_spouses(id_a, id_b, reader),
+            lambda: _determine_spouse_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "aunt_uncle": (
+            lambda: _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children),
+            lambda: _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "niece_nephew": (
+            lambda: _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children),
+            lambda: _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b),
+        ),
         "cousin": (lambda: _are_cousins(id_a, id_b, id_to_parents), lambda: f"whose cousin is {name_b}{birth_year_b}"),
-        "grandparent": (lambda: _is_grandparent(id_a, id_b, id_to_parents), lambda: _determine_grandparent_relationship(sex_char, name_b, birth_year_b)),
-        "grandchild": (lambda: _is_grandchild(id_a, id_b, id_to_children), lambda: _determine_grandchild_relationship(sex_char, name_b, birth_year_b)),
-        "great_grandparent": (lambda: _is_great_grandparent(id_a, id_b, id_to_parents), lambda: _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b)),
-        "great_grandchild": (lambda: _is_great_grandchild(id_a, id_b, id_to_children), lambda: _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b)),
+        "grandparent": (
+            lambda: _is_grandparent(id_a, id_b, id_to_parents),
+            lambda: _determine_grandparent_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "grandchild": (
+            lambda: _is_grandchild(id_a, id_b, id_to_children),
+            lambda: _determine_grandchild_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "great_grandparent": (
+            lambda: _is_great_grandparent(id_a, id_b, id_to_parents),
+            lambda: _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b),
+        ),
+        "great_grandchild": (
+            lambda: _is_great_grandchild(id_a, id_b, id_to_children),
+            lambda: _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b),
+        ),
     }
 
     if relationship_type in relationship_checks:
@@ -1392,17 +1411,23 @@ def _determine_relationship_between_individuals(
 
     # Define relationship types to check in priority order
     relationship_types = [
-        "parent", "child", "sibling", "spouse",
-        "aunt_uncle", "niece_nephew", "cousin",
-        "grandparent", "grandchild",
-        "great_grandparent", "great_grandchild"
+        "parent",
+        "child",
+        "sibling",
+        "spouse",
+        "aunt_uncle",
+        "niece_nephew",
+        "cousin",
+        "grandparent",
+        "grandchild",
+        "great_grandparent",
+        "great_grandchild",
     ]
 
     # Check each relationship type
     for rel_type in relationship_types:
         result = _check_relationship_type(
-            rel_type, id_a, id_b, sex_char, name_b, birth_year_b,
-            reader, id_to_parents, id_to_children
+            rel_type, id_a, id_b, sex_char, name_b, birth_year_b, reader, id_to_parents, id_to_children
         )
         if result:
             return result
@@ -1558,11 +1583,7 @@ def _are_cousins(
             grandparents2 = id_to_parents.get(parent2, set())
 
             # If they share a grandparent but have different parents, they're cousins
-            if (
-                grandparents1
-                and grandparents2
-                and not grandparents1.isdisjoint(grandparents2)
-            ) and (
+            if (grandparents1 and grandparents2 and not grandparents1.isdisjoint(grandparents2)) and (
                 parent1 != parent2
             ):  # Make sure they don't have the same parent (which would make them siblings)
                 return True
@@ -1571,10 +1592,7 @@ def _are_cousins(
 
 
 def _is_ancestor_at_generation(
-    descendant_id: str,
-    ancestor_id: str,
-    generations: int,
-    id_to_parents: dict[str, set[str]]
+    descendant_id: str, ancestor_id: str, generations: int, id_to_parents: dict[str, set[str]]
 ) -> bool:
     """
     Check if ancestor_id is an ancestor of descendant_id at a specific generation level.
@@ -1611,10 +1629,7 @@ def _is_ancestor_at_generation(
 
 
 def _is_descendant_at_generation(
-    ancestor_id: str,
-    descendant_id: str,
-    generations: int,
-    id_to_children: dict[str, set[str]]
+    ancestor_id: str, descendant_id: str, generations: int, id_to_children: dict[str, set[str]]
 ) -> bool:
     """
     Check if descendant_id is a descendant of ancestor_id at a specific generation level.
@@ -1675,10 +1690,18 @@ def _is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]
 def _prepare_search_data(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and normalize search criteria data."""
     return {
-        "fname": (search_criteria.get("first_name") or "").lower() if isinstance(search_criteria.get("first_name"), str) else "",
-        "sname": (search_criteria.get("surname") or "").lower() if isinstance(search_criteria.get("surname"), str) else "",
-        "pob": (search_criteria.get("birth_place") or "").lower() if isinstance(search_criteria.get("birth_place"), str) else "",
-        "pod": (search_criteria.get("death_place") or "").lower() if isinstance(search_criteria.get("death_place"), str) else "",
+        "fname": (search_criteria.get("first_name") or "").lower()
+        if isinstance(search_criteria.get("first_name"), str)
+        else "",
+        "sname": (search_criteria.get("surname") or "").lower()
+        if isinstance(search_criteria.get("surname"), str)
+        else "",
+        "pob": (search_criteria.get("birth_place") or "").lower()
+        if isinstance(search_criteria.get("birth_place"), str)
+        else "",
+        "pod": (search_criteria.get("death_place") or "").lower()
+        if isinstance(search_criteria.get("death_place"), str)
+        else "",
         "b_year": search_criteria.get("birth_year"),
         "b_date": search_criteria.get("birth_date_obj"),
         "d_year": search_criteria.get("death_year"),
@@ -1690,10 +1713,18 @@ def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[st
     """Extract and normalize candidate data."""
     return {
         "id_debug": candidate_processed_data.get("norm_id", "N/A_in_proc_cache"),
-        "fname": (candidate_processed_data.get("first_name") or "").lower() if isinstance(candidate_processed_data.get("first_name"), str) else "",
-        "sname": (candidate_processed_data.get("surname") or "").lower() if isinstance(candidate_processed_data.get("surname"), str) else "",
-        "bplace": (candidate_processed_data.get("birth_place_disp") or "").lower() if isinstance(candidate_processed_data.get("birth_place_disp"), str) else "",
-        "dplace": (candidate_processed_data.get("death_place_disp") or "").lower() if isinstance(candidate_processed_data.get("death_place_disp"), str) else "",
+        "fname": (candidate_processed_data.get("first_name") or "").lower()
+        if isinstance(candidate_processed_data.get("first_name"), str)
+        else "",
+        "sname": (candidate_processed_data.get("surname") or "").lower()
+        if isinstance(candidate_processed_data.get("surname"), str)
+        else "",
+        "bplace": (candidate_processed_data.get("birth_place_disp") or "").lower()
+        if isinstance(candidate_processed_data.get("birth_place_disp"), str)
+        else "",
+        "dplace": (candidate_processed_data.get("death_place_disp") or "").lower()
+        if isinstance(candidate_processed_data.get("death_place_disp"), str)
+        else "",
         "b_year": candidate_processed_data.get("birth_year"),
         "b_date": candidate_processed_data.get("birth_date_obj"),
         "d_year": candidate_processed_data.get("death_year"),
@@ -1701,7 +1732,13 @@ def _prepare_candidate_data(candidate_processed_data: dict[str, Any]) -> dict[st
     }
 
 
-def _score_names(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_names(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score name matches (first name, surname, and bonus for both)."""
     first_name_matched = False
     surname_matched = False
@@ -1741,7 +1778,9 @@ def _check_year_match(t_year: Any, c_year: Any, year_score_range: int) -> tuple[
         return False, False
 
 
-def _calculate_date_flags(t_data: dict[str, Any], c_data: dict[str, Any], year_score_range: Union[int, float]) -> dict[str, Any]:
+def _calculate_date_flags(
+    t_data: dict[str, Any], c_data: dict[str, Any], year_score_range: Union[int, float]
+) -> dict[str, Any]:
     """Calculate date match flags for birth and death dates."""
     year_range = int(year_score_range)
     birth_year_match, birth_year_approx = _check_year_match(t_data["b_year"], c_data["b_year"], year_range)
@@ -1749,27 +1788,40 @@ def _calculate_date_flags(t_data: dict[str, Any], c_data: dict[str, Any], year_s
 
     return {
         "exact_birth_date_match": bool(
-            t_data["b_date"] and c_data["b_date"] and
-            isinstance(t_data["b_date"], datetime) and isinstance(c_data["b_date"], datetime) and
-            t_data["b_date"].date() == c_data["b_date"].date()
+            t_data["b_date"]
+            and c_data["b_date"]
+            and isinstance(t_data["b_date"], datetime)
+            and isinstance(c_data["b_date"], datetime)
+            and t_data["b_date"].date() == c_data["b_date"].date()
         ),
         "exact_death_date_match": bool(
-            t_data["d_date"] and c_data["d_date"] and
-            isinstance(t_data["d_date"], datetime) and isinstance(c_data["d_date"], datetime) and
-            t_data["d_date"].date() == c_data["d_date"].date()
+            t_data["d_date"]
+            and c_data["d_date"]
+            and isinstance(t_data["d_date"], datetime)
+            and isinstance(c_data["d_date"], datetime)
+            and t_data["d_date"].date() == c_data["d_date"].date()
         ),
         "birth_year_match": birth_year_match,
         "birth_year_approx_match": birth_year_approx,
         "death_year_match": death_year_match,
         "death_year_approx_match": death_year_approx,
         "death_dates_absent": bool(
-            t_data["d_date"] is None and c_data["d_date"] is None and
-            t_data["d_year"] is None and c_data["d_year"] is None
+            t_data["d_date"] is None
+            and c_data["d_date"] is None
+            and t_data["d_year"] is None
+            and c_data["d_year"] is None
         ),
     }
 
 
-def _score_birth_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_birth_dates(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    date_flags: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score birth date matches (prioritize: exact date > exact year > approx year)."""
     if date_flags["exact_birth_date_match"]:
         points_bdate = weights.get("exact_birth_date", 0)
@@ -1789,10 +1841,19 @@ def _score_birth_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flag
         points_byear_approx = weights.get("approx_year_birth", 0) or weights.get("birth_year_close", 0)
         if points_byear_approx != 0:
             field_scores["byear"] = int(points_byear_approx)
-            match_reasons.append(f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)")
+            match_reasons.append(
+                f"Approx Birth Year ({c_data['b_year']} vs {t_data['b_year']}) ({points_byear_approx}pts)"
+            )
 
 
-def _score_death_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_death_dates(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    date_flags: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score death date matches (prioritize: exact date > exact year > approx year; no points for absence)."""
     if date_flags["exact_death_date_match"]:
         points_ddate = weights.get("exact_death_date", 0)
@@ -1812,19 +1873,34 @@ def _score_death_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flag
         points_dyear_approx = weights.get("approx_year_death", 0)
         if points_dyear_approx != 0:
             field_scores["dyear"] = int(points_dyear_approx)
-            match_reasons.append(f"Approx Death Year ({c_data['d_year']} vs {t_data['d_year']}) ({points_dyear_approx}pts)")
+            match_reasons.append(
+                f"Approx Death Year ({c_data['d_year']} vs {t_data['d_year']}) ({points_dyear_approx}pts)"
+            )
             return
 
     # Do not award points for both death dates absent when the user did not specify death criteria.
 
 
-def _score_dates(t_data: dict[str, Any], c_data: dict[str, Any], date_flags: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_dates(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    date_flags: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score birth and death date matches."""
     _score_birth_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
     _score_death_dates(t_data, c_data, date_flags, weights, field_scores, match_reasons)
 
 
-def _score_birth_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_birth_place(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score birth place match."""
     if not (t_data["pob"] and c_data["bplace"] and t_data["pob"] in c_data["bplace"]):
         return
@@ -1834,7 +1910,13 @@ def _score_birth_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: 
         match_reasons.append(f"Birth Place Contains ({points_pob}pts)")
 
 
-def _score_death_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_death_place(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score death place match (contains only; no points for absence)."""
     pod_match = bool(t_data["pod"] and c_data["dplace"] and t_data["pod"] in c_data["dplace"])
     if not pod_match:
@@ -1845,7 +1927,13 @@ def _score_death_place(t_data: dict[str, Any], c_data: dict[str, Any], weights: 
         match_reasons.append(f"Death Place Contains ({points_pod}pts)")
 
 
-def _score_places(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _score_places(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Score birth place and death place matches (gender removed from scoring)."""
     _score_birth_place(t_data, c_data, weights, field_scores, match_reasons)
     _score_death_place(t_data, c_data, weights, field_scores, match_reasons)
@@ -1878,7 +1966,13 @@ def _score_bonuses(weights: Mapping[str, Any], field_scores: dict[str, float], m
     _score_death_bonus(weights, field_scores, match_reasons)
 
 
-def _apply_alive_conflict_penalty(t_data: dict[str, Any], c_data: dict[str, Any], weights: Mapping[str, Any], field_scores: dict[str, float], match_reasons: list[str]) -> None:
+def _apply_alive_conflict_penalty(
+    t_data: dict[str, Any],
+    c_data: dict[str, Any],
+    weights: Mapping[str, Any],
+    field_scores: dict[str, float],
+    match_reasons: list[str],
+) -> None:
     """Apply a small negative score when query implies 'alive' but candidate has death info.
 
     Alive-mode heuristic: if the user provided no death year, no death date, and no death place,
@@ -1914,8 +2008,17 @@ def calculate_match_score(
     """
     match_reasons: list[str] = []
     field_scores = {
-        "givn": 0.0, "surn": 0.0, "byear": 0.0, "bdate": 0.0, "bplace": 0.0,
-        "bbonus": 0.0, "dyear": 0.0, "ddate": 0.0, "dplace": 0.0, "dbonus": 0.0, "bonus": 0.0,
+        "givn": 0.0,
+        "surn": 0.0,
+        "byear": 0.0,
+        "bdate": 0.0,
+        "bplace": 0.0,
+        "bbonus": 0.0,
+        "dyear": 0.0,
+        "ddate": 0.0,
+        "dplace": 0.0,
+        "dbonus": 0.0,
+        "bonus": 0.0,
         # Negative adjustments (policy-based)
         "alive_penalty": 0.0,
     }
@@ -1974,11 +2077,10 @@ class GedcomData:
         self.path = Path(gedcom_path).resolve()
         self.reader: Optional[GedcomReaderType] = None
         self.indi_index: dict[str, GedcomIndividualType] = {}  # Index of INDI records
-        self.processed_data_cache: dict[str, dict[str, Any]] = (
-            {}
-        )  # NEW: Cache for processed data
+        self.processed_data_cache: dict[str, dict[str, Any]] = {}  # NEW: Cache for processed data
         self.id_to_parents: dict[str, set[str]] = {}
         self.id_to_children: dict[str, set[str]] = {}
+        self.id_to_spouses: dict[str, set[str]] = {}  # NEW: Map for spouse lookups
         self.indi_index_build_time: float = 0
         self.family_maps_build_time: float = 0
         self.data_processing_time: float = 0  # NEW: Time for pre-processing
@@ -2000,11 +2102,7 @@ class GedcomData:
             load_time = time.time() - load_start
             logger.debug(f"GEDCOM file loaded in {load_time:.2f}s.")
         except Exception as e:
-            file_size_mb = (
-                self.path.stat().st_size / (1024 * 1024)
-                if self.path.exists()
-                else "unknown"
-            )
+            file_size_mb = self.path.stat().st_size / (1024 * 1024) if self.path.exists() else "unknown"
             error_msg = (
                 f"Failed to load/parse GEDCOM file {self.path} (size: {file_size_mb:.2f}MB). "
                 f"Error type: {type(e).__name__}. This may indicate file corruption, "
@@ -2041,6 +2139,7 @@ class GedcomData:
         instance.processed_data_cache = cached_data.get("processed_data_cache", {})
         instance.id_to_parents = cached_data.get("id_to_parents", {})
         instance.id_to_children = cached_data.get("id_to_children", {})
+        instance.id_to_spouses = cached_data.get("id_to_spouses", {})
         instance.indi_index_build_time = cached_data.get("indi_index_build_time", 0)
         instance.family_maps_build_time = cached_data.get("family_maps_build_time", 0)
         instance.data_processing_time = cached_data.get("data_processing_time", 0)
@@ -2067,16 +2166,16 @@ class GedcomData:
             self._build_family_maps()
             self._pre_process_individual_data()  # NEW: Call pre-processing
         else:
-            logger.error(
-                "[Cache Build] Skipping map build and data pre-processing due to empty INDI index."
-            )
+            logger.error("[Cache Build] Skipping map build and data pre-processing due to empty INDI index.")
 
     def _process_indi_record(self, indi_record: Any) -> tuple[bool, bool]:
         """Process an individual record for indexing. Returns (processed, skipped)."""
         if not (_is_individual(indi_record) and hasattr(indi_record, "xref_id") and indi_record.xref_id):
             if logger.isEnabledFor(logging.DEBUG):
                 if hasattr(indi_record, "xref_id"):
-                    logger.debug(f"Skipping non-Individual record: Type={type(indi_record).__name__}, Xref={indi_record.xref_id}")
+                    logger.debug(
+                        f"Skipping non-Individual record: Type={type(indi_record).__name__}, Xref={indi_record.xref_id}"
+                    )
                 else:
                     logger.debug(f"Skipping record with no xref_id: Type={type(indi_record).__name__}")
             return False, True
@@ -2131,7 +2230,9 @@ class GedcomData:
         if count > 0:
             logger.debug(f"[Cache] INDI index built with {count} individuals ({skipped} skipped) in {elapsed:.2f}s.")
         else:
-            logger.error(f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s.")
+            logger.error(
+                f"[Cache Build] INDI index is EMPTY after build attempt ({skipped} skipped) in {elapsed:.2f}s."
+            )
 
     @staticmethod
     def _extract_parents_from_family(fam: Any, fam_id_log: str) -> set[str]:
@@ -2144,20 +2245,26 @@ class GedcomData:
                 if parent_id:
                     parents.add(parent_id)
                 elif logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Skipping parent with invalid/unnormalizable ID {getattr(parent_ref, 'xref_id', '?')} in FAM {fam_id_log}")
+                    logger.debug(
+                        f"Skipping parent with invalid/unnormalizable ID {getattr(parent_ref, 'xref_id', '?')} in FAM {fam_id_log}"
+                    )
         return parents
 
     def _process_child_in_family(self, child_tag: Any, parents: set[str], fam_id_log: str) -> tuple[bool, bool]:
         """Process a child tag and update family maps. Returns (processed, skipped)."""
         if not (child_tag and hasattr(child_tag, "xref_id")):
             if child_tag is not None and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Skipping CHIL record in FAM {fam_id_log} with invalid format: Type={type(child_tag).__name__}")
+                logger.debug(
+                    f"Skipping CHIL record in FAM {fam_id_log} with invalid format: Type={type(child_tag).__name__}"
+                )
             return False, True
 
         child_id = _normalize_id(child_tag.xref_id)
         if not child_id:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Skipping child with invalid/unnormalizable ID {getattr(child_tag, 'xref_id', '?')} in FAM {fam_id_log}")
+                logger.debug(
+                    f"Skipping child with invalid/unnormalizable ID {getattr(child_tag, 'xref_id', '?')} in FAM {fam_id_log}"
+                )
             return False, True
 
         # Add child to each parent's children set
@@ -2170,7 +2277,9 @@ class GedcomData:
             return True, False
 
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Child {child_id} found in FAM {fam_id_log} but no valid parents identified in this specific record.")
+            logger.debug(
+                f"Child {child_id} found in FAM {fam_id_log} but no valid parents identified in this specific record."
+            )
         return False, False
 
     def _build_family_maps(self) -> None:
@@ -2183,6 +2292,7 @@ class GedcomData:
         logger.debug("[Cache] Building family maps...")
         self.id_to_parents = {}
         self.id_to_children = {}
+        self.id_to_spouses = {}
         fam_count = 0
         processed_links = 0
         skipped_links = 0
@@ -2197,6 +2307,12 @@ class GedcomData:
                 fam_id_log = getattr(fam, "xref_id", "N/A_FAM")
                 parents = self._extract_parents_from_family(fam, fam_id_log)
 
+                # Process spouses (parents in the same family are spouses)
+                if len(parents) == 2:
+                    p1, p2 = list(parents)
+                    self.id_to_spouses.setdefault(p1, set()).add(p2)
+                    self.id_to_spouses.setdefault(p2, set()).add(p1)
+
                 for child_tag in fam.sub_tags(TAG_CHILD):
                     processed, skipped = self._process_child_in_family(child_tag, parents, fam_id_log)
                     if processed:
@@ -2206,11 +2322,15 @@ class GedcomData:
         except StopIteration:
             logger.debug("[Cache] Finished iterating FAM records for maps.")
         except Exception as e:
-            logger.error(f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.", exc_info=True)
+            logger.error(
+                f"[Cache Build] Unexpected error during family map build: {e}. Maps may be incomplete.", exc_info=True
+            )
 
         self._log_family_maps_build_results(time.time() - start_time, fam_count, processed_links, skipped_links)
 
-    def _log_family_maps_build_results(self, elapsed: float, fam_count: int, processed_links: int, skipped_links: int) -> None:
+    def _log_family_maps_build_results(
+        self, elapsed: float, fam_count: int, processed_links: int, skipped_links: int
+    ) -> None:
         """Log the results of family maps building."""
         self.family_maps_build_time = elapsed
         parent_map_count = len(self.id_to_parents)
@@ -2221,7 +2341,9 @@ class GedcomData:
             f"{child_map_count} parent->children entries in {elapsed:.2f}s."
         )
         if parent_map_count == 0 and child_map_count == 0 and fam_count > 0:
-            logger.warning("[Cache Build] Family maps are EMPTY despite processing FAM records. Check GEDCOM structure or parsing logic.")
+            logger.warning(
+                "[Cache Build] Family maps are EMPTY despite processing FAM records. Check GEDCOM structure or parsing logic."
+            )
 
     def _pre_process_individual_data(self) -> None:
         """NEW: Extracts and caches key data points for each individual."""
@@ -2252,9 +2374,7 @@ class GedcomData:
             f"[Pre-Process] Processed data for {processed_count} individuals ({errors} errors) in {elapsed:.2f}s."
         )
         if not self.processed_data_cache:
-            logger.error(
-                "[Pre-Process] Processed data cache is EMPTY after build attempt."
-            )
+            logger.error("[Pre-Process] Processed data cache is EMPTY after build attempt.")
 
     def _build_processed_record(self, norm_id: str, indi: GedcomIndividualType) -> dict[str, Any]:
         """Construct the processed cache entry for an individual."""
@@ -2328,15 +2448,11 @@ class GedcomData:
     def get_processed_indi_data(self, norm_id: str) -> Optional[dict[str, Any]]:
         """Retrieves pre-processed data for an individual from the cache."""
         if not self.processed_data_cache:
-            logger.warning(
-                "Attempting to get processed data, but cache is empty. Triggering pre-processing."
-            )
+            logger.warning("Attempting to get processed data, but cache is empty. Triggering pre-processing.")
             self._pre_process_individual_data()
         return self.processed_data_cache.get(norm_id)
 
-    def find_individual_by_id(
-        self, norm_id: Optional[str]
-    ) -> Optional[GedcomIndividualType]:
+    def find_individual_by_id(self, norm_id: Optional[str]) -> Optional[GedcomIndividualType]:
         """Finds an individual by their normalized ID using the index."""
         if not norm_id:
             logger.warning("find_individual_by_id called with invalid norm_id")
@@ -2349,9 +2465,7 @@ class GedcomData:
             return None
         found_indi = self.indi_index.get(norm_id)
         if not found_indi and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Individual with normalized ID {norm_id} not found in INDI_INDEX."
-            )
+            logger.debug(f"Individual with normalized ID {norm_id} not found in INDI_INDEX.")
         return found_indi
 
     def _get_sibling_ids(self, target_id: str) -> set[str]:
@@ -2364,16 +2478,7 @@ class GedcomData:
 
     def _get_spouse_ids(self, target_id: str) -> set[str]:
         """Get spouse IDs for a target individual."""
-        spouse_ids: set[str] = set()
-        parent_families = self._find_family_records_where_individual_is_parent(target_id)
-        for fam_record, is_husband, _ in parent_families:
-            other_spouse_tag = TAG_WIFE if is_husband else TAG_HUSBAND
-            spouse_ref = fam_record.sub_tag(other_spouse_tag) if fam_record is not None else None
-            if spouse_ref and hasattr(spouse_ref, "xref_id"):
-                spouse_id = _normalize_id(spouse_ref.xref_id)
-                if spouse_id:
-                    spouse_ids.add(spouse_id)
-        return spouse_ids
+        return self.id_to_spouses.get(target_id, set())
 
     def _get_related_ids_by_type(self, target_id: str, relationship_type: str) -> Optional[set[str]]:
         """Get related IDs based on relationship type. Returns None for unknown types."""
@@ -2437,55 +2542,6 @@ class GedcomData:
         except Exception as e:
             logger.error(f"Error getting {relationship_type} for {target_id}: {e}", exc_info=True)
             return []
-
-    def _find_family_records(
-        self, target_id: str, role_tag: str
-    ) -> list[GedcomRecordType]:
-        """Helper to find FAM records where target_id plays the specified role (HUSB, WIFE, CHIL). Less efficient scan."""
-        matching_families: list[GedcomRecordType] = []
-        if not self.reader or not target_id or not role_tag:
-            return matching_families
-        try:
-            logger.debug(
-                f"Scanning FAM records for {target_id} in role {role_tag} (less efficient)."
-            )
-            for family_record in self.reader.records0("FAM"):
-                if not _is_record(family_record):
-                    continue
-                role_tag_in_fam = family_record.sub_tag(role_tag)
-                if (
-                    role_tag_in_fam
-                    and hasattr(role_tag_in_fam, "xref_id")
-                    and _normalize_id(role_tag_in_fam.xref_id) == target_id
-                ):
-                    matching_families.append(family_record)
-        except Exception as e:
-            logger.error(
-                f"Error finding FAMs via scan for ID {target_id}, role {role_tag}: {e}",
-                exc_info=True,
-            )
-        return matching_families
-
-    def _find_family_records_where_individual_is_parent(
-        self, target_id: str
-    ) -> list[tuple[GedcomRecordType, bool, bool]]:
-        """Finds FAM records where target_id is HUSB or WIFE using scan (less efficient than maps)."""
-        matching_families_with_role: list[tuple[GedcomRecordType, bool, bool]] = []
-        husband_families = self._find_family_records(target_id, TAG_HUSBAND)
-        wife_families = self._find_family_records(target_id, TAG_WIFE)
-        processed_fam_ids: set[str] = set()
-
-        for fam in husband_families:
-            fam_id = getattr(fam, "xref_id", None)
-            if fam_id and fam_id not in processed_fam_ids:
-                matching_families_with_role.append((fam, True, False))
-                processed_fam_ids.add(fam_id)
-        for fam in wife_families:
-            fam_id = getattr(fam, "xref_id", None)
-            if fam_id and fam_id not in processed_fam_ids:
-                matching_families_with_role.append((fam, False, True))
-                processed_fam_ids.add(fam_id)
-        return matching_families_with_role
 
     def _ensure_maps_and_index_built(self) -> Optional[str]:
         """Ensure family maps and individual index are built. Returns error message or None if successful."""
@@ -2558,9 +2614,7 @@ class GedcomData:
                 self.indi_index,
             )
         except Exception as explain_err:
-            logger.error(
-                f"Error generating path explanation: {explain_err}", exc_info=True
-            )
+            logger.error(f"Error generating path explanation: {explain_err}", exc_info=True)
             explanation_str = "(Error generating explanation)"
         explanation_time = time.time() - explanation_start
         logger.debug(f"[PROFILE] Path explanation built in {explanation_time:.2f}s.")
@@ -2574,9 +2628,7 @@ class GedcomData:
         max_depth = 25
         node_limit = 150000
         timeout_sec = 45
-        logger.debug(
-            f"Calculating relationship path (FastBiBFS): {start_id} <-> {end_id}"
-        )
+        logger.debug(f"Calculating relationship path (FastBiBFS): {start_id} <-> {end_id}")
         search_start = time.time()
         id_to_parents_list = {k: list(v) for k, v in self.id_to_parents.items()}
         id_to_children_list = {k: list(v) for k, v in self.id_to_children.items()}
