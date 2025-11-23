@@ -50,6 +50,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Type Safety Hardening Phase 2 (Nov 21)** - Addressed underlying type issues in `utils.py` and `relationship_utils.py` by introducing `GedcomIndividualProtocol` and improving `SessionManager` forward references.
 - ✅ **Integration Test Suite (Nov 25)** - Added `test_integration_workflow.py` and `run_all_tests.py --integration` to validate end-to-end workflows (Actions 6, 7, 9) with mocked session/database components, ensuring critical paths work together before deployment.
 - ✅ **Code Graph Maintenance Script (Nov 25)** - Added `scripts/maintain_code_graph.py` to programmatically remove stale nodes and edges from `docs/code_graph.json`, ensuring the knowledge graph remains accurate as code evolves; run it as `python scripts/maintain_code_graph.py remove_node <node_id>` to delete a node and its edges.
+ - ✅ **TOON Prompt Encoding for Clarifications (Nov 23)** - Implemented a minimal TOON encoder in `ai_interface.py` and switched the clarifying-questions prompt to send `extracted_entities` in TOON instead of pretty-printed JSON, while keeping AI responses in strict JSON for existing parsers.
 - 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
 - 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
 

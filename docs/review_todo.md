@@ -47,4 +47,9 @@ Top improvements (refreshed Nov 21 2025, ordered from highest to lowest priority
 
 5. sending JSON to an llm is inefficient. Instead, convert data going to an llm to TOON format. See https://github.com/toon-format/toon
 
+   Update (Nov 23 2025):
+   - Implemented a minimal TOON encoder in `ai_interface.py` and wired it into the clarifying-questions path so `extracted_entities` are sent as TOON instead of pretty-printed JSON.
+   - All 89 module tests pass with this change; AI output schemas remain strict JSON for downstream parsing.
+   - Recommendation: Extend TOON encoding to any additional large structured prompt payloads if and when they become bottlenecks.
+
 <!-- markdownlint-enable MD029 -->

@@ -1703,9 +1703,10 @@ def _format_clarification_prompt(
 ) -> str | None:
     """Format clarification prompt with user data."""
     try:
+        toon_entities = _encode_to_toon(extracted_entities)
         return prompt.format(
             user_message=user_message,
-            extracted_entities=json.dumps(extracted_entities, indent=2),
+            extracted_entities=toon_entities,
             ambiguity_context=ambiguity_context,
         )
     except KeyError as e:
@@ -1803,6 +1804,140 @@ def generate_clarifying_questions(
         logger.error(f"generate_clarifying_questions: AI call failed. (Took {duration:.2f}s)")
 
     return result
+
+
+def _toon_format_scalar(value: Any) -> str:
+    """Format a scalar value for TOON output.
+
+    Uses JSON serialization for primitives to keep quoting and escaping rules simple
+    while remaining lossless for LLM-facing data.
+    """
+    try:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    except TypeError:
+        return json.dumps(str(value), ensure_ascii=False, separators=(",", ":"))
+
+
+def _toon_tabular_fields(items: list[dict[str, Any]]) -> list[str] | None:
+    """Determine if a list of dicts can be rendered in TOON tabular form.
+
+    Returns a sorted list of field names when all values are primitives; otherwise None.
+    """
+    if not items:
+        return None
+
+    key_sets: list[set[str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        key_sets.append(set(item.keys()))
+
+    all_keys: set[str] = set()
+    for keys in key_sets:
+        all_keys.update(keys)
+
+    if not all_keys:
+        return None
+
+    for item in items:
+        for key in all_keys:
+            value = item.get(key)
+            if isinstance(value, (dict, list)):
+                return None
+
+    return sorted(all_keys)
+
+
+def _toon_encode_dict(obj: dict[str, Any], indent: int, step: int) -> list[str]:
+    """Encode a mapping into TOON lines."""
+    lines: list[str] = []
+    prefix = " " * indent
+
+    for key, value in obj.items():
+        if isinstance(value, dict):
+            lines.append(f"{prefix}{key}:")
+            lines.extend(_toon_encode_dict(value, indent + step, step))
+        elif isinstance(value, list):
+            lines.extend(_toon_encode_list(key, value, indent, step))
+        else:
+            lines.append(f"{prefix}{key}: {_toon_format_scalar(value)}")
+
+    return lines
+
+
+def _toon_encode_list(key: str, items: list[Any], indent: int, step: int) -> list[str]:
+    """Encode a sequence into TOON lines.
+
+    Uses tabular form for uniform object arrays, inline form for primitive arrays,
+    and a simple nested fallback for mixed structures.
+    """
+    prefix = " " * indent
+    length = len(items)
+
+    if length == 0:
+        return [f"{prefix}{key}[0]:"]
+
+    # Tabular representation for uniform arrays of objects with primitive fields
+    if all(isinstance(item, dict) for item in items):
+        fields = _toon_tabular_fields(cast(list[dict[str, Any]], items))
+        if fields:
+            header = f"{prefix}{key}[{length}]{{{','.join(fields)}}}:"
+            lines = [header]
+            row_prefix = " " * (indent + step)
+            for item in items:
+                row_values = [_toon_format_scalar(item.get(field)) for field in fields]
+                lines.append(f"{row_prefix}{','.join(row_values)}")
+            return lines
+
+    # Inline primitive array: key[N]: v1,v2,v3
+    if all(not isinstance(item, (dict, list)) for item in items):
+        values = ",".join(_toon_format_scalar(item) for item in items)
+        return [f"{prefix}{key}[{length}]: {values}"]
+
+    # Fallback: nested list representation
+    lines = [f"{prefix}{key}[{length}]:"]
+    nested_indent = indent + step
+    nested_prefix = " " * nested_indent
+
+    for item in items:
+        if isinstance(item, dict):
+            lines.append(f"{nested_prefix}-")
+            lines.extend(_toon_encode_dict(item, nested_indent + step, step))
+        elif isinstance(item, list):
+            lines.append(f"{nested_prefix}-")
+            # Reuse list encoder without a key for inner arrays
+            lines.extend(_toon_encode_list("items", item, nested_indent + step, step))
+        else:
+            lines.append(f"{nested_prefix}{_toon_format_scalar(item)}")
+
+    return lines
+
+
+def _encode_to_toon(data: Any, root_label: str | None = None, indent: int = 2) -> str:
+    """Encode JSON-like data into a compact TOON representation for LLM prompts.
+
+    This is a pragmatic encoder focused on readability and determinism for prompt
+    context. It does not aim to implement the full TOON specification but
+    intentionally follows its core patterns (object fields, array headers, and
+    tabular arrays) so models can reliably parse structure.
+    """
+    if root_label is not None:
+        if isinstance(data, dict):
+            lines = [f"{root_label}:"]
+            lines.extend(_toon_encode_dict(data, indent, indent))
+        elif isinstance(data, list):
+            lines = _toon_encode_list(root_label, data, 0, indent)
+        else:
+            lines = [f"{root_label}: {_toon_format_scalar(data)}"]
+    elif isinstance(data, dict):
+        lines = _toon_encode_dict(data, 0, indent)
+    elif isinstance(data, list):
+        # Use a generic key for root arrays
+        lines = _toon_encode_list("items", data, 0, indent)
+    else:
+        lines = [_toon_format_scalar(data)]
+
+    return "\n".join(lines)
 
 
 def extract_with_custom_prompt(
@@ -2506,6 +2641,31 @@ def _test_specialized_analysis_functions(session_manager: SessionManager) -> boo
     return True
 
 
+def _test_toon_encoder() -> None:
+    """Basic sanity check for TOON encoder used in prompts.
+
+    Verifies that a representative extracted_entities payload is rendered with
+    array headers and reasonable structure instead of raw JSON.
+    """
+    sample_entities: dict[str, Any] = {
+        "mentioned_people": [
+            {
+                "name": "Mary Smith",
+                "birth_year": 1881,
+                "birth_place": "Banff, Scotland",
+                "relationship": "great-grandmother",
+            }
+        ],
+        "locations": [
+            {"place": "Scotland", "context": "birthplace"},
+        ],
+    }
+
+    toon = _encode_to_toon(sample_entities)
+    assert "mentioned_people[1]" in toon, "TOON output should include array header for mentioned_people"
+    assert "locations[1]" in toon, "TOON output should include array header for locations"
+
+
 def test_ai_functionality(session_manager: SessionManager) -> bool:
     """
     Tests actual AI functionality if configuration allows.
@@ -2588,6 +2748,15 @@ def ai_interface_module_tests() -> bool:
             "Required AI libraries are available",
             "Test library availability",
             "Verify openai or google.genai libraries are installed",
+        )
+
+        suite.run_test(
+            "TOON Encoder Basic Structure",
+            _test_toon_encoder,
+            "TOON encoder renders extracted_entities-style payloads with array headers",
+            "_encode_to_toon",
+            "Encode a representative extracted_entities mapping into TOON",
+            "Output includes headers for mentioned_people and locations arrays",
         )
 
         # === INTEGRATION TESTS (Require Live Session) ===
