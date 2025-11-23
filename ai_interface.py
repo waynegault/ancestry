@@ -457,6 +457,49 @@ def _call_moonshot_model(
     return None
 
 
+def _call_tetrate_model(
+    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
+) -> str | None:
+    """Call Tetrate (TARS) via OpenAI-compatible endpoint.
+
+    Uses API key from TARS_API_KEY (mapped to api.tetrate_api_key) and the
+    router base URL from tetrate_ai_base_url.
+    """
+    if not openai_available or OpenAI is None:
+        logger.error("_call_ai_model: OpenAI library not available for Tetrate.")
+        return None
+
+    api_key = getattr(config_schema.api, "tetrate_api_key", None)
+    model_name = getattr(config_schema.api, "tetrate_ai_model", None)
+    base_url = getattr(config_schema.api, "tetrate_ai_base_url", "https://api.router.tetrate.ai/v1")
+
+    if not all([api_key, model_name, base_url]):
+        logger.error("_call_ai_model: Tetrate configuration incomplete.")
+        return None
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    request_params: dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stream": False,
+    }
+    if response_format_type == "json_object":
+        request_params["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(**request_params)
+    if response.choices and response.choices[0].message and response.choices[0].message.content:
+        return response.choices[0].message.content.strip()
+
+    logger.error("Tetrate returned an empty or invalid response structure.")
+    return None
+
+
 # Helper functions for _call_gemini_model
 
 
@@ -971,6 +1014,8 @@ def _route_ai_provider_call(
         result = _call_inception_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     elif provider == "grok":
         result = _call_grok_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
+    elif provider == "tetrate":
+        result = _call_tetrate_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     else:
         logger.error(f"_call_ai_model: Unsupported AI provider '{provider}'.")
     return result
@@ -994,6 +1039,8 @@ def _provider_is_configured(provider: str) -> bool:
         )
     if provider == "grok":
         return bool(getattr(config_schema.api, "xai_api_key", None))
+    if provider == "tetrate":
+        return bool(getattr(config_schema.api, "tetrate_api_key", None))
     return False
 
 
@@ -2213,9 +2260,9 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in {"deepseek", "gemini", "moonshot", "local_llm", "inception", "grok"}:
+    if ai_provider not in {"deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", "tetrate"}:
         logger.error(
-            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', 'inception', or 'grok'",
+            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', 'inception', 'grok', or 'tetrate'",
             ai_provider,
         )
         return False
@@ -2390,6 +2437,41 @@ def _validate_grok_config() -> bool:
     return config_valid
 
 
+def _validate_tetrate_config() -> bool:
+    """Validate Tetrate (TARS) configuration."""
+    config_valid = True
+
+    if not openai_available:
+        logger.error("❌ OpenAI library not available for Tetrate")
+        config_valid = False
+    else:
+        logger.info("✅ OpenAI library available (for Tetrate)")
+
+    api_key = getattr(config_schema.api, "tetrate_api_key", None)
+    model_name = getattr(config_schema.api, "tetrate_ai_model", None)
+    base_url = getattr(config_schema.api, "tetrate_ai_base_url", None)
+
+    if not api_key:
+        logger.error("❌ TARS_API_KEY / tetrate_api_key not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ Tetrate API key configured (length: {len(api_key)})")
+
+    if not model_name:
+        logger.error("❌ TETRATE_AI_MODEL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ TETRATE_AI_MODEL: {model_name}")
+
+    if not base_url:
+        logger.error("❌ TETRATE_AI_BASE_URL not configured")
+        config_valid = False
+    else:
+        logger.info(f"✅ TETRATE_AI_BASE_URL: {base_url}")
+
+    return config_valid
+
+
 def test_configuration() -> bool:
     """
     Tests AI configuration and dependencies.
@@ -2408,6 +2490,7 @@ def test_configuration() -> bool:
         "moonshot": _validate_moonshot_config,
         "local_llm": _validate_local_llm_config,
         "grok": _validate_grok_config,
+        "tetrate": _validate_tetrate_config,
     }
 
     validator = validators.get(ai_provider)
@@ -2811,6 +2894,8 @@ def _check_api_key_and_dependencies(ai_provider: str) -> tuple[bool, bool]:
         return bool(getattr(config_schema.api, "moonshot_api_key", None)), openai_available
     if ai_provider == "local_llm":
         return bool(config_schema.api.local_llm_api_key), openai_available
+    if ai_provider == "tetrate":
+        return bool(getattr(config_schema.api, "tetrate_api_key", None)), openai_available
     return False, False
 
 

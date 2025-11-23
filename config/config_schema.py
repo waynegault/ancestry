@@ -406,6 +406,11 @@ class APIConfig:
     xai_model: str = "grok-4-fast-non-reasoning"
     xai_api_host: str = "api.x.ai"
 
+    # Tetrate (TARS) configuration
+    tetrate_api_key: Optional[str] = None
+    tetrate_ai_model: str = "gpt-5"
+    tetrate_ai_base_url: str = "https://api.router.tetrate.ai/v1"
+
     # Local LLM Configuration (LM Studio)
     local_llm_api_key: Optional[str] = None
     local_llm_model: str = "qwen2.5-14b-instruct"
@@ -834,7 +839,7 @@ class ConfigSchema:
     ethnicity_enrichment_min_cm: int = 10  # Minimum shared DNA threshold for ethnicity enrichment API calls
 
     # AI settings
-    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", or ""
+    ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", "tetrate", or ""
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message

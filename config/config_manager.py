@@ -915,6 +915,10 @@ class ConfigManager:
             ("INCEPTION_API_KEY", "inception_api_key"),
             ("INCEPTION_AI_MODEL", "inception_ai_model"),
             ("INCEPTION_AI_BASE_URL", "inception_ai_base_url"),
+            # Tetrate (TARS) API configuration
+            ("TARS_API_KEY", "tetrate_api_key"),
+            ("TETRATE_AI_MODEL", "tetrate_ai_model"),
+            ("TETRATE_AI_BASE_URL", "tetrate_ai_base_url"),
         ]
 
         # Load all environment variables using helper method

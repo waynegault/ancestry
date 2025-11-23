@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 core/lifecycle.py - Application Lifecycle Management
 
@@ -10,6 +12,11 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
+# Ensure project root is on sys.path when running as a script
+parent_dir = str(Path(__file__).resolve().parent.parent)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+
 from core.action_registry import get_action_registry
 from core.action_runner import (
     get_api_manager,
@@ -20,6 +27,8 @@ from core.config_validation import validate_action_config
 from core.session_manager import SessionManager
 from logging_config import setup_logging
 from standard_imports import setup_module
+from test_framework import TestSuite
+from test_utilities import create_standard_test_runner
 
 logger = setup_module(globals(), __name__)
 
@@ -246,8 +255,18 @@ def validate_ai_provider_on_startup() -> None:
         _validate_cloud_provider("Moonshot", config_schema.api.moonshot_api_key, config_schema.api.moonshot_ai_model)
     elif ai_provider == "inception":
         _validate_cloud_provider("Inception", config_schema.api.inception_api_key, config_schema.api.inception_ai_model)
+    elif ai_provider == "tetrate":
+        _validate_cloud_provider("Tetrate", config_schema.api.tetrate_api_key, config_schema.api.tetrate_ai_model)
     else:
         logger.warning(f"⚠️ Unknown AI provider: {ai_provider}")
+
+
+def _get_tree_name_from_config(config: Any) -> str:
+    """Return the configured tree name from API config, or 'Unknown Tree'."""
+
+    api_cfg = getattr(config, "api", None)
+    name = getattr(api_cfg, "tree_name", None) if api_cfg is not None else None
+    return name or "Unknown Tree"
 
 
 def display_tree_owner(session_manager: SessionManager) -> None:
@@ -267,71 +286,50 @@ def display_tree_owner(session_manager: SessionManager) -> None:
                 from config.config_manager import ConfigManager
 
                 cfg = ConfigManager().get_config()
-                tree_name = getattr(cfg, "tree_name", "Unknown Tree")
+                tree_name = _get_tree_name_from_config(cfg)
                 logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name}'")
     except Exception:
         pass  # Silently ignore - not critical for startup
+
+
+def _test_get_tree_name_from_config_uses_api_tree_name() -> None:
+    """Test that _get_tree_name_from_config prefers api.tree_name and falls back safely."""
+
+    from types import SimpleNamespace
+
+    # When api.tree_name is set, it should be returned
+    config_with_tree = SimpleNamespace(api=SimpleNamespace(tree_name="Test Tree From Config"))
+    result = _get_tree_name_from_config(config_with_tree)
+    assert result == "Test Tree From Config", (
+        f"_get_tree_name_from_config should return api.tree_name when configured, got '{result}' instead."
+    )
+
+    # When api exists but tree_name is empty/None, fall back to 'Unknown Tree'
+    config_without_name = SimpleNamespace(api=SimpleNamespace(tree_name=None))
+    result_fallback = _get_tree_name_from_config(config_without_name)
+    assert result_fallback == "Unknown Tree", (
+        "_get_tree_name_from_config should fall back to 'Unknown Tree' when api.tree_name is not set, "
+        f"got '{result_fallback}' instead."
+    )
 
 
 def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["SessionManager", Any]:
     """Initialize application logging, configuration, and sleep prevention."""
     print("")
 
-    # Clear log file before initializing logging (uses .env settings)
-    try:
-        log_dir = Path(os.getenv("LOG_DIR", "Logs"))
-        if not log_dir.is_absolute():
-            log_dir = (Path(__file__).parent / log_dir).resolve()
-        log_file = os.getenv("LOG_FILE", "app.log")
-        log_path = log_dir / log_file
-        if log_path.exists():
-            log_path.write_text("", encoding="utf-8")
-    except Exception:
-        pass  # Silently ignore if can't clear
+    _clear_startup_log_file()
 
     setup_logging()
     validate_action_config()
 
-    sleep_state: Any = None
-    try:
-        from utils import prevent_system_sleep
-
-        sleep_state = prevent_system_sleep()
-    except Exception as sleep_err:
-        logger.warning(f"⚠️ System sleep prevention unavailable: {sleep_err}")
+    sleep_state = _enable_system_sleep_prevention()
 
     print(" Checks ".center(80, "="))
-    if sleep_state is not None:
-        logger.info("✅ System sleep prevention active")
-    else:
-        logger.info("⚠️ System sleep prevention inactive")
+    _log_sleep_prevention_status(sleep_state)
 
-    logger.info("✅ Action registry initialized (%d actions)", len(get_action_registry().get_all_actions()))
-
-    # Run Chrome/ChromeDriver diagnostics before any browser automation (silent mode)
-    try:
-        from diagnose_chrome import run_silent_diagnostic
-
-        success, message = run_silent_diagnostic()
-        if success:
-            logger.info("✅ Chrome/ChromeDriver OK")
-        else:
-            logger.warning(f"⚠️  Chrome diagnostic issue: {message}")
-    except Exception as diag_error:
-        logger.warning(f"Chrome diagnostics failed to run: {diag_error}")
-
-    # Check Grafana installation status
-    if grafana_checker:
-        try:
-            grafana_status = grafana_checker.check_grafana_status()
-            if grafana_status["ready"]:
-                logger.info("✅ Grafana ready (http://localhost:3000)")
-            elif grafana_status["installed"]:
-                logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
-            else:
-                logger.info("💡 Grafana not installed (run 'setup-grafana' from menu for automated setup)")
-        except Exception as grafana_error:
-            logger.debug(f"Grafana check skipped: {grafana_error}")
+    _log_action_registry_status()
+    _run_chrome_diagnostics()
+    _check_grafana_status(grafana_checker)
 
     if config is None:
         print_config_error_message()
@@ -344,6 +342,77 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
     logger.debug("✅ SessionManager registered as global session")
 
     return session_manager, sleep_state
+
+
+def _clear_startup_log_file() -> None:
+    """Clear the main application log file before logging is initialized."""
+    try:
+        log_dir = Path(os.getenv("LOG_DIR", "Logs"))
+        if not log_dir.is_absolute():
+            log_dir = (Path(__file__).parent / log_dir).resolve()
+        log_file = os.getenv("LOG_FILE", "app.log")
+        log_path = log_dir / log_file
+        if log_path.exists():
+            log_path.write_text("", encoding="utf-8")
+    except Exception:
+        # Silently ignore issues clearing the log file; startup should continue
+        pass
+
+
+def _enable_system_sleep_prevention() -> Any:
+    """Enable system sleep prevention and return the resulting state object."""
+    sleep_state: Any = None
+    try:
+        from utils import prevent_system_sleep
+
+        sleep_state = prevent_system_sleep()
+    except Exception as sleep_err:
+        logger.warning(f"⚠️ System sleep prevention unavailable: {sleep_err}")
+    return sleep_state
+
+
+def _log_sleep_prevention_status(sleep_state: Any) -> None:
+    """Log whether system sleep prevention is active based on state object."""
+    if sleep_state is not None:
+        logger.info("✅ System sleep prevention active")
+    else:
+        logger.info("⚠️ System sleep prevention inactive")
+
+
+def _log_action_registry_status() -> None:
+    """Log the number of registered actions in the action registry."""
+    logger.info("✅ Action registry initialized (%d actions)", len(get_action_registry().get_all_actions()))
+
+
+def _run_chrome_diagnostics() -> None:
+    """Run Chrome/ChromeDriver diagnostics in silent mode and log the outcome."""
+    try:
+        from diagnose_chrome import run_silent_diagnostic
+
+        success, message = run_silent_diagnostic()
+        if success:
+            logger.info("✅ Chrome/ChromeDriver OK")
+        else:
+            logger.warning(f"⚠️  Chrome diagnostic issue: {message}")
+    except Exception as diag_error:
+        logger.warning(f"Chrome diagnostics failed to run: {diag_error}")
+
+
+def _check_grafana_status(grafana_checker: Any) -> None:
+    """Check and log Grafana installation/ready status if a checker is provided."""
+    if not grafana_checker:
+        return
+
+    try:
+        grafana_status = grafana_checker.check_grafana_status()
+        if grafana_status["ready"]:
+            logger.info("✅ Grafana ready (http://localhost:3000)")
+        elif grafana_status["installed"]:
+            logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+        else:
+            logger.info("💡 Grafana not installed (run 'setup-grafana' from menu for automated setup)")
+    except Exception as grafana_error:
+        logger.debug(f"Grafana check skipped: {grafana_error}")
 
 
 def pre_authenticate_session() -> None:
@@ -415,3 +484,34 @@ def cleanup_session_manager(session_manager: Optional[Any]) -> None:
             logger.debug(f"⚠️  Cleanup warning (non-critical): {final_close_e}")
 
     print("\nExit.")
+
+
+def lifecycle_module_tests() -> bool:
+    """Comprehensive tests for core/lifecycle.py."""
+
+    suite = TestSuite("Application Lifecycle Management", "core/lifecycle.py")
+    suite.start_suite()
+
+    suite.run_test(
+        "Tree name helper uses api.tree_name",
+        _test_get_tree_name_from_config_uses_api_tree_name,
+        test_summary="Ensure _get_tree_name_from_config reads api.tree_name and falls back to 'Unknown Tree'",
+        functions_tested="_get_tree_name_from_config",
+        method_description=(
+            "Constructs lightweight config objects with and without api.tree_name and verifies the helper "
+            "returns the configured name or the expected fallback."
+        ),
+        expected_outcome=(
+            "When api.tree_name is set, the helper returns it; when missing, it returns 'Unknown Tree' without errors."
+        ),
+    )
+
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(lifecycle_module_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

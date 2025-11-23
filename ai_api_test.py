@@ -5,6 +5,7 @@ Loads credentials from the project's .env file, asks which provider to test,
 validates the configured endpoint, and attempts a simple completion request.
 Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercury, and Grok (xAI).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +56,7 @@ xai_system_message: Callable[..., Any] | None = _xai_system_message
 xai_user_message: Callable[..., Any] | None = _xai_user_message
 
 DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
-PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception", "grok")
+PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception", "grok", "tetrate")
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "moonshot": "Moonshot (Kimi)",
@@ -64,6 +65,7 @@ PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "local_llm": "Local LLM (LM Studio)",
     "inception": "Inception Mercury",
     "grok": "Grok (xAI)",
+    "tetrate": "Tetrate (TARS)",
 }
 
 PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
@@ -73,6 +75,7 @@ PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "local_llm": (),
     "inception": ("INCEPTION_API_KEY",),
     "grok": ("XAI_API_KEY",),
+    "tetrate": ("TARS_API_KEY",),
 }
 
 ListModelsFn = Callable[[], Iterable[Any]]
@@ -330,7 +333,9 @@ def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
             full_output = completion.choices[0].message.content.strip()
             finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("moonshot", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
+            return TestResult(
+                "moonshot", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+            )
         messages.append("Moonshot returned an empty response.")
         return TestResult("moonshot", False, endpoint_ok, messages)
     except Exception as exc:
@@ -373,12 +378,67 @@ def _test_deepseek(prompt: str, max_tokens: int) -> TestResult:
             full_output = completion.choices[0].message.content.strip()
             finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("deepseek", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
+            return TestResult(
+                "deepseek", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+            )
         messages.append("Received empty response payload from DeepSeek.")
         return TestResult("deepseek", False, endpoint_ok, messages)
     except Exception as exc:
         messages.append(_format_provider_error("deepseek", exc))
         return TestResult("deepseek", False, endpoint_ok, messages)
+
+
+def _test_tetrate(prompt: str, max_tokens: int) -> TestResult:
+    """Test Tetrate (TARS) via its OpenAI-compatible router endpoint."""
+    messages: list[str] = []
+    if OpenAI is None:
+        messages.append("OpenAI library not available. Install the openai package.")
+        return TestResult("tetrate", False, False, messages)
+
+    api_key = os.getenv("TARS_API_KEY")
+    base_url = os.getenv("TETRATE_AI_BASE_URL", "https://api.router.tetrate.ai/v1")
+    model_name = os.getenv("TETRATE_AI_MODEL", "gpt-5")
+
+    if not api_key:
+        messages.append("TARS_API_KEY not configured.")
+        return TestResult("tetrate", False, False, messages)
+
+    # Ensure we are using the /v1 router endpoint, drop any /chat/completions suffix
+    normalized_base_url, changed = _normalize_base_url(
+        base_url,
+        required_suffix="/v1",
+        drop_suffixes=("/chat/completions",),
+    )
+    endpoint_ok = normalized_base_url.endswith("/v1")
+    if changed:
+        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
+    if not endpoint_ok:
+        messages.append("Base URL is missing the required /v1 suffix.")
+
+    client = OpenAI(api_key=api_key, base_url=normalized_base_url)
+    try:
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a helpful genealogy assistant running via Tetrate TARS."},
+                {"role": "user", "content": [{"type": "text", "text": prompt}]},
+            ],
+            stream=False,
+            temperature=0.7,
+            max_tokens=max_tokens,
+        )
+        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
+            full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
+            messages.append(_build_messages_preview(full_output))
+            return TestResult(
+                "tetrate", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+            )
+        messages.append("Tetrate returned an empty response.")
+        return TestResult("tetrate", False, endpoint_ok, messages)
+    except Exception as exc:
+        messages.append(_format_provider_error("tetrate", exc))
+        return TestResult("tetrate", False, endpoint_ok, messages)
 
 
 def _describe_gemini_models(client: Any, model_name: str, messages: list[str]) -> None:
@@ -484,10 +544,7 @@ def _parse_gemini_response(response: Any, messages: list[str]) -> tuple[bool, st
 def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if genai is None:
-        messages.append(
-            "google-genai package not available ("
-            f"{genai_import_error or 'Install google-genai.'})."
-        )
+        messages.append(f"google-genai package not available ({genai_import_error or 'Install google-genai.'}).")
         return TestResult("gemini", False, False, messages)
 
     api_key = os.getenv("GOOGLE_API_KEY")
@@ -626,7 +683,9 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
             full_output = completion.choices[0].message.content.strip()
             finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("local_llm", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
+            return TestResult(
+                "local_llm", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+            )
         messages.append("Local LLM returned an empty response.")
         return TestResult("local_llm", False, endpoint_ok, messages)
     except Exception as exc:
@@ -679,7 +738,9 @@ def _test_inception(prompt: str, max_tokens: int) -> TestResult:
             full_output = completion.choices[0].message.content.strip()
             finish_reason = getattr(completion.choices[0], "finish_reason", None)
             messages.append(_build_messages_preview(full_output))
-            return TestResult("inception", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason)
+            return TestResult(
+                "inception", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+            )
         messages.append("Inception Mercury returned an empty response.")
         return TestResult("inception", False, endpoint_ok, messages)
     except Exception as exc:
@@ -737,6 +798,7 @@ PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
     "local_llm": _test_local_llm,
     "inception": _test_inception,
     "grok": _test_grok,
+    "tetrate": _test_tetrate,
 }
 
 
@@ -754,6 +816,8 @@ def _provider_base_url(provider: str) -> str:
         base_url = (os.getenv("INCEPTION_AI_BASE_URL") or "https://api.inceptionlabs.ai/v1").rstrip("/")
     elif provider == "grok":
         base_url = os.getenv("XAI_API_HOST") or "api.x.ai"
+    elif provider == "tetrate":
+        base_url = (os.getenv("TETRATE_AI_BASE_URL") or "https://api.router.tetrate.ai/v1").rstrip("/")
     else:
         base_url = ""
     return base_url
@@ -791,7 +855,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Prompt to send to the provider.")
     parser.add_argument("--max-tokens", dest="max_tokens", type=int, default=2048, help="Maximum tokens/output length.")
     parser.add_argument("--env-file", dest="env_file", default=".env", help="Path to .env file to load before running.")
-    parser.add_argument("--show-truncation-warning", action="store_true", help="Show warning if response appears truncated.")
+    parser.add_argument(
+        "--show-truncation-warning", action="store_true", help="Show warning if response appears truncated."
+    )
     return parser
 
 
