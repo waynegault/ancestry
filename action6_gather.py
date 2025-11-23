@@ -1799,25 +1799,6 @@ def _build_coord_state(start: Optional[int], action_start_time: float) -> tuple[
     return state, start_page
 
 
-def _log_resume_context(state: dict[str, Any], start_page: int) -> None:
-    """Emit consistent logging for action start and checkpoint resumes."""
-
-    _log_action_start(start_page)
-    if not state.get("resume_from_checkpoint"):
-        return
-
-    checkpoint_data = state.get("checkpoint_metadata")
-    planned_total = None
-    if isinstance(checkpoint_data, dict):
-        checkpoint_dict = cast(dict[str, Any], checkpoint_data)
-        planned_total = checkpoint_dict.get("total_pages_in_run")
-    logger.info(
-        "Checkpoint resume active: starting at page %d (planned total pages: %s)",
-        start_page,
-        planned_total if planned_total is not None else "unknown",
-    )
-
-
 def _execute_coord_run(
     session_manager: SessionManager,
     state: dict[str, Any],
@@ -1878,7 +1859,18 @@ def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
 
     _validate_session_state(session_manager)
     state, start_page = _build_coord_state(start, action_start_time)
-    _log_resume_context(state, start_page)
+    _log_action_start(start_page)
+    if state.get("resume_from_checkpoint"):
+        checkpoint_data = state.get("checkpoint_metadata")
+        planned_total = None
+        if isinstance(checkpoint_data, dict):
+            checkpoint_dict = cast(dict[str, Any], checkpoint_data)
+            planned_total = checkpoint_dict.get("total_pages_in_run")
+        logger.info(
+            "Checkpoint resume active: starting at page %d (planned total pages: %s)",
+            start_page,
+            planned_total if planned_total is not None else "unknown",
+        )
 
     keyboard_interrupt: Optional[KeyboardInterrupt] = None
 
@@ -2700,7 +2692,9 @@ def _prefetch_ethnicity_data(
     endpoint_counts["ethnicity"] += 1
 
 
-def _log_prefetch_progress(processed_count: int, num_candidates: int, _stats: _PrefetchStats, start_time: float) -> None:
+def _log_prefetch_progress(
+    processed_count: int, num_candidates: int, _stats: _PrefetchStats, start_time: float
+) -> None:
     """Emit progress updates for lengthy prefetches with ETA."""
 
     # Always log progress for visibility, but throttle frequency
@@ -7187,11 +7181,7 @@ def _extract_relationship_string(predictions: list[Any]) -> Optional[str]:
 
     valid_preds: list[dict[str, Any]] = []
     for candidate in predictions:
-        if (
-            isinstance(candidate, dict)
-            and "distributionProbability" in candidate
-            and "pathsToMatch" in candidate
-        ):
+        if isinstance(candidate, dict) and "distributionProbability" in candidate and "pathsToMatch" in candidate:
             valid_preds.append(candidate)
 
     if not valid_preds:

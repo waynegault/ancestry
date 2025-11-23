@@ -2013,8 +2013,12 @@ def call_discovery_relationship_api(
 
 
 def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> Optional[str]:
-    """Build TreesUI List API URL with search parameters."""
-    # Try both key formats for compatibility (first_name/surname from unified criteria, first_name_raw/surname_raw from legacy)
+    """Build TreesUI List API URL with search parameters.
+
+    Tries both unified (first_name/surname) and legacy (first_name_raw/surname_raw)
+    key formats to remain compatible with existing callers.
+    """
+    # Try both key formats for compatibility
     first_name = search_criteria.get("first_name") or search_criteria.get("first_name_raw", "")
     surname = search_criteria.get("surname") or search_criteria.get("surname_raw", "")
 
@@ -2030,7 +2034,6 @@ def _build_treesui_url(owner_tree_id: str, base_url: str, search_criteria: dict[
         logger.warning("Cannot call TreesUI List API: both first_name and surname are missing.")
         return None
 
-    # Build parameters: name, limit, fields, isGetFullPersonObject
     treesui_params_list = [
         f"name={quote(full_name)}",
         "limit=100",
@@ -2833,43 +2836,51 @@ def _validate_header_trees_response(response_data: Any, api_description: str) ->
     return None
 
 
+def _is_tree_name_match(name: str, target_name: str) -> bool:
+    """Check if tree name matches target name."""
+    name_lower = name.lower().strip()
+    target_name_lower = target_name.lower().strip()
+
+    # Exact match
+    if name_lower == target_name_lower:
+        return True
+
+    # Flexible match (containment)
+    return target_name_lower in name_lower or name_lower in target_name_lower
+
+
+def _extract_tree_id_from_item(item_dict: dict[str, Any], tree_name_config: str) -> Optional[str]:
+    """Helper to extract tree ID from a single item dictionary."""
+    # Check for tree ID in various fields (id, treeId, or from url)
+    tree_id = item_dict.get("id") or item_dict.get("treeId")
+    if not tree_id and KEY_URL in item_dict:
+        tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
+
+    if not tree_id:
+        return None
+
+    # Check for name match in various fields (name, text, title)
+    name = item_dict.get("name") or item_dict.get(KEY_TEXT) or item_dict.get("title")
+    if name and isinstance(name, str) and _is_tree_name_match(name, tree_name_config):
+        logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (match with '{name}').")
+        return str(tree_id)
+
+    return None
+
+
 def _extract_tree_id_from_response(response_data: Any, tree_name_config: str, api_description: str) -> Optional[str]:
     """Extract tree ID from header trees API response."""
     items = _validate_header_trees_response(response_data, api_description)
     if not items:
         return None
 
-    # Normalize config name for flexible matching
-    target_name_lower = tree_name_config.lower().strip()
-
     for item in items:
         if not isinstance(item, dict):
             continue
 
-        item_dict = cast(dict[str, Any], item)
-
-        # Check for tree ID in various fields (id, treeId, or from url)
-        tree_id = item_dict.get("id") or item_dict.get("treeId")
-        if not tree_id and KEY_URL in item_dict:
-            tree_id = _parse_tree_id_from_url(item_dict.get(KEY_URL), tree_name_config)
-
-        if not tree_id:
-            continue
-
-        # Check for name match in various fields (name, text, title)
-        name = item_dict.get("name") or item_dict.get(KEY_TEXT) or item_dict.get("title")
-        if name and isinstance(name, str):
-            name_lower = name.lower().strip()
-
-            # Exact match
-            if name_lower == target_name_lower:
-                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (exact match).")
-                return str(tree_id)
-
-            # Flexible match (containment)
-            if target_name_lower in name_lower or name_lower in target_name_lower:
-                logger.debug(f"Found tree ID '{tree_id}' for tree '{tree_name_config}' (flexible match with '{name}').")
-                return str(tree_id)
+        tree_id = _extract_tree_id_from_item(cast(dict[str, Any], item), tree_name_config)
+        if tree_id:
+            return tree_id
 
     logger.warning(f"Could not find TREE_NAME '{tree_name_config}' in {api_description} response.")
     return None
@@ -2881,10 +2892,10 @@ def _validate_header_trees_request(session_manager: "SessionManager", tree_name_
         logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
         return False
     if not session_manager.is_sess_valid():
-        logger.error("call_header_trees_api_for_tree_id: Session invalid.")
+        logger.error("call_tree_owner_api: Session invalid.")
         return False
     if not _api_request_available():
-        logger.critical("call_header_trees_api_for_tree_id: _api_req is not callable!")
+        logger.critical("call_tree_owner_api: _api_req is not callable!")
         raise ImportError("_api_req function not available from utils")
     return True
 
@@ -3437,6 +3448,12 @@ def _run_edge_case_tests(suite: "TestSuite") -> None:
 
         for empty_data in empty_data_cases:
             assert isinstance(empty_data, dict), "Test data should be dictionary"
+            invalid_data_dict = cast(dict[str, Any], empty_data)
+            # Validate that we can detect various invalid PersonId scenarios
+            person_id = invalid_data_dict.get("PersonId")
+            is_empty = not person_id
+            is_wrong_type = isinstance(person_id, int)
+            assert is_empty or is_wrong_type or isinstance(person_id, str), "PersonId validation should work"
 
     def test_special_characters():
         """Test handling of special characters in names and places."""

@@ -632,18 +632,28 @@ class AdvancedPerformanceMonitor:
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=5.0)
 
-        # Calculate summary metrics
+        metrics = self._calculate_final_metrics()
+
+        return {
+            "final_health_score": self.system_health_score,
+            "total_recommendations": len(self.optimization_recommendations),
+            "performance_samples": len(self.performance_history),
+            "monitoring_duration": duration,
+            # Compatibility keys for Action 8
+            "total_runtime": f"{duration:.2f}s",
+            "peak_memory_mb": metrics["peak_memory"],
+            "total_operations": len(self.performance_history),
+            "api_calls": metrics["api_calls"],
+            "total_errors": metrics["total_errors"],
+        }
+
+    def _calculate_final_metrics(self) -> dict[str, Any]:
+        """Calculate final metrics from performance history."""
         peak_memory = 0.0
         api_calls = 0
         total_errors = 0
 
         for entry in self.performance_history:
-            # Check for memory usage in system metrics
-            if (
-                "system" in entry and "memory_mb" in entry["system"]
-            ):  # Wait, structure is system: {memory_percent...} process: {memory_mb...}
-                pass
-
             if "process" in entry and "memory_mb" in entry["process"]:
                 peak_memory = max(peak_memory, entry["process"]["memory_mb"])
 
@@ -654,14 +664,7 @@ class AdvancedPerformanceMonitor:
                 total_errors += 1
 
         return {
-            "final_health_score": self.system_health_score,
-            "total_recommendations": len(self.optimization_recommendations),
-            "performance_samples": len(self.performance_history),
-            "monitoring_duration": duration,
-            # Compatibility keys for Action 8
-            "total_runtime": f"{duration:.2f}s",
-            "peak_memory_mb": peak_memory,
-            "total_operations": len(self.performance_history),
+            "peak_memory": peak_memory,
             "api_calls": api_calls,
             "total_errors": total_errors,
         }

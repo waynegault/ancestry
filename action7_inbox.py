@@ -1146,24 +1146,156 @@ class InboxProcessor:
     def _run_inbox_processing_loop(
         self, session: DbSession, comp_conv_id: Optional[str], comp_ts: Optional[datetime], my_pid_lower: str
     ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
-        """Run the main inbox processing loop.
+        """Run the core inbox processing loop.
 
         Returns: (stop_reason, total_api_items, ai_classified, engagement_assessments,
                   status_updated, items_processed, session_deaths, session_recoveries)
         """
-        # Add newline before processing starts
-        print()
+        # Initialize loop state
+        state = self._initialize_loop_state()
 
-        # Process inbox without progress bar (batch-level logging only, like Action 6)
-        return self._process_inbox_loop(session, comp_conv_id, comp_ts, my_pid_lower)
+        # Step 2: Main loop - continues until stop condition met
+        while not state["stop_processing"]:
+            try:
+                # Process single batch iteration
+                should_stop, batch_stop_reason = self._process_single_batch_iteration(
+                    session, state, comp_conv_id, comp_ts, my_pid_lower
+                )
 
-    def get_statistics(self) -> dict[str, Any]:
-        """Return processing statistics for monitoring and debugging."""
-        stats = self.stats.copy()
-        # Only calculate duration if both timestamps are not None
-        if stats.get("start_time") is not None and stats.get("end_time") is not None:
-            stats["duration_seconds"] = (stats["end_time"] - stats["start_time"]).total_seconds()
-        return stats
+                if should_stop:
+                    state["stop_reason"] = batch_stop_reason
+                    state["stop_processing"] = True
+                    break
+
+            # Handle exceptions during batch processing
+            except WebDriverException as wde:
+                state["stop_reason"], _, _ = self._handle_loop_exception(wde, "WebDriverException", session, state)
+                state["stop_processing"] = True
+                break
+
+            except KeyboardInterrupt as ki:
+                state["stop_reason"], _, _ = self._handle_loop_exception(ki, "KeyboardInterrupt", session, state)
+                state["stop_processing"] = True
+                break
+
+            except Exception as e_main:
+                state["error_count_this_loop"] += 1
+                stop_reason, _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
+
+                if state["error_count_this_loop"] > 5:
+                    logger.critical(f"Too many errors ({state['error_count_this_loop']}) in inbox loop. Stopping.")
+                    state["stop_reason"] = stop_reason
+                    state["stop_processing"] = True
+                    break
+
+                logger.warning(f"Recoverable error in inbox loop (Count: {state['error_count_this_loop']}): {e_main}")
+                # Continue loop
+
+        # --- End Main Loop (while not stop_processing) ---
+
+        # Step 4: Perform final commit if loop finished normally or stopped early
+        self._finalize_inbox_loop(session, state)
+
+        # Step 5: Return results from the loop execution
+        return (
+            state["stop_reason"],
+            state["total_processed_api_items"],
+            state["ai_classified_count"],
+            state["engagement_assessment_count"],
+            state["status_updated_count"],
+            state["items_processed_before_stop"],
+            state["session_deaths"],
+            state["session_recoveries"],
+        )
+
+    def _finalize_inbox_loop(self, session: DbSession, state: dict[str, Any]) -> None:
+        """Finalize inbox loop by committing any remaining data."""
+        if state["conv_log_upserts_dicts"] or state["person_updates"]:
+            logger.debug("Finalizing inbox loop: Committing remaining data...")
+            logs_committed, persons_updated = self._commit_batch_updates(
+                session, state["conv_log_upserts_dicts"], state["person_updates"], state["current_batch_num"]
+            )
+            state["status_updated_count"] += persons_updated
+            state["logs_processed_in_run"] += logs_committed
+            logger.debug(f"Final commit complete: {logs_committed} logs, {persons_updated} persons updated")
+
+    def _log_unified_summary(
+        self,
+        total_api_items: int,
+        items_processed: int,
+        new_logs: int,
+        ai_classified: int,
+        engagement_assessments: int,
+        status_updates: int,
+        stop_reason: Optional[str],
+        max_inbox_limit: int,
+        session_deaths: int = 0,
+        session_recoveries: int = 0,
+    ) -> None:
+        """Logs a unified summary of the inbox search process."""
+        # Calculate run time - use 'or' to handle None values properly
+        start_time = self.stats.get("start_time")
+        end_time = self.stats.get("end_time") or datetime.now(timezone.utc)
+        total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
+
+        # Step 1: Print header
+        print("")  # Blank line before summary
+        logger.info("-" * 35)
+        logger.info("Final summary")
+        logger.info("-" * 35)
+
+        # Mark unused parameters to satisfy linter without changing signature
+        _ = new_logs
+
+        # Step 2: Log key metrics
+        logger.info(f"API Conversations Fetched:    {total_api_items}")
+        logger.info(f"Conversations Processed:      {items_processed}")
+        logger.info(f"AI Classifications Attempted:  {ai_classified}")
+        logger.info(f"AI Engagement Assessments:     {engagement_assessments}")
+        logger.info(f"Person Status Updates Made:   {status_updates}")
+
+        # Step 2.5: Log session health metrics if any occurred
+        if session_deaths > 0 or session_recoveries > 0:
+            logger.info(f"Session Deaths:               {session_deaths}")
+            logger.info(f"Session Recoveries:           {session_recoveries}")
+
+        # Step 3: Log stopping reason
+        final_reason = stop_reason
+        if not stop_reason:
+            # Infer reason if not explicitly set
+            if max_inbox_limit == 0 or items_processed < max_inbox_limit:
+                final_reason = "End of Inbox Reached or Comparator Match"
+            else:
+                final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
+        logger.info(f"Stopped Due To:    {final_reason}")
+
+        # Step 4: Log run time in consistent format
+        hours = int(total_run_time // 3600)
+        minutes = int((total_run_time % 3600) // 60)
+        seconds = total_run_time % 60
+        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+
+        # Print rate limiter metrics if available
+        if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
+            self.session_manager.rate_limiter.print_metrics_summary()
+
+        # Update statistics
+        self.stats.update(
+            {
+                "conversations_fetched": total_api_items,
+                "conversations_processed": items_processed,
+                "ai_classifications": ai_classified,
+                "engagement_assessments": engagement_assessments,
+                "person_updates": status_updates,
+                "session_deaths": session_deaths,
+                "session_recoveries": session_recoveries,
+                "end_time": datetime.now(timezone.utc),
+            }
+        )
+
+    # End of _log_unified_summary
+
+    # --- Private Methods (Batch Processing) ---
 
     @staticmethod
     def _initialize_loop_state() -> dict[str, Any]:
@@ -2499,15 +2631,44 @@ class InboxProcessor:
             logger.error(f"ConnectionError during Action 7 {exception_type} save: {conn_err}")
             return 0, 0
 
-    @staticmethod
-    def _check_cancellation_requested() -> bool:
-        """Check if cancellation was requested by timeout wrapper."""
-        try:
-            from core.cancellation import is_cancel_requested
+    def _handle_loop_exception(
+        self,
+        exception: BaseException,
+        exception_type: str,
+        session: DbSession,
+        state: dict[str, Any],
+    ) -> tuple[str, int, int]:
+        """Handle exceptions during the main inbox loop.
 
-            return is_cancel_requested()
-        except Exception:
-            return False
+        Returns a tuple of (stop_reason, logs_saved, persons_updated).
+        """
+        if exception_type == "WebDriverException":
+            logger.error(
+                f"WebDriverException occurred during inbox loop: {exception}",
+            )
+            stop_reason = "WebDriver Exception"
+        elif exception_type == "KeyboardInterrupt":
+            logger.warning("KeyboardInterrupt detected during inbox loop.")
+            stop_reason = "Keyboard Interrupt"
+        else:
+            logger.critical(
+                f"Critical error in inbox processing loop: {exception}",
+                exc_info=True,
+            )
+            stop_reason = f"Critical Error ({type(exception).__name__})"
+
+        # Attempt a final save using the shared helper
+        final_logs, final_persons = self._handle_exception_with_save(
+            session=session,
+            conv_log_upserts_dicts=state["conv_log_upserts_dicts"],
+            person_updates=state["person_updates"],
+            exception_type=exception_type,
+        )
+
+        state["status_updated_count"] += final_persons
+        state["logs_processed_in_run"] += final_logs
+
+        return stop_reason, final_logs, final_persons
 
     @staticmethod
     def _get_db_timestamp_for_comparison(
@@ -2682,183 +2843,6 @@ class InboxProcessor:
             return True, f"Inbox Limit ({self.max_inbox_limit})"
         return False, None
 
-    def _first_pass_identify_conversations(
-        self,
-        all_conversations_batch: list[dict[str, Any]],
-        ctx: ConversationProcessingContext,
-        items_processed_before_stop: int,
-    ) -> tuple[list[dict[str, Any]], dict[str, str], bool, Optional[str]]:
-        """First pass: Identify which conversations need context fetching.
-
-        Returns: (conversations_needing_fetch, skip_map, should_stop, stop_reason)
-        """
-        conversations_needing_fetch: list[dict[str, Any]] = []
-        skip_map: dict[str, str] = {}  # api_conv_id -> skip_reason
-
-        for conversation_info in all_conversations_batch:
-            # Check inbox limit
-            should_stop, limit_reason = self._check_inbox_limit(items_processed_before_stop)
-            if should_stop:
-                logger.debug(f"Inbox limit reached during first pass: {limit_reason}")
-                return conversations_needing_fetch, skip_map, True, limit_reason
-
-            items_processed_before_stop += 1
-
-            # Extract conversation identifiers
-            profile_id_upper, api_conv_id, api_latest_ts_aware = self._extract_conversation_identifiers(
-                conversation_info
-            )
-
-            # Skip invalid conversations
-            if self._should_skip_invalid(api_conv_id, profile_id_upper):
-                skip_map[api_conv_id] = "invalid"
-                logger.debug(f"First pass: Skipping invalid conversation {api_conv_id}")
-                continue
-
-            # Determine if conversation needs fetching
-            needs_fetch, should_stop, fetch_stop_reason = self._determine_fetch_need(
-                api_conv_id,
-                ctx.comp_conv_id,
-                ctx.comp_ts,
-                api_latest_ts_aware,
-                ctx.existing_conv_logs,
-                ctx.min_aware_dt,
-            )
-
-            if should_stop:
-                logger.debug(f"First pass: Comparator found at {api_conv_id}: {fetch_stop_reason}")
-                return conversations_needing_fetch, skip_map, True, fetch_stop_reason
-
-            if not needs_fetch:
-                skip_map[api_conv_id] = "up-to-date"
-                logger.debug(f"First pass: Conversation {api_conv_id} is up-to-date")
-                continue
-
-            # Add to fetch list
-            conversations_needing_fetch.append(conversation_info)
-            logger.debug(f"First pass: Conversation {api_conv_id} needs context fetch")
-
-        logger.debug(
-            f"[First Pass] Complete: {len(conversations_needing_fetch)} need context fetch, "
-            f"{len(skip_map)} skipped (up-to-date or invalid)"
-        )
-        return conversations_needing_fetch, skip_map, False, None
-
-    def _fetch_single_conversation_context(self, api_conv_id: str) -> tuple[str, Optional[list[dict[str, Any]]]]:
-        """Fetch context for a single conversation. Used by parallel fetching.
-
-        Returns: (api_conv_id, context_messages or None)
-        """
-        try:
-            # Validate session before fetch
-            self._validate_session()
-
-            logger.debug(f"Fetching context for conversation {api_conv_id}")
-            context_messages = self._fetch_conversation_context(api_conv_id)
-
-            if context_messages is None:
-                logger.error(f"Failed to fetch context for {api_conv_id}")
-                return api_conv_id, None
-
-            logger.debug(f"Fetched {len(context_messages)} messages for {api_conv_id}")
-            return api_conv_id, context_messages
-
-        except Exception as e:
-            logger.error(f"Exception fetching context for {api_conv_id}: {e}")
-            return api_conv_id, None
-
-    def _fetch_conversation_contexts_batch(
-        self,
-        conversations_needing_fetch: list[dict[str, Any]],
-    ) -> dict[str, Optional[list[dict[str, Any]]]]:
-        """Fetch conversation contexts for all conversations in the list.
-
-        Phase 3 Optimization: Enforce sequential fetching to prevent rate limit violations.
-        Parallel execution has been removed to comply with strict 429 error prevention policy.
-
-        Returns: dict mapping api_conv_id -> context_messages (or None if fetch failed)
-        """
-        # Extract conversation IDs
-        conv_ids = [
-            self._extract_conversation_identifiers(conv)[1]  # api_conv_id
-            for conv in conversations_needing_fetch
-        ]
-
-        logger.debug(f"[Context Fetch] Sequential mode: fetching {len(conv_ids)} conversations")
-        context_map: dict[str, Optional[list[dict[str, Any]]]] = {}
-
-        for api_conv_id in conv_ids:
-            conv_id, context = self._fetch_single_conversation_context(api_conv_id)
-            context_map[conv_id] = context
-
-        successful = len([v for v in context_map.values() if v is not None])
-        logger.debug(f"[Context Fetch] Sequential complete: {successful}/{len(conv_ids)} successful")
-        return context_map
-
-    def _second_pass_process_conversations(
-        self,
-        session: DbSession,
-        conversations_needing_fetch: list[dict[str, Any]],
-        context_map: dict[str, Optional[list[dict[str, Any]]]],
-        ctx: ConversationProcessingContext,
-        ai_classified_count: int,
-    ) -> tuple[int, int]:
-        """Second pass: Process all conversations with their fetched contexts.
-
-        Returns: (error_count, ai_classified_count)
-        """
-        error_count = 0
-
-        for conversation_info in conversations_needing_fetch:
-            profile_id_upper, api_conv_id, _ = self._extract_conversation_identifiers(conversation_info)
-
-            # Get fetched context
-            context_messages = context_map.get(api_conv_id)
-            if context_messages is None:
-                logger.error(f"No context available for {api_conv_id}, skipping")
-                error_count += 1
-                continue
-
-            # Lookup or create person
-            person, person_status = self._lookup_or_create_person(
-                session,
-                profile_id_upper,
-                conversation_info.get("username", "Unknown"),
-                api_conv_id,
-                existing_person_arg=ctx.existing_persons_map.get(profile_id_upper),
-            )
-            if not person or not safe_column_value(person, "id"):
-                logger.error(
-                    f"Failed person lookup/create for conversation {api_conv_id}: "
-                    f"profile_id={profile_id_upper}, username={conversation_info.get('username', 'Unknown')}, "
-                    f"status={person_status}, person_obj={'None' if not person else 'exists but no ID'}"
-                )
-                error_count += 1
-                continue
-
-            people_id = safe_column_value(person, "id")
-            logger.debug(f"Second pass: Processing conversation {api_conv_id} for person ID {people_id}")
-
-            # Find latest IN and OUT messages
-            latest_ctx_in, latest_ctx_out = self._find_latest_messages(context_messages, ctx.my_pid_lower)
-            logger.debug(
-                f"Found latest messages for {api_conv_id}: IN={'present' if latest_ctx_in else 'None'}, OUT={'present' if latest_ctx_out else 'None'}"
-            )
-
-            # Process IN and OUT messages
-            ai_classified_count = self._process_in_message(
-                latest_ctx_in, api_conv_id, people_id, ctx, context_messages, ai_classified_count
-            )
-
-            self._process_out_message(latest_ctx_out, api_conv_id, people_id, ctx)
-
-            logger.debug(f"Second pass: Completed processing conversation {api_conv_id}")
-
-        logger.debug(
-            f"Second pass complete: {len(conversations_needing_fetch)} processed, {error_count} errors, {ai_classified_count} AI classifications"
-        )
-        return error_count, ai_classified_count
-
     def _process_single_conversation(
         self,
         session: DbSession,
@@ -2943,201 +2927,73 @@ class InboxProcessor:
 
         return False, None, error_count_delta, ai_classified_count
 
-    def _process_conversations_in_batch(
-        self,
-        session: DbSession,
-        all_conversations_batch: list[dict[str, Any]],
-        ctx: ConversationProcessingContext,
-        state: dict[str, Any],
-    ) -> tuple[bool, Optional[str]]:
-        """Process all conversations in a batch using two-pass approach.
-
-        Phase 2 Optimization: Two-pass processing
-        - First pass: Identify conversations needing context fetch
-        - Batch fetch: Fetch all contexts (sequential for now, parallel in Phase 3)
-        - Second pass: Process all conversations with fetched contexts
-
-        Returns: (stop_processing, stop_reason)
-        """
-        logger.debug(f"Processing batch of {len(all_conversations_batch)} conversations (two-pass)")
-
-        # FIRST PASS: Identify conversations needing fetch
-        conversations_needing_fetch, skip_map, should_stop, stop_reason = self._first_pass_identify_conversations(
-            all_conversations_batch, ctx, state["items_processed_before_stop"]
-        )
-
-        # Update items processed count (includes skipped items)
-        state["items_processed_before_stop"] += len(all_conversations_batch)
-        state["skipped_count_this_loop"] += len(skip_map)
-
-        # Skipped items already counted in skip_map
-
-        if should_stop:
-            logger.debug(f"First pass indicated stop: {stop_reason}")
-            return True, stop_reason
-
-        # If no conversations need fetching, we're done
-        if not conversations_needing_fetch:
-            logger.debug(
-                f"[Batch Complete] All {len(all_conversations_batch)} conversations skipped "
-                f"(up-to-date - no changes detected)"
-            )
-            return False, None
-
-        # BATCH FETCH: Fetch all conversation contexts
-        logger.debug(f"[Batch Fetch] Fetching contexts for {len(conversations_needing_fetch)} conversations")
-        context_map = self._fetch_conversation_contexts_batch(conversations_needing_fetch)
-
-        # SECOND PASS: Process all conversations with fetched contexts
-        logger.debug(f"[Second Pass] Processing {len(conversations_needing_fetch)} conversations with fetched contexts")
-        error_count, ai_classified_count = self._second_pass_process_conversations(
-            session, conversations_needing_fetch, context_map, ctx, state["ai_classified_count"]
-        )
-
-        # Update state
-        state["error_count_this_loop"] += error_count
-        state["ai_classified_count"] = ai_classified_count
-        state["conversations_needing_processing"] += len(conversations_needing_fetch)
-
-        # Progress bar updates removed - simple increment only at main loop level (matching Action 6/7/8/9)
-
-        logger.debug(
-            f"Batch complete: {len(conversations_needing_fetch)} processed, {len(skip_map)} skipped, {error_count} errors"
-        )
-        return False, None
-
-    @staticmethod
-    def _extract_state_variables(
-        state: dict[str, Any],
-    ) -> tuple[int, int, int, int, int, int, int, int, int, bool, Optional[str], Optional[str], int, int, int]:
-        """Extract state variables for easier access. Returns tuple of all state variables."""
-        return (
-            state["ai_classified_count"],
-            state["status_updated_count"],
-            state["total_processed_api_items"],
-            state["items_processed_before_stop"],
-            state["logs_processed_in_run"],
-            state["skipped_count_this_loop"],
-            state["error_count_this_loop"],
-            state["stop_reason"],
-            state["next_cursor"],
-            state["current_batch_num"],
-            state["conv_log_upserts_dicts"],
-            state["person_updates"],
-            state["stop_processing"],
-            state["min_aware_dt"],
-            state["conversations_needing_processing"],
-        )
-
-    def _check_batch_preconditions(
-        self, current_batch_num: int, items_processed_before_stop: int, state: dict[str, Any]
-    ) -> tuple[bool, Optional[str], Optional[int]]:
-        """Check preconditions before processing batch. Returns (should_stop, stop_reason, current_limit)."""
-        # Browser health check
-        browser_error = self._check_browser_health(current_batch_num, state)
-        if browser_error:
-            return True, browser_error, None
-
-        # Validate session
-        self._validate_session()
-
-        # Calculate API limit
-        current_limit, limit_error = self._calculate_api_limit(items_processed_before_stop)
-        if limit_error:
-            return True, limit_error, None
-
-        return False, None, current_limit
-
-    def _fetch_and_validate_batch(
-        self, current_limit: Optional[int], next_cursor: Optional[str]
-    ) -> tuple[bool, Optional[str], Optional[list[dict[str, Any]]], Optional[str]]:
-        """Fetch batch from API and validate. Returns (should_stop, stop_reason, batch, next_cursor)."""
-        if not current_limit:
-            logger.error("current_limit is None, cannot fetch batch")
-            return True, "Invalid current_limit", None, None
-        all_conversations_batch, next_cursor_from_api = self._get_all_conversations_api(
-            self.session_manager, limit=current_limit, cursor=next_cursor
-        )
-
-        if all_conversations_batch is None:
-            logger.error("API call to fetch conversation batch failed critically.")
-            return True, "API Error Fetching Batch", None, None
-
-        return False, None, all_conversations_batch, next_cursor_from_api
-
-    def _handle_batch_processing_exception(
-        self,
-        exception: BaseException,
-        exception_type: str,
-        session: DbSession,
-        conv_log_upserts_dicts: list[dict[str, Any]],
-        person_updates: dict[int, Any],
-        current_batch_num: int,
-    ) -> tuple[int, int, str]:
-        """Handle exception during batch processing. Returns (logs_saved, persons_updated, stop_reason)."""
-        if exception_type == "WebDriverException":
-            logger.error(f"WebDriverException occurred during inbox loop (Batch {current_batch_num}): {exception}")
-            stop_reason = "WebDriver Exception"
-        elif exception_type == "KeyboardInterrupt":
-            logger.warning("KeyboardInterrupt detected during inbox loop.")
-            stop_reason = "Keyboard Interrupt"
-        else:
-            logger.critical(
-                f"Critical error in inbox processing loop (Batch {current_batch_num}): {exception}",
-                exc_info=True,
-            )
-            stop_reason = f"Critical Error ({type(exception).__name__})"
-
-        final_logs, final_persons = self._handle_exception_with_save(
-            session, conv_log_upserts_dicts, person_updates, exception_type
-        )
-        return final_logs, final_persons, stop_reason
+    # --- Private Methods (Single Batch Processing) ---
 
     def _fetch_and_process_batch(
         self,
         state: dict[str, Any],
     ) -> tuple[bool, Optional[str], list[dict[str, Any]], Optional[str]]:
-        """Fetch and process batch. Returns (should_stop, stop_reason, batch, next_cursor)."""
-        # Check preconditions
-        should_stop, stop_reason_check, current_limit = self._check_batch_preconditions(
-            state["current_batch_num"], state["items_processed_before_stop"], state
-        )
-        if should_stop:
-            return True, stop_reason_check, [], None
+        """Fetch the next batch of conversations from the API.
 
-        # Fetch and validate batch
-        should_stop, stop_reason_check, all_conversations_batch, next_cursor_from_api = self._fetch_and_validate_batch(
-            current_limit, state["next_cursor"]
+        Returns (should_stop, stop_reason, batch, next_cursor).
+        """
+        # Determine current limit based on overall inbox limit
+        current_limit = (
+            self.api_batch_size
+            if self.max_inbox_limit <= 0 or state["items_processed_before_stop"] < self.max_inbox_limit
+            else 0
         )
-        if should_stop:
-            return True, stop_reason_check, [], None
 
-        # Update batch counters
-        batch_api_item_count = len(all_conversations_batch) if all_conversations_batch else 0
-        state["total_processed_api_items"] += batch_api_item_count
+        if current_limit <= 0 and self.max_inbox_limit > 0:
+            return True, f"Inbox Limit ({self.max_inbox_limit})", [], state["next_cursor"]
+
+        # Validate session before API call
+        self._validate_session()
+
+        all_conversations_batch, next_cursor_from_api = self._get_all_conversations_api(
+            self.session_manager,
+            limit=current_limit,
+            cursor=state["next_cursor"],
+        )
+
+        if all_conversations_batch is None:
+            logger.error("API call to fetch conversation batch failed critically.")
+            return True, "API Error Fetching Batch", [], None
+
+        batch_size = len(all_conversations_batch)
+        state["total_processed_api_items"] += batch_size
         state["current_batch_num"] += 1
 
-        return False, None, all_conversations_batch or [], next_cursor_from_api
+        # Handle an empty batch using the existing helper
+        if batch_size == 0:
+            should_stop, stop_reason = self._handle_empty_batch(next_cursor_from_api)
+            return should_stop, stop_reason, [], next_cursor_from_api
+
+        return False, None, all_conversations_batch, next_cursor_from_api
 
     def _handle_batch_and_commit(
         self,
         session: DbSession,
         state: dict[str, Any],
-        all_conversations_batch: list[Any],
+        all_conversations_batch: list[dict[str, Any]],
         comp_conv_id: Optional[str],
         comp_ts: Optional[datetime],
         my_pid_lower: str,
     ) -> tuple[bool, Optional[str]]:
-        """Handle batch processing and commit. Returns (should_stop, stop_reason)."""
+        """Process a batch of conversations and commit database changes.
 
-        # Prefetch batch data
+        Returns (should_stop, stop_reason).
+        """
+        # Prefetch related database data to minimize queries
         existing_persons_map, existing_conv_logs, prefetch_error = self._prefetch_batch_data(
-            session, all_conversations_batch, state["current_batch_num"]
+            session,
+            all_conversations_batch,
+            state["current_batch_num"],
         )
         if prefetch_error:
+            logger.error(f"DB prefetch failed for batch {state['current_batch_num']}: {prefetch_error}")
             return True, prefetch_error
 
-        # Process conversations in batch
         ctx = ConversationProcessingContext(
             existing_persons_map=existing_persons_map,
             existing_conv_logs=existing_conv_logs,
@@ -3149,39 +3005,48 @@ class InboxProcessor:
             min_aware_dt=state["min_aware_dt"],
             state=state,
         )
-        batch_stop, batch_stop_reason = self._process_conversations_in_batch(
-            session, all_conversations_batch, ctx, state
-        )
 
-        # Commit batch updates
-        batch_num = state['current_batch_num']
-        num_logs = len(state['conv_log_upserts_dicts'])
-        num_person_updates = len(state['person_updates'])
+        should_stop = False
+        stop_reason: Optional[str] = None
 
-        # Compact logging: Only log details if there are changes
-        if num_logs == 0 and num_person_updates == 0:
-            logger.debug(f"Batch {batch_num}: All conversations up-to-date (no changes)")
-        else:
-            logger.debug(f"Committing batch {batch_num}: {num_logs} logs, {num_person_updates} person updates")
+        # Process each conversation in the batch
+        for conversation_info in all_conversations_batch:
+            # Track how many items we've considered against the overall limit
+            state["items_processed_before_stop"] += 1
+            limit_reached, limit_reason = self._check_inbox_limit(state["items_processed_before_stop"])
+            if limit_reached:
+                logger.debug(f"Inbox limit reached during batch: {limit_reason}")
+                should_stop = True
+                stop_reason = limit_reason
+                break
 
+            conv_should_stop, conv_stop_reason, error_delta, new_ai_count = self._process_single_conversation(
+                session,
+                conversation_info,
+                ctx,
+                state["ai_classified_count"],
+            )
+
+            state["ai_classified_count"] = new_ai_count
+            if error_delta:
+                state["error_count_this_loop"] += error_delta
+
+            if conv_should_stop:
+                should_stop = True
+                stop_reason = conv_stop_reason
+                break
+
+        # Commit any accumulated updates for this batch
         logs_committed, persons_updated = self._commit_batch_updates(
-            session, state["conv_log_upserts_dicts"], state["person_updates"], batch_num
+            session,
+            state["conv_log_upserts_dicts"],
+            state["person_updates"],
+            state["current_batch_num"],
         )
         state["status_updated_count"] += persons_updated
         state["logs_processed_in_run"] += logs_committed
 
-        # Compact logging for commit results
-        if logs_committed == 0 and persons_updated == 0:
-            logger.debug(f"Batch {batch_num} complete: No changes committed")
-        else:
-            logger.debug(f"Batch {batch_num} committed: {logs_committed} logs, {persons_updated} persons updated")
-
-        # Check if batch processing should stop
-        if batch_stop:
-            logger.debug(f"Batch processing stopped: {batch_stop_reason}")
-            return True, batch_stop_reason
-
-        return False, None
+        return should_stop, stop_reason
 
     def _process_single_batch_iteration(
         self,
@@ -3192,250 +3057,68 @@ class InboxProcessor:
         my_pid_lower: str,
     ) -> tuple[bool, Optional[str]]:
         """Process a single batch iteration. Returns (should_stop, stop_reason)."""
-        batch_num = state['current_batch_num'] + 1
-        logger.debug(f"[Batch {batch_num}] Starting batch iteration")
+        all_conversations_batch: list[dict[str, Any]] = []
+        stop_reason: Optional[str] = None
 
-        # Log batch start removed - will only log batch completion like Action 6
+        # Step 1: Fetch next batch of conversations from API
+        try:
+            current_limit = (
+                self.api_batch_size  # Default to configured batch size
+                if state["items_processed_before_stop"] < self.max_inbox_limit
+                else 0  # Stop if overall limit reached
+            )
 
-        # Fetch and process batch
-        should_stop, stop_reason, all_conversations_batch, next_cursor_from_api = self._fetch_and_process_batch(state)
-        if should_stop:
-            logger.debug(f"Batch fetch indicated stop: {stop_reason}")
-            return True, stop_reason
+            logger.info(f"Fetching inbox batch: limit={current_limit}, cursor={state['next_cursor']}")
+            should_stop, stop_reason, all_conversations_batch, state["next_cursor"] = self._fetch_and_process_batch(
+                state
+            )
 
-        # Handle empty batch
-        if len(all_conversations_batch) == 0:
-            logger.debug("Received empty batch from API")
-            should_stop, empty_reason = self._handle_empty_batch(next_cursor_from_api)
             if should_stop:
-                logger.debug(f"Empty batch handling indicated stop: {empty_reason}")
-                return True, empty_reason
-            state["next_cursor"] = next_cursor_from_api
-            return False, None
+                logger.info(f"Stopping inbox processing: {stop_reason}")
+                return True, stop_reason
 
-        # Handle batch and commit
-        should_stop, stop_reason = self._handle_batch_and_commit(
-            session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower
-        )
+            logger.info(f"Fetched batch of {len(all_conversations_batch)} conversations")
 
-        logger.info(
-            f"Batch {state['current_batch_num']}: "
-            f"Processed={state['total_processed_api_items']}, "
-            f"AI={state['ai_classified_count']}, "
-            f"Engagement={state['engagement_assessment_count']}, "
-            f"Updates={state['status_updated_count']}, "
-            f"Errors={state['error_count_this_loop']}"
-        )
+        except Exception as e:
+            logger.error(f"Error fetching conversations batch: {e}", exc_info=True)
+            return True, "Error fetching batch"
 
-        if should_stop:
-            return True, stop_reason
-
-        # Prepare for next batch - combine the last two checks
-        state["next_cursor"] = next_cursor_from_api
-
-        # Check for end of inbox or cancellation
-        result_should_stop = False
-        result_stop_reason = None
-
-        if not next_cursor_from_api:
-            result_should_stop = True
-            result_stop_reason = "End of Inbox Reached (No Next Cursor)"
-        elif self._check_cancellation_requested():
-            logger.warning("Cancellation requested by timeout wrapper. Stopping inbox processing loop.")
-            result_should_stop = True
-            result_stop_reason = "Timeout Cancellation"
-
-        return result_should_stop, result_stop_reason
-
-    def _handle_loop_exception(
-        self,
-        exception: BaseException,
-        exception_type: str,
-        session: DbSession,
-        state: dict[str, Any],
-    ) -> tuple[Optional[str], int, int]:
-        """Handle exceptions during batch processing."""
-        if exception_type != "Exception":
-            state["error_count_this_loop"] += 1
-
-        final_logs, final_persons, stop_reason = self._handle_batch_processing_exception(
-            exception,
-            exception_type,
-            session,
-            state["conv_log_upserts_dicts"],
-            state["person_updates"],
-            state["current_batch_num"],
-        )
-        state["status_updated_count"] += final_persons
-        state["logs_processed_in_run"] += final_logs
-        return stop_reason, final_logs, final_persons
-
-    def _process_inbox_loop(
-        self,
-        session: DbSession,
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],  # Aware datetime
-        my_pid_lower: str,
-        # Accept progress bar instance
-    ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
-        """Run the core inbox processing loop.
-
-        Returns: (stop_reason, total_api_items, ai_classified, engagement_assessments,
-                  status_updated, items_processed, session_deaths, session_recoveries)
-        """
-        # Initialize loop state
-        state = self._initialize_loop_state()
-
-        # Step 2: Main loop - continues until stop condition met
-        while not state["stop_processing"]:
+        # Step 2: Process the fetched conversations
+        if all_conversations_batch:
             try:
-                # Process single batch iteration
-                should_stop, batch_stop_reason = self._process_single_batch_iteration(
-                    session, state, comp_conv_id, comp_ts, my_pid_lower
+                # --- Critical: Ensure session is valid before processing ---
+                self._validate_session()
+
+                # Process conversations in batch
+                logger.info(f"Processing batch of {len(all_conversations_batch)} conversations")
+                batch_stop, batch_stop_reason = self._handle_batch_and_commit(
+                    session, state, all_conversations_batch, comp_conv_id, comp_ts, my_pid_lower
                 )
 
-                if should_stop:
-                    state["stop_reason"] = batch_stop_reason
-                    state["stop_processing"] = True
-                    break
+                if batch_stop:
+                    logger.info(f"Stopping inbox processing after batch: {batch_stop_reason}")
+                    return True, batch_stop_reason
 
-            # Handle exceptions during batch processing
-            except WebDriverException as wde:
-                state["stop_reason"], _, _ = self._handle_loop_exception(wde, "WebDriverException", session, state)
-                state["stop_processing"] = True
-                break
+            except Exception as e:
+                logger.error(f"Error processing conversations batch: {e}", exc_info=True)
+                return True, "Error processing batch"
 
-            except KeyboardInterrupt as ki:
-                state["stop_reason"], _, _ = self._handle_loop_exception(ki, "KeyboardInterrupt", session, state)
-                state["stop_processing"] = True
-                break
+        return False, None
 
-            except Exception as e_main:
-                state["error_count_this_loop"] += 1
-                stop_reason, _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
+    # --- Public Methods (for testing or external use) ---
 
-                if state["error_count_this_loop"] > 5:
-                    logger.critical(f"Too many errors ({state['error_count_this_loop']}) in inbox loop. Stopping.")
-                    state["stop_reason"] = stop_reason
-                    state["stop_processing"] = True
-                    break
-
-                logger.warning(f"Recoverable error in inbox loop (Count: {state['error_count_this_loop']}): {e_main}")
-                # Continue loop
-
-        # --- End Main Loop (while not stop_processing) ---
-
-        # Step 4: Perform final commit if loop finished normally or stopped early
-        if (
-            not state["stop_reason"]
-            or state["stop_reason"]
-            in {
-                "Comparator Found",
-                "No Change",
-                f"Inbox Limit ({self.max_inbox_limit})",
-                "End of Inbox Reached (Empty Batch, No Cursor)",
-                "End of Inbox Reached (No Next Cursor)",
-            }
-        ) and (state["conv_log_upserts_dicts"] or state["person_updates"]):
-            logger.debug("Performing final commit at end of processing loop...")
-            final_logs_saved, final_persons_updated = commit_bulk_data(
-                session=session,
-                log_upserts=state["conv_log_upserts_dicts"],
-                person_updates=state["person_updates"],
-                context="Action 7 Final Save (Normal Exit)",
-            )
-            state["status_updated_count"] += final_persons_updated
-            state["logs_processed_in_run"] += final_logs_saved
-
-        # Step 5: Return results from the loop execution
-        return (
-            state["stop_reason"],
-            state["total_processed_api_items"],
-            state["ai_classified_count"],
-            state["engagement_assessment_count"],
-            state["status_updated_count"],
-            state["items_processed_before_stop"],
-            state["session_deaths"],
-            state["session_recoveries"],
-        )
-
-    # End of _process_inbox_loop
-
-    def _log_unified_summary(
+    def test_process_single_batch_iteration(
         self,
-        total_api_items: int,
-        items_processed: int,
-        new_logs: int,
-        ai_classified: int,
-        engagement_assessments: int,
-        status_updates: int,
-        stop_reason: Optional[str],
-        max_inbox_limit: int,
-        session_deaths: int = 0,
-        session_recoveries: int = 0,
-    ) -> None:
-        """Logs a unified summary of the inbox search process."""
-        # Calculate run time - use 'or' to handle None values properly
-        start_time = self.stats.get("start_time")
-        end_time = self.stats.get("end_time") or datetime.now(timezone.utc)
-        total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
+        session: DbSession,
+        state: dict[str, Any],
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],
+        my_pid_lower: str,
+    ) -> tuple[bool, Optional[str]]:
+        """Public method to test single batch iteration processing. Returns (should_stop, stop_reason)."""
+        return self._process_single_batch_iteration(session, state, comp_conv_id, comp_ts, my_pid_lower)
 
-        # Step 1: Print header
-        print("")  # Blank line before summary
-        logger.info("-" * 35)
-        logger.info("Final summary")
-        logger.info("-" * 35)
-
-        # Mark unused parameters to satisfy linter without changing signature
-        _ = new_logs
-
-        # Step 2: Log key metrics
-        logger.info(f"API Conversations Fetched:    {total_api_items}")
-        logger.info(f"Conversations Processed:      {items_processed}")
-        logger.info(f"AI Classifications Attempted:  {ai_classified}")
-        logger.info(f"AI Engagement Assessments:     {engagement_assessments}")
-        logger.info(f"Person Status Updates Made:   {status_updates}")
-
-        # Step 2.5: Log session health metrics if any occurred
-        if session_deaths > 0 or session_recoveries > 0:
-            logger.info(f"Session Deaths:               {session_deaths}")
-            logger.info(f"Session Recoveries:           {session_recoveries}")
-
-        # Step 3: Log stopping reason
-        final_reason = stop_reason
-        if not stop_reason:
-            # Infer reason if not explicitly set
-            if max_inbox_limit == 0 or items_processed < max_inbox_limit:
-                final_reason = "End of Inbox Reached or Comparator Match"
-            else:
-                final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
-        logger.info(f"Stopped Due To:    {final_reason}")
-
-        # Step 4: Log run time in consistent format
-        hours = int(total_run_time // 3600)
-        minutes = int((total_run_time % 3600) // 60)
-        seconds = total_run_time % 60
-        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-
-        # Print rate limiter metrics if available
-        if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
-            self.session_manager.rate_limiter.print_metrics_summary()
-
-        # Update statistics
-        self.stats.update(
-            {
-                "conversations_fetched": total_api_items,
-                "conversations_processed": items_processed,
-                "ai_classifications": ai_classified,
-                "engagement_assessments": engagement_assessments,
-                "person_updates": status_updates,
-                "session_deaths": session_deaths,
-                "session_recoveries": session_recoveries,
-                "end_time": datetime.now(timezone.utc),
-            }
-        )
-
-    # End of _log_unified_summary
+    # End of class InboxProcessor
 
 
 # --- Enhanced Test Framework Implementation ---
@@ -3710,6 +3393,81 @@ def _test_error_recovery() -> None:
     assert state["session_recoveries"] == 0, "Should start with 0 session recoveries"
 
     logger.info("Error recovery state initialized correctly")
+
+
+def _test_handle_loop_exception_updates_state() -> None:
+    """Ensure _handle_loop_exception maps reason and updates state counters."""
+    from unittest.mock import MagicMock
+
+    sm = MagicMock()
+    processor = InboxProcessor(session_manager=sm)
+
+    # Avoid real DB writes by stubbing the final save helper
+    processor._handle_exception_with_save = MagicMock(return_value=(3, 2))
+
+    fake_session = MagicMock(spec=DbSession)
+    state: dict[str, Any] = {
+        "conv_log_upserts_dicts": [],
+        "person_updates": {},
+        "status_updated_count": 0,
+        "logs_processed_in_run": 0,
+    }
+
+    stop_reason, logs_saved, persons_updated = processor._handle_loop_exception(
+        Exception("boom"),
+        "Exception",
+        fake_session,
+        state,
+    )
+
+    assert "Critical Error" in stop_reason, "Expected Critical Error stop reason for generic Exception"
+    assert logs_saved == 3 and persons_updated == 2, "Should propagate counts from _handle_exception_with_save"
+    assert state["status_updated_count"] == 2, "State should accumulate person updates"
+    assert state["logs_processed_in_run"] == 3, "State should accumulate log updates"
+
+
+def _test_fetch_and_process_batch_respects_limit_and_counters() -> None:
+    """Ensure _fetch_and_process_batch enforces inbox limit and updates state."""
+    from unittest.mock import MagicMock
+
+    sm = MagicMock()
+    sm.is_sess_valid.return_value = True
+    processor = InboxProcessor(session_manager=sm)
+    processor.api_batch_size = 10
+    processor.max_inbox_limit = 5
+
+    # Case 1: limit already reached -> immediate stop before API call
+    state = processor._initialize_loop_state()
+    state["items_processed_before_stop"] = 5
+    state["next_cursor"] = "CURSOR1"
+
+    should_stop, stop_reason, batch, next_cursor = processor._fetch_and_process_batch(state)
+    assert should_stop is True, "Should stop when inbox limit already reached"
+    assert "Inbox Limit" in (stop_reason or ""), "Stop reason should mention inbox limit"
+    assert batch == [], "No batch should be returned when stopping early"
+    assert next_cursor == "CURSOR1", "Cursor should remain unchanged when stopping early"
+
+    # Case 2: within limit -> fetches from API and updates counters
+    state = processor._initialize_loop_state()
+    state["items_processed_before_stop"] = 0
+    state["next_cursor"] = "CURSOR0"
+
+    processor._get_all_conversations_api = MagicMock(
+        return_value=(
+            [
+                {"conversation_id": "c1", "profile_id": "P1"},
+            ],
+            "CURSOR2",
+        ),
+    )
+
+    should_stop, stop_reason, batch, next_cursor = processor._fetch_and_process_batch(state)
+
+    assert should_stop is False and stop_reason is None, "Should continue when API call succeeds"
+    assert len(batch) == 1 and batch[0]["conversation_id"] == "c1", "Batch should contain API results"
+    assert next_cursor == "CURSOR2", "Cursor should be updated from API response"
+    assert state["total_processed_api_items"] == 1, "State should track processed API items"
+    assert state["current_batch_num"] == 1, "Batch counter should increment"
 
 
 def _test_retry_helper_alignment_action7() -> None:
@@ -4173,6 +3931,22 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="_initialize_loop_state",
             method_description="Test error recovery state tracking",
             expected_outcome="State tracks session deaths and recoveries",
+        )
+        _add_test(
+            "Loop exception handler updates state",
+            _test_handle_loop_exception_updates_state,
+            test_summary="Exception handler stop reason and counters",
+            functions_tested="_handle_loop_exception, _handle_exception_with_save",
+            method_description="Map exception types to stop reasons and persist final save counts into state",
+            expected_outcome="Stop reason text and state counters updated consistently with helper return values",
+        )
+        _add_test(
+            "Batch fetch helper respects inbox limit",
+            _test_fetch_and_process_batch_respects_limit_and_counters,
+            test_summary="API batch fetch limit and counter updates",
+            functions_tested="_fetch_and_process_batch",
+            method_description="Enforce inbox limit before API call and update batch counters on success",
+            expected_outcome="Helper stops when limit reached and increments API item/batch counters on fetch",
         )
         _add_test(
             "Retry helper alignment",

@@ -2033,6 +2033,21 @@ def _print_final_quality_summary(all_metrics: list[TestExecutionMetrics]) -> Non
     print(f"   📊 70-95%: {between_70_95} modules")
     if below_70 > 0:
         print(f"   ⚠️  Below 70%: {below_70} modules (NEEDS ATTENTION)")
+
+    # List modules with < 100% quality
+    imperfect_modules = [
+        (m.module_name, m.quality_metrics.quality_score)
+        for m in all_metrics
+        if hasattr(m, "quality_metrics") and m.quality_metrics and m.quality_metrics.quality_score < 100
+    ]
+
+    if imperfect_modules:
+        print("\n   📉 Modules with < 100% Quality:")
+        # Sort by score (ascending)
+        imperfect_modules.sort(key=lambda x: x[1])
+        for name, score in imperfect_modules:
+            print(f"      • {name}: {score:.1f}/100")
+
     print("=" * 80)
 
 
