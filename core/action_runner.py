@@ -61,6 +61,7 @@ class BrowserManagerProtocol(Protocol):
 class APIManagerProtocol(Protocol):
     csrf_token: str
     tree_owner_name: Optional[str]
+    my_tree_id: str
 
     def sync_cookies_from_browser(
         self,
@@ -404,9 +405,7 @@ def _finalize_action_execution(
             f"{type(context.exception).__name__}."
         )
 
-    logger.debug(
-        f"Final outcome for Action {context.choice} ('{context.action_name}'): {context.succeeded}\n"
-    )
+    logger.debug(f"Final outcome for Action {context.choice} ('{context.action_name}'): {context.succeeded}\n")
 
     duration_sec, mem_used_mb = _log_performance_metrics(
         context.start_time,

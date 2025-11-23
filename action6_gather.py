@@ -2700,20 +2700,14 @@ def _prefetch_ethnicity_data(
     endpoint_counts["ethnicity"] += 1
 
 
-def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _PrefetchStats, start_time: float) -> None:
+def _log_prefetch_progress(processed_count: int, num_candidates: int, _stats: _PrefetchStats, start_time: float) -> None:
     """Emit progress updates for lengthy prefetches with ETA."""
 
     # Always log progress for visibility, but throttle frequency
     should_log = False
 
     # Log every item if small batch
-    if num_candidates <= 5:
-        should_log = True
-    # Log every 5 items for larger batches
-    elif processed_count % 5 == 0:
-        should_log = True
-    # Always log the last item
-    elif processed_count == num_candidates:
+    if num_candidates <= 5 or processed_count % 5 == 0 or processed_count == num_candidates:
         should_log = True
 
     if not should_log:
@@ -2725,10 +2719,7 @@ def _log_prefetch_progress(processed_count: int, num_candidates: int, stats: _Pr
     eta_seconds = remaining * avg_time
 
     # Format ETA
-    if eta_seconds < 60:
-        eta_str = f"{eta_seconds:.0f}s"
-    else:
-        eta_str = f"{eta_seconds / 60:.1f}m"
+    eta_str = f"{eta_seconds:.0f}s" if eta_seconds < 60 else f"{eta_seconds / 60:.1f}m"
 
     percent = int((processed_count / num_candidates) * 100)
 
@@ -2812,9 +2803,9 @@ def _handle_combined_details_fetch(
 
 
 def _fetch_optional_relationship_data(
-    session_manager: SessionManager,
+    _session_manager: SessionManager,
     uuid_val: str,
-    high_priority_uuids: set[str],
+    _high_priority_uuids: set[str],
     priority_uuids: set[str],
     batch_relationship_prob_data: dict[str, Optional[str]],
     batch_combined_details: dict[str, Optional[dict[str, Any]]],
@@ -7189,67 +7180,76 @@ def _ensure_action6_session_ready(
     return False
 
 
+def _extract_relationship_string(predictions: list[Any]) -> Optional[str]:
+    """Extract formatted relationship string from predictions."""
+    if not predictions:
+        return None
+
+    valid_preds: list[dict[str, Any]] = []
+    for candidate in predictions:
+        if (
+            isinstance(candidate, dict)
+            and "distributionProbability" in candidate
+            and "pathsToMatch" in candidate
+        ):
+            valid_preds.append(candidate)
+
+    if not valid_preds:
+        return None
+
+    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+    top_prob_raw = best_pred.get("distributionProbability", 0.0)
+    top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
+
+    paths_raw = best_pred.get("pathsToMatch", [])
+    path_entries = paths_raw if isinstance(paths_raw, Sequence) else []
+
+    labels: list[str] = []
+    for path in path_entries:
+        if isinstance(path, dict):
+            path_dict = cast(dict[str, Any], path)
+            label_value = path_dict.get("label")
+            if isinstance(label_value, str):
+                labels.append(label_value)
+
+    max_labels_param = 2  # Default used in action6
+    final_labels = labels[:max_labels_param]
+    relationship_str_val = " or ".join(map(str, final_labels))
+    return f"{relationship_str_val} [{top_prob:.1f}%]"
+
+
 def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
     """Parse match details API response."""
-    if details_response and isinstance(details_response, dict):
-        details_dict = cast(dict[str, Any], details_response)
-        relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
+    if not (details_response and isinstance(details_response, dict)):
+        if isinstance(details_response, requests.Response):
+            logger.error(
+                f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
+            )
+        else:
+            logger.error(f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}")
+        return None
 
-        # Extract relationship predictions
-        predictions = details_dict.get("predictions", [])
-        relationship_str = None
+    details_dict = cast(dict[str, Any], details_response)
+    relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
 
-        if predictions:
-            valid_preds = []
-            for candidate in predictions:
-                if (
-                    isinstance(candidate, dict)
-                    and "distributionProbability" in candidate
-                    and "pathsToMatch" in candidate
-                ):
-                    valid_preds.append(candidate)
+    # Extract relationship predictions
+    predictions = details_dict.get("predictions", [])
+    relationship_str = _extract_relationship_string(predictions)
 
-            if valid_preds:
-                best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-                top_prob_raw = best_pred.get("distributionProbability", 0.0)
-                top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
-
-                paths_raw = best_pred.get("pathsToMatch", [])
-                path_entries = paths_raw if isinstance(paths_raw, Sequence) else []
-
-                labels = []
-                for path in path_entries:
-                    if isinstance(path, dict):
-                        label_value = path.get("label")
-                        if isinstance(label_value, str):
-                            labels.append(label_value)
-
-                max_labels_param = 2  # Default used in action6
-                final_labels = labels[:max_labels_param]
-                relationship_str_val = " or ".join(map(str, final_labels))
-                relationship_str = f"{relationship_str_val} [{top_prob:.1f}%]"
-
-        return {
-            "admin_profile_id": details_dict.get("adminUcdmId"),
-            "admin_username": details_dict.get("adminDisplayName"),
-            "tester_profile_id": details_dict.get("userId"),
-            "tester_username": details_dict.get("displayName"),
-            "tester_initials": details_dict.get("displayInitials"),
-            "gender": details_dict.get("subjectGender"),
-            "shared_segments": relationship_part.get("sharedSegments"),
-            "longest_shared_segment": relationship_part.get("longestSharedSegment"),
-            "meiosis": relationship_part.get("meiosis"),
-            "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
-            "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
-            "relationship_str": relationship_str,
-        }
-    if isinstance(details_response, requests.Response):
-        logger.error(
-            f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
-        )
-    else:
-        logger.error(f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}")
-    return None
+    return {
+        "admin_profile_id": details_dict.get("adminUcdmId"),
+        "admin_username": details_dict.get("adminDisplayName"),
+        "tester_profile_id": details_dict.get("userId"),
+        "tester_username": details_dict.get("displayName"),
+        "tester_initials": details_dict.get("displayInitials"),
+        "gender": details_dict.get("subjectGender"),
+        "shared_segments": relationship_part.get("sharedSegments"),
+        "longest_shared_segment": relationship_part.get("longestSharedSegment"),
+        "meiosis": relationship_part.get("meiosis"),
+        "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
+        "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
+        "relationship_str": relationship_str,
+    }
 
 
 def _fetch_match_details_api(

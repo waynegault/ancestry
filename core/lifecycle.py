@@ -267,7 +267,7 @@ def display_tree_owner(session_manager: SessionManager) -> None:
                 from config.config_manager import ConfigManager
 
                 cfg = ConfigManager().get_config()
-                tree_name = cfg.tree_name
+                tree_name = getattr(cfg, "tree_name", "Unknown Tree")
                 logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name}'")
     except Exception:
         pass  # Silently ignore - not critical for startup

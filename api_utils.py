@@ -2929,7 +2929,7 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
         logger.info(f"Tree '{tree_name_config}' not found in primary API. Trying fallback API...")
 
         # Construct fallback URL by removing query parameters
-        fallback_path = API_PATH_HEADER_TREES.split("?")[0]
+        fallback_path = API_PATH_HEADER_TREES.split("?", maxsplit=1)[0]
         fallback_url = urljoin(base_url_cfg.rstrip("/") + "/", fallback_path)
         api_description_fallback = "Header Trees API (Fallback)"
 

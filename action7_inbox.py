@@ -28,7 +28,8 @@ logger = setup_module(globals(), __name__)
 import json
 import sys
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# from concurrent.futures import ThreadPoolExecutor, as_completed - removed unused
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, cast
 

@@ -89,11 +89,10 @@ except ImportError:
     tabulate = None
 
 # === LOCAL IMPORTS ===
-from config import config_schema
-from core.error_handling import MissingConfigError
-
 # Import GEDCOM utilities
 import gedcom_utils
+from config import config_schema
+from core.error_handling import MissingConfigError
 from gedcom_utils import (
     GedcomData,
     calculate_match_score,
