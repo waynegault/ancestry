@@ -408,7 +408,7 @@ class APIConfig:
 
     # Tetrate (TARS) configuration
     tetrate_api_key: Optional[str] = None
-    tetrate_ai_model: str = "gpt-5"
+    tetrate_ai_model: str = "xai/grok-code-fast-1"
     tetrate_ai_base_url: str = "https://api.router.tetrate.ai/v1"
 
     # Local LLM Configuration (LM Studio)

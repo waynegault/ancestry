@@ -397,7 +397,8 @@ def _test_tetrate(prompt: str, max_tokens: int) -> TestResult:
 
     api_key = os.getenv("TARS_API_KEY")
     base_url = os.getenv("TETRATE_AI_BASE_URL", "https://api.router.tetrate.ai/v1")
-    model_name = os.getenv("TETRATE_AI_MODEL", "gpt-5")
+    # Default to the xAI Grok code model route if not configured
+    model_name = os.getenv("TETRATE_AI_MODEL", "xai/grok-code-fast-1")
 
     if not api_key:
         messages.append("TARS_API_KEY not configured.")
@@ -417,16 +418,22 @@ def _test_tetrate(prompt: str, max_tokens: int) -> TestResult:
 
     client = OpenAI(api_key=api_key, base_url=normalized_base_url)
     try:
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are a helpful genealogy assistant running via Tetrate TARS."},
-                {"role": "user", "content": [{"type": "text", "text": prompt}]},
+        # Use a minimal OpenAI-compatible payload: just model, messages,
+        # and optionally max_tokens. Tetrate's router expects standard
+        # OpenAI Chat Completions parameters.
+        create_kwargs: dict[str, Any] = {
+            "model": model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
             ],
-            stream=False,
-            temperature=0.7,
-            max_tokens=max_tokens,
-        )
+        }
+        if max_tokens > 0:
+            create_kwargs["max_tokens"] = max_tokens
+
+        completion = client.chat.completions.create(**create_kwargs)
         if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
             full_output = completion.choices[0].message.content.strip()
             finish_reason = getattr(completion.choices[0], "finish_reason", None)
