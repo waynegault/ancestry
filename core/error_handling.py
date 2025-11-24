@@ -22,6 +22,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import logging
 import random
 import threading
@@ -50,6 +51,7 @@ R = TypeVar('R')
 
 class CircuitState(Enum):
     """Circuit breaker states."""
+
     CLOSED = "CLOSED"  # Normal operation
     OPEN = "OPEN"  # Failing, calls rejected
     HALF_OPEN = "HALF_OPEN"  # Testing if service recovered
@@ -58,6 +60,7 @@ class CircuitState(Enum):
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for circuit breaker."""
+
     failure_threshold: int = 5  # Number of failures before opening
     recovery_timeout: int = 60  # Seconds before attempting recovery
     success_threshold: int = 3  # Successes needed to close from half-open
@@ -66,6 +69,7 @@ class CircuitBreakerConfig:
 
 class RetryStrategy(Enum):
     """Retry strategy options."""
+
     EXPONENTIAL_BACKOFF = "exponential_backoff"
     LINEAR_BACKOFF = "linear_backoff"
     FIXED_DELAY = "fixed_delay"
@@ -75,6 +79,7 @@ class RetryStrategy(Enum):
 @dataclass
 class RetryConfig:
     """Configuration for retry behavior."""
+
     max_attempts: int = 3
     base_delay: float = 1.0
     max_delay: float = 60.0
@@ -462,7 +467,9 @@ def with_api_recovery(max_attempts: int = 5, base_delay: float = 2.0) -> Callabl
     )
 
 
-def with_database_recovery(max_attempts: int = 3, base_delay: float = 1.0) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def with_database_recovery(
+    max_attempts: int = 3, base_delay: float = 1.0
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator optimized for database operations using unified recovery infrastructure."""
 
     return with_enhanced_recovery(
@@ -525,10 +532,7 @@ class CircuitBreaker:
         """Execute function with circuit breaker protection."""
         with self._lock:
             if self.state == CircuitState.OPEN:
-                if (
-                    self.last_failure_time
-                    and time.time() - self.last_failure_time > self.config.recovery_timeout
-                ):
+                if self.last_failure_time and time.time() - self.last_failure_time > self.config.recovery_timeout:
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
                 else:
@@ -575,13 +579,16 @@ class CircuitBreaker:
 
 class CircuitBreakerOpenError(Exception):
     """Exception raised when circuit breaker is open."""
+
     pass
 
 
 # === LEGACY EXCEPTION CLASSES FOR BACKWARD COMPATIBILITY ===
 
+
 class AncestryError(Exception):
     """Base exception class for all Ancestry project errors."""
+
     pass
 
 
@@ -765,9 +772,7 @@ class AppError(Exception):
             "recovery_suggestion": self.recovery_suggestion,
             "context": self.context,
             "timestamp": self.timestamp,
-            "original_exception": (
-                str(self.original_exception) if self.original_exception else None
-            ),
+            "original_exception": (str(self.original_exception) if self.original_exception else None),
         }
 
 
@@ -849,9 +854,7 @@ class APIError(AppError):
     """API-related errors."""
 
     def __init__(self, message: str, **kwargs: Any):
-        super().__init__(
-            message, category=ErrorCategory.API, severity=ErrorSeverity.MEDIUM, **kwargs
-        )
+        super().__init__(message, category=ErrorCategory.API, severity=ErrorSeverity.MEDIUM, **kwargs)
 
 
 # ConfigurationError already defined above as legacy exception
@@ -882,9 +885,7 @@ class ErrorHandler(ABC):
         pass
 
     @abstractmethod
-    def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
-    ) -> AppError:
+    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
         """Handle the error and return a standardized AppError."""
         pass
 
@@ -896,9 +897,7 @@ class DatabaseErrorHandler(ErrorHandler):
         keywords = ("sql", "database", "connection", "integrity")
         return self._match_keywords(error, keywords)
 
-    def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
-    ) -> AppError:
+    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -934,9 +933,7 @@ class NetworkErrorHandler(ErrorHandler):
         keywords = ("connection", "timeout", "http", "request", "url")
         return self._match_keywords(error, keywords)
 
-    def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
-    ) -> AppError:
+    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -972,9 +969,7 @@ class BrowserErrorHandler(ErrorHandler):
         keywords = ("webdriver", "selenium", "browser", "chrome")
         return self._match_keywords(error, keywords)
 
-    def handle(
-        self, error: Exception, context: Optional[dict[str, Any]] = None
-    ) -> AppError:
+    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -1016,9 +1011,7 @@ class ErrorHandlerRegistry:
 
     def _register_default_handlers(self) -> None:
         """Register default error handlers."""
-        self.handlers.extend(
-            [DatabaseErrorHandler(), NetworkErrorHandler(), BrowserErrorHandler()]
-        )
+        self.handlers.extend([DatabaseErrorHandler(), NetworkErrorHandler(), BrowserErrorHandler()])
 
     def register_handler(self, handler: ErrorHandler):
         """Register a custom error handler."""
@@ -1052,9 +1045,7 @@ class ErrorHandlerRegistry:
                 try:
                     return handler.handle(error, context)
                 except Exception as handler_error:
-                    logger.error(
-                        f"Error handler {type(handler).__name__} failed: {handler_error}"
-                    )
+                    logger.error(f"Error handler {type(handler).__name__} failed: {handler_error}")
                     continue
 
         # Fallback to generic error
@@ -1217,15 +1208,11 @@ class ErrorContext:
             # Convert BaseException to Exception for handle_error
             error_to_handle = exc_val if isinstance(exc_val, Exception) else Exception(str(exc_val))
             app_error = handle_error(error_to_handle, context, self.category)
-            logger.error(
-                f"Operation failed: {self.operation_name} ({duration:.2f}s) - {app_error.message}"
-            )
+            logger.error(f"Operation failed: {self.operation_name} ({duration:.2f}s) - {app_error.message}")
             return False  # Don't suppress the exception
         # Success
         if self.log_success:
-            logger.debug(
-                f"Operation completed: {self.operation_name} ({duration:.2f}s)"
-            )
+            logger.debug(f"Operation completed: {self.operation_name} ({duration:.2f}s)")
         return True
 
 
@@ -1252,9 +1239,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
             )
             return True  # Catch-all for unknown errors
 
-        def handle(
-            self, error: Exception, context: Optional[dict[str, Any]] = None
-        ) -> AppError:
+        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
             context_with_handler = self._augment_context(context)
             return AppError(
                 str(error),
@@ -1295,22 +1280,18 @@ def error_handling_module_tests() -> bool:
     )
 
     with suppress_logging():
-        suite = TestSuite(
-            "Core Error Handling & Recovery Systems", "core/error_handling.py"
-        )
+        suite = TestSuite("Core Error Handling & Recovery Systems", "core/error_handling.py")
 
     # Run all tests
-    print(
-        "🛡️ Running Core Error Handling & Recovery Systems comprehensive test suite..."
-    )
+    print("🛡️ Running Core Error Handling & Recovery Systems comprehensive test suite...")
 
     with suppress_logging():
         suite.run_test(
-            "Function availability verification",
-            test_function_availability,
-            "Test that all required error handling functions are available",
-            "Function availability verification ensures complete error handling functionality",
-            "All core error handling functions (AppError, safe_execute, CircuitBreaker, etc.) are available",
+            "Recovery decorator behavior",
+            test_recovery_decorator_behavior,
+            "Verify with_recovery wraps failures and returns fallback data",
+            "Recovery decorator ensures critical paths can provide degraded-but-safe results",
+            "with_recovery retries once, calls recovery strategy, and preserves successful return values",
         )
 
         suite.run_test(
@@ -1359,6 +1340,7 @@ def error_handling_module_tests() -> bool:
 
 # === ERROR RECOVERY MANAGER ===
 
+
 class ErrorRecoveryManager:
     """Manages circuit breakers and recovery strategies."""
 
@@ -1368,9 +1350,7 @@ class ErrorRecoveryManager:
         self.recovery_strategies: dict[str, Callable[..., Any]] = {}
         self._lock = threading.Lock()
 
-    def get_circuit_breaker(
-        self, name: str, config: Optional[CircuitBreakerConfig] = None
-    ) -> CircuitBreaker:
+    def get_circuit_breaker(self, name: str, config: Optional[CircuitBreakerConfig] = None) -> CircuitBreaker:
         """Get or create circuit breaker for a service."""
         with self._lock:
             if name not in self.circuit_breakers:
@@ -1385,9 +1365,7 @@ class ErrorRecoveryManager:
     def get_health_status(self) -> dict[str, Any]:
         """Get health status of all circuit breakers."""
         with self._lock:
-            return {
-                name: cb.get_stats() for name, cb in self.circuit_breakers.items()
-            }
+            return {name: cb.get_stats() for name, cb in self.circuit_breakers.items()}
 
     def reset_all_circuit_breakers(self) -> None:
         """Reset all circuit breakers to CLOSED state."""
@@ -1421,7 +1399,7 @@ def _calculate_retry_delay(
     max_delay: float,
 ) -> float:
     """Calculate delay before next retry attempt."""
-    delay = min(base_delay * (backoff_factor ** attempt), max_delay)
+    delay = min(base_delay * (backoff_factor**attempt), max_delay)
     if jitter_seconds > 0:
         delay = min(delay + random.uniform(0, jitter_seconds), max_delay)
     return max(0.05, delay)
@@ -1524,9 +1502,7 @@ def _resolve_retry_settings(
         stop_source = _DEFAULT_STOP_EXCEPTIONS
 
     policy_jitter_value = _float_value(None, "jitter_seconds", 0.5)
-    jitter_enabled = jitter if jitter is not None else (
-        bool(policy_jitter_value) if resolved_policy else True
-    )
+    jitter_enabled = jitter if jitter is not None else (bool(policy_jitter_value) if resolved_policy else True)
     jitter_seconds = policy_jitter_value if jitter_enabled else 0.0
 
     return RetryDecoratorSettings(
@@ -1589,9 +1565,7 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
 
         total_time = time.time() - start_time
         if last_exception is None:
-            last_exception = Exception(
-                f"{func.__name__} failed after {settings.max_attempts} attempts"
-            )
+            last_exception = Exception(f"{func.__name__} failed after {settings.max_attempts} attempts")
 
         logger.error(
             "%s failed after %d attempts in %.2fs: %s",
@@ -1681,6 +1655,7 @@ def circuit_breaker(
     success_threshold: int = 3,
 ):
     """Decorator to add circuit breaker protection to functions."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         config = CircuitBreakerConfig(
             failure_threshold=failure_threshold,
@@ -1692,12 +1667,15 @@ def circuit_breaker(
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             return cb.call(func, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for timeout protection (cross-platform)."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -1750,7 +1728,9 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
                 return result
             finally:
                 signal.signal(sigalrm, old_handler)
+
         return wrapper
+
     return decorator
 
 
@@ -1758,6 +1738,7 @@ def graceful_degradation(
     fallback_value: Any = None, fallback_func: Optional[Callable[..., Any]] = None
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for graceful degradation when service fails."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -1768,12 +1749,15 @@ def graceful_degradation(
                 if fallback_func:
                     return fallback_func(*args, **kwargs)
                 return fallback_value
+
         return wrapper
+
     return decorator
 
 
 def error_context(context_name: str = "", **context_data: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to add context to errors."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -1785,26 +1769,30 @@ def error_context(context_name: str = "", **context_data: Any) -> Callable[[Call
                         context_data["context_name"] = context_name
                     e.context.update(context_data)
                 raise e
+
         return wrapper
+
     return decorator
 
 
-def with_circuit_breaker(
-    service_name: str, config: Optional[CircuitBreakerConfig] = None
-):
+def with_circuit_breaker(service_name: str, config: Optional[CircuitBreakerConfig] = None):
     """Decorator to add circuit breaker protection to functions."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         cb = error_recovery_manager.get_circuit_breaker(service_name, config)
 
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             return cb.call(func, *args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator to add recovery strategy to functions."""
+
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -1813,11 +1801,14 @@ def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P
             except Exception as e:
                 logger.warning(f"Function {func.__name__} failed: {e}, attempting recovery")
                 return recovery_strategy(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 
 # === RECOVERY STRATEGIES ===
+
 
 def ancestry_session_recovery(*_args: Any, **_kwargs: Any) -> None:
     """Recovery strategy for session-related failures."""
@@ -1837,217 +1828,161 @@ def ancestry_database_recovery(*_args: Any, **_kwargs: Any) -> None:
     # Placeholder for database recovery logic
 
 
-# Test functions for comprehensive testing
-def test_function_availability() -> None:
-    """Test that all required error handling functions are available."""
-    required_functions = [
-        "ErrorRecoveryManager",
-        "AppError",
-        "handle_error",
-        "safe_execute",
-        "ErrorContext",
-        "CircuitBreaker",
-    ]
+def test_recovery_decorator_behavior() -> None:
+    """Ensure with_recovery delegates to fallback logic after failures."""
 
-    available_count = 0
-    for func_name in required_functions:
-        if func_name in globals():
-            assert callable(globals()[func_name]) or isinstance(
-                globals()[func_name], type
-            ), f"Function {func_name} should be available"
-            available_count += 1
+    calls: dict[str, Any] = {"recovery": []}
 
-    # Ensure we have at least 80% of required functions available
-    availability_ratio = available_count / len(required_functions)
-    assert availability_ratio >= 0.8, f"Only {availability_ratio:.1%} of required functions available"
+    def _recovery_strategy(*args: Any, **kwargs: Any) -> str:
+        calls["recovery"].append((args, kwargs))
+        return "recovered"
 
-    # Test that error categories and severities are available
-    if "ErrorCategory" in globals():
-        categories = ["NETWORK", "AUTHENTICATION", "VALIDATION", "CONFIGURATION", "BUSINESS_LOGIC", "SYSTEM"]
-        for category in categories:
-            assert hasattr(globals()["ErrorCategory"], category), f"ErrorCategory.{category} should be available"
+    @with_recovery(_recovery_strategy)
+    def flaky(value: str) -> str:
+        raise RuntimeError(f"boom:{value}")
 
-    if "ErrorSeverity" in globals():
-        severities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
-        for severity in severities:
-            assert hasattr(globals()["ErrorSeverity"], severity), f"ErrorSeverity.{severity} should be available"
+    assert flaky("one") == "recovered", "with_recovery should return fallback value on failure"
+    assert calls["recovery"], "Recovery strategy should be invoked when wrapped func fails"
+    assert calls["recovery"][0][0][0] == "one", "Arguments should be forwarded to recovery strategy"
+
+    @with_recovery(_recovery_strategy)
+    def stable(value: str) -> str:
+        return value.upper()
+
+    assert stable("ok") == "OK", "Successful calls should bypass recovery strategy"
+    assert len(calls["recovery"]) == 1, "Recovery should only run for failures"
 
 
 def test_error_handling() -> None:
-    """Test basic error handling and safe execution patterns."""
+    """Exercise safe_execute and handle_error behavior end-to-end."""
 
-    # Test safe_execute with simple function
-    def safe_func() -> str:
-        return "success"
+    recorded: dict[str, Any] = {"contexts": []}
 
-    def failing_func() -> None:
-        raise ValueError("Test error")
+    class RecordingHandler(ErrorHandler):
+        @staticmethod
+        def can_handle(error: Exception) -> bool:
+            return isinstance(error, ValueError)
 
-    if "safe_execute" in globals():
-        # Test successful execution
-        result = safe_execute(safe_func, default_return="failed")
-        assert result == "success", "safe_execute should handle successful execution"
+        @staticmethod
+        def handle(error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+            recorded["contexts"].append(context or {})
+            return AppError(str(error), context=context, original_exception=error)
 
-        # Test error handling with default return
-        result = safe_execute(failing_func, default_return="recovered")
-        assert result == "recovered", "safe_execute should return default on error"
+    register_error_handler(RecordingHandler())
 
-        # Test with context
-        result = safe_execute(failing_func, default_return="context_test", context={"test": "value"})
-        assert result == "context_test", "safe_execute should handle context parameter"
+    def failing_func(message: str) -> None:
+        raise ValueError(message)
 
-    # Test handle_error function
-    if "handle_error" in globals():
-        try:
-            raise ValueError("Test error for handle_error")
-        except Exception as e:
-            app_error = handle_error(e)
-            assert hasattr(app_error, 'message'), "handle_error should return AppError with message"
+    fallback = safe_execute(failing_func, "boom", default_return="recovered", context={"step": "safe"})
+    assert fallback == "recovered", "safe_execute should return fallback after error"
+    assert recorded["contexts"][-1]["step"] == "safe", "Context dictionary should propagate to handler"
+
+    direct_error = handle_error(ValueError("direct"), context={"phase": "handle"})
+    assert isinstance(direct_error, AppError), "handle_error should normalize exceptions into AppError"
+    assert direct_error.context.get("phase") == "handle", "Direct handle_error calls should keep context"
 
 
 def test_error_types() -> None:
-    """Test custom error types and exception creation."""
-    # Test AppError creation
-    if "AppError" in globals():
-        error = AppError("test error")
-        assert str(error) == "test error", "AppError should store message"
+    """Validate specialized AncestryError subclasses capture metadata."""
 
-        # Test AppError with category and severity
-        if "ErrorCategory" in globals() and "ErrorSeverity" in globals():
-            error_with_details = AppError(
-                "detailed error",
-                category=globals()["ErrorCategory"].VALIDATION,
-                severity=globals()["ErrorSeverity"].HIGH
-            )
-            assert error_with_details.message == "detailed error"
-            assert error_with_details.category == globals()["ErrorCategory"].VALIDATION
-            assert error_with_details.severity == globals()["ErrorSeverity"].HIGH
+    error = AppError(
+        "test error",
+        category=ErrorCategory.VALIDATION,
+        severity=ErrorSeverity.HIGH,
+        context={"field": "name"},
+    )
+    assert error.category is ErrorCategory.VALIDATION
+    assert error.severity is ErrorSeverity.HIGH
+    assert error.context == {"field": "name"}
 
-    # Test specific error types
-    specific_errors = [
-        "NetworkTimeoutError", "AuthenticationExpiredError", "DataValidationError",
-        "BrowserSessionError", "ConfigurationError", "FatalError"
-    ]
+    retryable = APIRateLimitError(retry_after=42)
+    assert isinstance(retryable, RetryableError)
+    assert retryable.retry_after == 42, "APIRateLimitError should expose retry_after value"
 
-    for error_name in specific_errors:
-        if error_name in globals():
-            try:
-                error_class = globals()[error_name]
-                error_instance = error_class("Test error message")
-                assert hasattr(error_instance, 'message'), f"{error_name} should have message attribute"
-                assert hasattr(error_instance, 'category'), f"{error_name} should have category attribute"
-                assert hasattr(error_instance, 'severity'), f"{error_name} should have severity attribute"
-            except Exception:
-                pass  # Some error types might require specific parameters
+    validation_error = DataValidationError(validation_errors=["missing birth date"])
+    assert validation_error.validation_errors == ["missing birth date"]
+
+    auth_error = AuthenticationExpiredError(context={"session": "abc"})
+    assert auth_error.context == {"session": "abc"}
 
 
 def test_error_recovery() -> None:
-    """Test error recovery and fallback mechanisms."""
+    """Exercise ErrorRecoveryManager circuit breaker orchestration."""
 
-    # Test error recovery with failing function
-    def failing_func() -> None:
-        raise ValueError("test error")
+    manager = ErrorRecoveryManager()
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
-    def successful_func() -> str:
-        return "success"
+    def sample_strategy(*args: Any, **kwargs: Any) -> None:
+        calls.append((args, kwargs))
 
-    if "safe_execute" in globals():
-        # Test basic error recovery
-        result = safe_execute(failing_func, default_return="recovered")
-        assert result == "recovered", "safe_execute should provide fallback on error"
+    manager.register_recovery_strategy("api", sample_strategy)
+    manager.recovery_strategies["api"]("arg")
+    assert calls and calls[0][0] == ("arg",)
 
-        # Test successful execution doesn't trigger recovery
-        result = safe_execute(successful_func, default_return="should_not_use")
-        assert result == "success", "safe_execute should return actual result on success"
+    breaker = manager.get_circuit_breaker("api", CircuitBreakerConfig(failure_threshold=2, recovery_timeout=0))
+    breaker.record_failure()
+    assert manager.get_health_status()["api"]["failure_count"] == 1
 
-        # Test with different error types
-        def network_error_func() -> None:
-            raise ConnectionError("Network error")
+    breaker.record_failure()
+    assert manager.get_health_status()["api"]["state"] == CircuitState.OPEN.value
 
-        result = safe_execute(network_error_func, default_return="network_recovered")
-        assert result == "network_recovered", "safe_execute should handle network errors"
-
-    # Test ErrorRecoveryManager if available
-    if "ErrorRecoveryManager" in globals():
-        try:
-            manager = globals()["ErrorRecoveryManager"]()
-            assert manager is not None, "ErrorRecoveryManager should be instantiable"
-        except Exception:
-            pass  # Manager might require specific setup
+    manager.reset_all_circuit_breakers()
+    assert manager.get_health_status()["api"]["state"] == CircuitState.CLOSED.value
 
 
 def test_circuit_breaker() -> None:
-    """Test circuit breaker pattern for fault tolerance."""
-    if "CircuitBreaker" in globals():
-        try:
-            config = CircuitBreakerConfig(failure_threshold=3, timeout=1)
-            cb = CircuitBreaker(name="test", config=config)
-            assert cb is not None, "CircuitBreaker should be instantiable"
+    """Validate that CircuitBreaker transitions through OPEN → HALF_OPEN → CLOSED."""
 
-            # Test initial state
-            if hasattr(cb, 'state'):
-                initial_state = cb.state
-                assert initial_state is not None, "CircuitBreaker should have initial state"
+    config = CircuitBreakerConfig(failure_threshold=1, recovery_timeout=0, success_threshold=1)
+    breaker = CircuitBreaker(name="unit", config=config)
 
-            # Test failure recording
-            if hasattr(cb, 'record_failure'):
-                for _ in range(2):  # Record some failures but not enough to open
-                    cb.record_failure()
+    def _fail() -> None:
+        raise RuntimeError("boom")
 
-                # Test that circuit breaker tracks failures
-                if hasattr(cb, 'failure_count'):
-                    assert cb.failure_count >= 0, "CircuitBreaker should track failure count"
+    with contextlib.suppress(RuntimeError):
+        breaker.call(_fail)
 
-            # Test success recording
-            if hasattr(cb, 'record_success'):
-                cb.record_success()
+    assert breaker.state is CircuitState.OPEN, "Failure threshold should open circuit"
 
-        except Exception:
-            pass  # Circuit breaker might require specific setup
+    if breaker.last_failure_time is None:
+        breaker.last_failure_time = time.time() - 1
+    else:
+        breaker.last_failure_time -= config.recovery_timeout + 1
 
-    # Test circuit breaker configuration
-    if "CircuitBreakerConfig" in globals():
-        try:
-            config = globals()["CircuitBreakerConfig"](failure_threshold=5, recovery_timeout=2)
-            assert config is not None, "CircuitBreakerConfig should be instantiable"
-        except Exception:
-            pass
+    result = breaker.call(lambda: "ok")
+    assert result == "ok"
+    assert breaker.state is CircuitState.CLOSED, "Successful half-open call should close breaker"
 
 
 def test_error_context() -> None:
-    """Test error context tracking and propagation."""
-    if "ErrorContext" in globals():
-        try:
-            ctx = ErrorContext("test_operation")
-            assert ctx is not None, "ErrorContext should be instantiable"
+    """Ensure ErrorContext reports failures through handle_error and preserves context."""
 
-            # Test context properties
-            if hasattr(ctx, 'operation_name'):
-                assert ctx.operation_name == "test_operation", "ErrorContext should store operation name"
+    handled: list[dict[str, Any]] = []
 
-        except Exception:
-            pass  # Error context might require specific setup
+    class ContextRecordingHandler(ErrorHandler):
+        @staticmethod
+        def can_handle(error: Exception) -> bool:
+            return isinstance(error, RuntimeError)
 
-    # Test error context in AppError
-    if "AppError" in globals():
-        context_data = {"user_id": "test123", "action": "test_action", "timestamp": "2024-01-01"}
-        error = AppError("Test error with context", context=context_data)
+        @staticmethod
+        def handle(error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+            handled.append(context or {})
+            return AppError(str(error), context=context, original_exception=error)
 
-        if hasattr(error, 'context'):
-            assert error.context == context_data, "AppError should store context data"
-            assert error.context.get("user_id") == "test123", "Context should contain user_id"
-            assert error.context.get("action") == "test_action", "Context should contain action"
+    register_error_handler(ContextRecordingHandler())
 
-    # Test context propagation through error handling
-    if "handle_error" in globals():
-        try:
-            raise ValueError("Test error for context propagation")
-        except Exception as e:
-            context = {"source": "test_function", "line": 123}
-            app_error = handle_error(e, context=context)
+    try:
+        with ErrorContext("test_operation", log_success=False):
+            raise RuntimeError("boom")
+    except RuntimeError:
+        pass
 
-            if hasattr(app_error, 'context'):
-                assert app_error.context.get("source") == "test_function", "Context should propagate through handle_error"
+    assert handled, "ErrorContext should route exceptions through handle_error"
+    assert handled[-1].get("operation") == "test_operation"
+
+    with ErrorContext("success_operation"):
+        result = "ok"
+    assert result == "ok"
 
 
 # =============================================

@@ -115,9 +115,7 @@ def is_elem_there(
         return False
 
     if wait and wait > 0:
-        WebDriverWait(driver, wait).until(
-            expected_conditions.presence_of_element_located((by, selector))
-        )
+        WebDriverWait(driver, wait).until(expected_conditions.presence_of_element_located((by, selector)))
         return True
 
     driver.find_element(by, selector)
@@ -173,6 +171,7 @@ def export_cookies(driver: Optional[WebDriver], filepath: str) -> bool:
 
     cookies = get_driver_cookies(driver)
     from pathlib import Path
+
     with Path(filepath).open("w", encoding="utf-8") as f:
         json.dump(cookies, f, indent=2)
     return True
@@ -235,76 +234,6 @@ def is_element_visible(element: Optional[WebElement]) -> bool:
     return element_proto.is_displayed()
 
 
-def selenium_module_tests() -> list[tuple[str, Any]]:
-    """Essential selenium utilities tests for unified framework."""
-    import time
-    from unittest.mock import MagicMock
-
-    tests: list[tuple[str, Any]] = []
-
-    # Test 1: Function availability
-    def test_function_availability():
-        required_functions = [
-            "force_user_agent",
-            "extract_text",
-            "extract_attribute",
-            "is_elem_there",
-            "safe_click",
-            "get_element_text",
-            "is_element_visible",
-        ]
-        for func_name in required_functions:
-            assert func_name in globals(), f"Function {func_name} should be available"
-            assert callable(
-                globals()[func_name]
-            ), f"Function {func_name} should be callable"
-
-    tests.append(("Function Availability", test_function_availability))
-
-    # Test 2: Force user agent functionality
-    def test_force_user_agent():
-        mock_driver = MagicMock()
-        result = force_user_agent(mock_driver, "test-agent")
-        mock_driver.execute_script.assert_called_once()
-        assert result, "force_user_agent should return True on success"
-
-    tests.append(("Force User Agent", test_force_user_agent))
-
-    # Test 3: Safe execution with None
-    def test_safe_execution():
-        assert not extract_text(None), "extract_text should handle None safely"
-        assert (
-            not extract_attribute(None, "href")
-        ), "extract_attribute should handle None safely"
-        assert (
-            not is_elem_there(None, "selector")
-        ), "is_elem_there should handle None safely"
-
-    tests.append(("Safe Execution", test_safe_execution))
-
-    # Test 4: Element text extraction
-    def test_element_text():
-        mock_element = MagicMock()
-        mock_element.text = "test text"
-        result = get_element_text(mock_element)
-        assert result == "test text", "Should extract text from element"
-
-    tests.append(("Element Text Extraction", test_element_text))
-
-    # Test 5: Performance validation
-    def test_performance():
-        start_time = time.time()
-        for _ in range(100):  # Reduced for faster testing
-            extract_text(None)
-            is_elem_there(None, "test")
-        duration = time.time() - start_time
-        assert duration < 0.1, f"Operations should be fast, took {duration:.3f}s"
-
-    tests.append(("Performance Validation", test_performance))
-
-    return tests
-
-
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
@@ -313,37 +242,63 @@ def selenium_module_tests() -> list[tuple[str, Any]]:
 # Removed smoke test: _test_function_availability - only checked availability in globals()
 
 
-def _test_force_user_agent():
-    """Test force_user_agent function."""
-    assert callable(force_user_agent), "force_user_agent should be callable"
-
-
-def _test_safe_execution():
-    """Test safe execution wrappers."""
-    assert callable(extract_text), "extract_text should be callable"
-    assert callable(extract_attribute), "extract_attribute should be callable"
-
-
-def _test_element_text():
-    """Test element text extraction."""
+def _test_safe_click_interactions() -> None:
+    """Verify safe_click scrolls elements and respects guard rails."""
     from unittest.mock import MagicMock
-    mock_elem = MagicMock()
-    mock_elem.text = "Test"
-    result = extract_text(mock_elem)
-    assert result == "Test"
+
+    mock_driver = MagicMock()
+    mock_element = MagicMock()
+
+    assert safe_click(mock_driver, mock_element) is True
+    mock_driver.execute_script.assert_called_once_with("arguments[0].scrollIntoView(true);", mock_element)
+    mock_element.click.assert_called_once()
+    assert safe_click(None, mock_element) is False
+    assert safe_click(mock_driver, None) is False
 
 
-def _test_performance():
-    """Test performance of utility functions."""
-    import time
+def _test_force_user_agent_behavior() -> None:
+    """Ensure force_user_agent updates navigator.userAgent via execute_script."""
     from unittest.mock import MagicMock
-    start = time.time()
-    for _ in range(100):
-        mock_elem = MagicMock()
-        mock_elem.text = "Test"
-        _ = extract_text(mock_elem)
-    elapsed = time.time() - start
-    assert elapsed < 1.0, f"Should be fast, took {elapsed:.3f}s"
+
+    mock_driver = MagicMock()
+    assert force_user_agent(mock_driver, "test-agent") is True
+    mock_driver.execute_script.assert_called_once_with("navigator.userAgent = arguments[0]", "test-agent")
+    assert force_user_agent(None, "ua") is False
+
+
+def _test_cookie_export_roundtrip() -> None:
+    """Validate export_cookies writes driver cookies to disk."""
+    import json as _json
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    mock_driver = MagicMock()
+    cookie_payload = [{"name": "session", "value": "abc"}]
+    mock_driver.get_cookies.return_value = cookie_payload
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        target = Path(tmp_dir) / "cookies.json"
+        assert export_cookies(mock_driver, str(target)) is True
+        on_disk = _json.loads(target.read_text(encoding="utf-8"))
+        assert on_disk == cookie_payload
+
+
+def _test_element_helpers() -> None:
+    """Exercise attribute/text extraction and visibility helpers."""
+    from unittest.mock import MagicMock
+
+    mock_element = MagicMock()
+    mock_element.text = "Hello"
+    mock_element.get_attribute.return_value = "https://example"
+    mock_element.is_displayed.return_value = True
+
+    assert extract_text(mock_element) == "Hello"
+    assert extract_attribute(mock_element, "href") == "https://example"
+    assert get_element_text(mock_element) == "Hello"
+    assert is_element_visible(mock_element) is True
+    assert not extract_attribute(None, "href")
+    assert not is_element_visible(None)
 
 
 # ==============================================
@@ -358,32 +313,43 @@ def selenium_utils_module_tests() -> bool:
     suite = TestSuite("Selenium Utilities & Browser Automation", "selenium_utils.py")
     suite.start_suite()
 
-    # Assign module-level test functions
-    # Removed: test_function_availability = _test_function_availability (smoke test)
-    test_force_user_agent = _test_force_user_agent
-    test_safe_execution = _test_safe_execution
-    test_element_text = _test_element_text
-    test_performance = _test_performance
+    # Assign behavior-focused module-level test functions
+    test_safe_click = _test_safe_click_interactions
+    test_force_user_agent = _test_force_user_agent_behavior
+    test_cookie_export = _test_cookie_export_roundtrip
+    test_element_helpers = _test_element_helpers
 
     # Define all tests in a data structure to reduce complexity
     tests = [
         # Removed smoke test: Function Availability
-        ("Force User Agent", test_force_user_agent,
-         "force_user_agent function is callable",
-         "Test user agent modification",
-         "Verify force_user_agent exists"),
-        ("Safe Execution", test_safe_execution,
-         "Safe execution wrappers are callable",
-         "Test safe execution functions",
-         "Verify extract_text and extract_attribute are callable"),
-        ("Element Text", test_element_text,
-         "Element text extraction works correctly",
-         "Test text extraction from mock element",
-         "Verify extract_text returns correct text"),
-        ("Performance", test_performance,
-         "Utility functions are performant",
-         "Test performance of 100 text extractions",
-         "Verify operations complete in less than 1 second"),
+        (
+            "Safe Click Interactions",
+            test_safe_click,
+            "safe_click scrolls elements and respects guard clauses",
+            "Simulate clicking via MagicMock",
+            "safe_click should scroll, click, and guard against missing args",
+        ),
+        (
+            "Force User Agent",
+            test_force_user_agent,
+            "force_user_agent executes CDP script",
+            "Mock driver execute_script calls",
+            "Driver execute_script should receive navigator.userAgent override",
+        ),
+        (
+            "Cookie Export",
+            test_cookie_export,
+            "export_cookies writes JSON payloads",
+            "Round-trip cookies to temp file",
+            "File contents should match driver.get_cookies output",
+        ),
+        (
+            "Element Helper Functions",
+            test_element_helpers,
+            "Element helpers extract text/attributes and visibility",
+            "Use MagicMock to cover helper routines",
+            "Helpers should return data and guard against None inputs",
+        ),
     ]
 
     with suppress_logging():
@@ -402,6 +368,7 @@ run_comprehensive_tests = create_standard_test_runner(selenium_utils_module_test
 
 if __name__ == "__main__":
     import sys
+
     print("🧪 Running Selenium Utils Comprehensive Tests...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
