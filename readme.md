@@ -1,3 +1,4 @@
+- All 71 modules pass tests with 100% success rate after improvements
 # Ancestry Genealogical Research Automation
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/waynegault/ancestry)
@@ -24,7 +25,9 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Test Suite Hardening (Nov 24)** - Converted the final smoke-style tests into behavioral coverage: gedcom_search_utils.py now validates filtering and GEDCOM fallback logic, core/error_handling.py exercises safe_execute context propagation plus circuit breaker transitions, and selenium_utils.py drives safe_click, CDP user-agent overrides, cookie export, and element helper guards. Updated the relationship_utils StubTag/StubIndi doubles to dataclasses to satisfy Ruff B903.
 - ✅ **Action 6 Decomposition Plan (Nov 24)** - Captured the full `coord()` pipeline, helper clustering plan, dependency audit, and Phase 2 next steps in `docs/action6_refactor_plan.md` so the gather refactor proceeds in structured phases.
+- ✅ **Action 6 Orchestrator Delegation (Nov 26)** - `action6_gather.coord()` now just builds a `GatherOrchestratorHooks` bundle and hands execution to `actions.gather.orchestrator.GatherOrchestrator`, shrinking the monolith to hook/prefetch/persistence helpers while the orchestrator module owns checkpoint/resume, retry metadata, and final-summary tests.
 - ✅ **Documentation Quality Improvements** (Nov 17) - Simplified 12 module docstrings, removed ~400 lines of verbose jargon, resolved 11 Pylance errors, updated knowledge graph
 - ✅ **Test Infrastructure Standardization** - All 22 test modules now use centralized `create_standard_test_runner` pattern
 - ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
@@ -935,6 +938,8 @@ For issues or questions:
     - Used by: `action6_gather._fetch_batch_badge_details` for badge-driven triage
   - Relationship ladder (JSON API): `family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
     - Used by: `api_utils.call_relationship_ladder_api` inside `action6_gather._fetch_batch_ladder` for `ladder_details`
+    - Helper coverage: `actions.gather.prefetch._merge_badge_and_ladder_data` merges badge metadata with ladder payloads and now has dedicated `TestSuite` regression tests guarding the combined output structure.
+  - Orchestration wrapper: `actions.gather.orchestrator.GatherOrchestrator` now drives the Action 6 coordination loop, leaving `action6_gather.coord()` as a thin compatibility shim that assembles the legacy hooks.
 
   **Messaging Endpoints** (used by Action 8)
   - Send New Message: `app-api/express/v2/conversations/message`

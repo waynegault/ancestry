@@ -38,6 +38,8 @@ import html
 import re
 import time
 from collections import OrderedDict, deque
+from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Callable, Optional, Protocol, Union, cast
 
 # --- Try to import BeautifulSoup ---
@@ -1777,25 +1779,21 @@ def relationship_module_tests() -> None:
 
     tests: list[tuple[str, Callable[[], Any]]] = []
 
-    # Test 1: Function availability
-    def test_function_availability():
-        """Test all essential relationship utility functions are available with detailed verification."""
-        required_functions = [
-            'format_name',
-            'fast_bidirectional_bfs',
-            '_get_relationship_term',
-            'format_api_relationship_path',
-            'format_relationship_path_unified',
-            'explain_relationship_path',
-            'convert_api_path_to_unified_format',
+    # Test 1: API path conversion
+    def test_api_path_conversion() -> None:
+        sample_path = [
+            {"name": "Target Example", "relationship": "", "lifespan": "1985-"},
+            {"name": "Parent Example", "relationship": "They are your father", "lifespan": "1955-2010"},
+            {"name": "Owner Example", "relationship": "You are their son", "lifespan": "2005-"},
         ]
 
-        from test_framework import test_function_availability
+        unified = convert_api_path_to_unified_format(sample_path, "Target Example")
+        assert len(unified) == 3, "Converted path should include every hop"
+        assert unified[0]["relationship"] is None, "First entry is the target"
+        assert unified[1]["relationship"] == "father", "Second hop should normalize to father"
+        assert unified[2]["relationship"] == "son", "Final hop should identify the owner as son"
 
-        results = test_function_availability(required_functions, globals(), "Relationship Utils")
-        return all(results)
-
-    tests.append(("Function Availability", test_function_availability))
+    tests.append(("API Path Conversion", test_api_path_conversion))
 
     # Test 2: Name formatting
     def test_name_formatting():
@@ -1965,155 +1963,121 @@ def _run_basic_functionality_tests(suite: TestSuite) -> None:
 def _test_gedcom_path_conversion() -> None:
     """Test GEDCOM path conversion"""
 
-    # Create mock GEDCOM data
-    class MockReader:
-        @staticmethod
-        def get_element_by_id(id_val: str) -> dict[str, str]:
-            return {"name": f"Person {id_val}", "id": id_val}
+    @dataclass
+    class StubTag:
+        value: Optional[str]
 
-    reader = MockReader()
-    gedcom_path = ["@I1@", "@I2@"]
-    id_to_parents = {"@I2@": {"@I1@"}}
-    id_to_children = {"@I1@": {"@I2@"}}
-    indi_index = {"@I1@": {"name": "Parent"}, "@I2@": {"name": "Child"}}
+    @dataclass
+    class StubIndi:
+        name: str
+        birth_year: Optional[int]
+        death_year: Optional[int]
+        _sex: Optional[str]
+
+        def sub_tag(self, tag: str) -> Optional[StubTag]:
+            if tag == TAG_SEX and self._sex:
+                return StubTag(self._sex)
+            return None
+
+    original_get_full_name = _get_full_name
+    original_get_event_info = _get_event_info
+
+    def fake_get_full_name(indi: StubIndi) -> str:
+        return indi.name
+
+    def fake_get_event_info(indi: StubIndi, tag: str) -> tuple[Optional[SimpleNamespace], None, None]:
+        year_attr = "birth_year" if tag == TAG_BIRTH else "death_year"
+        year_val = getattr(indi, year_attr, None)
+        return (SimpleNamespace(year=year_val) if year_val is not None else None, None, None)
+
+    globals()["_get_full_name"] = fake_get_full_name
+    globals()["_get_event_info"] = fake_get_event_info
 
     try:
-        unified = convert_gedcom_path_to_unified_format(gedcom_path, reader, id_to_parents, id_to_children, indi_index)
-        # If it doesn't raise an exception, verify the result
-        assert unified is not None, "Should convert GEDCOM path"
-        assert isinstance(unified, list), "Should return list format"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These specific exceptions are acceptable for mock data
-        logger.debug(f"Expected exception for mock data: {e}")
-    except Exception as e:
-        # Unexpected exceptions should fail the test
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+        path_ids = ["@C@", "@P@", "@GP@"]
+        id_to_parents = {"@C@": {"@P@"}, "@P@": {"@GP@"}}
+        id_to_children = {"@P@": {"@C@"}, "@GP@": {"@P@"}}
+        indi_index = {
+            "@C@": StubIndi("Child Example", 1990, None, "F"),
+            "@P@": StubIndi("Parent Example", 1965, None, "F"),
+            "@GP@": StubIndi("Grandparent Example", 1940, 2010, "M"),
+        }
+
+        unified = convert_gedcom_path_to_unified_format(path_ids, None, id_to_parents, id_to_children, indi_index)
+        assert len(unified) == 3, "Converted path should include all individuals"
+        assert unified[0]["birth_year"] == "1990", "Child birth year should be captured"
+        assert unified[1]["relationship"] == "mother", "Parent hop should resolve to mother"
+        assert unified[2]["relationship"] == "father", "Ancestor hop should resolve to parent relationship"
+    finally:
+        globals()["_get_full_name"] = original_get_full_name
+        globals()["_get_event_info"] = original_get_event_info
 
 
 def _test_discovery_api_conversion() -> None:
     """Test Discovery API path conversion"""
-    # Test function availability
-    assert callable(convert_discovery_api_path_to_unified_format), "Function should be callable"
 
-    # Verify function is not None
-    func = convert_discovery_api_path_to_unified_format
-    assert func is not None, "Function should be available"
+    mock_discovery_data = {
+        "path": [
+            {"name": "Parent", "relationship": "is the father of"},
+            {"name": "Owner", "relationship": "is the son of"},
+        ]
+    }
 
-    # Test 1: Empty path (edge case)
-    try:
-        mock_discovery_data = {"path": []}  # Empty path
-        mock_target_name = "Test Person"
-        result = func(mock_discovery_data, mock_target_name)
-        assert isinstance(result, list), f"Expected list, got {type(result)}"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These specific exceptions are acceptable for empty/mock data
-        logger.debug(f"Expected exception for empty path: {e}")
-    except Exception as e:
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
-
-    # Test 2: Valid path with relationship data
-    try:
-        mock_discovery_data = {
-            "path": [{"name": "Person A", "relationship": "self"}, {"name": "Person B", "relationship": "parent"}]
-        }
-        mock_target_name = "Person B"
-        result = func(mock_discovery_data, mock_target_name)
-        assert isinstance(result, list), f"Expected list, got {type(result)}"
-        if result:  # If conversion succeeded
-            assert len(result) > 0, "Should have at least one relationship step"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These exceptions are acceptable if the mock data structure doesn't match expected format
-        logger.debug(f"Expected exception for mock data structure: {e}")
-    except Exception as e:
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+    result = convert_discovery_api_path_to_unified_format(mock_discovery_data, "Target")
+    assert len(result) == 3, "Target plus two hops should be returned"
+    assert result[1]["relationship"] == "father", "Relationship text should normalize to father"
+    assert result[1]["gender"] == "M", "Gender should infer from relationship term"
+    assert result[2]["relationship"] == "son", "Owner hop should normalize to son"
 
 
 def _test_general_api_conversion() -> None:
     """Test General API path conversion"""
-    # Test function availability
-    assert callable(convert_api_path_to_unified_format), "Function should be callable"
 
-    # Verify function is not None
-    func = convert_api_path_to_unified_format
-    assert func is not None, "Function should be available"
+    relationship_data = [
+        {"name": "Target", "relationship": "", "lifespan": "1950-2010", "gender": "M"},
+        {"name": "Sibling", "relationship": "They are your sister", "lifespan": "1975-"},
+        {"name": "Owner", "relationship": "You are their daughter", "lifespan": "2000-"},
+    ]
 
-    # Test 1: Empty relationship data (edge case)
-    try:
-        mock_api_data = []  # Empty relationship data list
-        mock_target_name = "Test Person"
-        result = func(mock_api_data, mock_target_name)
-        assert isinstance(result, list), f"Expected list, got {type(result)}"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These specific exceptions are acceptable for empty/mock data
-        logger.debug(f"Expected exception for empty data: {e}")
-    except Exception as e:
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
-
-    # Test 2: Valid relationship data
-    try:
-        mock_api_data = [{"name": "Person A", "relation": "self"}, {"name": "Person B", "relation": "parent"}]
-        mock_target_name = "Person B"
-        result = func(mock_api_data, mock_target_name)
-        assert isinstance(result, list), f"Expected list, got {type(result)}"
-        if result:  # If conversion succeeded
-            assert len(result) > 0, "Should have at least one relationship step"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These exceptions are acceptable if the mock data structure doesn't match expected format
-        logger.debug(f"Expected exception for mock data structure: {e}")
-    except Exception as e:
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+    result = convert_api_path_to_unified_format(relationship_data, "Target")
+    assert len(result) == 3, "Every hop should be preserved"
+    assert result[0]["birth_year"] == "1950", "Lifespan parsing should capture birth year"
+    assert result[1]["relationship"] == "sister", "Relationship text should normalize to sister"
+    assert result[1]["gender"] == "F", "Gender inference should detect female from relationship"
+    assert result[2]["relationship"] == "daughter", "Owner hop should normalize inverse relationship"
 
 
 def _test_unified_path_formatting() -> None:
     """Test Unified path formatting"""
-    # Test function availability
-    assert callable(format_relationship_path_unified), "Function should be callable"
 
-    # Verify function is not None
-    func = format_relationship_path_unified
-    assert func is not None, "Function should be available"
+    mock_path = [
+        {"name": "Target", "birth_year": "1950", "death_year": "2010", "relationship": None, "gender": "M"},
+        {"name": "Parent", "birth_year": "1920", "death_year": "1990", "relationship": "father", "gender": "M"},
+        {"name": "Owner", "birth_year": "1985", "death_year": None, "relationship": "son", "gender": "M"},
+    ]
 
-    # Test with minimal mock data to verify it handles input
-    try:
-        # Create minimal unified path structure
-        mock_path = []  # Empty path
-        mock_target_name = "Test Target"
-        mock_owner_name = "Test Owner"
-        result = func(mock_path, mock_target_name, mock_owner_name)
-        # If it doesn't raise an exception, verify result type
-        assert isinstance(result, str), f"Expected str, got {type(result)}"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These specific exceptions are acceptable for empty/mock data
-        logger.debug(f"Expected exception for mock data: {e}")
-    except Exception as e:
-        # Unexpected exceptions should fail the test
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+    narrative = format_relationship_path_unified(mock_path, "Target", "Owner", "grandfather")
+    assert "Relationship between Target" in narrative, "Header should mention target"
+    assert "Owner" in narrative, "Owner name should be referenced"
+    assert "Target is Owner's grandfather" in narrative, "Provided relationship type should be used"
+    assert "- Target's father is Parent" in narrative, "Narrative should include possessive hop description"
 
 
 def _test_api_relationship_formatting() -> None:
     """Test API relationship path formatting"""
-    # Test function availability
-    assert callable(format_api_relationship_path), "Function should be callable"
 
-    # Verify function is not None
-    func = format_api_relationship_path
-    assert func is not None, "Function should be available"
+    api_response = {
+        "path": [
+            {"name": "Target", "relationship": "self"},
+            {"name": "Parent", "relationship": "is the father of"},
+            {"name": "Owner", "relationship": "is the son of"},
+        ]
+    }
 
-    # Test with minimal mock data to verify it handles input
-    try:
-        # Create minimal API relationship data
-        mock_api_response = None  # None response
-        mock_owner_name = "Test Owner"
-        mock_target_name = "Test Target"
-        result = func(mock_api_response, mock_owner_name, mock_target_name)
-        # If it doesn't raise an exception, verify result type
-        assert isinstance(result, str), f"Expected str, got {type(result)}"
-    except (ValueError, KeyError, TypeError, AttributeError) as e:
-        # These specific exceptions are acceptable for None/mock data
-        logger.debug(f"Expected exception for mock data: {e}")
-    except Exception as e:
-        # Unexpected exceptions should fail the test
-        raise AssertionError(f"Unexpected exception type: {type(e).__name__}: {e}") from e
+    rendered = format_api_relationship_path(api_response, "Owner", "Target")
+    assert "Target" in rendered and "Owner" in rendered, "Formatted output should reference both parties"
+    assert "father" in rendered.lower(), "Relationship narrative should mention the father hop"
+    assert rendered.strip().startswith("*"), "Discovery JSON format should render bullet list"
 
 
 def _run_conversion_tests(suite: TestSuite) -> None:
@@ -2216,23 +2180,16 @@ def _run_validation_tests(suite: TestSuite) -> None:
 
         assert bfs_duration < 1.0, f"BFS too slow: {bfs_duration:.3f}s"
 
-    def test_function_availability():
-        # Verify all major functions are available
-        required_functions = [
-            "format_name",
-            "fast_bidirectional_bfs",
-            "explain_relationship_path",
-            "format_api_relationship_path",
-            "convert_gedcom_path_to_unified_format",
-            "convert_discovery_api_path_to_unified_format",
-            "convert_api_path_to_unified_format",
-            "format_relationship_path_unified",
+    def test_relationship_narrative_generation():
+        path_data = [
+            {"name": "Target", "birth_year": "1970", "death_year": None, "relationship": None, "gender": "F"},
+            {"name": "Parent", "birth_year": "1950", "death_year": None, "relationship": "mother", "gender": "F"},
+            {"name": "Owner", "birth_year": "1995", "death_year": None, "relationship": "son", "gender": "M"},
         ]
 
-        from test_framework import test_function_availability
-
-        results = test_function_availability(required_functions, globals(), "Relationship Utils")
-        assert all(results), "Some required functions are missing"
+        narrative = format_relationship_path_unified(path_data, "Target", "Owner", None)
+        assert "Target" in narrative and "Owner" in narrative, "Narrative should reference both people"
+        assert "mother" in narrative.lower(), "Relationship narrative should mention the mother hop"
 
     suite.run_test(
         "Error handling and edge cases",
@@ -2251,11 +2208,11 @@ def _run_validation_tests(suite: TestSuite) -> None:
     )
 
     suite.run_test(
-        "Function availability verification",
-        test_function_availability,
-        "All required relationship utility functions are available and callable",
-        "Test availability of format_name, BFS, and conversion functions",
-        "Function availability ensures complete relationship utility interface",
+        "Relationship narrative generation",
+        test_relationship_narrative_generation,
+        "format_relationship_path_unified produces readable narratives",
+        "Test formatting of a simple parent/child path",
+        "Narrative output should mention both participants and the intermediate relationship",
     )
 
 

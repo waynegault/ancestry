@@ -25,7 +25,6 @@ from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
 from cache import cache as disk_cache
-from core.error_handling import with_enhanced_recovery
 from health_monitor import get_health_monitor, integrate_with_action6
 from relationship_utils import (
     convert_api_path_to_unified_format,
@@ -171,16 +170,13 @@ logger = OptimizedLogger(raw_logger)
 
 # === STANDARD LIBRARY IMPORTS ===
 import importlib
-import json
 import logging
 import math
 import random
 import sys
-import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import unquote, urlencode, urljoin, urlparse
@@ -208,44 +204,25 @@ from core.error_handling import (
     NetworkTimeoutError,
     RetryableError,
     api_retry,
-    circuit_breaker,
-    error_context,
-    selenium_retry,
-    timeout_protection,
 )
 
 # === LOCAL IMPORTS ===
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
-from actions.gather.checkpoint import (
-    GatherCheckpointPlan,
-    clear_checkpoint,
-    finalize_checkpoint_after_run,
-    load_checkpoint,
-    persist_checkpoint,
-    write_checkpoint_state,
-)
-from actions.gather.metrics import (
-    PageProcessingMetrics,
-    accumulate_page_metrics as _accumulate_page_metrics,
-    collect_total_processed as _collect_total_processed,
-    compose_progress_snapshot as _compose_progress_snapshot,
-    log_page_completion_summary as _log_page_completion_summary,
-    log_page_start as _log_page_start,
-    log_timing_breakdown as _log_timing_breakdown,
+from actions.gather.metrics import PageProcessingMetrics
+from actions.gather.orchestrator import GatherOrchestrator, GatherOrchestratorHooks
+from actions.gather.persistence import (
+    BatchLookupArtifacts,
+    PersistenceHooks,
+    prepare_and_commit_batch_data as gather_prepare_and_commit_batch_data,
+    process_batch_lookups as gather_process_batch_lookups,
 )
 from actions.gather.prefetch import (
     PrefetchConfig,
     PrefetchHooks,
     get_prefetched_data_for_match as _get_prefetched_data_for_match,
     perform_api_prefetches as gather_perform_api_prefetches,
-)
-from actions.gather.persistence import (
-    BatchLookupArtifacts,
-    PersistenceHooks,
-    prepare_and_commit_batch_data as gather_prepare_and_commit_batch_data,
-    process_batch_lookups as gather_process_batch_lookups,
 )
 from api_constants import API_PATH_PROFILE_DETAILS
 from config import config_schema
@@ -496,102 +473,6 @@ def _needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
     return False
 
 
-# Note: _apply_rate_limiting function moved to line ~768 (after helper functions)
-
-
-# ------------------------------------------------------------------------------
-# Refactored coord Helpers
-# ------------------------------------------------------------------------------
-
-
-def _initialize_gather_state() -> dict[str, Any]:
-    """Initializes counters and state variables for the gathering process."""
-    return {
-        "total_new": 0,
-        "total_updated": 0,
-        "total_skipped": 0,
-        "total_errors": 0,
-        "total_pages_processed": 0,
-        "db_connection_errors": 0,
-        "final_success": True,
-        "matches_on_current_page": [],
-        "total_pages_from_api": None,
-        "aggregate_metrics": PageProcessingMetrics(),
-        "pages_with_metrics": 0,
-        "pages_target": 0,
-        "total_pages_in_run": 0,
-        "last_page_to_process": 0,
-        "run_started_at": time.time(),
-        "resume_from_checkpoint": False,
-        "requested_start_page": None,
-        "effective_start_page": 1,
-        "last_checkpoint_written_at": None,
-        "checkpoint_metadata": None,
-    }
-
-
-# End of _initialize_gather_state
-
-
-def _validate_start_page(start_arg: Any) -> int:
-    """Validates and returns the starting page number."""
-    try:
-        start_page = int(start_arg)
-        if start_page <= 0:
-            logger.warning(f"Invalid start page '{start_arg}'. Using default page 1.")
-            return 1
-        return start_page
-    except (ValueError, TypeError):
-        logger.warning(f"Invalid start page value '{start_arg}'. Using default page 1.")
-        return 1
-
-
-# End of _validate_start_page
-
-
-def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional[dict[str, Any]]]:
-    """Resolve the effective start page, optionally resuming from checkpoint."""
-    if start_arg is not None:
-        return _validate_start_page(start_arg), False, None
-
-    checkpoint_data = load_checkpoint()
-    if not checkpoint_data:
-        return 1, False, None
-
-    resume_page = checkpoint_data.get("next_page")
-    if resume_page is None:
-        resume_page_int = 1
-    else:
-        try:
-            resume_page_int = max(1, int(resume_page))
-        except (TypeError, ValueError):
-            resume_page_int = 1
-
-    last_page = checkpoint_data.get("last_page", resume_page_int)
-    if last_page is None:
-        last_page_int = resume_page_int
-    else:
-        try:
-            last_page_int = max(1, int(last_page))
-        except (TypeError, ValueError):
-            last_page_int = resume_page_int
-
-    if resume_page_int > last_page_int:
-        logger.debug(
-            "Checkpoint requested resume page %s beyond last page %s; starting fresh.",
-            resume_page_int,
-            last_page_int,
-        )
-        return 1, False, None
-
-    logger.info(
-        "Resuming Action 6 from checkpoint page %d (planned last page %d).",
-        resume_page_int,
-        last_page_int,
-    )
-    return resume_page_int, True, checkpoint_data
-
-
 def _try_get_csrf_from_api(session_manager: "SessionManager") -> Optional[str]:
     """
     Try to get fresh CSRF token from API.
@@ -803,810 +684,36 @@ def _determine_page_processing_range(total_pages_from_api: int, start_page: int)
 # End of _determine_page_processing_range
 
 
-def _validate_session_before_page(
-    session_manager: SessionManager,
-    current_page_num: int,
-    _state: dict[str, Any],
-) -> bool:
-    """Validate session before processing a page.
+def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
+    """Entry point for Action 6 that delegates to the shared orchestrator."""
 
-    Returns:
-        True if session is valid, False otherwise
-    """
-    if not session_manager.is_sess_valid():
-        logger.critical(
-            f"WebDriver session invalid/unreachable before processing page {current_page_num}. Aborting run."
-        )
-        return False
-    return True
-
-
-def _apply_rate_limiting(session_manager: SessionManager, current_page_num: int = 0) -> None:
-    """Apply rate limiting after processing a page.
-
-    Args:
-        session_manager: SessionManager instance
-        current_page_num: Current page number (default: 0 for batch operations)
-    """
-    _adjust_delay(session_manager, current_page_num)
-    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
-    if limiter is not None and hasattr(limiter, "wait"):
-        limiter.wait()
-
-
-def _process_single_page(
-    session_manager: SessionManager,
-    current_page_num: int,
-    start_page: int,
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-    state: dict[str, Any],
-    loop_final_success: bool,
-) -> tuple[int, bool]:
-    """
-    Process a single page of matches.
-
-    Args:
-        session_manager: SessionManager instance
-        current_page_num: Current page number
-        start_page: Starting page number
-        matches_on_page_for_batch: Existing matches if available
-        state: State dictionary
-        loop_final_success: Current success status
-
-    Returns:
-        tuple of (next_page_num, loop_success)
-    """
-    _log_page_start(current_page_num, state)
-
-    # Check session health
-    if not _check_and_handle_session_health(session_manager, current_page_num, state):
-        return current_page_num, False
-
-    # Validate session
-    if not _validate_session_before_page(session_manager, current_page_num, state):
-        return current_page_num, False
-
-    # Fetch and validate page matches
-    matches, should_continue, loop_final_success = _handle_page_fetch_and_validation(
-        session_manager, current_page_num, start_page, matches_on_page_for_batch, state, loop_final_success
-    )
-
-    if should_continue:
-        return current_page_num + 1, loop_final_success
-
-    # Handle empty matches
-    if not matches:
-        logger.info(f"No matches found or processed on page {current_page_num}.")
-        time.sleep(0.2)
-        return current_page_num + 1, loop_final_success
-
-    # Try fast skip
-    if _try_fast_skip_page(session_manager, matches, current_page_num, state):
-        return current_page_num + 1, loop_final_success
-
-    # Process batch
-    page_new, page_updated, page_skipped, page_errors, page_metrics = _do_batch(
-        session_manager=session_manager,
-        matches_on_page=matches,
-        current_page=current_page_num,
-    )
-
-    _update_state_and_progress(state, page_new, page_updated, page_skipped, page_errors)
-
-    progress_snapshot = _compose_progress_snapshot(state)
-
-    _log_page_completion_summary(
-        current_page_num,
-        page_new,
-        page_updated,
-        page_skipped,
-        page_errors,
-        page_metrics,
-        progress_snapshot,
-    )
-
-    _accumulate_page_metrics(state, page_metrics)
-
-    # Rate limiting
-    _apply_rate_limiting(session_manager, current_page_num)
-
-    return current_page_num + 1, loop_final_success
-
-
-def _handle_page_fetch_and_validation(
-    session_manager: SessionManager,
-    current_page_num: int,
-    start_page: int,
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-    state: dict[str, Any],
-    loop_final_success: bool,
-) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
-    """
-    Handle fetching and validating matches for a page.
-
-    Args:
-        session_manager: SessionManager instance
-        current_page_num: Current page number
-        start_page: Starting page number
-        matches_on_page_for_batch: Existing matches if available
-        state: State dictionary
-        loop_final_success: Current success status
-
-    Returns:
-        tuple of (matches, should_continue, loop_success)
-        - matches: list of matches or None
-        - should_continue: True to continue to next page, False to process this page
-        - loop_success: Updated success status
-    """
-    # Fetch match data unless it's the first page and data is already available
-    if current_page_num == start_page and matches_on_page_for_batch is not None:
-        return matches_on_page_for_batch, False, loop_final_success
-
-    db_session_for_page = _get_database_session_with_retry(session_manager, current_page_num, state)
-
-    if not db_session_for_page:
-        state["total_errors"] += MATCHES_PER_PAGE
-        if state["db_connection_errors"] >= DB_ERROR_PAGE_THRESHOLD:
-            logger.critical(f"Aborting run due to {state['db_connection_errors']} consecutive DB connection failures.")
-            return None, True, False  # Continue to next page, but mark as failed
-        return None, True, loop_final_success  # Continue to next page
-
-    matches = _fetch_page_matches(session_manager, db_session_for_page, current_page_num, state)
-
-    if not matches:  # If fetch failed or returned empty
-        time.sleep(0.2 if loop_final_success else 1.0)
-        return None, True, loop_final_success  # Continue to next page
-
-    return matches, False, loop_final_success
-
-
-def _update_state_and_progress(
-    state: dict[str, Any], page_new: int, page_updated: int, page_skipped: int, page_errors: int
-) -> None:
-    """
-    Update state counters after processing a page.
-
-    Args:
-        state: State dictionary for tracking
-        page_new: Number of new matches on page
-        page_updated: Number of updated matches on page
-        page_skipped: Number of skipped matches on page
-        page_errors: Number of errors on page
-    """
-    state["total_new"] += page_new
-    state["total_updated"] += page_updated
-    state["total_skipped"] += page_skipped
-    state["total_errors"] += page_errors
-    state["total_pages_processed"] += 1
-
-    # Log progress summary
-    logger.debug(f"Page totals: {page_new} new, {page_updated} updated, {page_skipped} skipped, {page_errors} errors")
-
-
-def _try_fast_skip_page(
-    session_manager: SessionManager, matches_on_page: list[dict[str, Any]], current_page_num: int, state: dict[str, Any]
-) -> bool:
-    """
-    Try to fast-skip entire page if all matches are unchanged.
-
-    Args:
-        session_manager: SessionManager instance
-    matches_on_page: list of matches on current page
-    current_page_num: Current page number
-    state: State dictionary for tracking
-
-    Returns:
-        bool: True if page was fast-skipped, False otherwise
-    """
-    if not matches_on_page:
-        return False
-
-    # Get a quick DB session for page-level analysis
-    quick_db_session = session_manager.get_db_conn()
-    if not quick_db_session:
-        return False
-
-    try:
-        uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-        if not uuids_on_page:
-            return False
-
-        page_statuses = {"skipped": 0}
-        try:
-            lookup_artifacts = gather_process_batch_lookups(
-                quick_db_session,
-                matches_on_page,
-                current_page_num,
-                page_statuses,
-            )
-        except Exception as fast_skip_exc:
-            logger.debug(
-                "Fast-skip lookup pipeline unavailable for page %s: %s",
-                current_page_num,
-                fast_skip_exc,
-                exc_info=True,
-            )
-            return False
-
-        page_skip_count = page_statuses.get("skipped", 0)
-
-        # If all matches on the page can be skipped, do fast processing
-        if len(lookup_artifacts.fetch_candidates_uuid) == 0:
-            logger.info(f"{len(matches_on_page)} matches unchanged - fast skip")
-            state["total_skipped"] += page_skip_count
-            state["total_pages_processed"] += 1
-            progress_snapshot = _compose_progress_snapshot(state)
-            _log_page_completion_summary(
-                current_page_num,
-                0,
-                0,
-                page_skip_count,
-                0,
-                None,
-                progress_snapshot,
-            )
-            return True
-        return False
-    finally:
-        session_manager.return_session(quick_db_session)
-
-
-def _fetch_page_matches(
-    session_manager: SessionManager, db_session: SqlAlchemySession, current_page_num: int, state: dict[str, Any]
-) -> Optional[list[dict[str, Any]]]:
-    """
-    Fetch matches for a specific page with error handling.
-
-    Args:
-        session_manager: SessionManager instance
-        db_session: Database session
-    current_page_num: Current page number being processed
-    state: State dictionary for error accumulation
-
-    Returns:
-        list of matches or None if fetch failed
-    """
-    try:
-        if not session_manager.is_sess_valid():
-            raise ConnectionError(f"WebDriver session invalid before get_matches page {current_page_num}.")
-        result = get_matches(session_manager, db_session, current_page_num)
+    def _orchestrator_get_matches(
+        sess_mgr: SessionManager,
+        db_session: SqlAlchemySession,
+        current_page: int,
+    ) -> Optional[tuple[list[dict[str, Any]], int]]:
+        result = get_matches(sess_mgr, db_session, current_page)
         if result is None:
-            logger.warning(f"get_matches returned None for page {current_page_num}. Skipping.")
-
-            state["total_errors"] += MATCHES_PER_PAGE
-            return []
-        matches_on_page, _ = result  # We don't need total_pages again
-        return matches_on_page
-    except ConnectionError as conn_e:
-        logger.error(
-            f"ConnectionError get_matches page {current_page_num}: {conn_e}",
-            exc_info=False,
-        )
-
-        state["total_errors"] += MATCHES_PER_PAGE
-        return []
-    except Exception as get_match_e:
-        logger.error(
-            f"Error get_matches page {current_page_num}: {get_match_e}",
-            exc_info=True,
-        )
-
-        state["total_errors"] += MATCHES_PER_PAGE
-        return []
-    finally:
-        if db_session:
-            session_manager.return_session(db_session)
-
-
-def _get_database_session_with_retry(
-    session_manager: SessionManager, current_page_num: int, state: dict[str, Any], max_retries: int = 3
-) -> Optional[SqlAlchemySession]:
-    """
-    Get database session with retry logic.
-
-    Args:
-        session_manager: SessionManager instance
-        current_page_num: Current page number being processed
-        state: State dictionary for error tracking
-        max_retries: Maximum number of retry attempts
-
-    Returns:
-        SqlAlchemySession or None if all retries failed
-    """
-    db_session_for_page: Optional[SqlAlchemySession] = None
-    for retry_attempt in range(max_retries):
-        db_session_for_page = session_manager.get_db_conn()
-        if db_session_for_page:
-            state["db_connection_errors"] = 0
-            return db_session_for_page
-        logger.warning(
-            f"DB session attempt {retry_attempt + 1}/{max_retries} failed for page {current_page_num}. Retrying in 5s..."
-        )
-        time.sleep(5)
-
-    # All retries failed
-    state["db_connection_errors"] += 1
-    logger.error(f"Could not get DB session for page {current_page_num} after {max_retries} retries.")
-    return None
-
-
-def _handle_session_death(current_page_num: int, _state: dict[str, Any]) -> None:
-    """Handle session death by updating state."""
-    logger.critical(
-        f"🚨 SESSION DEATH DETECTED at page {current_page_num}. "
-        f"Immediately halting processing to prevent cascade failures."
-    )
-
-
-def _attempt_proactive_session_refresh(session_manager: SessionManager) -> None:
-    """Attempt proactive session refresh to prevent timeout."""
-
-    if not session_manager.session_start_time:
-        return
-
-    session_age = time.time() - session_manager.session_start_time
-    if session_age > 800:  # 13 minutes - refresh before 15-minute timeout
-        logger.info(
-            "Proactively refreshing session after %.0f seconds to prevent timeout",
-            session_age,
-        )
-        if session_manager.attempt_session_recovery(reason="proactive"):
-            logger.info("✅ Proactive session refresh successful")
-        else:
-            logger.error("❌ Proactive session refresh failed")
-
-
-def _check_database_pool_health(session_manager: SessionManager, current_page_num: int) -> None:
-    """Check database connection pool health every 25 pages."""
-    if current_page_num % 25 != 0:
-        return
-
-    try:
-        if hasattr(session_manager, 'db_manager') and session_manager.db_manager:
-            db_manager = session_manager.db_manager
-            if hasattr(db_manager, 'get_performance_stats'):
-                stats = db_manager.get_performance_stats()
-                active_conns = stats.get('active_connections', 0)
-                logger.debug(f"Database pool status at page {current_page_num}: {active_conns} active connections")
-            else:
-                logger.debug(f"Database connection pool check at page {current_page_num}")
-    except Exception as pool_opt_exc:
-        logger.debug(f"Connection pool check at page {current_page_num}: {pool_opt_exc}")
-
-
-def _check_and_handle_session_health(
-    session_manager: SessionManager, current_page_num: int, state: dict[str, Any]
-) -> bool:
-    """
-    Check session health and handle proactive refresh.
-
-    Args:
-        session_manager: SessionManager instance
-        current_page_num: Current page number being processed
-        state: State dictionary for error accumulation
-
-    Returns:
-        bool: True if session is healthy and processing should continue, False to halt
-    """
-    # Check session health
-    if not session_manager.check_session_health():
-        _handle_session_death(current_page_num, state)
-        return False
-
-    # Proactive session refresh to prevent 900-second timeout
-    _attempt_proactive_session_refresh(session_manager)
-
-    # Database connection pool optimization every 25 pages
-    _check_database_pool_health(session_manager, current_page_num)
-
-    return True
-
-
-def _main_page_processing_loop(
-    session_manager: SessionManager,
-    start_page: int,
-    last_page_to_process: int,
-    total_pages_in_run: int,  # Added this argument
-    initial_matches_on_page: Optional[list[dict[str, Any]]],
-    state: dict[str, Any],  # Pass the whole state dict
-) -> bool:
-    """Main loop for fetching and processing pages of matches."""
-
-    # Calculate dynamic API failure threshold based on total pages to process
-    dynamic_threshold = get_critical_api_failure_threshold(total_pages_in_run)
-    original_threshold = Action6State.critical_api_failure_threshold
-    Action6State.critical_api_failure_threshold = dynamic_threshold
-    if dynamic_threshold != original_threshold:
-        logger.info(
-            "Action 6: API failure threshold adjusted to %d for %d-page run (baseline %d)",
-            dynamic_threshold,
-            total_pages_in_run,
-            original_threshold,
-        )
-    else:
-        logger.debug(
-            "Action 6: API failure threshold remains %d for %d-page run",
-            dynamic_threshold,
-            total_pages_in_run,
-        )
-
-    current_page_num = start_page
-    # Estimate total matches for logging based on pages processed in this run
-    total_matches_estimate_this_run = total_pages_in_run * MATCHES_PER_PAGE
-    if start_page == 1 and initial_matches_on_page is not None:  # If first page data already exists
-        total_matches_estimate_this_run = max(total_matches_estimate_this_run, len(initial_matches_on_page))
-
-    # Ensure we always have a valid total for the estimate
-    if total_matches_estimate_this_run <= 0:
-        total_matches_estimate_this_run = MATCHES_PER_PAGE  # Default to one page worth
-
-    logger.info(f"Estimated matches: {total_matches_estimate_this_run}")
-
-    loop_final_success = True  # Success flag for this loop's execution
-
-    matches_on_page_for_batch: Optional[list[dict[str, Any]]] = initial_matches_on_page
-
-    while current_page_num <= last_page_to_process:
-        current_page_num, loop_final_success = _process_single_page(
-            session_manager, current_page_num, start_page, matches_on_page_for_batch, state, loop_final_success
-        )
-        matches_on_page_for_batch = None  # Clear for next iteration
-
-        persist_checkpoint(
-            next_page=current_page_num,
-            last_page_to_process=last_page_to_process,
-            total_pages_in_run=total_pages_in_run,
-            state=state,
-        )
-
-        if not loop_final_success:
-            break  # Exit while loop on fatal error
-
-    return loop_final_success
-
-
-# End of _main_page_processing_loop
-
-# ------------------------------------------------------------------------------
-# Core Orchestration (coord) - REFACTORED
-# ------------------------------------------------------------------------------
-
-
-@with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
-@selenium_retry()
-@circuit_breaker(failure_threshold=3, recovery_timeout=60)
-@timeout_protection(timeout=900)  # Increased from 300s (5min) to 900s (15min) for Action 6's normal 12+ min runtime
-@error_context("DNA match gathering coordination")
-def _validate_session_state(session_manager: SessionManager) -> None:
-    """
-    Validate that session manager is ready for DNA match gathering.
-
-    Args:
-        session_manager: SessionManager instance
-
-    Raises:
-        BrowserSessionError: If session is not ready
-        AuthenticationExpiredError: If UUID is missing
-    """
-    if not session_manager.driver or not session_manager.driver_live or not session_manager.session_ready:
-        raise BrowserSessionError(
-            "WebDriver/Session not ready for DNA match gathering",
-            context={
-                "driver_live": session_manager.driver_live,
-                "session_ready": session_manager.session_ready,
-            },
-        )
-    if not session_manager.my_uuid:
-        raise AuthenticationExpiredError(
-            "Failed to retrieve my_uuid for DNA match gathering",
-        )
-
-
-def _log_action_start(start_page: int) -> None:
-    """
-    Log action configuration at start.
-
-    Args:
-        start_page: Starting page number
-    """
-    app_mode = getattr(config_schema, "app_mode", "production")
-    dry_run_enabled = app_mode.lower() == "dry_run"
-    raw_max_pages = getattr(config_schema.api, "max_pages", 0)
-    requested_max_pages = raw_max_pages if raw_max_pages else "unlimited"
-
-    rel_prob_limit = RELATIONSHIP_PROB_MAX_PER_PAGE if RELATIONSHIP_PROB_MAX_PER_PAGE > 0 else "unlimited"
-    log_action_banner(
-        action_name="Gather DNA Matches",
-        action_number=6,
-        stage="start",
-        logger_instance=raw_logger,
-        details={
-            "start_page": start_page,
-            "requested_pages": requested_max_pages,
-            "matches_per_page": MATCHES_PER_PAGE,
-            "mode": app_mode,
-            "dry_run": "yes" if dry_run_enabled else "no",
-            "rel_prob_limit": rel_prob_limit,
-        },
-    )
-    logger.debug(
-        "Action 6 start | start_page=%s | requested_pages=%s | matches_per_page=%s | mode=%s | dry_run=%s | rel_prob_limit=%s",
-        start_page,
-        requested_max_pages,
-        MATCHES_PER_PAGE,
-        app_mode,
-        "yes" if dry_run_enabled else "no",
-        rel_prob_limit,
-    )
-    logger.debug(f"--- Starting DNA Match Gathering (Action 6) from page {start_page} ---")
-
-
-def _handle_initial_fetch(
-    session_manager: SessionManager, start_page: int, state: dict[str, Any]
-) -> tuple[int, int, int]:
-    """
-    Handle initial navigation and page fetch.
-
-    Args:
-        session_manager: SessionManager instance
-        start_page: Starting page number
-        state: State dictionary
-
-    Returns:
-        tuple of (total_pages_api, last_page_to_process, total_pages_in_run)
-
-    Raises:
-        RuntimeError: If initial fetch fails
-    """
-    from utils import log_starting_position
-
-    # Initial Navigation and Total Pages Fetch
-    initial_matches, total_pages_api, initial_fetch_ok = _navigate_and_get_initial_page_data(
-        session_manager, start_page
-    )
-
-    if not initial_fetch_ok or total_pages_api is None:
-        logger.error("Failed to retrieve total_pages on initial fetch. Aborting.")
-        state["final_success"] = False
-        raise RuntimeError("Initial fetch failed")
-
-    state["total_pages_from_api"] = total_pages_api
-    state["matches_on_current_page"] = initial_matches if initial_matches is not None else []
-    logger.info(f"Total pages found: {total_pages_api}")
-
-    # Determine Page Range
-    last_page_to_process, total_pages_in_run = _determine_page_processing_range(total_pages_api, start_page)
-
-    if total_pages_in_run <= 0:
-        logger.info(f"No pages to process (Start: {start_page}, End: {last_page_to_process}).")
-        raise RuntimeError("No pages to process")
-
-    total_matches_estimate = total_pages_in_run * MATCHES_PER_PAGE
-    state["pages_target"] = total_pages_in_run
-
-    # Log Starting Position
-    log_starting_position(
-        f"Processing {total_pages_in_run} pages from page {start_page} to {last_page_to_process}",
-        {
-            "Total Pages Available": total_pages_api,
-            "Pages to Process": total_pages_in_run,
-            "Estimated Matches": total_matches_estimate,
-            "Start Page": start_page,
-            "End Page": last_page_to_process,
-        },
-    )
-
-    return total_pages_api, last_page_to_process, total_pages_in_run
-
-
-def _emit_final_summary(
-    state: dict[str, Any],
-    run_time_seconds: float,
-    log_final_summary: Callable[[dict[str, Any], float], None],
-) -> None:
-    """Log the high-level final summary metrics."""
-    summary = {
-        "Pages Scanned": state["total_pages_processed"],
-        "New Matches": state["total_new"],
-        "Updated Matches": state["total_updated"],
-        "Skipped (No Change)": state["total_skipped"],
-        "Errors": state["total_errors"],
-        "Total Processed": _collect_total_processed(state),
-    }
-    log_final_summary(summary, run_time_seconds)
-
-
-def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
-    """Log rate limiter metrics and persist state when possible."""
-    limiter = getattr(session_manager, "rate_limiter", None)
-    if not limiter:
-        return
-
-    metrics = limiter.get_metrics()
-    logger.info("Rate Limiter Performance")
-    logger.info(f"Total Requests:        {metrics.total_requests}")
-    logger.info(f"429 Errors:            {metrics.error_429_count}")
-    logger.info(f"Current Rate:          {metrics.current_fill_rate:.3f} req/s")
-    logger.info(f"Rate Adjustments:      ↓{metrics.rate_decreases} ↑{metrics.rate_increases}")
-    logger.info(f"Average Wait Time:     {metrics.avg_wait_time:.3f}s")
-
-    try:
-        from rate_limiter import persist_rate_limiter_state
-
-        persist_rate_limiter_state(limiter, metrics)
-        logger.debug("Persisted rate limiter state for next run reuse")
-    except ImportError:
-        logger.debug("Rate limiter persistence unavailable (module import failed)")
-
-
-def _emit_action_status(state: dict[str, Any]) -> None:
-    """Log final action status using standardized banner helper."""
-    details: dict[str, Any] = {
-        "pages": state.get("total_pages_processed", 0),
-        "new": state.get("total_new", 0),
-        "updated": state.get("total_updated", 0),
-        "skipped": state.get("total_skipped", 0),
-        "errors": state.get("total_errors", 0),
-    }
-    stage = "success" if state.get("final_success") else "failure"
-    log_action_banner(
-        action_name="Gather DNA Matches",
-        action_number=6,
-        stage=stage,
-        logger_instance=raw_logger,
-        details=details,
-    )
-
-
-def _log_final_results(session_manager: SessionManager, state: dict[str, Any], action_start_time: float) -> None:
-    """
-    Log final summary and performance statistics.
-
-    Args:
-        session_manager: SessionManager instance
-        state: State dictionary
-        action_start_time: Start time of action
-    """
-    from utils import log_final_summary
-
-    run_time_seconds = time.time() - action_start_time
-
-    _emit_final_summary(state, run_time_seconds, log_final_summary)
-    _log_timing_breakdown(state)
-    _emit_rate_limiter_metrics(session_manager)
-    _emit_action_status(state)
-
-
-def _prepare_page_range(
-    session_manager: SessionManager,
-    start_page: int,
-    state: dict[str, Any],
-) -> Optional[tuple[int, int]]:
-    """Run the initial fetch and capture pagination metadata."""
-
-    try:
-        _, last_page_to_process, total_pages_in_run = _handle_initial_fetch(
-            session_manager,
-            start_page,
-            state,
-        )
-    except RuntimeError as exc:
-        if str(exc) == "No pages to process":
-            logger.info("No pages available for Action 6. Nothing to process this run.")
             return None
-        raise
+        matches, total_pages = result
+        normalized_total = int(total_pages) if total_pages is not None else 0
+        return matches, normalized_total
 
-    state["last_page_to_process"] = last_page_to_process
-    state["total_pages_in_run"] = total_pages_in_run
-    return last_page_to_process, total_pages_in_run
-
-
-def _build_coord_state(start: Optional[int], action_start_time: float) -> tuple[dict[str, Any], int]:
-    """Initialize gather state and determine effective start page."""
-
-    state = _initialize_gather_state()
-    state["run_started_at"] = action_start_time
-    state["requested_start_page"] = start
-    start_page, resumed_from_checkpoint, checkpoint_data = _determine_start_page(start)
-    state["effective_start_page"] = start_page
-    state["resume_from_checkpoint"] = resumed_from_checkpoint
-    state["checkpoint_metadata"] = checkpoint_data
-    return state, start_page
-
-
-def _execute_coord_run(
-    session_manager: SessionManager,
-    state: dict[str, Any],
-    start_page: int,
-) -> bool:
-    """Run the core Action 6 loop and return success flag."""
-
-    page_range = _prepare_page_range(session_manager, start_page, state)
-    if page_range is None:
-        return True
-
-    last_page_to_process, total_pages_in_run = page_range
-    initial_matches_for_loop = state["matches_on_current_page"]
-    loop_success = _main_page_processing_loop(
-        session_manager,
-        start_page,
-        last_page_to_process,
-        total_pages_in_run,
-        initial_matches_for_loop,
-        state,
+    hooks = GatherOrchestratorHooks(
+        matches_per_page=MATCHES_PER_PAGE,
+        relationship_prob_max_per_page=RELATIONSHIP_PROB_MAX_PER_PAGE,
+        db_error_page_threshold=DB_ERROR_PAGE_THRESHOLD,
+        navigate_and_get_initial_page_data=_navigate_and_get_initial_page_data,
+        determine_page_processing_range=_determine_page_processing_range,
+        do_batch=_do_batch,
+        get_matches=_orchestrator_get_matches,
+        adjust_delay=_adjust_delay,
+        action_state_cls=Action6State,
+        calculate_failure_threshold=get_critical_api_failure_threshold,
     )
-    return bool(state.get("final_success", True)) and loop_success
 
-
-def _handle_coord_failure(exc: Exception) -> None:
-    """Centralized exception logging for coord failures."""
-
-    if isinstance(exc, ConnectionError):
-        logger.critical(
-            f"ConnectionError during coord execution: {exc}",
-            exc_info=True,
-        )
-        return
-
-    if isinstance(exc, MaxApiFailuresExceededError):
-        logger.critical(
-            f"Halting run due to excessive critical API failures: {exc}",
-            exc_info=False,
-        )
-        return
-
-    logger.error(f"Critical error during coord execution: {exc}", exc_info=True)
-
-
-def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:  # Uses config schema
-    """
-    Orchestrates the gathering of DNA matches from Ancestry.
-    Handles pagination, fetches match data, compares with database, and processes.
-
-    Args:
-        session_manager: Global SessionManager instance from main.py
-        start: Optional starting page override. None attempts checkpoint resume.
-
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    action_start_time = time.time()
-
-    _validate_session_state(session_manager)
-    state, start_page = _build_coord_state(start, action_start_time)
-    _log_action_start(start_page)
-    if state.get("resume_from_checkpoint"):
-        checkpoint_data = state.get("checkpoint_metadata")
-        planned_total = None
-        if isinstance(checkpoint_data, dict):
-            checkpoint_dict = cast(dict[str, Any], checkpoint_data)
-            planned_total = checkpoint_dict.get("total_pages_in_run")
-        logger.info(
-            "Checkpoint resume active: starting at page %d (planned total pages: %s)",
-            start_page,
-            planned_total if planned_total is not None else "unknown",
-        )
-
-    keyboard_interrupt: Optional[KeyboardInterrupt] = None
-
-    try:
-        state["final_success"] = _execute_coord_run(session_manager, state, start_page)
-    except KeyboardInterrupt as interruption:
-        logger.warning("Keyboard interrupt detected. Stopping match gathering.")
-        state["final_success"] = False
-        keyboard_interrupt = interruption
-    except Exception as exc:
-        state["final_success"] = False
-        _handle_coord_failure(exc)
-    finally:
-        finalize_checkpoint_after_run(state)
-        _log_final_results(session_manager, state, action_start_time)
-
-        if keyboard_interrupt is not None:
-            logger.info("Re-raising KeyboardInterrupt after cleanup.")
-            raise keyboard_interrupt
-
-    return state["final_success"]
+    orchestrator = GatherOrchestrator(session_manager=session_manager, hooks=hooks)
+    return orchestrator.coord(start=start)
 
 
 # End of coord
@@ -6485,13 +5592,15 @@ def _test_combined_details_cache_helpers() -> bool:
 
 def _test_module_initialization():
     """Test module initialization and state functions with detailed verification"""
+    from actions.gather import orchestrator as gather_orchestrator
+
     print("📋 Testing Action 6 module initialization:")
     results: list[bool] = []
 
     # Test _initialize_gather_state function
     print("   • Testing _initialize_gather_state...")
     try:
-        state: Any = _initialize_gather_state()
+        state: Any = gather_orchestrator._initialize_gather_state()
         is_dict = isinstance(state, dict)
 
         required_keys = ["total_new", "total_updated", "total_pages_processed"]
@@ -6521,7 +5630,7 @@ def _test_module_initialization():
 
     for input_val, expected, description in validation_tests:
         try:
-            result = _validate_start_page(input_val)
+            result = gather_orchestrator._validate_start_page(input_val)
             matches_expected = result == expected
 
             status = "✅" if matches_expected else "❌"
@@ -6563,14 +5672,16 @@ def _test_data_processing_functions():
 
 def _test_edge_cases():
     """Test edge cases and boundary conditions"""
+    from actions.gather import orchestrator as gather_orchestrator
+
     # Test _validate_start_page with edge cases
-    result = _validate_start_page("invalid")
+    result = gather_orchestrator._validate_start_page("invalid")
     assert result == 1, "Should handle invalid string input"
 
-    result = _validate_start_page(-5)
+    result = gather_orchestrator._validate_start_page(-5)
     assert result == 1, "Should handle negative numbers"
 
-    result = _validate_start_page(0)
+    result = gather_orchestrator._validate_start_page(0)
     assert result == 1, "Should handle zero input"
 
 
@@ -6600,10 +5711,12 @@ def _test_performance():
     """Test performance of data processing operations"""
     import time
 
+    from actions.gather import orchestrator as gather_orchestrator
+
     # Test _initialize_gather_state performance
     start_time = time.time()
     for _ in range(100):
-        state = _initialize_gather_state()
+        state = gather_orchestrator._initialize_gather_state()
         assert isinstance(state, dict), "Should return dict each time"
     duration = time.time() - start_time
 
@@ -6612,7 +5725,7 @@ def _test_performance():
     # Test _validate_start_page performance
     start_time = time.time()
     for i in range(1000):
-        result = _validate_start_page(f"page_{i}_12345")
+        result = gather_orchestrator._validate_start_page(f"page_{i}_12345")
         assert isinstance(result, int), "Should return integer"
     duration = time.time() - start_time
 
@@ -6683,8 +5796,6 @@ def _test_all_error_class_constructors():
     """Test all error class constructors to prevent future regressions"""
     from core.error_handling import (
         APIRateLimitError,
-        AuthenticationExpiredError,
-        BrowserSessionError,
         ConfigurationError,
         DataValidationError,
         FatalError,
@@ -6722,7 +5833,8 @@ def _test_all_error_class_constructors():
 def _test_legacy_function_error_handling():
     """Test legacy function error handling"""
     from unittest.mock import MagicMock
-    from actions.gather import persistence as gather_persistence_module
+
+    from actions.gather import orchestrator as gather_orchestrator, persistence as gather_persistence_module
 
     print("   • Test 5: Legacy function error handling")
     mock_session = MagicMock()
@@ -6742,10 +5854,10 @@ def _test_legacy_function_error_handling():
     else:
         raise AssertionError("Lookup should propagate database errors for visibility")
 
-    result = _validate_start_page(None)
+    result = gather_orchestrator._validate_start_page(None)
     assert result == 1, "Should handle None gracefully"
 
-    result = _validate_start_page("not_a_number_12345")
+    result = gather_orchestrator._validate_start_page("not_a_number_12345")
     assert result == 1, "Should handle invalid input gracefully"
 
     print("     ✅ Legacy function error handling works correctly")
@@ -6806,35 +5918,6 @@ def _test_duplicate_record_handling():
     print("     ✅ Duplicate detection prevents UNIQUE violations both in-memory and pre-insert")
 
 
-def _test_final_summary_accuracy():
-    """Test final summary accuracy validation"""
-    captured: dict[str, Any] = {}
-
-    def _capture_summary(summary: dict[str, Any], runtime: float) -> None:
-        captured["summary"] = summary
-        captured["runtime"] = runtime
-
-    state = {
-        "total_pages_processed": 5,
-        "total_new": 7,
-        "total_updated": 3,
-        "total_skipped": 5,
-        "total_errors": 1,
-    }
-    runtime_seconds = 42.0
-    _emit_final_summary(state, runtime_seconds, _capture_summary)
-
-    summary = captured["summary"]
-    expected_total = state["total_new"] + state["total_updated"] + state["total_skipped"]
-    assert summary["Pages Scanned"] == state["total_pages_processed"]
-    assert summary["Total Processed"] == expected_total, "Total Processed should match individual counters"
-    assert summary["Errors"] == state["total_errors"], "Error count must propagate to final summary"
-    assert captured["runtime"] == runtime_seconds, "Runtime should be passed through to log formatter"
-
-    print("   • Test 8: Final summary accuracy validation")
-    print("     ✅ Final summaries reflect actual database counters and elapsed runtime")
-
-
 def _test_error_handling():
     """
     Test error handling scenarios including the critical RetryableError constructor bug
@@ -6849,7 +5932,6 @@ def _test_error_handling():
     _test_legacy_function_error_handling()
     _test_timeout_and_retry_handling()
     _test_duplicate_record_handling()
-    _test_final_summary_accuracy()
 
     print("🎯 All critical error handling scenarios validated successfully!")
     print("   This comprehensive test would have caught:")
@@ -7035,67 +6117,6 @@ def _test_dynamic_api_failure_threshold():
     return success
 
 
-def _test_checkpoint_resume_logic() -> bool:
-    """Validate checkpoint load/save, resume decisions, and explicit overrides."""
-
-    from unittest.mock import patch
-
-    from actions.gather import checkpoint as checkpoint_module
-
-    print("🛡️ Testing checkpoint persistence and resume logic:")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        checkpoint_file = Path(tmpdir) / "action6_checkpoint.json"
-
-        plan = GatherCheckpointPlan(enabled=True, path=checkpoint_file, max_age_hours=24)
-
-        sample_state = {
-            "effective_start_page": 2,
-            "requested_start_page": None,
-            "total_new": 0,
-            "total_updated": 0,
-            "total_skipped": 0,
-            "total_errors": 0,
-            "total_pages_processed": 0,
-        }
-
-        with patch.object(checkpoint_module, "checkpoint_settings", return_value=plan):
-            clear_checkpoint(plan)
-            start_page, resumed, checkpoint_data = _determine_start_page(None)
-            assert start_page == 1 and not resumed and checkpoint_data is None
-
-            write_checkpoint_state(5, 10, 20, sample_state, plan=plan)
-            assert checkpoint_file.exists(), "Checkpoint should exist after write"
-
-            start_page, resumed, checkpoint_data = _determine_start_page(None)
-            assert start_page == 5 and resumed
-            assert checkpoint_data is not None and checkpoint_data.get("last_page") == 10
-
-            override_start, override_resumed, _ = _determine_start_page(3)
-            assert override_start == 3 and not override_resumed
-
-            updated_state = {**sample_state, "total_pages_processed": 1}
-            persist_checkpoint(
-                next_page=6,
-                last_page_to_process=10,
-                total_pages_in_run=20,
-                state=updated_state,
-                plan=plan,
-            )
-            assert json.loads(checkpoint_file.read_text())["next_page"] == 6
-
-            persist_checkpoint(
-                next_page=11,
-                last_page_to_process=10,
-                total_pages_in_run=20,
-                state=updated_state,
-                plan=plan,
-            )
-            assert not checkpoint_file.exists(), "Checkpoint cleared after run completion"
-
-    print("🎉 Checkpoint persistence and resume logic tests passed!")
-    return True
-
-
 def _test_cm_relationship_fallback() -> bool:
     """Verify cM-driven predicted relationship inference when API data is missing."""
 
@@ -7194,43 +6215,6 @@ def _test_regression_prevention_session_management():
     success = all(results)
     if success:
         print("🎉 Session management regression tests passed!")
-    return success
-
-
-def _test_retry_policy_alignment() -> bool:
-    """Ensure Action 6 session validators use the shared Selenium retry helper."""
-
-    print("🛡️ Testing Selenium retry policy alignment for Action 6:")
-    selenium_policy = getattr(getattr(config_schema, "retry_policies", None), "selenium", None)
-    if selenium_policy is None:
-        print("   ❌ selenium retry policy missing from config_schema")
-        return False
-
-    helper_name = getattr(_validate_session_state, "__retry_helper__", None)
-    policy_name = getattr(_validate_session_state, "__retry_policy__", None)
-    settings = getattr(_validate_session_state, "__retry_settings__", {})
-
-    expected_settings = {
-        "max_attempts": selenium_policy.max_attempts,
-        "backoff_factor": selenium_policy.backoff_factor,
-        "base_delay": selenium_policy.initial_delay_seconds,
-        "max_delay": selenium_policy.max_delay_seconds,
-    }
-
-    checks = [
-        (helper_name == "selenium_retry", "Helper attribute should be 'selenium_retry'"),
-        (policy_name == "selenium", "Retry policy should resolve to 'selenium'"),
-        (
-            all(settings.get(key) == value for key, value in expected_settings.items()),
-            "Retry settings should match telemetry-derived configuration",
-        ),
-    ]
-
-    success = True
-    for passed, message in checks:
-        print(f"   {'✅' if passed else '❌'} {message}")
-        success = success and passed
-
     return success
 
 
@@ -7440,15 +6424,6 @@ def action6_gather_module_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="Checkpoint persistence and resume logic",
-            test_func=_test_checkpoint_resume_logic,
-            test_summary="Ensure checkpoint file save/load honors overrides and cleanup",
-            functions_tested="write_checkpoint_state(), _determine_start_page(), persist_checkpoint()",
-            method_description="Patch checkpoint path to temp file and validate resume + override flows",
-            expected_outcome="Checkpoint resume honours saved state and clears once pages complete",
-        )
-
-        suite.run_test(
             test_name="cM relationship fallback logic",
             test_func=_test_cm_relationship_fallback,
             test_summary="Predicted relationship inference uses cM buckets when API omits a value",
@@ -7464,15 +6439,6 @@ def action6_gather_module_tests() -> bool:
             functions_tested="SessionManager.__init__()",
             method_description="Testing SessionManager initialization and CSRF caching optimization implementation",
             expected_outcome="SessionManager initializes correctly with all optimization attributes present",
-        )
-
-        suite.run_test(
-            test_name="Retry helper alignment",
-            test_func=_test_retry_policy_alignment,
-            test_summary="Ensures _validate_session_state uses selenium_retry with telemetry settings",
-            functions_tested="_validate_session_state",
-            method_description="Inspect retry decorator metadata for helper marker and config parity",
-            expected_outcome="Helper marker is 'selenium_retry' and settings match config_schema.retry_policies.selenium",
         )
 
         # 303 REDIRECT DETECTION TESTS - This would have caught the authentication issue

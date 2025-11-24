@@ -669,6 +669,45 @@ def _build_cfpid_mapping(temp_badge_results: dict[str, Optional[dict[str, Any]]]
     return cfpid_list, cfpid_to_uuid_map
 
 
+def _merge_badge_and_ladder_data(
+    session_manager: SessionManager,
+    hooks: PrefetchHooks,
+    cfpid: str,
+    uuid_val: str,
+    my_tree_id: str,
+    badge_data: dict[str, Any],
+    enriched_tree_data: dict[str, Optional[dict[str, Any]]],
+) -> None:
+    """Fetch ladder details and merge them with existing badge data."""
+
+    badge_payload = badge_data or {}
+    match_display_name = (
+        badge_payload.get("their_firstname") or badge_payload.get("display_name") or badge_payload.get("name")
+    )
+
+    try:
+        ladder_result = hooks.fetch_ladder_details(
+            session_manager,
+            cfpid,
+            my_tree_id,
+            match_display_name,
+        )
+        if not ladder_result:
+            return
+
+        combined_tree_info = badge_payload.copy() if badge_payload else {}
+        combined_tree_info.update(ladder_result)
+        enriched_tree_data[uuid_val] = combined_tree_info or ladder_result
+    except Exception as exc:  # pragma: no cover - logging only
+        logger.error(
+            "Exception fetching ladder for CFPID %s (UUID %s): %s",
+            cfpid,
+            (uuid_val or "UNKNOWN")[:8],
+            exc,
+            exc_info=False,
+        )
+
+
 def _fetch_ladder_details_for_badges(
     session_manager: SessionManager,
     my_tree_id: Optional[str],
@@ -688,33 +727,17 @@ def _fetch_ladder_details_for_badges(
         uuid_val = cfpid_to_uuid_map.get(cfpid)
         if not uuid_val:
             continue
-
-        try:
-            ladder_call_count += 1
-            badge_data = temp_badge_results.get(uuid_val) or {}
-            match_display_name = (
-                badge_data.get("their_firstname") or badge_data.get("display_name") or badge_data.get("name")
-            )
-            ladder_result = hooks.fetch_ladder_details(
-                session_manager,
-                cfpid,
-                my_tree_id,
-                match_display_name,
-            )
-            if not ladder_result:
-                continue
-
-            combined_tree_info = badge_data.copy() if badge_data else {}
-            combined_tree_info.update(ladder_result)
-            enriched_tree_data[uuid_val] = combined_tree_info or ladder_result
-        except Exception as exc:  # pragma: no cover - logging only
-            logger.error(
-                "Exception fetching ladder for CFPID %s (UUID %s): %s",
-                cfpid,
-                (uuid_val or "UNKNOWN")[:8],
-                exc,
-                exc_info=False,
-            )
+        ladder_call_count += 1
+        badge_data = temp_badge_results.get(uuid_val) or {}
+        _merge_badge_and_ladder_data(
+            session_manager,
+            hooks,
+            cfpid,
+            uuid_val,
+            my_tree_id,
+            badge_data,
+            enriched_tree_data,
+        )
 
     return enriched_tree_data, ladder_call_count
 
@@ -933,6 +956,83 @@ def _test_prefetch_hooks_contract() -> bool:
     return True
 
 
+def _make_test_hooks(ladder_callable: Callable[..., Optional[dict[str, Any]]]) -> PrefetchHooks:
+    def _noop(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    return PrefetchHooks(
+        fetch_combined_details=_noop,
+        fetch_badge_details=_noop,
+        fetch_ladder_details=ladder_callable,
+        fetch_ethnicity_batch=_noop,
+    )
+
+
+def _test_merge_badge_and_ladder_success() -> bool:
+    from unittest.mock import MagicMock
+
+    session_manager = MagicMock()
+    ladder_payload = {"relationship": "3rd cousin", "confidence": 0.92}
+    captured_args: dict[str, Any] = {}
+
+    def _fake_fetch(sess: SessionManager, cfpid: str, tree_id: str, display_name: Optional[str]) -> dict[str, Any]:
+        captured_args["sess"] = sess
+        captured_args["cfpid"] = cfpid
+        captured_args["tree_id"] = tree_id
+        captured_args["display_name"] = display_name
+        return ladder_payload
+
+    hooks = _make_test_hooks(_fake_fetch)
+    enriched: dict[str, Optional[dict[str, Any]]] = {}
+    badge_data = {"their_firstname": "Ada", "existing": "value"}
+
+    _merge_badge_and_ladder_data(
+        session_manager,
+        hooks,
+        "cfpid-123",
+        "uuid-abc",
+        "tree-1",
+        badge_data,
+        enriched,
+    )
+
+    assert captured_args["sess"] is session_manager
+    assert captured_args["cfpid"] == "cfpid-123"
+    assert captured_args["tree_id"] == "tree-1"
+    assert captured_args["display_name"] == "Ada"
+    assert enriched["uuid-abc"]["existing"] == "value"
+    assert enriched["uuid-abc"]["relationship"] == "3rd cousin"
+    return True
+
+
+def _test_merge_badge_and_ladder_handles_errors() -> bool:
+    from unittest.mock import MagicMock
+
+    session_manager = MagicMock()
+    call_count = {"value": 0}
+
+    def _failing_fetch(*_args: Any, **_kwargs: Any) -> None:
+        call_count["value"] += 1
+        raise RuntimeError("boom")
+
+    hooks = _make_test_hooks(_failing_fetch)
+    enriched: dict[str, Optional[dict[str, Any]]] = {}
+
+    _merge_badge_and_ladder_data(
+        session_manager,
+        hooks,
+        "cfpid-err",
+        "uuid-err",
+        "tree-err",
+        {},
+        enriched,
+    )
+
+    assert call_count["value"] == 1
+    assert "uuid-err" not in enriched
+    return True
+
+
 def module_tests() -> bool:
     suite = TestSuite("actions.gather.prefetch", "actions/gather/prefetch.py")
     suite.run_test(
@@ -944,6 +1044,16 @@ def module_tests() -> bool:
         "Hooks are storable",
         _test_prefetch_hooks_contract,
         "Validates PrefetchHooks accepts placeholder callables during scaffolding.",
+    )
+    suite.run_test(
+        "Ladder merge success",
+        _test_merge_badge_and_ladder_success,
+        "Ensures badge and ladder data merge with proper hook invocation.",
+    )
+    suite.run_test(
+        "Ladder merge handles errors",
+        _test_merge_badge_and_ladder_handles_errors,
+        "Confirms helper swallows ladder errors without mutating results.",
     )
     return suite.finish_suite()
 

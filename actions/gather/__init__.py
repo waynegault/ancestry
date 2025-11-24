@@ -23,6 +23,16 @@ from .metrics import (
     log_timing_breakdown_details,
 )
 from .orchestrator import GatherOrchestrator
+from .persistence import (
+    BatchLookupArtifacts,
+    GatherBatchSummary,
+    GatherPersistenceService,
+    PersistenceHooks,
+    execute_bulk_db_operations,
+    needs_ethnicity_refresh,
+    prepare_and_commit_batch_data,
+    process_batch_lookups,
+)
 from .prefetch import (
     PrefetchConfig,
     PrefetchHooks,
@@ -30,42 +40,34 @@ from .prefetch import (
     get_prefetched_data_for_match,
     perform_api_prefetches,
 )
-from .persistence import (
-    BatchLookupArtifacts,
-    GatherBatchSummary,
-    GatherPersistenceService,
-    PersistenceHooks,
-    needs_ethnicity_refresh,
-    prepare_and_commit_batch_data,
-    process_batch_lookups,
-)
 
 __all__ = [
-    "GatherBatchSummary",
     "BatchLookupArtifacts",
+    "GatherBatchSummary",
     "GatherCheckpointPlan",
     "GatherCheckpointService",
     "GatherFetchPlan",
     "GatherFetchService",
     "GatherOrchestrator",
     "GatherPersistenceService",
+    "PageProcessingMetrics",
     "PersistenceHooks",
     "PrefetchConfig",
     "PrefetchHooks",
     "PrefetchResult",
-    "PageProcessingMetrics",
     "accumulate_page_metrics",
     "collect_total_processed",
     "compose_progress_snapshot",
     "detailed_endpoint_lines",
+    "execute_bulk_db_operations",
     "format_duration_with_avg",
+    "get_prefetched_data_for_match",
     "log_page_completion_summary",
     "log_page_start",
     "log_timing_breakdown",
     "log_timing_breakdown_details",
     "needs_ethnicity_refresh",
+    "perform_api_prefetches",
     "prepare_and_commit_batch_data",
     "process_batch_lookups",
-    "get_prefetched_data_for_match",
-    "perform_api_prefetches",
 ]

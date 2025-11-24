@@ -50,7 +50,7 @@ import json
 import sys
 from functools import lru_cache
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any, Optional, cast
 
 from config.config_manager import ConfigManager
@@ -116,6 +116,7 @@ DEFAULT_CONFIG = {
 # Global cache for GEDCOM data with enhanced caching
 class _GedcomDataCache:
     """Manages cached GEDCOM data state."""
+
     data: Optional[Any] = None
 
 
@@ -218,9 +219,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     # Check if GEDCOM path is configured
     gedcom_path_str = None
     try:
-        gedcom_path_str = (
-            config_schema.database.gedcom_file_path if config_schema else None
-        )
+        gedcom_path_str = config_schema.database.gedcom_file_path if config_schema else None
     except MissingConfigError as e:
         logger.warning(str(e))
         raise
@@ -228,9 +227,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
     logger.info(f"GEDCOM_FILE_PATH from config: {gedcom_path_str}")
 
     if not gedcom_path_str:
-        raise MissingConfigError(
-            "GEDCOM_FILE_PATH not configured. Cannot load GEDCOM file."
-        )
+        raise MissingConfigError("GEDCOM_FILE_PATH not configured. Cannot load GEDCOM file.")
 
     # Convert string to Path object
     gedcom_path = Path(gedcom_path_str)
@@ -240,9 +237,7 @@ def get_gedcom_data() -> Optional[GedcomData]:
         # If it's a relative path, make it absolute relative to the project root
         original_path = gedcom_path
         gedcom_path = Path(__file__).parent.resolve() / gedcom_path
-        logger.debug(
-            f"Converted relative path '{original_path}' to absolute path: {gedcom_path}"
-        )
+        logger.debug(f"Converted relative path '{original_path}' to absolute path: {gedcom_path}")
 
     # Check if the file exists
     if not gedcom_path.exists():
@@ -293,9 +288,7 @@ def matches_criterion(key: str, criteria: dict[str, Any], value: Any) -> bool:
     return criterion == value
 
 
-def matches_year_criterion(
-    key: str, criteria: dict[str, Any], value: Any, year_range: int
-) -> bool:
+def matches_year_criterion(key: str, criteria: dict[str, Any], value: Any, year_range: int) -> bool:
     """Check if a year value matches a criterion within a specified range."""
     if key not in criteria or criteria[key] is None or value is None:
         return False
@@ -311,6 +304,7 @@ def matches_year_criterion(
 
 
 # Helper functions for search_gedcom_for_criteria
+
 
 def _load_or_get_gedcom_data(
     gedcom_data: Optional[GedcomData],
@@ -356,8 +350,15 @@ def _prepare_search_criteria(search_criteria: dict[str, Any]) -> tuple[dict[str,
 
     # Copy provided criteria to scoring criteria
     scoring_keys = [
-        "first_name", "surname", "gender", "birth_year", "birth_place",
-        "birth_date_obj", "death_year", "death_place", "death_date_obj",
+        "first_name",
+        "surname",
+        "gender",
+        "birth_year",
+        "birth_place",
+        "birth_date_obj",
+        "death_year",
+        "death_place",
+        "death_date_obj",
     ]
     for key in scoring_keys:
         if key in search_criteria and search_criteria[key] is not None:
@@ -406,23 +407,16 @@ def _extract_individual_filter_values(indi_data: dict[str, Any]) -> dict[str, An
         "sex_lower": indi_data.get("gender_norm"),
         "birth_year": indi_data.get("birth_year"),
         "birth_place_lower": (
-            indi_data.get("birth_place_disp", "").lower()
-            if indi_data.get("birth_place_disp")
-            else None
+            indi_data.get("birth_place_disp", "").lower() if indi_data.get("birth_place_disp") else None
         ),
         "death_place_lower": (
-            indi_data.get("death_place_disp", "").lower()
-            if indi_data.get("death_place_disp")
-            else None
+            indi_data.get("death_place_disp", "").lower() if indi_data.get("death_place_disp") else None
         ),
         "death_date_obj": indi_data.get("death_date_obj"),
     }
 
 
-def _names_mandatory_satisfied(
-    filter_criteria: dict[str, Any],
-    filter_values: dict[str, Any]
-) -> Optional[bool]:
+def _names_mandatory_satisfied(filter_criteria: dict[str, Any], filter_values: dict[str, Any]) -> Optional[bool]:
     """Return True/False if name gating applies; None if no name provided.
 
     - If first_name and/or surname provided, both provided names must match (contains).
@@ -597,6 +591,7 @@ def search_gedcom_for_criteria(
 
 # Helper functions for get_gedcom_family_details
 
+
 def _ensure_gedcom_data(gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]) -> GedcomData:
     """Ensure GEDCOM data is loaded."""
     if gedcom_data:
@@ -670,11 +665,7 @@ def _get_parents(gedcom_data: GedcomData, individual_id_norm: str) -> list[dict[
     """Get parent information."""
     parents: list[dict[str, Any]] = []
     id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
-    parent_ids = (
-        id_to_parents.get(individual_id_norm, [])
-        if hasattr(gedcom_data, "id_to_parents")
-        else []
-    )
+    parent_ids = id_to_parents.get(individual_id_norm, []) if hasattr(gedcom_data, "id_to_parents") else []
 
     processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
 
@@ -781,6 +772,7 @@ def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str
 
 # Helper functions for _get_spouses_and_children
 
+
 def _validate_gedcom_data_for_family(gedcom_data: GedcomData) -> bool:
     """Validate that gedcom_data has required attributes for family processing."""
     has_reader = bool(getattr(gedcom_data, "reader", None))
@@ -836,7 +828,9 @@ def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> l
     return children
 
 
-def _process_family_record(gedcom_data: GedcomData, fam_record: Any, individual_id_norm: str) -> tuple[Optional[dict[str, Any]], list[dict[str, Any]]]:
+def _process_family_record(
+    gedcom_data: GedcomData, fam_record: Any, individual_id_norm: str
+) -> tuple[Optional[dict[str, Any]], list[dict[str, Any]]]:
     """Process a single family record to extract spouse and children."""
     spouse_info = None
     children = []
@@ -852,7 +846,9 @@ def _process_family_record(gedcom_data: GedcomData, fam_record: Any, individual_
     return spouse_info, children
 
 
-def _get_spouses_and_children(gedcom_data: GedcomData, individual_id_norm: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def _get_spouses_and_children(
+    gedcom_data: GedcomData, individual_id_norm: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Get spouses and children information."""
     spouses: list[dict[str, Any]] = []
     children: list[dict[str, Any]] = []
@@ -915,9 +911,7 @@ def get_gedcom_family_details(
         # Get parents
         id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
         parent_ids_raw = (
-            id_to_parents.get(individual_id_norm, set())
-            if hasattr(gedcom_data, "id_to_parents")
-            else set()
+            id_to_parents.get(individual_id_norm, set()) if hasattr(gedcom_data, "id_to_parents") else set()
         )
         parent_ids = list(parent_ids_raw)
         result["parents"] = _get_parents(gedcom_data, individual_id_norm)
@@ -936,8 +930,7 @@ def get_gedcom_family_details(
 
 
 def _load_or_get_gedcom_data_optional(
-    gedcom_data: Optional[GedcomData],
-    gedcom_path: Optional[str]
+    gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]
 ) -> Optional[GedcomData]:
     """Load or retrieve GEDCOM data from cache or file (optional variant that returns None on missing file)."""
     if gedcom_data:
@@ -977,11 +970,7 @@ def _get_individual_name(individual_id_norm: str, gedcom_data: GedcomData) -> st
     return "Individual"
 
 
-def _find_relationship_path(
-    individual_id_norm: str,
-    reference_id_norm: str,
-    gedcom_data: GedcomData
-) -> list[str]:
+def _find_relationship_path(individual_id_norm: str, reference_id_norm: str, gedcom_data: GedcomData) -> list[str]:
     """Find relationship path between two individuals."""
     if not (individual_id_norm and reference_id_norm):
         return []
@@ -1058,9 +1047,7 @@ def get_gedcom_relationship_path(
     )
 
     # Format the relationship path
-    return format_relationship_path_unified(
-        unified_path, individual_name, reference_name or "Reference Person", None
-    )
+    return format_relationship_path_unified(unified_path, individual_name, reference_name or "Reference Person", None)
 
 
 def gedcom_search_module_tests() -> bool:
@@ -1070,22 +1057,18 @@ def gedcom_search_module_tests() -> bool:
     """
 
     with suppress_logging():
-        suite = TestSuite(
-            "GEDCOM Search Utilities & Data Querying", "gedcom_search_utils.py"
-        )
+        suite = TestSuite("GEDCOM Search Utilities & Data Querying", "gedcom_search_utils.py")
 
     # Run all tests
-    print(
-        "🔍 Running GEDCOM Search Utilities & Data Querying comprehensive test suite..."
-    )
+    print("🔍 Running GEDCOM Search Utilities & Data Querying comprehensive test suite...")
 
     with suppress_logging():
         suite.run_test(
-            "Core function availability verification",
-            test_function_availability,
-            "Test that all required GEDCOM search functions are available",
-            "Function availability verification ensures complete search functionality",
-            "All core search functions (search_gedcom_for_criteria, matches_criterion, etc.) are available",
+            "Filter policy enforcement",
+            test_filter_policy_enforcement,
+            "Verify mandatory name/place policy and OR-filter fallback behavior",
+            "Filter evaluation enforces gating rules before scoring candidates",
+            "_evaluate_or_filter returns True only when policy requirements are satisfied",
         )
 
         suite.run_test(
@@ -1121,11 +1104,11 @@ def gedcom_search_module_tests() -> bool:
         )
 
         suite.run_test(
-            "Family details retrieval",
-            test_family_details,
-            "Test family relationship and detail extraction from GEDCOM data",
-            "Family details retrieval provides comprehensive relationship information",
-            "Family details are extracted correctly from GEDCOM structures",
+            "Filter value extraction",
+            test_filter_value_extraction,
+            "Test normalized value extraction used by GEDCOM filters",
+            "Filter value extraction ensures lower-casing and place normalization",
+            "_extract_individual_filter_values lowercases names and preserves known fields",
         )
 
         suite.run_test(
@@ -1187,36 +1170,70 @@ run_comprehensive_tests = create_standard_test_runner(gedcom_search_module_tests
 
 
 # Test functions for comprehensive testing
-def test_function_availability():
-    """Test that all required GEDCOM search functions are available."""
-    required_functions = [
-        "search_gedcom_for_criteria", "matches_criterion", "matches_year_criterion",
-        "get_gedcom_family_details", "get_gedcom_relationship_path", "load_gedcom_data"
-    ]
+def test_filter_policy_enforcement() -> None:
+    """Ensure _evaluate_or_filter enforces mandatory gates before scoring."""
 
-    from test_framework import test_function_availability
-    results = test_function_availability(required_functions, globals(), "GEDCOM Search Utils")
-    assert all(results), f"Some required functions are missing: {[f for f, r in zip(required_functions, results) if not r]}"
+    def _values(**overrides: Any) -> dict[str, Any]:
+        base = {
+            "givn_lower": "",
+            "surn_lower": "",
+            "birth_place_lower": None,
+            "death_place_lower": None,
+            "birth_year": None,
+            "death_date_obj": None,
+        }
+        for key, value in overrides.items():
+            base[key] = value
+        return base
+
+    # Names + birth place are mandatory when provided
+    mandatory_names = {"first_name": "John", "birth_place": "Boston"}
+    matching_values = _values(
+        givn_lower="john", surn_lower="doe", birth_place_lower="south boston, ma", birth_year=1985
+    )
+    assert _evaluate_or_filter(mandatory_names, matching_values, year_range=5), "Matching values should pass gate"
+
+    mismatched_place = _values(givn_lower="john", surn_lower="doe", birth_place_lower="chicago", birth_year=1985)
+    assert not _evaluate_or_filter(mandatory_names, mismatched_place, year_range=5), (
+        "Birth place mismatch should fail mandatory gate"
+    )
+
+    # When names are absent we allow OR filter, but still honor date tolerance and alive-state fallback
+    broad_criteria = {"birth_year": 1980}
+    alive_candidate = _values(birth_year=1978, death_date_obj=None)
+    assert _evaluate_or_filter(broad_criteria, alive_candidate, year_range=5), (
+        "Alive candidate within range should pass broader OR filter"
+    )
+
+    stale_candidate = _values(birth_year=1950, death_date_obj=object())
+    assert not _evaluate_or_filter(broad_criteria, stale_candidate, year_range=5), (
+        "Out-of-range candidate with death info should fail"
+    )
 
 
-def test_criterion_matching():
-    """Test criterion matching works correctly for various data types."""
-    # Test basic criterion matching
-    result1 = matches_criterion("name", {"name": "John"}, "John Smith")
-    assert isinstance(result1, bool), "matches_criterion should return boolean"
+def test_criterion_matching() -> None:
+    """Ensure matches_criterion enforces contains/equals semantics."""
 
-    result2 = matches_criterion("age", {"age": 30}, 30)
-    assert isinstance(result2, bool), "matches_criterion should return boolean"
+    assert matches_criterion("first_name", {"first_name": "john"}, "john smith"), (
+        "First-name containment should succeed"
+    )
+    assert not matches_criterion("first_name", {"first_name": "john"}, "mary smith"), (
+        "Mismatched first name should fail"
+    )
+
+    assert matches_criterion("birth_place", {"birth_place": "boston"}, "south boston, ma"), (
+        "Place comparison should be case-insensitive"
+    )
+    assert not matches_criterion("birth_place", {"birth_place": "boston"}, "chicago"), (
+        "Unmatched place should be rejected"
+    )
 
 
-def test_year_criterion():
-    """Test year-based criterion matching with range tolerance."""
-    # Test year range matching with required year_range parameter
-    result1 = matches_year_criterion("birth_year", {"birth_year": 1985}, 1985, 5)
-    assert isinstance(result1, bool), "Year criterion should return boolean"
+def test_year_criterion() -> None:
+    """Validate year comparisons respect tolerance windows."""
 
-    result2 = matches_year_criterion("birth_year", {"birth_year": 1980}, 1980, 0)
-    assert isinstance(result2, bool), "Year criterion should return boolean"
+    assert matches_year_criterion("birth_year", {"birth_year": 1985}, 1983, 3), "Year within tolerance should match"
+    assert not matches_year_criterion("birth_year", {"birth_year": 1985}, 1995, 3), "Year outside tolerance should fail"
 
 
 def test_gedcom_operations():
@@ -1229,46 +1246,59 @@ def test_gedcom_operations():
     assert cached_data is not None, "Should be able to cache and retrieve GEDCOM data"
 
 
-def test_search_criteria():
-    """Test complex search criteria processing and filtering."""
-    # Test search criteria with multiple filters
-    criteria = {"name": "Smith", "birth_year": 1980}
+def test_search_criteria() -> None:
+    """Verify _prepare_search_criteria filters None/unknown fields."""
 
-    # Test that search criteria can be processed
-    if "search_gedcom_for_criteria" in globals():
-        try:
-            result = search_gedcom_for_criteria(criteria)
-            assert isinstance(
-                result, (list, dict, type(None))
-            ), "Search should return valid result type"
-        except Exception:
-            pass  # Function may require specific data setup
+    raw = {
+        "first_name": "John",
+        "surname": "Doe",
+        "birth_place": "Boston",
+        "birth_year": None,
+        "notes": "ignore",
+    }
 
-
-def test_family_details():
-    """Test family relationship and detail extraction from GEDCOM data."""
-    if "get_gedcom_family_details" in globals():
-        try:
-            # Test with a mock individual ID
-            result = get_gedcom_family_details("I001")
-            assert result is None or isinstance(
-                result, (dict, list)
-            ), "Family details should return valid type"
-        except Exception:
-            pass  # Function may require specific GEDCOM data
+    scoring, filters = _prepare_search_criteria(raw)
+    assert scoring == {"first_name": "John", "surname": "Doe", "birth_place": "Boston"}, (
+        "Scoring should exclude None/unknown keys"
+    )
+    assert filters == {"first_name": "John", "surname": "Doe", "birth_place": "Boston"}, (
+        "Filters should match scoring subset"
+    )
 
 
-def test_relationship_paths():
+def test_filter_value_extraction() -> None:
+    """Ensure filter extraction normalizes case and optional fields."""
+
+    indi = {
+        "first_name": "JOHN",
+        "surname": "DOE",
+        "gender_norm": "M",
+        "birth_year": 1900,
+        "birth_place_disp": "South Boston, MA",
+        "death_place_disp": None,
+    }
+
+    values = _extract_individual_filter_values(indi)
+    assert values["givn_lower"] == "john"
+    assert values["surn_lower"] == "doe"
+    assert values["birth_place_lower"] == "south boston, ma"
+    assert values["death_place_lower"] is None
+
+
+def test_relationship_paths() -> None:
     """Test relationship path calculation between individuals."""
-    if "get_gedcom_relationship_path" in globals():
-        try:
-            # Test relationship path calculation
-            result = get_gedcom_relationship_path("I001", "I002")
-            assert result is None or isinstance(
-                result, (list, str)
-            ), "Relationship path should return valid type"
-        except Exception:
-            pass  # Function may require specific GEDCOM data setup
+
+    gedcom_data = cast(
+        GedcomData,
+        SimpleNamespace(
+            id_to_parents={"@CHILD@": {"@PARENT@"}, "@PARENT@": {"@GRAND@"}},
+            id_to_children={"@PARENT@": {"@CHILD@"}, "@GRAND@": {"@PARENT@"}},
+        ),
+    )
+
+    path = _find_relationship_path("@CHILD@", "@GRAND@", gedcom_data)
+    assert path == ["@CHILD@", "@PARENT@", "@GRAND@"], "Should find direct ancestor path"
+    assert _find_relationship_path("", "@GRAND@", gedcom_data) == [], "Invalid IDs should return empty path"
 
 
 def test_invalid_data_handling():
@@ -1322,20 +1352,21 @@ def test_memory_efficiency():
     assert True, "Memory usage should remain reasonable"
 
 
-def test_error_recovery():
-    """Test error recovery mechanisms and appropriate logging."""
-    # Test that functions handle errors gracefully
+def test_error_recovery() -> None:
+    """Verify validation helpers raise MissingConfigError and optional loaders degrade gracefully."""
+
     try:
-        # Attempt operations that might fail
-        matches_criterion("invalid_key", {"valid": "data"}, "mismatch")
+        empty_data = cast(GedcomData, SimpleNamespace(processed_data_cache={}))
+        _validate_gedcom_data(empty_data)
+    except MissingConfigError as exc:
+        assert "processed cache" in str(exc), "MissingConfigError should mention processed cache"
+    else:
+        raise AssertionError("_validate_gedcom_data should raise when cache missing")
 
-        if "search_gedcom_for_criteria" in globals():
-            search_gedcom_for_criteria({"impossible": "criteria"})
-    except Exception:
-        pass  # Error handling is acceptable
-
-    # Test should pass if no unhandled exceptions occur
-    assert True, "Error recovery should handle exceptions gracefully"
+    _GedcomDataCache.data = None
+    bogus_path = str(Path(__file__).with_name("does_not_exist.ged"))
+    optional = _load_or_get_gedcom_data_optional(None, bogus_path)
+    assert optional is None, "Optional GEDCOM loader should return None for missing files"
 
 
 # Self-test execution when run as main module
