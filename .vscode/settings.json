@@ -26,5 +26,17 @@
         "**/*.db": true,
         "**/*.ged": true,
         "**/linter_errors*.txt": true
+    },
+    "terminal.integrated.shellIntegration.enabled": true,
+    "terminal.integrated.shellIntegration.suggestEnabled": true,
+    "terminal.integrated.shellIntegration.defaultProfile.windows": "Command Prompt",
+    "terminal.integrated.profiles.windows": {
+        "Command Prompt": {
+            "path": [
+                "${env:windir}\\System32\\cmd.exe"
+            ],
+            "args": [],
+            "icon": "terminal-cmd"
+        }
     }
 }

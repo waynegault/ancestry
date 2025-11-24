@@ -7,11 +7,14 @@ metrics dashboards, and other ancillary utilities.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
+import io
 import logging
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -19,10 +22,17 @@ from collections.abc import Mapping
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
-from typing import Any, ClassVar, Optional, Protocol, TextIO, cast
+from typing import Any, Callable, ClassVar, Optional, Protocol, TextIO, cast
+from unittest import mock
 from urllib import request as urllib_request
 
+if __package__ in {None, ""}:
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
 from logging_config import setup_logging
+from test_framework import TestSuite, create_standard_test_runner
 
 
 class GrafanaCheckerProtocol(Protocol):
@@ -81,15 +91,11 @@ class MainCLIHelpers:
                     pass
                 cleared = True
         except PermissionError as permission_error:
-            self._logger.warning(
-                "Permission denied clearing log '%s': %s", log_file_path, permission_error
-            )
+            self._logger.warning("Permission denied clearing log '%s': %s", log_file_path, permission_error)
         except OSError as io_error:
             self._logger.warning("IOError clearing log '%s': %s", log_file_path, io_error)
         except Exception as error:  # pragma: no cover - defensive logging only
-            self._logger.warning(
-                "Error clearing log '%s': %s", log_file_path, error, exc_info=True
-            )
+            self._logger.warning("Error clearing log '%s': %s", log_file_path, error, exc_info=True)
         return cleared, log_file_path
 
     # ------------------------------------------------------------------
@@ -171,9 +177,7 @@ class MainCLIHelpers:
 
             for candidate_port in range(preferred_port, preferred_port + 20):
                 try:
-                    server = ThreadingHTTPServer(
-                        ("127.0.0.1", candidate_port), GraphRequestHandler
-                    )
+                    server = ThreadingHTTPServer(("127.0.0.1", candidate_port), GraphRequestHandler)
                     preferred_port = candidate_port
                     break
                 except OSError:
@@ -181,9 +185,7 @@ class MainCLIHelpers:
 
             if server is None:
                 print("❌ Unable to start the graph visualization server (no open ports).")
-                self._logger.error(
-                    "Graph visualization server failed to start: no open ports available"
-                )
+                self._logger.error("Graph visualization server failed to start: no open ports available")
                 input("\nPress Enter to continue...")
                 return
 
@@ -206,17 +208,13 @@ class MainCLIHelpers:
             try:
                 webbrowser.open(url, new=1)
             except webbrowser.Error as browser_err:
-                self._logger.warning(
-                    "Unable to open browser automatically: %s", browser_err
-                )
+                self._logger.warning("Unable to open browser automatically: %s", browser_err)
                 print("⚠️  Please open the URL manually in your browser.")
 
             input("\nPress Enter to stop the visualization server and return to the menu...")
 
         except Exception as graph_error:  # pragma: no cover - defensive
-            self._logger.error(
-                "Error running graph visualization: %s", graph_error, exc_info=True
-            )
+            self._logger.error("Error running graph visualization: %s", graph_error, exc_info=True)
             print(f"Error running graph visualization: {graph_error}")
             input("\nPress Enter to continue...")
         finally:
@@ -285,9 +283,7 @@ class MainCLIHelpers:
             name = target.get("name", "?")
             files = target.get("files_remaining", target.get("files_scanned", "?"))
             size_bytes = target.get("total_size_bytes", 0)
-            size_mb = (
-                (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
-            )
+            size_mb = (size_bytes / (1024 * 1024)) if isinstance(size_bytes, (int, float)) else 0.0
             deleted = target.get("files_deleted", 0)
             run_ts = target.get("run_timestamp")
             if isinstance(run_ts, (int, float)) and run_ts:
@@ -295,9 +291,7 @@ class MainCLIHelpers:
                 age_str = f"{age_minutes:.1f}m ago"
             else:
                 age_str = "n/a"
-            print(
-                f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})"
-            )
+            print(f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})")
         return True
 
     def _render_stat_fields(self, stats: dict[str, Any]) -> bool:
@@ -378,9 +372,7 @@ class MainCLIHelpers:
                 print(f"  Hits: {base_stats.get('hits', 0):,}")
                 print(f"  Misses: {base_stats.get('misses', 0):,}")
                 print(f"  Hit Rate: {base_stats.get('hit_rate', 0):.1f}%")
-                print(
-                    f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}"
-                )
+                print(f"  Entries: {base_stats.get('entries', 0):,} / {base_stats.get('max_entries', 'N/A')}")
                 print(f"  Volume: {base_stats.get('volume', 0):,} bytes")
                 print(f"  Cache Dir: {base_stats.get('cache_dir', 'N/A')}")
                 print()
@@ -521,17 +513,12 @@ class MainCLIHelpers:
                 print("\nNo pending migrations; schema already current.")
 
             if installed_versions:
-                print(
-                    f"Installed versions ({len(installed_versions)}): "
-                    f"{', '.join(installed_versions)}"
-                )
+                print(f"Installed versions ({len(installed_versions)}): {', '.join(installed_versions)}")
             else:
                 print("Installed versions: none recorded.")
 
             pending_versions = [
-                migration.version
-                for migration in registered_migrations
-                if migration.version not in installed_versions
+                migration.version for migration in registered_migrations if migration.version not in installed_versions
             ]
             if pending_versions:
                 print(f"Pending migrations ({len(pending_versions)}): {', '.join(pending_versions)}")
@@ -545,9 +532,7 @@ class MainCLIHelpers:
                 try:
                     db_manager.close_connections(dispose_engine=True)
                 except Exception:
-                    self._logger.debug(
-                        "Failed to close temporary database manager", exc_info=True
-                    )
+                    self._logger.debug("Failed to close temporary database manager", exc_info=True)
             input("\nPress Enter to continue...")
 
     # ------------------------------------------------------------------
@@ -628,9 +613,7 @@ class MainCLIHelpers:
                 try:
                     self._grafana_checker.ensure_dashboards_imported()
                 except Exception as import_err:  # pragma: no cover - optional dependency
-                    self._logger.debug(
-                        "Dashboard auto-import check: %s", import_err
-                    )
+                    self._logger.debug("Dashboard auto-import check: %s", import_err)
 
             system_perf_url = f"{grafana_base}/d/ancestry-performance"
             genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
@@ -691,6 +674,215 @@ class MainCLIHelpers:
         self.clear_screen()
         print("Exiting.")
         return False
+
+
+# ------------------------------------------------------------------
+# Test helpers (internal use only)
+# ------------------------------------------------------------------
+
+
+def _create_helper_for_tests(
+    *,
+    log_path: Optional[Path] = None,
+    include_stream: bool = False,
+) -> tuple[MainCLIHelpers, logging.Logger]:
+    logger = logging.getLogger(f"cli-maint-tests-{time.time_ns()}")
+    logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
+    logger.propagate = False
+
+    if log_path is not None:
+        file_handler = logging.FileHandler(log_path, mode="a", encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        logger.addHandler(file_handler)
+
+    if include_stream:
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setLevel(logging.INFO)
+        logger.addHandler(stream_handler)
+
+    return MainCLIHelpers(logger=logger), logger
+
+
+def _teardown_test_logger(logger: logging.Logger) -> None:
+    for handler in list(logger.handlers):
+        handler.close()
+        logger.removeHandler(handler)
+
+
+def _capture_stdout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[Any, str]:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        result = func(*args, **kwargs)
+    return result, buffer.getvalue()
+
+
+def _test_format_cache_stat_value() -> bool:
+    assert MainCLIHelpers._format_cache_stat_value(1_234_567) == "1,234,567"
+    assert MainCLIHelpers._format_cache_stat_value(3.14159) == "3.14"
+    assert MainCLIHelpers._format_cache_stat_value([1, 2, 3]) == "3 items"
+    rich_dict = {"a": 1, "b": 2, "c": 3, "d": 4}
+    assert MainCLIHelpers._format_cache_stat_value(rich_dict) == "{a=1, b=2, c=3, ...}"
+    assert MainCLIHelpers._format_cache_stat_value("ready") == "ready"
+    return True
+
+
+def _test_render_retention_targets() -> bool:
+    targets = [
+        {
+            "name": "Disk Cache",
+            "files_remaining": 10,
+            "total_size_bytes": 5 * 1024 * 1024,
+            "files_deleted": 2,
+            "run_timestamp": time.time() - 120,
+        }
+    ]
+    result, output = _capture_stdout(MainCLIHelpers._render_retention_targets, targets)
+    assert result is True
+    assert "Disk Cache" in output
+    assert "10 files" in output
+    assert "MB" in output
+
+    result, _ = _capture_stdout(MainCLIHelpers._render_retention_targets, None)
+    assert result is False
+    return True
+
+
+def _test_render_stat_and_health_fields() -> bool:
+    helper, logger = _create_helper_for_tests()
+    try:
+        stats = {"hits": 5, "misses": 2, "name": "disk", "kind": "disk"}
+        result, output = _capture_stdout(helper._render_stat_fields, stats)
+        assert result is True
+        assert "Hits: 5" in output
+        assert "Misses: 2" in output
+        result, _ = _capture_stdout(helper._render_stat_fields, {"name": "only"})
+        assert result is False
+    finally:
+        _teardown_test_logger(logger)
+
+    result, output = _capture_stdout(
+        MainCLIHelpers._render_health_stats,
+        {"overall_score": 87.5, "recommendations": ["optimize", "trim"]},
+    )
+    assert result is True
+    assert "87.5" in output
+    assert "Recommendations: 2" in output
+
+    result, _ = _capture_stdout(MainCLIHelpers._render_health_stats, None)
+    assert result is False
+    return True
+
+
+def _test_print_cache_component_output() -> bool:
+    helper, logger = _create_helper_for_tests()
+    try:
+        _, output = _capture_stdout(helper._print_cache_component, "component", {})
+        assert "🗃️ COMPONENT" in output
+        assert "No statistics available" in output
+    finally:
+        _teardown_test_logger(logger)
+    return True
+
+
+def _test_clear_log_file_behavior() -> bool:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        log_path = Path(tmp_dir) / "cli.log"
+        log_path.write_text("existing line\n", encoding="utf-8")
+        helper, logger = _create_helper_for_tests(log_path=log_path)
+        try:
+            cleared, cleared_path = helper.clear_log_file()
+            assert cleared is True
+            assert cleared_path == str(log_path)
+            assert not log_path.read_text(encoding="utf-8")
+        finally:
+            _teardown_test_logger(logger)
+    return True
+
+
+def _test_toggle_log_level_switches_levels() -> bool:
+    helper, logger = _create_helper_for_tests(include_stream=True)
+    try:
+        stream_handler = next(
+            handler
+            for handler in logger.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and cast(Optional[TextIO], getattr(handler, "stream", None)) is sys.stderr
+        )
+        stream_handler.setLevel(logging.INFO)
+
+        with mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup:
+            helper.toggle_log_level()
+            patched_setup.assert_called_once()
+            kwargs = patched_setup.call_args.kwargs
+            assert kwargs["log_level"] == "DEBUG"
+            assert kwargs["allow_env_override"] is False
+
+        stream_handler.setLevel(logging.DEBUG)
+        with mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup:
+            helper.toggle_log_level()
+            patched_setup.assert_called_once()
+            kwargs = patched_setup.call_args.kwargs
+            assert kwargs["log_level"] == "INFO"
+            assert kwargs["allow_env_override"] is False
+    finally:
+        _teardown_test_logger(logger)
+    return True
+
+
+# ------------------------------------------------------------------
+# Embedded TestSuite
+# ------------------------------------------------------------------
+
+
+def module_tests() -> bool:
+    suite = TestSuite("cli.maintenance", "cli/maintenance.py")
+
+    suite.run_test(
+        "Format cache stat values",
+        _test_format_cache_stat_value,
+        "Ensures value formatter handles common types.",
+    )
+
+    suite.run_test(
+        "Render retention targets",
+        _test_render_retention_targets,
+        "Ensures retention targets render summaries and fallbacks.",
+    )
+
+    suite.run_test(
+        "Render stat and health fields",
+        _test_render_stat_and_health_fields,
+        "Ensures stat and health helpers print expected lines.",
+    )
+
+    suite.run_test(
+        "Print cache component fallback",
+        _test_print_cache_component_output,
+        "Ensures cache component output handles empty stats.",
+    )
+
+    suite.run_test(
+        "Clear log file handler",
+        _test_clear_log_file_behavior,
+        "Ensures bound log file handler can be cleared.",
+    )
+
+    suite.run_test(
+        "Toggle console log level",
+        _test_toggle_log_level_switches_levels,
+        "Ensures log level toggle switches between INFO and DEBUG.",
+    )
+
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
 
 
 __all__ = ["GrafanaCheckerProtocol", "MainCLIHelpers"]

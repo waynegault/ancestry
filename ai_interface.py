@@ -1021,27 +1021,30 @@ def _route_ai_provider_call(
     return result
 
 
+_PROVIDER_CONFIG_VALIDATORS: dict[str, Callable[[Any], bool]] = {
+    "deepseek": lambda api: bool(getattr(api, "deepseek_api_key", None)),
+    "gemini": lambda api: bool(getattr(api, "google_api_key", None)),
+    "local_llm": lambda api: all(
+        getattr(api, attr, None) for attr in ("local_llm_api_key", "local_llm_model", "local_llm_base_url")
+    ),
+    "inception": lambda api: all(
+        getattr(api, attr, None) for attr in ("inception_api_key", "inception_ai_model", "inception_ai_base_url")
+    ),
+    "grok": lambda api: bool(getattr(api, "xai_api_key", None)),
+    "tetrate": lambda api: bool(getattr(api, "tetrate_api_key", None)),
+}
+
+
 def _provider_is_configured(provider: str) -> bool:
     """Return True when the specified provider has enough configuration to attempt a call."""
-    if provider == "deepseek":
-        return bool(getattr(config_schema.api, "deepseek_api_key", None))
-    if provider == "gemini":
-        return bool(getattr(config_schema.api, "google_api_key", None))
-    if provider == "local_llm":
-        return all(
-            getattr(config_schema.api, attr, None)
-            for attr in ("local_llm_api_key", "local_llm_model", "local_llm_base_url")
-        )
-    if provider == "inception":
-        return all(
-            getattr(config_schema.api, attr, None)
-            for attr in ("inception_api_key", "inception_ai_model", "inception_ai_base_url")
-        )
-    if provider == "grok":
-        return bool(getattr(config_schema.api, "xai_api_key", None))
-    if provider == "tetrate":
-        return bool(getattr(config_schema.api, "tetrate_api_key", None))
-    return False
+    api_config = getattr(config_schema, "api", None)
+    if api_config is None:
+        return False
+
+    checker = _PROVIDER_CONFIG_VALIDATORS.get(provider)
+    if checker is None:
+        return False
+    return bool(checker(api_config))
 
 
 def _resolve_provider_chain(primary_provider: str) -> list[str]:

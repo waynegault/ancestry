@@ -8,6 +8,7 @@ Action 10, and presents post-selection details (family + relationship path).
 Priority 1 Todo #10: API Search Deduplication - Caches search results for 7 days
 to prevent duplicate API calls for the same search criteria.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -26,6 +27,11 @@ from genealogy_presenter import present_post_selection
 from logging_config import logger
 from relationship_utils import convert_discovery_api_path_to_unified_format
 from universal_scoring import calculate_display_bonuses
+
+try:  # Optional helper for enriching API results with GEDCOM data when available
+    from gedcom_search_utils import get_gedcom_data as _get_cached_gedcom_data
+except ImportError:  # pragma: no cover - gedcom_search_utils not available in some environments
+    _get_cached_gedcom_data = None
 
 CandidateDict: TypeAlias = dict[str, Any]
 CandidateList: TypeAlias = list[CandidateDict]
@@ -64,6 +70,75 @@ def _clean_display_date(value: Any) -> Any:
 def _parse_date(value: Any) -> Any:
     parser = cast(Callable[[Any], Any], _get_gedcom_utils_attr("_parse_date"))
     return parser(value)
+
+
+_LOCAL_GEDCOM_WARNING_STATE = {"emitted": False}
+
+
+def _log_gedcom_enrichment_warning(message: str, *args: Any) -> None:
+    if _LOCAL_GEDCOM_WARNING_STATE["emitted"]:
+        return
+    logger.debug(message, *args)
+    _LOCAL_GEDCOM_WARNING_STATE["emitted"] = True
+
+
+def _load_processed_gedcom_record(norm_id: Any) -> dict[str, Any] | None:
+    if _get_cached_gedcom_data is None or not norm_id:
+        return None
+
+    try:
+        gedcom_data = _get_cached_gedcom_data()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        _log_gedcom_enrichment_warning("Unable to load GEDCOM cache for API enrichment: %s", exc)
+        return None
+
+    if not gedcom_data:
+        return None
+
+    try:
+        return gedcom_data.get_processed_indi_data(str(norm_id))
+    except Exception as exc:  # pragma: no cover - defensive logging
+        _log_gedcom_enrichment_warning("Failed to fetch GEDCOM data for %s: %s", norm_id, exc)
+        return None
+
+
+def _assign_processed_value(
+    cand: CandidateDict,
+    processed: dict[str, Any],
+    dest_key: str,
+    source_key: str,
+    *,
+    allow_empty: bool = False,
+) -> None:
+    value = processed.get(source_key)
+    if value is None or (isinstance(value, str) and not value.strip() and not allow_empty):
+        return
+    cand[dest_key] = value
+
+
+def _copy_processed_gedcom_fields(cand: CandidateDict, processed: dict[str, Any]) -> None:
+    for field in ("first_name", "surname", "full_name_disp"):
+        _assign_processed_value(cand, processed, field, field)
+
+    _assign_processed_value(cand, processed, "gender", "gender_norm")
+
+    for field in ("birth_place_disp", "death_place_disp", "birth_date_obj", "death_date_obj"):
+        _assign_processed_value(cand, processed, field, field)
+
+    for dest in ("birth_year", "death_year"):
+        value = processed.get(dest)
+        if value is not None:
+            cand[dest] = value
+
+
+def _supplement_candidate_with_local_gedcom(cand: CandidateDict) -> None:
+    """Fill in missing candidate fields using the local GEDCOM cache when available."""
+
+    processed = _load_processed_gedcom_record(cand.get("norm_id"))
+    if not processed:
+        return
+
+    _copy_processed_gedcom_fields(cand, processed)
 
 
 def _normalize_search_criteria(criteria: dict[str, Any]) -> dict[str, Any]:
@@ -139,15 +214,20 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
         from database import ApiSearchCache
 
         # Query for unexpired cache entry
-        cache_entry = db_session.query(ApiSearchCache).filter(
-            ApiSearchCache.search_criteria_hash == cache_key,
-            ApiSearchCache.expires_at > datetime.now(timezone.utc)
-        ).first()
+        cache_entry = (
+            db_session.query(ApiSearchCache)
+            .filter(
+                ApiSearchCache.search_criteria_hash == cache_key, ApiSearchCache.expires_at > datetime.now(timezone.utc)
+            )
+            .first()
+        )
 
         if not cache_entry:
             _cache_stats["misses"] += 1
             _cache_stats["total_queries"] += 1
-            logger.debug(f"[API Search Cache] MISS: {cache_key[:16]}... (hit rate: {get_api_search_cache_hit_rate():.1f}%)")
+            logger.debug(
+                f"[API Search Cache] MISS: {cache_key[:16]}... (hit rate: {get_api_search_cache_hit_rate():.1f}%)"
+            )
             return None
 
         # Update hit statistics
@@ -175,6 +255,21 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
         return None
 
 
+def _rescore_cached_results(cached_results: CandidateList, criteria: dict[str, Any]) -> CandidateList:
+    """Re-score cached API results to ensure they reflect the latest scoring logic."""
+    raw_candidates: CandidateList = []
+    for entry in cached_results:
+        raw_payload = entry.get("raw_data") if isinstance(entry, dict) else None
+        if not isinstance(raw_payload, dict):
+            return cached_results  # Missing raw data - cannot re-score
+        raw_candidates.append(raw_payload)
+
+    if not raw_candidates:
+        return cached_results
+
+    return _process_and_score_suggestions(raw_candidates, criteria)
+
+
 def _store_search_results_in_cache(
     cache_key: str,
     criteria: dict[str, Any],
@@ -194,9 +289,7 @@ def _store_search_results_in_cache(
         from database import ApiSearchCache
 
         # Check if entry already exists (shouldn't, but be safe)
-        existing = db_session.query(ApiSearchCache).filter(
-            ApiSearchCache.search_criteria_hash == cache_key
-        ).first()
+        existing = db_session.query(ApiSearchCache).filter(ApiSearchCache.search_criteria_hash == cache_key).first()
 
         if existing:
             # Update existing entry
@@ -235,7 +328,9 @@ def get_api_search_cache_stats() -> dict[str, Any]:
     Returns:
         Dictionary with cache performance metrics
     """
-    hit_rate = (_cache_stats["hits"] / _cache_stats["total_queries"] * 100) if _cache_stats["total_queries"] > 0 else 0.0
+    hit_rate = (
+        (_cache_stats["hits"] / _cache_stats["total_queries"] * 100) if _cache_stats["total_queries"] > 0 else 0.0
+    )
 
     return {
         "hits": _cache_stats["hits"],
@@ -295,9 +390,9 @@ def cleanup_expired_api_search_cache(db_session: Any) -> int:
     try:
         from database import ApiSearchCache
 
-        count = db_session.query(ApiSearchCache).filter(
-            ApiSearchCache.expires_at <= datetime.now(timezone.utc)
-        ).delete()
+        count = (
+            db_session.query(ApiSearchCache).filter(ApiSearchCache.expires_at <= datetime.now(timezone.utc)).delete()
+        )
         db_session.commit()
 
         if count > 0:
@@ -348,7 +443,7 @@ def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
             hits=stats['hits'],
             misses=stats['misses'],
             hit_rate=hit_rate_percent,
-            target_hit_rate=60.0  # Alert if below 60% (same threshold as relationship cache)
+            target_hit_rate=60.0,  # Alert if below 60% (same threshold as relationship cache)
         )
 
         logger.info(
@@ -365,36 +460,106 @@ def report_api_cache_stats_to_performance_monitor(session_manager: Any) -> None:
 # Scoring helpers (minimal port)
 # -----------------------------
 
-def _extract_candidate_data(raw: CandidateDict, idx: int, clean: Callable[[Any], str | None]) -> CandidateDict:
-    # Extract name - TreesUI parser returns FullName, GivenName, Surname
-    full_name = raw.get("FullName") or (f"{raw.get('GivenName', '')} {raw.get('Surname', '')}").strip() or "Unknown"
+
+def _build_full_name_and_pid(raw: CandidateDict, idx: int) -> tuple[str, Any]:
+    full_name = raw.get("FullName")
+    if not full_name:
+        combined = (f"{raw.get('GivenName', '')} {raw.get('Surname', '')}").strip()
+        full_name = combined or "Unknown"
     pid = raw.get("PersonId", f"Unknown_{idx}")
+    return full_name, pid
 
-    def _p(s: str | None) -> str | None:
-        return clean(s) if isinstance(s, str) else None
 
-    # Parse dates
-    bdate_s, ddate_s = raw.get("BirthDate"), raw.get("DeathDate")
-    bdate_o = _parse_date(bdate_s) if callable(_parse_date) and bdate_s else None
-    ddate_o = _parse_date(ddate_s) if callable(_parse_date) and ddate_s else None
+def _get_id_normalizer() -> Callable[[Any], Any] | None:
+    try:
+        return cast(Callable[[Any], Any], _get_gedcom_utils_attr("_normalize_id"))
+    except Exception:
+        return None
 
-    # Extract first name and surname from parsed data
-    first_name = _p(raw.get("GivenName")) or (_p(full_name.split()[0]) if full_name and full_name != "Unknown" else None)
-    surname = _p(raw.get("Surname")) or (_p(full_name.split()[-1]) if full_name and full_name != "Unknown" and len(full_name.split()) > 1 else None)
+
+def _apply_normalizer(normalizer: Callable[[Any], Any], value: Any) -> Any:
+    try:
+        return normalizer(value)
+    except Exception:
+        return None
+
+
+def _normalize_prefixed_numeric(normalizer: Callable[[Any], Any], value: Any) -> Any:
+    digits = str(value) if value is not None else ""
+    if digits.isdigit():
+        return _apply_normalizer(normalizer, f"I{digits}")
+    return None
+
+
+def _normalize_person_id(pid: Any) -> Any:
+    normalizer = _get_id_normalizer()
+    if normalizer is None:
+        return pid
+
+    normalized = _apply_normalizer(normalizer, pid)
+
+    if isinstance(normalized, str) and normalized.isdigit():
+        prefixed = _normalize_prefixed_numeric(normalizer, normalized)
+        if prefixed:
+            return prefixed
+
+    if normalized:
+        return normalized
+
+    prefixed = _normalize_prefixed_numeric(normalizer, pid)
+    return prefixed or pid
+
+
+def _clean_string(value: Any, cleaner: Callable[[Any], str | None]) -> str | None:
+    return cleaner(value) if isinstance(value, str) else None
+
+
+def _derive_names(
+    raw: CandidateDict, full_name: str, cleaner: Callable[[Any], str | None]
+) -> tuple[str | None, str | None]:
+    first = _clean_string(raw.get("GivenName"), cleaner)
+    last = _clean_string(raw.get("Surname"), cleaner)
+
+    if full_name and full_name != "Unknown":
+        parts = full_name.split()
+        if not first and parts:
+            first = _clean_string(parts[0], cleaner)
+        if not last and len(parts) > 1:
+            last = _clean_string(parts[-1], cleaner)
+
+    return first, last
+
+
+def _parse_date_safe(value: Any) -> Any:
+    if not value or not callable(_parse_date):
+        return None
+    try:
+        return _parse_date(value)
+    except Exception:
+        return None
+
+
+def _extract_candidate_data(raw: CandidateDict, idx: int, clean: Callable[[Any], str | None]) -> CandidateDict:
+    full_name, pid = _build_full_name_and_pid(raw, idx)
+    normalized_pid = _normalize_person_id(pid)
+
+    first_name, surname = _derive_names(raw, full_name, clean)
+    birth_place = _clean_string(raw.get("BirthPlace"), clean)
+    death_place = _clean_string(raw.get("DeathPlace"), clean)
 
     return {
-        "norm_id": pid,
+        "norm_id": normalized_pid,
         "display_id": pid,
         "first_name": first_name,
         "surname": surname,
         "full_name_disp": full_name,
         "gender": raw.get("Gender"),
         "birth_year": raw.get("BirthYear"),
-        "birth_date_obj": bdate_o,
-        "birth_place_disp": _p(raw.get("BirthPlace")),
+        "birth_date_obj": _parse_date_safe(raw.get("BirthDate")),
+        "birth_place_disp": birth_place,
         "death_year": raw.get("DeathYear"),
-        "death_date_obj": ddate_o,
-        "death_place_disp": _p(raw.get("DeathPlace")),
+        "death_date_obj": _parse_date_safe(raw.get("DeathDate")),
+        "death_place_disp": death_place,
         "is_living": raw.get("IsLiving"),
     }
 
@@ -420,15 +585,18 @@ def _build_processed_candidate(
     reasons: list[str],
 ) -> CandidateDict:
     bstr, dstr = raw.get("BirthDate"), raw.get("DeathDate")
+    birth_place_disp = cand.get("birth_place_disp") or raw.get("BirthPlace")
+    death_place_disp = cand.get("death_place_disp") or raw.get("DeathPlace")
+
     return {
-        "id": cand.get("norm_id", "Unknown"),
+        "id": cand.get("display_id", cand.get("norm_id", "Unknown")),
         "name": cand.get("full_name_disp", "Unknown"),
         "gender": cand.get("gender"),
         "birth_date": _clean_display_date(bstr) if callable(_clean_display_date) else (bstr or "N/A"),
-        "birth_place": raw.get("BirthPlace", "N/A"),
+        "birth_place": birth_place_disp or "N/A",
         "birth_year": cand.get("birth_year"),  # Add birth_year for header display
         "death_date": _clean_display_date(dstr) if callable(_clean_display_date) else (dstr or "N/A"),
-        "death_place": raw.get("DeathPlace", "N/A"),
+        "death_place": death_place_disp or "N/A",
         "death_year": cand.get("death_year"),  # Add death_year for header display
         "score": score,
         "field_scores": field_scores,
@@ -439,17 +607,24 @@ def _build_processed_candidate(
 
 def _process_and_score_suggestions(suggestions: CandidateList, criteria: dict[str, Any]) -> CandidateList:
     def clean_param(p: Any) -> str | None:
-        return (p.strip().lower() if p and isinstance(p, str) else None)
+        return p.strip().lower() if p and isinstance(p, str) else None
+
     processed: CandidateList = []
     for idx, raw in enumerate(suggestions or []):
         cand = _extract_candidate_data(raw, idx, clean_param)
+        _supplement_candidate_with_local_gedcom(cand)
         score, field_scores, reasons = _calculate_candidate_score(cand, criteria)
         processed.append(_build_processed_candidate(raw, cand, score, field_scores, reasons))
         # Debug logging to see what scores each result is getting
-        logger.debug(f"Scored {idx}: {cand.get('full_name_disp')} (b. {cand.get('birth_year')} in {cand.get('birth_place_disp')}) = {score} points")
+        logger.debug(
+            f"Scored {idx}: {cand.get('full_name_disp')} (b. {cand.get('birth_year')} in {cand.get('birth_place_disp')}) = {score} points"
+        )
     processed.sort(key=lambda x: x.get("score", 0), reverse=True)
-    logger.debug(f"Top 3 scored results: {[(p.get('name'), p.get('birth_date'), p.get('score')) for p in processed[:3]]}")
+    logger.debug(
+        f"Top 3 scored results: {[(p.get('name'), p.get('birth_date'), p.get('score')) for p in processed[:3]]}"
+    )
     return processed
+
 
 # -----------------------------
 # Display helpers (Action 10 compatible)
@@ -490,14 +665,19 @@ def _create_table_row_for_candidate(candidate: CandidateDict) -> list[str]:
     name_score = f"[{s['givn_s'] + s['surn_s']}]" + (f"[+{s['name_bonus_orig']}]" if s["name_bonus_orig"] > 0 else "")
     bdate = f"{candidate.get('birth_date', 'N/A')} [{b['birth_date_score_component']}]"
     bp = str(candidate.get("birth_place", "N/A"))
-    bplace = f"{(bp[:20] + ('...' if len(bp) > 20 else ''))} [{s['bplace_s']}]" + (f" [+{b['birth_bonus_s_disp']}]" if b["birth_bonus_s_disp"] > 0 else "")
+    bplace = f"{(bp[:20] + ('...' if len(bp) > 20 else ''))} [{s['bplace_s']}]" + (
+        f" [+{b['birth_bonus_s_disp']}]" if b["birth_bonus_s_disp"] > 0 else ""
+    )
     ddate = f"{candidate.get('death_date', 'N/A')} [{b['death_date_score_component']}]"
     dp = str(candidate.get("death_place", "N/A"))
-    dplace = f"{(dp[:20] + ('...' if len(dp) > 20 else ''))} [{s['dplace_s']}]" + (f" [+{b['death_bonus_s_disp']}]" if b["death_bonus_s_disp"] > 0 else "")
+    dplace = f"{(dp[:20] + ('...' if len(dp) > 20 else ''))} [{s['dplace_s']}]" + (
+        f" [+{b['death_bonus_s_disp']}]" if b["death_bonus_s_disp"] > 0 else ""
+    )
     total = int(candidate.get("score", 0))
     alive_pen = int(candidate.get("field_scores", {}).get("alive_penalty", 0))
     total_cell = f"{total}{f' [{alive_pen}]' if alive_pen < 0 else ''}"
     return [str(candidate.get("id", "N/A")), f"{name_short} {name_score}", bdate, bplace, ddate, dplace, total_cell]
+
 
 # -----------------------------
 # Search and post-selection
@@ -529,7 +709,11 @@ def _fetch_cached_results(
     if cached_results is None:
         return cache_key, None
 
-    limited = cached_results[: max(1, max_results)]
+    rescored_results = _rescore_cached_results(cached_results, search_criteria)
+    if rescored_results is not cached_results:
+        _store_search_results_in_cache(cache_key, search_criteria, rescored_results, db_session)
+
+    limited = rescored_results[: max(1, max_results)]
     return cache_key, limited
 
 
@@ -598,7 +782,9 @@ def _extract_year_from_candidate(
     fallback_key: str,
 ) -> int | None:
     """Extract and convert year value from candidate data."""
-    val = selected_candidate_processed.get("field_scores", {}).get(field_key) or selected_candidate_processed.get(fallback_key)
+    val = selected_candidate_processed.get("field_scores", {}).get(field_key) or selected_candidate_processed.get(
+        fallback_key
+    )
     try:
         return int(val) if val and str(val).isdigit() else None
     except Exception:
@@ -621,7 +807,9 @@ def _get_relationship_paths(
 
     # Try relation ladder with labels API first (best option - returns clean JSON with names and dates)
     if owner_tree_id:
-        owner_profile_id = getattr(session_manager_local, "my_profile_id", None) or getattr(config_schema, "reference_person_id", None)
+        owner_profile_id = getattr(session_manager_local, "my_profile_id", None) or getattr(
+            config_schema, "reference_person_id", None
+        )
         if owner_profile_id:
             ladder_data = call_relation_ladder_with_labels_api(
                 session_manager_local, owner_profile_id, owner_tree_id, person_id, base_url, timeout=20
@@ -632,9 +820,13 @@ def _get_relationship_paths(
 
     # Fall back to discovery API if needed
     if not formatted_path:
-        owner_profile_id = getattr(session_manager_local, "my_profile_id", None) or getattr(config_schema, "reference_person_id", None)
+        owner_profile_id = getattr(session_manager_local, "my_profile_id", None) or getattr(
+            config_schema, "reference_person_id", None
+        )
         if owner_profile_id:
-            disc = call_discovery_relationship_api(session_manager_local, person_id, str(owner_profile_id), base_url, timeout=20)
+            disc = call_discovery_relationship_api(
+                session_manager_local, person_id, str(owner_profile_id), base_url, timeout=20
+            )
             if isinstance(disc, dict):
                 unified_path = convert_discovery_api_path_to_unified_format(disc, target_name)
 
@@ -703,7 +895,9 @@ def _handle_supplementary_info_phase(selected_candidate_processed: CandidateDict
     try:
         person_id = str(selected_candidate_processed.get("id"))
         base_url, owner_tree_id = _resolve_base_and_tree(session_manager_local)
-        owner_name = getattr(session_manager_local, "tree_owner_name", None) or getattr(config_schema, "reference_person_name", "Reference Person")
+        owner_name = getattr(session_manager_local, "tree_owner_name", None) or getattr(
+            config_schema, "reference_person_name", "Reference Person"
+        )
         target_name = selected_candidate_processed.get("name", "Target Person")
         # Family details
         family_data = get_api_family_details(session_manager_local, person_id, owner_tree_id)
@@ -771,6 +965,7 @@ def _api_search_core_module_tests() -> bool:
     def _test_resolve_base_and_tree() -> None:
         class Dummy:  # simple object without attributes
             pass
+
         dummy = Dummy()
         base_url, tree_id = _resolve_base_and_tree(dummy)
         assert isinstance(base_url, str)
@@ -805,8 +1000,10 @@ def _api_search_core_module_tests() -> bool:
             pass
 
         # Mock both _resolve_base_and_tree and call_treesui_list_api
-        with patch('api_search_core._resolve_base_and_tree') as mock_resolve, \
-             patch('api_search_core.call_treesui_list_api', fake_list_api):
+        with (
+            patch('api_search_core._resolve_base_and_tree') as mock_resolve,
+            patch('api_search_core.call_treesui_list_api', fake_list_api),
+        ):
             mock_resolve.return_value = ("https://example.com", "tree123")
             # Function gracefully handles invalid input by returning empty list
             results = search_ancestry_api_for_person(SM(), {"GivenName": "John"})
@@ -977,48 +1174,63 @@ def _api_search_core_module_tests() -> bool:
     )
 
     def _test_search_with_cache_integration() -> None:
-        """Test search_ancestry_api_for_person handles database gracefully."""
+        """Test search_ancestry_api_for_person handles cache paths with valid criteria."""
         from unittest.mock import MagicMock, patch
 
-        # Test 1: Search without database (should work without caching)
-        mock_sm_no_db = MagicMock()
-        mock_sm_no_db.database_manager = None  # No database
-        mock_sm_no_db.my_tree_id = "test_tree_123"
+        def _valid_criteria() -> dict[str, Any]:
+            return {
+                "first_name": "Test",
+                "surname": "Person",
+                "birth_year": 1900,
+            }
 
-        with patch('api_search_core.call_treesui_list_api', return_value=[]):
-            criteria = {"givenName": "Test"}
-            results = search_ancestry_api_for_person(mock_sm_no_db, criteria)
+        def _new_session_manager() -> MagicMock:
+            sm = MagicMock()
+            sm.my_tree_id = "test_tree_123"
+            return sm
+
+        patch_target = f"{__name__}.call_treesui_list_api"
+
+        # Test 1: Search without database (should still hit the API helper once)
+        mock_sm_no_db = _new_session_manager()
+        mock_sm_no_db.database_manager = None
+        with patch(patch_target, return_value=[]) as mock_api:
+            results = search_ancestry_api_for_person(mock_sm_no_db, _valid_criteria())
             assert isinstance(results, list), "Should return list even without database"
+            assert mock_api.call_count == 1, "API helper should be called when DB caching is unavailable"
 
-        # Test 2: Search with database manager that fails (should gracefully fall back)
-        mock_sm_fail = MagicMock()
-        mock_sm_fail.database_manager.get_session.side_effect = Exception("DB connection failed")
-        mock_sm_fail.my_tree_id = "test_tree_123"
-
-        with patch('api_search_core.call_treesui_list_api', return_value=[]):
-            results = search_ancestry_api_for_person(mock_sm_fail, criteria)
-            assert isinstance(results, list), "Should return list even when DB fails"
-
-        # Test 3: Verify cache functions are called correctly with working DB
-        mock_sm_db = MagicMock()
+        # Test 2: Working database session should drive cache query + store
+        mock_sm_db = _new_session_manager()
         mock_db_manager = MagicMock()
         mock_db_session = MagicMock()
-
-        # Setup working database mock
         mock_sm_db.database_manager = mock_db_manager
         mock_db_manager.get_session.return_value = mock_db_session
-        mock_sm_db.my_tree_id = "test_tree_123"
+        mock_db_session.query.return_value.filter.return_value.first.return_value = None  # Cache miss
 
-        # Mock the cache table query to return None (cache miss)
-        mock_db_session.query.return_value.filter.return_value.first.return_value = None
+        api_payload = [
+            {
+                "FullName": "Test Person",
+                "PersonId": "1",
+                "GivenName": "Test",
+                "Surname": "Person",
+                "BirthYear": 1900,
+                "BirthPlace": "Banff, Scotland",
+                "BirthDate": "1 Jan 1900",
+                "DeathYear": 1980,
+                "DeathPlace": "Edinburgh, Scotland",
+                "DeathDate": "1 Jan 1980",
+                "Gender": "M",
+            }
+        ]
 
-        with patch('api_search_core.call_treesui_list_api', return_value=[{"id": "1", "name": "Test"}]):
-            results = search_ancestry_api_for_person(mock_sm_db, criteria)
+        with patch(patch_target, return_value=api_payload) as mock_api:
+            results = search_ancestry_api_for_person(mock_sm_db, _valid_criteria())
 
-            # Verify session methods were called (indicates cache was attempted)
-            assert mock_db_session.query.called or mock_db_session.add.called, \
-                "Database session should be used for caching"
-            assert isinstance(results, list), "Should return list of results"
+            assert mock_api.call_count == 1, "API helper should be called for cache miss"
+            assert mock_db_session.query.called, "Cache lookup should query the database"
+            assert mock_db_session.add.called, "Cache store should insert the new results"
+            assert mock_db_session.commit.called, "Cache store should commit the transaction"
+            assert isinstance(results, list) and results, "Processed results should be returned"
 
     suite.run_test(
         test_name="Search with cache integration",

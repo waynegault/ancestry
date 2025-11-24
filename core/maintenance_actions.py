@@ -1,8 +1,20 @@
+import contextlib
 import gc
+import io
+import os
 import shutil
+import sys
 import time
 from importlib import import_module
-from typing import Any
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Callable, Optional, cast
+
+if __package__ in {None, ""}:
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+from unittest import mock
 
 from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -21,6 +33,7 @@ from database import (
     Person,
 )
 from standard_imports import setup_module
+from test_framework import TestSuite, create_standard_test_runner
 from utils import log_in, login_status
 
 logger = setup_module(globals(), __name__)
@@ -50,21 +63,15 @@ def _perform_deletions(sess: SASession, person_id_to_keep: int) -> dict[str, int
     """Perform all deletion operations and return counts."""
     deleted_counts: dict[str, int] = {
         "conversation_log": _delete_table_records(
-            sess, ConversationLog, ConversationLog.people_id != person_id_to_keep,
-            "conversation_log", person_id_to_keep
+            sess, ConversationLog, ConversationLog.people_id != person_id_to_keep, "conversation_log", person_id_to_keep
         ),
         "dna_match": _delete_table_records(
-            sess, DnaMatch, DnaMatch.people_id != person_id_to_keep,
-            "dna_match", person_id_to_keep
+            sess, DnaMatch, DnaMatch.people_id != person_id_to_keep, "dna_match", person_id_to_keep
         ),
         "family_tree": _delete_table_records(
-            sess, FamilyTree, FamilyTree.people_id != person_id_to_keep,
-            "family_tree", person_id_to_keep
+            sess, FamilyTree, FamilyTree.people_id != person_id_to_keep, "family_tree", person_id_to_keep
         ),
-        "people": _delete_table_records(
-            sess, Person, Person.id != person_id_to_keep,
-            "people", person_id_to_keep
-        ),
+        "people": _delete_table_records(sess, Person, Person.id != person_id_to_keep, "people", person_id_to_keep),
     }
 
     total_deleted = int(sum(deleted_counts.values()))
@@ -101,16 +108,12 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     try:
         # --- Close main pool FIRST ---
         if session_manager:
-            logger.debug(
-                f"Closing main DB connections before deleting data (except {profile_id_to_keep})..."
-            )
+            logger.debug(f"Closing main DB connections before deleting data (except {profile_id_to_keep})...")
             session_manager.cls_db_conn(keep_db=False)
             logger.debug("Main DB pool closed.")
         # --- End closing main pool ---
 
-        logger.debug(
-            f"Deleting data for all people except Profile ID: {profile_id_to_keep}..."
-        )
+        logger.debug(f"Deleting data for all people except Profile ID: {profile_id_to_keep}...")
         # Create a temporary SessionManager for this specific operation
         temp_manager = SessionManager()
         session = temp_manager.get_db_conn()
@@ -138,9 +141,7 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
             # 1. Find the person to keep by profile_id
             person_to_keep = (
                 sess.query(Person.id, Person.username, Person.first_name, Person.profile_id)
-                .filter(
-                    Person.profile_id == profile_id_to_keep, Person.deleted_at.is_(None)
-                )
+                .filter(Person.profile_id == profile_id_to_keep, Person.deleted_at.is_(None))
                 .first()
             )
 
@@ -174,9 +175,7 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
         success = True  # Mark success if transaction completes
 
     except Exception as e:
-        logger.error(
-            f"Error during deletion (except {profile_id_to_keep}): {e}", exc_info=True
-        )
+        logger.error(f"Error during deletion (except {profile_id_to_keep}): {e}", exc_info=True)
         success = False  # Explicitly mark failure
     finally:
         # Clean up the temporary session manager and its resources
@@ -280,9 +279,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
             existing_count = sess.query(func.count(MessageTemplate.id)).scalar() or 0
 
             if existing_count > 0:
-                logger.debug(
-                    f"Found {existing_count} existing message templates. Skipping seeding."
-                )
+                logger.debug(f"Found {existing_count} existing message templates. Skipping seeding.")
             else:
                 templates_data: list[dict[str, Any]] = get_default_templates()
                 if not templates_data:
@@ -294,9 +291,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
                     logger.debug(f"Added {len(templates_data)} message templates from defaults.")
 
         count = recreation_session.query(func.count(MessageTemplate.id)).scalar() or 0
-        logger.debug(
-            f"MessageTemplate seeding complete. Total templates in DB: {count}"
-        )
+        logger.debug(f"MessageTemplate seeding complete. Total templates in DB: {count}")
         return True
     except Exception as e:
         logger.error(f"Error seeding message templates: {e}", exc_info=True)
@@ -557,6 +552,7 @@ def _display_session_info(session_manager: SessionManager) -> None:
     # We need api_manager to get csrf_token
     # In main.py it used _get_api_manager from core.action_runner
     from core.action_runner import get_api_manager as _get_api_manager
+
     api_manager = _get_api_manager(session_manager)
     if api_manager and api_manager.csrf_token:
         token = api_manager.csrf_token
@@ -617,18 +613,14 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     if not session_manager.driver_live:
         logger.error("Driver not live. Cannot check login status.")
         print("ERROR: Browser not started. Cannot check login status.")
-        print(
-            "       Select any browser-required action (1, 6-9) to start the browser."
-        )
+        print("       Select any browser-required action (1, 6-9) to start the browser.")
         return False
 
     print("Checking login status...")
 
     # Call login_status directly to check initial status
     try:
-        status = login_status(
-            session_manager, disable_ui_fallback=False
-        )  # Use UI fallback for reliability
+        status = login_status(session_manager, disable_ui_fallback=False)  # Use UI fallback for reliability
 
         if status is True:
             return _handle_logged_in_status(session_manager)
@@ -645,3 +637,244 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
         print(f"\n! Error checking login status: {e}")
         print("  This may indicate a browser or network issue.")
         return False
+
+
+# ------------------------------------------------------------------
+# Embedded regression tests
+# ------------------------------------------------------------------
+
+
+class _FakeQuery:
+    def __init__(self, delete_result: int, scalar_values: Optional[list[int]] = None) -> None:
+        self.delete_result = delete_result
+        self.scalar_values = scalar_values or []
+        self.filter_args: list[Any] = []
+        self.delete_kwargs: list[Any] = []
+
+    def filter(self, condition: Any) -> "_FakeQuery":
+        self.filter_args.append(condition)
+        return self
+
+    def delete(self, *, synchronize_session: Any) -> int:
+        self.delete_kwargs.append(synchronize_session)
+        return self.delete_result
+
+    def scalar(self) -> int:
+        if self.scalar_values:
+            return self.scalar_values.pop(0)
+        return 0
+
+
+class _FakeSession:
+    def __init__(self, delete_result: int = 1, scalar_values: Optional[list[int]] = None) -> None:
+        self.query_calls: list[Any] = []
+        self.added: list[Any] = []
+        self._query = _FakeQuery(delete_result, scalar_values)
+
+    def query(self, _table: Any) -> _FakeQuery:
+        self.query_calls.append(_table)
+        return self._query
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+
+def _capture_stdout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        func(*args, **kwargs)
+    return buffer.getvalue()
+
+
+def _test_delete_table_records_uses_session_query() -> bool:
+    fake_session = _FakeSession(delete_result=2)
+    session_for_call = cast(SASession, fake_session)
+    count = _delete_table_records(session_for_call, Person, "condition", "people", 42)
+    assert count == 2
+    assert fake_session.query_calls == [Person]
+    assert fake_session._query.filter_args == ["condition"]
+    assert fake_session._query.delete_kwargs == [False]
+    return True
+
+
+def _test_perform_deletions_aggregates_counts() -> bool:
+    with mock.patch(
+        f"{__name__}._delete_table_records",
+        side_effect=[1, 2, 3, 4],
+    ) as patched:
+        fake_session = SimpleNamespace()
+        counts = _perform_deletions(cast(SASession, fake_session), 7)
+
+    assert counts == {
+        "conversation_log": 1,
+        "dna_match": 2,
+        "family_tree": 3,
+        "people": 4,
+    }
+    assert patched.call_count == 4
+    return True
+
+
+def _test_initialize_db_manager_engine_invokes_initializer() -> bool:
+    class FakeManager:
+        def __init__(self) -> None:
+            self.engine = None
+            self.Session = None
+            self.ready_checks = 0
+            self.close_invocations: list[bool] = []
+
+        def _initialize_engine_and_session(self) -> None:
+            self.engine = "engine"
+            self.Session = "session"
+
+        def ensure_ready(self) -> bool:
+            self.ready_checks += 1
+            return True
+
+        def close_connections(self, dispose_engine: bool = False) -> None:
+            self.close_invocations.append(dispose_engine)
+
+    fake_manager = FakeManager()
+    engine, session = _initialize_db_manager_engine(fake_manager)
+    assert engine == "engine"
+    assert session == "session"
+    return True
+
+
+def _test_initialize_ethnicity_columns_from_metadata_imports_module() -> bool:
+    sentinel = object()
+    fake_module = SimpleNamespace(initialize_ethnicity_columns_from_metadata=lambda _mgr: sentinel)
+    with mock.patch.dict(sys.modules, {"dna_ethnicity_utils": fake_module}):
+        session_manager = SimpleNamespace()
+        result = _initialize_ethnicity_columns_from_metadata(cast(SessionManager, session_manager))
+    assert result is sentinel
+    return True
+
+
+def _test_close_main_pool_for_reset_invokes_gc() -> bool:
+    fake_manager = SimpleNamespace(cls_db_conn=mock.Mock())
+    with mock.patch("gc.collect") as gc_collect, mock.patch("time.sleep") as sleep:
+        manager_for_call = cast(SessionManager, fake_manager)
+        _close_main_pool_for_reset(manager_for_call)
+
+    fake_manager.cls_db_conn.assert_called_once_with(keep_db=False)
+    assert gc_collect.call_count >= 2
+    sleep.assert_called_once_with(1.0)
+    return True
+
+
+def _test_handle_logged_in_status_outputs_message() -> bool:
+    session_manager = SimpleNamespace()
+    with mock.patch(f"{__name__}._display_session_info") as display_info:
+        output = _capture_stdout(_handle_logged_in_status, cast(SessionManager, session_manager))
+
+    assert "You are currently logged in" in output
+    display_info.assert_called_once_with(session_manager)
+    return True
+
+
+def _test_verify_login_success_reports_status() -> bool:
+    session_manager = SimpleNamespace()
+    with (
+        mock.patch(f"{__name__}.login_status", return_value=True),
+        mock.patch(f"{__name__}._display_session_info") as display_info,
+    ):
+        assert _verify_login_success(cast(SessionManager, session_manager)) is True
+        display_info.assert_called_once_with(session_manager)
+
+    with mock.patch(f"{__name__}.login_status", return_value=False):
+        output = _capture_stdout(_verify_login_success, cast(SessionManager, session_manager))
+        assert "verification failed" in output
+        assert _verify_login_success(cast(SessionManager, session_manager)) is False
+    return True
+
+
+def _test_attempt_login_success_and_failure_paths() -> bool:
+    session_manager = SimpleNamespace()
+    with (
+        mock.patch(f"{__name__}.log_in", return_value=True),
+        mock.patch(f"{__name__}._verify_login_success", return_value=True) as verify_login,
+    ):
+        assert _attempt_login(cast(SessionManager, session_manager)) is True
+        verify_login.assert_called_once_with(session_manager)
+
+    with mock.patch(f"{__name__}.log_in", return_value=False):
+        assert _attempt_login(cast(SessionManager, session_manager)) is False
+
+    with mock.patch(f"{__name__}.log_in", side_effect=RuntimeError("boom")):
+        assert _attempt_login(cast(SessionManager, session_manager)) is False
+    return True
+
+
+def module_tests() -> bool:
+    suite = TestSuite("core.maintenance_actions", "core/maintenance_actions.py")
+
+    suite.run_test(
+        "Delete table records",
+        _test_delete_table_records_uses_session_query,
+        "Ensures delete helper issues a query and returns count.",
+    )
+
+    suite.run_test(
+        "Aggregate deletion counts",
+        _test_perform_deletions_aggregates_counts,
+        "Ensures perform deletions aggregates each table count.",
+    )
+
+    suite.run_test(
+        "Initialize DB manager engine",
+        _test_initialize_db_manager_engine_invokes_initializer,
+        "Ensures DB manager initializer runs when engine missing.",
+    )
+
+    suite.run_test(
+        "Initialize ethnicity columns",
+        _test_initialize_ethnicity_columns_from_metadata_imports_module,
+        "Ensures ethnicity initializer delegates to helper module.",
+    )
+
+    suite.run_test(
+        "Close pool for reset",
+        _test_close_main_pool_for_reset_invokes_gc,
+        "Ensures reset helper closes pool and frees resources.",
+    )
+
+    suite.run_test(
+        "Handle logged in status",
+        _test_handle_logged_in_status_outputs_message,
+        "Ensures logged-in handler prints message and session info.",
+    )
+
+    suite.run_test(
+        "Verify login success",
+        _test_verify_login_success_reports_status,
+        "Ensures login verification reports success and failure states.",
+    )
+
+    suite.run_test(
+        "Attempt login paths",
+        _test_attempt_login_success_and_failure_paths,
+        "Ensures login attempts handle success, failure, and exceptions.",
+    )
+
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+
+def _should_run_module_tests() -> bool:
+    return os.environ.get("RUN_MODULE_TESTS") == "1"
+
+
+def _print_module_usage() -> int:
+    print("core.maintenance_actions exposes helpers for main.py and has no standalone CLI entry.")
+    print("Set RUN_MODULE_TESTS=1 before execution to run embedded regression tests.")
+    return 0
+
+
+if __name__ == "__main__":
+    if _should_run_module_tests():
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    sys.exit(_print_module_usage())

@@ -95,6 +95,7 @@ from memory_utils import ObjectPool
 # Pool for GedcomReader objects (if available)
 try:
     from ged4py.parser import GedcomReader
+
     gedcom_pool = ObjectPool(lambda: GedcomReader, max_size=5)
 except ImportError:
     gedcom_pool = None
@@ -103,6 +104,7 @@ except ImportError:
 # --- Lazy Loading for Large GEDCOM Datasets ---
 class LazyGedcomData:
     """Lazy loader for large GEDCOM datasets."""
+
     def __init__(self, gedcom_path: str):
         self.gedcom_path = gedcom_path
         self._data = None
@@ -112,6 +114,7 @@ class LazyGedcomData:
         # Only load GEDCOM data when accessed
         try:
             from ged4py.parser import GedcomReader
+
             self._data = GedcomReader(self.gedcom_path)
         except ImportError:
             self._data = None
@@ -141,18 +144,14 @@ class GedcomCacheModule(BaseCacheModule):
 
         # Add GEDCOM-specific statistics
         memory_cache_size = len(_MEMORY_CACHE)
-        memory_cache_valid_entries = sum(
-            1 for key in _MEMORY_CACHE if _is_memory_cache_valid(key)
-        )
+        memory_cache_valid_entries = sum(1 for key in _MEMORY_CACHE if _is_memory_cache_valid(key))
 
         gedcom_stats = {
             "module_name": self.module_name,
             "memory_cache_entries": memory_cache_size,
             "memory_cache_valid_entries": memory_cache_valid_entries,
             "memory_cache_hit_rate": (
-                memory_cache_valid_entries / memory_cache_size * 100
-                if memory_cache_size > 0
-                else 0
+                memory_cache_valid_entries / memory_cache_size * 100 if memory_cache_size > 0 else 0
             ),
             "cache_max_age_seconds": _CACHE_MAX_AGE,
         }
@@ -161,9 +160,7 @@ class GedcomCacheModule(BaseCacheModule):
         gedcom_path = config_schema.database.gedcom_file_path
         if gedcom_path and Path(gedcom_path).exists():
             gedcom_stats["gedcom_file_path"] = str(gedcom_path)
-            gedcom_stats["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
-                1024 * 1024
-            )
+            gedcom_stats["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (1024 * 1024)
             gedcom_stats["gedcom_file_mtime"] = Path(gedcom_path).stat().st_mtime
 
         # Merge with base statistics
@@ -194,9 +191,7 @@ class GedcomCacheModule(BaseCacheModule):
         """Warm up GEDCOM cache with frequently accessed data."""
         try:
             # Check if GEDCOM file is available
-            if not (
-                config_schema and hasattr(config_schema.database, "gedcom_file_path")
-            ):
+            if not (config_schema and hasattr(config_schema.database, "gedcom_file_path")):
                 logger.warning("No GEDCOM file path configured for cache warming")
                 return False
 
@@ -317,9 +312,8 @@ def _get_memory_cache_key(file_path: str, operation: str) -> str:
     """Generate a consistent cache key for memory cache using unified system."""
     # Use the unified cache key generation for consistency
     from pathlib import Path
-    return get_unified_cache_key(
-        "gedcom_memory", operation, file_path, Path(file_path).stat().st_mtime
-    )
+
+    return get_unified_cache_key("gedcom_memory", operation, file_path, Path(file_path).stat().st_mtime)
 
 
 def _is_memory_cache_valid(cache_key: str) -> bool:
@@ -364,12 +358,14 @@ def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Opt
     """Check disk cache for GEDCOM data. Returns (cached_data, disk_cache_key)."""
     try:
         from pathlib import Path
+
         file_mtime = Path(gedcom_path).stat().st_mtime
         mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
         disk_cache_key = f"gedcom_load_mtime_{mtime_hash}"
 
         if cache is not None:
             from diskcache.core import ENOVAL
+
             cache_obj = cast(Any, cache)
             disk_cached = cache_obj.get(disk_cache_key, default=ENOVAL, retry=True)
             if disk_cached is not ENOVAL:
@@ -401,6 +397,7 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
                 "processed_data_cache": gedcom_data.processed_data_cache,
                 "id_to_parents": gedcom_data.id_to_parents,
                 "id_to_children": gedcom_data.id_to_children,
+                "id_to_spouses": getattr(gedcom_data, "id_to_spouses", {}),
                 "indi_index_build_time": gedcom_data.indi_index_build_time,
                 "family_maps_build_time": gedcom_data.family_maps_build_time,
                 "data_processing_time": gedcom_data.data_processing_time,
@@ -426,6 +423,9 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
         gedcom_path: Path to the GEDCOM file
 
     Returns:
+            if isinstance(disk_cached, dict) and "id_to_spouses" not in disk_cached:
+                logger.debug("Disk GEDCOM cache missing spouse map; refreshing cached entry with rebuilt data.")
+                _store_gedcom_in_disk_cache(gedcom_data, disk_cache_key)
         GedcomData instance or None if loading fails
 
     Note:
@@ -447,6 +447,7 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
         # Reconstruct GedcomData from cached data
         try:
             from gedcom_utils import GedcomData
+
             gedcom_data = GedcomData.from_cache(disk_cached, gedcom_path)
 
             # Store in memory cache for faster next access
@@ -498,9 +499,11 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
 
 # Helper functions for cache_gedcom_processed_data
 
+
 def _create_cache_keys(gedcom_path: str) -> dict[str, str]:
     """Create cache keys based on file path and modification time."""
     from pathlib import Path
+
     file_mtime = Path(gedcom_path).stat().st_mtime
     path_hash = hashlib.md5(str(gedcom_path).encode()).hexdigest()[:8]
     mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
@@ -523,9 +526,7 @@ def _serialize_processed_data_item(value: dict[str, Any]) -> dict[str, Any]:
             serializable_item[item_key] = item_value
         else:
             # Skip non-serializable objects
-            logger.debug(
-                f"Skipping non-serializable object in processed_data_cache: {item_key} = {type(item_value)}"
-            )
+            logger.debug(f"Skipping non-serializable object in processed_data_cache: {item_key} = {type(item_value)}")
     return serializable_item
 
 
@@ -605,9 +606,7 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
 
         # Cache processed data
         if hasattr(gedcom_data, "processed_data_cache"):
-            serializable_processed_data = _serialize_processed_data_cache(
-                gedcom_data.processed_data_cache
-            )
+            serializable_processed_data = _serialize_processed_data_cache(gedcom_data.processed_data_cache)
             warm_cache_with_data(
                 cache_keys["processed_data"],
                 serializable_processed_data,
@@ -618,17 +617,14 @@ def cache_gedcom_processed_data(gedcom_data: Any, gedcom_path: str) -> bool:
         if hasattr(gedcom_data, "indi_index"):
             serializable_indi_index = _serialize_indi_index(gedcom_data.indi_index)
             if serializable_indi_index:
-                warm_cache_with_data(
-                    cache_keys["indi_index"], serializable_indi_index, expire=86400
-                )
+                warm_cache_with_data(cache_keys["indi_index"], serializable_indi_index, expire=86400)
 
         # Cache family relationship maps
         _cache_family_relationship_maps(gedcom_data, cache_keys["family_maps"])
 
         from pathlib import Path
-        logger.info(
-            f"Successfully cached GEDCOM processed data for {Path(gedcom_path).name}"
-        )
+
+        logger.info(f"Successfully cached GEDCOM processed data for {Path(gedcom_path).name}")
         return True
 
     except Exception as e:
@@ -691,9 +687,7 @@ def get_gedcom_cache_info() -> dict[str, Any]:
         gedcom_path = config_schema.database.gedcom_file_path
         if gedcom_path and Path(gedcom_path).exists():
             info["gedcom_file"] = str(gedcom_path)
-            info["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (
-                1024 * 1024
-            )
+            info["gedcom_file_size_mb"] = Path(gedcom_path).stat().st_size / (1024 * 1024)
             info["gedcom_file_mtime"] = Path(gedcom_path).stat().st_mtime
 
     return info
@@ -793,9 +787,7 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
                 _MEMORY_CACHE.pop(cache_key, None)
 
         # Demo 4: Cache Coordination
-        coordination_stats = get_unified_cache_key(
-            "gedcom", "coordination_demo", "test_param"
-        )
+        coordination_stats = get_unified_cache_key("gedcom", "coordination_demo", "test_param")
         cast(list[dict[str, Any]], demo_results["demonstrations"]).append(
             {
                 "name": "Cache Coordination",
@@ -817,13 +809,9 @@ def demonstrate_gedcom_cache_usage() -> dict[str, Any]:
 
     # Final summary
     demo_results["end_time"] = time.time()
-    demo_results["total_duration"] = (
-        demo_results["end_time"] - demo_results["start_time"]
-    )
+    demo_results["total_duration"] = demo_results["end_time"] - demo_results["start_time"]
     demo_results["performance_summary"] = {
-        "demonstrations_completed": len(
-            [d for d in demo_results["demonstrations"] if d["status"] == "success"]
-        ),
+        "demonstrations_completed": len([d for d in demo_results["demonstrations"] if d["status"] == "success"]),
         "total_demonstrations": len(demo_results["demonstrations"]),
         "final_cache_stats": get_gedcom_cache_stats(),
         "final_health_status": get_gedcom_cache_health(),
@@ -875,10 +863,8 @@ def test_memory_cache_operations():
 def test_gedcom_parsing_caching():
     """Test GEDCOM file parsing and caching."""
     # Test that cache_gedcom_processed_data function exists in this module
-    assert "cache_gedcom_processed_data" in globals(), \
-        "cache_gedcom_processed_data function should exist"
-    assert callable(cache_gedcom_processed_data), \
-        "cache_gedcom_processed_data should be callable"
+    assert "cache_gedcom_processed_data" in globals(), "cache_gedcom_processed_data function should exist"
+    assert callable(cache_gedcom_processed_data), "cache_gedcom_processed_data should be callable"
 
     # Test with mock cache key and data (avoid file access)
     test_key = "test_gedcom_parse_key"
@@ -899,10 +885,10 @@ def test_gedcom_parsing_caching():
 def test_cached_data_retrieval():
     """Test cached GEDCOM data retrieval."""
     # Test that load_gedcom_with_aggressive_caching function exists in this module
-    assert "load_gedcom_with_aggressive_caching" in globals(), \
+    assert "load_gedcom_with_aggressive_caching" in globals(), (
         "load_gedcom_with_aggressive_caching function should exist"
-    assert callable(load_gedcom_with_aggressive_caching), \
-        "load_gedcom_with_aggressive_caching should be callable"
+    )
+    assert callable(load_gedcom_with_aggressive_caching), "load_gedcom_with_aggressive_caching should be callable"
 
     # Test memory cache retrieval
     test_key = "test_retrieval_key"
@@ -984,8 +970,7 @@ def test_cache_statistics_collection():
         "memory_cache_entries",
         "cache_max_age_seconds",
     ]
-    assert all(field in stats for field in required_fields), \
-        f"Stats missing required fields. Got: {list(stats.keys())}"
+    assert all(field in stats for field in required_fields), f"Stats missing required fields. Got: {list(stats.keys())}"
     return True
 
 
@@ -997,8 +982,9 @@ def test_cache_health_status():
         "memory_cache_health",
         "gedcom_file_health",
     ]
-    assert all(field in health for field in required_fields), \
+    assert all(field in health for field in required_fields), (
         f"Health status missing required fields. Got: {list(health.keys())}"
+    )
     return True
 
 
@@ -1007,8 +993,9 @@ def test_cache_performance_metrics():
     stats = _gedcom_cache_module.get_stats()
     # Check for performance-related metrics
     performance_indicators = ["memory_cache_entries", "cache_max_age_seconds"]
-    assert all(indicator in stats for indicator in performance_indicators), \
+    assert all(indicator in stats for indicator in performance_indicators), (
         f"Stats missing performance indicators. Got: {list(stats.keys())}"
+    )
     return True
 
 
@@ -1182,8 +1169,6 @@ run_comprehensive_tests = create_standard_test_runner(gedcom_cache_module_tests)
 
 
 if __name__ == "__main__":
-    print(
-        "🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite..."
-    )
+    print("🗂️ Running GEDCOM Cache Management & Optimization comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

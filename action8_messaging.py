@@ -5515,6 +5515,88 @@ def _test_enhance_message_format_data_phase5() -> None:
     logger.info("✓ Complete Phase 5 enhancement test passed")
 
 
+def _test_calculate_days_since_login_handles_timezones() -> bool:
+    base_now = datetime.now(timezone.utc)
+    naive_login = (base_now - timedelta(days=5)).replace(tzinfo=None)
+    aware_login = (base_now - timedelta(days=3)).astimezone(timezone(timedelta(hours=-5)))
+
+    assert _calculate_days_since_login(naive_login, "test") == 5
+    assert _calculate_days_since_login(aware_login, "test") == 3
+    assert _calculate_days_since_login(None, "test") is None
+    return True
+
+
+def _test_determine_engagement_tier_thresholds() -> bool:
+    thresholds = {
+        'high': 70,
+        'medium': 40,
+        'low': 20,
+        'active_login': 7,
+        'moderate_login': 30,
+    }
+    intervals = {'high': 7, 'medium': 14, 'low': 21, 'none': 30}
+
+    high_interval, high_tier = _determine_engagement_tier(80, 3, thresholds, intervals)
+    med_interval, med_tier = _determine_engagement_tier(50, None, thresholds, intervals)
+    low_interval, low_tier = _determine_engagement_tier(10, 60, thresholds, intervals)
+
+    assert (high_interval.days, high_tier) == (7, 'high')
+    assert (med_interval.days, med_tier) == (14, 'medium')
+    assert (low_interval.days, low_tier) == (21, 'low')
+    return True
+
+
+def _test_is_tree_creation_recent_respects_threshold() -> bool:
+    from types import SimpleNamespace
+
+    original_threshold = getattr(config_schema, 'status_change_recent_days', 7)
+    config_schema.status_change_recent_days = 10
+    try:
+        person = cast(Person, SimpleNamespace(username="Tester", id=1))
+        recent_creation = datetime.now(timezone.utc) - timedelta(days=5)
+        old_creation = datetime.now(timezone.utc) - timedelta(days=25)
+
+        assert _is_tree_creation_recent(recent_creation, person) is True
+        assert _is_tree_creation_recent(old_creation, person) is False
+    finally:
+        config_schema.status_change_recent_days = original_threshold
+    return True
+
+
+def _test_has_message_after_tree_creation_detects_activity() -> bool:
+    from types import SimpleNamespace
+
+    created_at = datetime.now(timezone.utc) - timedelta(days=30)
+    log_before = SimpleNamespace(direction=MessageDirectionEnum.OUT, latest_timestamp=created_at - timedelta(days=1))
+    log_after = SimpleNamespace(direction=MessageDirectionEnum.OUT, latest_timestamp=created_at + timedelta(days=2))
+    person = cast(Person, SimpleNamespace(username="Tester", id=1, conversation_log_entries=[log_before, log_after]))
+    assert _has_message_after_tree_creation(person, created_at) is True
+
+    person_without = cast(Person, SimpleNamespace(username="Tester", id=1, conversation_log_entries=[log_before]))
+    assert _has_message_after_tree_creation(person_without, created_at) is False
+    return True
+
+
+def _test_cancel_pending_messages_updates_state() -> bool:
+    from types import SimpleNamespace
+    from unittest import mock
+
+    conv_state = SimpleNamespace(
+        next_action='send_follow_up',
+        next_action_date=datetime.now(timezone.utc) + timedelta(days=10),
+        engagement_score=55,
+    )
+    person = cast(Person, SimpleNamespace(username="Tester", id=1, conversation_state=conv_state))
+
+    with mock.patch(f"{__name__}.log_conversation_state_change") as log_mock:
+        assert cancel_pending_messages_on_status_change(person)
+
+    assert conv_state.next_action == 'status_changed'
+    assert conv_state.next_action_date is None
+    log_mock.assert_called_once()
+    return True
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -5638,6 +5720,36 @@ def action8_messaging_tests() -> bool:
             "Error categorization basic path works.",
             "Test skip categorization.",
             "Ensure categorizer returns expected tuple.",
+        )
+
+        suite.run_test(
+            "Days since login helper",
+            _test_calculate_days_since_login_handles_timezones,
+            "Ensures _calculate_days_since_login handles naive, aware, and missing timestamps.",
+        )
+
+        suite.run_test(
+            "Engagement tier thresholds",
+            _test_determine_engagement_tier_thresholds,
+            "Validates tier selection and interval mapping across multiple scenarios.",
+        )
+
+        suite.run_test(
+            "Tree status helpers",
+            _test_is_tree_creation_recent_respects_threshold,
+            "Checks recent tree detection with configurable thresholds.",
+        )
+
+        suite.run_test(
+            "Message-after-tree detection",
+            _test_has_message_after_tree_creation_detects_activity,
+            "Verifies outgoing messages after tree creation short-circuit cancellation logic.",
+        )
+
+        suite.run_test(
+            "Pending message cancellation",
+            _test_cancel_pending_messages_updates_state,
+            "Ensures cancel_pending_messages_on_status_change updates conversation state and logs the change.",
         )
 
     # === PHASE 4.1: ADAPTIVE TIMING TESTS (Consolidated 5 tests → 1) ===

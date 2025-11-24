@@ -17,9 +17,12 @@ Usage:
 """
 
 import argparse
+import io
 import json
+import os
 import subprocess
 import sys
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -92,14 +95,11 @@ def save_baseline(baseline_file: Path, median_score: float, experiment_count: in
     # Try to capture current git short SHA for provenance, if available
     git_sha = None
     try:
-        git_sha = (
-            subprocess.check_output(
-                ["git", "rev-parse", "--short", "HEAD"],
-                cwd=Path(__file__).resolve().parent,
-                text=True,
-            )
-            .strip()
-        )
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent,
+            text=True,
+        ).strip()
     except Exception:
         git_sha = None
 
@@ -123,11 +123,7 @@ def save_baseline(baseline_file: Path, median_score: float, experiment_count: in
     print(f"   Based on {experiment_count} experiments")
 
 
-def check_regression(
-    current_median: float,
-    baseline_median: float,
-    threshold: float = 5.0
-) -> tuple[bool, float]:
+def check_regression(current_median: float, baseline_median: float, threshold: float = 5.0) -> tuple[bool, float]:
     """
     Check if current quality represents a regression.
 
@@ -140,43 +136,22 @@ def check_regression(
 
 
 def _build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Quality Regression Gate - Block deployments on prompt quality drops"
-    )
+    parser = argparse.ArgumentParser(description="Quality Regression Gate - Block deployments on prompt quality drops")
     parser.add_argument(
-        "--generate-baseline",
-        action="store_true",
-        help="Generate new baseline from recent experiments"
+        "--generate-baseline", action="store_true", help="Generate new baseline from recent experiments"
     )
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=5.0,
-        help="Quality drop threshold (default: 5.0 points)"
-    )
-    parser.add_argument(
-        "--days",
-        type=int,
-        default=7,
-        help="Number of days of experiments to analyze (default: 7)"
-    )
+    parser.add_argument("--threshold", type=float, default=5.0, help="Quality drop threshold (default: 5.0 points)")
+    parser.add_argument("--days", type=int, default=7, help="Number of days of experiments to analyze (default: 7)")
     parser.add_argument(
         "--experiments-file",
         type=Path,
         default=Path("Logs/prompt_experiments.jsonl"),
-        help="Path to experiments JSONL file"
+        help="Path to experiments JSONL file",
     )
     parser.add_argument(
-        "--baseline-file",
-        type=Path,
-        default=Path("Data/quality_baseline.json"),
-        help="Path to baseline JSON file"
+        "--baseline-file", type=Path, default=Path("Data/quality_baseline.json"), help="Path to baseline JSON file"
     )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit a compact JSON summary to stdout (machine-readable)"
-    )
+    parser.add_argument("--json", action="store_true", help="Emit a compact JSON summary to stdout (machine-readable)")
     return parser
 
 
@@ -221,7 +196,11 @@ def _generate_baseline_flow(
     current_median: float,
     experiments: list[dict[str, Any]],
 ) -> int:
-    save_baseline(args.baseline_file, current_median, len(experiments))
+    if args.json:
+        with redirect_stdout(io.StringIO()):
+            save_baseline(args.baseline_file, current_median, len(experiments))
+    else:
+        save_baseline(args.baseline_file, current_median, len(experiments))
     if args.json:
         baseline_content = load_baseline(args.baseline_file)
         out = {
@@ -361,11 +340,15 @@ def _create_test_experiments_file(path: Path, scores: list[float]) -> None:
     entries: list[str] = []
     now = datetime.now(timezone.utc).isoformat()
     for score in scores:
-        entries.append(json.dumps({
-            "timestamp_utc": now,
-            "parse_success": True,
-            "quality_score": score,
-        }))
+        entries.append(
+            json.dumps(
+                {
+                    "timestamp_utc": now,
+                    "parse_success": True,
+                    "quality_score": score,
+                }
+            )
+        )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(entries), encoding="utf-8")
@@ -386,14 +369,16 @@ def _test_generate_baseline_json_output() -> None:
 
         capture = io.StringIO()
         with redirect_stdout(capture):
-            rc = main([
-                "--experiments-file",
-                str(experiments),
-                "--baseline-file",
-                str(baseline),
-                "--generate-baseline",
-                "--json",
-            ])
+            rc = main(
+                [
+                    "--experiments-file",
+                    str(experiments),
+                    "--baseline-file",
+                    str(baseline),
+                    "--generate-baseline",
+                    "--json",
+                ]
+            )
 
         assert rc == 0, "Baseline generation should exit successfully"
         assert baseline.exists(), "Baseline file should be created"
@@ -431,13 +416,15 @@ def _test_regression_detection_json_mode() -> None:
 
         capture = io.StringIO()
         with redirect_stdout(capture):
-            rc = main([
-                "--experiments-file",
-                str(experiments),
-                "--baseline-file",
-                str(baseline),
-                "--json",
-            ])
+            rc = main(
+                [
+                    "--experiments-file",
+                    str(experiments),
+                    "--baseline-file",
+                    str(baseline),
+                    "--json",
+                ]
+            )
 
         assert rc == 1, "Regression should exit with status code 1"
 
@@ -475,9 +462,17 @@ try:
 
     run_comprehensive_tests = create_standard_test_runner(quality_regression_gate_module_tests)
 except ImportError:  # pragma: no cover - minimal environments may skip helper import
+
     def run_comprehensive_tests() -> bool:
         return quality_regression_gate_module_tests()
 
 
+def _should_run_module_tests() -> bool:
+    return os.environ.get("RUN_MODULE_TESTS") == "1"
+
+
 if __name__ == "__main__":
+    if _should_run_module_tests():
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
     sys.exit(main())

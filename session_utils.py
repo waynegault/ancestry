@@ -27,9 +27,12 @@ BENEFITS:
 """
 
 # === STANDARD LIBRARY IMPORTS ===
+import contextlib
 import os
 import sys
-from typing import Optional
+from collections.abc import Iterator
+from typing import Optional, cast
+from unittest import mock
 
 # === LOCAL IMPORTS ===
 from core.session_manager import SessionManager
@@ -140,10 +143,7 @@ def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: 
         logger.debug(f"Re-validating global session state for {action_name}")
 
 
-def get_authenticated_session(
-    action_name: str = "Session Setup",
-    skip_csrf: bool = True
-) -> tuple[SessionManager, str]:
+def get_authenticated_session(action_name: str = "Session Setup", skip_csrf: bool = True) -> tuple[SessionManager, str]:
     """
     Get the global authenticated session manager (single source of truth).
 
@@ -155,6 +155,7 @@ def get_authenticated_session(
 
     # 2) Determine session state and pre-auth logging
     from config import config_schema
+
     env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
     already_auth = bool(GLOBAL_SESSION.session_uuid and getattr(GLOBAL_SESSION.session_manager, "my_uuid", None))
     _pre_auth_logging(already_auth, env_uuid, action_name)
@@ -202,10 +203,7 @@ def close_cached_session(keep_db: bool = True) -> None:
 # ==============================================
 
 
-def ensure_session_for_tests(
-    action_name: str = "Test Session",
-    skip_csrf: bool = True
-) -> tuple[SessionManager, str]:
+def ensure_session_for_tests(action_name: str = "Test Session", skip_csrf: bool = True) -> tuple[SessionManager, str]:
     """
     Get the global authenticated session for test functions.
 
@@ -227,10 +225,7 @@ def ensure_session_for_tests(
     return get_authenticated_session(action_name, skip_csrf)
 
 
-def ensure_session_for_tests_sm_only(
-    action_name: str = "Test Session",
-    skip_csrf: bool = True
-) -> SessionManager:
+def ensure_session_for_tests_sm_only(action_name: str = "Test Session", skip_csrf: bool = True) -> SessionManager:
     """
     Get the global authenticated session (SessionManager only) for test functions.
 
@@ -320,6 +315,41 @@ def _test_ensure_session_for_tests_wrapper() -> bool:
     return True
 
 
+@contextlib.contextmanager
+def _preserve_global_session_state() -> Iterator[None]:
+    prev_manager = GLOBAL_SESSION.session_manager
+    prev_uuid = GLOBAL_SESSION.session_uuid
+    prev_banner = GLOBAL_SESSION.auth_banner_printed
+    try:
+        yield
+    finally:
+        GLOBAL_SESSION.session_manager = prev_manager
+        GLOBAL_SESSION.session_uuid = prev_uuid
+        GLOBAL_SESSION.auth_banner_printed = prev_banner
+
+
+def _test_clear_cached_session_resets_state() -> bool:
+    with _preserve_global_session_state():
+        GLOBAL_SESSION.session_manager = cast(SessionManager, mock.Mock(spec=SessionManager))
+        GLOBAL_SESSION.session_uuid = "cached"
+        clear_cached_session()
+        assert GLOBAL_SESSION.session_manager is None
+        assert GLOBAL_SESSION.session_uuid is None
+    return True
+
+
+def _test_close_cached_session_invokes_close() -> bool:
+    with _preserve_global_session_state():
+        fake_session = mock.Mock(spec=SessionManager)
+        GLOBAL_SESSION.session_manager = fake_session
+        GLOBAL_SESSION.session_uuid = "cached"
+        close_cached_session(keep_db=False)
+        fake_session.close_sess.assert_called_once_with(keep_db=False)
+        assert GLOBAL_SESSION.session_manager is None
+        assert GLOBAL_SESSION.session_uuid is None
+    return True
+
+
 def session_utils_module_tests() -> bool:
     """Run all module tests."""
     from test_framework import TestSuite
@@ -331,7 +361,7 @@ def session_utils_module_tests() -> bool:
         _test_global_session_not_set,
         "Raises error when no global session",
         "get_authenticated_session()",
-        "Tests that error is raised when global session not set"
+        "Tests that error is raised when global session not set",
     )
 
     suite.run_test(
@@ -339,7 +369,7 @@ def session_utils_module_tests() -> bool:
         _test_global_session_set,
         "Returns global session when set",
         "get_authenticated_session()",
-        "Tests that global session is returned correctly"
+        "Tests that global session is returned correctly",
     )
 
     suite.run_test(
@@ -347,7 +377,23 @@ def session_utils_module_tests() -> bool:
         _test_ensure_session_for_tests_wrapper,
         "Wrapper returns global session",
         "ensure_session_for_tests()",
-        "Tests convenience wrapper for test functions"
+        "Tests convenience wrapper for test functions",
+    )
+
+    suite.run_test(
+        "clear_cached_session resets state",
+        _test_clear_cached_session_resets_state,
+        "Ensures cached session references are cleared without closing",
+        "clear_cached_session()",
+        "Verifies global cache is cleared safely",
+    )
+
+    suite.run_test(
+        "close_cached_session closes and clears",
+        _test_close_cached_session_invokes_close,
+        "Ensures close_cached_session invokes close_sess and clears globals",
+        "close_cached_session()",
+        "Verifies keep_db flag propagates to SessionManager",
     )
 
     return suite.finish_suite()

@@ -42,6 +42,7 @@ for professional genealogical automation development and quality assurance.
 import contextlib
 import tempfile
 from collections.abc import Iterator
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -65,12 +66,14 @@ class EmptyTestService:
         # Or simply:
         class ServiceA(EmptyTestService): ...
     """
+
     pass
 
 
 # ==============================================================================
 # Temporary File and Directory Helpers (Task 5)
 # ==============================================================================
+
 
 @contextlib.contextmanager
 def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8") -> Iterator[Any]:
@@ -91,7 +94,7 @@ def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8
             delete=False,
             dir=str(target_path.parent),
             encoding=encoding if 'b' not in mode else None,
-            suffix=target_path.suffix
+            suffix=target_path.suffix,
         ) as tf:
             try:
                 yield tf
@@ -120,8 +123,9 @@ def temp_directory(prefix: str = "test-", cleanup: bool = True) -> Iterator[Path
 
 
 @contextlib.contextmanager
-def temp_file(suffix: str = "", prefix: str = "test-", mode: str = "w+",
-              encoding: str = "utf-8", delete: bool = True) -> Iterator[Path]:
+def temp_file(
+    suffix: str = "", prefix: str = "test-", mode: str = "w+", encoding: str = "utf-8", delete: bool = True
+) -> Iterator[Path]:
     """Context manager for temporary file creation with optional cleanup."""
     with tempfile.NamedTemporaryFile(
         mode=mode,
@@ -233,8 +237,10 @@ def create_test_function(return_value: Any = "test") -> Callable[[], Any]:
     Returns:
         Callable: A function that returns the specified value
     """
+
     def generated_function() -> Any:
         return return_value
+
     return generated_function
 
 
@@ -252,6 +258,7 @@ def create_parameterized_test_function(operation: str = "multiply", factor: int 
     Returns:
         Callable: A function that performs the specified operation
     """
+
     def generated_function(x: int) -> int:
         if operation == "multiply":
             return x * factor
@@ -260,6 +267,7 @@ def create_parameterized_test_function(operation: str = "multiply", factor: int 
         if operation == "subtract":
             return x - factor
         return x
+
     return generated_function
 
 
@@ -320,6 +328,7 @@ def create_property_delegator(target_attr: str, property_name: str):
             # Use:
             my_profile_id = create_property_delegator('api_manager', 'my_profile_id')
     """
+
     def getter(self: Any) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
@@ -356,6 +365,7 @@ def create_method_delegator(target_attr: str, method_name: str):
             # Use:
             close_driver = create_method_delegator('browser_manager', 'close_driver')
     """
+
     def delegator(self: Any, *args: Any, **kwargs: Any) -> Any:
         target_obj = getattr(self, target_attr, None)
         if target_obj is None:
@@ -370,6 +380,7 @@ def create_method_delegator(target_attr: str, method_name: str):
 
 # ===== VALIDATION UTILITIES =====
 # Consolidates common validation patterns found across the codebase
+
 
 def create_range_validator(min_val: Any, max_val: Any, inclusive: bool = True):
     """
@@ -402,6 +413,7 @@ def create_range_validator(min_val: Any, max_val: Any, inclusive: bool = True):
         # Use:
         validate_port_range = create_range_validator(1024, 65535)
     """
+
     def validator(value: Any) -> bool:
         try:
             if inclusive:
@@ -438,6 +450,7 @@ def create_type_validator(expected_type: type, allow_none: bool = False):
         is_positive = create_range_validator(1, float('inf'))
         validate_positive_integer = lambda x: is_integer(x) and is_positive(x)
     """
+
     def validator(value: Any) -> bool:
         if value is None:
             return allow_none
@@ -446,8 +459,9 @@ def create_type_validator(expected_type: type, allow_none: bool = False):
     return validator
 
 
-def create_string_validator(min_length: int = 0, max_length: Optional[int] = None,
-                          allow_empty: bool = True, strip_whitespace: bool = True):
+def create_string_validator(
+    min_length: int = 0, max_length: Optional[int] = None, allow_empty: bool = True, strip_whitespace: bool = True
+):
     """
     Create a string validation function.
 
@@ -464,6 +478,7 @@ def create_string_validator(min_length: int = 0, max_length: Optional[int] = Non
     Returns:
         function: A validation function that checks string criteria
     """
+
     def validator(value: Any) -> bool:
         if not isinstance(value, str):
             return False
@@ -507,6 +522,7 @@ def create_composite_validator(*validators: Callable[..., bool]) -> Callable[...
             create_range_validator(1, float('inf'))
         )
     """
+
     def validator(value: Any) -> bool:
         return all(v(value) for v in validators)
 
@@ -517,8 +533,7 @@ def create_composite_validator(*validators: Callable[..., bool]) -> Callable[...
 is_valid_year = create_range_validator(1000, 2100)
 validate_port_range = create_range_validator(1024, 65535)
 validate_positive_integer = create_composite_validator(
-    create_type_validator(int),
-    create_range_validator(1, float('inf'))
+    create_type_validator(int), create_range_validator(1, float('inf'))
 )
 validate_non_empty_string = create_string_validator(min_length=1, allow_empty=False)
 validate_optional_string = create_string_validator(allow_empty=True)
@@ -586,6 +601,7 @@ def create_standard_test_runner(module_test_function: Callable[[], bool]) -> Cal
         # Use:
         run_comprehensive_tests = create_standard_test_runner(my_module_tests)
     """
+
     def run_comprehensive_tests() -> bool:
         """Run comprehensive tests using standardized test runner pattern."""
         try:
@@ -622,6 +638,58 @@ def create_mock_session_manager() -> MagicMock:
     sm.driver = MagicMock()
     sm.requests_session = MagicMock()
     return sm
+
+
+@dataclass
+class LiveSessionHandle:
+    """Container returned by live_session_fixture() for easy attribute access."""
+
+    session_manager: Any
+    session_uuid: str
+    db_session: Session
+
+
+@contextlib.contextmanager
+def live_session_fixture(
+    action_name: str = "Test Session",
+    *,
+    skip_csrf: bool = True,
+) -> Iterator[LiveSessionHandle]:
+    """Yield an authenticated SessionManager plus rollback-protected DB session.
+
+    This helper ensures every integration test that touches Ancestry APIs uses the
+    single global session (via session_utils.ensure_session_for_tests) and that any
+    database writes are rolled back automatically when the test completes.
+
+    Example:
+        with live_session_fixture("Action 7 Tests") as live:
+            assert live.session_manager.session_ready
+            # Perform DB work - it will be rolled back automatically
+            live.db_session.add(...)
+
+    Args:
+        action_name: Friendly label for logging inside ensure_session_for_tests.
+        skip_csrf: Whether to skip CSRF validation (default mirrors existing tests).
+    """
+
+    from session_utils import ensure_session_for_tests  # Local import to avoid cycles
+    from test_framework import database_rollback_test
+
+    session_manager, session_uuid = ensure_session_for_tests(action_name, skip_csrf)
+    db_session = session_manager.get_db_conn()
+    if db_session is None:
+        raise RuntimeError("SessionManager did not return a database session; ensure DB is ready before running tests.")
+
+    try:
+        with database_rollback_test(db_session):
+            yield LiveSessionHandle(
+                session_manager=session_manager,
+                session_uuid=session_uuid,
+                db_session=db_session,
+            )
+    finally:
+        with contextlib.suppress(Exception):
+            session_manager.return_session(db_session)
 
 
 def create_test_database() -> Session:
@@ -676,6 +744,7 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
 
     if gedcom_path is None:
         from config import config_schema
+
         gedcom_path = getattr(config_schema, "gedcom_file_path", None)
 
     if not gedcom_path or not Path(gedcom_path).exists():
@@ -724,6 +793,7 @@ def create_test_person(
 
     if cm_dna is not None:
         from database import DnaMatch
+
         person.dna_match = MagicMock(spec=DnaMatch)
         person.dna_match.cm_dna = cm_dna
     else:
@@ -754,8 +824,9 @@ def run_parameterized_tests(test_cases: list[tuple[str, Callable[..., Any], Any,
         suite.run_test(test_name, test_func, expected_result, description, "parameterized")
 
 
-def assert_function_behavior(func: Callable[..., Any], args: tuple[Any, ...], expected_result: Any,
-                            error_message: Optional[str] = None) -> None:
+def assert_function_behavior(
+    func: Callable[..., Any], args: tuple[Any, ...], expected_result: Any, error_message: Optional[str] = None
+) -> None:
     """
     Assert that a function behaves as expected with given arguments.
 
@@ -807,8 +878,9 @@ def create_test_session() -> Session:
     return session
 
 
-def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
-                         expected_count: int, error_message: Optional[str] = None) -> None:
+def assert_database_state(
+    session: Session, model: Any, filters: dict[str, Any], expected_count: int, error_message: Optional[str] = None
+) -> None:
     """
     Assert that the database contains the expected number of records.
 
@@ -837,8 +909,9 @@ def assert_database_state(session: Session, model: Any, filters: dict[str, Any],
     assert count == expected_count, error_message
 
 
-def mock_api_response(status_code: int = 200, json_data: Optional[dict[str, Any]] = None,
-                     text: Optional[str] = None) -> MagicMock:
+def mock_api_response(
+    status_code: int = 200, json_data: Optional[dict[str, Any]] = None, text: Optional[str] = None
+) -> MagicMock:
     """
     Create a mock API response object.
 
@@ -902,6 +975,7 @@ def _test_function_registry() -> None:
 
 def _test_runner_factory() -> None:
     """Test the test runner factory."""
+
     def dummy_test():
         return True
 
@@ -946,6 +1020,7 @@ def _test_create_test_database() -> None:
     assert session is not None
     # Test that we can query
     from database import Person
+
     result = session.query(Person).count()
     assert result == 0  # Empty database
     session.close()
@@ -1038,14 +1113,62 @@ def test_utilities_module_tests() -> bool:
         ("Factory functions", _test_factory_functions, "Test function factories", "direct", "Test function factories"),
         ("Function registry", _test_function_registry, "Test function registry", "direct", "Test function registry"),
         ("Test runner factory", _test_runner_factory, "Test runner creation", "direct", "Test runner creation"),
-        ("Assert function behavior", _test_assert_function_behavior, "Test assertion helper", "direct", "Test assertion helper"),
-        ("Mock API response", _test_mock_api_response, "Test mock response creation", "direct", "Test mock response creation"),
-        ("Create mock session manager (Todo #17)", _test_create_mock_session_manager, "Test session manager mock helper", "direct", "Test session manager mock helper"),
-        ("Create test database (Todo #17)", _test_create_test_database, "Test database creation helper", "direct", "Test database creation helper"),
-        ("Create test person (Todo #17)", _test_create_test_person, "Test person mock helper", "direct", "Test person mock helper"),
-        ("Temp directory helper (Task 5)", _test_temp_directory, "Test temp directory creation and cleanup", "direct", "Test temp directory helper"),
-        ("Temp file helper (Task 5)", _test_temp_file, "Test temp file creation and cleanup", "direct", "Test temp file helper"),
-        ("Atomic write file helper (Task 5)", _test_atomic_write_file, "Test atomic file writing", "direct", "Test atomic write helper"),
+        (
+            "Assert function behavior",
+            _test_assert_function_behavior,
+            "Test assertion helper",
+            "direct",
+            "Test assertion helper",
+        ),
+        (
+            "Mock API response",
+            _test_mock_api_response,
+            "Test mock response creation",
+            "direct",
+            "Test mock response creation",
+        ),
+        (
+            "Create mock session manager (Todo #17)",
+            _test_create_mock_session_manager,
+            "Test session manager mock helper",
+            "direct",
+            "Test session manager mock helper",
+        ),
+        (
+            "Create test database (Todo #17)",
+            _test_create_test_database,
+            "Test database creation helper",
+            "direct",
+            "Test database creation helper",
+        ),
+        (
+            "Create test person (Todo #17)",
+            _test_create_test_person,
+            "Test person mock helper",
+            "direct",
+            "Test person mock helper",
+        ),
+        (
+            "Temp directory helper (Task 5)",
+            _test_temp_directory,
+            "Test temp directory creation and cleanup",
+            "direct",
+            "Test temp directory helper",
+        ),
+        (
+            "Temp file helper (Task 5)",
+            _test_temp_file,
+            "Test temp file creation and cleanup",
+            "direct",
+            "Test temp file helper",
+        ),
+        (
+            "Atomic write file helper (Task 5)",
+            _test_atomic_write_file,
+            "Test atomic file writing",
+            "direct",
+            "Test atomic write helper",
+        ),
     ]
 
     with suppress_logging():
@@ -1061,5 +1184,6 @@ run_comprehensive_tests = create_standard_test_runner(test_utilities_module_test
 
 if __name__ == "__main__":
     import sys
+
     success = test_utilities_module_tests()
     sys.exit(0 if success else 1)

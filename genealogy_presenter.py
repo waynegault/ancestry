@@ -11,11 +11,17 @@ GEDCOM (Action 10) and API (search core) paths:
 This module centralizes the UI output so both sources produce identical
 user experience. Keep api_search_core focused on retrieval.
 """
+
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
+import sys
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Callable, cast
+from unittest import mock
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +154,7 @@ def present_post_selection(
     elif unified_path:
         try:
             from relationship_utils import format_relationship_path_unified  # late import to avoid cycles
+
             relation_text = format_relationship_path_unified(unified_path, display_name, owner_name, None)
         except Exception as e:
             logger.error(f"Error formatting relationship path: {e}", exc_info=True)
@@ -156,6 +163,78 @@ def present_post_selection(
     if relation_text:
         print("")
         print(relation_text)
+
+
+def _capture_output(func: Callable[..., Any], *args: Any, **kwargs: Any) -> str:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        func(*args, **kwargs)
+    return buffer.getvalue()
+
+
+def _test_deduplicate_members_prefers_first_occurrence() -> None:
+    members: list[Any] = [
+        {"name": "Jane Doe", "birth_year": 1900, "death_year": 1970},
+        {"name": "jane doe", "birth_year": 1900, "death_year": 1970},
+        {"name": "Unique Person", "birth_year": 1905, "death_year": 1982},
+        "invalid entry",
+    ]
+
+    deduped = _deduplicate_members(members)
+    assert len(deduped) == 2
+    assert deduped[0]["name"] == "Jane Doe"
+    assert deduped[1]["name"] == "Unique Person"
+
+
+def _test_filter_valid_members_skips_placeholders() -> None:
+    members = [
+        {"name": "Unknown"},
+        {"name": " "},
+        {"name": "-"},
+        {"name": "Valid Name"},
+    ]
+
+    filtered = _filter_valid_members(members)
+    assert filtered == [{"name": "Valid Name"}]
+
+
+def _test_display_family_members_outputs_sections() -> None:
+    family_data = {
+        "parents": [{"name": "Parent One"}],
+        "siblings": [],
+        "spouses": [{"name": "Spouse"}, {"name": "spouse"}],
+        "children": [{"name": "Unknown"}],
+    }
+
+    output = _capture_output(display_family_members, family_data)
+    assert "Parents:" in output
+    assert "Parent One" in output
+    assert "Spouses:" in output
+    assert "   - None recorded" in output  # siblings empty
+    assert output.count("   - Spouse") == 1  # deduplicated spouse entry
+    assert "Unknown" not in output  # filtered child entry
+
+
+def _test_present_post_selection_formats_relationship_path() -> None:
+    family_data = {relation: [] for relation in ("parents", "siblings", "spouses", "children")}
+    fake_relationship_module = SimpleNamespace(
+        format_relationship_path_unified=lambda _path, display_name, _owner, _unused: f"Path for {display_name}"
+    )
+
+    with mock.patch.dict(sys.modules, {"relationship_utils": fake_relationship_module}):
+        output = _capture_output(
+            present_post_selection,
+            display_name="Sample Person",
+            birth_year=None,
+            death_year=None,
+            family_data=family_data,
+            owner_name="Owner",
+            unified_path=[{"id": 1}],
+        )
+
+    assert "=== Sample Person" in output
+    assert "Parents:" in output
+    assert "Path for Sample Person" in output
 
 
 # --- Internal Tests ---
@@ -212,6 +291,38 @@ def genealogy_presenter_module_tests() -> bool:
         functions_tested="present_post_selection",
         test_summary="Ensure presenter runs without exceptions on minimal input",
         expected_outcome="No exceptions; output printed",
+    )
+
+    suite.run_test(
+        test_name="Deduplicate members",
+        test_func=_test_deduplicate_members_prefers_first_occurrence,
+        functions_tested="_deduplicate_members",
+        test_summary="Ensure duplicates are removed case-insensitively while preserving first entry",
+        expected_outcome="Only unique member dictionaries remain in their original order.",
+    )
+
+    suite.run_test(
+        test_name="Filter placeholder names",
+        test_func=_test_filter_valid_members_skips_placeholders,
+        functions_tested="_filter_valid_members",
+        test_summary="Ensure placeholder values are dropped.",
+        expected_outcome="Only meaningful names remain after filtering.",
+    )
+
+    suite.run_test(
+        test_name="Display family members output",
+        test_func=_test_display_family_members_outputs_sections,
+        functions_tested="display_family_members",
+        test_summary="Ensure sections print with deduplication and empty placeholders",
+        expected_outcome="Sections print once and empty groups display 'None recorded'.",
+    )
+
+    suite.run_test(
+        test_name="Relationship path formatting",
+        test_func=_test_present_post_selection_formats_relationship_path,
+        functions_tested="present_post_selection",
+        test_summary="Ensure unified relationship path rendering is used when provided",
+        expected_outcome="present_post_selection prints the relationship text from relationship_utils.",
     )
 
     return suite.finish_suite()

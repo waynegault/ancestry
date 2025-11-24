@@ -29,7 +29,7 @@ logger = setup_module(globals(), __name__)
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, ClassVar, Optional, Union
 
 
 class ConfigValidationError(Exception):
@@ -799,6 +799,49 @@ class RetryPoliciesConfig:
     )
 
 
+class AppConfigView:
+    """Proxy exposing high-level app settings via attribute access."""
+
+    __slots__ = ("_config",)
+
+    _FIELD_MAP: ClassVar[dict[str, str]] = {
+        "name": "app_name",
+        "version": "app_version",
+        "mode": "app_mode",
+        "include_action6_in_workflow": "include_action6_in_workflow",
+        "proactive_refresh_interval_seconds": "proactive_refresh_interval_seconds",
+        "action6_coord_timeout_seconds": "action6_coord_timeout_seconds",
+        "enable_action6_checkpointing": "enable_action6_checkpointing",
+        "action6_checkpoint_max_age_hours": "action6_checkpoint_max_age_hours",
+        "action6_checkpoint_file": "action6_checkpoint_file",
+    }
+
+    def __init__(self, config: "ConfigSchema") -> None:
+        object.__setattr__(self, "_config", config)
+
+    def __getattr__(self, name: str) -> Any:
+        field = self._FIELD_MAP.get(name)
+        if field is None:
+            raise AttributeError(f"App configuration has no attribute '{name}'")
+        value = getattr(self._config, field)
+        if field == "action6_checkpoint_file" and isinstance(value, str):
+            value = Path(value)
+            setattr(self._config, field, value)
+        return value
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        field = self._FIELD_MAP.get(name)
+        if field is None:
+            raise AttributeError(f"App configuration has no attribute '{name}'")
+        if field == "action6_checkpoint_file" and isinstance(value, str):
+            value = Path(value)
+        setattr(self._config, field, value)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a dict snapshot of the proxied settings."""
+        return {name: getattr(self, name) for name in self._FIELD_MAP}
+
+
 @dataclass
 class ConfigSchema:
     """Main configuration schema that combines all sub-schemas."""
@@ -955,6 +998,7 @@ class ConfigSchema:
             raise ValueError("action6_checkpoint_max_age_hours must be positive")
         if isinstance(self.action6_checkpoint_file, str):
             self.action6_checkpoint_file = Path(self.action6_checkpoint_file)
+        self._app_view = AppConfigView(self)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary (deep dataclass conversion)."""
@@ -1023,6 +1067,11 @@ class ConfigSchema:
             errors.append(f"Unexpected validation error: {e}")
 
         return errors
+
+    @property
+    def app(self) -> AppConfigView:
+        """Nested view exposing high-level app configuration settings."""
+        return self._app_view
 
 
 # === Module-level test functions for config_schema_module_tests ===

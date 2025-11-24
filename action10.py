@@ -1477,6 +1477,8 @@ def _register_input_validation_tests(
     debug_wrapper: Callable[..., Any],
     test_sanitize_input: Callable[[], None],
     test_get_validated_year_input_patch: Callable[[], None],
+    test_field_analysis_formatting_helpers: Callable[[], None],
+    test_test_person_analysis_formatting: Callable[[], None],
 ) -> None:
     """Register input validation and parsing tests."""
     suite.run_test(
@@ -1492,6 +1494,20 @@ def _register_input_validation_tests(
         "Parses multiple date formats: simple years, full dates, and various formats.",
         "Test year extraction from various date input formats.",
         "Test against: '1990', '1 Jan 1942', '1/1/1942', '1942/1/1', '2000'.",
+    )
+    suite.run_test(
+        "Field Analysis Formatting",
+        debug_wrapper(test_field_analysis_formatting_helpers),
+        "Validates helper formatting for field analysis and score verification.",
+        "Test formatting helpers for consistent emoji markers and totals.",
+        "Covers _format_field_analysis and _format_score_verification outputs.",
+    )
+    suite.run_test(
+        "Test Person Analysis Formatting",
+        debug_wrapper(test_test_person_analysis_formatting),
+        "Ensures test person analysis highlights expected vs actual fields.",
+        "Test _format_test_person_analysis for success/failure markers.",
+        "Validates per-field messaging and summary score annotations.",
     )
 
 
@@ -1783,6 +1799,33 @@ def test_get_validated_year_input_patch() -> None:
         raise AssertionError(f"Year input validation failed: {'; '.join(failures)}")
 
     # Return nothing (part of TestSuite)
+
+
+def test_field_analysis_formatting_helpers() -> None:
+    """Ensure field analysis and score verification helpers format output correctly."""
+    field_scores = {"givn": 25, "surn": 0, "bonus": 15}
+    lines, total = _format_field_analysis(field_scores)
+    assert total == 40, f"Expected total 40, got {total}"
+    assert any("✅ givn" in line for line in lines), "Positive score should include success indicator"
+    assert any("❌ surn" in line for line in lines), "Zero score should include failure indicator"
+
+    verified_lines = _format_score_verification(40.0, total)
+    assert verified_lines[-1].strip().endswith("Score calculation verified"), "Matching totals should verify"
+
+    mismatch_lines = _format_score_verification(50.0, total)
+    assert any("WARNING" in line for line in mismatch_lines), "Mismatched totals should trigger warning"
+
+
+def test_test_person_analysis_formatting() -> None:
+    """Ensure test person analysis highlights expected vs actual scores."""
+    field_scores = {"givn": 25, "surn": 0, "bonus": 25}
+    lines = _format_test_person_analysis(field_scores, total_score=50.0)
+
+    givn_line = next(line for line in lines if "givn" in line)
+    surn_line = next(line for line in lines if "surn" in line)
+    assert "Got 25" in givn_line and "✅" in givn_line, "Positive field should be marked as success"
+    assert "Got 0" in surn_line and "❌" in surn_line, "Zero field should be marked as failure"
+    assert any("Score Match" in line for line in lines), "Summary should include score match status"
 
 
 def test_fraser_gault_scoring_algorithm() -> None:
@@ -2113,6 +2156,15 @@ def test_family_relationship_analysis() -> None:
     print(f"✅ Found {test_first_name}: {person.get('full_name_disp')}")
     print(f"   Birth year: {test_birth_year} (as expected)")
 
+    spouse_entries = _convert_gedcom_relatives_to_standard_format(
+        gedcom_data.get_related_individuals(person_individual, "spouses")
+    )
+    assert spouse_entries, "Expected at least one spouse recorded for test person"
+    spouse_names = {entry.get("name", "").strip() for entry in spouse_entries}
+    assert any("Nellie" in name and "Smith" in name for name in spouse_names), (
+        f"Spouse list missing Nellie Mason Smith. Current entries: {sorted(spouse_names)}"
+    )
+
     # Test relationship analysis functionality
     try:
         print("\n🔍 Analyzing family relationships...")
@@ -2193,10 +2245,14 @@ def test_api_search_test_person() -> None:
         print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
         print(f"   Score: {top_result.get('score', 0)}")
 
+        expected_score = config.get('expected_score', 0)
+        actual_score = float(top_result.get('score', 0))
+
         # Validate that we got proper data (not "Unknown_0")
         assert top_result.get('name') != "Unknown", "Name should be parsed correctly, not 'Unknown'"
         assert top_result.get('id') != "Unknown_0", "Person ID should be parsed correctly, not 'Unknown_0'"
         assert top_result.get('score', 0) > 0, "Score should be greater than 0"
+        assert actual_score == expected_score, f"API score mismatch: expected {expected_score}, got {actual_score}"
 
         print(f"\n{Colors.GREEN}✅ API search test passed{Colors.RESET}")
         print(f"   • Name parsed correctly: {top_result.get('name')}")
@@ -2365,7 +2421,14 @@ def action10_module_tests() -> bool:
     debug_wrapper = _debug_wrapper
 
     # Register meaningful tests only
-    _register_input_validation_tests(suite, debug_wrapper, test_sanitize_input, test_get_validated_year_input_patch)
+    _register_input_validation_tests(
+        suite,
+        debug_wrapper,
+        test_sanitize_input,
+        test_get_validated_year_input_patch,
+        test_field_analysis_formatting_helpers,
+        test_test_person_analysis_formatting,
+    )
 
     suite.run_test(
         "Retry helper alignment",

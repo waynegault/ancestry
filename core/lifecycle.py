@@ -8,9 +8,12 @@ Handles application startup, initialization, and shutdown procedures.
 
 import os
 import sys
+import tempfile
 from importlib import import_module
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Optional, cast
+from unittest import mock
 
 # Ensure project root is on sys.path when running as a script
 parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -379,6 +382,56 @@ def _log_sleep_prevention_status(sleep_state: Any) -> None:
         logger.info("⚠️ System sleep prevention inactive")
 
 
+def _test_clear_startup_log_file_truncates_existing_log() -> bool:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_dir = Path(tmpdir)
+        log_path = log_dir / "startup.log"
+        log_path.write_text("data", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"LOG_DIR": str(log_dir), "LOG_FILE": "startup.log"}):
+            _clear_startup_log_file()
+
+        assert not log_path.read_text(encoding="utf-8")
+    return True
+
+
+def _test_check_grafana_status_logs_branches() -> bool:
+    ready_status = {
+        "ready": True,
+        "installed": True,
+        "running": True,
+        "sqlite_plugin": True,
+        "plugins_accessible": True,
+    }
+    ready_checker = SimpleNamespace(check_grafana_status=lambda: ready_status)
+    with mock.patch.object(logger, "info") as info_log:
+        _check_grafana_status(ready_checker)
+    info_log.assert_called_with("✅ Grafana ready (http://localhost:3000)")
+
+    not_ready_status = {
+        "ready": False,
+        "installed": True,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+    }
+    pending_checker = SimpleNamespace(check_grafana_status=lambda: not_ready_status)
+    with mock.patch.object(logger, "info") as info_log:
+        _check_grafana_status(pending_checker)
+    info_log.assert_called_with("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+    return True
+
+
+def _test_log_sleep_prevention_status_reports_correctly() -> bool:
+    active_state = object()
+    with mock.patch.object(logger, "info") as info_log:
+        _log_sleep_prevention_status(active_state)
+        _log_sleep_prevention_status(None)
+
+    info_log.assert_any_call("✅ System sleep prevention active")
+    info_log.assert_any_call("⚠️ System sleep prevention inactive")
+    return True
+
+
 def _log_action_registry_status() -> None:
     """Log the number of registered actions in the action registry."""
     logger.info("✅ Action registry initialized (%d actions)", len(get_action_registry().get_all_actions()))
@@ -504,6 +557,30 @@ def lifecycle_module_tests() -> bool:
         expected_outcome=(
             "When api.tree_name is set, the helper returns it; when missing, it returns 'Unknown Tree' without errors."
         ),
+    )
+
+    suite.run_test(
+        "Clear startup log file truncates existing file",
+        _test_clear_startup_log_file_truncates_existing_log,
+        test_summary="Ensures _clear_startup_log_file wipes configured log file contents",
+        functions_tested="_clear_startup_log_file",
+        expected_outcome="Existing log file contents are removed without raising exceptions.",
+    )
+
+    suite.run_test(
+        "Grafana status logs ready state",
+        _test_check_grafana_status_logs_branches,
+        test_summary="Ensures _check_grafana_status logs appropriate status messages",
+        functions_tested="_check_grafana_status",
+        expected_outcome="Ready and installed-but-not-ready states trigger the correct log messages.",
+    )
+
+    suite.run_test(
+        "Sleep prevention status logging",
+        _test_log_sleep_prevention_status_reports_correctly,
+        test_summary="Ensures _log_sleep_prevention_status reports both active and inactive states",
+        functions_tested="_log_sleep_prevention_status",
+        expected_outcome="Logger receives ✅ message when active and ⚠️ message when inactive.",
     )
 
     return suite.finish_suite()

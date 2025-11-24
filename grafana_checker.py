@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 logger = logging.getLogger(__name__)
 
@@ -92,18 +93,20 @@ def run_automated_setup(silent: bool = False) -> bool:
         # PowerShell command to run script as administrator
         ps_args = [
             "powershell.exe",
-            "-ExecutionPolicy", "Bypass",
+            "-ExecutionPolicy",
+            "Bypass",
             "-Command",
             f"Start-Process PowerShell -Verb RunAs -ArgumentList "
             f"'-ExecutionPolicy Bypass -File \"{SETUP_SCRIPT}\" "
-            f"{'-Silent' if silent else ''}' -Wait"
+            f"{'-Silent' if silent else ''}' -Wait",
         ]
 
         result = subprocess.run(
             ps_args,
             capture_output=True,
             text=True,
-            timeout=300, check=False  # 5 minute timeout
+            timeout=300,
+            check=False,  # 5 minute timeout
         )
 
         if result.returncode == 0:
@@ -178,6 +181,7 @@ def ensure_grafana_ready(auto_setup: bool = False, silent: bool = False) -> bool
         if success:
             # Re-check status after setup
             import time
+
             time.sleep(5)  # Give services time to stabilize
             new_status = check_grafana_status()
             return new_status["ready"]
@@ -235,10 +239,7 @@ def ensure_dashboards_imported() -> bool:
     for uid, filename in required_dashboards:
         try:
             # Check if dashboard exists
-            check_req = urllib.request.Request(
-                f"http://localhost:3000/api/dashboards/uid/{uid}",
-                headers=headers
-            )
+            check_req = urllib.request.Request(f"http://localhost:3000/api/dashboards/uid/{uid}", headers=headers)
             urllib.request.urlopen(check_req, timeout=2)
             logger.debug(f"Dashboard {uid} already exists")
         except urllib.error.HTTPError as e:
@@ -258,16 +259,26 @@ def ensure_dashboards_imported() -> bool:
                         "dashboard": dashboard_json,
                         "overwrite": True,
                         "inputs": [
-                            {"name": "DS_PROMETHEUS", "type": "datasource", "pluginId": "prometheus", "value": "Prometheus"},
-                            {"name": "DS_SQLITE", "type": "datasource", "pluginId": "frser-sqlite-datasource", "value": "SQLite"}
-                        ]
+                            {
+                                "name": "DS_PROMETHEUS",
+                                "type": "datasource",
+                                "pluginId": "prometheus",
+                                "value": "Prometheus",
+                            },
+                            {
+                                "name": "DS_SQLITE",
+                                "type": "datasource",
+                                "pluginId": "frser-sqlite-datasource",
+                                "value": "SQLite",
+                            },
+                        ],
                     }
 
                     import_req = urllib.request.Request(
                         "http://localhost:3000/api/dashboards/import",
                         data=json.dumps(import_payload).encode("utf-8"),
                         headers=headers,
-                        method="POST"
+                        method="POST",
                     )
                     urllib.request.urlopen(import_req, timeout=5)
                     logger.info(f"✓ Successfully imported {filename}")
@@ -285,25 +296,149 @@ def ensure_dashboards_imported() -> bool:
     return True
 
 
+def _test_check_grafana_status_handles_installation_flag() -> None:
+    with (
+        mock.patch(f"{__name__}.is_grafana_installed", return_value=False),
+        mock.patch(f"{__name__}.is_grafana_running") as running_mock,
+        mock.patch(f"{__name__}.are_plugins_installed") as plugins_mock,
+    ):
+        status = check_grafana_status()
+
+    assert status == {
+        "installed": False,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+        "ready": False,
+    }
+    running_mock.assert_not_called()
+    plugins_mock.assert_not_called()
+
+
+def _test_check_grafana_status_ready_state() -> None:
+    with (
+        mock.patch(f"{__name__}.is_grafana_installed", return_value=True),
+        mock.patch(f"{__name__}.is_grafana_running", return_value=True),
+        mock.patch(f"{__name__}.are_plugins_installed", return_value=(True, True)),
+    ):
+        status = check_grafana_status()
+
+    assert status["ready"] is True
+    assert status["sqlite_plugin"] is True
+
+
+def _test_get_status_message_variants() -> None:
+    ready_status = {
+        "installed": True,
+        "running": True,
+        "sqlite_plugin": True,
+        "plugins_accessible": True,
+        "ready": True,
+    }
+    running_status = {**ready_status, "ready": False}
+    installed_status = {
+        "installed": True,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+        "ready": False,
+    }
+    missing_status = {
+        "installed": False,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+        "ready": False,
+    }
+
+    cases = [
+        (ready_status, "✅ Grafana Ready (http://localhost:3000)"),
+        (running_status, "⚠️  Grafana Running (plugins need setup)"),
+        (installed_status, "⚠️  Grafana Installed (service not running)"),
+        (missing_status, "❌ Grafana Not Installed (run setup)"),
+    ]
+
+    for provided_status, expected in cases:
+        with mock.patch(f"{__name__}.check_grafana_status", return_value=provided_status):
+            assert get_status_message() == expected
+
+
+def _test_ensure_grafana_ready_runs_setup_when_needed() -> None:
+    initial_status = {
+        "installed": True,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+        "ready": False,
+    }
+    final_status = {**initial_status, "running": True, "sqlite_plugin": True, "plugins_accessible": True, "ready": True}
+
+    with (
+        mock.patch(f"{__name__}.check_grafana_status", side_effect=[initial_status, final_status]) as status_mock,
+        mock.patch(f"{__name__}.run_automated_setup", return_value=True) as setup_mock,
+        mock.patch("time.sleep", return_value=None) as sleep_mock,
+    ):
+        assert ensure_grafana_ready(auto_setup=True, silent=True) is True
+
+    setup_mock.assert_called_once_with(silent=True)
+    sleep_mock.assert_called_once()
+    assert status_mock.call_count == 2
+
+
+def _test_ensure_grafana_ready_skips_when_user_declines() -> None:
+    status = {
+        "installed": True,
+        "running": False,
+        "sqlite_plugin": False,
+        "plugins_accessible": False,
+        "ready": False,
+    }
+
+    with (
+        mock.patch(f"{__name__}.check_grafana_status", return_value=status),
+        mock.patch(f"{__name__}.prompt_user_for_setup", return_value=False) as prompt_mock,
+    ):
+        assert ensure_grafana_ready(auto_setup=False, silent=False) is True
+
+    prompt_mock.assert_called_once()
+
+
 def grafana_checker_module_tests() -> bool:
-    """Test the Grafana checker functionality"""
-    print("\n" + "=" * 70)
-    print("GRAFANA STATUS CHECK")
-    print("=" * 70 + "\n")
+    from test_framework import TestSuite
 
-    status = check_grafana_status()
+    suite = TestSuite("grafana_checker", "grafana_checker.py")
 
-    print(f"Grafana Installed:     {'✓' if status['installed'] else '✗'}")
-    print(f"Service Running:       {'✓' if status['running'] else '✗'}")
-    print(f"SQLite Plugin:         {'✓' if status['sqlite_plugin'] else '✗'}")
-    print(f"Plugins Accessible:    {'✓' if status['plugins_accessible'] else '✗'}")
-    print(f"\nOverall Status:        {'✅ READY' if status['ready'] else '❌ NOT READY'}")
+    suite.run_test(
+        "Status short-circuits when not installed",
+        _test_check_grafana_status_handles_installation_flag,
+        "Verifies that check_grafana_status avoids network calls when Grafana is not installed.",
+    )
 
-    print(f"\nStatus Message: {get_status_message()}")
+    suite.run_test(
+        "Status ready state",
+        _test_check_grafana_status_ready_state,
+        "Ensures ready flag is set only when running and plugins are available.",
+    )
 
-    print("\n" + "=" * 70 + "\n")
+    suite.run_test(
+        "Status message variants",
+        _test_get_status_message_variants,
+        "Confirms get_status_message returns the correct text for each state.",
+    )
 
-    return True
+    suite.run_test(
+        "Automated setup path",
+        _test_ensure_grafana_ready_runs_setup_when_needed,
+        "Validates ensure_grafana_ready triggers setup and re-checks status when auto_setup is True.",
+    )
+
+    suite.run_test(
+        "User decline path",
+        _test_ensure_grafana_ready_skips_when_user_declines,
+        "Ensures ensure_grafana_ready respects user choice and does not block startup.",
+    )
+
+    return suite.finish_suite()
 
 
 # Use centralized test runner utility from test_utilities

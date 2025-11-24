@@ -9,6 +9,7 @@ Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercu
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import subprocess
@@ -16,9 +17,14 @@ import sys
 import textwrap
 import time
 from collections.abc import Iterable
+from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import Any, Callable, cast
+
+from test_framework import TestSuite, create_standard_test_runner
 
 try:
     from openai import OpenAI as _OpenAI
@@ -76,6 +82,16 @@ PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "inception": ("INCEPTION_API_KEY",),
     "grok": ("XAI_API_KEY",),
     "tetrate": ("TARS_API_KEY",),
+}
+
+_PROVIDER_BASE_URL_FACTORIES: dict[str, Callable[[], str]] = {
+    "moonshot": lambda: (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/"),
+    "deepseek": lambda: (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/"),
+    "gemini": lambda: os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)",
+    "local_llm": lambda: (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/"),
+    "inception": lambda: (os.getenv("INCEPTION_AI_BASE_URL") or "https://api.inceptionlabs.ai/v1").rstrip("/"),
+    "grok": lambda: os.getenv("XAI_API_HOST") or "api.x.ai",
+    "tetrate": lambda: (os.getenv("TETRATE_AI_BASE_URL") or "https://api.router.tetrate.ai/v1").rstrip("/"),
 }
 
 ListModelsFn = Callable[[], Iterable[Any]]
@@ -206,42 +222,58 @@ def _build_messages_preview(content: str) -> str:
     return f"Completion preview: {preview}" if preview else "Completion preview unavailable."
 
 
-def _format_provider_error(provider: str, exc: Exception) -> str:
-    """Return a friendly error message extracted from an exception."""
-    provider_name = provider.capitalize()
-    status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
-    error_str = str(exc)
+_QUOTA_KEYWORDS = ("quota", "credit", "limit")
 
-    if status_code is None:
-        status_match = re.search(r"Error code:\s*(\d+)", error_str)
-        if status_match:
-            status_code = status_match.group(1)
 
-    message_match = re.search(r"'message':\s*'([^']+)'", error_str)
-    code_match = re.search(r"'code':\s*'([^']+)'", error_str)
-    req_match = re.search(r"request id:\s*([\w-]+)", error_str)
+def _infer_status_code(exc: Exception, error_str: str) -> str | int | None:
+    """Return HTTP status code from exception metadata or string content."""
+
+    for attr in ("status_code", "status"):
+        status_code = getattr(exc, attr, None)
+        if status_code:
+            return status_code
+
+    match = re.search(r"Error code:\s*(\d+)", error_str)
+    return match.group(1) if match else None
+
+
+def _collect_error_details(error_str: str) -> tuple[list[str], bool]:
+    """Extract notable fragments from the provider error string."""
+
+    detail_patterns: tuple[tuple[str, str, Callable[[str], str]], ...] = (
+        ("message", r"'message':\s*'([^']+)'", lambda value: value),
+        ("code", r"'code':\s*'([^']+)'", lambda value: f"code: {value}"),
+        ("request", r"request id:\s*([\w-]+)", lambda value: f"request id: {value}"),
+    )
 
     details: list[str] = []
     seen: set[str] = set()
-
-    quota_keywords = {"quota", "credit", "limit"}
     quota_detected = False
 
     def add_detail(text: str) -> None:
         nonlocal quota_detected
         normalized = text.lower()
-        if any(keyword in normalized for keyword in quota_keywords):
+        if any(keyword in normalized for keyword in _QUOTA_KEYWORDS):
             quota_detected = True
         if normalized not in seen:
             details.append(text)
             seen.add(normalized)
 
-    if message_match:
-        add_detail(message_match.group(1))
-    if code_match:
-        add_detail(f"code: {code_match.group(1)}")
-    if req_match and not any("request id" in d.lower() for d in details):
-        add_detail(f"request id: {req_match.group(1)}")
+    for _, pattern, formatter in detail_patterns:
+        match = re.search(pattern, error_str, re.IGNORECASE)
+        if match:
+            add_detail(formatter(match.group(1)))
+
+    return details, quota_detected
+
+
+def _format_provider_error(provider: str, exc: Exception) -> str:
+    """Return a friendly error message extracted from an exception."""
+
+    provider_name = provider.capitalize()
+    error_str = str(exc)
+    status_code = _infer_status_code(exc, error_str)
+    details, quota_detected = _collect_error_details(error_str)
 
     if quota_detected:
         return f"{provider_name} request failed: Insufficient credits or quota on the provider account."
@@ -252,44 +284,54 @@ def _format_provider_error(provider: str, exc: Exception) -> str:
     return f"{provider_name} request failed: {detail_text}"
 
 
+def _normalize_grok_entry(entry: Any) -> str | None:
+    if isinstance(entry, str):
+        return entry.strip()
+    for attr in ("text", "content"):
+        value = getattr(entry, attr, None)
+        if isinstance(value, str):
+            return value.strip()
+    return None
+
+
+def _collapse_grok_parts(items: Iterable[Any]) -> str | None:
+    parts = [text for text in (_normalize_grok_entry(item) for item in items) if text]
+    return "\n".join(parts) if parts else None
+
+
+def _normalize_grok_payload(payload: Any) -> str | None:
+    if isinstance(payload, str):
+        return payload.strip()
+    if isinstance(payload, list):
+        return _collapse_grok_parts(payload)
+    return None
+
+
+def _normalize_grok_message(message: Any) -> str | None:
+    if message is None:
+        return None
+    message_content = getattr(message, "content", None)
+    return _normalize_grok_payload(message_content)
+
+
 def _extract_grok_content(response: Any | None) -> str | None:
     """Extract text content from Grok SDK responses."""
+
     if response is None:
         return None
 
-    def _normalize(entry: Any) -> str | None:
-        if isinstance(entry, str):
-            return entry.strip()
-        for attr in ("text", "content"):
-            value = getattr(entry, attr, None)
-            if isinstance(value, str):
-                return value.strip()
-        return None
-
-    normalized: str | None = None
     content = getattr(response, "content", None)
-    if isinstance(content, str):
-        normalized = content.strip()
-    elif isinstance(content, list):
-        parts = [part for part in (_normalize(item) for item in content) if part]
-        if parts:
-            normalized = "\n".join(parts)
+    normalized = _normalize_grok_payload(content)
+    if normalized:
+        return normalized
 
-    if normalized is None:
-        message = getattr(response, "message", None)
-        if message is not None:
-            message_content = getattr(message, "content", None)
-            if isinstance(message_content, str):
-                normalized = message_content.strip()
-            elif isinstance(message_content, list):
-                parts = [part for part in (_normalize(item) for item in message_content) if part]
-                if parts:
-                    normalized = "\n".join(parts)
+    message = getattr(response, "message", None)
+    normalized = _normalize_grok_message(message)
+    if normalized:
+        return normalized
 
-    if normalized is None:
-        normalized = str(content if content is not None else response).strip()
-
-    return normalized
+    fallback = str(content if content is not None else response).strip()
+    return fallback or None
 
 
 def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:
@@ -448,66 +490,84 @@ def _test_tetrate(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("tetrate", False, endpoint_ok, messages)
 
 
+def _model_supports_generate_content(model: Any) -> bool:
+    methods = getattr(model, "supported_generation_methods", [])
+    return not methods or "generateContent" in methods
+
+
+def _gather_gemini_models(client: Any, *, limit: int = 10) -> tuple[list[str], bool]:
+    names: list[str] = []
+    has_more = False
+    for model in client.models.list():
+        if not _model_supports_generate_content(model):
+            continue
+        name = getattr(model, "name", "").replace("models/", "")
+        if not name:
+            continue
+        names.append(name)
+        if len(names) >= limit:
+            has_more = True
+            break
+    return names, has_more
+
+
+def _append_gemini_model_listing(
+    names: list[str],
+    configured: str,
+    has_more: bool,
+    messages: list[str],
+) -> None:
+    if not names:
+        messages.append("   ⚠️  No models found")
+        messages.append("")
+        return
+
+    found_configured = False
+    for name in names:
+        marker = " ← CONFIGURED" if name == configured else ""
+        messages.append(f"   • {name}{marker}")
+        if marker:
+            found_configured = True
+    if has_more:
+        messages.append("   ... (additional models available)")
+    if not found_configured:
+        messages.append(f"   ⚠️  Configured model '{configured}' not found in available models")
+    messages.append("")
+
+
 def _describe_gemini_models(client: Any, model_name: str, messages: list[str]) -> None:
     if client is None:
         return
+    messages.append("\n📋 Available Gemini models with generateContent support:")
     try:
-        messages.append("\n📋 Available Gemini models with generateContent support:")
-        model_count = 0
-        found_configured = False
-        # client.models.list() returns an iterator of Model objects
-        for model in client.models.list():
-            # Check supported generation methods if available, otherwise assume it's a model
-            methods = getattr(model, "supported_generation_methods", [])
-            if methods and "generateContent" not in methods:
-                continue
-
-            # model.name is usually "models/gemini-1.5-flash"
-            name = getattr(model, "name", "").replace("models/", "")
-            if not name:
-                continue
-
-            marker = " ← CONFIGURED" if name == model_name else ""
-            messages.append(f"   • {name}{marker}")
-            model_count += 1
-            if name == model_name:
-                found_configured = True
-            if model_count >= 10:  # Increased limit slightly
-                messages.append("   ... (additional models available)")
-                break
-        if model_count == 0:
-            messages.append("   ⚠️  No models found")
-        elif not found_configured:
-            messages.append(f"   ⚠️  Configured model '{model_name}' not found in available models")
-        messages.append("")
+        names, has_more = _gather_gemini_models(client)
     except Exception as exc:  # pragma: no cover - diagnostic helper
         messages.append(f"   ⚠️  Could not list models: {exc}")
         messages.append("")
+        return
+    _append_gemini_model_listing(names, model_name, has_more, messages)
+
+
+def _suggestion_suffix(error_msg: str, suggestions: list[str]) -> str:
+    if not suggestions:
+        if "Try:" in error_msg:
+            return error_msg
+        return error_msg + " Try updating GOOGLE_AI_MODEL in .env to a supported model."
+
+    suffix = f" Try: {', '.join(suggestions)}"
+    if suffix.strip() in error_msg:
+        return error_msg
+    return error_msg + suffix
 
 
 def _suggest_gemini_model_alternatives(client: Any, error_msg: str) -> str:
     if client is None:
         return error_msg
     try:
-        available_models: list[str] = []
-        for model in client.models.list():
-            methods = getattr(model, "supported_generation_methods", [])
-            if methods and "generateContent" not in methods:
-                continue
-            name = getattr(model, "name", "").replace("models/", "")
-            if name:
-                available_models.append(name)
-            if len(available_models) >= 3:
-                break
-        if available_models:
-            suggestion = f" Try: {', '.join(available_models)}"
-            if suggestion.strip() not in error_msg:
-                error_msg += suggestion
+        names, _ = _gather_gemini_models(client, limit=3)
     except Exception:  # pragma: no cover - suggestion helper
         return error_msg
-    if "Try:" not in error_msg:
-        error_msg += " Try updating GOOGLE_AI_MODEL in .env to a supported model."
-    return error_msg
+    return _suggestion_suffix(error_msg, names)
 
 
 def _parse_gemini_response(response: Any, messages: list[str]) -> tuple[bool, str | None, str | None]:
@@ -614,6 +674,55 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
     )
 
 
+def _local_llm_endpoint_active(target_base_url: str) -> bool:
+    try:
+        import socket
+        from urllib.parse import urlparse
+
+        parsed = urlparse(target_base_url)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex((parsed.hostname or "localhost", parsed.port or 1234))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
+
+def _maybe_start_lm_studio(base_url: str, messages: list[str]) -> None:
+    auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
+    if not auto_start:
+        return
+
+    lm_path = os.getenv("LM_STUDIO_PATH")
+    if not lm_path or not Path(lm_path).exists():
+        messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
+        return
+
+    if _local_llm_endpoint_active(base_url):
+        messages.append("LM Studio is already running.")
+        return
+
+    try:
+        subprocess.Popen([lm_path], shell=True)
+        startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
+        wait_time = min(startup_timeout, 10)
+        messages.append(f"Starting LM Studio (waiting {wait_time}s for initialization)...")
+        time.sleep(wait_time)
+    except Exception as exc:
+        messages.append(f"Failed to start LM Studio: {exc}")
+
+
+def _normalize_local_llm_endpoint(base_url: str, messages: list[str]) -> tuple[str, bool]:
+    normalized_base_url, changed = _normalize_base_url(base_url, required_suffix="/v1")
+    endpoint_ok = normalized_base_url.endswith("/v1")
+    if changed:
+        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
+    if not endpoint_ok:
+        messages.append("Base URL is missing the required /v1 suffix.")
+    return normalized_base_url, endpoint_ok
+
+
 def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
     messages: list[str] = []
     if OpenAI is None:
@@ -628,51 +737,8 @@ def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
         messages.append("LOCAL_LLM_BASE_URL not configured.")
         return TestResult("local_llm", False, False, messages)
 
-    def _maybe_start_lm_studio(target_base_url: str) -> None:
-        auto_start = os.getenv("LM_STUDIO_AUTO_START", "false").lower() == "true"
-        if not auto_start:
-            return
-
-        lm_path = os.getenv("LM_STUDIO_PATH")
-        if not lm_path or not Path(lm_path).exists():
-            messages.append("LM_STUDIO_AUTO_START is true but LM_STUDIO_PATH is not configured or does not exist.")
-            return
-
-        def _endpoint_active() -> bool:
-            try:
-                import socket
-                from urllib.parse import urlparse
-
-                parsed = urlparse(target_base_url)
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                result = sock.connect_ex((parsed.hostname or "localhost", parsed.port or 1234))
-                sock.close()
-                return result == 0
-            except Exception:
-                return False
-
-        if _endpoint_active():
-            messages.append("LM Studio is already running.")
-            return
-
-        try:
-            subprocess.Popen([lm_path], shell=True)
-            startup_timeout = int(os.getenv("LM_STUDIO_STARTUP_TIMEOUT", "60"))
-            wait_time = min(startup_timeout, 10)
-            messages.append(f"Starting LM Studio (waiting {wait_time}s for initialization)...")
-            time.sleep(wait_time)
-        except Exception as exc:
-            messages.append(f"Failed to start LM Studio: {exc}")
-
-    _maybe_start_lm_studio(base_url)
-
-    normalized_base_url, changed = _normalize_base_url(base_url, required_suffix="/v1")
-    endpoint_ok = normalized_base_url.endswith("/v1")
-    if changed:
-        messages.append(f"Normalized base URL from '{base_url}' to '{normalized_base_url}'.")
-    if not endpoint_ok:
-        messages.append("Base URL is missing the required /v1 suffix.")
+    _maybe_start_lm_studio(base_url, messages)
+    normalized_base_url, endpoint_ok = _normalize_local_llm_endpoint(base_url, messages)
 
     client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
     try:
@@ -810,24 +876,10 @@ PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
 
 
 def _provider_base_url(provider: str) -> str:
-    base_url: str
-    if provider == "moonshot":
-        base_url = (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/")
-    elif provider == "deepseek":
-        base_url = (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/")
-    elif provider == "gemini":
-        base_url = os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)"
-    elif provider == "local_llm":
-        base_url = (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/")
-    elif provider == "inception":
-        base_url = (os.getenv("INCEPTION_AI_BASE_URL") or "https://api.inceptionlabs.ai/v1").rstrip("/")
-    elif provider == "grok":
-        base_url = os.getenv("XAI_API_HOST") or "api.x.ai"
-    elif provider == "tetrate":
-        base_url = (os.getenv("TETRATE_AI_BASE_URL") or "https://api.router.tetrate.ai/v1").rstrip("/")
-    else:
-        base_url = ""
-    return base_url
+    factory = _PROVIDER_BASE_URL_FACTORIES.get(provider)
+    if not factory:
+        return ""
+    return factory()
 
 
 def _prompt_for_provider() -> str | None:
@@ -868,6 +920,86 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _require_provider_tester(provider: str, parser: argparse.ArgumentParser) -> Callable[[str, int], TestResult]:
+    tester = PROVIDER_TESTERS.get(provider)
+    if not tester:
+        parser.error(f"Unsupported provider: {provider}")
+    return tester
+
+
+def _ensure_provider_env_ready(provider: str, *, interactive: bool) -> bool:
+    missing_env = _provider_missing_env(provider)
+    if not missing_env:
+        return True
+
+    missing_list = ", ".join(missing_env)
+    if interactive:
+        print(f"\n⚠️  Provider '{provider}' is missing required environment variables: {missing_list}.")
+        print("    Update your .env (or pass --env-file) and choose again.\n")
+    else:
+        print(f"Provider '{provider}' is missing required environment variables: {missing_list}.")
+        print("Update your .env (or pass --env-file) and try again.")
+    return False
+
+
+def _execute_provider_test(
+    tester: Callable[[str, int], TestResult], prompt: str, max_tokens: int
+) -> tuple[TestResult, float]:
+    start_time = time.time()
+    result = tester(prompt, max_tokens)
+    duration = time.time() - start_time
+    return result, duration
+
+
+def _render_test_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
+    _print_result(result)
+
+    if result.api_status and result.full_output:
+        print("\nPrompt:")
+        print(f'"{args.prompt}"')
+        print("\nResponse:")
+        print(result.full_output)
+        print(f"\nResponse time: {duration:.2f}s")
+        if _is_response_truncated(result.full_output, result.finish_reason):
+            print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
+            print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
+        print()
+        return
+
+    if result.api_status or not result.messages:
+        return
+
+    print("\nError details:")
+    for msg in result.messages:
+        print(f"  {msg}")
+
+
+def _run_single_provider(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    tester = _require_provider_tester(args.provider, parser)
+    if not _ensure_provider_env_ready(args.provider, interactive=False):
+        return 1
+
+    print(f"\nTesting provider: {args.provider}")
+    result, duration = _execute_provider_test(tester, args.prompt, args.max_tokens)
+    _render_test_output(args, result, duration)
+    return 0
+
+
+def _interactive_provider_loop(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    while True:
+        provider = _prompt_for_provider()
+        if provider is None:
+            break
+
+        tester = _require_provider_tester(provider, parser)
+        if not _ensure_provider_env_ready(provider, interactive=True):
+            continue
+
+        print(f"\nTesting provider: {provider}")
+        result, duration = _execute_provider_test(tester, args.prompt, args.max_tokens)
+        _render_test_output(args, result, duration)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     _ensure_env_loaded(".env", parser)
@@ -876,98 +1008,254 @@ def main(argv: list[str] | None = None) -> int:
     if args.env_file and args.env_file != ".env":
         _ensure_env_loaded(args.env_file, parser)
 
-    # If provider specified via CLI arg, test once and exit
+    if not args.provider and _should_prefer_local_llm():
+        print("⚙️ Defaulting to local_llm provider for automated test execution.")
+        args.provider = "local_llm"
+
     if args.provider:
-        tester = PROVIDER_TESTERS.get(args.provider)
-        if not tester:
-            parser.error(f"Unsupported provider: {args.provider}")
+        return _run_single_provider(args, parser)
 
-        missing_env = _provider_missing_env(args.provider)
-        if missing_env:
-            missing_list = ", ".join(missing_env)
-            print(f"Provider '{args.provider}' is missing required environment variables: {missing_list}.")
-            print("Update your .env (or pass --env-file) and try again.")
-            return 1
-
-        print(f"\nTesting provider: {args.provider}")
-
-        # Start timer when making the API call
-        start_time = time.time()
-        result = tester(args.prompt, args.max_tokens)
-        duration = time.time() - start_time
-
-        _print_result(result)
-
-        # Always show prompt and response if available
-        if result.api_status and result.full_output:
-            print("\nPrompt:")
-            print(f'"{args.prompt}"')
-            print("\nResponse:")
-            print(result.full_output)
-            print(f"\nResponse time: {duration:.2f}s")
-
-            # Check for truncation
-            if _is_response_truncated(result.full_output, result.finish_reason):
-                print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
-                print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
-            print()
-        elif not result.api_status:
-            # Show error details if API call failed
-            if result.messages:
-                print("\nError details:")
-                for msg in result.messages:
-                    print(f"  {msg}")
-
-        return 0
-
-    # Interactive mode - loop through providers
-    while True:
-        provider = _prompt_for_provider()
-        if provider is None:
-            break
-
-        tester = PROVIDER_TESTERS.get(provider)
-        if not tester:
-            parser.error(f"Unsupported provider: {provider}")
-
-        missing_env = _provider_missing_env(provider)
-        if missing_env:
-            missing_list = ", ".join(missing_env)
-            print(f"\n⚠️  Provider '{provider}' is missing required environment variables: {missing_list}.")
-            print("    Update your .env (or pass --env-file) and choose again.\n")
-            continue
-
-        print(f"\nTesting provider: {provider}")
-
-        # Start timer when making the API call
-        start_time = time.time()
-        result = tester(args.prompt, args.max_tokens)
-        duration = time.time() - start_time
-
-        _print_result(result)
-
-        # Always show prompt and response if available
-        if result.api_status and result.full_output:
-            print("\nPrompt:")
-            print(f'"{args.prompt}"')
-            print("\nResponse:")
-            print(result.full_output)
-            print(f"\nResponse time: {duration:.2f}s")
-
-            # Check for truncation
-            if _is_response_truncated(result.full_output, result.finish_reason):
-                print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
-                print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
-            print()
-        elif not result.api_status:
-            # Show error details if API call failed
-            if result.messages:
-                print("\nError details:")
-                for msg in result.messages:
-                    print(f"  {msg}")
-
+    _interactive_provider_loop(args, parser)
     return 0
 
 
+@contextmanager
+def _temporary_env(overrides: dict[str, str | None]):
+    original = {key: os.environ.get(key) for key in overrides}
+    try:
+        for key, value in overrides.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        yield
+    finally:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+@contextmanager
+def _temporary_cwd(path: Path):
+    original = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(original)
+
+
+@contextmanager
+def _patched_provider_tester(provider: str, tester: Callable[[str, int], TestResult]):
+    original = PROVIDER_TESTERS.get(provider)
+    PROVIDER_TESTERS[provider] = tester
+    try:
+        yield tester
+    finally:
+        if original is None:
+            PROVIDER_TESTERS.pop(provider, None)
+        else:
+            PROVIDER_TESTERS[provider] = original
+
+
+def _test_normalize_base_url_applies_suffix() -> bool:
+    normalized, changed = _normalize_base_url(
+        "https://api.example.com/chat/completions",
+        required_suffix="/v1",
+        drop_suffixes=("/chat/completions",),
+    )
+    assert normalized == "https://api.example.com/v1"
+    assert changed is True
+    return True
+
+
+def _test_provider_missing_env_detects_requirements() -> bool:
+    with _temporary_env({"MOONSHOT_API_KEY": None}):
+        assert _provider_missing_env("moonshot") == ["MOONSHOT_API_KEY"]
+    with _temporary_env({"MOONSHOT_API_KEY": "token"}):
+        assert _provider_missing_env("moonshot") == []
+    return True
+
+
+def _test_is_response_truncated_and_preview_helpers() -> bool:
+    assert _is_response_truncated("Incomplete thought", None) is True
+    assert _is_response_truncated("Complete sentence.", None) is False
+    assert _is_response_truncated("Whatever", "length") is True
+    preview = _build_messages_preview("word " * 80)
+    assert preview.startswith("Completion preview")
+    assert preview.endswith("...")
+    return True
+
+
+def _test_format_provider_error_extracts_status_and_details() -> bool:
+    class FakeError(Exception):
+        def __init__(self) -> None:
+            super().__init__("{'message': 'quota exceeded', 'code': 'quota'}")
+            self.status_code = 429
+
+    message = _format_provider_error("moonshot", FakeError())
+    assert "Insufficient credits" in message
+    assert "Moonshot" in message
+    return True
+
+
+def _test_extract_grok_content_handles_part_lists() -> bool:
+    response = SimpleNamespace(content=[SimpleNamespace(text="Hello"), SimpleNamespace(text="World")])
+    assert _extract_grok_content(response) == "Hello\nWorld"
+    fallback = SimpleNamespace(content=None, message=SimpleNamespace(content=[SimpleNamespace(text="Hi")]))
+    assert _extract_grok_content(fallback) == "Hi"
+    return True
+
+
+def _test_load_env_file_respects_override_flag() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        env_path = Path(tmp_dir) / ".env"
+        env_path.write_text("FOO=bar\n", encoding="utf-8")
+        with _temporary_env({"FOO": "existing"}):
+            _load_env_file(env_path, override=False)
+            assert os.environ["FOO"] == "existing"
+        with _temporary_env({"FOO": "existing"}):
+            _load_env_file(env_path, override=True)
+            assert os.environ["FOO"] == "bar"
+    return True
+
+
+def _test_find_env_path_locates_relative_files() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        env_path = root / ".env.local"
+        env_path.write_text("KEY=VALUE", encoding="utf-8")
+        with _temporary_cwd(root):
+            found = _find_env_path(".env.local")
+    assert found == env_path
+    return True
+
+
+def _test_main_requires_env_for_cli_provider() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        temp_root = Path(tmp_dir)
+        (temp_root / ".env").write_text("", encoding="utf-8")
+        with _temporary_cwd(temp_root), _temporary_env({"MOONSHOT_API_KEY": None}):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                exit_code = main(["--provider", "moonshot", "--prompt", "Short prompt"])
+    output = buffer.getvalue()
+    assert exit_code == 1
+    assert "missing required environment variables" in output
+    return True
+
+
+def _test_main_cli_executes_stubbed_provider_once() -> bool:
+    fake_result = TestResult(
+        provider="moonshot",
+        api_status=True,
+        endpoint_status=True,
+        full_output="Complete response.",
+        finish_reason="stop",
+    )
+    calls: list[tuple[str, int]] = []
+
+    def fake_tester(prompt: str, max_tokens: int) -> TestResult:
+        calls.append((prompt, max_tokens))
+        return fake_result
+
+    with TemporaryDirectory() as tmp_dir:
+        temp_root = Path(tmp_dir)
+        (temp_root / ".env").write_text("", encoding="utf-8")
+        with (
+            _temporary_cwd(temp_root),
+            _temporary_env({"MOONSHOT_API_KEY": "token"}),
+            _patched_provider_tester("moonshot", fake_tester),
+        ):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                exit_code = main(
+                    [
+                        "--provider",
+                        "moonshot",
+                        "--prompt",
+                        "CLI prompt.",
+                        "--max-tokens",
+                        "321",
+                    ]
+                )
+    output = buffer.getvalue()
+    assert exit_code == 0
+    assert calls == [("CLI prompt.", 321)]
+    assert "Testing provider: moonshot" in output
+    assert '"CLI prompt."' in output
+    assert "Response time:" in output
+    return True
+
+
+def module_tests() -> bool:
+    suite = TestSuite("ai_api_test", "ai_api_test.py")
+    suite.run_test(
+        "Normalize base URL",
+        _test_normalize_base_url_applies_suffix,
+        "Ensures suffix handling trims chat endpoints and appends /v1.",
+    )
+    suite.run_test(
+        "Provider env detection",
+        _test_provider_missing_env_detects_requirements,
+        "Ensures missing env vars are surfaced per provider requirements.",
+    )
+    suite.run_test(
+        "Response truncation helpers",
+        _test_is_response_truncated_and_preview_helpers,
+        "Ensures truncation and preview helpers flag incomplete outputs.",
+    )
+    suite.run_test(
+        "Provider error formatting",
+        _test_format_provider_error_extracts_status_and_details,
+        "Ensures diagnostic errors include codes and quota messaging.",
+    )
+    suite.run_test(
+        "Grok content extraction",
+        _test_extract_grok_content_handles_part_lists,
+        "Ensures Grok response normalization handles list payloads.",
+    )
+    suite.run_test(
+        "Env utilities",
+        _test_load_env_file_respects_override_flag,
+        "Ensures env loader honors override flag semantics.",
+    )
+    suite.run_test(
+        "Env path discovery",
+        _test_find_env_path_locates_relative_files,
+        "Ensures .env discovery resolves relative paths via cwd.",
+    )
+    suite.run_test(
+        "CLI missing env guard",
+        _test_main_requires_env_for_cli_provider,
+        "Ensures CLI provider mode surfaces missing env vars before testing.",
+    )
+    suite.run_test(
+        "CLI provider execution",
+        _test_main_cli_executes_stubbed_provider_once,
+        "Ensures CLI provider args invoke the tester once and print responses.",
+    )
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+
+def _should_run_module_tests() -> bool:
+    return os.environ.get("RUN_MODULE_TESTS") == "1"
+
+
+def _should_prefer_local_llm() -> bool:
+    if _should_run_module_tests():
+        return True
+    skip_live = os.environ.get("SKIP_LIVE_API_TESTS", "").lower()
+    return skip_live in {"1", "true", "yes"}
+
+
 if __name__ == "__main__":
+    if _should_run_module_tests():
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
     sys.exit(main())

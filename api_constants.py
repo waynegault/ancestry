@@ -54,14 +54,10 @@ API_PATH_TREE_OWNER_INFO = "api/uhome/secure/rest/user/tree-info"
 API_PATH_PERSON_PICKER_SUGGEST = "api/person-picker/suggest/{tree_id}"
 
 # Person facts in family tree
-API_PATH_PERSON_FACTS_USER = (
-    "family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}"
-)
+API_PATH_PERSON_FACTS_USER = "family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}"
 
 # Person relationship ladder (legacy HTML parsing)
-API_PATH_PERSON_GETLADDER = (
-    "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
-)
+API_PATH_PERSON_GETLADDER = "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 
 # Person relationship ladder with labels (JSON API)
 API_PATH_RELATION_LADDER_WITH_LABELS = (
@@ -88,13 +84,17 @@ API_PATH_MATCH_LIST = "discoveryui-matches/parents/list/api/matchList/{my_uuid}"
 API_PATH_MATCH_BADGES_IN_TREE = "discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid}"
 
 # DNA match details (combined endpoint with parental data)
-API_PATH_MATCH_DETAILS = "/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true"
+API_PATH_MATCH_DETAILS = (
+    "/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true"
+)
 
 # DNA match badge details
 API_PATH_MATCH_BADGE_DETAILS = "/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails"
 
 # DNA match probability data
-API_PATH_MATCH_PROBABILITY = "discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}"
+API_PATH_MATCH_PROBABILITY = (
+    "discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}"
+)
 
 # ============================================================================
 # DNA ETHNICITY ENDPOINTS
@@ -107,7 +107,9 @@ API_PATH_ETHNICITY_OWNER = "dna/origins/secure/tests/{tree_owner_test_guid}/v2/e
 API_PATH_ETHNICITY_REGION_NAMES = "dna/origins/public/ethnicity/2025/names?locale={locale}"
 
 # Ethnicity comparison between owner and match
-API_PATH_ETHNICITY_COMPARE = "discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity"
+API_PATH_ETHNICITY_COMPARE = (
+    "discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity"
+)
 
 # ============================================================================
 # FAMILY TREE NAVIGATION ENDPOINTS
@@ -124,6 +126,7 @@ API_PATH_FAMILY_TREE_VIEW = "/family-tree/tree/{tree_id}/family"
 # ENDPOINT VALIDATION
 # ============================================================================
 
+
 def validate_all_endpoints() -> bool:
     """
     Validate that all API endpoint constants are defined and non-empty.
@@ -136,9 +139,7 @@ def validate_all_endpoints() -> bool:
     # Get all API_PATH_ constants from this module
     current_module = sys.modules[__name__]
     api_constants = {
-        name: getattr(current_module, name)
-        for name in dir(current_module)
-        if name.startswith("API_PATH_")
+        name: getattr(current_module, name) for name in dir(current_module) if name.startswith("API_PATH_")
     }
 
     # Validate each constant
@@ -158,6 +159,7 @@ def validate_all_endpoints() -> bool:
 # MODULE TESTS
 # ============================================================================
 
+
 def api_constants_module_tests() -> bool:
     """
     Run comprehensive tests for API constants module.
@@ -174,6 +176,8 @@ def api_constants_module_tests() -> bool:
     print()
 
     success = True
+    total_tests = 3
+    passed_tests = 0
 
     # Test 1: Validate all endpoints
     print("Test 1: Validate all API endpoint constants")
@@ -182,6 +186,7 @@ def api_constants_module_tests() -> bool:
         print("❌ FAILED: Some endpoints are invalid")
     else:
         print("✅ PASSED: All endpoints valid")
+        passed_tests += 1
     print()
 
     # Test 2: Regression guards for critical endpoints
@@ -191,7 +196,10 @@ def api_constants_module_tests() -> bool:
         ("API_PATH_CSRF_TOKEN", "discoveryui-matches/parents/api/csrfToken"),
         ("API_PATH_UUID_NAVHEADER", "api/navheaderdata/v1/header/data/dna"),
         ("API_PATH_ETHNICITY_OWNER", "dna/origins/secure/tests/{tree_owner_test_guid}/v2/ethnicity"),
-        ("API_PATH_ETHNICITY_COMPARE", "discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity"),
+        (
+            "API_PATH_ETHNICITY_COMPARE",
+            "discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity",
+        ),
         ("API_PATH_TREESUI_LIST", "api/treesui-list/trees/{tree_id}/persons"),
         ("API_PATH_HEADER_TREES", "api/treesui-list/trees?rights=own"),
     ]
@@ -210,11 +218,13 @@ def api_constants_module_tests() -> bool:
 
     if regression_passed:
         print("✅ PASSED: All regression guards passed")
+        passed_tests += 1
     print()
 
     # Test 3: Check for literal presence in source code
     print("Test 3: Literal presence guards")
     import inspect
+
     source = inspect.getsource(sys.modules[__name__])
 
     literal_tests = [
@@ -235,12 +245,17 @@ def api_constants_module_tests() -> bool:
 
     if literal_passed:
         print("✅ PASSED: All literals present in source")
+        passed_tests += 1
     print()
 
     if success:
         print("🎉 All API constants tests PASSED")
     else:
         print("❌ Some API constants tests FAILED")
+
+    failed_tests = total_tests - passed_tests
+    print(f"✅ Passed: {passed_tests}")
+    print(f"❌ Failed: {failed_tests}")
 
     return success
 
@@ -253,4 +268,5 @@ run_comprehensive_tests = create_standard_test_runner(api_constants_module_tests
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

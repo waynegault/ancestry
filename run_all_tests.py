@@ -1210,6 +1210,9 @@ def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], di
     # Always pass environment to subprocess to ensure SKIP_LIVE_API_TESTS is inherited
     env: dict[str, str] = dict(os.environ)
 
+    # Force modules to execute their embedded tests instead of interactive CLIs
+    env["RUN_MODULE_TESTS"] = "1"
+
     # For modules with internal test suite, set env var to trigger test output
     suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
     if module_name in suite_env_modules:

@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
+"""Dead-code scanner stub pointing to scripts/archive/dead_code_scan.py."""
+
 from __future__ import annotations
 
-"""This helper has been moved to ``scripts/archive/dead_code_scan.py``.
-
-The archived version contains the full dead-code scanner implementation.
-This top-level stub exists only to keep backward references clear.
-"""
-
-raise SystemExit(
-    "Use scripts/archive/dead_code_scan.py for dead-code analysis; this "
-    "top-level stub exists only as a pointer to the archived script."
-)
-
 import ast
+import io
 import json
 import os
 import re
+import sys
 from collections.abc import Iterable
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from test_framework import TestSuite, create_standard_test_runner
+
+DEPRECATION_MESSAGE = (
+    "Use scripts/archive/dead_code_scan.py for dead-code analysis; this "
+    "top-level stub exists only as a pointer to the archived script."
+)
 
 SKIP_DIRS: set[str] = {
     ".git",
@@ -129,12 +133,15 @@ def _collect_symbols_from_tree(tree: ast.Module, rel_path: str) -> list[SymbolIn
     return symbols
 
 
-def collect_symbol_defs(file_texts: dict[Path, str]) -> list[SymbolInfo]:
+def collect_symbol_defs(
+    file_texts: dict[Path, str], *, root: Path = ROOT, skip_files: set[str] | None = None
+) -> list[SymbolInfo]:
     defs: list[SymbolInfo] = []
+    ignored_files = skip_files if skip_files is not None else SKIP_FILES
 
     for path, text in file_texts.items():
-        rel = path.relative_to(ROOT).as_posix()
-        if rel in SKIP_FILES:
+        rel = path.relative_to(root).as_posix()
+        if rel in ignored_files:
             continue
 
         tree = _parse_ast_safely(path, text)
@@ -156,13 +163,11 @@ def _should_skip_name(name: str) -> bool:
 
 
 def compute_usage_counts(file_texts: dict[Path, str], defs: list[SymbolInfo]) -> list[dict[str, Any]]:
-    # Pre-collect all texts for faster iteration
     texts: list[str] = list(file_texts.values())
 
     results: list[dict[str, Any]] = []
     for info in defs:
-        # Simple word-boundary regex to catch both code and string references
-        pattern = re.compile(r"\\b" + re.escape(info.name) + r"\\b")
+        pattern = re.compile(r"\b" + re.escape(info.name) + r"\b")
         total_refs = 0
         for text in texts:
             total_refs += len(pattern.findall(text))
@@ -182,27 +187,209 @@ def compute_usage_counts(file_texts: dict[Path, str], defs: list[SymbolInfo]) ->
     return results
 
 
-def main() -> None:
-    py_files = list(iter_py_files(ROOT))
-    file_texts = load_file_texts(py_files)
-    defs = collect_symbol_defs(file_texts)
-    candidates = compute_usage_counts(file_texts, defs)
+def get_deprecation_message() -> str:
+    """Return the user-facing deprecation notice."""
 
+    return DEPRECATION_MESSAGE
+
+
+def main(args: list[str] | None = None) -> int:
+    """Stub entrypoint that instructs callers to use the archived script."""
+
+    _ = args
+    print(DEPRECATION_MESSAGE)
+    return 1
+
+
+def generate_dead_code_report(root: Path = ROOT, *, skip_files: set[str] | None = None) -> dict[str, Any]:
+    """Produce the dead-code candidate payload without writing it to disk."""
+
+    py_files = list(iter_py_files(root))
+    file_texts = load_file_texts(py_files)
+    defs = collect_symbol_defs(file_texts, root=root, skip_files=skip_files)
+    candidates = compute_usage_counts(file_texts, defs)
     candidates.sort(key=lambda r: (r["file"], r["lineno"]))
 
-    out_payload: dict[str, Any] = {
-        "root": str(ROOT),
+    return {
+        "root": str(root),
         "candidate_count": len(candidates),
+        "files_analyzed": len(py_files),
         "candidates": candidates,
     }
 
-    out_path = ROOT / "Cache" / "dead_code_candidates.json"
+
+def write_dead_code_report(payload: dict[str, Any], root: Path = ROOT) -> Path:
+    """Persist the payload to Cache/dead_code_candidates.json under *root*."""
+
+    out_path = root / "Cache" / "dead_code_candidates.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(out_payload, indent=2), encoding="utf-8")
-
-    print(f"[dead_code_scan] Analyzed {len(py_files)} files, found {len(candidates)} candidate functions.")
-    print(f"[dead_code_scan] Results written to: {out_path}")
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return out_path
 
 
-if __name__ == "__main__":  # pragma: no cover - utility script
-    main()
+def _create_file(root: Path, relative: str, contents: str) -> Path:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(contents, encoding="utf-8")
+    return path
+
+
+def _capture_main_output(args: list[str] | None = None) -> tuple[int, str]:
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        exit_code = main(args)
+    return exit_code, buffer.getvalue()
+
+
+def _test_main_emits_deprecation_notice() -> bool:
+    exit_code, output = _capture_main_output()
+    assert exit_code == 1
+    assert DEPRECATION_MESSAGE in output
+    return True
+
+
+def _test_iter_py_files_skips_configured_dirs() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        _create_file(root, "pkg/keep.py", "print('ok')")
+        skip_dir = root / "Cache"
+        skip_dir.mkdir()
+        _create_file(skip_dir, "ignored.py", "print('skip')")
+        files = list(iter_py_files(root))
+    rel_paths = {path.relative_to(root).as_posix() for path in files}
+    assert rel_paths == {"pkg/keep.py"}
+    return True
+
+
+def _test_collect_symbol_defs_filters_helpers() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        _create_file(
+            root,
+            "pkg/mod.py",
+            """\
+def good_func():
+    pass
+
+def __skip_me__():
+    pass
+
+def test_helper():
+    pass
+
+class Sample:
+    def method_one(self):
+        pass
+
+    def test_method(self):
+        pass
+""",
+        )
+        file_texts = load_file_texts(iter_py_files(root))
+        defs = collect_symbol_defs(file_texts, root=root, skip_files=set())
+
+    names = {(info.name, info.kind) for info in defs}
+    assert ("good_func", "module_function") in names
+    assert ("Sample", "class") in names
+    assert ("method_one", "method") in names
+    assert all("test" not in name and "__" not in name for name, _ in names)
+    return True
+
+
+def _test_compute_usage_counts_flags_single_reference() -> bool:
+    defs = [
+        SymbolInfo(name="unused_func", file="a.py", lineno=1, kind="module_function", owner=None),
+        SymbolInfo(name="used_func", file="a.py", lineno=5, kind="module_function", owner=None),
+    ]
+    file_texts = {
+        Path("a.py"): "def unused_func():\n    pass\n",
+        Path("b.py"): "def used_func():\n    pass\n\nused_func()\n",
+    }
+
+    candidates = compute_usage_counts(file_texts, defs)
+    assert len(candidates) == 1
+    assert candidates[0]["name"] == "unused_func"
+    assert candidates[0]["total_refs"] == 1
+    return True
+
+
+def _test_generate_dead_code_report_counts_candidates() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        _create_file(
+            root,
+            "pkg/first.py",
+            """\
+def keeper():
+    return 1
+
+def maybe_dead():
+    return 2
+
+keeper()
+""",
+        )
+        _create_file(root, "pkg/second.py", "print('noop')\n")
+        payload = generate_dead_code_report(root, skip_files=set())
+
+    assert payload["files_analyzed"] == 2
+    assert payload["candidate_count"] == 1
+    assert payload["candidates"][0]["name"] == "maybe_dead"
+    return True
+
+
+def _test_write_dead_code_report_persists_payload() -> bool:
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        payload = {"root": str(root), "candidate_count": 0, "candidates": []}
+        out_path = write_dead_code_report(payload, root)
+        written = json.loads(out_path.read_text(encoding="utf-8"))
+
+    assert out_path.relative_to(root).as_posix() == "Cache/dead_code_candidates.json"
+    assert written == payload
+    return True
+
+
+def module_tests() -> bool:
+    suite = TestSuite("scripts.dead_code_scan", "scripts/dead_code_scan.py")
+    suite.run_test(
+        "Main emits deprecation",
+        _test_main_emits_deprecation_notice,
+        "Ensures CLI stub prints the archived-script notice.",
+    )
+    suite.run_test(
+        "Iterator skips directories",
+        _test_iter_py_files_skips_configured_dirs,
+        "Ensures iter_py_files respects the configured skip list.",
+    )
+    suite.run_test(
+        "Symbol collection filters helpers",
+        _test_collect_symbol_defs_filters_helpers,
+        "Ensures test/dunder helpers are excluded from symbol discovery.",
+    )
+    suite.run_test(
+        "Usage counts flag single refs",
+        _test_compute_usage_counts_flags_single_reference,
+        "Ensures compute_usage_counts identifies unused functions.",
+    )
+    suite.run_test(
+        "Generate report counts candidates",
+        _test_generate_dead_code_report_counts_candidates,
+        "Ensures report generation counts files and candidates correctly.",
+    )
+    suite.run_test(
+        "Report writer persists payload",
+        _test_write_dead_code_report_persists_payload,
+        "Ensures payload is written to Cache/dead_code_candidates.json.",
+    )
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+
+if __name__ == "__main__":
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        success = run_comprehensive_tests()
+        raise SystemExit(0 if success else 1)
+    raise SystemExit(main())

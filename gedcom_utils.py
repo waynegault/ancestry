@@ -54,14 +54,17 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import importlib
 import logging
+import os
 import re
+import sys
 import time
 from collections import deque
 from collections.abc import Collection, Mapping
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import (
     Any,
     Callable,
@@ -109,6 +112,7 @@ DATEPARSER_AVAILABLE = _dateparser_available
 # === LOCAL IMPORTS ===
 from common_params import GraphContext
 from config.config_manager import ConfigManager
+from test_framework import TestSuite, create_standard_test_runner
 from utils import format_name
 
 # Note: _find_direct_relationship and _has_direct_relationship are accessed via
@@ -2139,13 +2143,18 @@ class GedcomData:
         instance.processed_data_cache = cached_data.get("processed_data_cache", {})
         instance.id_to_parents = cached_data.get("id_to_parents", {})
         instance.id_to_children = cached_data.get("id_to_children", {})
-        instance.id_to_spouses = cached_data.get("id_to_spouses", {})
+        spouse_map = cached_data.get("id_to_spouses") if "id_to_spouses" in cached_data else None
+        instance.id_to_spouses = spouse_map or {}
         instance.indi_index_build_time = cached_data.get("indi_index_build_time", 0)
         instance.family_maps_build_time = cached_data.get("family_maps_build_time", 0)
         instance.data_processing_time = cached_data.get("data_processing_time", 0)
 
         # Rebuild indi_index from reader (fast - just indexing, no data extraction)
         instance._build_indi_index()
+
+        if spouse_map is None:
+            logger.debug("Cached GEDCOM data missing spouse relationships; rebuilding family maps for accuracy.")
+            instance._build_family_maps()
 
         logger.debug(
             f"GedcomData restored from cache: {len(instance.processed_data_cache)} processed individuals, "
@@ -2681,3 +2690,258 @@ class GedcomData:
 
         # No direct relationship found
         return []
+
+
+_PATCH_GEDCOM_SENTINEL = object()
+
+
+@contextmanager
+def _temporary_globals(overrides: dict[str, Any]):
+    previous: dict[str, Any] = {}
+    try:
+        for key, value in overrides.items():
+            previous[key] = globals().get(key, _PATCH_GEDCOM_SENTINEL)
+            globals()[key] = value
+        yield
+    finally:
+        for key, original in previous.items():
+            if original is _PATCH_GEDCOM_SENTINEL:
+                globals().pop(key, None)
+            else:
+                globals()[key] = original
+
+
+class _FakeNameTag:
+    def __init__(self, givn: Optional[str] = None, surn: Optional[str] = None) -> None:
+        self._givn = givn
+        self._surn = surn
+
+    def sub_tag_value(self, tag: str) -> Optional[str]:
+        if tag == TAG_GIVN:
+            return self._givn
+        if tag == TAG_SURN:
+            return self._surn
+        return None
+
+
+class _FakeIndividualRecord:
+    def __init__(
+        self,
+        *,
+        xref_id: str = "@I1@",
+        name_obj: Any = None,
+        name_tag: Any = None,
+        sub_tag_values: Optional[dict[str, Any]] = None,
+        event_map: Optional[dict[str, Any]] = None,
+    ) -> None:
+        self.tag = TAG_INDI
+        self.xref_id = xref_id
+        self.name = name_obj
+        self._name_tag = name_tag
+        self._sub_tag_values = sub_tag_values or {}
+        self._event_map = event_map or {}
+
+    def sub_tag(self, tag: str) -> Any:
+        if tag == TAG_NAME:
+            return self._name_tag
+        return self._event_map.get(tag)
+
+    def sub_tag_value(self, tag: str) -> Any:
+        return self._sub_tag_values.get(tag)
+
+
+class _FakeSourceTag:
+    def __init__(self, title: str) -> None:
+        self._title = title
+
+    def sub_tag(self, tag: str) -> Any:
+        if tag == TAG_TITL:
+            return SimpleNamespace(value=self._title)
+        return None
+
+
+class _FakeEventRecord:
+    def __init__(
+        self,
+        *,
+        date_value: str,
+        place_value: str,
+        source_titles: Optional[list[str]] = None,
+    ) -> None:
+        self._date_tag = SimpleNamespace(value=date_value)
+        self._place_tag = SimpleNamespace(value=place_value)
+        self._source_tags = [_FakeSourceTag(title) for title in (source_titles or [])]
+
+    def sub_tag(self, tag: str) -> Any:
+        if tag == TAG_DATE:
+            return self._date_tag
+        if tag == TAG_PLACE:
+            return self._place_tag
+        return None
+
+    def sub_tags(self, tag: str) -> list[Any]:
+        if tag == TAG_SOUR:
+            return list(self._source_tags)
+        return []
+
+
+class _FakeNameObject:
+    def __init__(self, formatted: str) -> None:
+        self._formatted = formatted
+
+    def format(self) -> str:
+        return self._formatted
+
+
+def _test_normalize_id_variants() -> bool:
+    assert _normalize_id("@I123@") == "I123"
+    assert _normalize_id("i-42") == "I-42"
+    assert _normalize_id("Family I999 note") == "I999"
+    assert _normalize_id("12345") == "12345"
+    assert _normalize_id("???") is None
+    return True
+
+
+def _test_extract_and_fix_id_handles_various_inputs() -> bool:
+    fake = _FakeIndividualRecord(xref_id="@S77@")
+    assert extract_and_fix_id(fake) == "S77"
+    assert extract_and_fix_id(42) == "42"
+    assert extract_and_fix_id("@F12@") == "F12"
+    assert extract_and_fix_id(object()) is None
+    return True
+
+
+def _test_get_full_name_prefers_name_format_and_manual_fallback() -> bool:
+    def _format_name_without_slashes(value: str) -> str:
+        return " ".join(value.replace("/", " ").split())
+
+    indi_with_format = cast(GedcomIndividualType, _FakeIndividualRecord(name_obj=_FakeNameObject("Ada /Lovelace/")))
+    with _temporary_globals({"format_name": _format_name_without_slashes}):
+        assert _get_full_name(indi_with_format) == "Ada Lovelace"
+
+    indi_manual = cast(GedcomIndividualType, _FakeIndividualRecord(name_tag=_FakeNameTag("Ada", "Lovelace")))
+
+    def _identity(value: str) -> str:
+        return value
+
+    with _temporary_globals({"format_name": _identity}):
+        assert _get_full_name(indi_manual) == "Ada Lovelace"
+
+    bad_value = cast(GedcomIndividualType, object())
+    assert _get_full_name(bad_value) == "Unknown (Invalid Type)"
+    return True
+
+
+def _test_parse_date_uses_dateparser_when_available() -> bool:
+    class FakeDateParser:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, Optional[dict[str, Any]]]] = []
+
+        def parse(self, cleaned_str: str, settings: Optional[dict[str, Any]] = None) -> datetime:
+            self.calls.append((cleaned_str, settings))
+            return datetime(1875, 4, 5)
+
+    fake_parser = FakeDateParser()
+    with _temporary_globals({"DATEPARSER_AVAILABLE": True, "dateparser": fake_parser}):
+        parsed = _parse_date("ABT 5 APR 1875")
+    assert parsed is not None
+    assert parsed.year == 1875 and parsed.tzinfo == timezone.utc
+    assert fake_parser.calls
+    return True
+
+
+def _test_parse_date_falls_back_to_year_extraction() -> bool:
+    with _temporary_globals({"DATEPARSER_AVAILABLE": False, "dateparser": None}):
+        parsed = _parse_date("BET 1900 AND 1905")
+    assert parsed is not None
+    assert parsed.year == 1900 and parsed.tzinfo == timezone.utc
+    return True
+
+
+def _test_clean_display_date_transforms_modifiers() -> bool:
+    assert _clean_display_date("(ABT 1850)") == "~1850"
+    assert _clean_display_date("BET 1900 AND 1905") == "1900-1905"
+    assert _clean_display_date(None) == "N/A"
+    return True
+
+
+def _test_extract_event_helpers_capture_date_place_and_sources() -> bool:
+    event = _FakeEventRecord(
+        date_value="12 JAN 1900",
+        place_value="Boston, MA",
+        source_titles=["Birth Register", "Family Bible"],
+    )
+    indi = cast(GedcomIndividualType, _FakeIndividualRecord(event_map={TAG_BIRTH: event}))
+    record = _extract_event_record(indi, TAG_BIRTH, "I1")
+    assert record is event
+
+    date_obj, date_str = _extract_date_from_event(event)
+    assert date_str == "12 JAN 1900"
+    assert date_obj and date_obj.year == 1900
+
+    place = _extract_place_from_event(event)
+    assert place == "Boston, MA"
+
+    sources = _extract_sources_from_event(event)
+    assert sources == ["Birth Register", "Family Bible"]
+    return True
+
+
+def module_tests() -> bool:
+    suite = TestSuite("gedcom_utils", "gedcom_utils.py")
+    suite.run_test(
+        "Normalize GEDCOM IDs",
+        _test_normalize_id_variants,
+        "Ensures GEDCOM IDs normalize from standard, fallback, and numeric formats.",
+    )
+    suite.run_test(
+        "extract_and_fix_id inputs",
+        _test_extract_and_fix_id_handles_various_inputs,
+        "Validates ID extraction from strings, ints, and GEDCOM-like objects.",
+    )
+    suite.run_test(
+        "Name resolution",
+        _test_get_full_name_prefers_name_format_and_manual_fallback,
+        "Ensures name formatting prefers indi.name and falls back to manual combination.",
+    )
+    suite.run_test(
+        "Date parsing via dateparser",
+        _test_parse_date_uses_dateparser_when_available,
+        "Confirms dateparser output is accepted and normalized to UTC.",
+    )
+    suite.run_test(
+        "Date parsing fallback",
+        _test_parse_date_falls_back_to_year_extraction,
+        "Ensures year extraction fallback triggers when dateparser/strptime fail.",
+    )
+    suite.run_test(
+        "Display date cleaning",
+        _test_clean_display_date_transforms_modifiers,
+        "Verifies display cleaning handles parentheses and modifiers.",
+    )
+    suite.run_test(
+        "Event helper extraction",
+        _test_extract_event_helpers_capture_date_place_and_sources,
+        "Ensures event records return date/place/source information for tables.",
+    )
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+
+def _should_run_module_tests() -> bool:
+    return os.environ.get("RUN_MODULE_TESTS") == "1"
+
+
+def _print_module_usage() -> int:
+    print("gedcom_utils provides import-only helpers; there is no standalone CLI entry point.")
+    print("Set RUN_MODULE_TESTS=1 before execution to run the embedded regression tests.")
+    return 0
+
+
+if __name__ == "__main__":
+    if _should_run_module_tests():
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
+    sys.exit(_print_module_usage())

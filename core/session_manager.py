@@ -34,6 +34,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, NotRequired, Optional, Protocol, TypedDict, cast
+from unittest.mock import patch
 
 from core.error_handling import (
     api_retry,
@@ -3113,6 +3114,169 @@ def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
     assert flags["csrf"], "get_csrf should be invoked"
 
 
+def _test_cached_readiness_returns_none_without_cache() -> None:
+    """Cached readiness helper should return None when no cache exists."""
+
+    sm = SessionManager()
+    sm.browser_manager.browser_needed = False
+    sm.session_ready = True
+    sm._last_readiness_check = None
+
+    assert sm._check_cached_readiness("unit_test") is None, "Without cache the helper should return None"
+
+
+def _test_cached_readiness_respects_fresh_cache() -> None:
+    """Cached readiness helper should reuse fresh cache when session ready."""
+
+    sm = SessionManager()
+    sm.browser_manager.browser_needed = False
+    sm.session_ready = True
+    sm._last_readiness_check = time.time()
+
+    assert sm._check_cached_readiness("unit_test") is True, "Fresh cache with ready session should return True"
+
+
+def _test_cached_readiness_expires_on_stale_state() -> None:
+    """Cached readiness should expire when stale or session_ready flag cleared."""
+
+    sm = SessionManager()
+    sm.browser_manager.browser_needed = False
+    sm.session_ready = True
+    sm._last_readiness_check = time.time() - 120
+
+    assert sm._check_cached_readiness("unit_test") is None, "Stale cache should be ignored"
+
+    sm._last_readiness_check = time.time()
+    sm.session_ready = False
+    assert sm._check_cached_readiness("unit_test") is None, "Non-ready session should bypass cache"
+
+
+def _test_cached_readiness_detects_invalid_driver() -> None:
+    """Cached readiness should detect invalid driver sessions and degrade state."""
+
+    sm = SessionManager()
+    sm.browser_manager.browser_needed = True
+    sm.session_ready = True
+    sm._last_readiness_check = time.time()
+    sm._transition_state(SessionLifecycleState.READY, "unit prep")
+
+    from types import MethodType
+
+    sm.browser_manager.is_session_valid = MethodType(lambda _self: False, sm.browser_manager)
+
+    result = sm._check_cached_readiness("unit_test")
+    assert result is False, "Invalid driver should cause cached readiness failure"
+    assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "State should transition to DEGRADED"
+    assert sm._last_readiness_check is None, "Cached timestamp should reset after invalidation"
+
+
+def _test_endpoint_profile_config_normalization_and_rate_cap() -> None:
+    """Endpoint profile normalization should filter invalid entries and derive tightest caps."""
+
+    original_profiles = config_schema.api.endpoint_throttle_profiles
+    api_any = cast(Any, config_schema.api)
+    try:
+        api_any.endpoint_throttle_profiles = {
+            "Valid": {"max_rate": 0.5, "min_interval": 1.5},
+            "Slow": {"min_interval": 3.0},
+        }
+        mutated = cast(Any, api_any.endpoint_throttle_profiles)
+        mutated[123] = {"max_rate": 0.1}
+        mutated["Bad"] = ["not", "dict"]
+        profiles = SessionManager._build_endpoint_profile_config()
+        assert set(profiles.keys()) == {"Valid", "Slow"}, "Non-dict and non-str keys should be ignored"
+        assert profiles["Valid"]["max_rate"] == 0.5, "Valid profile should be preserved"
+
+        cap = SessionManager._calculate_endpoint_rate_cap(profiles)
+        assert cap is not None, "Rate cap should derive from available inputs"
+        assert abs(cap - (1.0 / 3.0)) < 1e-9, "Slow endpoint min interval should define tightest cap"
+
+        api_any.endpoint_throttle_profiles = "invalid"
+        assert SessionManager._build_endpoint_profile_config() == {}, "Non-dict config should be ignored"
+    finally:
+        config_schema.api.endpoint_throttle_profiles = original_profiles
+
+
+def _test_enhanced_requests_session_configuration() -> None:
+    """Enhanced requests session should mount adapters with expected pool sizing."""
+
+    from types import SimpleNamespace
+
+    sm = SessionManager.__new__(SessionManager)
+    session = requests.Session()
+    sm.api_manager = cast(APIManager, SimpleNamespace(_requests_session=session))
+
+    sm._initialize_enhanced_requests_session()
+
+    adapter = session.adapters["https://"]
+    assert isinstance(adapter, HTTPAdapter), "HTTPS adapter should be HTTPAdapter"
+    assert getattr(adapter, "_pool_connections", None) == 20, "Pool connections should be 20"
+    assert getattr(adapter, "_pool_maxsize", None) == 50, "Pool max size should be 50"
+    assert getattr(adapter.max_retries, "total", None) == 0, "Retries handled at app layer"
+
+
+def _test_enhanced_requests_session_creates_fallback() -> None:
+    """Enhanced session init should create fallback requests session when missing."""
+
+    from types import SimpleNamespace
+
+    sm = SessionManager.__new__(SessionManager)
+    sm.api_manager = cast(APIManager, SimpleNamespace())
+
+    sm._initialize_enhanced_requests_session()
+
+    assert hasattr(sm.api_manager, "_requests_session"), "Fallback session should be created"
+    adapter = sm.api_manager._requests_session.adapters["http://"]
+    assert isinstance(adapter, HTTPAdapter), "HTTP adapter should be configured"
+
+
+def _test_initialize_cloudscraper_without_dependency() -> None:
+    """CloudScraper init should no-op cleanly when dependency missing."""
+
+    from types import SimpleNamespace
+
+    sm = SessionManager.__new__(SessionManager)
+    sm.api_manager = cast(APIManager, SimpleNamespace())
+
+    with patch(f"{__name__}.cloudscraper", None):
+        sm._initialize_cloudscraper()
+        assert sm._scraper is None, "Scraper should remain None when library unavailable"
+
+
+def _test_initialize_cloudscraper_with_factory() -> None:
+    """CloudScraper init should create scraper and mount adapters when available."""
+
+    from types import SimpleNamespace
+
+    class _FakeScraper:
+        def __init__(self) -> None:
+            self.mount_calls: list[tuple[str, HTTPAdapter]] = []
+
+        def mount(self, prefix: str, adapter: HTTPAdapter) -> None:
+            self.mount_calls.append((prefix, adapter))
+
+    class _FakeCloudscraper:
+        def __init__(self) -> None:
+            self.kwargs: Optional[dict[str, Any]] = None
+
+        def create_scraper(self, **kwargs: Any) -> _FakeScraper:
+            self.kwargs = kwargs
+            return _FakeScraper()
+
+    sm = SessionManager.__new__(SessionManager)
+    sm.api_manager = cast(APIManager, SimpleNamespace())
+
+    factory = _FakeCloudscraper()
+    with patch(f"{__name__}.cloudscraper", factory):
+        sm._initialize_cloudscraper()
+        assert isinstance(sm._scraper, _FakeScraper), "Scraper instance should be created"
+        assert factory.kwargs is not None, "Factory should receive kwargs"
+        browser_cfg = factory.kwargs.get("browser", {})
+        assert browser_cfg.get("browser") == "chrome", "Browser fingerprint should target Chrome"
+        mounts = {prefix for prefix, _ in sm._scraper.mount_calls}
+        assert {"http://", "https://"}.issubset(mounts), "Both protocols should be mounted"
+
+
 def core_session_manager_module_tests() -> bool:
     """Comprehensive test suite for session_manager.py (decomposed)."""
     from test_framework import TestSuite, suppress_logging
@@ -3328,6 +3492,78 @@ def core_session_manager_module_tests() -> bool:
             "Successful recovery forces cookie resync and CSRF refresh",
             "Ensure recovery path refreshes auth state",
             "Mock cookies present and assert force_cookie_resync + get_csrf invoked",
+        )
+
+        suite.run_test(
+            "Cached readiness without cache",
+            _test_cached_readiness_returns_none_without_cache,
+            "Helper returns None when no cached readiness state",
+            "Ensure cached readiness helper bypasses when cache missing",
+            "Invoke _check_cached_readiness without cached timestamp and expect None",
+        )
+
+        suite.run_test(
+            "Cached readiness with fresh cache",
+            _test_cached_readiness_respects_fresh_cache,
+            "Fresh cached readiness re-used when session still valid",
+            "Ensure helper returns True when cache fresh and browser not needed",
+            "Set recent cache timestamp and session_ready True, expect True",
+        )
+
+        suite.run_test(
+            "Cached readiness expiration rules",
+            _test_cached_readiness_expires_on_stale_state,
+            "Cached readiness expires after 60s or when session_ready False",
+            "Prevent stale readiness state from being re-used",
+            "Set cached timestamp beyond threshold and toggle session_ready False",
+        )
+
+        suite.run_test(
+            "Cached readiness invalid driver detection",
+            _test_cached_readiness_detects_invalid_driver,
+            "Helper detects invalid driver and transitions to DEGRADED",
+            "Ensure invalid browser state clears cache and flips lifecycle state",
+            "Patch browser_manager.is_session_valid to False and expect DEGRADED state",
+        )
+
+        suite.run_test(
+            "Endpoint profile normalization & rate cap",
+            _test_endpoint_profile_config_normalization_and_rate_cap,
+            "Endpoint throttle config filtered and tightest cap derived",
+            "Ensure endpoint profile helper handles invalid inputs and derives tightest rate cap",
+            "Patch config_schema.api.endpoint_throttle_profiles with mixed entries and validate normalization/rate cap",
+        )
+
+        suite.run_test(
+            "Enhanced requests session configuration",
+            _test_enhanced_requests_session_configuration,
+            "Requests session adapters use expected pool sizing",
+            "Ensure enhanced session init mounts HTTPAdapter with 20/50 pool sizing",
+            "Build SessionManager stub, call _initialize_enhanced_requests_session, inspect adapters",
+        )
+
+        suite.run_test(
+            "Enhanced session fallback creation",
+            _test_enhanced_requests_session_creates_fallback,
+            "Fallback requests session created when API manager lacks one",
+            "Ensure enhanced session helper creates Session when attribute missing",
+            "Call helper without _requests_session and verify mount configuration",
+        )
+
+        suite.run_test(
+            "CloudScraper missing dependency",
+            _test_initialize_cloudscraper_without_dependency,
+            "Initialization no-ops cleanly when cloudscraper unavailable",
+            "Verify helper sets scraper to None when dependency missing",
+            "Patch module-level cloudscraper to None and ensure _scraper stays None",
+        )
+
+        suite.run_test(
+            "CloudScraper factory integration",
+            _test_initialize_cloudscraper_with_factory,
+            "Helper constructs scraper and mounts adapters when dependency present",
+            "Validate create_scraper kwargs and adapter mounting",
+            "Inject fake cloudscraper implementation and assert mounts captured",
         )
 
         suite.run_test(

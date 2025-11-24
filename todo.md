@@ -1,0 +1,32 @@
+# TODOs
+
+> Quality guard: run `ruff check` and `pyright` after every milestone; never introduce `# noqa` or `type: ignore` suppressions while tackling the items below.
+
+- [ ] Decompose `action6_gather.py` (9280 lines) into a package (e.g., `actions/gather/`) that splits orchestration, API fetch, checkpoint/resume, bulk persistence, and telemetry so the core coord() loop is testable without scrolling through 9k lines.
+	- Phase 1 (Discovery): Diagram the current coord() flow (fetch page → normalize → persist → telemetry) and tag helper regions with future-module names; capture dependencies on `utils`, `database`, and `SessionManager` so imports stay acyclic.
+	- Phase 2 (Package skeleton): Stand up `actions/gather/` with `__init__.py`, `orchestrator.py`, `fetch.py`, `checkpoint.py`, `persistence.py`, and `metrics.py`; wire existing tests to import from the new modules without behavioral changes.
+	- Phase 3 (Incremental moves): Shift low-risk helpers first (checkpoint + telemetry), add focused `TestSuite` coverage per module, then migrate the main coord() orchestration once helpers are stable; keep Ruff/Pyright clean between each move.
+	- Phase 4 (Cleanup): Delete dead code from the monolith, ensure `run_comprehensive_tests()` spans the new modules, and document the package structure in `README`/developer docs.
+	- Progress:
+		- [x] Migrate telemetry + logging utilities into `actions/gather/metrics.py` with dedicated `TestSuite` coverage.
+		- [x] Extract sequential API prefetch orchestration into `actions/gather/prefetch.py`, including config/hook bridges and unit tests.
+		- [ ] Move batch persistence helpers (`_process_batch_lookups`, `_prepare_and_commit_batch_data`, bulk insert helpers) into `actions/gather/persistence.py` and backfill tests.
+		- [ ] Rewire `coord()` orchestration to consume the new modules end-to-end and prune legacy helpers.
+- [ ] Extract shared messaging/inbox workflow helpers from `action7_inbox.py`, `action8_messaging.py`, `action9_process_productive.py`, and `core/workflow_actions.py` into a reusable module (nav guards, conversation state transitions, template loading, status-change detection) to cut duplication and make each action <2k lines.
+- [ ] Collapse the GEDCOM/API comparison pipeline back into `action10.py` by deleting `action10_wrapper.py`, turning `_ComparisonConfig/_ComparisonResults` into public dataclasses inside the main module, and covering the GEDCOM-first/API-fallback flow with regression tests.
+- [ ] Unify the caching stack by merging `cache.py`, `cache_manager.py`, `core/unified_cache_manager.py`, `core/cache_registry.py`, `core/session_cache.py`, and `performance_cache.py` under a single backend interface so we remove the documented import cycles and stop maintaining two parallel cache implementations.
+	- Step 1: Inventory all cache entry points (decorators, managers, registries) and map which modules consume each API; note features that must survive (predictive warming, stats, retention hooks).
+	- Step 2: Design a single `CacheBackend` protocol (get/set/delete/stats/warm) plus a thin adapter living in `core/cache_backend.py`; prove it can back both diskcache and in-memory unified cache behaviors.
+	- Step 3: Port consumers module-by-module (begin with `core/cache_registry`, then session/performance caches, finally the decorators) replacing direct `diskcache` access; add regression tests capturing hit/miss accounting.
+	- Step 4: Remove redundant modules and update docs/telemetry dashboards so cache metrics point at the unified backend; ensure Ruff/Pyright stay clean after each deletion.
+- [ ] Move all HTTP orchestration out of `api_utils.py` (3779 lines) into `core/api_manager.py`/`SessionManager.api_manager` so we have one request pipeline (rate limiting, retry, cookie sync) instead of duplicating it through `_api_req` hooks.
+	- Step 1: Catalogue every `_api_req` consumer (Actions 6–10, messaging, telemetry) and categorize them by HTTP method + auth requirements.
+	- Step 2: Extend `APIManager` with the missing capabilities (parameterized endpoints, streaming, retry policies) and add unit tests that stub `requests.Session` to keep coverage.
+	- Step 3: Update callers to depend on `session_manager.api_manager.request()` instead of helpers in `api_utils.py`, deleting duplicate rate-limiter logic as you go.
+	- Step 4: Trim `api_utils.py` to parsing/transform helpers only, then relocate those into more focused modules once the HTTP surface is clean.
+- [ ] Split the 3k-line `ai_interface.py` into provider adapters, prompt templating, and telemetry modules; co-locate `ai_prompt_utils.py`, `message_personalization.py`, and `prompt_telemetry.py` logic under an `ai/` package so prompts, scoring, and provider failover share a single abstraction.
+- [ ] Add real `TestSuite`-based regression tests for the modules that currently have none (`core/workflow_actions.py`, `observability/__init__.py`, `ui/menu.py`, `ui/__init__.py`) and ensure the ones that hit Ancestry APIs obtain a live session via `session_utils.ensure_session_for_tests()`.
+	- Completed: `test_integration_workflow.py` (live-session harness), `config/__init__.py`, `config/__main__.py`, `core/session_guards.py`, `core/config_validation.py`, `core/analytics_helpers.py`, `core/maintenance_actions.py`, `cli/maintenance.py`, `cli/__init__.py`, `scripts/check_type_ignores.py`, `scripts/maintain_code_graph.py`, `scripts/dead_code_scan.py`, `ai_api_test.py` (connectivity harness + CLI smoke tests), `action10_wrapper.py` (GEDCOM/API orchestration harness tests), `gedcom_utils.py` (ID normalization + date/event helper tests).
+- [ ] Replace the remaining `test_function_availability` smoke tests in `core/error_handling.py`, `gedcom_search_utils.py`, `relationship_utils.py`, and `selenium_utils.py` with behavior assertions so we no longer gate success on callable() checks.
+- [x] Convert `test_integration_workflow.py` to the standard `TestSuite`/`create_standard_test_runner` pattern so `run_all_tests.py --integration` auto-discovers it and we can add per-action asserts without relying on unittest’s implicit main.
+- [x] Create a reusable authenticated-session fixture inside `test_utilities.py` that wraps `session_utils.ensure_session_for_tests()` plus database rollbacks so future live tests (Action 7–10, API helpers, cache warmers) don’t need to hand-roll SessionManager plumbing. *(Done via `live_session_fixture()` + `LiveSessionHandle` container.)*
