@@ -20,7 +20,7 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 
 import contextlib
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
@@ -91,41 +91,6 @@ def _track_api_metrics(api_name: str, duration: float, response_status: str) -> 
         track_api_performance(api_name, duration, response_status)
     except ImportError:
         pass  # Graceful degradation if performance monitor not available
-
-
-@dataclass
-class PageProcessingMetrics:
-    """Aggregated telemetry for a processed page."""
-
-    total_matches: int = 0
-    fetch_candidates: int = 0
-    existing_matches: int = 0
-    db_seconds: float = 0.0
-    prefetch_seconds: float = 0.0
-    commit_seconds: float = 0.0
-    total_seconds: float = 0.0
-    batches: int = 0
-    idle_seconds: float = 0.0
-    prefetch_breakdown: dict[str, float] = field(default_factory=dict)
-    prefetch_call_counts: dict[str, int] = field(default_factory=dict)
-
-    def merge(self, other: "PageProcessingMetrics") -> "PageProcessingMetrics":
-        """Combine metrics from another batch into this aggregate."""
-
-        self.total_matches += other.total_matches
-        self.fetch_candidates += other.fetch_candidates
-        self.existing_matches += other.existing_matches
-        self.db_seconds += other.db_seconds
-        self.prefetch_seconds += other.prefetch_seconds
-        self.commit_seconds += other.commit_seconds
-        self.total_seconds += other.total_seconds
-        self.batches += other.batches
-        self.idle_seconds += other.idle_seconds
-        for endpoint, duration in other.prefetch_breakdown.items():
-            self.prefetch_breakdown[endpoint] = self.prefetch_breakdown.get(endpoint, 0.0) + duration
-        for endpoint, count in other.prefetch_call_counts.items():
-            self.prefetch_call_counts[endpoint] = self.prefetch_call_counts.get(endpoint, 0) + count
-        return self
 
 
 # Performance monitoring helper with session manager integration
@@ -233,12 +198,13 @@ from selenium.common.exceptions import (
 from selenium.webdriver.remote.webdriver import WebDriver
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session as SqlAlchemySession, joinedload  # Alias Session
+from sqlalchemy.orm import Session as SqlAlchemySession  # Alias Session
 
 from core.error_handling import (
     AuthenticationExpiredError,
     BrowserSessionError,
     DatabaseConnectionError,
+    MaxApiFailuresExceededError,
     NetworkTimeoutError,
     RetryableError,
     api_retry,
@@ -252,6 +218,35 @@ from core.error_handling import (
 if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
+from actions.gather.checkpoint import (
+    GatherCheckpointPlan,
+    clear_checkpoint,
+    finalize_checkpoint_after_run,
+    load_checkpoint,
+    persist_checkpoint,
+    write_checkpoint_state,
+)
+from actions.gather.metrics import (
+    PageProcessingMetrics,
+    accumulate_page_metrics as _accumulate_page_metrics,
+    collect_total_processed as _collect_total_processed,
+    compose_progress_snapshot as _compose_progress_snapshot,
+    log_page_completion_summary as _log_page_completion_summary,
+    log_page_start as _log_page_start,
+    log_timing_breakdown as _log_timing_breakdown,
+)
+from actions.gather.prefetch import (
+    PrefetchConfig,
+    PrefetchHooks,
+    get_prefetched_data_for_match as _get_prefetched_data_for_match,
+    perform_api_prefetches as gather_perform_api_prefetches,
+)
+from actions.gather.persistence import (
+    BatchLookupArtifacts,
+    PersistenceHooks,
+    prepare_and_commit_batch_data as gather_prepare_and_commit_batch_data,
+    process_batch_lookups as gather_process_batch_lookups,
+)
 from api_constants import API_PATH_PROFILE_DETAILS
 from config import config_schema
 from core.database_manager import db_transn
@@ -274,7 +269,7 @@ from test_framework import (
     TestSuite,
     suppress_logging,
 )
-from test_utilities import atomic_write_file, create_standard_test_runner
+from test_utilities import create_standard_test_runner
 from utils import (
     format_name,  # Name formatting utility
     nav_to_page,  # Navigation helper
@@ -382,15 +377,6 @@ DB_ERROR_PAGE_THRESHOLD: int = 10  # Max consecutive DB errors allowed
 
 
 # --- Custom Exceptions ---
-class MaxApiFailuresExceededError(Exception):
-    """Custom exception for exceeding API failure threshold in a batch."""
-
-    pass
-
-
-# End of MaxApiFailuresExceededError
-
-
 # OPTIMIZATION: Profile caching using UnifiedCacheManager
 def _get_cached_profile(profile_id: str) -> Optional[dict[str, Any]]:
     """Get profile from persistent cache if available."""
@@ -564,150 +550,12 @@ def _validate_start_page(start_arg: Any) -> int:
 # End of _validate_start_page
 
 
-CHECKPOINT_VERSION = "1.0"
-
-
-def _checkpoint_settings() -> tuple[bool, Path, int]:
-    """Return (enabled, path, max_age_hours) for Action 6 checkpointing."""
-    enabled = bool(getattr(config_schema, "enable_action6_checkpointing", True))
-    raw_path = getattr(config_schema, "action6_checkpoint_file", Path("Cache/action6_checkpoint.json"))
-    checkpoint_path = raw_path if isinstance(raw_path, Path) else Path(str(raw_path))
-    max_age_hours = getattr(config_schema, "action6_checkpoint_max_age_hours", 24)
-    try:
-        max_age_hours_int = max(1, int(max_age_hours))
-    except (TypeError, ValueError):
-        max_age_hours_int = 24
-    return enabled, checkpoint_path, max_age_hours_int
-
-
-def _checkpoint_enabled() -> bool:
-    """Return True when checkpointing is enabled in configuration."""
-    enabled, _, _ = _checkpoint_settings()
-    return enabled
-
-
-def _clear_checkpoint_state() -> None:
-    """Remove the checkpoint file if it exists."""
-    if not _checkpoint_enabled():
-        return
-    _, checkpoint_path, _ = _checkpoint_settings()
-    try:
-        checkpoint_path.unlink()
-        logger.debug("Cleared Action 6 checkpoint at %s", checkpoint_path)
-    except FileNotFoundError:
-        return
-    except OSError as exc:  # pragma: no cover - diagnostic only
-        logger.debug("Failed to remove Action 6 checkpoint: %s", exc)
-
-
-def _load_checkpoint_state() -> Optional[dict[str, Any]]:
-    """Load checkpoint JSON if present and not expired."""
-    if not _checkpoint_enabled():
-        return None
-    _, checkpoint_path, max_age_hours = _checkpoint_settings()
-    if not checkpoint_path.exists():
-        return None
-    try:
-        with checkpoint_path.open(encoding="utf-8") as fh:
-            checkpoint_data = json.load(fh)
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logger.warning("Failed to read Action 6 checkpoint at %s: %s", checkpoint_path, exc)
-        return None
-
-    timestamp = checkpoint_data.get("timestamp")
-    if isinstance(timestamp, (int, float)):
-        age_hours = max(0.0, (time.time() - float(timestamp)) / 3600)
-        if age_hours > max_age_hours:
-            logger.info(
-                "Ignoring Action 6 checkpoint because it is %.1f hours old (max %d).",
-                age_hours,
-                max_age_hours,
-            )
-            _clear_checkpoint_state()
-            return None
-    else:
-        checkpoint_data["timestamp"] = time.time()
-
-    return checkpoint_data
-
-
-def _serialize_checkpoint_snapshot(state: dict[str, Any]) -> dict[str, int]:
-    """Create a lightweight snapshot of processing counters for checkpoint storage."""
-    return {
-        "total_new": int(state.get("total_new", 0)),
-        "total_updated": int(state.get("total_updated", 0)),
-        "total_skipped": int(state.get("total_skipped", 0)),
-        "total_errors": int(state.get("total_errors", 0)),
-        "total_pages_processed": int(state.get("total_pages_processed", 0)),
-    }
-
-
-def _write_checkpoint_state(
-    next_page: int,
-    last_page_to_process: int,
-    total_pages_in_run: int,
-    state: dict[str, Any],
-) -> None:
-    """Persist checkpoint information for later resume."""
-    if not _checkpoint_enabled():
-        return
-
-    _, checkpoint_path, _ = _checkpoint_settings()
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-    payload = {
-        "version": CHECKPOINT_VERSION,
-        "timestamp": time.time(),
-        "next_page": max(1, int(next_page)),
-        "last_page": max(1, int(last_page_to_process)),
-        "total_pages_in_run": max(0, int(total_pages_in_run)),
-        "start_page": int(state.get("effective_start_page", 1)),
-        "requested_start": state.get("requested_start_page"),
-        "counters": _serialize_checkpoint_snapshot(state),
-    }
-
-    try:
-        with atomic_write_file(checkpoint_path, mode="w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        logger.debug(
-            "Checkpoint saved. Next page=%s (run length=%s).",
-            payload["next_page"],
-            payload["total_pages_in_run"],
-        )
-    except Exception as exc:  # pragma: no cover - diagnostics only
-        if checkpoint_path.exists():
-            logger.debug(
-                "Checkpoint persisted despite exception; continuing (error: %s)",
-                exc,
-            )
-        else:
-            logger.debug("Failed to persist Action 6 checkpoint: %s", exc)
-
-
-def _persist_action6_checkpoint(
-    next_page: int,
-    last_page_to_process: int,
-    total_pages_in_run: int,
-    state: dict[str, Any],
-) -> None:
-    """Update checkpoint state after finishing or attempting a page."""
-    if not _checkpoint_enabled() or total_pages_in_run <= 0:
-        return
-
-    if next_page > last_page_to_process:
-        _clear_checkpoint_state()
-        return
-
-    _write_checkpoint_state(next_page, last_page_to_process, total_pages_in_run, state)
-    state["last_checkpoint_written_at"] = time.time()
-
-
 def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional[dict[str, Any]]]:
     """Resolve the effective start page, optionally resuming from checkpoint."""
     if start_arg is not None:
         return _validate_start_page(start_arg), False, None
 
-    checkpoint_data = _load_checkpoint_state()
+    checkpoint_data = load_checkpoint()
     if not checkpoint_data:
         return 1, False, None
 
@@ -743,14 +591,6 @@ def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional
         last_page_int,
     )
     return resume_page_int, True, checkpoint_data
-
-
-def _finalize_checkpoint_after_run(state: dict[str, Any]) -> None:
-    """Clear checkpoint file after a successful run."""
-    if not _checkpoint_enabled():
-        return
-    if state.get("final_success"):
-        _clear_checkpoint_state()
 
 
 def _try_get_csrf_from_api(session_manager: "SessionManager") -> Optional[str]:
@@ -1144,36 +984,6 @@ def _update_state_and_progress(
     logger.debug(f"Page totals: {page_new} new, {page_updated} updated, {page_skipped} skipped, {page_errors} errors")
 
 
-def _accumulate_page_metrics(state: dict[str, Any], page_metrics: Optional[PageProcessingMetrics]) -> None:
-    """Aggregate per-page metrics for final timing breakdowns."""
-    if not isinstance(page_metrics, PageProcessingMetrics):
-        return
-
-    has_signal = any(
-        value > 0
-        for value in (
-            page_metrics.total_seconds,
-            page_metrics.prefetch_seconds,
-            page_metrics.db_seconds,
-            page_metrics.commit_seconds,
-        )
-    )  # Closing parenthesis for _process_dna_data_safe
-    if not has_signal:
-        return
-
-    aggregate_metrics = state.get("aggregate_metrics")
-    if not isinstance(aggregate_metrics, PageProcessingMetrics):
-        aggregate_metrics = PageProcessingMetrics()
-        state["aggregate_metrics"] = aggregate_metrics
-
-    aggregate_metrics.merge(page_metrics)
-    state["pages_with_metrics"] = int(state.get("pages_with_metrics", 0)) + 1
-
-    pages_tracked = state["pages_with_metrics"]
-    if pages_tracked in {1, 5} or pages_tracked % 10 == 0:
-        _log_timing_snapshot(pages_tracked, aggregate_metrics)
-
-
 def _try_fast_skip_page(
     session_manager: SessionManager, matches_on_page: list[dict[str, Any]], current_page_num: int, state: dict[str, Any]
 ) -> bool:
@@ -1202,11 +1012,27 @@ def _try_fast_skip_page(
         if not uuids_on_page:
             return False
 
-        existing_persons_map = _lookup_existing_persons(quick_db_session, uuids_on_page)
-        fetch_candidates_uuid, _, page_skip_count = _identify_fetch_candidates(matches_on_page, existing_persons_map)
+        page_statuses = {"skipped": 0}
+        try:
+            lookup_artifacts = gather_process_batch_lookups(
+                quick_db_session,
+                matches_on_page,
+                current_page_num,
+                page_statuses,
+            )
+        except Exception as fast_skip_exc:
+            logger.debug(
+                "Fast-skip lookup pipeline unavailable for page %s: %s",
+                current_page_num,
+                fast_skip_exc,
+                exc_info=True,
+            )
+            return False
+
+        page_skip_count = page_statuses.get("skipped", 0)
 
         # If all matches on the page can be skipped, do fast processing
-        if len(fetch_candidates_uuid) == 0:
+        if len(lookup_artifacts.fetch_candidates_uuid) == 0:
             logger.info(f"{len(matches_on_page)} matches unchanged - fast skip")
             state["total_skipped"] += page_skip_count
             state["total_pages_processed"] += 1
@@ -1427,7 +1253,7 @@ def _main_page_processing_loop(
         )
         matches_on_page_for_batch = None  # Clear for next iteration
 
-        _persist_action6_checkpoint(
+        persist_checkpoint(
             next_page=current_page_num,
             last_page_to_process=last_page_to_process,
             total_pages_in_run=total_pages_in_run,
@@ -1574,11 +1400,6 @@ def _handle_initial_fetch(
     return total_pages_api, last_page_to_process, total_pages_in_run
 
 
-def _collect_total_processed(state: dict[str, Any]) -> int:
-    """Return the total number of matches processed successfully."""
-    return state["total_new"] + state["total_updated"] + state["total_skipped"]
-
-
 def _emit_final_summary(
     state: dict[str, Any],
     run_time_seconds: float,
@@ -1594,111 +1415,6 @@ def _emit_final_summary(
         "Total Processed": _collect_total_processed(state),
     }
     log_final_summary(summary, run_time_seconds)
-
-
-def _log_timing_breakdown_details(
-    aggregate_metrics: PageProcessingMetrics,
-    pages_with_metrics: int,
-    matches_for_avg: int,
-    total_processed_matches: int,
-) -> None:
-    """Emit detailed timing statistics for the run."""
-    logger.info("Timing Breakdown")
-    logger.info(f"Tracked Pages:        {pages_with_metrics}")
-    logger.info(
-        "Tracked Matches:      %s",
-        aggregate_metrics.total_matches or total_processed_matches,
-    )
-
-    if aggregate_metrics.total_seconds and pages_with_metrics:
-        avg_page_duration = aggregate_metrics.total_seconds / pages_with_metrics
-        logger.info(f"Avg Page Duration:    {avg_page_duration:.2f}s")
-
-    api_per_page = (
-        f"{(aggregate_metrics.prefetch_seconds / pages_with_metrics):.2f}s/page"
-        if aggregate_metrics.prefetch_seconds
-        else "0.00s/page"
-    )
-    logger.info(
-        "API Prefetch Time:    %s (%s)",
-        _format_duration_with_avg(
-            aggregate_metrics.prefetch_seconds,
-            float(aggregate_metrics.fetch_candidates),
-            "call",
-        ),
-        api_per_page,
-    )
-    logger.info(
-        "DB Lookup Time:       %s",
-        _format_duration_with_avg(
-            aggregate_metrics.db_seconds,
-            matches_for_avg,
-            "match",
-        ),
-    )
-    logger.info(
-        "Commit Time:          %s",
-        _format_duration_with_avg(
-            aggregate_metrics.commit_seconds,
-            matches_for_avg,
-            "match",
-        ),
-    )
-    logger.info(
-        "Total Processing:     %s",
-        _format_duration_with_avg(
-            aggregate_metrics.total_seconds,
-            matches_for_avg,
-            "match",
-        ),
-    )
-    if aggregate_metrics.idle_seconds > 0.0:
-        logger.info(
-            "Pacing Delay:        %s",
-            _format_duration_with_avg(
-                aggregate_metrics.idle_seconds,
-                matches_for_avg,
-                "match",
-            ),
-        )
-    if aggregate_metrics.fetch_candidates:
-        logger.info(
-            "API Calls/Page:      %.1f",
-            aggregate_metrics.fetch_candidates / pages_with_metrics,
-        )
-    if aggregate_metrics.total_seconds > 0 and total_processed_matches > 0:
-        throughput = total_processed_matches / aggregate_metrics.total_seconds
-        logger.info(f"Avg Throughput:      {throughput:.2f} match/s")
-
-    endpoint_lines = _detailed_endpoint_lines(
-        aggregate_metrics.prefetch_breakdown,
-        aggregate_metrics.prefetch_call_counts,
-    )
-    if endpoint_lines:
-        logger.info("API Endpoint Averages:")
-        for line in endpoint_lines:
-            logger.info(f"  • {line}")
-
-
-def _emit_timing_breakdown(state: dict[str, Any]) -> None:
-    """Log timing metrics when aggregate data is available."""
-    aggregate_metrics = state.get("aggregate_metrics")
-    pages_with_metrics = int(state.get("pages_with_metrics", 0) or 0)
-    if not isinstance(aggregate_metrics, PageProcessingMetrics) or pages_with_metrics <= 0:
-        return
-
-    total_processed_matches = _collect_total_processed(state)
-    matches_for_avg = max(
-        aggregate_metrics.total_matches,
-        total_processed_matches,
-        1,
-    )
-    _log_timing_breakdown_details(
-        aggregate_metrics,
-        pages_with_metrics,
-        matches_for_avg,
-        total_processed_matches,
-    )
 
 
 def _emit_rate_limiter_metrics(session_manager: SessionManager) -> None:
@@ -1757,7 +1473,7 @@ def _log_final_results(session_manager: SessionManager, state: dict[str, Any], a
     run_time_seconds = time.time() - action_start_time
 
     _emit_final_summary(state, run_time_seconds, log_final_summary)
-    _emit_timing_breakdown(state)
+    _log_timing_breakdown(state)
     _emit_rate_limiter_metrics(session_manager)
     _emit_action_status(state)
 
@@ -1884,7 +1600,7 @@ def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
         state["final_success"] = False
         _handle_coord_failure(exc)
     finally:
-        _finalize_checkpoint_after_run(state)
+        finalize_checkpoint_after_run(state)
         _log_final_results(session_manager, state, action_start_time)
 
         if keyboard_interrupt is not None:
@@ -1901,363 +1617,7 @@ def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
 # ------------------------------------------------------------------------------
 
 
-def _lookup_existing_persons(session: SqlAlchemySession, uuids_on_page: list[str]) -> dict[str, Person]:
-    """
-    Queries the database for existing Person records based on a list of UUIDs.
-    Eager loads related DnaMatch and FamilyTree data for efficiency.
-
-    Args:
-        session: The active SQLAlchemy database session.
-        uuids_on_page: A list of UUID strings to look up.
-
-    Returns:
-        A dictionary mapping UUIDs (uppercase) to their corresponding Person objects.
-        Returns an empty dictionary if input list is empty or an error occurs.
-
-    Raises:
-        SQLAlchemyError: If a database query error occurs.
-        ValueError: If a critical data mismatch (like Enum) is detected.
-    """
-    # Step 1: Initialize result map
-    existing_persons_map: dict[str, Person] = {}
-    # Step 2: Handle empty input list
-    if not uuids_on_page:
-        return existing_persons_map
-
-    # Step 3: Query the database
-    try:
-        logger.debug(f"DB lookup: {len(uuids_on_page)} UUIDs")
-        # Normalize incoming UUIDs for consistent matching (DB stores uppercase; guard just in case)
-        uuids_norm = {str(uuid_val).upper() for uuid_val in uuids_on_page}
-
-        if not uuids_norm:
-            return existing_persons_map
-
-        stmt = (
-            select(Person)
-            .options(joinedload(Person.dna_match), joinedload(Person.family_tree))
-            .where(Person.deleted_at.is_(None))
-            .where(Person.uuid.in_(list(uuids_norm)))
-        )
-        existing_persons = session.scalars(stmt).all()
-        # Step 4: Populate the result map (key by UUID)
-        existing_persons_map: dict[str, Person] = {
-            str(person.uuid).upper(): person for person in existing_persons if person.uuid is not None
-        }
-
-        logger.debug(f"Found {len(existing_persons_map)}/{len(uuids_on_page)} existing in DB")
-
-    # Step 5: Handle potential database errors
-    except SQLAlchemyError as db_lookup_err:
-        # Check specifically for Enum mismatch errors which can be critical
-        if "is not among the defined enum values" in str(db_lookup_err):
-            logger.critical(
-                f"CRITICAL ENUM MISMATCH during Person lookup. DB schema might be outdated. Error: {db_lookup_err}"
-            )
-            # Raise a specific error to halt processing if schema mismatch detected
-            raise ValueError("Database enum mismatch detected during person lookup.") from db_lookup_err
-        # Log other SQLAlchemy errors and re-raise
-        logger.error(
-            f"Database lookup failed during prefetch: {db_lookup_err}",
-            exc_info=True,
-        )
-        raise  # Re-raise to be handled by the caller (_do_batch)
-    except Exception as e:
-        # Catch any other unexpected errors
-        logger.error(f"Unexpected error during Person lookup: {e}", exc_info=True)
-        raise  # Re-raise to be handled by the caller
-
-    # Step 6: Return the map of found persons
-    return existing_persons_map
-
-
-# End of _lookup_existing_persons
-
-
-def _identify_fetch_candidates(
-    matches_on_page: list[dict[str, Any]], existing_persons_map: dict[str, Any]
-) -> tuple[set[str], list[dict[str, Any]], int]:
-    """
-    Analyzes matches from a page against existing database records to determine:
-    1. Which matches need detailed API data fetched (new or potentially changed).
-    2. Which matches can be skipped (no apparent change based on list view data).
-
-    Args:
-        matches_on_page: list of match data dictionaries from the `get_matches` function.
-        existing_persons_map: Dictionary mapping UUIDs to existing Person objects
-                               (from `_lookup_existing_persons`).
-
-    Returns:
-        A tuple containing:
-        - fetch_candidates_uuid (set[str]): set of UUIDs requiring API detail fetches.
-        - matches_to_process_later (list[dict]): list of match data dicts for candidates.
-        - skipped_count_this_batch (int): Number of matches skipped in this batch.
-    """
-    # Step 1: Initialize results
-    fetch_candidates_uuid: set[str] = set()
-    skipped_count_this_batch = 0
-    matches_to_process_later: list[dict[str, Any]] = []
-    invalid_uuid_count = 0
-
-    # Step 2: Iterate through matches fetched from the current page
-    for match_api_data in matches_on_page:
-        # Step 2a: Validate UUID presence
-        uuid_val = match_api_data.get("uuid")
-        if not uuid_val:
-            logger.warning(f"Skipping match missing UUID: {match_api_data}")
-            invalid_uuid_count += 1
-            continue
-
-        # Step 2b: Check if this person exists in the database
-        existing_person = existing_persons_map.get(uuid_val.upper())  # Use uppercase UUID
-
-        if not existing_person:
-            # --- Case 1: New Person ---
-            # Always fetch details for new people.
-            fetch_candidates_uuid.add(uuid_val)
-            match_api_data["_needs_ethnicity_refresh"] = True
-            matches_to_process_later.append(match_api_data)
-        else:
-            # --- Case 2: Existing Person ---
-            # Determine if details fetch is needed based on potential changes.
-            needs_fetch = _check_if_fetch_needed(existing_person, match_api_data, uuid_val)
-
-            # Add to fetch list or increment skipped count
-            if needs_fetch:
-                fetch_candidates_uuid.add(uuid_val)
-                existing_dna = getattr(existing_person, "dna_match", None)
-                if existing_dna is None:
-                    match_api_data["_needs_ethnicity_refresh"] = True
-                else:
-                    match_api_data["_needs_ethnicity_refresh"] = _needs_ethnicity_refresh(existing_dna)
-                matches_to_process_later.append(match_api_data)
-            else:
-                skipped_count_this_batch += 1  # Step 3: Log summary of identification
-    if invalid_uuid_count > 0:
-        logger.error(f"{invalid_uuid_count} matches skipped during identification due to missing UUID.")
-    logger.debug(
-        f"Identified {len(fetch_candidates_uuid)} candidates for API detail fetch, {skipped_count_this_batch} skipped (no change detected from list view)."
-    )
-
-    # Step 4: Return results
-    return fetch_candidates_uuid, matches_to_process_later, skipped_count_this_batch
-
-
-# End of _identify_fetch_candidates
-
-
-def _check_if_fetch_needed(existing_person: Any, match_api_data: dict[str, Any], uuid_val: str) -> bool:
-    """Check if API fetch is needed for an existing person.
-
-    Args:
-        existing_person: Existing Person object from database
-        match_api_data: Match data from API list view
-        uuid_val: UUID of the match
-
-    Returns:
-        True if fetch is needed, False otherwise
-    """
-    needs_fetch = False
-    existing_dna = existing_person.dna_match
-    existing_tree = existing_person.family_tree
-    db_in_tree = existing_person.in_my_tree
-    api_in_tree = match_api_data.get("in_my_tree", False)
-
-    # Check for changes in core DNA list data
-    if existing_dna:
-        try:
-            # Compare cM
-            api_cm = int(match_api_data.get("cm_dna", 0))
-            db_cm = existing_dna.cm_dna
-            if api_cm != db_cm:
-                needs_fetch = True
-                logger.debug(f"  Fetch needed (UUID {uuid_val}): cM changed ({db_cm} -> {api_cm})")
-
-            # Compare segments
-            api_segments = int(match_api_data.get("numSharedSegments", 0))
-            db_segments = existing_dna.shared_segments
-            if api_segments != db_segments:
-                needs_fetch = True
-                logger.debug(f"  Fetch needed (UUID {uuid_val}): Segments changed ({db_segments} -> {api_segments})")
-
-        except (ValueError, TypeError, AttributeError) as comp_err:
-            logger.warning(f"Error comparing list DNA data for UUID {uuid_val}: {comp_err}. Assuming fetch needed.")
-            needs_fetch = True
-    else:
-        # If DNA record doesn't exist, fetch details
-        needs_fetch = True
-        logger.debug(f"  Fetch needed (UUID {uuid_val}): No existing DNA record.")
-
-    # Check for changes in tree status or missing tree record
-    if bool(api_in_tree) != bool(db_in_tree):
-        needs_fetch = True
-        logger.debug(f"  Fetch needed (UUID {uuid_val}): Tree status changed ({db_in_tree} -> {api_in_tree})")
-    elif api_in_tree and not existing_tree:
-        needs_fetch = True
-        logger.debug(f"  Fetch needed (UUID {uuid_val}): Marked in tree but no DB record.")
-
-    return needs_fetch
-
-
 # Removed _calculate_optimized_workers - no longer needed for sequential processing
-
-
-_PRIORITY_DEBUG_LIMIT = 5
-
-
-def _safe_cm_value(match_data: dict[str, Any]) -> int:
-    """Return cM value from match data with defensive conversion."""
-    try:
-        return int(match_data.get("cm_dna", 0) or 0)
-    except (TypeError, ValueError):
-        logger.debug("Unable to parse cm_dna for priority classification; defaulting to 0")
-        return 0
-
-
-def _determine_match_priority(match_data: dict[str, Any]) -> tuple[str, int, bool, bool]:
-    """Map match attributes to priority level."""
-    cm_value = _safe_cm_value(match_data)
-    has_tree = bool(match_data.get("in_my_tree"))
-    is_starred = bool(match_data.get("starred"))
-
-    if is_starred or cm_value > 50:
-        return "high", cm_value, has_tree, is_starred
-    if cm_value > DNA_MATCH_PROBABILITY_THRESHOLD_CM or (cm_value > 5 and has_tree):
-        return "medium", cm_value, has_tree, is_starred
-    return "low", cm_value, has_tree, is_starred
-
-
-def _log_priority_decision(
-    priority: str,
-    uuid_val: str,
-    cm_value: int,
-    has_tree: bool,
-    is_starred: bool,
-    log_state: dict[str, int],
-) -> None:
-    """Emit limited debug output for priority classification."""
-    emitted = log_state.get(priority, 0)
-    suppressed_key = f"suppressed_{priority}"
-
-    if emitted < _PRIORITY_DEBUG_LIMIT:
-        if priority == "high":
-            logger.debug(f"High priority match {uuid_val[:8]}: {cm_value} cM, starred={is_starred}")
-        elif priority == "medium":
-            logger.debug(f"Medium priority match {uuid_val[:8]}: {cm_value} cM, has_tree={has_tree}")
-        else:
-            logger.debug(
-                f"Skipping relationship probability fetch for low-priority match {uuid_val[:8]} "
-                f"({cm_value} cM < {DNA_MATCH_PROBABILITY_THRESHOLD_CM} cM threshold, no tree)"
-            )
-    else:
-        log_state[suppressed_key] = log_state.get(suppressed_key, 0) + 1
-
-    log_state[priority] = emitted + 1
-
-
-def _classify_match_priorities(
-    matches_to_process_later: list[dict[str, Any]], fetch_candidates_uuid: set[str]
-) -> tuple[set[str], set[str], set[str]]:
-    """Classify matches into priority tiers for API call optimization.
-
-    Args:
-        matches_to_process_later: List of match data dictionaries
-        fetch_candidates_uuid: Set of UUIDs requiring fetch
-
-    Returns:
-        Tuple of (high_priority_uuids, medium_priority_uuids, priority_uuids)
-    """
-    high_priority_uuids: set[str] = set()
-    medium_priority_uuids: set[str] = set()
-
-    log_state: dict[str, int] = {
-        "high": 0,
-        "medium": 0,
-        "low": 0,
-        "suppressed_high": 0,
-        "suppressed_medium": 0,
-        "suppressed_low": 0,
-    }
-
-    for match_data in matches_to_process_later:
-        uuid_val = match_data.get("uuid")
-        if not uuid_val or uuid_val not in fetch_candidates_uuid:
-            continue
-
-        priority, cm_value, has_tree, is_starred = _determine_match_priority(match_data)
-
-        if priority == "high":
-            high_priority_uuids.add(uuid_val)
-        elif priority == "medium":
-            medium_priority_uuids.add(uuid_val)
-
-        _log_priority_decision(priority, uuid_val, cm_value, has_tree, is_starred, log_state)
-
-    # Combined high and medium for API calls
-    priority_uuids = high_priority_uuids.union(medium_priority_uuids)
-    logger.debug(
-        f"API Call Filtering: {len(high_priority_uuids)} high priority, "
-        f"{len(medium_priority_uuids)} medium priority, "
-        f"{len(fetch_candidates_uuid) - len(priority_uuids)} low priority (skipped)"
-    )
-
-    if log_state["suppressed_high"]:
-        logger.debug(f"Suppressed debug output for {log_state['suppressed_high']} additional high priority matches")
-    if log_state["suppressed_medium"]:
-        logger.debug(f"Suppressed debug output for {log_state['suppressed_medium']} additional medium priority matches")
-    if log_state["suppressed_low"]:
-        logger.debug(f"Suppressed debug output for {log_state['suppressed_low']} additional low priority matches")
-
-    return high_priority_uuids, medium_priority_uuids, priority_uuids
-
-
-# Removed _apply_predictive_rate_limiting - sequential processing uses per-request rate limiting only
-
-
-def _relationship_priority_sort_key(match_data: dict[str, Any]) -> tuple[int, int, str]:
-    """Sort priority matches by descending cM, then tree presence."""
-
-    cm_value = _safe_cm_value(match_data)
-    has_tree = 0 if match_data.get("in_my_tree") else 1
-    uuid_val = match_data.get("uuid") or ""
-    return (-cm_value, has_tree, uuid_val)
-
-
-def _limit_relationship_probability_requests(
-    matches_to_process_later: list[dict[str, Any]],
-    high_priority_uuids: set[str],
-    medium_priority_uuids: set[str],
-    max_per_page: int,
-) -> tuple[set[str], set[str], int]:
-    """Restrict relationship-probability fetches to the highest-value matches."""
-
-    if max_per_page <= 0:
-        return high_priority_uuids.union(medium_priority_uuids), set(medium_priority_uuids), 0
-
-    allowed_high = set(high_priority_uuids)
-    remaining_slots = max(max_per_page - len(allowed_high), 0)
-
-    if remaining_slots >= len(medium_priority_uuids):
-        return allowed_high.union(medium_priority_uuids), set(medium_priority_uuids), 0
-
-    matches_by_uuid = {
-        match_data.get("uuid"): match_data
-        for match_data in matches_to_process_later
-        if match_data.get("uuid") in medium_priority_uuids
-    }
-
-    ranked_medium = sorted(matches_by_uuid.values(), key=_relationship_priority_sort_key)
-    selected_medium: set[str] = set()
-    for match in ranked_medium[:remaining_slots]:
-        if not match:
-            continue
-        uuid_val = match.get("uuid")
-        if isinstance(uuid_val, str) and uuid_val:
-            selected_medium.add(uuid_val)
-
-    trimmed_count = len(medium_priority_uuids) - len(selected_medium)
-    combined = allowed_high.union(selected_medium)
-    return combined, selected_medium, trimmed_count
 
 
 def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
@@ -2422,699 +1782,36 @@ def _derive_actual_relationship_label(
     return None
 
 
-PREFETCH_PROGRESS_THRESHOLDS: tuple[float, ...] = (0.25, 0.5, 0.75)
-PREFETCH_ENDPOINT_LABELS: dict[str, str] = {
-    "combined_details": "Match profile",
-    "relationship_prob": "Relationship probability",
-    "badge_details": "DNA badge",
-    "ladder_details": "Tree ladder",
-    "ethnicity": "Ethnicity",
-}
+def _build_prefetch_config() -> PrefetchConfig:
+    """Bridge Action 6 runtime settings to the gather.prefetch config object."""
 
-
-@dataclass
-class _PrefetchStats:
-    """Tracks counters for sequential API prefetch operations."""
-
-    critical_failures: int = 0
-    ethnicity_fetch_count: int = 0
-    ethnicity_skipped: int = 0
-    next_progress_threshold_index: int = 0
-
-
-@dataclass
-class _PrefetchPlan:
-    """Immutable plan describing how the prefetch run should behave."""
-
-    stats: _PrefetchStats
-    badge_candidates: set[str]
-    priority_uuids: set[str]
-    high_priority_uuids: set[str]
-    ethnicity_candidates: set[str]
-    num_candidates: int
-    my_tree_id: Optional[str]
-
-
-def _prepare_prefetch_plan(
-    session_manager: SessionManager,
-    fetch_candidates_uuid: set[str],
-    matches_to_process_later: list[dict[str, Any]],
-) -> _PrefetchPlan:
-    """Derive the prefetch execution plan from current configuration."""
-
-    stats = _PrefetchStats()
-    num_candidates = len(fetch_candidates_uuid)
-    badge_candidates = _identify_badge_candidates(matches_to_process_later, fetch_candidates_uuid)
-    logger.debug(f"Identified {len(badge_candidates)} candidates for Badge/Ladder fetch.")
-
-    high_priority_uuids, medium_priority_uuids, priority_uuids = _classify_match_priorities(
-        matches_to_process_later, fetch_candidates_uuid
-    )
-
-    (
-        priority_uuids,
-        medium_priority_uuids,
-        trimmed_medium_count,
-    ) = _limit_relationship_probability_requests(
-        matches_to_process_later,
-        high_priority_uuids,
-        medium_priority_uuids,
-        RELATIONSHIP_PROB_MAX_PER_PAGE,
-    )
-
-    if trimmed_medium_count > 0:
-        logger.debug(
-            "Relationship probability fetch limit active (%s/page). Trimmed %s medium-priority matches.",
-            RELATIONSHIP_PROB_MAX_PER_PAGE,
-            trimmed_medium_count,
-        )
-
-    ethnicity_candidates = _determine_ethnicity_candidates(matches_to_process_later, priority_uuids)
-
-    return _PrefetchPlan(
-        stats=stats,
-        badge_candidates=badge_candidates,
-        priority_uuids=priority_uuids,
-        high_priority_uuids=high_priority_uuids,
-        ethnicity_candidates=ethnicity_candidates,
-        num_candidates=num_candidates,
-        my_tree_id=session_manager.my_tree_id,
+    return PrefetchConfig(
+        relationship_prob_max_per_page=RELATIONSHIP_PROB_MAX_PER_PAGE,
+        enable_ethnicity_enrichment=ENABLE_ETHNICITY_ENRICHMENT,
+        ethnicity_min_cm=ETHNICITY_ENRICHMENT_MIN_CM,
+        dna_match_priority_threshold_cm=DNA_MATCH_PROBABILITY_THRESHOLD_CM,
+        critical_failure_threshold=Action6State.critical_api_failure_threshold,
     )
 
 
-@dataclass
-class _EthnicityScreeningStats:
-    """Track screening outcomes for ethnicity enrichment."""
+def _build_prefetch_hooks() -> PrefetchHooks:
+    """Expose the legacy helper callables to the modular prefetch pipeline."""
 
-    already_up_to_date: int = 0
-    threshold_filtered: int = 0
-
-
-def _match_requires_ethnicity_refresh(
-    match_info: dict[str, Any],
-    stats: _EthnicityScreeningStats,
-) -> bool:
-    """Return True if the match should request refreshed ethnicity data."""
-
-    flag = match_info.get("_needs_ethnicity_refresh")
-    if flag is None or bool(flag):
-        return True
-
-    stats.already_up_to_date += 1
-    return False
-
-
-def _is_below_ethnicity_threshold(
-    match_info: dict[str, Any],
-    threshold_cm: int,
-    stats: _EthnicityScreeningStats,
-) -> bool:
-    """Return True when the match falls below the enrichment cM threshold."""
-
-    if threshold_cm <= 0:
-        return False
-
-    if _safe_cm_value(match_info) < threshold_cm:
-        stats.threshold_filtered += 1
-        return True
-
-    return False
-
-
-def _log_ethnicity_skip_counts(
-    stats: _EthnicityScreeningStats,
-    threshold_cm: int,
-) -> None:
-    """Emit debug logs summarizing ethnicity enrichment skips."""
-
-    if stats.already_up_to_date:
-        logger.debug(
-            "🧬 Ethnicity refresh skipped for %d matches already up to date",
-            stats.already_up_to_date,
-        )
-
-    if threshold_cm > 0 and stats.threshold_filtered:
-        logger.debug(
-            "🧬 Ethnicity enrichment threshold %s cM filtered %s priority matches",
-            threshold_cm,
-            stats.threshold_filtered,
-        )
-
-
-def _determine_ethnicity_candidates(
-    matches_to_process_later: list[dict[str, Any]],
-    priority_uuids: set[str],
-) -> set[str]:
-    """Identify which matches qualify for ethnicity enrichment."""
-
-    if not ENABLE_ETHNICITY_ENRICHMENT:
-        logger.debug("Ethnicity enrichment disabled via configuration; skipping ethnicity API calls.")
-        return set()
-
-    filtered_candidates: set[str] = set()
-    screening_stats = _EthnicityScreeningStats()
-    threshold_cm = ETHNICITY_ENRICHMENT_MIN_CM
-
-    for match_data in matches_to_process_later:
-        uuid_candidate = match_data.get("uuid")
-        if not uuid_candidate or uuid_candidate not in priority_uuids:
-            continue
-
-        if not _match_requires_ethnicity_refresh(match_data, screening_stats):
-            continue
-
-        if _is_below_ethnicity_threshold(match_data, threshold_cm, screening_stats):
-            continue
-
-        filtered_candidates.add(uuid_candidate)
-
-    _log_ethnicity_skip_counts(screening_stats, threshold_cm)
-
-    return filtered_candidates
-
-
-def _prefetch_combined_details(
-    session_manager: SessionManager,
-    uuid_val: str,
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
-    stats: _PrefetchStats,
-    endpoint_durations: dict[str, float],
-    endpoint_counts: dict[str, int],
-) -> None:
-    """Fetch combined details and record timing metadata."""
-
-    combined_start = time.time()
-    _handle_combined_details_fetch(session_manager, uuid_val, batch_combined_details, stats)
-    endpoint_durations["combined_details"] += time.time() - combined_start
-    endpoint_counts["combined_details"] += 1
-
-
-def _prefetch_relationship_probability(
-    session_manager: SessionManager,
-    uuid_val: str,
-    plan: _PrefetchPlan,
-    batch_relationship_prob_data: dict[str, Optional[str]],
-    endpoint_durations: dict[str, float],
-    endpoint_counts: dict[str, int],
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
-) -> None:
-    """Fetch relationship probability for priority matches."""
-
-    if uuid_val not in plan.priority_uuids:
-        return
-
-    rel_start = time.time()
-    _fetch_optional_relationship_data(
-        session_manager,
-        uuid_val,
-        plan.high_priority_uuids,
-        plan.priority_uuids,
-        batch_relationship_prob_data,
-        batch_combined_details,
-    )
-    endpoint_durations["relationship_prob"] += time.time() - rel_start
-    endpoint_counts["relationship_prob"] += 1
-
-
-def _prefetch_badge_metadata(
-    session_manager: SessionManager,
-    uuid_val: str,
-    plan: _PrefetchPlan,
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
-    endpoint_durations: dict[str, float],
-    endpoint_counts: dict[str, int],
-) -> None:
-    """Fetch badge metadata for matches tied to the user tree."""
-
-    if uuid_val not in plan.badge_candidates:
-        return
-
-    badge_start = time.time()
-    _fetch_optional_badge_data(
-        session_manager,
-        uuid_val,
-        plan.badge_candidates,
-        temp_badge_results,
-    )
-    endpoint_durations["badge_details"] += time.time() - badge_start
-    endpoint_counts["badge_details"] += 1
-
-
-def _prefetch_ethnicity_data(
-    session_manager: SessionManager,
-    uuid_val: str,
-    plan: _PrefetchPlan,
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
-    endpoint_durations: dict[str, float],
-    endpoint_counts: dict[str, int],
-) -> None:
-    """Fetch ethnicity enrichment data when allowed."""
-
-    if not ENABLE_ETHNICITY_ENRICHMENT:
-        plan.stats.ethnicity_skipped += 1
-        batch_ethnicity_data[uuid_val] = None
-        return
-
-    if uuid_val not in plan.ethnicity_candidates:
-        plan.stats.ethnicity_skipped += 1
-        batch_ethnicity_data[uuid_val] = None
-        return
-
-    ethnicity_start = time.time()
-    _process_ethnicity_candidate(
-        session_manager,
-        uuid_val,
-        plan.ethnicity_candidates,
-        batch_ethnicity_data,
-        plan.stats,
-    )
-    endpoint_durations["ethnicity"] += time.time() - ethnicity_start
-    endpoint_counts["ethnicity"] += 1
-
-
-def _log_prefetch_progress(
-    processed_count: int, num_candidates: int, _stats: _PrefetchStats, start_time: float
-) -> None:
-    """Emit progress updates for lengthy prefetches with ETA."""
-
-    # Always log progress for visibility, but throttle frequency
-    should_log = False
-
-    # Log every item if small batch
-    if num_candidates <= 5 or processed_count % 5 == 0 or processed_count == num_candidates:
-        should_log = True
-
-    if not should_log:
-        return
-
-    elapsed = time.time() - start_time
-    avg_time = elapsed / max(processed_count, 1)
-    remaining = num_candidates - processed_count
-    eta_seconds = remaining * avg_time
-
-    # Format ETA
-    eta_str = f"{eta_seconds:.0f}s" if eta_seconds < 60 else f"{eta_seconds / 60:.1f}m"
-
-    percent = int((processed_count / num_candidates) * 100)
-
-    logger.info(
-        "📊 Prefetch %d/%d (%d%%) | Elapsed: %.1fs | Avg: %.1fs/match | ETA: %s",
-        processed_count,
-        num_candidates,
-        percent,
-        elapsed,
-        avg_time,
-        eta_str,
+    return PrefetchHooks(
+        fetch_combined_details=_fetch_combined_details,
+        fetch_badge_details=_fetch_batch_badge_details,
+        fetch_ladder_details=_fetch_batch_ladder,
+        fetch_ethnicity_batch=_fetch_ethnicity_for_batch,
     )
 
 
-def _identify_badge_candidates(
-    matches_to_process_later: list[dict[str, Any]],
-    fetch_candidates_uuid: set[str],
-) -> set[str]:
-    """Collect UUIDs eligible for badge and ladder enrichment."""
+def _build_persistence_hooks() -> PersistenceHooks:
+    """Bridge legacy persistence helpers into the modular pipeline."""
 
-    return {
-        match_data["uuid"]
-        for match_data in matches_to_process_later
-        if match_data.get("in_my_tree") and match_data.get("uuid") in fetch_candidates_uuid
-    }
-
-
-def _enforce_session_health_for_prefetch(
-    session_manager: SessionManager,
-    processed_count: int,
-    num_candidates: int,
-) -> None:
-    """Abort processing if the session health check fails."""
-
-    if processed_count % 10 != 0:
-        return
-
-    if session_manager.check_session_health():
-        return
-
-    logger.critical(f"🚨 Session death detected at item {processed_count}/{num_candidates}. Aborting.")
-    raise MaxApiFailuresExceededError(f"Session death detected during sequential processing at item {processed_count}")
-
-
-def _raise_prefetch_threshold_if_needed(stats: _PrefetchStats, exc: Exception | None = None) -> None:
-    """Raise when the critical API failure threshold is reached."""
-
-    if stats.critical_failures < Action6State.critical_api_failure_threshold:
-        return
-
-    logger.critical(
-        f"Exceeded critical API failure threshold ({stats.critical_failures}/"
-        f"{Action6State.critical_api_failure_threshold}). Halting batch."
+    return PersistenceHooks(
+        process_single_match=_process_single_match_for_bulk,
+        execute_bulk_db_operations=_execute_bulk_db_operations,
     )
-    message = f"Critical API failure threshold reached ({stats.critical_failures} failures)."
-    if exc is None:
-        raise MaxApiFailuresExceededError(message)
-    raise MaxApiFailuresExceededError(message) from exc
-
-
-def _handle_combined_details_fetch(
-    session_manager: SessionManager,
-    uuid_val: str,
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
-    stats: _PrefetchStats,
-) -> None:
-    """Fetch mandatory combined details for a match and update counters."""
-
-    try:
-        combined_result = _fetch_combined_details(session_manager, uuid_val)
-        batch_combined_details[uuid_val] = combined_result
-        if combined_result is None:
-            logger.warning(f"Combined details for {uuid_val[:8]} returned None.")
-            stats.critical_failures += 1
-            _raise_prefetch_threshold_if_needed(stats)
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error(f"Exception fetching combined details for {uuid_val[:8]}: {exc}", exc_info=True)
-        batch_combined_details[uuid_val] = None
-        stats.critical_failures += 1
-        _raise_prefetch_threshold_if_needed(stats, exc)
-
-
-def _fetch_optional_relationship_data(
-    _session_manager: SessionManager,
-    uuid_val: str,
-    _high_priority_uuids: set[str],
-    priority_uuids: set[str],
-    batch_relationship_prob_data: dict[str, Optional[str]],
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
-) -> None:
-    """Fetch relationship probability when priority thresholds demand it."""
-
-    if uuid_val not in priority_uuids:
-        return
-
-    # OPTIMIZATION: Extract from combined details if available
-    combined_data = batch_combined_details.get(uuid_val)
-    if combined_data and combined_data.get("relationship_str"):
-        batch_relationship_prob_data[uuid_val] = cast(str, combined_data.get("relationship_str"))
-        return
-
-    try:
-        # If not found in combined details, we can't fetch it separately anymore
-        # as the standalone endpoint is redundant/broken.
-        # Just log a debug message.
-        logger.debug(f"Relationship string not found in combined details for {uuid_val[:8]}")
-        batch_relationship_prob_data[uuid_val] = None
-    except Exception as exc:  # pragma: no cover - logging only
-        logger.error(
-            f"Exception fetching relationship prob for {uuid_val[:8]}: {exc}",
-            exc_info=False,
-        )
-        batch_relationship_prob_data[uuid_val] = None
-
-
-def _fetch_optional_badge_data(
-    session_manager: SessionManager,
-    uuid_val: str,
-    badge_candidates: set[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
-) -> None:
-    """Fetch badge metadata for tree members."""
-
-    if uuid_val not in badge_candidates:
-        return
-
-    try:
-        temp_badge_results[uuid_val] = _fetch_batch_badge_details(session_manager, uuid_val)
-    except Exception as exc:  # pragma: no cover - logging only
-        logger.error(
-            f"Exception fetching badge details for {uuid_val[:8]}: {exc}",
-            exc_info=False,
-        )
-        temp_badge_results[uuid_val] = None
-
-
-def _process_ethnicity_candidate(
-    session_manager: SessionManager,
-    uuid_val: str,
-    ethnicity_candidates: set[str],
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
-    stats: _PrefetchStats,
-) -> None:
-    """Fetch ethnicity data when the match qualifies."""
-
-    if uuid_val not in ethnicity_candidates:
-        stats.ethnicity_skipped += 1
-        batch_ethnicity_data[uuid_val] = None
-        return
-
-    try:
-        ethnicity_result = _fetch_ethnicity_for_batch(session_manager, uuid_val)
-        batch_ethnicity_data[uuid_val] = ethnicity_result
-        stats.ethnicity_fetch_count += 1
-    except Exception as exc:  # pragma: no cover - logging only
-        logger.error(f"Exception fetching ethnicity for {uuid_val[:8]}: {exc}", exc_info=False)
-        batch_ethnicity_data[uuid_val] = None
-
-
-def _build_cfpid_mapping(temp_badge_results: dict[str, Optional[dict[str, Any]]]) -> tuple[list[str], dict[str, str]]:
-    """Translate badge data into CFPID lookup structures."""
-
-    cfpid_to_uuid_map: dict[str, str] = {}
-    cfpid_list: list[str] = []
-
-    for uuid_val, badge_result in temp_badge_results.items():
-        if not badge_result:
-            continue
-        cfpid = badge_result.get("their_cfpid")
-        if cfpid:
-            cfpid_list.append(cfpid)
-            cfpid_to_uuid_map[cfpid] = uuid_val
-
-    return cfpid_list, cfpid_to_uuid_map
-
-
-def _fetch_ladder_details_for_badges(
-    session_manager: SessionManager,
-    my_tree_id: Optional[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
-) -> tuple[dict[str, Optional[dict[str, Any]]], int]:
-    """Combine badge data with ladder enrichment where available.
-
-    Returns:
-        Tuple of (enriched badge ladder map, ladder API call count).
-    """
-
-    if not my_tree_id or not temp_badge_results:
-        return dict(temp_badge_results), 0
-
-    cfpid_list, cfpid_to_uuid_map = _build_cfpid_mapping(temp_badge_results)
-    enriched_tree_data = dict(temp_badge_results)
-    ladder_call_count = 0
-
-    for cfpid in cfpid_list:
-        uuid_val = cfpid_to_uuid_map.get(cfpid)
-        if not uuid_val:
-            continue
-
-        try:
-            ladder_call_count += 1
-            badge_data = temp_badge_results.get(uuid_val) or {}
-            match_display_name = (
-                badge_data.get("their_firstname") or badge_data.get("display_name") or badge_data.get("name")
-            )
-            ladder_result = _fetch_batch_ladder(
-                session_manager,
-                cfpid,
-                my_tree_id,
-                match_display_name,
-            )
-            if not ladder_result:
-                continue
-
-            combined_tree_info = badge_data.copy() if badge_data else {}
-            combined_tree_info.update(ladder_result)
-            enriched_tree_data[uuid_val] = combined_tree_info or ladder_result
-        except Exception as exc:  # pragma: no cover - logging only
-            logger.error(
-                f"Exception fetching ladder for CFPID {cfpid} (UUID {uuid_val[:8]}): {exc}",
-                exc_info=False,
-            )
-
-    return enriched_tree_data, ladder_call_count
-
-
-def _log_prefetch_summary(
-    fetch_duration: float,
-    stats: _PrefetchStats,
-    endpoint_durations: dict[str, float],
-    endpoint_counts: dict[str, int],
-) -> None:
-    """Summarize prefetch work after completion with detailed metrics."""
-
-    logger.info(f"--- Finished SEQUENTIAL API Pre-fetch. Duration: {fetch_duration:.2f}s ---")
-
-    # Log detailed breakdown
-    logger.info("🔬 API Performance Breakdown:")
-    for endpoint, duration in endpoint_durations.items():
-        count = endpoint_counts.get(endpoint, 0)
-        if count > 0:
-            avg = duration / count
-            logger.info(f"   - {endpoint:<20}: {count:>3} calls | {duration:>6.2f}s total | {avg:>5.2f}s avg")
-
-    if not ENABLE_ETHNICITY_ENRICHMENT:
-        logger.debug("🧬 Ethnicity enrichment disabled; skipping summary metrics.")
-        return
-
-    if stats.ethnicity_fetch_count or stats.ethnicity_skipped:
-        logger.debug(
-            "🧬 Ethnicity fetches: %s prioritized, %s skipped (low priority)",
-            stats.ethnicity_fetch_count,
-            stats.ethnicity_skipped,
-        )
-
-
-def _perform_api_prefetches(
-    session_manager: SessionManager,
-    fetch_candidates_uuid: set[str],
-    matches_to_process_later: list[dict[str, Any]],
-) -> tuple[dict[str, dict[str, Any]], dict[str, float], dict[str, int]]:
-    """
-    Perform sequential API calls to prefetch detailed data for candidate matches.
-
-    Returns:
-        Tuple of (
-            prefetched_data,
-            endpoint_durations,
-            endpoint_call_counts
-        ).
-
-        prefetched_data retains the original structure, while the timing metadata
-        captures total duration and invocation counts for each API endpoint used.
-
-    Raises:
-        MaxApiFailuresExceededError: If critical API failure threshold is met.
-    """
-    batch_combined_details: dict[str, Optional[dict[str, Any]]] = {}
-    batch_tree_data: dict[str, Optional[dict[str, Any]]] = {}
-    batch_relationship_prob_data: dict[str, Optional[str]] = {}
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]] = {}
-
-    endpoint_durations: dict[str, float] = {
-        "combined_details": 0.0,
-        "relationship_prob": 0.0,
-        "badge_details": 0.0,
-        "ladder_details": 0.0,
-        "ethnicity": 0.0,
-    }
-    endpoint_counts: dict[str, int] = {
-        "combined_details": 0,
-        "relationship_prob": 0,
-        "badge_details": 0,
-        "ladder_details": 0,
-        "ethnicity": 0,
-    }
-
-    if not fetch_candidates_uuid:
-        logger.debug("No fetch candidates provided for API pre-fetch.")
-        return ({"combined": {}, "tree": {}, "rel_prob": {}, "ethnicity": {}}, endpoint_durations, endpoint_counts)
-
-    plan = _prepare_prefetch_plan(
-        session_manager,
-        fetch_candidates_uuid,
-        matches_to_process_later,
-    )
-
-    fetch_start_time = time.time()
-    logger.debug(f"--- Starting SEQUENTIAL API Pre-fetch ({plan.num_candidates} candidates) ---")
-
-    temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
-    for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
-        _enforce_session_health_for_prefetch(
-            session_manager,
-            processed_count,
-            plan.num_candidates,
-        )
-
-        _prefetch_combined_details(
-            session_manager,
-            uuid_val,
-            batch_combined_details,
-            plan.stats,
-            endpoint_durations,
-            endpoint_counts,
-        )
-
-        _prefetch_relationship_probability(
-            session_manager,
-            uuid_val,
-            plan,
-            batch_relationship_prob_data,
-            endpoint_durations,
-            endpoint_counts,
-            batch_combined_details,
-        )
-
-        _prefetch_badge_metadata(
-            session_manager,
-            uuid_val,
-            plan,
-            temp_badge_results,
-            endpoint_durations,
-            endpoint_counts,
-        )
-
-        _prefetch_ethnicity_data(
-            session_manager,
-            uuid_val,
-            plan,
-            batch_ethnicity_data,
-            endpoint_durations,
-            endpoint_counts,
-        )
-
-        _log_prefetch_progress(processed_count, plan.num_candidates, plan.stats, fetch_start_time)
-
-    ladder_start = time.time()
-    batch_tree_data, ladder_calls = _fetch_ladder_details_for_badges(
-        session_manager,
-        plan.my_tree_id,
-        temp_badge_results,
-    )
-    endpoint_durations["ladder_details"] += time.time() - ladder_start
-    endpoint_counts["ladder_details"] += ladder_calls
-
-    fetch_duration = time.time() - fetch_start_time
-    _log_prefetch_summary(fetch_duration, plan.stats, endpoint_durations, endpoint_counts)
-
-    return (
-        {
-            "combined": batch_combined_details,
-            "tree": batch_tree_data,
-            "rel_prob": batch_relationship_prob_data,
-            "ethnicity": batch_ethnicity_data,
-        },
-        endpoint_durations,
-        endpoint_counts,
-    )
-
-
-# End of _perform_api_prefetches
-
-
-def _get_prefetched_data_for_match(
-    uuid_val: str, prefetched_data: dict[str, dict[str, Any]]
-) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[str], Optional[dict[str, Optional[int]]]]:
-    """Get prefetched data for a match.
-
-    Args:
-        uuid_val: UUID of the match
-        prefetched_data: Dictionary containing prefetched API data
-
-    Returns:
-        Tuple of (combined, tree, rel_prob, ethnicity) data
-    """
-    prefetched_combined = prefetched_data.get("combined", {}).get(uuid_val)
-    prefetched_tree = prefetched_data.get("tree", {}).get(uuid_val)
-    prefetched_rel_prob = prefetched_data.get("rel_prob", {}).get(uuid_val)
-    prefetched_ethnicity = prefetched_data.get("ethnicity", {}).get(uuid_val)
-    return prefetched_combined, prefetched_tree, prefetched_rel_prob, prefetched_ethnicity
 
 
 def _process_single_match_for_bulk(
@@ -3195,101 +1892,6 @@ def _update_page_statuses(
     else:
         logger.error(f"Unknown status '{status}' from _do_match for {log_ref_short}. Counting as error.")
         page_statuses["error"] += 1
-
-
-def _handle_match_processing_result(
-    prepared_data: Optional[dict[str, Any]],
-    status: Literal["new", "updated", "skipped", "error"],
-    error_msg: Optional[str],
-    log_ref_short: str,
-    prepared_bulk_data: list[dict[str, Any]],
-    page_statuses: dict[str, int],
-) -> None:
-    """Handle the result of processing a single match.
-
-    Args:
-        prepared_data: Prepared data from _process_single_match_for_bulk
-        status: Status of the match processing
-        error_msg: Error message if any
-        log_ref_short: Short log reference
-        prepared_bulk_data: List to append valid data to
-        page_statuses: Status counts to update
-    """
-    # Update status counts
-    _update_page_statuses(status, page_statuses, log_ref_short)
-
-    # Append valid prepared data
-    if status not in {"error", "skipped"} and prepared_data:
-        prepared_bulk_data.append(prepared_data)
-    elif status == "error":
-        logger.error(f"Error preparing DB data for {log_ref_short}: {error_msg or 'Unknown error in _do_match'}")
-
-
-def _prepare_bulk_db_data(
-    session: SqlAlchemySession,
-    session_manager: SessionManager,
-    matches_to_process: list[dict[str, Any]],
-    existing_persons_map: dict[str, Person],
-    prefetched_data: dict[str, dict[str, Any]],
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """
-    Processes individual matches using prefetched API data, compares with existing
-    DB records, and prepares dictionaries formatted for bulk database operations
-    (insert/update for Person, DnaMatch, FamilyTree).
-
-    Args:
-        session: The active SQLAlchemy database session.
-        session_manager: The active SessionManager instance.
-        matches_to_process: list of match data dictionaries identified as candidates.
-    existing_persons_map: Dictionary mapping UUIDs to existing Person objects.
-    prefetched_data: Dictionary containing results from `_perform_api_prefetches`.
-
-    Returns:
-        A tuple containing:
-        - prepared_bulk_data (list[dict]): A list where each element is a dictionary
-          representing one person and contains keys 'person', 'dna_match', 'family_tree'
-          with data formatted for bulk operations (or None if no change needed).
-        - page_statuses (dict[str, int]): Counts of 'new', 'updated', 'error' outcomes
-          during the preparation phase for this batch.
-    """
-    # Initialize results
-    prepared_bulk_data: list[dict[str, Any]] = []
-    page_statuses: dict[str, int] = {"new": 0, "updated": 0, "error": 0}
-    num_to_process = len(matches_to_process)
-
-    if not num_to_process:
-        return [], page_statuses
-
-    logger.debug(f"--- Preparing DB data structures for {num_to_process} candidates ---")
-    process_start_time = time.time()
-
-    # Iterate through each candidate match
-    for match_list_data in matches_to_process:
-        uuid_val = match_list_data.get("uuid")
-        log_ref_short = f"UUID={uuid_val or 'MISSING'} User='{match_list_data.get('username', 'Unknown')}'"
-
-        try:
-            # Process single match
-            prepared_data, status, error_msg = _process_single_match_for_bulk(
-                session, session_manager, match_list_data, existing_persons_map, prefetched_data
-            )
-
-            # Handle result
-            _handle_match_processing_result(
-                prepared_data, status, error_msg, log_ref_short, prepared_bulk_data, page_statuses
-            )
-
-        except Exception as inner_e:
-            logger.error(
-                f"Critical unexpected error processing {log_ref_short} in _prepare_bulk_db_data: {inner_e}",
-                exc_info=True,
-            )
-            page_statuses["error"] += 1
-
-    # Log summary and return results
-    process_duration = time.time() - process_start_time
-    logger.debug(f"--- Finished preparing DB data structures. Duration: {process_duration:.2f}s ---")
-    return prepared_bulk_data, page_statuses
 
 
 # End of _prepare_bulk_db_data
@@ -4546,7 +3148,7 @@ def _do_batch(
     page_session = session_manager.get_db_conn()
     if not page_session:
         logger.error(f"Page {current_page}: Failed to get DB session for batch processing.")
-        return 0, 0, 0, 0, PageProcessingMetrics(total_matches=num_matches_on_page)
+        return 0, 0, 0, 0, PageProcessingMetrics()
 
     try:
         totals, combined_metrics, total_duration = _process_batches_for_page(
@@ -4595,7 +3197,7 @@ def _process_batches_for_page(
     )
 
     totals = _BatchTotals()
-    combined_metrics = PageProcessingMetrics(total_matches=0, batches=0)
+    combined_metrics = PageProcessingMetrics()
     total_batches = max(1, math.ceil(len(matches_on_page) / batch_size))
 
     for batch_index, start_index in enumerate(range(0, len(matches_on_page), batch_size), start=1):
@@ -4751,14 +3353,6 @@ def _initialize_page_processing(
 
 
 @dataclass(slots=True)
-class _BatchLookupArtifacts:
-    existing_persons_map: dict[str, Person]
-    fetch_candidates_uuid: set[str]
-    matches_to_process_later: list[dict[str, Any]]
-    skipped_count: int
-
-
-@dataclass(slots=True)
 class _PrefetchArtifacts:
     prefetched_data: dict[str, Any]
     timings: dict[str, float]
@@ -4798,35 +3392,6 @@ def _summarize_prefetch_metrics(
     )
 
 
-def _process_batch_lookups(
-    batch_session: SqlAlchemySession,
-    matches_on_page: list[dict[str, Any]],
-    current_page: int,
-    page_statuses: dict[str, int],
-) -> _BatchLookupArtifacts:
-    """Process batch lookups and identify candidates."""
-    logger.debug(f"Page {current_page}: Looking up existing persons...")
-    uuids_on_page = [m["uuid"].upper() for m in matches_on_page if m.get("uuid")]
-    logger.debug(f"Page {current_page}: DB lookup for {len(uuids_on_page)} matches...")
-    existing_persons_map = _lookup_existing_persons(batch_session, uuids_on_page)
-    logger.debug(
-        f"Page {current_page}: Found {len(existing_persons_map)} in database (will fetch {len(uuids_on_page) - len(existing_persons_map)} new)"
-    )
-
-    logger.debug(f"Batch {current_page}: Identifying candidates...")
-    fetch_candidates_uuid, matches_to_process_later, skipped_count = _identify_fetch_candidates(
-        matches_on_page, existing_persons_map
-    )
-    page_statuses["skipped"] = skipped_count
-
-    return _BatchLookupArtifacts(
-        existing_persons_map=existing_persons_map,
-        fetch_candidates_uuid=fetch_candidates_uuid,
-        matches_to_process_later=matches_to_process_later,
-        skipped_count=skipped_count,
-    )
-
-
 def _handle_critical_batch_error(
     critical_err: Exception, current_page: int, page_statuses: dict[str, int], num_matches_on_page: int
 ) -> tuple[int, int, int, int, PageProcessingMetrics]:
@@ -4847,7 +3412,7 @@ def _handle_critical_batch_error(
         page_statuses["updated"],
         page_statuses["skipped"],
         final_error_count_for_page,
-        PageProcessingMetrics(total_matches=num_matches_on_page),
+        PageProcessingMetrics(),
     )
 
 
@@ -4868,7 +3433,7 @@ def _handle_unhandled_batch_error(
         page_statuses["updated"],
         page_statuses["skipped"],
         max(0, final_error_count_for_page),
-        PageProcessingMetrics(total_matches=num_matches_on_page),
+        PageProcessingMetrics(),
     )
 
 
@@ -4911,35 +3476,6 @@ def _execute_batch_db_commit(
         page_statuses["updated"] = 0
 
 
-def _prepare_and_commit_batch_data(
-    batch_session: SqlAlchemySession,
-    session_manager: SessionManager,
-    matches_to_process_later: list[dict[str, Any]],
-    existing_persons_map: dict[str, Person],
-    prefetched_data: dict[str, Any],
-    current_page: int,
-    page_statuses: dict[str, int],
-) -> None:
-    """Prepare and commit batch data to database."""
-    logger.debug(f"Batch {current_page}: Preparing DB data...")
-    prepared_bulk_data, prep_statuses = _prepare_bulk_db_data(
-        batch_session,
-        session_manager,
-        matches_to_process_later,
-        existing_persons_map,
-        prefetched_data,
-    )
-    page_statuses["new"] = prep_statuses.get("new", 0)
-    page_statuses["updated"] = prep_statuses.get("updated", 0)
-    page_statuses["error"] = prep_statuses.get("error", 0)
-
-    logger.debug(f"Batch {current_page}: Executing DB Commit...")
-    if prepared_bulk_data:
-        _execute_batch_db_commit(batch_session, prepared_bulk_data, existing_persons_map, current_page, page_statuses)
-    else:
-        logger.debug(f"No data prepared for bulk DB operations on page {current_page}.")
-
-
 def _perform_batch_api_prefetches(
     session_manager: SessionManager,
     fetch_candidates_uuid: set[str],
@@ -4955,12 +3491,18 @@ def _perform_batch_api_prefetches(
         f"Batch {current_page}: Performing sequential API prefetches for {len(fetch_candidates_uuid)} candidates"
     )
 
-    prefetched_data, timings, call_counts = _perform_api_prefetches(
+    prefetch_result = gather_perform_api_prefetches(
         session_manager,
         fetch_candidates_uuid,
         matches_to_process_later,
+        _build_prefetch_config(),
+        _build_prefetch_hooks(),
     )
-    return _PrefetchArtifacts(prefetched_data, timings, call_counts)
+    return _PrefetchArtifacts(
+        prefetch_result.prefetched_data,
+        prefetch_result.endpoint_durations,
+        prefetch_result.endpoint_counts,
+    )
 
 
 _memory_cleanup_state: dict[str, Optional[float]] = {"previous_mb": None}
@@ -5065,7 +3607,7 @@ def _process_page_matches(
     # TIMING BREAKDOWN: Track each phase for performance analysis
     timing_log: dict[str, float] = {}
     page_metrics = PageProcessingMetrics()
-    lookup_artifacts: Optional[_BatchLookupArtifacts] = None
+    lookup_artifacts: Optional[BatchLookupArtifacts] = None
     prefetch_artifacts: Optional[_PrefetchArtifacts] = None
 
     try:
@@ -5080,7 +3622,12 @@ def _process_page_matches(
         try:
             # Phase 1: Database Lookups
             with _timed_phase("db_lookups", timing_log):
-                lookup_artifacts = _process_batch_lookups(batch_session, matches_on_page, current_page, page_statuses)
+                lookup_artifacts = gather_process_batch_lookups(
+                    batch_session,
+                    matches_on_page,
+                    current_page,
+                    page_statuses,
+                )
             logger.debug(f"⏱️  Page {current_page} - DB lookups: {timing_log['db_lookups']:.2f}s")
 
             assert lookup_artifacts is not None
@@ -5099,7 +3646,7 @@ def _process_page_matches(
 
             # Phase 3: Data Preparation & DB Commit
             with _timed_phase("data_prep_commit", timing_log):
-                _prepare_and_commit_batch_data(
+                gather_prepare_and_commit_batch_data(
                     batch_session,
                     session_manager,
                     lookup_artifacts.matches_to_process_later,
@@ -5107,6 +3654,7 @@ def _process_page_matches(
                     prefetch_artifacts.prefetched_data,
                     current_page,
                     page_statuses,
+                    _build_persistence_hooks(),
                 )
             logger.debug(f"⏱️  Page {current_page} - Data prep & commit: {timing_log['data_prep_commit']:.2f}s")
         finally:
@@ -7853,233 +6401,6 @@ def _log_page_summary(page: int, page_new: int, page_updated: int, page_skipped:
 
 # End of _log_page_summary
 
-
-def _format_brief_duration(seconds: Optional[float]) -> str:
-    """Return a compact human-readable duration."""
-    if seconds is None:
-        return "--"
-
-    seconds = max(0.0, float(seconds))
-    if seconds < 1.0:
-        return f"{seconds * 1000:.0f}ms"
-
-    minutes, secs = divmod(int(seconds), 60)
-
-    if minutes == 0:
-        return f"{seconds:.1f}s"
-
-    hours, mins = divmod(minutes, 60)
-    if hours == 0:
-        return f"{mins}m {secs:02d}s"
-
-    return f"{hours}h {mins:02d}m"
-
-
-def _compose_progress_snapshot(state: dict[str, Any]) -> dict[str, Any]:
-    """Build a progress snapshot for the current run."""
-    pages_done = int(state.get("total_pages_processed", 0))
-    pages_target = int(state.get("pages_target") or 0)
-    if pages_target <= 0:
-        pages_target = max(pages_done, 1)
-
-    pages_target = max(pages_target, pages_done)
-
-    run_started_at = state.get("run_started_at")
-    elapsed = (time.time() - run_started_at) if run_started_at else None
-
-    avg_per_page = (elapsed / pages_done) if elapsed and pages_done else None
-    pages_remaining = max(pages_target - pages_done, 0)
-    eta = avg_per_page * pages_remaining if avg_per_page else None
-
-    percent_complete = (pages_done / pages_target * 100.0) if pages_target else 100.0
-
-    return {
-        "page_index": max(pages_done, 1),
-        "pages_target": pages_target,
-        "pages_done": pages_done,
-        "percent": percent_complete,
-        "elapsed": elapsed,
-        "eta": eta,
-    }
-
-
-def _log_page_start(current_page: int, state: dict[str, Any]) -> None:
-    """Emit an INFO log announcing the start of a page with progress context."""
-    pages_done = int(state.get("total_pages_processed", 0))
-    pages_target = int(state.get("pages_target") or 0)
-    page_index = pages_done + 1
-
-    if pages_target <= 0:
-        pages_target = page_index
-    pages_target = max(pages_target, page_index)
-
-    run_started_at = state.get("run_started_at")
-    elapsed = (time.time() - run_started_at) if run_started_at else None
-    avg_per_page = (elapsed / pages_done) if elapsed and pages_done else None
-    pages_remaining = max(pages_target - page_index, 0)
-    eta = avg_per_page * pages_remaining if avg_per_page else None
-    percent_complete = (pages_done / pages_target * 100.0) if pages_target else 0.0
-
-    tokens = [f"Page {current_page} ({page_index} of {pages_target})"]
-
-    tokens.append(f"{percent_complete:.0f}% complete")
-
-    if elapsed is not None:
-        tokens.append(f"elapsed {_format_brief_duration(elapsed)}")
-    if eta is not None:
-        tokens.append(f"ETA {_format_brief_duration(eta)}")
-    print("")
-    logger.info(" | ".join(tokens))
-
-
-def _format_duration_with_avg(total_seconds: float, denominator: float, unit: str) -> str:
-    """Return duration string with average per-unit context when available."""
-    if total_seconds <= 0:
-        return "0.00s"
-    if denominator <= 0:
-        return f"{total_seconds:.2f}s"
-
-    average = total_seconds / denominator
-    if average >= 1.0:
-        return f"{total_seconds:.2f}s (avg={average:.2f}s/{unit})"
-
-    average_ms = average * 1000.0
-    if average_ms >= 100.0:
-        return f"{total_seconds:.2f}s (avg={average_ms:.0f}ms/{unit})"
-    return f"{total_seconds:.2f}s (avg={average_ms:.1f}ms/{unit})"
-
-
-def _iter_endpoint_stats(
-    breakdown: dict[str, float],
-    counts: dict[str, int],
-):
-    """Yield endpoint timing stats sorted by total duration (descending)."""
-
-    for endpoint, total in sorted(breakdown.items(), key=lambda item: item[1], reverse=True):
-        if total <= 0:
-            continue
-        count = counts.get(endpoint, 0)
-        if count <= 0:
-            continue
-        avg = total / count
-        yield endpoint, total, count, avg
-
-
-def _format_avg_value(seconds: float) -> str:
-    """Format an average duration for human-readable logging."""
-
-    if seconds >= 1.0:
-        return f"{seconds:.2f}s"
-    return f"{seconds * 1000:.0f}ms"
-
-
-def _format_endpoint_breakdown(
-    breakdown: dict[str, float],
-    counts: dict[str, int],
-    limit: int | None = 3,
-    *,
-    style: Literal["inline", "list"] = "inline",
-) -> str:
-    """Format endpoint timing summary for logging."""
-
-    entries: list[str] = []
-    for endpoint, total, count, _avg in _iter_endpoint_stats(breakdown, counts):
-        label = PREFETCH_ENDPOINT_LABELS.get(endpoint, endpoint)
-        duration_summary = _format_duration_with_avg(total, float(count), "call")
-        entries.append(f"{label}={duration_summary}")
-        if limit and len(entries) >= limit:
-            break
-
-    if not entries:
-        return ""
-
-    if style == "list":
-        return "\n".join(f"- {entry}" for entry in entries)
-
-    return " | ".join(entries)
-
-
-def _detailed_endpoint_lines(
-    breakdown: dict[str, float],
-    counts: dict[str, int],
-) -> list[str]:
-    """Generate detailed endpoint timing lines for final summaries."""
-
-    lines: list[str] = []
-    for endpoint, total, count, avg in _iter_endpoint_stats(breakdown, counts):
-        label = PREFETCH_ENDPOINT_LABELS.get(endpoint, endpoint)
-        avg_display = _format_avg_value(avg)
-        lines.append(f"{label}: total {total:.2f}s across {count} calls (avg {avg_display})")
-    return lines
-
-
-def _log_timing_snapshot(pages_tracked: int, metrics: PageProcessingMetrics) -> None:
-    """Log a periodic timing snapshot using aggregated metrics."""
-
-    if pages_tracked <= 1:
-        return
-
-    breakdown_limit = 3 if pages_tracked < 10 else None
-    snapshot = _format_endpoint_breakdown(
-        metrics.prefetch_breakdown,
-        metrics.prefetch_call_counts,
-        limit=breakdown_limit,
-    )
-    if not snapshot:
-        return
-
-    logger.info(f"Timing snapshot after {pages_tracked} page(s): {snapshot}")
-
-
-def _log_page_completion_summary(
-    page: int,
-    page_new: int,
-    page_updated: int,
-    page_skipped: int,
-    page_errors: int,
-    metrics: Optional[PageProcessingMetrics],
-    progress: Optional[dict[str, Any]] = None,
-) -> None:
-    """Emit a structured INFO-level summary for a completed page."""
-
-    lines: list[str] = [f"Page {page} complete:"]
-
-    if progress:
-        percent = progress.get("percent", 0.0)
-        elapsed = _format_brief_duration(progress.get("elapsed"))
-        eta = _format_brief_duration(progress.get("eta"))
-
-        lines.append(f"  - {percent:.0f}% of total downloaded")
-        if elapsed != "--":
-            lines.append(f"  - took {elapsed}")
-        if eta != "--":
-            lines.append(f"  - ETA {eta} to full download")
-
-    lines.append(f"  - new={page_new} updated={page_updated} skipped={page_skipped} errors={page_errors}")
-
-    total_processed = page_new + page_updated + page_skipped
-    if metrics and metrics.total_seconds:
-        avg_rate = (total_processed / metrics.total_seconds) if total_processed and metrics.total_seconds else 0.0
-        lines.append(f"  - rate={avg_rate:.2f} match/s")
-
-        breakdown_list = _format_endpoint_breakdown(
-            metrics.prefetch_breakdown,
-            metrics.prefetch_call_counts,
-            style="list",
-        )
-        if breakdown_list:
-            lines.append("  API endpoints (by total time):")
-            for entry in breakdown_list.splitlines():
-                lines.append(f"    {entry}")
-    elif not metrics:
-        lines.append("  - metrics unavailable for this page")
-
-    logger.info("\n".join(lines))
-
-
-# End of _log_page_completion_summary
-
-
 # type: moved unused function: _log_coord_summary
 
 
@@ -8282,14 +6603,6 @@ def _test_module_initialization():
 
 def _test_core_functionality():
     """Test all core DNA match gathering functions"""
-    from unittest.mock import MagicMock
-
-    # Test _lookup_existing_persons function
-    mock_session = MagicMock()
-    mock_session.query.return_value.options.return_value.filter.return_value.all.return_value = []
-
-    result = _lookup_existing_persons(mock_session, ["uuid_12345"])
-    assert isinstance(result, dict), "Should return dictionary of existing persons"
 
     # Test get_matches function availability
     assert callable(get_matches), "get_matches should be callable"
@@ -8303,16 +6616,10 @@ def _test_core_functionality():
 
 def _test_data_processing_functions():
     """Test all data processing and preparation functions"""
-    # Test _identify_fetch_candidates with correct signature
-    matches_on_page = [{"uuid": "test_12345", "cm_dna": 100}]
-    existing_persons_map = {}
+    from actions.gather import persistence as gather_persistence_module
 
-    result = _identify_fetch_candidates(matches_on_page, existing_persons_map)
-    assert isinstance(result, tuple), "Should return tuple of results"
-    assert len(result) == 3, "Should return 3-element tuple"
-
-    # Test _prepare_bulk_db_data function exists
-    assert callable(_prepare_bulk_db_data), "_prepare_bulk_db_data should be callable"
+    assert callable(gather_persistence_module.process_batch_lookups)
+    assert callable(gather_persistence_module.prepare_and_commit_batch_data)
 
     # Test _execute_bulk_db_operations function exists
     assert callable(_execute_bulk_db_operations), "_execute_bulk_db_operations should be callable"
@@ -8330,16 +6637,6 @@ def _test_edge_cases():
     result = _validate_start_page(0)
     assert result == 1, "Should handle zero input"
 
-    # Test _lookup_existing_persons with empty input
-    from unittest.mock import MagicMock
-
-    mock_session = MagicMock()
-    mock_session.query.return_value.options.return_value.filter.return_value.all.return_value = []
-
-    result = _lookup_existing_persons(mock_session, [])
-    assert isinstance(result, dict), "Should handle empty UUID list"
-    assert len(result) == 0, "Should return empty dict for empty input"
-
 
 def _test_integration():
     """Test integration with external dependencies"""
@@ -8356,13 +6653,6 @@ def _test_integration():
     params = list(sig.parameters.keys())
     assert "session_manager" in params, "nav_to_list should accept session_manager parameter"
     assert callable(nav_to_list), "nav_to_list should be callable"
-
-    # Test _lookup_existing_persons works with database session interface
-    mock_db_session = MagicMock()
-    mock_db_session.query.return_value.options.return_value.filter.return_value.all.return_value = []
-
-    result = _lookup_existing_persons(mock_db_session, ["integration_test_12345"])
-    assert isinstance(result, dict), "Should work with database session interface"
 
     # Test coord function accepts proper parameters
     coord_sig = inspect.signature(coord)
@@ -8496,16 +6786,25 @@ def _test_all_error_class_constructors():
 def _test_legacy_function_error_handling():
     """Test legacy function error handling"""
     from unittest.mock import MagicMock
+    from actions.gather import persistence as gather_persistence_module
 
     print("   • Test 5: Legacy function error handling")
     mock_session = MagicMock()
-    mock_session.query.side_effect = Exception("Database error 12345")
+    mock_scalar_result = MagicMock()
+    mock_scalar_result.all.side_effect = Exception("Database error 12345")
+    mock_session.scalars.return_value = mock_scalar_result
 
     try:
-        result = _lookup_existing_persons(mock_session, ["test_12345"])
-        assert isinstance(result, dict), "Should return dict even on error"
+        gather_persistence_module.process_batch_lookups(
+            mock_session,
+            [{"uuid": "test_12345"}],
+            current_page=1,
+            page_statuses={"skipped": 0},
+        )
     except Exception as e:
         assert "12345" in str(e), "Should be test-related error"
+    else:
+        raise AssertionError("Lookup should propagate database errors for visibility")
 
     result = _validate_start_page(None)
     assert result == 1, "Should handle None gracefully"
@@ -8805,12 +7104,13 @@ def _test_checkpoint_resume_logic() -> bool:
 
     from unittest.mock import patch
 
+    from actions.gather import checkpoint as checkpoint_module
+
     print("🛡️ Testing checkpoint persistence and resume logic:")
     with tempfile.TemporaryDirectory() as tmpdir:
         checkpoint_file = Path(tmpdir) / "action6_checkpoint.json"
 
-        def _fake_settings() -> tuple[bool, Path, int]:
-            return True, checkpoint_file, 24
+        plan = GatherCheckpointPlan(enabled=True, path=checkpoint_file, max_age_hours=24)
 
         sample_state = {
             "effective_start_page": 2,
@@ -8822,16 +7122,12 @@ def _test_checkpoint_resume_logic() -> bool:
             "total_pages_processed": 0,
         }
 
-        module_ref = sys.modules.get(__name__)
-        if module_ref is None:
-            raise AssertionError("Module reference unavailable for checkpoint patching")
-
-        with patch.object(module_ref, "_checkpoint_settings", side_effect=_fake_settings):
-            _clear_checkpoint_state()
+        with patch.object(checkpoint_module, "checkpoint_settings", return_value=plan):
+            clear_checkpoint(plan)
             start_page, resumed, checkpoint_data = _determine_start_page(None)
             assert start_page == 1 and not resumed and checkpoint_data is None
 
-            _write_checkpoint_state(5, 10, 20, sample_state)
+            write_checkpoint_state(5, 10, 20, sample_state, plan=plan)
             assert checkpoint_file.exists(), "Checkpoint should exist after write"
 
             start_page, resumed, checkpoint_data = _determine_start_page(None)
@@ -8842,10 +7138,22 @@ def _test_checkpoint_resume_logic() -> bool:
             assert override_start == 3 and not override_resumed
 
             updated_state = {**sample_state, "total_pages_processed": 1}
-            _persist_action6_checkpoint(6, 10, 20, updated_state)
+            persist_checkpoint(
+                next_page=6,
+                last_page_to_process=10,
+                total_pages_in_run=20,
+                state=updated_state,
+                plan=plan,
+            )
             assert json.loads(checkpoint_file.read_text())["next_page"] == 6
 
-            _persist_action6_checkpoint(11, 10, 20, updated_state)
+            persist_checkpoint(
+                next_page=11,
+                last_page_to_process=10,
+                total_pages_in_run=20,
+                state=updated_state,
+                plan=plan,
+            )
             assert not checkpoint_file.exists(), "Checkpoint cleared after run completion"
 
     print("🎉 Checkpoint persistence and resume logic tests passed!")
@@ -9199,7 +7507,7 @@ def action6_gather_module_tests() -> bool:
             test_name="Checkpoint persistence and resume logic",
             test_func=_test_checkpoint_resume_logic,
             test_summary="Ensure checkpoint file save/load honors overrides and cleanup",
-            functions_tested="_write_checkpoint_state(), _determine_start_page(), _persist_action6_checkpoint()",
+            functions_tested="write_checkpoint_state(), _determine_start_page(), persist_checkpoint()",
             method_description="Patch checkpoint path to temp file and validate resume + override flows",
             expected_outcome="Checkpoint resume honours saved state and clears once pages complete",
         )
