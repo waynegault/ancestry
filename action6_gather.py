@@ -249,7 +249,6 @@ from actions.gather.persistence import (
 )
 from api_constants import API_PATH_PROFILE_DETAILS
 from config import config_schema
-from core.database_manager import db_transn
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
 from database import (
@@ -1872,30 +1871,6 @@ def _process_single_match_for_bulk(
     )
 
 
-def _update_page_statuses(
-    status: Literal["new", "updated", "skipped", "error"], page_statuses: dict[str, int], log_ref_short: str
-) -> None:
-    """Update page status counts.
-
-    Args:
-        status: Status of the match processing
-        page_statuses: Dictionary of status counts
-        log_ref_short: Short log reference for the match
-    """
-    if status in {"new", "updated", "error"}:
-        page_statuses[status] += 1
-    elif status == "skipped":
-        logger.info(
-            "♻️  Skipped %s (already up to date)",
-            log_ref_short,
-        )
-    else:
-        logger.error(f"Unknown status '{status}' from _do_match for {log_ref_short}. Counting as error.")
-        page_statuses["error"] += 1
-
-
-# End of _prepare_bulk_db_data
-
 # ===================================================================
 # PHASE 2: API PREFETCH ORCHESTRATION (SEQUENTIAL ONLY)
 # ===================================================================
@@ -3058,7 +3033,7 @@ def _execute_bulk_db_operations(
 
     except SQLAlchemyError as bulk_db_err:
         logger.error(f"Bulk DB operation FAILED: {bulk_db_err}", exc_info=True)
-        return False  # Indicate failure (rollback handled by db_transn)
+        return False  # Indicate failure (caller owns transaction rollback)
     except Exception as e:
         logger.error(f"Unexpected error during bulk DB operations: {e}", exc_info=True)
         return False  # Indicate failure
@@ -3435,45 +3410,6 @@ def _handle_unhandled_batch_error(
         max(0, final_error_count_for_page),
         PageProcessingMetrics(),
     )
-
-
-def _execute_batch_db_commit(
-    batch_session: SqlAlchemySession,
-    prepared_bulk_data: list[dict[str, Any]],
-    existing_persons_map: dict[str, Person],
-    current_page: int,
-    page_statuses: dict[str, int],
-) -> None:
-    """Execute bulk DB operations for batch."""
-    logger.debug(f"Attempting bulk DB operations for page {current_page}...")
-    try:
-        with db_transn(batch_session) as sess:
-            bulk_success = _execute_bulk_db_operations(sess, prepared_bulk_data, existing_persons_map)
-            if not bulk_success:
-                logger.error(f"Bulk DB ops FAILED page {current_page}. Adjusting counts.")
-                failed_items = len(prepared_bulk_data)
-                page_statuses["error"] += failed_items
-                page_statuses["new"] = 0
-                page_statuses["updated"] = 0
-        logger.debug(f"Transaction block finished page {current_page}.")
-    except (IntegrityError, SQLAlchemyError, ValueError) as bulk_db_err:
-        logger.error(
-            f"Bulk DB transaction FAILED page {current_page}: {bulk_db_err}",
-            exc_info=True,
-        )
-        failed_items = len(prepared_bulk_data)
-        page_statuses["error"] += failed_items
-        page_statuses["new"] = 0
-        page_statuses["updated"] = 0
-    except Exception as e:
-        logger.error(
-            f"Unexpected error during bulk DB transaction page {current_page}: {e}",
-            exc_info=True,
-        )
-        failed_items = len(prepared_bulk_data)
-        page_statuses["error"] += failed_items
-        page_statuses["new"] = 0
-        page_statuses["updated"] = 0
 
 
 def _perform_batch_api_prefetches(
