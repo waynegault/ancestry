@@ -82,6 +82,11 @@ from messaging import (
     cancel_pending_on_reply,
     log_conversation_state_change,
 )
+from messaging.message_types import (
+    MESSAGE_TYPES,
+    MESSAGE_TYPES_ACTION8,
+    determine_next_message_type,
+)
 
 # Map columns needing enum coercion for shared helper
 SAFE_COLUMN_ENUMS = {
@@ -464,20 +469,7 @@ def detect_status_change_to_in_tree(person: Person) -> bool:
 
 
 # === MESSAGE TYPES ===
-MESSAGE_TYPES_ACTION8: dict[str, str] = {
-    "In_Tree-Initial": "In_Tree-Initial",
-    "In_Tree-Follow_Up": "In_Tree-Follow_Up",
-    "In_Tree-Final_Reminder": "In_Tree-Final_Reminder",
-    "Out_Tree-Initial": "Out_Tree-Initial",
-    "Out_Tree-Follow_Up": "Out_Tree-Follow_Up",
-    "Out_Tree-Final_Reminder": "Out_Tree-Final_Reminder",
-    "In_Tree-Initial_for_was_Out_Tree": "In_Tree-Initial_for_was_Out_Tree",
-    "User_Requested_Desist": "User_Requested_Desist",
-    "In_Tree-Initial_Short": "In_Tree-Initial_Short",
-    "Out_Tree-Initial_Short": "Out_Tree-Initial_Short",
-    "In_Tree-Initial_Confident": "In_Tree-Initial_Confident",
-    "Out_Tree-Initial_Exploratory": "Out_Tree-Initial_Exploratory",
-}
+# Now imported from messaging.message_types
 
 
 @cache_result("message_templates")
@@ -588,82 +580,9 @@ MESSAGE_PERSONALIZER = None
 
 # ------------------------------------------------------------------------------
 # Message Type Determination Logic
+# Now imported from messaging.message_types:
+#   MESSAGE_TRANSITION_TABLE, determine_next_message_type, MESSAGE_TYPES_ACTION8
 # ------------------------------------------------------------------------------
-
-
-# === MESSAGE TRANSITION TABLE ===
-# Maps (current_message_type, is_in_family_tree) to next_message_type
-MESSAGE_TRANSITION_TABLE = {
-    # Initial messages (no previous message)
-    (None, True): "In_Tree-Initial",
-    (None, False): "Out_Tree-Initial",
-    # In-Tree sequences
-    ("In_Tree-Initial", True): "In_Tree-Follow_Up",
-    ("In_Tree-Initial_for_was_Out_Tree", True): "In_Tree-Follow_Up",
-    ("In_Tree-Initial_Confident", True): "In_Tree-Follow_Up",
-    ("In_Tree-Initial_Short", True): "In_Tree-Follow_Up",
-    ("In_Tree-Follow_Up", True): "In_Tree-Final_Reminder",
-    ("In_Tree-Final_Reminder", True): None,
-    # Out-Tree sequences
-    ("Out_Tree-Initial", False): "Out_Tree-Follow_Up",
-    ("Out_Tree-Initial_Short", False): "Out_Tree-Follow_Up",
-    ("Out_Tree-Initial_Exploratory", False): "Out_Tree-Follow_Up",
-    ("Out_Tree-Follow_Up", False): "Out_Tree-Final_Reminder",
-    ("Out_Tree-Final_Reminder", False): None,
-    # Tree status changes (Out->In)
-    ("Out_Tree-Initial", True): "In_Tree-Initial_for_was_Out_Tree",
-    ("Out_Tree-Follow_Up", True): "In_Tree-Initial_for_was_Out_Tree",
-    ("Out_Tree-Final_Reminder", True): "In_Tree-Initial_for_was_Out_Tree",
-    ("Out_Tree-Initial_Short", True): "In_Tree-Initial_for_was_Out_Tree",
-    ("Out_Tree-Initial_Exploratory", True): "In_Tree-Initial_for_was_Out_Tree",
-    # Tree status changes (In->Out)
-    ("In_Tree-Initial", False): None,
-    ("In_Tree-Follow_Up", False): None,
-    ("In_Tree-Final_Reminder", False): None,
-    ("In_Tree-Initial_Confident", False): None,
-    ("In_Tree-Initial_Short", False): None,
-    ("In_Tree-Initial_for_was_Out_Tree", False): "Out_Tree-Initial",
-    # Desist ends sequence
-    ("User_Requested_Desist", True): None,
-    ("User_Requested_Desist", False): None,
-    # Fallback for unknown types
-    ("Unknown", True): "In_Tree-Initial",
-    ("Unknown", False): "Out_Tree-Initial",
-}
-
-
-def determine_next_message_type(
-    last_message_details: Optional[tuple[Optional[str], datetime, str]],
-    is_in_family_tree: bool,
-) -> Optional[str]:
-    """
-    Determine next message type based on last message and tree status.
-
-    Uses state machine with transition table mapping (current_type, is_in_tree) to next_type.
-    """
-    last_message_type: Optional[str] = None
-    if last_message_details:
-        last_message_type, _, _ = last_message_details
-
-    transition_key = (last_message_type, is_in_family_tree)
-
-    if transition_key in MESSAGE_TRANSITION_TABLE:
-        next_type = MESSAGE_TRANSITION_TABLE[transition_key]
-    elif last_message_type:
-        # Recover from unknown types by treating as initial
-        logger.warning(f"Unknown message type '{last_message_type}', treating as initial")
-        next_type = "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-    else:
-        # Fallback for initial message
-        next_type = "In_Tree-Initial" if is_in_family_tree else "Out_Tree-Initial"
-
-    if next_type:
-        next_type = MESSAGE_TYPES_ACTION8.get(next_type, next_type)
-
-    return next_type
-
-
-# End of determine_next_message_type
 
 # ------------------------------------------------------------------------------
 # Improved Variable Handling Functions

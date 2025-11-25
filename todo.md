@@ -14,7 +14,14 @@
    - Removed ~200+ lines of duplicated code from Actions 7, 8, 9
    - All action test suites pass (Action 7: 23/23, Action 8: 36/36, Action 9: 14/14)
 
-2. **Action 10 GEDCOM/API Consolidation** (prior session, verified working)
+2. **Message Types Module Extraction**
+   - Created `messaging/message_types.py` with 7 tests
+   - Extracted `MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`, `determine_next_message_type()` from Action 8
+   - Added utility functions: `is_terminal_message_type()`, `get_message_type_category()`
+   - Removed ~80 lines of code from `action8_messaging.py`
+   - Updated `messaging/__init__.py` to export all message type constants
+
+3. **Action 10 GEDCOM/API Consolidation** (prior session, verified working)
    - Merged `action10_wrapper.py` into `action10.py`
    - Exposed `ComparisonConfig`/`ComparisonResults` as public dataclasses
    - Ported 11 regression tests into action10 module
@@ -53,7 +60,7 @@
 
 ---
 
-### 2. 🔄 Messaging/Inbox Helpers Extraction [IN PROGRESS - 70%]
+### 2. 🔄 Messaging/Inbox Helpers Extraction [IN PROGRESS - 85%]
 
 > **Goal**: Reduce Actions 7–9 to <2k lines each via shared `messaging/` package
 
@@ -61,8 +68,8 @@
 |------|--------|-------------|
 | Step 1 | ✅ | `build_safe_column_value` + enum coercion helpers |
 | Step 2 | ✅ | Conversation state & engagement timing helpers |
-| Step 3 | ❌ | Nav-guard helpers (browser navigation, session validation) |
-| Step 4 | ❌ | Template loading/message type helpers |
+| Step 3 | ⏳ | Nav-guard helpers (already in `core/session_guards.py`) |
+| Step 4 | ✅ | Message type constants + state machine |
 
 **Completed helpers** (in `messaging/workflow_helpers.py`):
 - `safe_column_value()`, `build_safe_column_value()` - enum-aware column extraction
@@ -72,11 +79,16 @@
 - `is_tree_creation_recent()`, `has_message_after_tree_creation()`, `detect_status_change_to_in_tree()` - tree detection
 - `calculate_follow_up_action()` - workflow decisions
 
+**Completed constants** (in `messaging/message_types.py`):
+- `MESSAGE_TYPES`, `MESSAGE_TYPES_ACTION8` - message type constants
+- `MESSAGE_TRANSITION_TABLE` - state machine transitions
+- `CORE_REQUIRED_TEMPLATE_KEYS` - validation keys
+- `determine_next_message_type()` - state machine logic
+- `is_terminal_message_type()`, `get_message_type_category()` - utility functions
+
 **Remaining work**:
-- [ ] Extract `_ensure_navigation_ready`, `_validate_browser_state` from Action 7
-- [ ] Extract `ensure_message_templates_loaded`, message type constants
-- [ ] Wire nav-guard helpers into Actions 8/9
-- [ ] Document extension points in README.md
+- [ ] Document messaging/ package in README.md
+- [ ] Assess if template loading can be extracted (tight DB coupling)
 
 ---
 

@@ -1,5 +1,14 @@
 """Messaging helper utilities shared across inbox and messaging actions."""
 
+from .message_types import (
+    CORE_REQUIRED_TEMPLATE_KEYS,
+    MESSAGE_TRANSITION_TABLE,
+    MESSAGE_TYPES,
+    MESSAGE_TYPES_ACTION8,
+    determine_next_message_type,
+    get_message_type_category,
+    is_terminal_message_type,
+)
 from .workflow_helpers import (
     build_safe_column_value,
     calculate_adaptive_interval,
@@ -16,6 +25,15 @@ from .workflow_helpers import (
 )
 
 __all__ = [
+    # Message types and state machine
+    "CORE_REQUIRED_TEMPLATE_KEYS",
+    "MESSAGE_TRANSITION_TABLE",
+    "MESSAGE_TYPES",
+    "MESSAGE_TYPES_ACTION8",
+    "determine_next_message_type",
+    "get_message_type_category",
+    "is_terminal_message_type",
+    # Workflow helpers
     "build_safe_column_value",
     "calculate_adaptive_interval",
     "calculate_days_since_login",
