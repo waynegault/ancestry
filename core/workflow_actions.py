@@ -1,10 +1,25 @@
-from typing import Any
+"""Workflow action wrappers for Actions 6-9 and core workflow.
+
+This module uses lazy imports to avoid circular dependencies with action modules.
+"""
+
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
-from action6_gather import coord
-from action7_inbox import InboxProcessor
-from action8_messaging import send_messages_to_matches
-from action9_process_productive import process_productive_messages
+if __package__ in {None, ""}:
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+
+# TYPE_CHECKING imports (not executed at runtime)
+if TYPE_CHECKING:
+    from action6_gather import coord as _coord
+    from action7_inbox import InboxProcessor as _InboxProcessor
+    from action8_messaging import send_messages_to_matches as _send_messages
+    from action9_process_productive import process_productive_messages as _process_productive
+
 from config.config_manager import ConfigManager
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
@@ -19,13 +34,43 @@ config_manager = ConfigManager()
 config = config_manager.get_config()
 
 
+def _get_coord() -> Any:
+    """Lazy import of coord from action6_gather to avoid circular imports."""
+    from action6_gather import coord
+
+    return coord
+
+
+def _get_inbox_processor() -> Any:
+    """Lazy import of InboxProcessor from action7_inbox to avoid circular imports."""
+    from action7_inbox import InboxProcessor
+
+    return InboxProcessor
+
+
+def _get_send_messages() -> Any:
+    """Lazy import of send_messages_to_matches from action8_messaging."""
+    from action8_messaging import send_messages_to_matches
+
+    return send_messages_to_matches
+
+
+def _get_process_productive() -> Any:
+    """Lazy import of process_productive_messages from action9_process_productive."""
+    from action9_process_productive import process_productive_messages
+
+    return process_productive_messages
+
+
 # --- Action Wrappers (7, 8, 9) ---
+
 
 @require_interactive_session("search inbox")
 def srch_inbox_actn(session_manager: Any, *_: Any) -> bool:
     """Action to search the inbox. Relies on exec_actn ensuring session is ready."""
     logger.debug("Starting inbox search...")
     try:
+        InboxProcessor = _get_inbox_processor()
         processor = InboxProcessor(session_manager=session_manager)
         result = processor.search_inbox()
         if result is False:
@@ -57,6 +102,7 @@ def send_messages_action(session_manager: Any, *_: Any) -> bool:
         logger.debug("Navigation OK. Proceeding to send messages...")
 
         # Call the actual sending function
+        send_messages_to_matches = _get_send_messages()
         result = send_messages_to_matches(session_manager)
         if result is False:
             logger.error("Message sending reported failure.")
@@ -75,6 +121,7 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
     logger.debug("Starting productive message processing...")
     try:
         # Call the actual processing function
+        process_productive_messages = _get_process_productive()
         result = process_productive_messages(session_manager)
         if result is False:
             logger.error("Productive message processing reported failure.")
@@ -87,6 +134,7 @@ def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
 
 
 # --- Action 6 Wrapper ---
+
 
 def gather_dna_matches(
     session_manager: SessionManager,
@@ -107,7 +155,8 @@ def gather_dna_matches(
         return False
 
     try:
-        # Call the imported function from action6
+        # Call the imported function from action6 (lazy import)
+        coord = _get_coord()
         result = coord(session_manager, start=start)
         if result is False:
             logger.error("⚠️  WARNING: Match gathering incomplete or failed. Check logs for details.")
@@ -122,6 +171,7 @@ def gather_dna_matches(
 
 
 # --- Action 1 (Core Workflow) Helpers ---
+
 
 def _run_action6_gather(session_manager: SessionManager) -> bool:
     """Run Action 6: Gather Matches."""
@@ -153,6 +203,7 @@ def _run_action7_inbox(session_manager: SessionManager) -> bool:
             return False
 
         logger.debug("Running inbox search...")
+        InboxProcessor = _get_inbox_processor()
         inbox_processor = InboxProcessor(session_manager=session_manager)
         search_result = inbox_processor.search_inbox()
 
@@ -188,6 +239,7 @@ def _run_action9_process_productive(session_manager: SessionManager) -> bool:
 
         logger.debug("Processing productive messages after navigation guard passed...")
 
+        process_productive_messages = _get_process_productive()
         process_result = process_productive_messages(session_manager)
 
         if process_result is False:
@@ -222,6 +274,7 @@ def _run_action8_send_messages(session_manager: SessionManager) -> bool:
 
         logger.debug("Navigation guard passed. Sending messages...")
 
+        send_messages_to_matches = _get_send_messages()
         send_result = send_messages_to_matches(session_manager)
 
         if send_result is False:
@@ -240,6 +293,7 @@ def _run_action8_send_messages(session_manager: SessionManager) -> bool:
 
 
 # --- Action 1 (Core Workflow) ---
+
 
 def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
     """
@@ -260,10 +314,11 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
             return result
 
         # Run Action 7, 9, and 8 in sequence
-        if (_run_action7_inbox(session_manager) and
-            _run_action9_process_productive(session_manager) and
-            _run_action8_send_messages(session_manager)):
-
+        if (
+            _run_action7_inbox(session_manager)
+            and _run_action9_process_productive(session_manager)
+            and _run_action8_send_messages(session_manager)
+        ):
             # Build success message
             action_sequence: list[str] = []
             if run_action6:
@@ -280,3 +335,113 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
         print(f"CRITICAL ERROR during core workflow: {e}")
 
     return result
+
+
+# === TESTS ===
+
+
+def _test_gather_dna_matches_requires_ready_session() -> bool:
+    """Test that gather_dna_matches fails when session is not ready."""
+    from types import SimpleNamespace
+    from typing import cast
+
+    # Test with None session (cast to bypass type checking)
+    none_session: Any = None
+    result = gather_dna_matches(cast(SessionManager, none_session))
+    assert result is False, "Should fail with None session"
+
+    # Test with session_ready=False
+    mock_session = SimpleNamespace(session_ready=False)
+    result = gather_dna_matches(cast(SessionManager, mock_session))
+    assert result is False, "Should fail with session_ready=False"
+
+    return True
+
+
+def _test_run_core_workflow_requires_ready_session() -> bool:
+    """Test that run_core_workflow_action fails when session is not ready."""
+    from types import SimpleNamespace
+    from typing import cast
+
+    # Test with None session (cast to bypass type checking)
+    none_session: Any = None
+    result = run_core_workflow_action(cast(SessionManager, none_session))
+    assert result is False, "Should fail with None session"
+
+    # Test with session_ready=False
+    mock_session = SimpleNamespace(session_ready=False)
+    result = run_core_workflow_action(cast(SessionManager, mock_session))
+    assert result is False, "Should fail with session_ready=False"
+
+    return True
+
+
+def _test_srch_inbox_actn_decorator_applied() -> bool:
+    """Test that srch_inbox_actn has the require_interactive_session decorator."""
+    # The decorator wraps the function - check it blocks on None session
+    result = srch_inbox_actn(None)
+    assert result is False, "Decorator should block when session manager is None"
+    return True
+
+
+def _test_send_messages_action_decorator_applied() -> bool:
+    """Test that send_messages_action has the require_interactive_session decorator."""
+    result = send_messages_action(None)
+    assert result is False, "Decorator should block when session manager is None"
+    return True
+
+
+def _test_process_productive_messages_action_decorator_applied() -> bool:
+    """Test that process_productive_messages_action has the require_interactive_session decorator."""
+    result = process_productive_messages_action(None)
+    assert result is False, "Decorator should block when session manager is None"
+    return True
+
+
+def module_tests() -> bool:
+    """Run module tests for workflow_actions."""
+    from test_framework import TestSuite
+
+    suite = TestSuite("core.workflow_actions", "core/workflow_actions.py")
+
+    suite.run_test(
+        "gather_dna_matches session guard",
+        _test_gather_dna_matches_requires_ready_session,
+        "Ensures gather_dna_matches fails cleanly when session is not ready.",
+    )
+
+    suite.run_test(
+        "run_core_workflow session guard",
+        _test_run_core_workflow_requires_ready_session,
+        "Ensures run_core_workflow_action fails cleanly when session is not ready.",
+    )
+
+    suite.run_test(
+        "srch_inbox_actn decorator",
+        _test_srch_inbox_actn_decorator_applied,
+        "Ensures srch_inbox_actn blocks when session manager is None.",
+    )
+
+    suite.run_test(
+        "send_messages_action decorator",
+        _test_send_messages_action_decorator_applied,
+        "Ensures send_messages_action blocks when session manager is None.",
+    )
+
+    suite.run_test(
+        "process_productive_messages_action decorator",
+        _test_process_productive_messages_action_decorator_applied,
+        "Ensures process_productive_messages_action blocks when session manager is None.",
+    )
+
+    return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    import sys
+
+    from test_framework import create_standard_test_runner
+
+    run_comprehensive_tests = create_standard_test_runner(module_tests)
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
