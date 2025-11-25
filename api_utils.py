@@ -139,6 +139,156 @@ def _call_api_request(*args: Any, **kwargs: Any) -> Any:
     return api_request(*args, **kwargs)  # Call the API request function
 
 
+# === TRACK 5 STEP 3: APIManager.request() ADAPTER ===
+# Feature flag for gradual migration - set to True to use new APIManager.request()
+USE_API_MANAGER_REQUEST = True
+
+
+def _call_via_api_manager(
+    url: str,
+    session_manager: SessionManager,
+    method: str = "GET",
+    data: Optional[dict[str, Any]] = None,
+    json_data: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
+    timeout: Optional[int] = None,
+    use_csrf_token: bool = True,
+    api_description: str = "API Request",
+    force_text_response: bool = False,
+    allow_redirects: bool = True,
+    **_kwargs: Any,  # Absorb unused legacy params (driver, referer_url, cookie_jar, etc.)
+) -> Any:
+    """
+    Adapter function that uses APIManager.request() instead of legacy _api_req.
+
+    This function provides backward compatibility with the legacy _api_req interface
+    while using the new unified APIManager.request() method underneath.
+
+    Track 5 Step 3: Gradual migration of api_utils.py consumers to APIManager.
+
+    Args:
+        url: The URL to make the request to
+        session_manager: SessionManager instance (provides api_manager and browser_manager)
+        method: HTTP method (GET, POST, etc.)
+        data: Form data to send
+        json_data: JSON data to send
+        headers: Additional headers
+        timeout: Request timeout in seconds
+        use_csrf_token: Whether to include CSRF token
+        api_description: Description for logging
+        force_text_response: Force text response parsing
+        allow_redirects: Whether to follow redirects
+        **_kwargs: Absorb unused legacy parameters for compatibility
+
+    Returns:
+        Parsed JSON (dict/list), raw text (str), or None on failure
+    """
+    from core.api_manager import RequestConfig, RetryPolicy
+    from rate_limiter import get_adaptive_rate_limiter
+
+    # Build RequestConfig from legacy parameters
+    timeout_tuple = (30, timeout) if timeout else (30, 90)
+
+    config = RequestConfig(
+        url=url,
+        method=method,
+        data=data,
+        json_data=json_data,
+        headers=headers,
+        timeout=timeout_tuple,
+        use_csrf_token=use_csrf_token,
+        sync_cookies=True,  # Always sync cookies (replaces driver/cookie_jar logic)
+        retry_policy=RetryPolicy.API,  # Use standard API retry policy
+        force_text_response=force_text_response,
+        allow_redirects=allow_redirects,
+        api_description=api_description,
+    )
+
+    # Get rate limiter and browser manager from session
+    rate_limiter = get_adaptive_rate_limiter()
+    browser_manager = session_manager.browser_manager if hasattr(session_manager, "browser_manager") else None
+
+    # Make request via APIManager
+    result = session_manager.api_manager.request(
+        config=config,
+        browser_manager=browser_manager,
+        rate_limiter=rate_limiter,
+    )
+
+    # Return data in legacy format (None on failure, data on success)
+    if result.success:
+        return result.data
+    return None
+
+
+def _call_api_request_unified(
+    url: str,
+    driver: Any,  # Kept for signature compatibility, ignored when using APIManager
+    session_manager: SessionManager,
+    method: str = "GET",
+    data: Optional[dict[str, Any]] = None,
+    json_data: Optional[dict[str, Any]] = None,
+    json: Optional[dict[str, Any]] = None,
+    use_csrf_token: bool = True,
+    headers: Optional[dict[str, str]] = None,
+    referer_url: Optional[str] = None,
+    api_description: str = "API Call",
+    timeout: Optional[int] = None,
+    cookie_jar: Any = None,
+    allow_redirects: bool = True,
+    force_text_response: bool = False,
+    add_default_origin: bool = True,
+) -> Any:
+    """
+    Unified API request function that routes to APIManager.request() or legacy _api_req.
+
+    This function maintains full backward compatibility with the legacy _api_req
+    signature while enabling gradual migration to the new APIManager.request().
+
+    Set USE_API_MANAGER_REQUEST = True to use the new path.
+    """
+    if USE_API_MANAGER_REQUEST:
+        # Use new APIManager.request() path
+        effective_json = json if json is not None else json_data
+        return _call_via_api_manager(
+            url=url,
+            session_manager=session_manager,
+            method=method,
+            data=data,
+            json_data=effective_json,
+            headers=headers,
+            timeout=timeout,
+            use_csrf_token=use_csrf_token,
+            api_description=api_description,
+            force_text_response=force_text_response,
+            allow_redirects=allow_redirects,
+            # Legacy params absorbed by **_kwargs
+            driver=driver,
+            referer_url=referer_url,
+            cookie_jar=cookie_jar,
+            add_default_origin=add_default_origin,
+        )
+    # Use legacy _api_req path
+    return _call_api_request(
+        url=url,
+        driver=driver,
+        session_manager=session_manager,
+        method=method,
+        data=data,
+        json_data=json_data,
+        json=json,
+        use_csrf_token=use_csrf_token,
+        headers=headers,
+        referer_url=referer_url,
+        api_description=api_description,
+        timeout=timeout,
+        cookie_jar=cookie_jar,
+        allow_redirects=allow_redirects,
+        force_text_response=force_text_response,
+        add_default_origin=add_default_origin,
+    )
+
+
 @lru_cache(maxsize=1)
 def _get_gedcom_utils_module() -> ModuleType:
     """Lazy-load the gedcom_utils module to access date helpers."""

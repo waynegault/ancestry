@@ -509,6 +509,228 @@ class APIManager:
             logger.debug(f"{api_description} request successful (response object)")
             return response
 
+    # === UNIFIED REQUEST METHOD HELPERS (Track 5 Step 2) ===
+
+    @staticmethod
+    def _calculate_retry_delay(
+        attempt_num: int,
+        initial_delay: float,
+        backoff_factor: float,
+        max_delay: float,
+        jitter_seconds: float,
+    ) -> float:
+        """Calculate delay with exponential backoff and jitter."""
+        import random
+
+        if attempt_num <= 1:
+            return 0.0
+        base_delay = initial_delay * (backoff_factor ** (attempt_num - 2))
+        delay = min(base_delay, max_delay)
+        jitter = random.uniform(-jitter_seconds, jitter_seconds)
+        return max(0.0, delay + jitter)
+
+    def _apply_rate_limit_and_delay(
+        self,
+        config: RequestConfig,
+        rate_limiter: Optional["AdaptiveRateLimiter"],
+        endpoint_label: str,
+        attempt: int,
+        max_attempts: int,
+    ) -> float:
+        """Apply rate limiting and retry delay, return total wait time."""
+        total_wait = 0.0
+
+        # Apply rate limiting before request
+        if config.apply_rate_limiting and rate_limiter is not None:
+            total_wait += rate_limiter.wait(endpoint_label)
+
+        # Apply backoff delay for retries (after first attempt)
+        retry_delay = self._calculate_retry_delay(
+            attempt,
+            config.initial_delay,
+            config.backoff_factor,
+            config.max_delay,
+            config.jitter_seconds,
+        )
+        if retry_delay > 0:
+            logger.debug(
+                f"[{config.api_description}] Retry delay: {retry_delay:.2f}s (attempt {attempt}/{max_attempts})"
+            )
+            time.sleep(retry_delay)
+            total_wait += retry_delay
+
+        return total_wait
+
+    def _execute_single_request(
+        self,
+        config: RequestConfig,
+    ) -> RequestsResponse:
+        """Execute a single HTTP request and return response."""
+        request_headers = self._prepare_api_headers(config.headers, config.use_csrf_token, config.api_description)
+
+        return self._requests_session.request(
+            method=config.method.upper(),
+            url=config.url,
+            headers=request_headers,
+            data=config.data,
+            json=config.json_data,
+            timeout=config.timeout,
+            allow_redirects=config.allow_redirects,
+        )
+
+    def _handle_response_status(
+        self,
+        response: RequestsResponse,
+        config: RequestConfig,
+        rate_limiter: Optional["AdaptiveRateLimiter"],
+        endpoint_label: str,
+        attempt: int,
+        max_attempts: int,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Handle response status codes for retry logic.
+
+        Returns:
+            Tuple of (should_continue_retry, error_message)
+            - (True, None) means retry
+            - (False, None) means success
+            - (False, "error") means final failure
+        """
+        # Handle rate limiting
+        if response.status_code == 429:
+            if rate_limiter is not None:
+                rate_limiter.on_429_error(endpoint_label)
+            if attempt < max_attempts:
+                logger.warning(
+                    f"[{config.api_description}] 429 Rate Limited - will retry (attempt {attempt}/{max_attempts})"
+                )
+                return (True, None)
+            return (False, "Rate limited (429)")
+
+        # Handle retryable status codes
+        if response.status_code in config.retry_status_codes:
+            if attempt < max_attempts:
+                logger.warning(
+                    f"[{config.api_description}] Status {response.status_code} - "
+                    f"will retry (attempt {attempt}/{max_attempts})"
+                )
+                return (True, None)
+            return (False, f"HTTP {response.status_code}")
+
+        return (False, None)  # Success path
+
+    def _build_success_result(
+        self,
+        response: RequestsResponse,
+        config: RequestConfig,
+        endpoint_label: str,
+        attempt: int,
+        total_wait_time: float,
+        start_time: float,
+        rate_limiter: Optional["AdaptiveRateLimiter"],
+    ) -> RequestResult:
+        """Build successful RequestResult from response."""
+        # Notify rate limiter of success
+        if rate_limiter is not None:
+            rate_limiter.on_success()
+
+        # Parse response
+        if config.force_text_response:
+            data: Union[dict[str, Any], list[Any], str, bytes, None] = response.text
+        else:
+            parsed = self._parse_api_response(response, config.api_description)
+            data = parsed if not isinstance(parsed, RequestsResponse) else None
+
+        duration = time.perf_counter() - start_time
+        self._record_api_metrics(endpoint_label, config.method.upper(), response.status_code, "success", duration)
+
+        return RequestResult(
+            data=data,
+            response=response,
+            success=True,
+            status_code=response.status_code,
+            attempts=attempt,
+            total_wait_time=total_wait_time,
+            duration_seconds=duration,
+        )
+
+    def _build_failure_result(
+        self,
+        config: RequestConfig,
+        endpoint_label: str,
+        attempt: int,
+        total_wait_time: float,
+        start_time: float,
+        last_status_code: Optional[int],
+        last_error: Optional[str],
+    ) -> RequestResult:
+        """Build failure RequestResult after all attempts exhausted."""
+        duration = time.perf_counter() - start_time
+        self._record_api_metrics(endpoint_label, config.method.upper(), last_status_code, "failure", duration)
+
+        return RequestResult(
+            data=None,
+            response=None,
+            success=False,
+            status_code=last_status_code,
+            error=last_error,
+            attempts=attempt,
+            total_wait_time=total_wait_time,
+            duration_seconds=duration,
+        )
+
+    def _attempt_single_request(
+        self,
+        config: RequestConfig,
+        rate_limiter: Optional["AdaptiveRateLimiter"],
+        endpoint_label: str,
+        attempt: int,
+        max_attempts: int,
+    ) -> tuple[Optional[RequestsResponse], Optional[int], Optional[str], bool]:
+        """
+        Attempt a single request with error handling.
+
+        Returns:
+            Tuple of (response, status_code, error, should_break)
+            - response: Successful response or None
+            - status_code: Last seen status code
+            - error: Error message if failed
+            - should_break: True if retry loop should exit
+        """
+        try:
+            logger.debug(
+                f"[{config.api_description}] {config.method.upper()} {config.url} (attempt {attempt}/{max_attempts})"
+            )
+
+            response = self._execute_single_request(config)
+
+            # Check for retry conditions
+            should_retry, error = self._handle_response_status(
+                response, config, rate_limiter, endpoint_label, attempt, max_attempts
+            )
+            if should_retry:
+                return (None, response.status_code, None, False)  # Continue retrying
+            if error:
+                return (None, response.status_code, error, True)  # Break with error
+
+            # Success path - validate response
+            response.raise_for_status()
+            return (response, response.status_code, None, True)  # Success, break loop
+
+        except RequestException as e:
+            response_obj = getattr(e, "response", None)
+            status_code = getattr(response_obj, "status_code", None) if response_obj else None
+            logger.warning(f"[{config.api_description}] RequestException: {e} (attempt {attempt}/{max_attempts})")
+            should_break = attempt >= max_attempts
+            return (None, status_code, str(e), should_break)
+
+        except Exception as e:
+            logger.error(
+                f"[{config.api_description}] Unexpected error: {e} (attempt {attempt}/{max_attempts})",
+                exc_info=True,
+            )
+            return (None, None, str(e), True)  # Don't retry unexpected errors
+
     # === UNIFIED REQUEST METHOD (Track 5 Step 2) ===
 
     def request(
@@ -544,155 +766,51 @@ class APIManager:
             if result.success:
                 print(result.json)
         """
-        import random
-
         start_time = time.perf_counter()
         endpoint_label = config.endpoint_label or self.sanitize_endpoint_label(config.url)
         total_wait_time = 0.0
         attempt = 0
         last_error: Optional[str] = None
         last_status_code: Optional[int] = None
+        max_attempts = config.max_retries + 1
 
         # Sync cookies from browser if requested and available
         if config.sync_cookies and browser_manager is not None:
             self.sync_cookies_from_browser(browser_manager)
 
-        # Calculate delays for each attempt
-        def get_delay(attempt_num: int) -> float:
-            """Calculate delay with exponential backoff and jitter."""
-            if attempt_num <= 1:
-                return 0.0
-            base_delay = config.initial_delay * (config.backoff_factor ** (attempt_num - 2))
-            delay = min(base_delay, config.max_delay)
-            jitter = random.uniform(-config.jitter_seconds, config.jitter_seconds)
-            return max(0.0, delay + jitter)
-
         # Retry loop
-        max_attempts = config.max_retries + 1
         while attempt < max_attempts:
             attempt += 1
 
-            # Apply rate limiting before request
-            if config.apply_rate_limiting and rate_limiter is not None:
-                wait_time = rate_limiter.wait(endpoint_label)
-                total_wait_time += wait_time
+            # Apply rate limiting and retry delay
+            total_wait_time += self._apply_rate_limit_and_delay(
+                config, rate_limiter, endpoint_label, attempt, max_attempts
+            )
 
-            # Apply backoff delay for retries (after first attempt)
-            retry_delay = get_delay(attempt)
-            if retry_delay > 0:
-                logger.debug(
-                    f"[{config.api_description}] Retry delay: {retry_delay:.2f}s (attempt {attempt}/{max_attempts})"
-                )
-                time.sleep(retry_delay)
-                total_wait_time += retry_delay
+            # Attempt request with error handling
+            response, status_code, error, should_break = self._attempt_single_request(
+                config, rate_limiter, endpoint_label, attempt, max_attempts
+            )
 
-            try:
-                # Prepare headers
-                request_headers = self._prepare_api_headers(
-                    config.headers, config.use_csrf_token, config.api_description
-                )
+            # Update tracking state
+            if status_code is not None:
+                last_status_code = status_code
+            if error is not None:
+                last_error = error
 
-                # Make the request
-                logger.debug(
-                    f"[{config.api_description}] {config.method.upper()} {config.url} "
-                    f"(attempt {attempt}/{max_attempts})"
+            # Check if we got a successful response
+            if response is not None:
+                return self._build_success_result(
+                    response, config, endpoint_label, attempt, total_wait_time, start_time, rate_limiter
                 )
 
-                response = self._requests_session.request(
-                    method=config.method.upper(),
-                    url=config.url,
-                    headers=request_headers,
-                    data=config.data,
-                    json=config.json_data,
-                    timeout=config.timeout,
-                    allow_redirects=config.allow_redirects,
-                )
-
-                last_status_code = response.status_code
-
-                # Handle rate limiting
-                if response.status_code == 429:
-                    if rate_limiter is not None:
-                        rate_limiter.on_429_error(endpoint_label)
-                    if attempt < max_attempts:
-                        logger.warning(
-                            f"[{config.api_description}] 429 Rate Limited - will retry "
-                            f"(attempt {attempt}/{max_attempts})"
-                        )
-                        continue
-                    last_error = "Rate limited (429)"
-                    break
-
-                # Handle retryable status codes
-                if response.status_code in config.retry_status_codes:
-                    if attempt < max_attempts:
-                        logger.warning(
-                            f"[{config.api_description}] Status {response.status_code} - "
-                            f"will retry (attempt {attempt}/{max_attempts})"
-                        )
-                        continue
-                    last_error = f"HTTP {response.status_code}"
-                    break
-
-                # Check for success
-                response.raise_for_status()
-
-                # Notify rate limiter of success
-                if rate_limiter is not None:
-                    rate_limiter.on_success()
-
-                # Parse response
-                if config.force_text_response:
-                    data: Union[dict[str, Any], list[Any], str, bytes, None] = response.text
-                else:
-                    parsed = self._parse_api_response(response, config.api_description)
-                    data = parsed if not isinstance(parsed, RequestsResponse) else None
-
-                duration = time.perf_counter() - start_time
-                self._record_api_metrics(
-                    endpoint_label, config.method.upper(), response.status_code, "success", duration
-                )
-
-                return RequestResult(
-                    data=data,
-                    response=response,
-                    success=True,
-                    status_code=response.status_code,
-                    attempts=attempt,
-                    total_wait_time=total_wait_time,
-                    duration_seconds=duration,
-                )
-
-            except RequestException as e:
-                response_obj = getattr(e, "response", None)
-                if response_obj is not None:
-                    last_status_code = getattr(response_obj, "status_code", last_status_code)
-                last_error = str(e)
-                logger.warning(f"[{config.api_description}] RequestException: {e} (attempt {attempt}/{max_attempts})")
-                if attempt >= max_attempts:
-                    break
-
-            except Exception as e:
-                last_error = str(e)
-                logger.error(
-                    f"[{config.api_description}] Unexpected error: {e} (attempt {attempt}/{max_attempts})",
-                    exc_info=True,
-                )
-                break  # Don't retry on unexpected errors
+            # Exit loop if we shouldn't retry
+            if should_break:
+                break
 
         # All attempts exhausted
-        duration = time.perf_counter() - start_time
-        self._record_api_metrics(endpoint_label, config.method.upper(), last_status_code, "failure", duration)
-
-        return RequestResult(
-            data=None,
-            response=None,
-            success=False,
-            status_code=last_status_code,
-            error=last_error,
-            attempts=attempt,
-            total_wait_time=total_wait_time,
-            duration_seconds=duration,
+        return self._build_failure_result(
+            config, endpoint_label, attempt, total_wait_time, start_time, last_status_code, last_error
         )
 
     def make_api_request(
