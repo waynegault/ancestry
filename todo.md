@@ -4,9 +4,34 @@
 
 ---
 
-## Session Summary (November 27, 2025)
+## Session Summary (November 25, 2025)
 
 ### ✅ Completed This Session
+
+1. **Fixed Circular Import in `actions/__init__.py`**
+   - Changed direct import of `coord` from `action6_gather` to lazy import using `__getattr__`
+   - Prevents ImportError when `action6_gather` imports from `actions.gather.metrics`
+   - Uses `TYPE_CHECKING` for static type analysis
+   - All 115 test modules pass
+
+2. **API Utils Consolidation - Step 1 Inventory (Track 5)**
+   - Catalogued all 14 `call_*` API functions in `api_utils.py` (3780 lines)
+   - Documented core request logic in `utils.py` (`_api_req`, `_api_req_impl`, `ApiRequestConfig`)
+   - Identified 14 import sites across 6 modules
+   - Current `api_manager.py` has connection pooling and cookie sync but no unified `request()` method
+
+### Assessment: Did We Do the Right Things?
+
+**Yes** - Track 5 Step 1 provides foundation for API consolidation:
+- Complete function inventory enables targeted migration
+- Understanding of request flow guides `APIManager.request()` design
+- Import site mapping ensures no consumers are missed
+
+---
+
+## Previous Session Summary (November 27, 2025)
+
+### ✅ Completed That Session
 
 1. **Cache Stack Unification - Step 3 Protocol Integration (Track 4)**
    - Updated `cache.py` BaseCacheModule to implement CacheBackend protocol methods
@@ -200,19 +225,62 @@
 
 ---
 
-### 5. API Utils Consolidation [NOT STARTED]
+### 5. API Utils Consolidation [IN PROGRESS - Step 1 Complete]
 
 > **Goal**: Single HTTP pipeline via `core/api_manager.py`
 > **Effort**: ~2-3 sessions | **Priority**: Medium
 
-**Problem**: `api_utils.py` (3779 lines) duplicates rate limiting, retry, and cookie sync logic that should live in `SessionManager.api_manager`.
+**Problem**: `api_utils.py` (3780 lines) duplicates rate limiting, retry, and cookie sync logic that should live in `SessionManager.api_manager`.
 
-| Step | Description |
-|------|-------------|
-| 1 | Catalogue all `_api_req` consumers (Actions 6–10, messaging, telemetry) |
-| 2 | Extend `APIManager` with parameterized endpoints, streaming, retry policies |
-| 3 | Migrate callers to `session_manager.api_manager.request()` |
-| 4 | Trim `api_utils.py` to parsing/transform helpers only |
+#### Step 1: Consumer Inventory (COMPLETE)
+
+**API Functions in `api_utils.py` (14 total)**:
+| Function | Used By | Purpose |
+|----------|---------|---------|
+| `call_suggest_api` | api_search_utils | Search suggestions |
+| `call_facts_user_api` | api_search_utils | User facts |
+| `call_getladder_api` | api_search_utils | Relationship ladder HTML |
+| `call_discovery_relationship_api` | api_search_core | Discovery relationships |
+| `call_treesui_list_api` | api_search_core | Tree UI list |
+| `call_newfamilyview_api` | api_search_utils | New family view |
+| `call_relation_ladder_with_labels_api` | api_search_core, action6_gather | Relationship labels |
+| `call_send_message_api` | action8_messaging, action9 | Send messages |
+| `call_profile_details_api` | Various | Profile details |
+| `call_header_trees_api_for_tree_id` | Various | Tree ID lookup |
+| `call_tree_owner_api` | Various | Tree owner lookup |
+| `call_enhanced_api` | Various | Enhanced API wrapper |
+| `call_edit_relationships_api` | api_search_utils | Edit relationships |
+| `call_relationship_ladder_api` | Various | Relationship ladder |
+
+**Core Request Logic in `utils.py`**:
+- `_api_req()` - Legacy positional parameter wrapper (line 2442)
+- `_api_req_impl()` - Main implementation with `ApiRequestConfig` (line 2493)
+- `_prepare_api_request()` - Request preparation (line 1768)
+- `_execute_api_request()` - Request execution with retries (line 1856)
+- `ApiRequestConfig` dataclass - Configuration container (line 477)
+
+**Current `core/api_manager.py` (909 lines)**:
+- Connection pooling setup
+- Cookie synchronization (`sync_cookies_from_browser`)
+- User identifier retrieval (profile ID, UUID, tree ID)
+- Metrics recording (`_record_api_metrics`)
+- Session recovery logic
+- **Missing**: Unified `request()` method that integrates with rate limiting
+
+**Consumers (14 import sites)**:
+- `api_search_utils.py` - 4 imports
+- `api_search_core.py` - 2 imports
+- `action6_gather.py` - 2 imports (lazy)
+- `action8_messaging.py` - 1 import
+- `action9_process_productive.py` - 1 import (lazy)
+- `core/session_manager.py` - 2 imports (lazy)
+
+| Step | Status | Description |
+|------|--------|-------------|
+| 1 | ✅ | Catalogue all `_api_req` consumers (Actions 6–10, messaging, telemetry) |
+| 2 | 🔲 | Extend `APIManager` with parameterized endpoints, streaming, retry policies |
+| 3 | 🔲 | Migrate callers to `session_manager.api_manager.request()` |
+| 4 | 🔲 | Trim `api_utils.py` to parsing/transform helpers only |
 
 ---
 
