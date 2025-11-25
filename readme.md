@@ -18,13 +18,15 @@ This project automates genealogical research workflows on Ancestry.com, includin
 ## Key Features
 
 - **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 58 test modules with 100% standardized test infrastructure
+- **Comprehensive Testing**: 110 test modules with 100% standardized test infrastructure
 - **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
 - **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
 - **Developer Tools**: Code graph visualization, centralized test utilities, performance profiling
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Message Types Module Extraction (Nov 25)** - Created `messaging/message_types.py` with message type constants (`MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`), state machine logic (`determine_next_message_type()`), and 7 tests. Updated `messaging/__init__.py` to export all 19 helpers.
+- ✅ **Messaging Package Documentation (Nov 25)** - Documented `messaging/message_types.py` in README.md. Assessed template loading - not extracted due to tight DB coupling (by design).
 - ✅ **Messaging Workflow Helpers Package (Nov 25)** - Created `messaging/workflow_helpers.py` with 12 shared helper functions (enum-aware column extraction, conversation state management, engagement timing, tree detection) and 13 tests. Actions 7–9 now import from this module, removing ~200 lines of duplicated code.
 - ✅ **CLI Method Visibility Fix (Nov 25)** - Renamed protected helper methods in `cli/maintenance.py` (`_format_cache_stat_value`, `_render_retention_targets`, etc.) to public methods so tests comply with Pyright access rules without needing `type: ignore` suppressions.
 - ✅ **Test Suite Hardening (Nov 24)** - Converted the final smoke-style tests into behavioral coverage: gedcom_search_utils.py now validates filtering and GEDCOM fallback logic, core/error_handling.py exercises safe_execute context propagation plus circuit breaker transitions, and selenium_utils.py drives safe_click, CDP user-agent overrides, cookie export, and element helper guards. Updated the relationship_utils StubTag/StubIndi doubles to dataclasses to satisfy Ruff B903.
@@ -169,7 +171,24 @@ The `messaging/` package centralizes workflow utilities shared across Actions 7�
 - `has_message_after_tree_creation()` - Verify message timing relative to tree
 - `detect_status_change_to_in_tree()` - Detect IN_TREE status transitions
 
-The module includes 13 `TestSuite` tests. Remaining nav-guard, template-loading utilities tracked in `todo.md`.
+The module includes 13 `TestSuite` tests.
+
+#### Message Types & State Machine (`messaging/message_types.py`)
+
+The `messaging/message_types.py` module manages message type constants and the state machine for the messaging workflow:
+
+**Constants:**
+- `MESSAGE_TYPES` - Canonical message type enumeration (12 types: Initial_Contact, Follow_Up, Final_Reminder, etc.)
+- `MESSAGE_TYPES_ACTION8` - Alias for backward compatibility
+- `MESSAGE_TRANSITION_TABLE` - State machine defining valid transitions between message types
+- `CORE_REQUIRED_TEMPLATE_KEYS` - Required keys for message template validation
+
+**State Machine Functions:**
+- `determine_next_message_type(last_type, is_in_tree, is_first)` - Returns the next message type based on current state and tree status
+- `is_terminal_message_type(message_type)` - Check if a message type is terminal (no further messages)
+- `get_message_type_category(message_type)` - Categorize message type (In_Tree, Out_Tree, Desist)
+
+The module includes 7 `TestSuite` tests covering all state transitions.
 
 ### Action 10: GEDCOM Analysis
 Analyze GEDCOM files and score potential matches.
@@ -202,7 +221,7 @@ python action10.py
 ## Testing
 
 ```bash
-# Run all tests (57 modules, 457 tests)
+# Run all tests (110 modules, 911 tests)
 python run_all_tests.py
 
 # Run with parallel execution
@@ -241,7 +260,7 @@ All test modules use centralized helpers from `test_utilities.py` to eliminate d
 
 **Test Infrastructure:**
 - `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
-- All 58 test modules use this pattern for uniform output and exit codes
+- All 110 test modules use this pattern for uniform output and exit codes
 
 **Usage Example:**
 ```python

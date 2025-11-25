@@ -36,9 +36,9 @@ _LOGGER = logging.getLogger(__name__)
 # Use Any for the enum type since we access .OUT/.IN dynamically
 MessageDirectionEnum: Any = None
 try:
-    from database import MessageDirectionEnum as _MDE
+    from database import MessageDirectionEnum as _MsgDirEnum
 
-    MessageDirectionEnum = _MDE
+    MessageDirectionEnum = _MsgDirEnum
 except Exception:  # pragma: no cover - optional dependency
     pass
 

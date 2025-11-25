@@ -21,7 +21,16 @@
    - Removed ~80 lines of code from `action8_messaging.py`
    - Updated `messaging/__init__.py` to export all message type constants
 
-3. **Action 10 GEDCOM/API Consolidation** (prior session, verified working)
+3. **Messaging Package Documentation**
+   - Documented `messaging/message_types.py` in README.md
+   - Assessed template loading - not extracted (tight DB coupling by design)
+   - Marked Messaging/Inbox Helpers Extraction track as COMPLETE
+
+4. **Pylance Configuration**
+   - Added `python.analysis.extraPaths` to `.vscode/settings.json`
+   - Fixed import resolution errors across messaging package
+
+5. **Action 10 GEDCOM/API Consolidation** (prior session, verified working)
    - Merged `action10_wrapper.py` into `action10.py`
    - Exposed `ComparisonConfig`/`ComparisonResults` as public dataclasses
    - Ported 11 regression tests into action10 module
@@ -60,7 +69,7 @@
 
 ---
 
-### 2. 🔄 Messaging/Inbox Helpers Extraction [IN PROGRESS - 85%]
+### 2. ✅ Messaging/Inbox Helpers Extraction [COMPLETE]
 
 > **Goal**: Reduce Actions 7–9 to <2k lines each via shared `messaging/` package
 
@@ -68,8 +77,9 @@
 |------|--------|-------------|
 | Step 1 | ✅ | `build_safe_column_value` + enum coercion helpers |
 | Step 2 | ✅ | Conversation state & engagement timing helpers |
-| Step 3 | ⏳ | Nav-guard helpers (already in `core/session_guards.py`) |
+| Step 3 | ✅ | Nav-guard helpers (already in `core/session_guards.py`) |
 | Step 4 | ✅ | Message type constants + state machine |
+| Step 5 | ✅ | Documentation in README.md |
 
 **Completed helpers** (in `messaging/workflow_helpers.py`):
 - `safe_column_value()`, `build_safe_column_value()` - enum-aware column extraction
@@ -86,9 +96,8 @@
 - `determine_next_message_type()` - state machine logic
 - `is_terminal_message_type()`, `get_message_type_category()` - utility functions
 
-**Remaining work**:
-- [ ] Document messaging/ package in README.md
-- [ ] Assess if template loading can be extracted (tight DB coupling)
+**Not extracted** (by design):
+- Template loading (`load_message_templates()`) - Tight DB coupling via `session_manager.get_db_conn_context()`. Not worth extracting as it requires session infrastructure.
 
 ---
 
@@ -207,6 +216,7 @@ pyright
 
 ## Recommended Next Steps
 
-1. **Complete messaging extraction** (Steps 3-4) - Finish nav-guard and template helpers
-2. **Start cache unification** - High-impact fix for import cycle issues
-3. **API consolidation** - After cache is stable, tackle HTTP pipeline
+1. **Start cache unification** - High-impact fix for import cycle issues (Track 4)
+2. **API consolidation** - After cache is stable, tackle HTTP pipeline (Track 5)
+3. **AI Interface decomposition** - Provider adapters and prompt templating (Track 6)
+4. **Test coverage gaps** - Add tests for remaining modules (Track 7)
