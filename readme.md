@@ -18,13 +18,14 @@ This project automates genealogical research workflows on Ancestry.com, includin
 ## Key Features
 
 - **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 114 test modules with 100% standardized test infrastructure
+- **Comprehensive Testing**: 115 test modules with 100% standardized test infrastructure
 - **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
 - **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
 - **Developer Tools**: Code graph visualization, centralized test utilities, performance profiling
 
 ## Recent Improvements (November 2025)
 
+- ✅ **CacheBackend Protocol (Nov 25)** - Created `core/cache_backend.py` with unified cache interface: `CacheBackend` and `ScopedCacheBackend` protocols, `CacheStats`/`CacheHealth` dataclasses, and `CacheFactory` for centralized backend management. Step 2 of cache stack unification (Track 4).
 - ✅ **Cache Stack Inventory (Nov 25)** - Completed Step 1 of Track 4 (Cache Unification): analyzed 6 cache modules (5,678 lines), identified 28 import sites, documented 3 import cycles, and created consumer mapping. Ready for Step 2: Design `CacheBackend` protocol.
 - ✅ **Message Types Module Extraction (Nov 25)** - Created `messaging/message_types.py` with message type constants (`MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`), state machine logic (`determine_next_message_type()`), and 7 tests. Updated `messaging/__init__.py` to export all 19 helpers.
 - ✅ **Messaging Package Documentation (Nov 25)** - Documented `messaging/message_types.py` in README.md. Assessed template loading - not extracted due to tight DB coupling (by design).
@@ -222,7 +223,7 @@ python action10.py
 ## Testing
 
 ```bash
-# Run all tests (114 modules)
+# Run all tests (115 modules)
 python run_all_tests.py
 
 # Run with parallel execution
@@ -261,7 +262,7 @@ All test modules use centralized helpers from `test_utilities.py` to eliminate d
 
 **Test Infrastructure:**
 - `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
-- All 114 test modules use this pattern for uniform output and exit codes
+- All 115 test modules use this pattern for uniform output and exit codes
 
 **Usage Example:**
 ```python
