@@ -60,7 +60,10 @@ import time
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+if TYPE_CHECKING:
+    from core.cache_backend import CacheHealth, CacheStats
 
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
 from memory_utils import ObjectPool
@@ -71,6 +74,7 @@ from memory_utils import ObjectPool
 @dataclass
 class CacheableObject:
     """Example cacheable object for pooling."""
+
     value: Optional[Any] = None
 
 
@@ -119,11 +123,9 @@ class PerformanceCache:
             "total_size_mb": 0.0,
             "memory_pressure_cleanups": 0,
             "adaptive_resizes": 0,
-            "dependency_invalidations": 0
+            "dependency_invalidations": 0,
         }
-        logger.debug(
-            f"Performance cache initialized with max size {max_memory_cache_size} (Phase 7.3.1 Enhanced)"
-        )
+        logger.debug(f"Performance cache initialized with max size {max_memory_cache_size} (Phase 7.3.1 Enhanced)")
 
         try:
             from cache_retention import auto_enforce_retention
@@ -147,6 +149,7 @@ class PerformanceCache:
         """Calculate approximate memory usage in MB."""
         try:
             import sys
+
             total_size = 0
             for key, value in self._memory_cache.items():
                 total_size += sys.getsizeof(key) + sys.getsizeof(value)
@@ -213,9 +216,9 @@ class PerformanceCache:
                 self._cache_timestamps.keys(),
                 key=lambda k: (
                     self._cache_access_times.get(k, 0),  # Last access time (primary)
-                    self._cache_hit_counts.get(k, 0),    # Hit frequency (secondary)
-                    -self._cache_sizes.get(k, 0)         # Size (larger items evicted first, hence negative)
-                )
+                    self._cache_hit_counts.get(k, 0),  # Hit frequency (secondary)
+                    -self._cache_sizes.get(k, 0),  # Size (larger items evicted first, hence negative)
+                ),
             )[:num_to_remove]
 
             # Remove entries and their dependencies
@@ -311,6 +314,7 @@ class PerformanceCache:
         # Calculate and store entry size
         try:
             import sys
+
             entry_size = sys.getsizeof(value)
             self._cache_sizes[cache_key] = entry_size
         except Exception:
@@ -336,9 +340,7 @@ class PerformanceCache:
                     pickle.dump(value, f)
                 logger.debug(f"Cache SET (disk): {cache_key[:12]}...")
             except (pickle.PicklingError, TypeError) as e:
-                logger.debug(
-                    f"Skipping disk cache for non-serializable data {cache_key}: {e}"
-                )
+                logger.debug(f"Skipping disk cache for non-serializable data {cache_key}: {e}")
             except Exception as e:
                 logger.warning(f"Failed to save disk cache {cache_key}: {e}")
 
@@ -346,15 +348,98 @@ class PerformanceCache:
         self._cleanup_old_entries()
         logger.debug(f"Cache SET: {cache_key[:12]}...")
 
+    # CacheBackend Protocol Methods
+    # These provide protocol-compatible interface for CacheFactory integration
+
+    def delete(self, key: str) -> bool:
+        """CacheBackend protocol: Delete value by key."""
+        return self._remove_cache_entry(key) > 0
+
+    def clear(self) -> int:
+        """CacheBackend protocol: Clear entire cache."""
+        count = len(self._memory_cache)
+        self._memory_cache.clear()
+        self._cache_timestamps.clear()
+        self._cache_hit_counts.clear()
+        self._cache_access_times.clear()
+        self._cache_sizes.clear()
+        self._cache_dependencies.clear()
+        return count
+
+    def get_stats_typed(self) -> "CacheStats":
+        """CacheBackend protocol: Return standardized CacheStats."""
+        from core.cache_backend import CacheStats
+
+        stats = self._cache_stats
+        return CacheStats(
+            name="performance_cache",
+            kind="memory+disk",
+            hits=stats.get("hits", 0),
+            misses=stats.get("misses", 0),
+            entries=len(self._memory_cache),
+            evictions=stats.get("evictions", 0),
+            size_bytes=int(self._calculate_memory_usage() * 1024 * 1024),
+            max_size_bytes=self._max_size * 1024,  # Approximate bytes per entry
+        )
+
+    def get_health_typed(self) -> "CacheHealth":
+        """CacheBackend protocol: Return standardized CacheHealth."""
+        from core.cache_backend import CacheHealth
+
+        stats = self.get_stats_typed()
+        recommendations = []
+
+        # Check memory pressure
+        pressure = self._calculate_memory_pressure()
+        if pressure > 0.9:
+            recommendations.append("High memory pressure - consider clearing old entries")
+
+        # Check hit rate
+        if stats.hit_rate < 50 and (stats.hits + stats.misses) > 100:
+            recommendations.append("Low hit rate - review caching strategy")
+
+        status = "healthy"
+        message = "Performance cache operating normally"
+
+        if recommendations:
+            status = "degraded"
+            message = "; ".join(recommendations)
+
+        return CacheHealth(
+            name="performance_cache",
+            status=status,
+            message=message,
+            hit_rate=stats.hit_rate,
+            recommendations=recommendations,
+        )
+
+    def warm(self, data: dict[str, Any]) -> int:
+        """CacheBackend protocol: Pre-populate cache with data."""
+        count = 0
+        for key, value in data.items():
+            self.set(key, value, disk_cache=False)
+            count += 1
+        return count
+
 
 # === GLOBAL CACHE INSTANCE ===
 _performance_cache = PerformanceCache()
+
+# Register with CacheFactory for unified monitoring
+try:
+    from core.cache_backend import CacheFactory
+
+    CacheFactory.register_backend("performance_cache", _performance_cache)
+except Exception as e:
+    logger.debug(f"CacheFactory registration skipped: {e}")
 
 
 # === PERFORMANCE DECORATORS ===
 
 
-def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def cache_gedcom_results(
+    ttl: int = 3600, disk_cache: bool = True
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Cache GEDCOM analysis results for dramatic performance improvement.
     Target: Reduce action10 from 98.64s to ~20s through intelligent caching.
@@ -364,9 +449,7 @@ def cache_gedcom_results(ttl: int = 3600, disk_cache: bool = True) -> Callable[[
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Generate cache key
-            cache_key = _performance_cache._generate_cache_key(
-                func.__name__, *args, **kwargs
-            )
+            cache_key = _performance_cache._generate_cache_key(func.__name__, *args, **kwargs)
 
             # Try to get from cache
             cached_result = _performance_cache.get(cache_key)
@@ -452,11 +535,7 @@ def progressive_processing(
                 for i in range(0, len(data), chunk_size):
                     chunk = data[i : i + chunk_size]
                     chunk_result = func(chunk, *args[1:], **kwargs)
-                    results.extend(
-                        chunk_result
-                        if isinstance(chunk_result, list)
-                        else [chunk_result]
-                    )
+                    results.extend(chunk_result if isinstance(chunk_result, list) else [chunk_result])
 
                     # Progress callback
                     if progress_callback:
@@ -512,7 +591,9 @@ def get_performance_cache_stats() -> dict[str, Any]:
     return stats
 
 
-def warm_performance_cache(gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None) -> None:
+def warm_performance_cache(
+    gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None
+) -> None:
     """
     Intelligent cache warming with multiple strategies.
 
@@ -559,7 +640,7 @@ def _warm_metadata_cache(gedcom_path: str, path: Path) -> None:
             "size": path.stat().st_size,
             "modified": path.stat().st_mtime,
             "loaded_at": time.time(),
-            "size_mb": path.stat().st_size / (1024 * 1024)
+            "size_mb": path.stat().st_size / (1024 * 1024),
         }
         _performance_cache.set(cache_key, metadata, disk_cache=True)
         logger.debug(f"Warmed metadata cache for {gedcom_path}")
@@ -571,19 +652,14 @@ def _warm_common_queries_cache(gedcom_path: str) -> None:
         ("surname_index", gedcom_path),
         ("birth_year_index", gedcom_path),
         ("gender_index", gedcom_path),
-        ("location_index", gedcom_path)
+        ("location_index", gedcom_path),
     ]
 
     for pattern, path in common_patterns:
         cache_key = _performance_cache._generate_cache_key(pattern, path)
         if cache_key not in _performance_cache._memory_cache:
             # Create placeholder data for common indexes
-            placeholder_data = {
-                "pattern": pattern,
-                "path": path,
-                "warmed_at": time.time(),
-                "placeholder": True
-            }
+            placeholder_data = {"pattern": pattern, "path": path, "warmed_at": time.time(), "placeholder": True}
             _performance_cache.set(cache_key, placeholder_data, disk_cache=True)
 
     logger.debug(f"Warmed common queries cache for {gedcom_path}")
@@ -594,18 +670,13 @@ def _warm_relationships_cache(gedcom_path: str) -> None:
     relationship_patterns = [
         ("parent_child_map", gedcom_path),
         ("spouse_map", gedcom_path),
-        ("sibling_map", gedcom_path)
+        ("sibling_map", gedcom_path),
     ]
 
     for pattern, path in relationship_patterns:
         cache_key = _performance_cache._generate_cache_key(pattern, path)
         if cache_key not in _performance_cache._memory_cache:
-            placeholder_data = {
-                "pattern": pattern,
-                "path": path,
-                "warmed_at": time.time(),
-                "placeholder": True
-            }
+            placeholder_data = {"pattern": pattern, "path": path, "warmed_at": time.time(), "placeholder": True}
             # Set dependencies for relationship data
             dependencies = [_performance_cache._generate_cache_key("gedcom_metadata", path)]
             _performance_cache.set(cache_key, placeholder_data, disk_cache=True, dependencies=dependencies)
@@ -624,14 +695,10 @@ def get_cache_stats() -> dict[str, Any]:
         "adaptive_sizing_enabled": _performance_cache._adaptive_sizing,
         "dependency_entries": len(_performance_cache._cache_dependencies),
         "oldest_entry": (
-            min(_performance_cache._cache_timestamps.values())
-            if _performance_cache._cache_timestamps
-            else None
+            min(_performance_cache._cache_timestamps.values()) if _performance_cache._cache_timestamps else None
         ),
         "newest_entry": (
-            max(_performance_cache._cache_timestamps.values())
-            if _performance_cache._cache_timestamps
-            else None
+            max(_performance_cache._cache_timestamps.values()) if _performance_cache._cache_timestamps else None
         ),
     }
 
@@ -671,7 +738,7 @@ def _calculate_cache_health(stats: dict[str, Any]) -> dict[str, Any]:
         "memory_health": "good",
         "hit_rate_health": "good",
         "turnover_health": "good",
-        "recommendations": recommendations
+        "recommendations": recommendations,
     }
 
     # Memory health
@@ -764,6 +831,7 @@ class FastMockDataFactory:
 
 
 # --- Individual Test Functions ---
+
 
 def test_performance_cache_initialization() -> bool:
     """Test PerformanceCache module initialization."""
@@ -942,4 +1010,5 @@ if __name__ == "__main__":
     print("🗂️ Running PerformanceCache Management & Optimization comprehensive test suite...")
     success = run_comprehensive_tests()
     import sys
+
     sys.exit(0 if success else 1)

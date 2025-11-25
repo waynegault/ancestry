@@ -22,6 +22,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+from core.cache_backend import CacheFactory, CacheHealth, CacheStats
 from observability.metrics_registry import metrics
 from standard_imports import setup_module
 
@@ -257,8 +258,7 @@ class UnifiedCacheManager:
             elif service is not None and endpoint is not None:
                 # Invalidate all entries for specific service + endpoint
                 keys_to_delete = [
-                    (k, v) for k, v in self._entries.items()
-                    if v.service == service and v.endpoint == endpoint
+                    (k, v) for k, v in self._entries.items() if v.service == service and v.endpoint == endpoint
                 ]
                 for k, v in keys_to_delete:
                     self._emit_cache_operation(v.service, v.endpoint, "invalidate")
@@ -268,10 +268,7 @@ class UnifiedCacheManager:
                 count = len(keys_to_delete)
             elif service is not None:
                 # Invalidate all entries for service
-                keys_to_delete = [
-                    (k, v) for k, v in self._entries.items()
-                    if v.service == service
-                ]
+                keys_to_delete = [(k, v) for k, v in self._entries.items() if v.service == service]
                 for k, v in keys_to_delete:
                     self._emit_cache_operation(v.service, v.endpoint, "invalidate")
                     del self._entries[k]
@@ -317,9 +314,7 @@ class UnifiedCacheManager:
                         stats["total_misses"] += ep_stats["misses"]
 
                 total = stats["total_hits"] + stats["total_misses"]
-                stats["hit_rate_percent"] = (
-                    (stats["total_hits"] / total * 100) if total > 0 else 0.0
-                )
+                stats["hit_rate_percent"] = (stats["total_hits"] / total * 100) if total > 0 else 0.0
                 return stats
 
             # Return overall statistics
@@ -371,6 +366,76 @@ class UnifiedCacheManager:
             }
             logger.info(f"Cache cleared: {count} entries")
             return count
+
+    # CacheBackend Protocol Methods
+    # These provide protocol-compatible interface for CacheFactory integration
+
+    def get_by_key(self, key: str) -> Optional[Any]:
+        """CacheBackend protocol: Get value by key only (uses 'generic' service/endpoint)."""
+        return self.get("generic", "default", key)
+
+    def set_by_key(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """CacheBackend protocol: Set value by key only (uses 'generic' service/endpoint)."""
+        try:
+            self.set("generic", "default", key, value, ttl)
+            return True
+        except Exception:
+            return False
+
+    def delete(self, key: str) -> bool:
+        """CacheBackend protocol: Delete value by key."""
+        count = self.invalidate(key=key)
+        return count > 0
+
+    def get_stats_typed(self) -> CacheStats:
+        """CacheBackend protocol: Return standardized CacheStats."""
+        stats = self.get_stats()
+        global_stats = stats.get("global", {})
+        return CacheStats(
+            name="unified_cache",
+            kind="memory",
+            hits=global_stats.get("hits", 0),
+            misses=global_stats.get("misses", 0),
+            entries=stats.get("total_entries", 0),
+            max_size_bytes=self._max_entries,  # Using entries as proxy for size
+        )
+
+    def get_health_typed(self) -> CacheHealth:
+        """CacheBackend protocol: Return standardized CacheHealth."""
+        stats = self.get_stats_typed()
+        recommendations = []
+
+        # Check utilization (entries as percentage of max)
+        utilization_pct = (stats.entries / self._max_entries * 100) if self._max_entries > 0 else 0
+        if utilization_pct > 90:
+            recommendations.append("Consider increasing max_entries")
+
+        # Check hit rate
+        if stats.hit_rate < 50 and (stats.hits + stats.misses) > 100:
+            recommendations.append("Low hit rate - review TTL settings")
+
+        status = "healthy"
+        message = "Unified cache operating normally"
+
+        if recommendations:
+            status = "degraded"
+            message = "; ".join(recommendations)
+
+        return CacheHealth(
+            name="unified_cache",
+            status=status,
+            message=message,
+            hit_rate=stats.hit_rate,
+            recommendations=recommendations,
+        )
+
+    def warm(self, data: dict[str, Any]) -> int:
+        """CacheBackend protocol: Pre-populate cache with data."""
+        count = 0
+        for key, value in data.items():
+            if self.set_by_key(key, value):
+                count += 1
+        return count
 
     # Private methods
 
@@ -433,6 +498,8 @@ def get_unified_cache() -> UnifiedCacheManager:
     """Get or create the global unified cache instance (singleton)."""
     if CacheState._unified_cache is None:
         CacheState._unified_cache = UnifiedCacheManager()
+        # Register with CacheFactory for unified monitoring
+        CacheFactory.register_backend("unified_cache", CacheState._unified_cache)
         logger.info("🚀 Unified cache manager initialized")
     return CacheState._unified_cache
 
@@ -697,7 +764,9 @@ def _test_cache_statistics_tracking() -> bool:
     # Verify global statistics
     assert stats["global"]["hits"] == 2, f"Expected 2 hits, got {stats['global']['hits']}"
     assert stats["global"]["misses"] == 1, f"Expected 1 miss, got {stats['global']['misses']}"
-    assert abs(stats["global"]["hit_rate_percent"] - 66.67) < 0.01, f"Expected ~66.67% hit rate, got {stats['global']['hit_rate_percent']}"
+    assert abs(stats["global"]["hit_rate_percent"] - 66.67) < 0.01, (
+        f"Expected ~66.67% hit rate, got {stats['global']['hit_rate_percent']}"
+    )
 
     # Verify service-specific statistics
     assert "ancestry" in stats["by_service"], "Ancestry service should be in stats"
@@ -722,6 +791,7 @@ def _test_cache_ttl_expiration() -> bool:
 
     # Wait for expiration
     import time
+
     time.sleep(1.1)  # Wait slightly longer than TTL
 
     # Should be expired now
@@ -796,8 +866,9 @@ def _test_cache_size_limit_enforcement() -> bool:
     assert cache.get("test", "ep2", "key2") is not None, "Accessed key2 should remain"
     # key3 might be evicted or key4 might not be added if eviction didn't work perfectly
     # Let's be more flexible in our assertion
-    remaining_count = sum(1 for key in ["key1", "key2", "key3", "key4"]
-                         if cache.get("test", f"ep{key[-1]}", f"key{key[-1]}") is not None)
+    remaining_count = sum(
+        1 for key in ["key1", "key2", "key3", "key4"] if cache.get("test", f"ep{key[-1]}", f"key{key[-1]}") is not None
+    )
     assert remaining_count >= 3, f"Should have at least 3 entries remaining, got {remaining_count}"
 
     return True
@@ -918,7 +989,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_entry_dataclass,
         "CacheEntry should retain metadata and expire correctly",
         "Create fresh and stale CacheEntry instances",
-        "Verify field assignments and expiration logic"
+        "Verify field assignments and expiration logic",
     )
 
     suite.run_test(
@@ -926,7 +997,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_singleton_instance,
         "Unified cache factory should return singleton instance",
         "Call get_unified_cache twice",
-        "Ensure both references point to same object"
+        "Ensure both references point to same object",
     )
 
     # Test basic cache operations
@@ -935,7 +1006,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_basic_operations,
         "Basic get/set operations should work correctly",
         "Test cache.set() and cache.get() methods",
-        "Verify values are stored and retrieved correctly"
+        "Verify values are stored and retrieved correctly",
     )
 
     suite.run_test(
@@ -943,7 +1014,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_deep_copy_isolation,
         "Cache should shield stored payloads from mutation",
         "Retrieve cached object and mutate it",
-        "Ensure subsequent reads return original payload"
+        "Ensure subsequent reads return original payload",
     )
 
     # Test statistics tracking
@@ -952,7 +1023,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_statistics_tracking,
         "Cache statistics should be accurately tracked",
         "Test hit/miss counting and hit rate calculation",
-        "Verify global and service-specific statistics"
+        "Verify global and service-specific statistics",
     )
 
     suite.run_test(
@@ -960,7 +1031,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_service_auto_creation,
         "New services should be tracked without manual configuration",
         "Cache data under a new service name",
-        "Verify retrieval succeeds and stats include service"
+        "Verify retrieval succeeds and stats include service",
     )
 
     suite.run_test(
@@ -968,7 +1039,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_overwrite_behavior,
         "Setting the same key twice should replace value",
         "Write twice to identical cache key",
-        "Confirm latest value is returned"
+        "Confirm latest value is returned",
     )
 
     suite.run_test(
@@ -976,7 +1047,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_clear_operation,
         "Cache clear should remove entries and reset counters",
         "Populate cache then call clear()",
-        "Verify entries removed and statistics reset"
+        "Verify entries removed and statistics reset",
     )
 
     # Test TTL expiration
@@ -985,7 +1056,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_ttl_expiration,
         "Cache entries should expire after TTL",
         "Test TTL-based expiration functionality",
-        "Verify expired entries return None"
+        "Verify expired entries return None",
     )
 
     # Test invalidation
@@ -994,7 +1065,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_invalidation,
         "Cache invalidation should work at different levels",
         "Test key, service+endpoint, service, and full cache invalidation",
-        "Verify correct number of entries are invalidated"
+        "Verify correct number of entries are invalidated",
     )
 
     # Test size limit enforcement
@@ -1003,7 +1074,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_size_limit_enforcement,
         "Cache should enforce size limits with LRU eviction",
         "Test max_entries limit with LRU eviction policy",
-        "Verify least-used entries are evicted first"
+        "Verify least-used entries are evicted first",
     )
 
     # Test key generation
@@ -1012,7 +1083,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_key_generation,
         "Cache key generation should be consistent and order-independent",
         "Test generate_cache_key function with various inputs",
-        "Verify consistent hashing and proper formatting"
+        "Verify consistent hashing and proper formatting",
     )
 
     # Test thread safety
@@ -1021,7 +1092,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_thread_safety,
         "Cache operations should be thread-safe",
         "Test concurrent access from multiple threads",
-        "Verify no data corruption or race conditions"
+        "Verify no data corruption or race conditions",
     )
 
     # Test endpoint statistics
@@ -1030,7 +1101,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_endpoint_statistics,
         "Endpoint-specific statistics should be tracked correctly",
         "Test get_stats(endpoint=...) functionality",
-        "Verify per-endpoint hit/miss tracking"
+        "Verify per-endpoint hit/miss tracking",
     )
 
     suite.run_test(
@@ -1038,7 +1109,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_cache_realistic_access_patterns,
         "Mixed workloads should maintain minimum hit rate",
         "Simulate access patterns observed in production",
-        "Ensure overall hit rate stays above minimum floor"
+        "Ensure overall hit rate stays above minimum floor",
     )
 
     suite.run_test(
@@ -1046,7 +1117,7 @@ def unified_cache_manager_module_tests() -> bool:
         _test_create_ancestry_cache_config,
         "Preset TTL configuration helper should expose expected defaults",
         "Invoke create_ancestry_cache_config()",
-        "Confirm required endpoints and TTLs are present"
+        "Confirm required endpoints and TTLs are present",
     )
 
     return suite.finish_suite()

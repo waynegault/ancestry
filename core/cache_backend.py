@@ -354,13 +354,38 @@ class CacheFactory:
     def get_all_stats(cls) -> dict[str, CacheStats]:
         """Get statistics from all registered backends.
 
+        Tries get_stats_typed() first (protocol method), then get_stats().
+        This allows for gradual migration of cache implementations.
+
         Returns:
             Dictionary mapping backend names to their CacheStats.
         """
         stats: dict[str, CacheStats] = {}
         for name, backend in cls._instances.items():
             try:
-                stats[name] = backend.get_stats()
+                # Try the typed method first (new protocol)
+                if hasattr(backend, "get_stats_typed"):
+                    result = backend.get_stats_typed()
+                    if isinstance(result, CacheStats):
+                        stats[name] = result
+                        continue
+
+                # Fall back to get_stats() if it returns CacheStats
+                if hasattr(backend, "get_stats"):
+                    result = backend.get_stats()
+                    if isinstance(result, CacheStats):
+                        stats[name] = result
+                    else:
+                        # Legacy dict format - create minimal CacheStats
+                        stats[name] = CacheStats(
+                            name=name,
+                            kind=result.get("kind", "unknown") if isinstance(result, dict) else "unknown",
+                            hits=result.get("hits", 0) if isinstance(result, dict) else 0,
+                            misses=result.get("misses", 0) if isinstance(result, dict) else 0,
+                            entries=result.get("entries", 0) if isinstance(result, dict) else 0,
+                        )
+                else:
+                    stats[name] = CacheStats(name=name, kind="unknown")
             except Exception as exc:
                 logger.warning(f"Failed to get stats for {name}: {exc}")
                 stats[name] = CacheStats(name=name, kind="unknown")

@@ -81,6 +81,7 @@ from diskcache.core import ENOVAL
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
+from core.cache_backend import CacheFactory, CacheHealth, CacheStats
 
 # --- Test framework imports ---
 from test_framework import (
@@ -108,9 +109,7 @@ except OSError as e:
         exc_info=True,
     )
 except Exception as e:
-    logger.error(
-        f"Unexpected error setting up cache directory {CACHE_DIR}: {e}", exc_info=True
-    )
+    logger.error(f"Unexpected error setting up cache directory {CACHE_DIR}: {e}", exc_info=True)
 
 # Step 3: Initialize the DiskCache instance with aggressive settings
 # This instance is shared across modules that import 'cache from cache'.
@@ -128,14 +127,10 @@ try:
         timeout=60,  # Longer timeout for disk operations
         statistics=True,  # Enable cache statistics
     )
-    logger.debug(
-        f"DiskCache instance initialized with aggressive settings at {CACHE_DIR}."
-    )
+    logger.debug(f"DiskCache instance initialized with aggressive settings at {CACHE_DIR}.")
     logger.debug("Cache settings: size_limit=2GB, eviction=LRU, statistics=enabled")
 except Exception as e:
-    logger.critical(
-        f"CRITICAL: Failed to initialize DiskCache at {CACHE_DIR}: {e}", exc_info=True
-    )
+    logger.critical(f"CRITICAL: Failed to initialize DiskCache at {CACHE_DIR}: {e}", exc_info=True)
     cache = None  # Ensure cache remains None if initialization fails
 
 # --- Standard Cache Interface ---
@@ -171,6 +166,7 @@ class CacheInterface:
 class BaseCacheModule(CacheInterface):
     """
     Implementation of the standard cache interface for the base cache module.
+    Also implements CacheBackend protocol for unified cache access.
     """
 
     def __init__(self) -> None:
@@ -179,6 +175,92 @@ class BaseCacheModule(CacheInterface):
         self._last_stats: Optional[dict[str, Any]] = None
         self._last_warm_timestamp: Optional[float] = None
         self._last_clear_timestamp: Optional[float] = None
+        self._last_access_time: Optional[float] = None
+        self._last_write_time: Optional[float] = None
+        self._error_count: int = 0
+
+    # === CacheBackend Protocol Methods ===
+
+    def get(self, key: str) -> Optional[Any]:
+        """Retrieve a value from the cache (CacheBackend protocol)."""
+        if cache is None:
+            return None
+        try:
+            self._last_access_time = time.time()
+            cache_obj = cast(Any, cache)
+            value = cache_obj.get(key, default=ENOVAL, retry=True)
+            if value is ENOVAL:
+                return None
+            return value
+        except Exception as e:
+            logger.debug(f"Cache get error for key '{key}': {e}")
+            self._error_count += 1
+            return None
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        """Store a value in the cache (CacheBackend protocol)."""
+        if cache is None:
+            return False
+        try:
+            self._last_write_time = time.time()
+            cache_obj = cast(Any, cache)
+            cache_obj.set(key, value, expire=ttl, retry=True)
+            return True
+        except Exception as e:
+            logger.debug(f"Cache set error for key '{key}': {e}")
+            self._error_count += 1
+            return False
+
+    def delete(self, key: str) -> bool:
+        """Remove a key from the cache (CacheBackend protocol)."""
+        if cache is None:
+            return False
+        try:
+            cache_obj = cast(Any, cache)
+            return cache_obj.delete(key, retry=True)
+        except Exception as e:
+            logger.debug(f"Cache delete error for key '{key}': {e}")
+            self._error_count += 1
+            return False
+
+    def get_stats_typed(self) -> CacheStats:
+        """Get cache statistics as CacheStats (CacheBackend protocol)."""
+        raw_stats = self.get_stats()
+        return CacheStats(
+            name=self._module_name,
+            kind="disk",
+            hits=raw_stats.get("hits", 0),
+            misses=raw_stats.get("misses", 0),
+            entries=raw_stats.get("entries", 0),
+            size_bytes=raw_stats.get("volume", 0),
+            max_size_bytes=int(2e9),  # 2GB configured limit
+            evictions=raw_stats.get("evictions", 0),
+            errors=self._error_count,
+            last_access_time=self._last_access_time,
+            last_write_time=self._last_write_time,
+            extra={"cache_dir": str(CACHE_DIR), "hit_rate": raw_stats.get("hit_rate", 0.0)},
+        )
+
+    def get_health(self) -> CacheHealth:
+        """Get cache health as CacheHealth (CacheBackend protocol)."""
+        raw_health = self.get_health_status()
+        status_map = {
+            "excellent": "healthy",
+            "good": "healthy",
+            "fair": "degraded",
+            "poor": "degraded",
+            "critical": "critical",
+            "error": "critical",
+        }
+        return CacheHealth(
+            name=self._module_name,
+            status=status_map.get(raw_health.get("health", "unknown"), "unknown"),
+            message=raw_health.get("message", "Unknown status"),
+            hit_rate=raw_health.get("hit_rate", 0.0),
+            is_available=raw_health.get("cache_available", False),
+        )
+
+    # === Legacy CacheInterface Methods ===
 
     def get_stats(self) -> dict[str, Any]:
         """Get base cache statistics."""
@@ -197,21 +279,15 @@ class BaseCacheModule(CacheInterface):
         """Warm base cache with system data using intelligent warming."""
         try:
             # Traditional warming
-            warm_cache_with_data(
-                "system_status", {"status": "operational", "timestamp": time.time()}
-            )
-            warm_cache_with_data(
-                "cache_metadata", {"version": "2.0", "type": "enhanced_base"}
-            )
+            warm_cache_with_data("system_status", {"status": "operational", "timestamp": time.time()})
+            warm_cache_with_data("cache_metadata", {"version": "2.0", "type": "enhanced_base"})
 
             # === PHASE 12.4.1: INTELLIGENT CACHE WARMING ===
             warmer = get_intelligent_cache_warmer()
             warmed_count = warmer.warm_predictive_cache()
             self._last_warm_timestamp = time.time()
 
-            logger.info(
-                f"Base cache warming completed: {warmed_count} predictive entries warmed"
-            )
+            logger.info(f"Base cache warming completed: {warmed_count} predictive entries warmed")
             return True
         except Exception as e:
             logger.error(f"Error warming base cache: {e}")
@@ -233,11 +309,7 @@ class BaseCacheModule(CacheInterface):
         try:
             stats = self.get_stats()
             total_requests = stats.get("hits", 0) + stats.get("misses", 0)
-            hit_rate = (
-                (stats.get("hits", 0) / total_requests * 100)
-                if total_requests > 0
-                else 0
-            )
+            hit_rate = (stats.get("hits", 0) / total_requests * 100) if total_requests > 0 else 0
 
             # Determine health based on hit rate and cache availability
             if cache is None:
@@ -276,11 +348,16 @@ class BaseCacheModule(CacheInterface):
 # Global instance of base cache module
 base_cache_module = BaseCacheModule()
 
+# Register with CacheFactory for unified access
+CacheFactory.register_backend("disk_cache", base_cache_module)
+
 
 # --- Cache Decorator Helper Functions ---
 
 
-def _generate_cache_key(cache_key_prefix: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ignore_args: bool) -> Optional[str]:
+def _generate_cache_key(
+    cache_key_prefix: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ignore_args: bool
+) -> Optional[str]:
     """Generate cache key for function call."""
     if ignore_args:
         logger.debug(f"Using ignore_args=True, cache key: '{cache_key_prefix}'")
@@ -418,9 +495,7 @@ def clear_cache() -> bool:
     if cache:
         try:
             count = cache.clear()
-            logger.debug(
-                f"Cache cleared successfully via API. {count} items removed from {CACHE_DIR}."
-            )
+            logger.debug(f"Cache cleared successfully via API. {count} items removed from {CACHE_DIR}.")
             return True
         except Exception as e:
             logger.error(
@@ -430,9 +505,7 @@ def clear_cache() -> bool:
             # Fall through to manual removal attempt
 
     # Step 2: Fallback - Attempt manual directory removal
-    logger.warning(
-        "Cache object not available or API clear failed. Attempting manual directory removal..."
-    )
+    logger.warning("Cache object not available or API clear failed. Attempting manual directory removal...")
     if CACHE_DIR and CACHE_DIR.exists():
         try:
             shutil.rmtree(CACHE_DIR)
@@ -443,9 +516,7 @@ def clear_cache() -> bool:
                 logger.debug(f"Recreated empty cache directory: {CACHE_DIR}")
                 return True  # Manual removal and recreation successful
             except OSError as mkdir_e:
-                logger.error(
-                    f"Failed to recreate cache directory {CACHE_DIR} after manual removal: {mkdir_e}"
-                )
+                logger.error(f"Failed to recreate cache directory {CACHE_DIR} after manual removal: {mkdir_e}")
                 return False  # Failed to recreate directory
         except Exception as e:
             logger.error(
@@ -518,9 +589,7 @@ def get_unified_cache_key(module: str, operation: str, *args: Any, **kwargs: Any
     return key_string
 
 
-def invalidate_related_caches(
-    pattern: str, exclude_modules: Optional[list[str]] = None
-) -> dict[str, int]:
+def invalidate_related_caches(pattern: str, exclude_modules: Optional[list[str]] = None) -> dict[str, int]:
     """
     Invalidate caches across multiple modules based on pattern.
 
@@ -539,9 +608,7 @@ def invalidate_related_caches(
         try:
             count = invalidate_cache_pattern(pattern)
             results["base_cache"] = count
-            logger.info(
-                f"Invalidated {count} base cache entries matching pattern: {pattern}"
-            )
+            logger.info(f"Invalidated {count} base cache entries matching pattern: {pattern}")
         except Exception as e:
             logger.error(f"Error invalidating base cache pattern {pattern}: {e}")
             results["base_cache"] = 0
@@ -630,10 +697,9 @@ def _collect_api_cache_stats(coordination_stats: dict[str, Any]) -> None:
 
 def _determine_cross_module_health(coordination_stats: dict[str, Any]) -> str:
     """Determine cross-module health based on available modules."""
-    available_modules = len([
-        m for m in coordination_stats["modules"].values()
-        if "error" not in m and m.get("status") != "not_available"
-    ])
+    available_modules = len(
+        [m for m in coordination_stats["modules"].values() if "error" not in m and m.get("status") != "not_available"]
+    )
 
     if available_modules >= 3:
         return "excellent"
@@ -882,9 +948,7 @@ def get_cache_stats() -> dict[str, Any]:
             current_entries = stats["entries"]  # Use the entries field
 
             stats["max_entries"] = max_entries
-            stats["entries_utilization"] = (
-                (current_entries / max_entries * 100) if max_entries > 0 else 0.0
-            )
+            stats["entries_utilization"] = (current_entries / max_entries * 100) if max_entries > 0 else 0.0
             stats["size_compliant"] = current_entries <= max_entries
         else:
             stats["max_entries"] = "Unknown"
@@ -929,13 +993,12 @@ def cache_file_based_on_mtime(
             try:
                 # Get file modification time
                 from pathlib import Path
+
                 file_mtime = Path(file_path).stat().st_mtime
 
                 # Create cache key that includes file mtime
                 mtime_hash = hashlib.md5(str(file_mtime).encode()).hexdigest()[:8]
-                final_cache_key = (
-                    f"{cache_key_prefix}_{func.__name__}_mtime_{mtime_hash}"
-                )
+                final_cache_key = f"{cache_key_prefix}_{func.__name__}_mtime_{mtime_hash}"
 
                 # Try to get from cache
                 # Cast cache to Any to avoid type errors
@@ -968,9 +1031,7 @@ def cache_file_based_on_mtime(
 # End of cache_file_based_on_mtime
 
 
-def warm_cache_with_data(
-    cache_key: str, data: Any, expire: Optional[int] = None
-) -> bool:
+def warm_cache_with_data(cache_key: str, data: Any, expire: Optional[int] = None) -> bool:
     """
     Preloads cache with data (cache warming).
 
@@ -999,6 +1060,7 @@ def warm_cache_with_data(
 
 # === PHASE 12.4.1: ADVANCED CACHING STRATEGIES & CACHE WARMING ===
 
+
 class IntelligentCacheWarmer:
     """
     Intelligent cache warming system that learns from usage patterns
@@ -1023,7 +1085,7 @@ class IntelligentCacheWarmer:
                 "miss_count": 0,
                 "last_access": access_time,
                 "access_frequency": 0.0,
-                "access_times": deque(maxlen=100)
+                "access_times": deque(maxlen=100),
             }
 
         pattern = self.usage_patterns[cache_key]
@@ -1089,11 +1151,9 @@ class IntelligentCacheWarmer:
             except Exception as e:
                 logger.warning(f"Failed to warm cache key {cache_key}: {e}")
 
-        self.warming_history.append({
-            "timestamp": time.time(),
-            "candidates_count": len(candidates),
-            "warmed_count": warmed_count
-        })
+        self.warming_history.append(
+            {"timestamp": time.time(), "candidates_count": len(candidates), "warmed_count": warmed_count}
+        )
 
         logger.info(f"Predictive cache warming completed: {warmed_count}/{len(candidates)} keys warmed")
         return warmed_count
@@ -1130,6 +1190,7 @@ class IntelligentCacheWarmer:
         try:
             # Try to load GEDCOM metadata
             from config import config_schema
+
             if hasattr(config_schema.database, "gedcom_file_path"):
                 gedcom_path = config_schema.database.gedcom_file_path
                 if gedcom_path and Path(gedcom_path).exists():
@@ -1138,7 +1199,7 @@ class IntelligentCacheWarmer:
                         "size": file_stats.st_size,
                         "mtime": file_stats.st_mtime,
                         "warmed_at": time.time(),
-                        "predictive": True
+                        "predictive": True,
                     }
                     return warm_cache_with_data(cache_key, metadata)
         except Exception as e:
@@ -1153,7 +1214,7 @@ class IntelligentCacheWarmer:
             api_config = {
                 "warmed_at": time.time(),
                 "predictive": True,
-                "session_valid": session_manager.is_sess_valid() if session_manager else False
+                "session_valid": session_manager.is_sess_valid() if session_manager else False,
             }
             return warm_cache_with_data(cache_key, api_config)
         except Exception as e:
@@ -1165,11 +1226,7 @@ class IntelligentCacheWarmer:
         """Warm profile-related cache data."""
         try:
             # Warm with basic profile metadata
-            profile_data = {
-                "warmed_at": time.time(),
-                "predictive": True,
-                "cache_key": cache_key
-            }
+            profile_data = {"warmed_at": time.time(), "predictive": True, "cache_key": cache_key}
             return warm_cache_with_data(cache_key, profile_data)
         except Exception as e:
             logger.debug(f"Could not warm profile data for {cache_key}: {e}")
@@ -1283,9 +1340,7 @@ def invalidate_cache_pattern(pattern: str) -> int:
                 cache_obj.delete(key)
                 invalidated += 1
 
-        logger.debug(
-            f"Invalidated {invalidated} cache entries matching pattern: '{pattern}'"
-        )
+        logger.debug(f"Invalidated {invalidated} cache entries matching pattern: '{pattern}'")
         return invalidated
     except Exception as e:
         logger.error(f"Error invalidating cache pattern '{pattern}': {e}")
@@ -1341,9 +1396,7 @@ def _test_basic_cache_operations() -> bool:
     cache_obj = cast(Any, cache)
     cache_obj.set(test_key, test_value)
     retrieved = cache_obj.get(test_key)
-    assert (
-        retrieved == test_value
-    ), f"Retrieved value {retrieved} doesn't match set value {test_value}"
+    assert retrieved == test_value, f"Retrieved value {retrieved} doesn't match set value {test_value}"
 
     # Test delete
     cache_obj.delete(test_key)
@@ -1483,9 +1536,7 @@ def _test_cache_performance() -> bool:
         cache_obj.get(f"perf_test_{i}")
 
     duration = time.time() - start_time
-    assert (
-        duration < 5.0
-    ), f"100 cache operations took {duration}s, should be under 5s"
+    assert duration < 5.0, f"100 cache operations took {duration}s, should be under 5s"
     return True
 
 
@@ -1577,17 +1628,13 @@ def cache_module_tests() -> bool:
         test_cache_decorator,
         "@cache_result decorator caches function outputs correctly",
     )
-    suite.run_test(
-        "Cache Expiration", test_cache_expiration, "TTL and expiration work correctly"
-    )
+    suite.run_test("Cache Expiration", test_cache_expiration, "TTL and expiration work correctly")
     suite.run_test(
         "Cache Size Management",
         test_cache_size_management,
         "Cache handles size limits and eviction properly",
     )
-    suite.run_test(
-        "Cache Clearing", test_cache_clearing, "Cache clearing removes all stored data"
-    )
+    suite.run_test("Cache Clearing", test_cache_clearing, "Cache clearing removes all stored data")
     suite.run_test(
         "Complex Data Types",
         test_complex_data_types,
