@@ -9,7 +9,7 @@ entry points.
 
 from __future__ import annotations
 
-from action6_gather import coord as gather_coord
+from typing import TYPE_CHECKING
 
 from .gather.checkpoint import GatherCheckpointPlan, GatherCheckpointService
 from .gather.fetch import GatherFetchPlan, GatherFetchService
@@ -27,6 +27,19 @@ from .gather.metrics import (
 )
 from .gather.orchestrator import GatherOrchestrator
 from .gather.persistence import GatherBatchSummary, GatherPersistenceService
+
+if TYPE_CHECKING:
+    from action6_gather import coord as gather_coord
+
+
+def __getattr__(name: str):
+    """Lazy import to avoid circular import with action6_gather."""
+    if name == "gather_coord":
+        from action6_gather import coord
+
+        return coord
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "GatherBatchSummary",
