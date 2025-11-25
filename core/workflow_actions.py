@@ -5,20 +5,13 @@ This module uses lazy imports to avoid circular dependencies with action modules
 
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urljoin
 
 if __package__ in {None, ""}:
     _REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-
-# TYPE_CHECKING imports (not executed at runtime)
-if TYPE_CHECKING:
-    from action6_gather import coord as _coord
-    from action7_inbox import InboxProcessor as _InboxProcessor
-    from action8_messaging import send_messages_to_matches as _send_messages
-    from action9_process_productive import process_productive_messages as _process_productive
 
 from config.config_manager import ConfigManager
 from core.session_guards import ensure_navigation_ready, require_interactive_session

@@ -1859,12 +1859,12 @@ def test_error_handling() -> None:
     recorded: dict[str, Any] = {"contexts": []}
 
     class RecordingHandler(ErrorHandler):
-        @staticmethod
-        def can_handle(error: Exception) -> bool:
+        def can_handle(self, error: Exception) -> bool:
+            _ = self
             return isinstance(error, ValueError)
 
-        @staticmethod
-        def handle(error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+            _ = self
             recorded["contexts"].append(context or {})
             return AppError(str(error), context=context, original_exception=error)
 
@@ -1960,12 +1960,12 @@ def test_error_context() -> None:
     handled: list[dict[str, Any]] = []
 
     class ContextRecordingHandler(ErrorHandler):
-        @staticmethod
-        def can_handle(error: Exception) -> bool:
+        def can_handle(self, error: Exception) -> bool:
+            _ = self
             return isinstance(error, RuntimeError)
 
-        @staticmethod
-        def handle(error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+            _ = self
             handled.append(context or {})
             return AppError(str(error), context=context, original_exception=error)
 

@@ -25,6 +25,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **AI Provider Adapter Framework (Nov 29)** - Added `ai/providers/base.py` plus Gemini and DeepSeek adapters, introduced `ai/prompts.py` for centralized prompt/experiment loading, and refactored `ai_interface.py` to register providers through the adapter registry with structured telemetry payloads.
 - ✅ **CacheBackend Protocol (Nov 25)** - Created `core/cache_backend.py` with unified cache interface: `CacheBackend` and `ScopedCacheBackend` protocols, `CacheStats`/`CacheHealth` dataclasses, and `CacheFactory` for centralized backend management. Step 2 of cache stack unification (Track 4).
 - ✅ **Cache Stack Inventory (Nov 25)** - Completed Step 1 of Track 4 (Cache Unification): analyzed 6 cache modules (5,678 lines), identified 28 import sites, documented 3 import cycles, and created consumer mapping. Ready for Step 2: Design `CacheBackend` protocol.
 - ✅ **Message Types Module Extraction (Nov 25)** - Created `messaging/message_types.py` with message type constants (`MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`), state machine logic (`determine_next_message_type()`), and 7 tests. Updated `messaging/__init__.py` to export all 19 helpers.
@@ -1019,6 +1020,7 @@ For issues or questions:
   - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
   - INCEPTION_* when ai_provider=inception: INCEPTION_API_KEY, INCEPTION_AI_MODEL, INCEPTION_AI_BASE_URL
   - XAI_* when ai_provider=grok: XAI_API_KEY, XAI_MODEL (default grok-4-fast-non-reasoning), XAI_API_HOST (default api.x.ai)
+  - AI_PROVIDER_FALLBACKS (optional): comma-separated failover order (default `deepseek,gemini,moonshot,local_llm,grok,inception,tetrate`); providers without credentials/SDKs are skipped automatically.
   - Quick connectivity check: run `python ai_api_test.py --provider gemini` (script now lives at repo root) to validate credentials before invoking the main workflow
   - Default base URL: http://localhost:1234/v1 (LM Studio)
 

@@ -883,6 +883,17 @@ class ConfigSchema:
 
     # AI settings
     ai_provider: str = ""  # "deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", "tetrate", or ""
+    ai_provider_fallbacks: list[str] = field(
+        default_factory=lambda: [
+            "deepseek",
+            "gemini",
+            "moonshot",
+            "local_llm",
+            "grok",
+            "inception",
+            "tetrate",
+        ]
+    )
     ai_context_messages_count: int = 5
     ai_context_message_max_words: int = 60
     ai_context_window_messages: int = 6  # Sliding window of recent msgs used to classify last USER message

@@ -31,7 +31,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Literal, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -578,8 +578,8 @@ class APIManager:
             allow_redirects=config.allow_redirects,
         )
 
+    @staticmethod
     def _handle_response_status(
-        self,
         response: RequestsResponse,
         config: RequestConfig,
         rate_limiter: Optional["AdaptiveRateLimiter"],

@@ -119,6 +119,24 @@ if not xai_available:
 # === LOCAL IMPORTS ===
 import contextlib
 
+from ai.prompts import (
+    get_prompt,
+    get_prompt_version,
+    get_prompt_with_experiment,
+    load_prompts,
+    record_extraction_experiment_event,
+    supports_json_prompts,
+)
+from ai.providers.base import (
+    ProviderAdapter,
+    ProviderConfigurationError,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderUnavailableError,
+)
+from ai.providers.deepseek import DeepSeekProvider
+from ai.providers.gemini import GeminiProvider
+
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import cached_api_call
 from config.config_manager import ConfigManager
@@ -143,55 +161,45 @@ if TYPE_CHECKING:
 config_manager = ConfigManager()
 config_schema = config_manager.get_config()
 
+
+_PROVIDER_ADAPTERS: dict[str, ProviderAdapter] = {}
+
+
+def _register_provider(name: str, factory: Callable[[Any], ProviderAdapter]) -> None:
+    try:
+        adapter = factory(config_schema)
+    except Exception as exc:  # pragma: no cover - optional dependency import failures
+        logger.debug("Skipping provider '%s' due to initialization failure: %s", name, exc)
+        return
+    _PROVIDER_ADAPTERS[name] = adapter
+
+
+_register_provider("deepseek", DeepSeekProvider)
+_register_provider("gemini", GeminiProvider)
+
+
+def _adapter_is_available(provider: str) -> bool:
+    """Return True if the provider adapter (if registered) is ready for use."""
+
+    adapter = _PROVIDER_ADAPTERS.get(provider)
+    if adapter is None:
+        return True
+    try:
+        return bool(adapter.is_available())
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.debug("Adapter availability probe failed for '%s': %s", provider, exc)
+        return False
+
+
 # --- Test framework imports ---
 from test_utilities import create_standard_test_runner
 
 # --- Constants and Prompts ---
-_get_prompt: Callable[[str], str | None] | None
-_load_prompts: Callable[[], dict[str, Any]] | None
-try:
-    from ai_prompt_utils import get_prompt as _get_prompt, load_prompts as _load_prompts
-except ImportError:
-    _get_prompt = None
-    _load_prompts = None
-
-USE_JSON_PROMPTS = _get_prompt is not None and _load_prompts is not None
+USE_JSON_PROMPTS = supports_json_prompts()
 if USE_JSON_PROMPTS:
-    assert _get_prompt is not None
-    assert _load_prompts is not None
-    get_prompt = _get_prompt
-    load_prompts = _load_prompts
     logger.debug("AI prompt utilities loaded successfully - will use JSON prompts")
 else:
     logger.warning("ai_prompt_utils module not available, using fallback prompts")
-
-    def get_prompt(prompt_key: str) -> str | None:
-        _ = prompt_key  # Fallback stub - parameter required for API compatibility
-        return None
-
-
-_get_prompt_with_experiment: Callable[..., str | None] | None = None
-_get_prompt_version: Callable[[str], str | None] | None = None
-try:
-    prompt_utils_module = importlib.import_module("ai_prompt_utils")
-    _get_prompt_with_experiment = getattr(prompt_utils_module, "get_prompt_with_experiment", None)
-    _get_prompt_version = getattr(prompt_utils_module, "get_prompt_version", None)
-except Exception:
-    _get_prompt_with_experiment = None
-    _get_prompt_version = None
-
-try:
-    prompt_telemetry_module = importlib.import_module("prompt_telemetry")
-    _record_extraction_experiment_event = getattr(
-        prompt_telemetry_module,
-        "record_extraction_experiment_event",
-        None,
-    )
-except Exception:
-    _record_extraction_experiment_event = None
-
-    def load_prompts() -> dict[str, Any]:
-        return {"prompts": {}}
 
 
 # Based on the prompt from the original ai_interface.py (and updated with more categories from ai_prompts.json example)
@@ -204,6 +212,43 @@ EXPECTED_INTENT_CATEGORIES = {
     "OTHER",
     "DESIST",  # Added from the original file's SYSTEM_PROMPT_INTENT
 }
+
+SUPPORTED_AI_PROVIDERS: tuple[str, ...] = (
+    "deepseek",
+    "gemini",
+    "moonshot",
+    "local_llm",
+    "inception",
+    "grok",
+    "tetrate",
+)
+
+DEFAULT_AI_PROVIDER_FALLBACKS: tuple[str, ...] = (
+    "deepseek",
+    "gemini",
+    "moonshot",
+    "local_llm",
+    "grok",
+    "inception",
+    "tetrate",
+)
+
+
+def _normalize_provider_name(provider: str | None) -> str:
+    """Normalize provider names for comparison and logging."""
+
+    return provider.strip().lower() if isinstance(provider, str) else ""
+
+
+def _get_configured_fallbacks() -> list[str]:
+    """Return configured fallback order (defaults to safe global preference)."""
+
+    configured = getattr(config_schema, "ai_provider_fallbacks", None)
+    if isinstance(configured, list) and configured:
+        normalized = [_normalize_provider_name(value) for value in configured]
+        return [value for value in normalized if value]
+    return list(DEFAULT_AI_PROVIDER_FALLBACKS)
+
 
 ListModelsFn = Callable[[], Iterable[Any]]
 GenerativeModelFactory = Callable[[str], Any]
@@ -361,56 +406,6 @@ def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None
         logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
 
 
-def _build_deepseek_request_params(
-    model_name: str,
-    messages: list[dict[str, str]],
-    max_tokens: int,
-    temperature: float,
-    response_format_type: str | None,
-) -> dict[str, Any]:
-    """Build request parameters for DeepSeek API call."""
-    request_params: dict[str, Any] = {
-        "model": model_name,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stream": False,
-    }
-    if response_format_type == "json_object":
-        request_params["response_format"] = {"type": "json_object"}
-    return request_params
-
-
-def _call_deepseek_model(
-    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
-) -> str | None:
-    """Call DeepSeek AI model."""
-    if not openai_available or OpenAI is None:
-        logger.error("_call_ai_model: OpenAI library not available for DeepSeek.")
-        return None
-
-    api_key = config_schema.api.deepseek_api_key
-    model_name = config_schema.api.deepseek_ai_model
-    base_url = config_schema.api.deepseek_ai_base_url
-
-    if not all([api_key, model_name, base_url]):
-        logger.error("_call_ai_model: DeepSeek configuration incomplete.")
-        return None
-
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    request_params = _build_deepseek_request_params(model_name, messages, max_tokens, temperature, response_format_type)
-
-    response = client.chat.completions.create(**request_params)
-    if response.choices and response.choices[0].message and response.choices[0].message.content:
-        return response.choices[0].message.content.strip()
-    logger.error("DeepSeek returned an empty or invalid response structure.")
-    return None
-
-
 def _call_moonshot_model(
     system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
 ) -> str | None:
@@ -498,222 +493,6 @@ def _call_tetrate_model(
 
     logger.error("Tetrate returned an empty or invalid response structure.")
     return None
-
-
-# Helper functions for _call_gemini_model
-
-
-def _validate_gemini_availability() -> bool:
-    """Validate Gemini library is available."""
-    if not genai_available or genai is None:
-        logger.error("_call_ai_model: Google GenAI library not available for Gemini.")
-        return False
-
-    if not hasattr(genai, "Client"):
-        logger.error("_call_ai_model: Gemini library missing expected interfaces.")
-        return False
-
-    return True
-
-
-def _get_gemini_config() -> tuple[str | None, str | None]:
-    """Get Gemini API key and model name from config."""
-    api_key = getattr(config_schema.api, "google_api_key", None)
-    model_name = getattr(config_schema.api, "google_ai_model", None)
-
-    if not api_key or not model_name:
-        logger.error("_call_ai_model: Gemini configuration incomplete.")
-        return None, None
-
-    return api_key, model_name
-
-
-def _list_available_gemini_models() -> list[str]:
-    """
-    List all available Gemini models with generateContent support.
-
-    Returns:
-        List of model names (e.g., ["gemini-2.0-flash", "gemini-1.5-pro"])
-        Returns empty list if listing fails or genai is not available.
-    """
-    if not genai_available or genai is None:
-        return []
-
-    api_key = getattr(config_schema.api, "google_api_key", None)
-    if not api_key:
-        return []
-
-    try:
-        client = genai.Client(api_key=api_key)
-        models: list[str] = []
-        # client.models.list() returns an iterator of Model objects
-        for model in client.models.list():
-            # Check if generateContent is supported (if attribute exists)
-            # In google-genai v1, we might assume listed models are usable or check capabilities if available
-            # For now, we'll list all and filter by name convention if needed
-            model_name = getattr(model, "name", "")
-            # name usually comes as "models/gemini-..."
-            normalized_name = model_name.replace("models/", "")
-            if normalized_name:
-                models.append(normalized_name)
-        return models
-    except Exception as e:
-        logger.debug(f"Failed to list Gemini models: {e}")
-        return []
-
-
-def _validate_gemini_model_exists(model_name: str) -> bool:
-    """
-    Check if the configured model exists and supports generateContent.
-
-    Args:
-        model_name: Model name to validate (e.g., "gemini-2.5-flash")
-
-    Returns:
-        True if model is valid, False otherwise.
-        Returns True if model listing is not available (to avoid breaking existing functionality).
-    """
-    available = _list_available_gemini_models()
-
-    # If we couldn't list models, assume the configured model is valid
-    # (better to attempt the API call than block it)
-    if not available:
-        return True
-
-    # Handle both formats: "gemini-2.5-flash" and "models/gemini-2.5-flash"
-    normalized = model_name.replace("models/", "")
-
-    if normalized not in available:
-        logger.error(f"❌ Model '{model_name}' not found or doesn't support generateContent")
-        if len(available) > 0:
-            logger.error(f"📋 Available models: {', '.join(available[:5])}")
-            if len(available) > 5:
-                logger.error(f"   ... and {len(available) - 5} more")
-        return False
-
-    logger.debug(f"✅ Model '{normalized}' validated successfully")
-    return True
-
-
-def _initialize_gemini_model(api_key: str, model_name: str) -> Any | None:
-    """
-    Initialize Gemini client with validation.
-
-    Args:
-        api_key: Google API key
-        model_name: Model name (e.g., "gemini-2.0-flash")
-
-    Returns:
-        Initialized Client instance or None if validation/initialization fails
-    """
-    # Validate model exists before attempting API call
-    if not _validate_gemini_model_exists(model_name):
-        available = _list_available_gemini_models()
-        if available:
-            suggested = available[0]
-            logger.error(f"💡 Suggestion: Update GOOGLE_AI_MODEL in .env to: {suggested}")
-            logger.error(f"💡 Or choose from: {', '.join(available[:3])}")
-        return None
-
-    if genai is None or not hasattr(genai, "Client"):
-        logger.error("_call_ai_model: Gemini SDK missing Client")
-        return None
-
-    try:
-        client = cast(Any, genai).Client(api_key=api_key)
-        logger.debug(f"✅ Gemini client initialized successfully for model '{model_name}'")
-        return client
-    except Exception as e:
-        logger.error(f"_call_ai_model: Failed initializing Gemini client: {e}")
-        return None
-
-
-def _create_gemini_generation_config(max_tokens: int, temperature: float) -> Any | None:
-    """Create Gemini generation config."""
-    if genai_types is None:
-        return None
-
-    config_cls = getattr(genai_types, "GenerateContentConfig", None)
-    if config_cls is None:
-        # Fallback to dict if class not found
-        return {
-            "candidateCount": 1,
-            "maxOutputTokens": max_tokens,
-            "temperature": temperature,
-        }
-
-    try:
-        return config_cls(
-            candidateCount=1,
-            maxOutputTokens=max_tokens,
-            temperature=temperature,
-        )
-    except Exception:
-        return None
-
-
-def _generate_gemini_content(
-    client: Any, model_name: str, full_prompt: str, generation_config: Any | None
-) -> Any | None:
-    """Generate content using Gemini model."""
-    if not client or not hasattr(client, "models"):
-        return None
-
-    try:
-        return client.models.generate_content(model=model_name, contents=full_prompt, config=generation_config)
-    except Exception as e:
-        logger.error(f"Gemini generation failed: {e}")
-        return None
-
-
-def _extract_gemini_response_text(response: Any | None) -> str | None:
-    """Extract text from Gemini response."""
-    if response is not None and getattr(response, "text", None):
-        return getattr(response, "text", "").strip()
-
-    # Log block reason if response was blocked
-    block_reason_msg = "Unknown"
-    try:
-        if response is not None and hasattr(response, "prompt_feedback"):
-            pf = getattr(response, "prompt_feedback", None)
-            if pf and hasattr(pf, "block_reason"):
-                br = getattr(pf, "block_reason", None)
-                if hasattr(br, "name"):
-                    block_reason_msg = getattr(br, "name", "Unknown")
-                elif br is not None:
-                    block_reason_msg = str(br)
-    except Exception:
-        pass
-
-    logger.error(f"Gemini returned an empty or blocked response. Reason: {block_reason_msg}")
-    return None
-
-
-def _call_gemini_model(system_prompt: str, user_content: str, max_tokens: int, temperature: float) -> str | None:
-    """Call Gemini AI model."""
-    # Validate Gemini availability
-    if not _validate_gemini_availability():
-        return None
-
-    # Get configuration
-    api_key, model_name = _get_gemini_config()
-    if not api_key or not model_name:
-        return None
-
-    # Initialize client
-    client = _initialize_gemini_model(api_key, model_name)
-    if not client:
-        return None
-
-    # Prepare prompt and config
-    full_prompt = f"{system_prompt}\n\n---\n\nUser Query/Content:\n{user_content}"
-    generation_config = _create_gemini_generation_config(max_tokens, temperature)
-
-    # Generate content
-    response = _generate_gemini_content(client, model_name, full_prompt, generation_config)
-
-    # Extract and return response text
-    return _extract_gemini_response_text(response)
 
 
 def _call_local_llm_model(
@@ -1001,13 +780,29 @@ def _route_ai_provider_call(
     response_format_type: str | None,
 ) -> str | None:
     """Route call to appropriate AI provider."""
+    adapter = _PROVIDER_ADAPTERS.get(provider)
+    if adapter is not None:
+        if not adapter.is_available():
+            logger.debug("Provider '%s' is not currently available.", provider)
+            return None
+
+        request = ProviderRequest(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format_type=response_format_type,
+        )
+        try:
+            response = adapter.call(request)
+            return response.content
+        except (ProviderConfigurationError, ProviderUnavailableError) as exc:
+            logger.error("%s provider error: %s", provider, exc)
+            return None
+
     result: str | None = None
-    if provider == "deepseek":
-        result = _call_deepseek_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    elif provider == "moonshot":
+    if provider == "moonshot":
         result = _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    elif provider == "gemini":
-        result = _call_gemini_model(system_prompt, user_content, max_tokens, temperature)
     elif provider == "local_llm":
         result = _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     elif provider == "inception":
@@ -1024,6 +819,7 @@ def _route_ai_provider_call(
 _PROVIDER_CONFIG_VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "deepseek": lambda api: bool(getattr(api, "deepseek_api_key", None)),
     "gemini": lambda api: bool(getattr(api, "google_api_key", None)),
+    "moonshot": lambda api: bool(getattr(api, "moonshot_api_key", None)),
     "local_llm": lambda api: all(
         getattr(api, attr, None) for attr in ("local_llm_api_key", "local_llm_model", "local_llm_base_url")
     ),
@@ -1048,22 +844,45 @@ def _provider_is_configured(provider: str) -> bool:
 
 
 def _resolve_provider_chain(primary_provider: str) -> list[str]:
-    """Build the list of providers to attempt, including safe fallbacks."""
-    provider_chain = [primary_provider]
-    if primary_provider == "moonshot":
-        for candidate in ("deepseek", "gemini", "local_llm", "grok"):
-            if candidate not in provider_chain and _provider_is_configured(candidate):
-                provider_chain.append(candidate)
+    """Build the ordered list of providers to attempt, honoring configured fallbacks."""
+
+    normalized_primary = _normalize_provider_name(primary_provider)
+    provider_chain: list[str] = []
+    seen: set[str] = set()
+
+    def append_candidate(candidate: str, *, require_configuration: bool = True) -> None:
+        normalized_candidate = _normalize_provider_name(candidate)
+        if not normalized_candidate or normalized_candidate in seen:
+            return
+        if normalized_candidate not in SUPPORTED_AI_PROVIDERS:
+            logger.debug("Skipping unsupported AI provider '%s' in fallback chain.", normalized_candidate)
+            return
+        if require_configuration and not _provider_is_configured(normalized_candidate):
+            logger.debug(
+                "Skipping AI provider '%s' in fallback chain (missing configuration).",
+                normalized_candidate,
+            )
+            return
+        if not _adapter_is_available(normalized_candidate):
+            logger.debug(
+                "Skipping AI provider '%s' in fallback chain (adapter unavailable).",
+                normalized_candidate,
+            )
+            return
+
+        seen.add(normalized_candidate)
+        provider_chain.append(normalized_candidate)
+
+    append_candidate(normalized_primary, require_configuration=False)
+
+    for fallback_candidate in _get_configured_fallbacks():
+        append_candidate(fallback_candidate)
+
+    if not provider_chain and normalized_primary:
+        # As a last resort, attempt the primary provider even if it failed validation
+        provider_chain.append(normalized_primary)
+
     return provider_chain
-
-
-def _should_fallback_to_next_provider(provider: str, error: Exception) -> bool:
-    """Determine whether a fallback provider should be attempted after the given error."""
-    if provider != "moonshot":
-        return False
-    if AuthenticationError and isinstance(error, AuthenticationError):
-        return True
-    return bool(APIError and isinstance(error, APIError) and getattr(error, "status_code", None) == 401)
 
 
 def _handle_authentication_errors(e: Exception, provider: str) -> None:
@@ -1137,45 +956,65 @@ def _call_ai_model(
     logger.debug(f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}")
 
     provider_chain = _resolve_provider_chain(provider)
+    if not provider_chain:
+        logger.error("No configured AI providers available for '%s'.", provider)
+        return None
+
     last_exception: Exception | None = None
 
     for idx, active_provider in enumerate(provider_chain):
+        next_provider = provider_chain[idx + 1] if idx < len(provider_chain) - 1 else None
         _apply_rate_limiting(session_manager, active_provider)
 
         try:
             result = _route_ai_provider_call(
                 active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
             )
-            if active_provider != provider:
-                logger.warning(
-                    "AI provider '%s' failed, successfully fell back to '%s'.",
-                    provider,
-                    active_provider,
-                )
-            return result
         except Exception as exc:
             last_exception = exc
             _handle_ai_exceptions(exc, active_provider, session_manager)
 
-            should_try_fallback = idx < len(provider_chain) - 1 and _should_fallback_to_next_provider(
-                active_provider, exc
-            )
-
-            if should_try_fallback:
+            if next_provider is not None:
                 logger.warning(
-                    "Attempting fallback AI provider '%s' after %s authentication failure.",
-                    provider_chain[idx + 1],
+                    "AI provider '%s' failed (%s). Attempting fallback '%s'.",
                     active_provider,
+                    type(exc).__name__,
+                    next_provider,
                 )
                 continue
 
             break
 
+        if result is None:
+            if next_provider is not None:
+                logger.warning(
+                    "AI provider '%s' returned no response. Attempting fallback '%s'.",
+                    active_provider,
+                    next_provider,
+                )
+                continue
+            break
+
+        if active_provider != provider:
+            logger.warning(
+                "AI provider '%s' failed, successfully fell back to '%s'.",
+                provider,
+                active_provider,
+            )
+        return result
+
     if last_exception is not None:
         logger.error(
-            "AI provider '%s' failed without available fallback: %s",
+            "AI provider '%s' failed after exhausting %d option(s): %s",
             provider,
+            len(provider_chain),
             type(last_exception).__name__,
+        )
+    else:
+        logger.error(
+            "AI provider '%s' returned no usable response after trying %d option(s).",
+            provider,
+            len(provider_chain),
         )
     return None
 
@@ -1241,15 +1080,12 @@ def _get_extraction_prompt(session_manager: SessionManager) -> str:
     system_prompt = get_fallback_extraction_prompt()
     if USE_JSON_PROMPTS:
         try:
-            if _get_prompt_with_experiment:
-                variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
-                loaded_prompt = _get_prompt_with_experiment(
-                    "extraction_task",
-                    variants=variants,
-                    user_id=getattr(session_manager, "user_id", None),
-                )
-            else:
-                loaded_prompt = get_prompt("extraction_task")
+            variants = {"control": "extraction_task", "alt": "extraction_task_alt"}
+            loaded_prompt = get_prompt_with_experiment(
+                "extraction_task",
+                variants=variants,
+                user_id=getattr(session_manager, "user_id", None),
+            )
             if loaded_prompt:
                 system_prompt = loaded_prompt
             else:
@@ -1302,7 +1138,7 @@ def _record_extraction_telemetry(
     error: str | None = None,
 ) -> None:
     """Record extraction telemetry event."""
-    if _record_extraction_experiment_event is None or _get_prompt_version is None:
+    if not USE_JSON_PROMPTS:
         return
 
     try:
@@ -1318,22 +1154,23 @@ def _record_extraction_telemetry(
         anomaly_summary = None
 
         prompt_key = "extraction_task_alt" if variant_label == "alt" else "extraction_task"
-        prompt_version = _get_prompt_version(prompt_key)
+        prompt_version = get_prompt_version(prompt_key)
 
-        _record_extraction_experiment_event(
-            variant_label=variant_label,
-            prompt_key=prompt_key,
-            prompt_version=prompt_version,
-            parse_success=parse_success,
-            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,
-            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,
-            raw_response_text=cleaned_response_str,
-            user_id=getattr(session_manager, "user_id", None),
-            quality_score=quality_score,
-            component_coverage=component_coverage,
-            anomaly_summary=anomaly_summary,
-            error=error,
-        )
+        telemetry_payload: dict[str, Any] = {
+            "variant_label": variant_label,
+            "prompt_key": prompt_key,
+            "prompt_version": prompt_version,
+            "parse_success": parse_success,
+            "extracted_data": parsed_json.get("extracted_data") if parsed_json else None,
+            "suggested_tasks": parsed_json.get("suggested_tasks") if parsed_json else None,
+            "raw_response_text": cleaned_response_str,
+            "user_id": getattr(session_manager, "user_id", None),
+            "quality_score": quality_score,
+            "component_coverage": component_coverage,
+            "anomaly_summary": anomaly_summary,
+            "error": error,
+        }
+        record_extraction_experiment_event(telemetry_payload)
     except Exception:
         pass
 
@@ -2263,10 +2100,11 @@ def _validate_ai_provider(ai_provider: str) -> bool:
     if not ai_provider:
         logger.error("❌ AI_PROVIDER not configured")
         return False
-    if ai_provider not in {"deepseek", "gemini", "moonshot", "local_llm", "inception", "grok", "tetrate"}:
+    if ai_provider not in SUPPORTED_AI_PROVIDERS:
         logger.error(
-            "❌ Invalid AI_PROVIDER: %s. Must be 'deepseek', 'gemini', 'moonshot', 'local_llm', 'inception', 'grok', or 'tetrate'",
+            "❌ Invalid AI_PROVIDER: %s. Must be one of: %s",
             ai_provider,
+            ", ".join(SUPPORTED_AI_PROVIDERS),
         )
         return False
     logger.info(f"✅ AI_PROVIDER: {ai_provider}")
@@ -2622,6 +2460,92 @@ def _test_ai_fallback_behavior(session_manager: SessionManager) -> bool:
     return False
 
 
+def _test_configurable_provider_failover() -> bool:
+    """Ensure provider failover honors configured order and adapter responses."""
+
+    from test_framework import suppress_logging
+
+    class _RateLimiterStub:
+        def wait(self) -> float:
+            _ = self
+            return 0.0
+
+        def on_429_error(self, _source: str) -> None:
+            _ = self
+            _ = _source
+
+    class _SessionManagerStub:
+        def __init__(self) -> None:
+            self.rate_limiter = _RateLimiterStub()
+
+    class _FailingAdapter:
+        name = "deepseek"
+
+        def is_available(self) -> bool:
+            _ = self
+            return True
+
+        def call(self, request: ProviderRequest) -> ProviderResponse:
+            _ = self
+            _ = request
+            raise ProviderUnavailableError("forced failure")
+
+    class _SuccessfulAdapter:
+        name = "gemini"
+
+        def is_available(self) -> bool:
+            _ = self
+            return True
+
+        def call(self, request: ProviderRequest) -> ProviderResponse:
+            _ = self
+            _ = request
+            return ProviderResponse(content="OK", raw_response={"provider": self.name})
+
+    with suppress_logging():
+        session_stub = _SessionManagerStub()
+        api_config = config_schema.api
+        original_provider = config_schema.ai_provider
+        original_fallbacks = list(getattr(config_schema, "ai_provider_fallbacks", []))
+        original_deepseek_key = api_config.deepseek_api_key
+        original_google_key = api_config.google_api_key
+        original_adapters = {key: _PROVIDER_ADAPTERS.get(key) for key in ("deepseek", "gemini")}
+
+        try:
+            config_schema.ai_provider = "deepseek"
+            config_schema.ai_provider_fallbacks = ["gemini"]
+            if not api_config.deepseek_api_key:
+                api_config.deepseek_api_key = "test-deepseek-key"
+            if not api_config.google_api_key:
+                api_config.google_api_key = "test-google-key"
+
+            _PROVIDER_ADAPTERS["deepseek"] = _FailingAdapter()
+            _PROVIDER_ADAPTERS["gemini"] = _SuccessfulAdapter()
+
+            result = _call_ai_model(
+                provider="deepseek",
+                system_prompt="system",
+                user_content="failover-test",
+                session_manager=session_stub,  # type: ignore[arg-type]
+                max_tokens=8,
+                temperature=0.0,
+            )
+            assert result == "OK", "Failover should return the fallback response"
+        finally:
+            config_schema.ai_provider = original_provider
+            config_schema.ai_provider_fallbacks = original_fallbacks
+            api_config.deepseek_api_key = original_deepseek_key
+            api_config.google_api_key = original_google_key
+
+            for key, adapter in original_adapters.items():
+                if adapter is not None:
+                    _PROVIDER_ADAPTERS[key] = adapter
+                else:
+                    _PROVIDER_ADAPTERS.pop(key, None)
+
+    return True
+
+
 def _test_intent_classification(session_manager: SessionManager) -> bool:
     """Test AI intent classification functionality."""
     test_message = "Hello, I'm interested in genealogy research and finding common ancestors."
@@ -2834,6 +2758,14 @@ def ai_interface_module_tests() -> bool:
             "Required AI libraries are available",
             "Test library availability",
             "Verify openai or google.genai libraries are installed",
+        )
+
+        suite.run_test(
+            "Provider Failover Chain",
+            _test_configurable_provider_failover,
+            "Configurable fallback order engages alternate providers when the primary fails",
+            "AI provider failover orchestration",
+            "Override adapters to force failure and verify fallback succeeds",
         )
 
         suite.run_test(

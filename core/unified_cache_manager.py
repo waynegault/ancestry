@@ -22,7 +22,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core.cache_backend import CacheFactory, CacheHealth, CacheStats
+from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
 from observability.metrics_registry import metrics
 from standard_imports import setup_module
 
@@ -403,7 +403,7 @@ class UnifiedCacheManager:
     def get_health_typed(self) -> CacheHealth:
         """CacheBackend protocol: Return standardized CacheHealth."""
         stats = self.get_stats_typed()
-        recommendations = []
+        recommendations: list[str] = []
 
         # Check utilization (entries as percentage of max)
         utilization_pct = (stats.entries / self._max_entries * 100) if self._max_entries > 0 else 0
@@ -490,16 +490,58 @@ class UnifiedCacheManager:
 
 
 # Global cache instance (singleton pattern)
+
+
+class UnifiedCacheBackendAdapter(CacheBackend):
+    """Adapter that exposes UnifiedCacheManager via CacheBackend protocol."""
+
+    def __init__(self, cache_impl: UnifiedCacheManager) -> None:
+        self._cache = cache_impl
+
+    def get(self, key: str) -> Optional[Any]:
+        return self._cache.get_by_key(key)
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        return self._cache.set_by_key(key, value, ttl)
+
+    def delete(self, key: str) -> bool:
+        return self._cache.delete(key)
+
+    def clear(self) -> bool:
+        try:
+            self._cache.clear()
+            return True
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Unified cache clear failed: %s", exc)
+            return False
+
+    def get_stats(self) -> CacheStats:
+        return self._cache.get_stats_typed()
+
+    def get_health(self) -> CacheHealth:
+        return self._cache.get_health_typed()
+
+    def warm(self) -> bool:
+        try:
+            self._cache.warm({})
+            return True
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Unified cache warm failed: %s", exc)
+            return False
+
+
 class CacheState:
     _unified_cache: Optional[UnifiedCacheManager] = None
+    _unified_cache_backend: Optional[UnifiedCacheBackendAdapter] = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:
     """Get or create the global unified cache instance (singleton)."""
     if CacheState._unified_cache is None:
         CacheState._unified_cache = UnifiedCacheManager()
+        CacheState._unified_cache_backend = UnifiedCacheBackendAdapter(CacheState._unified_cache)
         # Register with CacheFactory for unified monitoring
-        CacheFactory.register_backend("unified_cache", CacheState._unified_cache)
+        CacheFactory.register_backend("unified_cache", CacheState._unified_cache_backend)
         logger.info("🚀 Unified cache manager initialized")
     return CacheState._unified_cache
 

@@ -81,7 +81,7 @@ from diskcache.core import ENOVAL
 
 # --- Local application imports ---
 from config import config_schema  # Use configured instance
-from core.cache_backend import CacheFactory, CacheHealth, CacheStats
+from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
 
 # --- Test framework imports ---
 from test_framework import (
@@ -348,8 +348,37 @@ class BaseCacheModule(CacheInterface):
 # Global instance of base cache module
 base_cache_module = BaseCacheModule()
 
+
+class DiskCacheBackendAdapter(CacheBackend):
+    """Adapter that exposes BaseCacheModule via CacheBackend protocol."""
+
+    def __init__(self, module: BaseCacheModule) -> None:
+        self._module = module
+
+    def get(self, key: str) -> Optional[Any]:
+        return self._module.get(key)
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        return self._module.set(key, value, ttl)
+
+    def delete(self, key: str) -> bool:
+        return self._module.delete(key)
+
+    def clear(self) -> bool:
+        return self._module.clear()
+
+    def get_stats(self) -> CacheStats:
+        return self._module.get_stats_typed()
+
+    def get_health(self) -> CacheHealth:
+        return self._module.get_health()
+
+    def warm(self) -> bool:
+        return self._module.warm()
+
+
 # Register with CacheFactory for unified access
-CacheFactory.register_backend("disk_cache", base_cache_module)
+CacheFactory.register_backend("disk_cache", DiskCacheBackendAdapter(base_cache_module))
 
 
 # --- Cache Decorator Helper Functions ---

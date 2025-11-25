@@ -364,8 +364,9 @@ class CacheFactory:
         for name, backend in cls._instances.items():
             try:
                 # Try the typed method first (new protocol)
-                if hasattr(backend, "get_stats_typed"):
-                    result = backend.get_stats_typed()
+                get_stats_typed = getattr(backend, "get_stats_typed", None)
+                if callable(get_stats_typed):
+                    result = get_stats_typed()
                     if isinstance(result, CacheStats):
                         stats[name] = result
                         continue
@@ -471,7 +472,8 @@ def _test_cache_backend_protocol_check() -> bool:
         def get(self, key: str) -> Optional[Any]:
             return self._data.get(key)
 
-        def set(self, key: str, value: Any, _ttl: Optional[int] = None) -> bool:
+        def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+            del ttl  # Protocol requires parameter
             self._data[key] = value
             return True
 
@@ -514,7 +516,8 @@ def _test_cache_factory_operations() -> bool:
         def get(self, key: str) -> Optional[Any]:
             return self._data.get(key)
 
-        def set(self, key: str, value: Any, _ttl: Optional[int] = None) -> bool:
+        def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+            del ttl  # Protocol requires parameter
             self._data[key] = value
             return True
 

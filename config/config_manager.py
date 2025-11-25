@@ -812,6 +812,12 @@ class ConfigManager:
         if ai_provider_value:
             config["ai_provider"] = ai_provider_value
 
+        fallback_value = os.getenv("AI_PROVIDER_FALLBACKS")
+        if fallback_value:
+            fallback_list = [item.strip() for item in fallback_value.split(",") if item.strip()]
+            if fallback_list:
+                config["ai_provider_fallbacks"] = fallback_list
+
         ai_ctx_msgs = os.getenv("AI_CONTEXT_MESSAGES_COUNT")
         if ai_ctx_msgs:
             try:

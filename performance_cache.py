@@ -60,10 +60,9 @@ import time
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import Any, Callable, Optional
 
-if TYPE_CHECKING:
-    from core.cache_backend import CacheHealth, CacheStats
+from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
 
 # --- Memory-Efficient Object Pool for Cacheable Objects ---
 from memory_utils import ObjectPool
@@ -178,7 +177,7 @@ class PerformanceCache:
         # If hit rate is very high (>90%), consider increasing cache size
         if hit_rate > 0.9 and len(self._memory_cache) >= self._max_size * 0.9:
             old_size = self._max_size
-            self._max_size = min(self._max_size * 1.2, 1000)  # Cap at 1000 entries
+            self._max_size = int(min(self._max_size * 1.2, 1000))  # Cap at 1000 entries
             if self._max_size != old_size:
                 self._cache_stats["adaptive_resizes"] += 1
                 logger.debug(f"Adaptive resize: increased cache size from {old_size} to {self._max_size}")
@@ -186,7 +185,7 @@ class PerformanceCache:
         # If hit rate is low (<50%) and cache is large, consider shrinking
         elif hit_rate < 0.5 and self._max_size > 100:
             old_size = self._max_size
-            self._max_size = max(self._max_size * 0.8, 100)  # Minimum 100 entries
+            self._max_size = int(max(self._max_size * 0.8, 100))  # Minimum 100 entries
             if self._max_size != old_size:
                 self._cache_stats["adaptive_resizes"] += 1
                 logger.debug(f"Adaptive resize: decreased cache size from {old_size} to {self._max_size}")
@@ -379,7 +378,7 @@ class PerformanceCache:
             entries=len(self._memory_cache),
             evictions=stats.get("evictions", 0),
             size_bytes=int(self._calculate_memory_usage() * 1024 * 1024),
-            max_size_bytes=self._max_size * 1024,  # Approximate bytes per entry
+            max_size_bytes=int(self._max_size * 1024),  # Approximate bytes per entry
         )
 
     def get_health_typed(self) -> "CacheHealth":
@@ -387,7 +386,7 @@ class PerformanceCache:
         from core.cache_backend import CacheHealth
 
         stats = self.get_stats_typed()
-        recommendations = []
+        recommendations: list[str] = []
 
         # Check memory pressure
         pressure = self._calculate_memory_pressure()
@@ -422,16 +421,55 @@ class PerformanceCache:
         return count
 
 
+class PerformanceCacheBackendAdapter(CacheBackend):
+    """Adapter exposing PerformanceCache via CacheBackend protocol."""
+
+    def __init__(self, cache_impl: PerformanceCache) -> None:
+        self._cache = cache_impl
+
+    def get(self, key: str) -> Optional[Any]:
+        return self._cache.get(key)
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        del ttl  # CacheBackend protocol requires ttl parameter
+        try:
+            self._cache.set(key, value)
+            return True
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Performance cache set failed for %s: %s", key, exc)
+            return False
+
+    def delete(self, key: str) -> bool:
+        return self._cache.delete(key)
+
+    def clear(self) -> bool:
+        try:
+            self._cache.clear()
+            return True
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Performance cache clear failed: %s", exc)
+            return False
+
+    def get_stats(self) -> CacheStats:
+        return self._cache.get_stats_typed()
+
+    def get_health(self) -> CacheHealth:
+        return self._cache.get_health_typed()
+
+    def warm(self) -> bool:
+        try:
+            self._cache.warm({})
+            return True
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.debug("Performance cache warm failed: %s", exc)
+            return False
+
+
 # === GLOBAL CACHE INSTANCE ===
 _performance_cache = PerformanceCache()
 
 # Register with CacheFactory for unified monitoring
-try:
-    from core.cache_backend import CacheFactory
-
-    CacheFactory.register_backend("performance_cache", _performance_cache)
-except Exception as e:
-    logger.debug(f"CacheFactory registration skipped: {e}")
+CacheFactory.register_backend("performance_cache", PerformanceCacheBackendAdapter(_performance_cache))
 
 
 # === PERFORMANCE DECORATORS ===
