@@ -27,7 +27,7 @@ import time
 from importlib import import_module
 from typing import Any, Callable, Optional, Protocol, cast
 
-from action10_wrapper import run_gedcom_then_api_fallback
+from action10 import run_gedcom_then_api_fallback
 from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
 from core.action_registry import (
     ActionMetadata,
@@ -177,13 +177,7 @@ def _check_action_confirmation(choice: str) -> bool:
 
     if metadata and metadata.requires_confirmation:
         action_desc = metadata.confirmation_message or metadata.name
-        confirm = (
-            input(
-                f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): "
-            )
-            .strip()
-            .lower()
-        )
+        confirm = input(f"Are you sure you want to {action_desc}? ⚠️  This cannot be undone. (yes/no): ").strip().lower()
         if confirm not in {"yes", "y"}:
             print("Action cancelled.\n")
             return False
@@ -400,11 +394,13 @@ def main() -> None:
         # Restore system sleep settings
         if sleep_state is not None:
             from utils import restore_system_sleep
+
             restore_system_sleep(sleep_state)
             logger.info("🔓 System sleep prevention deactivated")
 
         import contextlib
         import io
+
         # Suppress all stderr output during cleanup to hide undetected_chromedriver errors
         with contextlib.redirect_stderr(io.StringIO()):
             cleanup_session_manager(session_manager)
@@ -416,6 +412,7 @@ def main() -> None:
 
 
 # === Module Test Suite ===
+
 
 def _test_clear_log_file_function() -> bool:
     """Validate log file clearing behavior returns structured tuple."""
@@ -455,13 +452,9 @@ def _test_reset_db_actn_integration() -> bool:
         )
         assert hasattr(db_manager, "engine"), "DatabaseManager should have engine attribute"
         assert hasattr(db_manager, "Session"), "DatabaseManager should have Session attribute"
-        logger.debug(
-            "reset_db_actn integration test: All required methods and attributes verified"
-        )
+        logger.debug("reset_db_actn integration test: All required methods and attributes verified")
     except AttributeError as exc:
-        raise AssertionError(
-            f"reset_db_actn integration test failed with AttributeError: {exc}"
-        ) from exc
+        raise AssertionError(f"reset_db_actn integration test failed with AttributeError: {exc}") from exc
     except Exception as exc:  # pragma: no cover - acceptable fallback
         logger.debug(
             "reset_db_actn integration test: Non-AttributeError exception (acceptable): %s",
@@ -575,9 +568,7 @@ def _test_memory_efficiency() -> bool:
     }
 
     globals_count = len(tracked_state)
-    assert globals_count < 80, (
-        f"Stateful global variables should be reasonable, got {globals_count}"
-    )
+    assert globals_count < 80, f"Stateful global variables should be reasonable, got {globals_count}"
     return True
 
 

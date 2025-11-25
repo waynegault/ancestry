@@ -25,6 +25,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Messaging Workflow Helpers Package (Nov 25)** - Created `messaging/workflow_helpers.py` with 12 shared helper functions (enum-aware column extraction, conversation state management, engagement timing, tree detection) and 13 tests. Actions 7–9 now import from this module, removing ~200 lines of duplicated code.
+- ✅ **CLI Method Visibility Fix (Nov 25)** - Renamed protected helper methods in `cli/maintenance.py` (`_format_cache_stat_value`, `_render_retention_targets`, etc.) to public methods so tests comply with Pyright access rules without needing `type: ignore` suppressions.
 - ✅ **Test Suite Hardening (Nov 24)** - Converted the final smoke-style tests into behavioral coverage: gedcom_search_utils.py now validates filtering and GEDCOM fallback logic, core/error_handling.py exercises safe_execute context propagation plus circuit breaker transitions, and selenium_utils.py drives safe_click, CDP user-agent overrides, cookie export, and element helper guards. Updated the relationship_utils StubTag/StubIndi doubles to dataclasses to satisfy Ruff B903.
 - ✅ **Action 6 Decomposition Plan (Nov 24)** - Captured the full `coord()` pipeline, helper clustering plan, dependency audit, and Phase 2 next steps in `docs/action6_refactor_plan.md` so the gather refactor proceeds in structured phases.
 - ✅ **Action 6 Orchestrator Delegation (Nov 26)** - `action6_gather.coord()` now just builds a `GatherOrchestratorHooks` bundle and hands execution to `actions.gather.orchestrator.GatherOrchestrator`, shrinking the monolith to hook/prefetch/persistence helpers while the orchestrator module owns checkpoint/resume, retry metadata, and final-summary tests.
@@ -143,6 +145,31 @@ Manage ongoing productive conversations with automated follow-ups.
 ```bash
 python action9_process_productive.py
 ```
+
+#### Shared Messaging Helpers (`messaging/workflow_helpers.py`)
+
+The `messaging/` package centralizes workflow utilities shared across Actions 7–9:
+
+**Column extraction & enum coercion:**
+- `safe_column_value()`, `build_safe_column_value()` - Enum-aware SQLAlchemy column extraction with automatic type coercion
+
+**Conversation state management:**
+- `cancel_pending_messages_on_status_change()` - Cancel pending messages when person status changes
+- `cancel_pending_on_reply()` - Cancel pending messages when reply detected
+- `log_conversation_state_change()` - Audit logging for state transitions
+
+**Engagement timing:**
+- `calculate_days_since_login()` - Days since last login activity
+- `determine_engagement_tier()` - Classify engagement level (hot/warm/cold)
+- `calculate_adaptive_interval()` - Compute follow-up intervals based on engagement
+- `calculate_follow_up_action()` - Determine next workflow action
+
+**Tree detection:**
+- `is_tree_creation_recent()` - Check if tree was created recently
+- `has_message_after_tree_creation()` - Verify message timing relative to tree
+- `detect_status_change_to_in_tree()` - Detect IN_TREE status transitions
+
+The module includes 13 `TestSuite` tests. Remaining nav-guard, template-loading utilities tracked in `todo.md`.
 
 ### Action 10: GEDCOM Analysis
 Analyze GEDCOM files and score potential matches.

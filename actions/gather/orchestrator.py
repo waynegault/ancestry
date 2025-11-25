@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import time
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
@@ -45,6 +45,8 @@ from test_framework import TestSuite, create_standard_test_runner
 from utils import log_final_summary, log_starting_position
 
 logger = setup_module(globals(), __name__)
+
+GatherState = dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -156,12 +158,18 @@ class GatherOrchestrator:
         action_start_time = time.time()
 
         self._validate_session_state()
-        state, start_page = self._build_coord_state(start, action_start_time)
+        coord_state = self._build_coord_state(start, action_start_time)
+        state = cast(dict[str, object], coord_state[0])
+        start_page = coord_state[1]
         self._log_action_start(start_page)
 
         if state.get("resume_from_checkpoint"):
-            checkpoint_data = state.get("checkpoint_metadata") or {}
-            planned_total = checkpoint_data.get("total_pages_in_run") if isinstance(checkpoint_data, dict) else None
+            checkpoint_meta = state.get("checkpoint_metadata")
+            if isinstance(checkpoint_meta, dict):
+                checkpoint_data: Optional[dict[str, Any]] = cast(dict[str, Any], checkpoint_meta)
+            else:
+                checkpoint_data = None
+            planned_total = checkpoint_data.get("total_pages_in_run") if checkpoint_data else None
             logger.info(
                 "Checkpoint resume active: starting at page %d (planned total pages: %s)",
                 start_page,
@@ -203,7 +211,7 @@ class GatherOrchestrator:
         state["checkpoint_metadata"] = checkpoint_data
         return state, start_page
 
-    def _execute_coord_run(self, state: dict[str, Any], start_page: int) -> bool:
+    def _execute_coord_run(self, state: GatherState, start_page: int) -> bool:
         page_range = self._prepare_page_range(start_page, state)
         if page_range is None:
             return True
@@ -256,7 +264,7 @@ class GatherOrchestrator:
     def _handle_initial_fetch(
         self,
         start_page: int,
-        state: dict[str, Any],
+        state: GatherState,
     ) -> tuple[int, int, int]:
         initial_matches, total_pages_api, initial_fetch_ok = self.hooks.navigate_and_get_initial_page_data(
             self.session_manager,
@@ -299,7 +307,7 @@ class GatherOrchestrator:
     def _prepare_page_range(
         self,
         start_page: int,
-        state: dict[str, Any],
+        state: GatherState,
     ) -> Optional[tuple[int, int]]:
         try:
             _, last_page_to_process, total_pages_in_run = self._handle_initial_fetch(
@@ -322,7 +330,7 @@ class GatherOrchestrator:
         last_page_to_process: int,
         total_pages_in_run: int,
         initial_matches_on_page: Optional[list[dict[str, Any]]],
-        state: dict[str, Any],
+        state: GatherState,
     ) -> bool:
         action_state_cls = self.hooks.action_state_cls
         dynamic_threshold = self.hooks.calculate_failure_threshold(total_pages_in_run)
@@ -382,7 +390,7 @@ class GatherOrchestrator:
         current_page_num: int,
         start_page: int,
         matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-        state: dict[str, Any],
+        state: GatherState,
         loop_final_success: bool,
     ) -> tuple[int, bool]:
         log_page_start(current_page_num, state)
@@ -445,7 +453,7 @@ class GatherOrchestrator:
         current_page_num: int,
         start_page: int,
         matches_on_page_for_batch: Optional[list[dict[str, Any]]],
-        state: dict[str, Any],
+        state: GatherState,
         loop_final_success: bool,
     ) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
         if current_page_num == start_page and matches_on_page_for_batch is not None:
@@ -472,7 +480,7 @@ class GatherOrchestrator:
     def _get_database_session_with_retry(
         self,
         current_page_num: int,
-        state: dict[str, Any],
+        state: GatherState,
         max_retries: int = 3,
     ) -> Optional[SqlAlchemySession]:
         db_session: Optional[SqlAlchemySession] = None
@@ -495,7 +503,7 @@ class GatherOrchestrator:
 
     @staticmethod
     def _update_state_and_progress(
-        state: dict[str, Any],
+        state: GatherState,
         page_new: int,
         page_updated: int,
         page_skipped: int,
@@ -518,7 +526,7 @@ class GatherOrchestrator:
         self,
         matches_on_page: list[dict[str, Any]],
         current_page_num: int,
-        state: dict[str, Any],
+        state: GatherState,
     ) -> bool:
         if not matches_on_page:
             return False
@@ -573,7 +581,7 @@ class GatherOrchestrator:
         self,
         db_session: SqlAlchemySession,
         current_page_num: int,
-        state: dict[str, Any],
+        state: GatherState,
     ) -> Optional[list[dict[str, Any]]]:
         try:
             if not self.session_manager.is_sess_valid():

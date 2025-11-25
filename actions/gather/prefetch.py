@@ -1000,8 +1000,10 @@ def _test_merge_badge_and_ladder_success() -> bool:
     assert captured_args["cfpid"] == "cfpid-123"
     assert captured_args["tree_id"] == "tree-1"
     assert captured_args["display_name"] == "Ada"
-    assert enriched["uuid-abc"]["existing"] == "value"
-    assert enriched["uuid-abc"]["relationship"] == "3rd cousin"
+    merged_entry = enriched.get("uuid-abc")
+    assert merged_entry is not None
+    assert merged_entry["existing"] == "value"
+    assert merged_entry["relationship"] == "3rd cousin"
     return True
 
 

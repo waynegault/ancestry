@@ -159,7 +159,7 @@ def _update_session_performance_tracking(
 # Note: ObjectPool and lazy_property removed - not essential for core functionality
 # from memory_optimizer import ObjectPool, lazy_property
 # Historical note: prior advanced caching layer removed for clarity
-from core.logging_utils import OptimizedLogger, log_action_banner
+from core.logging_utils import OptimizedLogger
 from standard_imports import setup_module
 
 # === MODULE SETUP ===

@@ -61,6 +61,7 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+from messaging import build_safe_column_value
 from person_lookup_utils import (
     PersonLookupResult,
     create_not_found_result,
@@ -92,29 +93,12 @@ DecoratorCallable = Callable[[Callable[..., Any]], Callable[..., Any]]
 DecoratorFactory = Callable[..., DecoratorCallable]
 error_context_decorator = cast(DecoratorFactory, error_context)
 
+SAFE_COLUMN_ENUMS = {
+    "direction": MessageDirectionEnum,
+    "status": PersonStatusEnum,
+}
 
-def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
-    """
-    Safely extract a value from a SQLAlchemy object attribute.
-    Handles cases where the attribute might be a SQLAlchemy Column or None.
-
-    Args:
-        obj: The SQLAlchemy object
-        attr_name: The name of the attribute to extract
-        default: Default value to return if extraction fails
-
-    Returns:
-        The extracted value or the default (preserving type when possible)
-    """
-    try:
-        if hasattr(obj, attr_name):
-            value = getattr(obj, attr_name)
-            if value is None:
-                return default
-            return value
-        return default
-    except Exception:
-        return default
+safe_column_value = build_safe_column_value(SAFE_COLUMN_ENUMS)
 
 
 def should_exclude_message(message_content: Optional[str]) -> bool:

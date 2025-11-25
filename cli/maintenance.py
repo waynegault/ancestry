@@ -256,7 +256,7 @@ class MainCLIHelpers:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _format_cache_stat_value(value: Any) -> str:
+    def format_cache_stat_value(value: Any) -> str:
         if isinstance(value, float):
             return f"{value:.2f}"
         if isinstance(value, int):
@@ -272,7 +272,7 @@ class MainCLIHelpers:
         return str(value)
 
     @staticmethod
-    def _render_retention_targets(targets: Any) -> bool:
+    def render_retention_targets(targets: Any) -> bool:
         if not (isinstance(targets, list) and targets and isinstance(targets[0], dict)):
             return False
 
@@ -294,7 +294,7 @@ class MainCLIHelpers:
             print(f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})")
         return True
 
-    def _render_stat_fields(self, stats: dict[str, Any]) -> bool:
+    def render_stat_fields(self, stats: dict[str, Any]) -> bool:
         shown_any = False
         for key in sorted(stats.keys()):
             if key in {"name", "kind", "health", "targets"}:
@@ -302,12 +302,12 @@ class MainCLIHelpers:
             value = stats[key]
             if value in (None, "", [], {}):
                 continue
-            print(f"  {key.replace('_', ' ').title()}: {self._format_cache_stat_value(value)}")
+            print(f"  {key.replace('_', ' ').title()}: {self.format_cache_stat_value(value)}")
             shown_any = True
         return shown_any
 
     @staticmethod
-    def _render_health_stats(health: Any) -> bool:
+    def render_health_stats(health: Any) -> bool:
         if not (isinstance(health, dict) and health):
             return False
 
@@ -320,7 +320,7 @@ class MainCLIHelpers:
             print(f"  Recommendations: {len(recommendations)}")
         return True
 
-    def _print_cache_component(self, component_name: str, stats: dict[str, Any]) -> None:
+    def print_cache_component(self, component_name: str, stats: dict[str, Any]) -> None:
         icon = self._CACHE_KIND_ICONS.get(stats.get("kind", ""), "🗃️")
         display_name = stats.get("name", component_name).upper()
         kind = stats.get("kind", "unknown")
@@ -328,9 +328,9 @@ class MainCLIHelpers:
         print("-" * 70)
 
         had_output = False
-        had_output |= self._render_retention_targets(stats.get("targets"))
-        had_output |= self._render_stat_fields(stats)
-        had_output |= self._render_health_stats(stats.get("health"))
+        had_output |= self.render_retention_targets(stats.get("targets"))
+        had_output |= self.render_stat_fields(stats)
+        had_output |= self.render_health_stats(stats.get("health"))
 
         if not had_output:
             print("  No statistics available for this component.")
@@ -348,7 +348,7 @@ class MainCLIHelpers:
 
             for component_name in component_names:
                 stats = summary.get(component_name, {})
-                self._print_cache_component(component_name, stats)
+                self.print_cache_component(component_name, stats)
 
             registry_info = summary.get("registry", {})
             print("REGISTRY OVERVIEW")
@@ -718,12 +718,12 @@ def _capture_stdout(func: Callable[..., Any], *args: Any, **kwargs: Any) -> tupl
 
 
 def _test_format_cache_stat_value() -> bool:
-    assert MainCLIHelpers._format_cache_stat_value(1_234_567) == "1,234,567"
-    assert MainCLIHelpers._format_cache_stat_value(3.14159) == "3.14"
-    assert MainCLIHelpers._format_cache_stat_value([1, 2, 3]) == "3 items"
+    assert MainCLIHelpers.format_cache_stat_value(1_234_567) == "1,234,567"
+    assert MainCLIHelpers.format_cache_stat_value(3.14159) == "3.14"
+    assert MainCLIHelpers.format_cache_stat_value([1, 2, 3]) == "3 items"
     rich_dict = {"a": 1, "b": 2, "c": 3, "d": 4}
-    assert MainCLIHelpers._format_cache_stat_value(rich_dict) == "{a=1, b=2, c=3, ...}"
-    assert MainCLIHelpers._format_cache_stat_value("ready") == "ready"
+    assert MainCLIHelpers.format_cache_stat_value(rich_dict) == "{a=1, b=2, c=3, ...}"
+    assert MainCLIHelpers.format_cache_stat_value("ready") == "ready"
     return True
 
 
@@ -737,13 +737,13 @@ def _test_render_retention_targets() -> bool:
             "run_timestamp": time.time() - 120,
         }
     ]
-    result, output = _capture_stdout(MainCLIHelpers._render_retention_targets, targets)
+    result, output = _capture_stdout(MainCLIHelpers.render_retention_targets, targets)
     assert result is True
     assert "Disk Cache" in output
     assert "10 files" in output
     assert "MB" in output
 
-    result, _ = _capture_stdout(MainCLIHelpers._render_retention_targets, None)
+    result, _ = _capture_stdout(MainCLIHelpers.render_retention_targets, None)
     assert result is False
     return True
 
@@ -752,24 +752,24 @@ def _test_render_stat_and_health_fields() -> bool:
     helper, logger = _create_helper_for_tests()
     try:
         stats = {"hits": 5, "misses": 2, "name": "disk", "kind": "disk"}
-        result, output = _capture_stdout(helper._render_stat_fields, stats)
+        result, output = _capture_stdout(helper.render_stat_fields, stats)
         assert result is True
         assert "Hits: 5" in output
         assert "Misses: 2" in output
-        result, _ = _capture_stdout(helper._render_stat_fields, {"name": "only"})
+        result, _ = _capture_stdout(helper.render_stat_fields, {"name": "only"})
         assert result is False
     finally:
         _teardown_test_logger(logger)
 
     result, output = _capture_stdout(
-        MainCLIHelpers._render_health_stats,
+        MainCLIHelpers.render_health_stats,
         {"overall_score": 87.5, "recommendations": ["optimize", "trim"]},
     )
     assert result is True
     assert "87.5" in output
     assert "Recommendations: 2" in output
 
-    result, _ = _capture_stdout(MainCLIHelpers._render_health_stats, None)
+    result, _ = _capture_stdout(MainCLIHelpers.render_health_stats, None)
     assert result is False
     return True
 
@@ -777,7 +777,7 @@ def _test_render_stat_and_health_fields() -> bool:
 def _test_print_cache_component_output() -> bool:
     helper, logger = _create_helper_for_tests()
     try:
-        _, output = _capture_stdout(helper._print_cache_component, "component", {})
+        _, output = _capture_stdout(helper.print_cache_component, "component", {})
         assert "🗃️ COMPONENT" in output
         assert "No statistics available" in output
     finally:

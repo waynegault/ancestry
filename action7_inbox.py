@@ -72,6 +72,7 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+from messaging import build_safe_column_value
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
 JSONDict = dict[str, Any]
@@ -140,83 +141,12 @@ with_enhanced_recovery = cast(DecoratorFactory, _with_enhanced_recovery)
 api_retry = cast(DecoratorFactory, _api_retry)
 
 
-# --- Helper function for SQLAlchemy Column conversion ---
-def _handle_direction_enum(value: Any, default: Any) -> Any:
-    """Handle direction enum conversion."""
-    if isinstance(value, MessageDirectionEnum):
-        return value
-    if isinstance(value, str):
-        try:
-            return MessageDirectionEnum(value)
-        except ValueError:
-            logger.warning(f"Invalid direction string '{value}'")
-            return default
-    else:
-        logger.warning(f"Unexpected direction type: {type(value)}")
-        return default
+SAFE_COLUMN_ENUMS = {
+    "direction": MessageDirectionEnum,
+    "status": PersonStatusEnum,
+}
 
-
-def _handle_status_enum(value: Any, default: Any) -> Any:
-    """Handle status enum conversion."""
-    if isinstance(value, PersonStatusEnum):
-        return value
-    if isinstance(value, str):
-        try:
-            return PersonStatusEnum(value)
-        except ValueError:
-            logger.warning(f"Invalid status string '{value}'")
-            return default
-    else:
-        logger.warning(f"Unexpected status type: {type(value)}")
-        return default
-
-
-def _convert_to_primitive(value: Any) -> Any:
-    """Convert value to Python primitive type."""
-    if isinstance(value, (bool, bool, bool)):
-        return bool(value)
-    if isinstance(value, int):
-        return int(value)
-    if isinstance(value, float):
-        return float(value)
-    if hasattr(value, "isoformat"):  # datetime-like
-        return value
-    return str(value)
-
-
-def safe_column_value(obj: Any, attr_name: str, default: Any = None) -> Any:
-    """
-    Safely extract a value from a SQLAlchemy model attribute, handling Column objects.
-
-    Args:
-        obj: The SQLAlchemy model instance
-        attr_name: The attribute name to access
-        default: Default value to return if attribute doesn't exist or conversion fails
-
-    Returns:
-        The Python primitive value of the attribute, or the default value
-    """
-    if not hasattr(obj, attr_name):
-        return default
-
-    value = getattr(obj, attr_name)
-    if value is None:
-        return default
-
-    # Try to convert to Python primitive
-    try:
-        # Special handling for enums
-        if attr_name == "direction":
-            return _handle_direction_enum(value, default)
-
-        if attr_name == "status":
-            return _handle_status_enum(value, default)
-
-        # For different types of attributes
-        return _convert_to_primitive(value)
-
-    except (ValueError, TypeError, AttributeError):
-        return default
+safe_column_value = build_safe_column_value(SAFE_COLUMN_ENUMS)
 
 
 # --- Critical Improvements ---
