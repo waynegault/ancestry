@@ -1,6 +1,20 @@
 {
     "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "python.terminal.activateEnvironment": true,
+    "python.analysis.extraPaths": [
+        ".",
+        "./core",
+        "./config",
+        "./messaging",
+        "./actions",
+        "./cli",
+        "./scripts",
+        "./observability"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "none",
+        "reportMissingModuleSource": "none"
+    },
     "files.watcherExclude": {
         "**/.git/objects/**": true,
         "**/.git/subtree-cache/**": true,

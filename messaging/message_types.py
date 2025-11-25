@@ -299,11 +299,10 @@ def module_tests() -> bool:
     return suite.finish_suite()
 
 
-# Standard test runner pattern
-from test_framework import create_standard_test_runner
-
-run_comprehensive_tests = create_standard_test_runner(module_tests)
-
 if __name__ == "__main__":
+    # Import test framework only when running as main (Pylance-friendly)
+    from test_framework import create_standard_test_runner
+
+    run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()
     raise SystemExit(0 if success else 1)
