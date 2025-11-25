@@ -669,11 +669,11 @@ class _FakeSession:
     def __init__(self, delete_result: int = 1, scalar_values: Optional[list[int]] = None) -> None:
         self.query_calls: list[Any] = []
         self.added: list[Any] = []
-        self._query = _FakeQuery(delete_result, scalar_values)
+        self.query_instance = _FakeQuery(delete_result, scalar_values)
 
     def query(self, _table: Any) -> _FakeQuery:
         self.query_calls.append(_table)
-        return self._query
+        return self.query_instance
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
@@ -692,8 +692,8 @@ def _test_delete_table_records_uses_session_query() -> bool:
     count = _delete_table_records(session_for_call, Person, "condition", "people", 42)
     assert count == 2
     assert fake_session.query_calls == [Person]
-    assert fake_session._query.filter_args == ["condition"]
-    assert fake_session._query.delete_kwargs == [False]
+    assert fake_session.query_instance.filter_args == ["condition"]
+    assert fake_session.query_instance.delete_kwargs == [False]
     return True
 
 

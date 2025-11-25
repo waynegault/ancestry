@@ -95,7 +95,12 @@
       "extraPaths": [
         ".",
         "./core",
-        "./config"
+        "./config",
+        "./messaging",
+        "./actions",
+        "./cli",
+        "./scripts",
+        "./observability"
       ]
     }
   ],

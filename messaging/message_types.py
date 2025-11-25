@@ -45,17 +45,19 @@ MESSAGE_TYPES_ACTION8 = MESSAGE_TYPES
 
 
 # Core required template keys for validation
-CORE_REQUIRED_TEMPLATE_KEYS = frozenset({
-    "In_Tree-Initial",
-    "In_Tree-Follow_Up",
-    "In_Tree-Final_Reminder",
-    "Out_Tree-Initial",
-    "Out_Tree-Follow_Up",
-    "Out_Tree-Final_Reminder",
-    "In_Tree-Initial_for_was_Out_Tree",
-    "User_Requested_Desist",
-    "Productive_Reply_Acknowledgement",
-})
+CORE_REQUIRED_TEMPLATE_KEYS = frozenset(
+    {
+        "In_Tree-Initial",
+        "In_Tree-Follow_Up",
+        "In_Tree-Final_Reminder",
+        "Out_Tree-Initial",
+        "Out_Tree-Follow_Up",
+        "Out_Tree-Final_Reminder",
+        "In_Tree-Initial_for_was_Out_Tree",
+        "User_Requested_Desist",
+        "Productive_Reply_Acknowledgement",
+    }
+)
 
 
 # ------------------------------------------------------------------------------
@@ -257,45 +259,41 @@ def module_tests() -> bool:
     suite = TestSuite("Message Types Module", "messaging/message_types.py")
 
     suite.run_test(
-        "MESSAGE_TYPES constant",
-        _test_message_types_constant,
-        "Validates MESSAGE_TYPES has 12 entries and alias works"
+        "MESSAGE_TYPES constant", _test_message_types_constant, "Validates MESSAGE_TYPES has 12 entries and alias works"
     )
 
     suite.run_test(
         "CORE_REQUIRED_TEMPLATE_KEYS",
         _test_core_required_template_keys,
-        "Validates required template keys set has 9 entries"
+        "Validates required template keys set has 9 entries",
     )
 
     suite.run_test(
         "Initial message type determination",
         _test_determine_next_message_type_initial,
-        "Tests first message in sequence for tree/non-tree"
+        "Tests first message in sequence for tree/non-tree",
     )
 
     suite.run_test(
         "Message sequence progression",
         _test_determine_next_message_type_sequence,
-        "Tests Initial -> Follow_Up -> Final_Reminder -> None"
+        "Tests Initial -> Follow_Up -> Final_Reminder -> None",
     )
 
     suite.run_test(
         "Tree status change handling",
         _test_determine_next_message_type_tree_change,
-        "Tests Out_Tree person becoming In_Tree"
+        "Tests Out_Tree person becoming In_Tree",
     )
 
     suite.run_test(
         "Terminal message type detection",
         _test_is_terminal_message_type,
-        "Tests Final_Reminder and Desist are terminal"
+        "Tests Final_Reminder and Desist are terminal",
     )
 
     suite.run_test(
-        "Message type categorization",
-        _test_get_message_type_category,
-        "Tests In_Tree/Out_Tree/Desist categorization"
+        "Message type categorization", _test_get_message_type_category, "Tests In_Tree/Out_Tree/Desist categorization"
     )
 
     return suite.finish_suite()
