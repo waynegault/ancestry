@@ -25,6 +25,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Cache Stack Inventory (Nov 25)** - Completed Step 1 of Track 4 (Cache Unification): analyzed 6 cache modules (5,678 lines), identified 28 import sites, documented 3 import cycles, and created consumer mapping. Ready for Step 2: Design `CacheBackend` protocol.
 - ✅ **Message Types Module Extraction (Nov 25)** - Created `messaging/message_types.py` with message type constants (`MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`), state machine logic (`determine_next_message_type()`), and 7 tests. Updated `messaging/__init__.py` to export all 19 helpers.
 - ✅ **Messaging Package Documentation (Nov 25)** - Documented `messaging/message_types.py` in README.md. Assessed template loading - not extracted due to tight DB coupling (by design).
 - ✅ **Messaging Workflow Helpers Package (Nov 25)** - Created `messaging/workflow_helpers.py` with 12 shared helper functions (enum-aware column extraction, conversation state management, engagement timing, tree detection) and 13 tests. Actions 7–9 now import from this module, removing ~200 lines of duplicated code.
