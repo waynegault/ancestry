@@ -136,6 +136,8 @@ from ai.providers.base import (
 )
 from ai.providers.deepseek import DeepSeekProvider
 from ai.providers.gemini import GeminiProvider
+from ai.providers.local_llm import LocalLLMProvider
+from ai.providers.moonshot import MoonshotProvider
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from cache_manager import cached_api_call
@@ -176,6 +178,8 @@ def _register_provider(name: str, factory: Callable[[Any], ProviderAdapter]) -> 
 
 _register_provider("deepseek", DeepSeekProvider)
 _register_provider("gemini", GeminiProvider)
+_register_provider("moonshot", MoonshotProvider)
+_register_provider("local_llm", LocalLLMProvider)
 
 
 def _adapter_is_available(provider: str) -> bool:
@@ -406,52 +410,6 @@ def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None
         logger.debug("Rate limiter invocation failed; proceeding without enforced wait.")
 
 
-def _call_moonshot_model(
-    system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
-) -> str | None:
-    """Call Moonshot (Kimi) AI model using OpenAI-compatible endpoint."""
-    if not openai_available or OpenAI is None:
-        logger.error("_call_ai_model: OpenAI library not available for Moonshot.")
-        return None
-
-    api_key = getattr(config_schema.api, "moonshot_api_key", None)
-    model_name = getattr(config_schema.api, "moonshot_ai_model", None)
-    base_url = getattr(config_schema.api, "moonshot_ai_base_url", None)
-
-    if not all([api_key, model_name, base_url]):
-        logger.error("_call_ai_model: Moonshot configuration incomplete.")
-        return None
-
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_content},
-    ]
-    request_params: dict[str, Any] = {
-        "model": model_name,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "stream": False,
-    }
-    if response_format_type == "json_object":
-        request_params["response_format"] = {"type": "json_object"}
-
-    response = client.chat.completions.create(**request_params)
-    if response.choices and response.choices[0].message and response.choices[0].message.content:
-        try:
-            reasoning_content = getattr(response.choices[0].message, "reasoning_content", None)
-            if reasoning_content:
-                # Log a short preview to help during provider evaluation without overwhelming logs.
-                logger.debug(f"Moonshot reasoning preview: {str(reasoning_content)[:200]}")
-        except Exception:
-            pass
-        return response.choices[0].message.content.strip()
-
-    logger.error("Moonshot returned an empty or invalid response structure.")
-    return None
-
-
 def _call_tetrate_model(
     system_prompt: str, user_content: str, max_tokens: int, temperature: float, response_format_type: str | None
 ) -> str | None:
@@ -495,114 +453,6 @@ def _call_tetrate_model(
     return None
 
 
-def _call_local_llm_model(
-    system_prompt: str, user_content: str, max_tokens: int, temperature: float, _response_format_type: str | None
-) -> str | None:
-    """
-    Call Local LLM model via LM Studio OpenAI-compatible API.
-
-    LM Studio provides an OpenAI-compatible API endpoint at http://localhost:1234/v1
-    This allows seamless integration with the existing OpenAI client.
-
-    Note: response_format_type parameter is kept for API compatibility but not used
-    because LM Studio doesn't support the response_format parameter. JSON output
-    is controlled via system prompt instructions instead.
-
-    Recommended models for Dell XPS 15 9520 (i9-12900HK, 64GB RAM, RTX 3050 Ti 4GB):
-    - Qwen2.5-14B-Instruct-Q4_K_M: Best quality, 2-4s response time
-    - Llama-3.2-11B-Vision-Instruct: Good quality, 1-3s response time
-    - Mistral-7B-Instruct-v0.3: Fast, <2s response time
-    """
-    # Validate prerequisites
-    if not openai_available or OpenAI is None:
-        logger.error("_call_local_llm_model: OpenAI library not available for Local LLM.")
-        return None
-
-    api_key = config_schema.api.local_llm_api_key
-    model_name = config_schema.api.local_llm_model
-    base_url = config_schema.api.local_llm_base_url
-
-    if not all([api_key, model_name, base_url]):
-        logger.error("_call_local_llm_model: Local LLM configuration incomplete.")
-        return None
-
-    try:
-        client = OpenAI(api_key=api_key, base_url=base_url)
-
-        # Validate model is loaded and get the actual model name
-        actual_model_name, error_msg = _validate_local_llm_model_loaded(client, model_name)
-        if error_msg:
-            logger.error(error_msg)
-            return None
-
-        # Make API call using the actual model name from LM Studio
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ]
-
-        # Build request params - LM Studio doesn't support response_format, so omit it
-        request_params: dict[str, Any] = {
-            "model": actual_model_name,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "stream": False,
-        }
-        # Note: LM Studio doesn't support response_format parameter
-        # JSON output is controlled via system prompt instructions instead
-
-        response = client.chat.completions.create(**request_params)
-        if response.choices and response.choices[0].message and response.choices[0].message.content:
-            return response.choices[0].message.content.strip()
-
-        logger.error("Local LLM returned an empty or invalid response structure.")
-        return None
-    except Exception as e:
-        logger.error(f"Local LLM API call failed: {e}")
-        return None
-
-
-def _validate_local_llm_model_loaded(client: Any, model_name: str) -> tuple[str | None, str | None]:
-    """
-    Validate that the requested model is loaded in LM Studio.
-
-    Supports flexible model name matching:
-    - Exact match: "qwen/qwen3-4b-2507" == "qwen/qwen3-4b-2507"
-    - Partial match: "qwen3-4b-2507" matches "qwen/qwen3-4b-2507"
-
-    Returns:
-        Tuple of (actual_model_name, error_message)
-        - If successful: (actual_model_name, None)
-        - If failed: (None, error_message)
-    """
-    try:
-        models = client.models.list()
-        available_models = [model.id for model in models.data]
-
-        if not available_models:
-            return None, "Local LLM: No models loaded. Please load a model in LM Studio."
-
-        # Try exact match first
-        if model_name in available_models:
-            return model_name, None  # Success with exact match
-
-        # Try partial match (model_name matches end of available model)
-        for available_model in available_models:
-            if available_model.endswith(model_name) or available_model.endswith(f"/{model_name}"):
-                logger.debug(f"Local LLM: Matched '{model_name}' to '{available_model}'")
-                return available_model, None  # Success with matched model name
-
-        # No match found
-        return None, f"Local LLM: Model '{model_name}' not loaded. Available models: {available_models}"
-
-    except Exception as e:
-        error_str = str(e).lower()
-        if "connection" in error_str or "refused" in error_str or "timeout" in error_str:
-            return None, "Local LLM: Connection error. Please ensure LM Studio is running."
-        return None, f"Local LLM: Failed to check loaded models: {e}"
-
-
 def _handle_rate_limit_error(session_manager: SessionManager, source: str | None = None) -> None:
     """Handle rate limit error by increasing delay."""
     if session_manager and hasattr(session_manager, "rate_limiter"):
@@ -615,6 +465,15 @@ def _handle_rate_limit_error(session_manager: SessionManager, source: str | None
                     on_429(endpoint)
         except Exception:
             pass
+
+
+def _validate_local_llm_model_loaded(client: Any, model_name: str) -> tuple[str | None, str | None]:
+    """Backward-compatible helper used by lifecycle checks."""
+
+    try:
+        return LocalLLMProvider._validate_model_loaded(client, model_name)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        return None, f"Local LLM validation failed: {exc}"
 
 
 def _call_inception_model(
@@ -801,11 +660,7 @@ def _route_ai_provider_call(
             return None
 
     result: str | None = None
-    if provider == "moonshot":
-        result = _call_moonshot_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    elif provider == "local_llm":
-        result = _call_local_llm_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
-    elif provider == "inception":
+    if provider == "inception":
         result = _call_inception_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
     elif provider == "grok":
         result = _call_grok_model(system_prompt, user_content, max_tokens, temperature, response_format_type)
@@ -2526,7 +2381,7 @@ def _test_configurable_provider_failover() -> bool:
                 provider="deepseek",
                 system_prompt="system",
                 user_content="failover-test",
-                session_manager=session_stub,  # type: ignore[arg-type]
+                session_manager=session_stub,
                 max_tokens=8,
                 temperature=0.0,
             )
@@ -2542,6 +2397,119 @@ def _test_configurable_provider_failover() -> bool:
                     _PROVIDER_ADAPTERS[key] = adapter
                 else:
                     _PROVIDER_ADAPTERS.pop(key, None)
+
+    return True
+
+
+def _test_moonshot_adapter_routing() -> bool:
+    """Ensure Moonshot requests flow through the adapter registry."""
+
+    from test_framework import suppress_logging
+
+    class _RateLimiterStub:
+        def wait(self) -> float:
+            _ = self
+            return 0.0
+
+        def on_429_error(self, _source: str) -> None:
+            _ = self
+            _ = _source
+
+    class _SessionManagerStub:
+        def __init__(self) -> None:
+            self.rate_limiter = _RateLimiterStub()
+
+    class _MoonshotAdapterStub:
+        name = "moonshot"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def is_available(self) -> bool:
+            _ = self
+            return True
+
+        def call(self, request: ProviderRequest) -> ProviderResponse:
+            self.calls += 1
+            assert request.system_prompt == "system"
+            return ProviderResponse(content="MOONSHOT-ADAPTER", raw_response={'provider': self.name})
+
+    with suppress_logging():
+        session_stub = _SessionManagerStub()
+        api_config = config_schema.api
+        original_provider = config_schema.ai_provider
+        original_fallbacks = list(getattr(config_schema, "ai_provider_fallbacks", []))
+        original_key = getattr(api_config, "moonshot_api_key", None)
+        original_model = getattr(api_config, "moonshot_ai_model", None)
+        original_base = getattr(api_config, "moonshot_ai_base_url", None)
+        original_adapter = _PROVIDER_ADAPTERS.get("moonshot")
+
+        try:
+            config_schema.ai_provider = "moonshot"
+            config_schema.ai_provider_fallbacks = []
+            if not api_config.moonshot_api_key:
+                api_config.moonshot_api_key = "test-moonshot-key"
+            if not api_config.moonshot_ai_model:
+                api_config.moonshot_ai_model = "moonshot-test-model"
+            if not api_config.moonshot_ai_base_url:
+                api_config.moonshot_ai_base_url = "https://example.com/v1"
+
+            adapter_stub = _MoonshotAdapterStub()
+            _PROVIDER_ADAPTERS['moonshot'] = adapter_stub
+
+            result = _call_ai_model(
+                provider="moonshot",
+                system_prompt="system",
+                user_content="adapter-test",
+                session_manager=session_stub,
+                max_tokens=8,
+                temperature=0.0,
+            )
+            assert result == "MOONSHOT-ADAPTER", "Moonshot adapter should handle the request"
+            assert adapter_stub.calls == 1
+        finally:
+            config_schema.ai_provider = original_provider
+            config_schema.ai_provider_fallbacks = original_fallbacks
+            api_config.moonshot_api_key = original_key
+            api_config.moonshot_ai_model = original_model
+            api_config.moonshot_ai_base_url = original_base
+            if original_adapter is not None:
+                _PROVIDER_ADAPTERS['moonshot'] = original_adapter
+            else:
+                _PROVIDER_ADAPTERS.pop('moonshot', None)
+
+    return True
+
+
+def _test_local_llm_validation_helper() -> bool:
+    """Verify the Local LLM validation helper handles matches and errors."""
+
+    class _ModelResult:
+        def __init__(self, names: list[str]) -> None:
+            self.data = [type("Model", (), {"id": name}) for name in names]
+
+    class _ModelList:
+        def __init__(self, names: list[str]) -> None:
+            self._names = names
+
+        def list(self) -> _ModelResult:
+            return _ModelResult(self._names)
+
+    class _Client:
+        def __init__(self, names: list[str]) -> None:
+            self.models = _ModelList(names)
+
+    exact_client = _Client(["namespace/my-model"])
+    exact_match, error = _validate_local_llm_model_loaded(exact_client, "namespace/my-model")
+    assert exact_match == "namespace/my-model" and error is None
+
+    partial_client = _Client(["namespace/other-model", "foo/bar-baz"])
+    partial_match, error2 = _validate_local_llm_model_loaded(partial_client, "bar-baz")
+    assert partial_match == "foo/bar-baz" and error2 is None
+
+    empty_client = _Client([])
+    missing_match, error3 = _validate_local_llm_model_loaded(empty_client, "not-here")
+    assert missing_match is None and error3 is not None
 
     return True
 
@@ -2766,6 +2734,22 @@ def ai_interface_module_tests() -> bool:
             "Configurable fallback order engages alternate providers when the primary fails",
             "AI provider failover orchestration",
             "Override adapters to force failure and verify fallback succeeds",
+        )
+
+        suite.run_test(
+            "Moonshot Adapter Routing",
+            _test_moonshot_adapter_routing,
+            "Moonshot adapter handles requests via registry",
+            "Adapter routing",
+            "Verify Moonshot provider routes through the adapter stub",
+        )
+
+        suite.run_test(
+            "Local LLM Validation Helper",
+            _test_local_llm_validation_helper,
+            "Local LLM helper matches configured models and surfaces errors",
+            "LM Studio validation",
+            "Ensure helper detects loaded models and reports missing ones",
         )
 
         suite.run_test(

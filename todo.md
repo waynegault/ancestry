@@ -4,6 +4,27 @@
 
 ---
 
+## Session Summary (November 25, 2025 - Provider Failover Wrap-Up)
+
+### ✅ Completed This Session
+
+1. **Moonshot & Local LLM Adapters**
+   - Added `ai/providers/moonshot.py` and `ai/providers/local_llm.py`, registering both through `_register_provider()` so credential checks, client construction, and response normalization all live inside adapter modules instead of `ai_interface.py`.
+   - Removed the legacy `_call_moonshot_model()`/`_call_local_llm_model()` helpers plus the manual OpenAI plumbing they duplicated.
+2. **Configurable Failover Enforcement**
+   - Extended `ai_interface._call_ai_model()` to resolve providers strictly through the adapter registry and respect the new `AI_PROVIDER_FALLBACKS` list from config.
+   - Added `_test_moonshot_adapter_routing()` and `_test_local_llm_validation_helper()` so the TestSuite now verifies adapter routing and the LM Studio model validation helper used by lifecycle checks.
+3. **Quality Gate + Regression Suite**
+   - Ran `python run_all_tests.py` (115 modules / 942 tests) after removing the final `type: ignore` annotations; every module now reports 100/100 quality and the `scripts/check_type_ignores.py` guard stays green.
+
+### 🔜 Next Up
+
+1. **Document adapter lifecycle expectations** – Capture the provider registry workflow in `readme.md` (wiring diagram + environment knobs) so new adapters follow the same pattern without touching `ai_interface.py`.
+2. **Telemetry baselines for fallback chains** – Use `python prompt_telemetry.py --baseline` after the next 2-3 live runs to record pre/post metrics for the new provider order.
+3. **Operational checklist** – Add a short “Provider failover troubleshooting” subsection (env overrides, `ai_api_test.py` recipes, rate-limit tips) before promoting Track 6 to COMPLETE.
+
+---
+
 ## Session Summary (November 29, 2025)
 
 ### ✅ Completed This Session

@@ -1024,6 +1024,20 @@ For issues or questions:
   - Quick connectivity check: run `python ai_api_test.py --provider gemini` (script now lives at repo root) to validate credentials before invoking the main workflow
   - Default base URL: http://localhost:1234/v1 (LM Studio)
 
+  #### Configuring AI Provider Fallbacks & Adapters
+
+  - All adapters live under `ai/providers/` and must subclass `ProviderAdapter` from `ai/providers/base.py`; register new providers with `_register_provider("name", ProviderClass)` inside `ai_interface.py` to participate in routing.
+  - The `AI_PROVIDER_FALLBACKS` environment variable (parsed into `config_schema.ai_provider_fallbacks`) defines the exact failover order. Example:
+
+  ```env
+  AI_PROVIDER=deepseek
+  AI_PROVIDER_FALLBACKS=deepseek,gemini,moonshot,local_llm,grok,inception,tetrate
+  ```
+
+  - During `_call_ai_model()` each provider is attempted sequentially; adapters signal availability (credentials, SDK imports) and return `ProviderResponse` objects. Providers that raise or return `None` automatically defer to the next entry without leaking partial state.
+  - Use `python ai_api_test.py --provider <name>` to validate credentials before updating fallback chains, then run `python prompt_telemetry.py --baseline` after live runs to capture new success/quality metrics.
+  - Troubleshooting order changes: set `AI_PROVIDER_FALLBACKS=gemini,deepseek` (or similar) temporarily, rerun `python run_all_tests.py` to ensure the TestSuite verifies `_test_configurable_provider_failover`, and monitor `Logs/prompt_experiments.jsonl` for quality regressions.
+
 - LM Studio quick-start checklist (real use)
   1) Install LM Studio and open it
   2) Load an instruct model (e.g., qwen3-4b-2507)
