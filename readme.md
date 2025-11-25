@@ -713,6 +713,16 @@ For issues or questions:
 
 ### Appendix A: Chronology of Changes
 
+2025-11-07
+- Track 5 Step 2: Extended APIManager with unified request() method (core/api_manager.py now 1350+ lines)
+  - Added `RequestConfig` dataclass - Unified request configuration with sensible defaults (URL, method, headers, timeout, retry policy, rate limiting)
+  - Added `RequestResult` dataclass - Structured response with helper properties (`is_json`, `json`, `text`, `success`, `error`, `attempts`)
+  - Added `RetryPolicy` enum - Predefined retry policies: `NONE` (0 retries), `API` (3 retries, 1s delay), `RESILIENT` (5 retries, 2s delay)
+  - Added `APIManager.request()` - Unified entry point for all API calls integrating rate limiting, cookie sync, retries with exponential backoff/jitter
+  - Added 4 new tests: RequestConfig dataclass, RequestResult dataclass, request() method signature, RetryPolicy enum (13 tests total)
+  - All 115 test modules pass with 100% success rate
+- Next Step: Track 5 Step 3 - Migrate callers to `session_manager.api_manager.request()`
+
 2025-11-03
 - Action 6 Browser Death Fix (commit 4c3277a): Reverted action6_gather.py and core/session_manager.py to stable commit 793d948 (last known-good version that processed 15,000+ matches flawlessly) and cleanly re-added ethnicity enrichment
   - Root cause: Massive refactoring after 793d948 introduced complex browser recovery mechanisms (_atomic_browser_replacement, attempt_browser_recovery, death cascade detection) that were failing with "atomic replacement failed" errors causing browser session death

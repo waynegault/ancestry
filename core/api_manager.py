@@ -3,10 +3,18 @@ API Manager - Handles API interactions and user identifiers.
 
 This module extracts API management functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
+
+Track 5 Step 2: Added unified request() method with:
+- Rate limiting integration via AdaptiveRateLimiter
+- Retry policy support via RetryPolicyProfile
+- Cookie synchronization with browser
+- Comprehensive metrics recording
 """
 
 import sys
 import time
+from dataclasses import dataclass, field
+from enum import Enum
 
 # Add parent directory to path for standard_imports
 from pathlib import Path
@@ -23,7 +31,7 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, Union, cast
 from urllib.parse import urljoin, urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -44,6 +52,128 @@ from observability.metrics_registry import metrics
 if TYPE_CHECKING:
     from core.browser_manager import BrowserManager
     from core.session_manager import SessionManager
+    from rate_limiter import AdaptiveRateLimiter
+
+
+# === REQUEST CONFIGURATION ===
+
+
+class RetryPolicy(Enum):
+    """Predefined retry policies for different operation types."""
+
+    NONE = "none"  # No retries
+    API = "api"  # Standard API calls (3 retries, 1s base delay)
+    RESILIENT = "resilient"  # Critical operations (5 retries, 2s base delay)
+
+
+@dataclass
+class RequestConfig:
+    """
+    Configuration for unified API requests via APIManager.request().
+
+    This dataclass centralizes all request parameters and provides
+    sensible defaults for common scenarios.
+
+    Example:
+        config = RequestConfig(
+            url="https://api.example.com/data",
+            method="POST",
+            json_data={"key": "value"},
+            retry_policy=RetryPolicy.RESILIENT,
+        )
+        response = api_manager.request(config)
+    """
+
+    # Required
+    url: str
+
+    # HTTP method and data
+    method: str = "GET"
+    data: Optional[dict[str, Any]] = None
+    json_data: Optional[dict[str, Any]] = None
+    headers: Optional[dict[str, str]] = None
+
+    # Timeouts (connect, read)
+    timeout: tuple[int, int] = field(default_factory=lambda: (30, 90))
+
+    # Authentication
+    use_csrf_token: bool = True
+    sync_cookies: bool = True
+
+    # Retry configuration
+    retry_policy: RetryPolicy = RetryPolicy.API
+    max_retries: int = 3
+    initial_delay: float = 1.0
+    backoff_factor: float = 2.0
+    max_delay: float = 30.0
+    jitter_seconds: float = 0.3
+    retry_status_codes: frozenset[int] = field(default_factory=lambda: frozenset({429, 500, 502, 503, 504}))
+
+    # Rate limiting
+    apply_rate_limiting: bool = True
+    endpoint_label: Optional[str] = None  # For metrics and rate limiter
+
+    # Response handling
+    force_text_response: bool = False
+    allow_redirects: bool = True
+
+    # Logging
+    api_description: str = "API Request"
+
+    def __post_init__(self) -> None:
+        """Apply retry policy presets if specified."""
+        if self.retry_policy == RetryPolicy.NONE:
+            self.max_retries = 0
+        elif self.retry_policy == RetryPolicy.RESILIENT:
+            self.max_retries = 5
+            self.initial_delay = 2.0
+            self.backoff_factor = 2.0
+            self.max_delay = 60.0
+
+
+@dataclass
+class RequestResult:
+    """
+    Result of an API request via APIManager.request().
+
+    Provides structured access to response data, status, and metadata.
+    """
+
+    # Response data
+    data: Union[dict[str, Any], list[Any], str, bytes, None] = None
+    response: Optional[RequestsResponse] = None
+
+    # Status
+    success: bool = False
+    status_code: Optional[int] = None
+    error: Optional[str] = None
+
+    # Metadata
+    attempts: int = 1
+    total_wait_time: float = 0.0
+    duration_seconds: float = 0.0
+
+    @property
+    def is_json(self) -> bool:
+        """Check if response data is JSON (dict or list)."""
+        return isinstance(self.data, (dict, list))
+
+    @property
+    def json(self) -> Optional[Union[dict[str, Any], list[Any]]]:
+        """Get response as JSON if available."""
+        if isinstance(self.data, (dict, list)):
+            return self.data
+        return None
+
+    @property
+    def text(self) -> Optional[str]:
+        """Get response as text if available."""
+        if isinstance(self.data, str):
+            return self.data
+        if self.response is not None:
+            return self.response.text
+        return None
+
 
 # === TYPE ALIASES ===
 ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
@@ -96,7 +226,9 @@ class APIManager:
         - Detailed logging for debugging
         """
         adapter = HTTPAdapter(
-            pool_connections=20, pool_maxsize=50, max_retries=0  # Application handles retries
+            pool_connections=20,
+            pool_maxsize=50,
+            max_retries=0,  # Application handles retries
         )
         self._requests_session.mount("http://", adapter)
         self._requests_session.mount("https://", adapter)
@@ -308,6 +440,7 @@ class APIManager:
                 return False
 
             import json
+
             with cookies_file.open("r", encoding="utf-8") as f:
                 cookies = json.load(f)
 
@@ -358,16 +491,12 @@ class APIManager:
             request_headers["x-csrf-token"] = self.csrf_token
             logger.debug(f"Added CSRF token to {api_description} request")
         elif use_csrf_token and not self.csrf_token:
-            logger.warning(
-                f"CSRF token requested but not available for {api_description}"
-            )
+            logger.warning(f"CSRF token requested but not available for {api_description}")
 
         return request_headers
 
     @staticmethod
-    def _parse_api_response(
-        response: RequestsResponse, api_description: str
-    ) -> ApiResponseType:
+    def _parse_api_response(response: RequestsResponse, api_description: str) -> ApiResponseType:
         """Parse API response into appropriate format."""
         try:
             json_response = response.json()
@@ -379,6 +508,192 @@ class APIManager:
                 return response.text
             logger.debug(f"{api_description} request successful (response object)")
             return response
+
+    # === UNIFIED REQUEST METHOD (Track 5 Step 2) ===
+
+    def request(
+        self,
+        config: RequestConfig,
+        browser_manager: Optional["BrowserManager"] = None,
+        rate_limiter: Optional["AdaptiveRateLimiter"] = None,
+    ) -> RequestResult:
+        """
+        Unified API request method with rate limiting, retries, and cookie sync.
+
+        This is the recommended entry point for all API calls. It integrates:
+        - Rate limiting via AdaptiveRateLimiter (if provided)
+        - Configurable retry policies with exponential backoff
+        - Cookie synchronization from browser (if browser_manager provided)
+        - Comprehensive metrics recording
+
+        Args:
+            config: RequestConfig with all request parameters
+            browser_manager: Optional BrowserManager for cookie sync
+            rate_limiter: Optional AdaptiveRateLimiter for rate limiting
+
+        Returns:
+            RequestResult with response data, status, and metadata
+
+        Example:
+            config = RequestConfig(
+                url="https://api.example.com/data",
+                method="GET",
+                retry_policy=RetryPolicy.API,
+            )
+            result = api_manager.request(config)
+            if result.success:
+                print(result.json)
+        """
+        import random
+
+        start_time = time.perf_counter()
+        endpoint_label = config.endpoint_label or self.sanitize_endpoint_label(config.url)
+        total_wait_time = 0.0
+        attempt = 0
+        last_error: Optional[str] = None
+        last_status_code: Optional[int] = None
+
+        # Sync cookies from browser if requested and available
+        if config.sync_cookies and browser_manager is not None:
+            self.sync_cookies_from_browser(browser_manager)
+
+        # Calculate delays for each attempt
+        def get_delay(attempt_num: int) -> float:
+            """Calculate delay with exponential backoff and jitter."""
+            if attempt_num <= 1:
+                return 0.0
+            base_delay = config.initial_delay * (config.backoff_factor ** (attempt_num - 2))
+            delay = min(base_delay, config.max_delay)
+            jitter = random.uniform(-config.jitter_seconds, config.jitter_seconds)
+            return max(0.0, delay + jitter)
+
+        # Retry loop
+        max_attempts = config.max_retries + 1
+        while attempt < max_attempts:
+            attempt += 1
+
+            # Apply rate limiting before request
+            if config.apply_rate_limiting and rate_limiter is not None:
+                wait_time = rate_limiter.wait(endpoint_label)
+                total_wait_time += wait_time
+
+            # Apply backoff delay for retries (after first attempt)
+            retry_delay = get_delay(attempt)
+            if retry_delay > 0:
+                logger.debug(
+                    f"[{config.api_description}] Retry delay: {retry_delay:.2f}s (attempt {attempt}/{max_attempts})"
+                )
+                time.sleep(retry_delay)
+                total_wait_time += retry_delay
+
+            try:
+                # Prepare headers
+                request_headers = self._prepare_api_headers(
+                    config.headers, config.use_csrf_token, config.api_description
+                )
+
+                # Make the request
+                logger.debug(
+                    f"[{config.api_description}] {config.method.upper()} {config.url} "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+
+                response = self._requests_session.request(
+                    method=config.method.upper(),
+                    url=config.url,
+                    headers=request_headers,
+                    data=config.data,
+                    json=config.json_data,
+                    timeout=config.timeout,
+                    allow_redirects=config.allow_redirects,
+                )
+
+                last_status_code = response.status_code
+
+                # Handle rate limiting
+                if response.status_code == 429:
+                    if rate_limiter is not None:
+                        rate_limiter.on_429_error(endpoint_label)
+                    if attempt < max_attempts:
+                        logger.warning(
+                            f"[{config.api_description}] 429 Rate Limited - will retry "
+                            f"(attempt {attempt}/{max_attempts})"
+                        )
+                        continue
+                    last_error = "Rate limited (429)"
+                    break
+
+                # Handle retryable status codes
+                if response.status_code in config.retry_status_codes:
+                    if attempt < max_attempts:
+                        logger.warning(
+                            f"[{config.api_description}] Status {response.status_code} - "
+                            f"will retry (attempt {attempt}/{max_attempts})"
+                        )
+                        continue
+                    last_error = f"HTTP {response.status_code}"
+                    break
+
+                # Check for success
+                response.raise_for_status()
+
+                # Notify rate limiter of success
+                if rate_limiter is not None:
+                    rate_limiter.on_success()
+
+                # Parse response
+                if config.force_text_response:
+                    data: Union[dict[str, Any], list[Any], str, bytes, None] = response.text
+                else:
+                    parsed = self._parse_api_response(response, config.api_description)
+                    data = parsed if not isinstance(parsed, RequestsResponse) else None
+
+                duration = time.perf_counter() - start_time
+                self._record_api_metrics(
+                    endpoint_label, config.method.upper(), response.status_code, "success", duration
+                )
+
+                return RequestResult(
+                    data=data,
+                    response=response,
+                    success=True,
+                    status_code=response.status_code,
+                    attempts=attempt,
+                    total_wait_time=total_wait_time,
+                    duration_seconds=duration,
+                )
+
+            except RequestException as e:
+                response_obj = getattr(e, "response", None)
+                if response_obj is not None:
+                    last_status_code = getattr(response_obj, "status_code", last_status_code)
+                last_error = str(e)
+                logger.warning(f"[{config.api_description}] RequestException: {e} (attempt {attempt}/{max_attempts})")
+                if attempt >= max_attempts:
+                    break
+
+            except Exception as e:
+                last_error = str(e)
+                logger.error(
+                    f"[{config.api_description}] Unexpected error: {e} (attempt {attempt}/{max_attempts})",
+                    exc_info=True,
+                )
+                break  # Don't retry on unexpected errors
+
+        # All attempts exhausted
+        duration = time.perf_counter() - start_time
+        self._record_api_metrics(endpoint_label, config.method.upper(), last_status_code, "failure", duration)
+
+        return RequestResult(
+            data=None,
+            response=None,
+            success=False,
+            status_code=last_status_code,
+            error=last_error,
+            attempts=attempt,
+            total_wait_time=total_wait_time,
+            duration_seconds=duration,
+        )
 
     def make_api_request(
         self,
@@ -451,9 +766,7 @@ class APIManager:
                 logger.error(f"{api_description} request failed: {e}")
             return None
         except Exception as e:
-            logger.error(
-                f"Unexpected error in {api_description} request: {e}", exc_info=True
-            )
+            logger.error(f"Unexpected error in {api_description} request: {e}", exc_info=True)
             return None
         finally:
             try:
@@ -481,11 +794,7 @@ class APIManager:
 
         if response_data and isinstance(response_data, dict):
             # Try multiple possible field names for CSRF token
-            csrf_token = (
-                response_data.get("token") or
-                response_data.get("csrfToken") or
-                response_data.get("csrf_token")
-            )
+            csrf_token = response_data.get("token") or response_data.get("csrfToken") or response_data.get("csrf_token")
             if csrf_token:
                 self.csrf_token = csrf_token
                 logger.debug("CSRF token retrieved successfully")
@@ -655,9 +964,7 @@ def _test_api_manager_initialization() -> bool:
     try:
         api_manager = APIManager()
         assert hasattr(api_manager, "csrf_token"), "Should have csrf_token attribute"
-        assert hasattr(
-            api_manager, "my_profile_id"
-        ), "Should have my_profile_id attribute"
+        assert hasattr(api_manager, "my_profile_id"), "Should have my_profile_id attribute"
         assert hasattr(api_manager, "my_uuid"), "Should have my_uuid attribute"
         assert hasattr(api_manager, "_requests_session"), "Should have requests session"
         assert api_manager.csrf_token is None, "CSRF token should initially be None"
@@ -671,17 +978,13 @@ def _test_api_manager_initialization() -> bool:
 def _test_identifier_management() -> bool:
     try:
         api_manager = APIManager()
-        assert hasattr(
-            api_manager, "has_essential_identifiers"
-        ), "Should have identifier check property"
+        assert hasattr(api_manager, "has_essential_identifiers"), "Should have identifier check property"
         initial_state = api_manager.has_essential_identifiers
         assert isinstance(initial_state, bool), "Identifier check should return boolean"
         api_manager.my_profile_id = "test_profile_123"
         api_manager.my_uuid = "test_uuid_456"
         updated_state = api_manager.has_essential_identifiers
-        assert (
-            updated_state
-        ), "Should have essential identifiers after setting them"
+        assert updated_state, "Should have essential identifiers after setting them"
         return True
     except Exception:
         return False
@@ -702,9 +1005,7 @@ def _test_api_request_methods() -> bool:
                 method = getattr(api_manager, method_name)
                 if callable(method):
                     available_methods.append(method_name)
-        assert (
-            len(available_methods) >= 3
-        ), f"Should have API methods available, found: {available_methods}"
+        assert len(available_methods) >= 3, f"Should have API methods available, found: {available_methods}"
         return True
     except Exception:
         return False
@@ -714,9 +1015,7 @@ def _test_invalid_response_handling() -> bool:
     try:
         api_manager = APIManager()
         api_manager.clear_identifiers()
-        assert (
-            not api_manager.has_essential_identifiers
-        ), "Should not have identifiers after clearing"
+        assert not api_manager.has_essential_identifiers, "Should not have identifiers after clearing"
         return True
     except Exception:
         return False
@@ -730,9 +1029,7 @@ def _test_config_integration() -> bool:
         for constant in api_constants:
             if constant in globals():
                 constants_defined.append(constant)
-        assert (
-            len(constants_defined) >= 2
-        ), f"Should have API path constants defined: {constants_defined}"
+        assert len(constants_defined) >= 2, f"Should have API path constants defined: {constants_defined}"
         return True
     except Exception:
         return False
@@ -790,14 +1087,131 @@ def _test_endpoint_label_sanitization() -> bool:
     try:
         api_manager = APIManager()
         assert api_manager.sanitize_endpoint_label("https://example.com/") == "root"
-        complex_label = api_manager.sanitize_endpoint_label(
-            "https://example.com/api/person/12345/details"
-        )
+        complex_label = api_manager.sanitize_endpoint_label("https://example.com/api/person/12345/details")
         assert complex_label == "api/person/:param/details"
-        hex_path = api_manager.sanitize_endpoint_label(
-            "https://example.com/api/match/ABCDEF1234567890/data"
-        )
+        hex_path = api_manager.sanitize_endpoint_label("https://example.com/api/match/ABCDEF1234567890/data")
         assert hex_path == "api/match/:param/data"
+        return True
+    except Exception:
+        return False
+
+
+def _test_request_config_dataclass() -> bool:
+    """Test RequestConfig dataclass initialization and defaults."""
+    try:
+        # Test basic initialization with URL only
+        config = RequestConfig(url="https://example.com/api/test")
+        assert config.url == "https://example.com/api/test"
+        assert config.method == "GET"
+        assert config.retry_policy == RetryPolicy.API
+        assert config.max_retries == 3
+        assert config.apply_rate_limiting is True
+        assert config.sync_cookies is True
+
+        # Test RetryPolicy.NONE preset
+        config_no_retry = RequestConfig(
+            url="https://example.com/api/test",
+            retry_policy=RetryPolicy.NONE,
+        )
+        assert config_no_retry.max_retries == 0
+
+        # Test RetryPolicy.RESILIENT preset
+        config_resilient = RequestConfig(
+            url="https://example.com/api/test",
+            retry_policy=RetryPolicy.RESILIENT,
+        )
+        assert config_resilient.max_retries == 5
+        assert config_resilient.initial_delay == 2.0
+        assert config_resilient.max_delay == 60.0
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_request_result_dataclass() -> bool:
+    """Test RequestResult dataclass properties."""
+    try:
+        # Test successful JSON response
+        result_json = RequestResult(
+            data={"key": "value"},
+            success=True,
+            status_code=200,
+        )
+        assert result_json.success is True
+        assert result_json.is_json is True
+        assert result_json.json == {"key": "value"}
+        assert result_json.text is None  # No text for dict data
+
+        # Test successful text response
+        result_text = RequestResult(
+            data="Plain text response",
+            success=True,
+            status_code=200,
+        )
+        assert result_text.is_json is False
+        assert result_text.json is None
+        assert result_text.text == "Plain text response"
+
+        # Test list response
+        result_list = RequestResult(
+            data=[1, 2, 3],
+            success=True,
+            status_code=200,
+        )
+        assert result_list.is_json is True
+        assert result_list.json == [1, 2, 3]
+
+        # Test failed response
+        result_fail = RequestResult(
+            success=False,
+            error="Connection timeout",
+            attempts=3,
+        )
+        assert result_fail.success is False
+        assert result_fail.error == "Connection timeout"
+        assert result_fail.attempts == 3
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_request_method_available() -> bool:
+    """Test that request() method is available on APIManager."""
+    try:
+        api_manager = APIManager()
+        assert hasattr(api_manager, "request"), "Should have request method"
+        assert callable(api_manager.request), "request should be callable"
+
+        # Verify method signature accepts RequestConfig
+        import inspect
+
+        sig = inspect.signature(api_manager.request)
+        params = list(sig.parameters.keys())
+        assert "config" in params, "request should accept config parameter"
+        assert "browser_manager" in params, "request should accept browser_manager"
+        assert "rate_limiter" in params, "request should accept rate_limiter"
+
+        return True
+    except Exception:
+        return False
+
+
+def _test_retry_policy_enum() -> bool:
+    """Test RetryPolicy enum values."""
+    try:
+        assert RetryPolicy.NONE.value == "none"
+        assert RetryPolicy.API.value == "api"
+        assert RetryPolicy.RESILIENT.value == "resilient"
+
+        # Verify all enum members
+        members = list(RetryPolicy)
+        assert len(members) == 3
+        assert RetryPolicy.NONE in members
+        assert RetryPolicy.API in members
+        assert RetryPolicy.RESILIENT in members
+
         return True
     except Exception:
         return False
@@ -875,6 +1289,34 @@ def api_manager_module_tests() -> bool:
         "Known-good API endpoint constants remain unchanged",
         "Assert exact values for CSRF, Profile ID, and UUID endpoints",
         "Fail if any constant drifts from the documented path (prevents regressions)",
+    )
+    suite.run_test(
+        "RequestConfig Dataclass",
+        _test_request_config_dataclass,
+        "RequestConfig initializes with defaults and applies retry policy presets",
+        "Test RequestConfig dataclass with different retry policies",
+        "Verify Track 5 Step 2 RequestConfig with NONE, API, RESILIENT policies",
+    )
+    suite.run_test(
+        "RequestResult Dataclass",
+        _test_request_result_dataclass,
+        "RequestResult provides structured access to response data and metadata",
+        "Test RequestResult properties for JSON, text, and error responses",
+        "Verify Track 5 Step 2 RequestResult helper properties",
+    )
+    suite.run_test(
+        "Unified request() Method",
+        _test_request_method_available,
+        "APIManager.request() method is available with correct signature",
+        "Verify request method exists and accepts expected parameters",
+        "Verify Track 5 Step 2 unified request() method integration",
+    )
+    suite.run_test(
+        "RetryPolicy Enum",
+        _test_retry_policy_enum,
+        "RetryPolicy enum has correct values for NONE, API, RESILIENT",
+        "Test RetryPolicy enum member values and completeness",
+        "Verify Track 5 Step 2 RetryPolicy enum implementation",
     )
     return suite.finish_suite()
 

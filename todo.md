@@ -225,7 +225,7 @@
 
 ---
 
-### 5. API Utils Consolidation [IN PROGRESS - Step 1 Complete]
+### 5. API Utils Consolidation [IN PROGRESS - Step 2 Complete]
 
 > **Goal**: Single HTTP pipeline via `core/api_manager.py`
 > **Effort**: ~2-3 sessions | **Priority**: Medium
@@ -259,13 +259,23 @@
 - `_execute_api_request()` - Request execution with retries (line 1856)
 - `ApiRequestConfig` dataclass - Configuration container (line 477)
 
-**Current `core/api_manager.py` (909 lines)**:
-- Connection pooling setup
-- Cookie synchronization (`sync_cookies_from_browser`)
-- User identifier retrieval (profile ID, UUID, tree ID)
-- Metrics recording (`_record_api_metrics`)
-- Session recovery logic
-- **Missing**: Unified `request()` method that integrates with rate limiting
+#### Step 2: Extend APIManager (COMPLETE)
+
+**New `core/api_manager.py` additions (1350+ lines)**:
+- `RequestConfig` dataclass - Unified request configuration with sensible defaults
+- `RequestResult` dataclass - Structured response with `is_json`, `json`, `text` helpers
+- `RetryPolicy` enum - Predefined policies: `NONE`, `API` (3 retries), `RESILIENT` (5 retries)
+- `APIManager.request()` - Unified entry point integrating:
+  - Rate limiting via `AdaptiveRateLimiter` parameter
+  - Cookie synchronization via `BrowserManager` parameter
+  - Configurable retry with exponential backoff and jitter
+  - Comprehensive metrics recording
+
+**Tests Added (4 new tests, 13 total)**:
+- `_test_request_config_dataclass` - Validates defaults and retry policy presets
+- `_test_request_result_dataclass` - Validates helper properties
+- `_test_request_method_available` - Validates method signature
+- `_test_retry_policy_enum` - Validates enum values
 
 **Consumers (14 import sites)**:
 - `api_search_utils.py` - 4 imports
@@ -278,7 +288,7 @@
 | Step | Status | Description |
 |------|--------|-------------|
 | 1 | ✅ | Catalogue all `_api_req` consumers (Actions 6–10, messaging, telemetry) |
-| 2 | 🔲 | Extend `APIManager` with parameterized endpoints, streaming, retry policies |
+| 2 | ✅ | Extend `APIManager` with unified `request()`, retry policies, rate limiting |
 | 3 | 🔲 | Migrate callers to `session_manager.api_manager.request()` |
 | 4 | 🔲 | Trim `api_utils.py` to parsing/transform helpers only |
 
