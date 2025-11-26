@@ -875,6 +875,9 @@ def _prepare_local_llm_client(
             0.0,
         )
 
+    # Note: OpenAI is guaranteed to be non-None here because callers check via
+    # _check_local_llm_prerequisites() before calling this function
+    assert OpenAI is not None, "OpenAI import check should happen in caller"
     client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
 
     # Warm up: trigger model load (if needed) before timing
@@ -907,6 +910,10 @@ def _execute_local_llm_inference(
     """Execute the inference request and return the result."""
     provider_name = f"local:{model_id}"
     inference_start = time.time()
+
+    # Note: OpenAI is guaranteed to be non-None here because callers check via
+    # _check_local_llm_prerequisites() before calling this function
+    assert OpenAI is not None, "OpenAI import check should happen in caller"
 
     try:
         # Create client with timeout for inference and NO retries

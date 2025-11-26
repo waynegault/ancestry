@@ -816,12 +816,11 @@ def _should_skip_list_item(item: Any) -> bool:
 def _extract_name_from_item(item: Any) -> str:
     """Extract name from list item."""
     try:
-        tag_item = cast(Any, item)
-        name_elem = tag_item.find("b") if isinstance(item, Tag) else None
+        name_elem = item.find("b") if isinstance(item, Tag) else None
         if name_elem and hasattr(name_elem, "get_text"):
             return name_elem.get_text(strip=True)
-        if hasattr(item, "string") and tag_item.string:
-            return str(tag_item.string).strip()
+        if hasattr(item, "string") and item.string:
+            return str(item.string).strip()
         return "Unknown"
     except (AttributeError, TypeError):
         logger.debug(f"Error extracting name: {type(item)}")
@@ -831,8 +830,7 @@ def _extract_name_from_item(item: Any) -> str:
 def _extract_relationship_from_item(item: Any) -> str:
     """Extract relationship description from list item."""
     try:
-        tag_item = cast(Any, item)
-        rel_elem = tag_item.find("i") if isinstance(item, Tag) else None
+        rel_elem = item.find("i") if isinstance(item, Tag) else None
         if rel_elem and hasattr(rel_elem, "get_text"):
             return rel_elem.get_text(strip=True)
         return ""
@@ -844,8 +842,7 @@ def _extract_relationship_from_item(item: Any) -> str:
 def _extract_lifespan_from_item(item: Any) -> str:
     """Extract lifespan from list item."""
     try:
-        tag_item = cast(Any, item)
-        text_content = tag_item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
+        text_content = item.get_text(strip=True) if hasattr(item, "get_text") else str(item)
         lifespan_match = re.search(r"(\d{4})-(\d{4}|\bLiving\b|-)", text_content, re.IGNORECASE)
         return lifespan_match.group(0) if lifespan_match else ""
     except (AttributeError, TypeError):

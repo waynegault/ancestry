@@ -374,17 +374,20 @@ class CacheFactory:
                 # Fall back to get_stats() if it returns CacheStats
                 if hasattr(backend, "get_stats"):
                     result = backend.get_stats()
-                    if isinstance(result, CacheStats):
+                    if isinstance(result, CacheStats):  # pyright: ignore[reportUnnecessaryIsInstance] - legacy support
                         stats[name] = result
-                    else:
+                    elif isinstance(result, dict):  # pyright: ignore[reportUnnecessaryIsInstance] - legacy support
                         # Legacy dict format - create minimal CacheStats
                         stats[name] = CacheStats(
                             name=name,
-                            kind=result.get("kind", "unknown") if isinstance(result, dict) else "unknown",
-                            hits=result.get("hits", 0) if isinstance(result, dict) else 0,
-                            misses=result.get("misses", 0) if isinstance(result, dict) else 0,
-                            entries=result.get("entries", 0) if isinstance(result, dict) else 0,
+                            kind=result.get("kind", "unknown"),
+                            hits=result.get("hits", 0),
+                            misses=result.get("misses", 0),
+                            entries=result.get("entries", 0),
                         )
+                    else:
+                        # Unknown format - create empty stats
+                        stats[name] = CacheStats(name=name, kind="unknown")
                 else:
                     stats[name] = CacheStats(name=name, kind="unknown")
             except Exception as exc:
@@ -544,8 +547,8 @@ def _test_cache_factory_operations() -> bool:
             return True
 
     # Clear any existing registrations for clean test
-    original_instances = CacheFactory._instances.copy()
-    CacheFactory._instances.clear()
+    original_instances = CacheFactory._instances.copy()  # pyright: ignore[reportPrivateUsage]
+    CacheFactory._instances.clear()  # pyright: ignore[reportPrivateUsage]
 
     try:
         cache = TestCache()
@@ -561,7 +564,7 @@ def _test_cache_factory_operations() -> bool:
         return True
     finally:
         # Restore original instances
-        CacheFactory._instances = original_instances
+        CacheFactory._instances = original_instances  # pyright: ignore[reportPrivateUsage]
 
 
 def module_tests() -> bool:

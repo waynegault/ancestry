@@ -3553,7 +3553,7 @@ def _test_enhanced_task_creation() -> None:
 
     for case in cases:
         person = _build_person(**case["person_kwargs"])
-        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)
+        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)  # pyright: ignore[reportPrivateUsage]
         assert importance == case["expected_importance"], f"Unexpected priority for {person.username}: {importance}"
         for category in case["required_categories"]:
             assert category in categories, f"{category} should appear for {person.username}"
@@ -3679,7 +3679,8 @@ def _test_response_quality_scoring() -> None:
 
     lookup_results = [PersonLookupResult(found=True, name="William Gault", birth_year=1820, source='gedcom')]
 
-    score1 = processor._score_response_quality(
+    # pyright: ignore[reportPrivateUsage] - testing internal method
+    score1 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
         response_text=high_quality_response, lookup_results=lookup_results, person=mock_person
     )
 
@@ -3694,7 +3695,7 @@ def _test_response_quality_scoring() -> None:
     more details.
     """
 
-    score2 = processor._score_response_quality(
+    score2 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
         response_text=medium_quality_response, lookup_results=[], person=mock_person
     )
 
@@ -3706,7 +3707,7 @@ def _test_response_quality_scoring() -> None:
     Thanks for the message. I'll check my records.
     """
 
-    score3 = processor._score_response_quality(
+    score3 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
         response_text=low_quality_response, lookup_results=[], person=mock_person
     )
 
@@ -3714,14 +3715,18 @@ def _test_response_quality_scoring() -> None:
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
 
     # Test Case 4: Edge case - empty response
-    score4 = processor._score_response_quality(response_text="", lookup_results=[], person=mock_person)
+    score4 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
+        response_text="", lookup_results=[], person=mock_person
+    )
 
     assert score4 == 0, f"Empty response scored {score4}, expected 0"
     logger.info(f"✓ Empty response scored {score4:.1f}/100")
 
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
-    score5 = processor._score_response_quality(response_text=very_long_response, lookup_results=[], person=mock_person)
+    score5 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
+        response_text=very_long_response, lookup_results=[], person=mock_person
+    )
 
     # Should have penalty applied for being too long (>500 words)
     logger.info(f"✓ Very long response scored {score5:.1f}/100 (penalty applied)")
@@ -3742,7 +3747,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score6 = processor._score_response_quality(
+    score6 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
         response_text=unused_lookup_response, lookup_results=rich_lookup_results, person=mock_person
     )
 

@@ -502,7 +502,7 @@ class UnifiedCacheManager:
 # Global cache instance (singleton pattern)
 
 
-class UnifiedCacheBackendAdapter(CacheBackend):
+class UnifiedCacheBackendAdapter(CacheBackend):  # pyright: ignore[reportUntypedBaseClass]
     """Adapter that exposes UnifiedCacheManager via CacheBackend protocol."""
 
     def __init__(self, cache_impl: UnifiedCacheManager) -> None:
@@ -541,19 +541,19 @@ class UnifiedCacheBackendAdapter(CacheBackend):
 
 
 class CacheState:
-    _unified_cache: Optional[UnifiedCacheManager] = None
-    _unified_cache_backend: Optional[UnifiedCacheBackendAdapter] = None
+    unified_cache: Optional[UnifiedCacheManager] = None
+    unified_cache_backend: Optional[UnifiedCacheBackendAdapter] = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:
     """Get or create the global unified cache instance (singleton)."""
-    if CacheState._unified_cache is None:
-        CacheState._unified_cache = UnifiedCacheManager()
-        CacheState._unified_cache_backend = UnifiedCacheBackendAdapter(CacheState._unified_cache)
+    if CacheState.unified_cache is None:
+        CacheState.unified_cache = UnifiedCacheManager()
+        CacheState.unified_cache_backend = UnifiedCacheBackendAdapter(CacheState.unified_cache)
         # Register with CacheFactory for unified monitoring
-        CacheFactory.register_backend("unified_cache", CacheState._unified_cache_backend)
+        CacheFactory.register_backend("unified_cache", CacheState.unified_cache_backend)
         logger.info("🚀 Unified cache manager initialized")
-    return CacheState._unified_cache
+    return CacheState.unified_cache
 
 
 def create_ancestry_cache_config() -> dict[str, int]:

@@ -43,7 +43,6 @@ import json
 import logging
 import random  # Used by RateLimiter jitter calculations
 import re
-import threading  # For thread-safe rate limiting
 import time
 import uuid  # For make_ube
 from collections.abc import Mapping  # Consolidated typing imports
@@ -4547,7 +4546,7 @@ def _test_circuit_breaker() -> None:
     from core.error_handling import CircuitBreaker, CircuitBreakerConfig
 
     # Test CircuitBreaker instantiation with config
-    config = CircuitBreakerConfig(failure_threshold=3, recovery_timeout=1.0, success_threshold=2)
+    config = CircuitBreakerConfig(failure_threshold=3, recovery_timeout=1, success_threshold=2)
     cb = CircuitBreaker(name="test_utils", config=config)
     assert cb is not None, "Circuit breaker should instantiate"
 

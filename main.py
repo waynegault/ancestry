@@ -416,16 +416,12 @@ def main() -> None:
 
 def _test_clear_log_file_function() -> bool:
     """Validate log file clearing behavior returns structured tuple."""
-
-    try:
-        result = clear_log_file()
-        assert isinstance(result, tuple), "clear_log_file should return a tuple"
-        assert len(result) == 2, "clear_log_file should return a 2-element tuple"
-        success, message = result
-        assert isinstance(success, bool), "First element should be boolean"
-        assert message is None or isinstance(message, str), "Second element should be None or string"
-    except Exception as exc:  # pragma: no cover - defensive assertion
-        assert isinstance(exc, Exception), "Should handle errors gracefully"
+    result = clear_log_file()
+    assert isinstance(result, tuple), "clear_log_file should return a tuple"
+    assert len(result) == 2, "clear_log_file should return a 2-element tuple"
+    success, message = result
+    assert isinstance(success, bool), "First element should be boolean"
+    assert message is None or isinstance(message, str), "Second element should be None or string"
     return True
 
 
@@ -465,37 +461,40 @@ def _test_reset_db_actn_integration() -> bool:
 
 
 def _test_edge_case_handling() -> bool:
-    """Verify required action modules stay imported for dispatch helpers."""
-
+    """Verify required action modules can be imported and have expected exports."""
     required_modules = [
-        "action6_gather",
-        "action7_inbox",
-        "action8_messaging",
-        "action9_process_productive",
-        "action10",
+        ("action6_gather", "coord"),  # Main coordinator function
+        ("action7_inbox", "InboxProcessor"),  # Main class
+        ("action8_messaging", "send_messages_to_matches"),  # Main function
+        ("action9_process_productive", "process_productive_messages"),  # Main function
+        ("action10", "main"),  # Main function
     ]
 
-    for module_name in required_modules:
-        importlib.import_module(module_name)
+    for module_name, expected_export in required_modules:
+        module = importlib.import_module(module_name)
+        assert hasattr(module, expected_export), f"{module_name} should have {expected_export}"
+        export = getattr(module, expected_export)
+        assert callable(export), f"{module_name}.{expected_export} should be callable"
     return True
 
 
 def _test_import_error_handling() -> bool:
-    """Confirm core imports remain registered on the module namespace."""
-
+    """Confirm core imports remain registered and are callable/usable."""
     module_globals = globals()
     required_imports = [
-        "gather_dna_matches",
-        "srch_inbox_actn",
-        "send_messages_action",
-        "process_productive_messages_action",
-        "config",
-        "logger",
-        "SessionManager",
+        ("gather_dna_matches", callable),
+        ("srch_inbox_actn", callable),
+        ("send_messages_action", callable),
+        ("process_productive_messages_action", callable),
+        ("config", lambda x: hasattr(x, "api")),  # config should have api attribute
+        ("logger", lambda x: hasattr(x, "info")),  # logger should have info method
+        ("SessionManager", callable),
     ]
 
-    for import_name in required_imports:
+    for import_name, validator in required_imports:
         assert import_name in module_globals, f"{import_name} should be imported"
+        value = module_globals[import_name]
+        assert validator(value), f"{import_name} should pass validation"
     return True
 
 
@@ -534,15 +533,11 @@ def _test_action_integration() -> bool:
 
 def _test_import_performance() -> bool:
     """Reload config module to ensure performance stays reasonable."""
-
     start_time = time.time()
 
-    try:
-        config_module = sys.modules.get("config")
-        if config_module:
-            importlib.reload(config_module)
-    except Exception:  # pragma: no cover - diagnostic only
-        pass
+    config_module = sys.modules.get("config")
+    if config_module:
+        importlib.reload(config_module)
 
     duration = time.time() - start_time
     assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
