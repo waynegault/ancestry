@@ -941,6 +941,291 @@ def mock_api_response(
 
 
 # ==============================================
+# Test Decorators (Todo §7: Test Utility Framework)
+# ==============================================
+
+
+def with_temp_database(func: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    Decorator that provides a temporary in-memory database session.
+
+    The decorated function receives a `db_session` keyword argument with
+    an SQLAlchemy session connected to a fresh in-memory SQLite database.
+    The session is automatically closed after the test completes.
+
+    Args:
+        func: Test function to wrap
+
+    Returns:
+        Wrapped function with database session injection
+
+    Example:
+        @with_temp_database
+        def test_person_creation(db_session):
+            person = Person(username="Test")
+            db_session.add(person)
+            db_session.commit()
+            assert db_session.query(Person).count() == 1
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        session = create_test_database()
+        try:
+            kwargs["db_session"] = session
+            return func(*args, **kwargs)
+        finally:
+            session.close()
+
+    return wrapper
+
+
+def with_mock_session(func: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    Decorator that provides a mock SessionManager.
+
+    The decorated function receives a `session_manager` keyword argument
+    with a pre-configured MagicMock simulating SessionManager behavior.
+
+    Args:
+        func: Test function to wrap
+
+    Returns:
+        Wrapped function with mock session manager injection
+
+    Example:
+        @with_mock_session
+        def test_api_call(session_manager):
+            session_manager.requests_session.get.return_value.status_code = 200
+            # Test code using session_manager
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        mock_sm = create_mock_session_manager()
+        kwargs["session_manager"] = mock_sm
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def with_test_config(overrides: Optional[dict[str, Any]] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    Decorator factory that provides test configuration with optional overrides.
+
+    The decorated function receives a `test_config` keyword argument with
+    a dictionary of configuration values. Original config is restored after test.
+
+    Args:
+        overrides: Dictionary of config values to override for the test
+
+    Returns:
+        Decorator function
+
+    Example:
+        @with_test_config({"max_pages": 5, "debug_mode": True})
+        def test_with_custom_config(test_config):
+            assert test_config["max_pages"] == 5
+            # Test code using modified config
+    """
+    import functools
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Build test config with defaults and overrides
+            test_config = {
+                "max_pages": 1,
+                "requests_per_second": 0.3,
+                "debug_mode": False,
+                "skip_live_api_tests": True,
+                "max_concurrency": 1,
+            }
+            if overrides:
+                test_config.update(overrides)
+            kwargs["test_config"] = test_config
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def with_rollback(func: Callable[..., Any]) -> Callable[..., Any]:
+    """
+    Decorator that wraps test in a database transaction rollback.
+
+    Requires `db_session` argument to be passed to the function.
+    All database changes are rolled back after test completion.
+
+    Args:
+        func: Test function to wrap
+
+    Returns:
+        Wrapped function with automatic rollback
+
+    Example:
+        @with_rollback
+        def test_data_modification(db_session):
+            db_session.add(Person(username="Test"))
+            # Changes will be rolled back after test
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        db_session = kwargs.get("db_session")
+        if db_session is None:
+            raise ValueError("with_rollback requires db_session argument")
+
+        try:
+            result = func(*args, **kwargs)
+            db_session.rollback()  # Always rollback
+            return result
+        except Exception:
+            db_session.rollback()
+            raise
+
+    return wrapper
+
+
+# ==============================================
+# Additional Fixture Factories (Todo §7)
+# ==============================================
+
+
+def create_test_match(
+    match_id: int = 1,
+    people_id: int = 1,
+    cm_dna: int = 100,
+    predicted_relationship: str = "3rd-4th Cousin",
+    shared_segments: int = 5,
+    longest_shared_segment: float = 25.0,
+    compare_link: str = "https://ancestry.com/compare/test",
+    from_my_fathers_side: bool = False,
+    from_my_mothers_side: bool = False,
+) -> MagicMock:
+    """
+    Create a mock DnaMatch object for testing.
+
+    Test Infrastructure Todo #17: Shared test helpers
+    Provides a fully-configured mock DNA match for testing.
+
+    Args:
+        match_id: Database ID for the match
+        people_id: Foreign key to Person
+        cm_dna: Shared centimorgans
+        predicted_relationship: Ancestry's relationship prediction
+        shared_segments: Number of shared DNA segments
+        longest_shared_segment: Length of longest segment in cM
+        compare_link: URL to comparison page
+        from_my_fathers_side: Paternal match flag
+        from_my_mothers_side: Maternal match flag
+
+    Returns:
+        MagicMock: Mock DnaMatch object with all attributes
+
+    Example:
+        match = create_test_match(cm_dna=250, predicted_relationship="2nd Cousin")
+        assert match.cm_dna == 250
+        assert match.predicted_relationship == "2nd Cousin"
+    """
+    from database import DnaMatch
+
+    match = MagicMock(spec=DnaMatch)
+    match.id = match_id
+    match.people_id = people_id
+    match.cm_dna = cm_dna
+    match.predicted_relationship = predicted_relationship
+    match.shared_segments = shared_segments
+    match.longest_shared_segment = longest_shared_segment
+    match.compare_link = compare_link
+    match.from_my_fathers_side = from_my_fathers_side
+    match.from_my_mothers_side = from_my_mothers_side
+    return match
+
+
+def create_test_conversation(
+    conversation_id: int = 1,
+    person_id: int = 1,
+    message_content: str = "Test message content",
+    direction: str = "received",
+    classification: Optional[str] = None,
+) -> MagicMock:
+    """
+    Create a mock ConversationLog object for testing.
+
+    Args:
+        conversation_id: Database ID
+        person_id: Foreign key to Person
+        message_content: The message text
+        direction: 'sent' or 'received'
+        classification: Optional AI classification (PRODUCTIVE/DESIST/OTHER)
+
+    Returns:
+        MagicMock: Mock ConversationLog object
+
+    Example:
+        conv = create_test_conversation(classification="PRODUCTIVE")
+        assert conv.classification == "PRODUCTIVE"
+    """
+    from database import ConversationLog
+
+    conv = MagicMock(spec=ConversationLog)
+    conv.id = conversation_id
+    conv.people_id = person_id
+    conv.message_content = message_content
+    conv.direction = direction
+    conv.classification = classification
+    return conv
+
+
+def create_test_person_with_match(
+    person_id: int = 1,
+    uuid: str = "TEST-UUID-1234",
+    username: str = "Test User",
+    cm_dna: int = 100,
+    predicted_relationship: str = "3rd-4th Cousin",
+    engagement_score: int = 50,
+) -> MagicMock:
+    """
+    Create a mock Person with an associated DnaMatch for testing.
+
+    Convenience function that creates both Person and DnaMatch mocks
+    with proper linkage.
+
+    Args:
+        person_id: Database ID
+        uuid: Person UUID
+        username: Display name
+        cm_dna: Shared centimorgans
+        predicted_relationship: Ancestry's relationship prediction
+        engagement_score: Current engagement score (0-100)
+
+    Returns:
+        MagicMock: Mock Person object with linked DnaMatch
+
+    Example:
+        person = create_test_person_with_match(cm_dna=200)
+        assert person.dna_match.cm_dna == 200
+        assert person.dna_match.people_id == person.id
+    """
+    person = create_test_person(
+        person_id=person_id,
+        uuid=uuid,
+        username=username,
+        cm_dna=cm_dna,
+        engagement_score=engagement_score,
+    )
+    # Link the match properly
+    person.dna_match.people_id = person_id
+    person.dna_match.predicted_relationship = predicted_relationship
+    return person
+
+
+# ==============================================
 # Module Tests
 # ==============================================
 
@@ -1102,6 +1387,104 @@ def _test_atomic_write_file() -> None:
         assert data == {"updated": "data"}
 
 
+def _test_with_temp_database_decorator() -> None:
+    """Test the @with_temp_database decorator (Todo §7)."""
+
+    @with_temp_database
+    def inner_test(db_session: Session) -> bool:
+        from database import Person
+
+        # Verify session works
+        count = db_session.query(Person).count()
+        assert count == 0, "Fresh database should be empty"
+        return True
+
+    result = inner_test()
+    assert result is True
+
+
+def _test_with_mock_session_decorator() -> None:
+    """Test the @with_mock_session decorator (Todo §7)."""
+
+    @with_mock_session
+    def inner_test(session_manager: MagicMock) -> bool:
+        # Verify mock is properly configured
+        assert session_manager.session_ready is True
+        assert session_manager.driver is not None
+        assert session_manager.requests_session is not None
+        return True
+
+    result = inner_test()
+    assert result is True
+
+
+def _test_with_test_config_decorator() -> None:
+    """Test the @with_test_config decorator (Todo §7)."""
+
+    @with_test_config({"max_pages": 10, "debug_mode": True})
+    def inner_test(test_config: dict[str, Any]) -> bool:
+        # Verify overrides applied
+        assert test_config["max_pages"] == 10
+        assert test_config["debug_mode"] is True
+        # Verify defaults preserved
+        assert test_config["requests_per_second"] == 0.3
+        return True
+
+    result = inner_test()
+    assert result is True
+
+
+def _test_create_test_match() -> None:
+    """Test the create_test_match helper (Todo §7)."""
+    # Test with defaults
+    match = create_test_match()
+    assert match.id == 1
+    assert match.cm_dna == 100
+    assert match.predicted_relationship == "3rd-4th Cousin"
+    assert match.shared_segments == 5
+
+    # Test with custom values
+    custom_match = create_test_match(
+        cm_dna=250,
+        predicted_relationship="2nd Cousin",
+        from_my_fathers_side=True,
+    )
+    assert custom_match.cm_dna == 250
+    assert custom_match.predicted_relationship == "2nd Cousin"
+    assert custom_match.from_my_fathers_side is True
+
+
+def _test_create_test_conversation() -> None:
+    """Test the create_test_conversation helper (Todo §7)."""
+    # Test with defaults
+    conv = create_test_conversation()
+    assert conv.id == 1
+    assert conv.direction == "received"
+    assert conv.classification is None
+
+    # Test with classification
+    classified = create_test_conversation(
+        classification="PRODUCTIVE",
+        message_content="I have info about our ancestor",
+    )
+    assert classified.classification == "PRODUCTIVE"
+    assert classified.message_content == "I have info about our ancestor"
+
+
+def _test_create_test_person_with_match() -> None:
+    """Test the create_test_person_with_match helper (Todo §7)."""
+    person = create_test_person_with_match(
+        person_id=5,
+        cm_dna=200,
+        predicted_relationship="2nd Cousin",
+    )
+    assert person.id == 5
+    assert person.dna_match is not None
+    assert person.dna_match.cm_dna == 200
+    assert person.dna_match.people_id == 5
+    assert person.dna_match.predicted_relationship == "2nd Cousin"
+
+
 def test_utilities_module_tests() -> bool:
     """Test the test utilities module itself."""
     from test_framework import TestSuite, suppress_logging
@@ -1168,6 +1551,49 @@ def test_utilities_module_tests() -> bool:
             "Test atomic file writing",
             "direct",
             "Test atomic write helper",
+        ),
+        # New decorators and factories (Todo §7)
+        (
+            "@with_temp_database decorator (Todo §7)",
+            _test_with_temp_database_decorator,
+            "Test temp database injection",
+            "direct",
+            "Test @with_temp_database decorator",
+        ),
+        (
+            "@with_mock_session decorator (Todo §7)",
+            _test_with_mock_session_decorator,
+            "Test mock session injection",
+            "direct",
+            "Test @with_mock_session decorator",
+        ),
+        (
+            "@with_test_config decorator (Todo §7)",
+            _test_with_test_config_decorator,
+            "Test config override injection",
+            "direct",
+            "Test @with_test_config decorator",
+        ),
+        (
+            "Create test match (Todo §7)",
+            _test_create_test_match,
+            "Test DNA match mock helper",
+            "direct",
+            "Test create_test_match factory",
+        ),
+        (
+            "Create test conversation (Todo §7)",
+            _test_create_test_conversation,
+            "Test conversation mock helper",
+            "direct",
+            "Test create_test_conversation factory",
+        ),
+        (
+            "Create test person with match (Todo §7)",
+            _test_create_test_person_with_match,
+            "Test person+match mock helper",
+            "direct",
+            "Test create_test_person_with_match factory",
         ),
     ]
 
