@@ -10,12 +10,17 @@ from __future__ import annotations
 
 import argparse
 import io
+import logging
 import os
 import re
 import subprocess
 import sys
 import textwrap
 import time
+
+# Suppress httpx INFO logging (HTTP Request messages)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("google_genai.models").setLevel(logging.WARNING)
 from collections.abc import Iterable
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
@@ -26,17 +31,30 @@ from typing import Any, Callable, cast
 
 from test_framework import TestSuite, create_standard_test_runner
 
+# Optional dependency imports with proper typing
+# These packages may not have type stubs, so we declare types before import
+OpenAI: type[Any] | None
+genai: Any
+genai_types: Any
+load_dotenv: Callable[..., Any] | None
+XAIClient: type[Any] | None
+xai_system_message: Callable[..., Any] | None
+xai_user_message: Callable[..., Any] | None
+
 try:
     from openai import OpenAI as _OpenAI
-except ImportError:  # pragma: no cover - optional dependency
-    _OpenAI = None
 
-OpenAI: Any | None = _OpenAI
+    OpenAI = _OpenAI
+except ImportError:  # pragma: no cover - optional dependency
+    OpenAI = None
 
 genai_import_error: str | None = None
 try:
-    from google import genai  # type: ignore[import-untyped]
-    from google.genai import types as genai_types  # type: ignore[import-untyped]
+    import google.genai as _genai
+    import google.genai.types as _genai_types
+
+    genai = _genai
+    genai_types = _genai_types
 except ImportError as import_error:  # pragma: no cover - optional dependency
     genai = None
     genai_types = None
@@ -44,57 +62,86 @@ except ImportError as import_error:  # pragma: no cover - optional dependency
 
 try:
     from dotenv import load_dotenv as _load_dotenv
-except ImportError:  # pragma: no cover - optional dependency
-    _load_dotenv = None
 
-load_dotenv: Callable[..., Any] | None = _load_dotenv
+    load_dotenv = _load_dotenv
+except ImportError:  # pragma: no cover - optional dependency
+    load_dotenv = None
 
 try:
-    from xai_sdk import Client as _XAIClient
-    from xai_sdk.chat import system as _xai_system_message, user as _xai_user_message
+    import xai_sdk as _xai_sdk
+    import xai_sdk.chat as _xai_chat
+
+    XAIClient = _xai_sdk.Client
+    xai_system_message = _xai_chat.system
+    xai_user_message = _xai_chat.user
 except ImportError:  # pragma: no cover - optional dependency
-    _XAIClient = None
-    _xai_system_message = None
-    _xai_user_message = None
+    XAIClient = None
+    xai_system_message = None
+    xai_user_message = None
 
-XAIClient: Callable[..., Any] | None = cast(Callable[..., Any] | None, _XAIClient)
-xai_system_message: Callable[..., Any] | None = _xai_system_message
-xai_user_message: Callable[..., Any] | None = _xai_user_message
+DEFAULT_PROMPT = (
+    "I'm interested in genealogy. Could you succinctly tell me the maximum number of great-great-great grandparents I may be descended from?"
+)
 
-DEFAULT_PROMPT = "I'm interested in geneology. Could you succinctly tell me how many individual great-great-great grandparents did I have?"
-PROVIDERS = ("moonshot", "deepseek", "gemini", "local_llm", "inception", "grok", "tetrate")
+# Cloud API providers
+CLOUD_PROVIDERS = ("moonshot", "deepseek", "gemini", "inception", "grok", "tetrate")
+
+# Local LLM models available in LM Studio (model_id -> display_name)
+# Updated from: curl -s http://localhost:1234/v1/models
+LOCAL_LLM_MODELS: dict[str, str] = {
+    "qwen3-4b-instruct-2507": "Qwen3 4B Instruct",
+    "deepseek-r1-distill-qwen-7b": "DeepSeek R1 Distill Qwen 7B",
+    "phi-3-mini-128k-instruct-imatrix-smashed": "Phi-3 Mini 128K (smashed)",
+    "phi-3-mini-4k-instruct": "Phi-3 Mini 4K",
+    "mistral-7b-instruct-v0.2": "Mistral 7B Instruct v0.2",
+}
+
+# All providers: cloud + local
+PROVIDERS = CLOUD_PROVIDERS + tuple(f"local:{model_id}" for model_id in LOCAL_LLM_MODELS)
 
 PROVIDER_DISPLAY_NAMES: dict[str, str] = {
     "moonshot": "Moonshot (Kimi)",
     "deepseek": "DeepSeek",
     "gemini": "Google Gemini",
-    "local_llm": "Local LLM (LM Studio)",
     "inception": "Inception Mercury",
     "grok": "Grok (xAI)",
     "tetrate": "Tetrate (TARS)",
+    # Local models are added dynamically from LOCAL_LLM_MODELS
+    **{f"local:{model_id}": name for model_id, name in LOCAL_LLM_MODELS.items()},
 }
 
 PROVIDER_ENV_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "moonshot": ("MOONSHOT_API_KEY",),
     "deepseek": ("DEEPSEEK_API_KEY",),
     "gemini": ("GOOGLE_API_KEY",),
-    "local_llm": (),
     "inception": ("INCEPTION_API_KEY",),
     "grok": ("XAI_API_KEY",),
     "tetrate": ("TARS_API_KEY",),
+    # Local models don't require env keys
+    **{f"local:{model_id}": () for model_id in LOCAL_LLM_MODELS},
 }
+
+
+def _get_local_llm_base_url() -> str:
+    return (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/")
+
 
 _PROVIDER_BASE_URL_FACTORIES: dict[str, Callable[[], str]] = {
     "moonshot": lambda: (os.getenv("MOONSHOT_AI_BASE_URL") or "https://api.moonshot.ai/v1").rstrip("/"),
     "deepseek": lambda: (os.getenv("DEEPSEEK_AI_BASE_URL") or "https://api.deepseek.com").rstrip("/"),
-    "gemini": lambda: os.getenv("GOOGLE_AI_BASE_URL") or "(default Google endpoint)",
-    "local_llm": lambda: (os.getenv("LOCAL_LLM_BASE_URL") or "http://localhost:1234/v1").rstrip("/"),
+    "gemini": lambda: os.getenv("GOOGLE_AI_BASE_URL") or "https://generativelanguage.googleapis.com",
     "inception": lambda: (os.getenv("INCEPTION_AI_BASE_URL") or "https://api.inceptionlabs.ai/v1").rstrip("/"),
     "grok": lambda: os.getenv("XAI_API_HOST") or "api.x.ai",
     "tetrate": lambda: (os.getenv("TETRATE_AI_BASE_URL") or "https://api.router.tetrate.ai/v1").rstrip("/"),
+    # All local models use the same LM Studio endpoint
+    **{f"local:{model_id}": _get_local_llm_base_url for model_id in LOCAL_LLM_MODELS},
 }
 
 ListModelsFn = Callable[[], Iterable[Any]]
+
+
+# Correct answer for the default genealogy prompt
+CORRECT_ANSWER = 32
 
 
 @dataclass
@@ -105,6 +152,9 @@ class TestResult:
     messages: list[str] = field(default_factory=list)
     full_output: str | None = None
     finish_reason: str | None = None  # Track why generation stopped
+    model_name: str | None = None  # Model used for the test
+    load_time: float | None = None  # Time to load model (local LLM only)
+    inference_time: float | None = None  # Pure inference time (excludes load)
 
 
 def _load_env_file(env_path: Path, override: bool = False) -> None:
@@ -723,50 +773,138 @@ def _normalize_local_llm_endpoint(base_url: str, messages: list[str]) -> tuple[s
     return normalized_base_url, endpoint_ok
 
 
-def _test_local_llm(prompt: str, max_tokens: int) -> TestResult:
-    messages: list[str] = []
-    if OpenAI is None:
-        messages.append("OpenAI library not available. Install the openai package.")
-        return TestResult("local_llm", False, False, messages)
+def _check_model_loaded(base_url: str, model_id: str) -> tuple[bool, list[str]]:
+    """Check if the requested model is available in LM Studio.
 
-    api_key = os.getenv("LOCAL_LLM_API_KEY") or ""
-    base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
-    model_name = os.getenv("LOCAL_LLM_MODEL", "qwen3-4b-2507")
+    Returns (is_available, list of available model ids).
+    """
+    import requests
 
-    if not base_url:
-        messages.append("LOCAL_LLM_BASE_URL not configured.")
-        return TestResult("local_llm", False, False, messages)
-
-    _maybe_start_lm_studio(base_url, messages)
-    normalized_base_url, endpoint_ok = _normalize_local_llm_endpoint(base_url, messages)
-
-    client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
     try:
-        completion = client.chat.completions.create(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": "You are the local LM Studio model."},
-                {"role": "user", "content": [{"type": "text", "text": prompt}]},
-            ],
-            stream=False,
-            temperature=0.7,
-            max_tokens=max_tokens,
+        resp = requests.get(f"{base_url}/models", timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        available_models = [m.get("id", "") for m in data.get("data", [])]
+
+        # Check exact match or partial match (model_id might have org prefix)
+        for available in available_models:
+            if model_id == available or model_id.endswith(f"/{available}"):
+                return True, available_models
+
+        return False, available_models
+    except requests.exceptions.ConnectionError:
+        return False, []
+    except Exception:
+        return False, []
+
+
+def _warm_up_model(client: Any, model_id: str) -> tuple[bool, float]:
+    """Send a minimal request to ensure model is loaded. Returns (success, load_time)."""
+    import time
+
+    start = time.time()
+    try:
+        # Minimal request - just ask for 1 token to trigger model load
+        client.chat.completions.create(
+            model=model_id,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=1,
+            temperature=0,
         )
-        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
-            full_output = completion.choices[0].message.content.strip()
-            finish_reason = getattr(completion.choices[0], "finish_reason", None)
-            messages.append(_build_messages_preview(full_output))
-            return TestResult(
-                "local_llm", True, endpoint_ok, messages, full_output=full_output, finish_reason=finish_reason
+        return True, time.time() - start
+    except Exception:
+        return False, time.time() - start
+
+
+def _create_local_llm_tester(model_id: str) -> Callable[[str, int], TestResult]:
+    """Factory function to create a tester for a specific local LLM model."""
+
+    def _test_local_model(prompt: str, max_tokens: int) -> TestResult:
+        provider_name = f"local:{model_id}"
+        messages: list[str] = []
+        if OpenAI is None:
+            messages.append("OpenAI library not available. Install the openai package.")
+            return TestResult(provider_name, False, False, messages)
+
+        api_key = os.getenv("LOCAL_LLM_API_KEY") or ""
+        base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
+
+        if not base_url:
+            messages.append("LOCAL_LLM_BASE_URL not configured.")
+            return TestResult(provider_name, False, False, messages)
+
+        _maybe_start_lm_studio(base_url, messages)
+        normalized_base_url, endpoint_ok = _normalize_local_llm_endpoint(base_url, messages)
+
+        # Check if model is available in LM Studio
+        is_available, available_models = _check_model_loaded(normalized_base_url, model_id)
+        if not is_available:
+            if not available_models:
+                messages.append("⚠️  LM Studio not running or not accessible")
+            else:
+                messages.append(f"⚠️  Model '{model_id}' not found in LM Studio.")
+                messages.append(f"   Available models: {', '.join(available_models)}")
+            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id)
+
+        client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
+
+        # Warm up: trigger model load (if needed) before timing
+        messages.append(f"Loading model: {model_id}...")
+        warm_ok, load_time = _warm_up_model(client, model_id)
+        if not warm_ok:
+            messages.append(f"⚠️  Failed to load model '{model_id}'")
+            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id)
+        messages.append(f"✓ Model ready (load time: {load_time:.1f}s)")
+
+        # Now time only the inference (with 20s timeout, no retries)
+        inference_start = time.time()
+        try:
+            # Create client with timeout for inference and NO retries
+            client_with_timeout = OpenAI(
+                api_key=api_key or "lm-studio",
+                base_url=normalized_base_url,
+                timeout=20.0,  # 20 second timeout for inference
+                max_retries=0,  # No retries - fail fast on timeout
             )
-        messages.append("Local LLM returned an empty response.")
-        return TestResult("local_llm", False, endpoint_ok, messages)
-    except Exception as exc:
-        error_msg = _format_provider_error("local_llm", exc)
-        if "no models loaded" in str(exc).lower():
-            error_msg += " Please start LM Studio, load a model (e.g., qwen3-4b-2507), and ensure it's running on the configured endpoint."
-        messages.append(error_msg)
-        return TestResult("local_llm", False, endpoint_ok, messages)
+            # Use only user message - some models (e.g., Mistral) don't support system role
+            completion = client_with_timeout.chat.completions.create(
+                model=model_id,
+                messages=[
+                    {"role": "user", "content": prompt},
+                ],
+                stream=False,
+                temperature=0.7,
+                max_tokens=max_tokens,
+            )
+            inference_time = time.time() - inference_start
+            if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
+                full_output = completion.choices[0].message.content.strip()
+                finish_reason = getattr(completion.choices[0], "finish_reason", None)
+                messages.append(_build_messages_preview(full_output))
+                return TestResult(
+                    provider_name,
+                    True,
+                    endpoint_ok,
+                    messages,
+                    full_output=full_output,
+                    finish_reason=finish_reason,
+                    model_name=model_id,
+                    load_time=load_time,
+                    inference_time=inference_time,
+                )
+            messages.append("Local LLM returned an empty response.")
+            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
+        except Exception as exc:
+            inference_time = time.time() - inference_start
+            error_msg = _format_provider_error(provider_name, exc)
+            if "timeout" in str(exc).lower() or "timed out" in str(exc).lower():
+                error_msg = f"⏱️  TIMEOUT after {inference_time:.1f}s - model too slow for practical use"
+            elif "no models loaded" in str(exc).lower():
+                error_msg += f" Please ensure '{model_id}' is loaded in LM Studio."
+            messages.append(error_msg)
+            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
+
+    return _test_local_model
 
 
 def _test_inception(prompt: str, max_tokens: int) -> TestResult:
@@ -868,10 +1006,11 @@ PROVIDER_TESTERS: dict[str, Callable[[str, int], TestResult]] = {
     "moonshot": _test_moonshot,
     "deepseek": _test_deepseek,
     "gemini": _test_gemini,
-    "local_llm": _test_local_llm,
     "inception": _test_inception,
     "grok": _test_grok,
     "tetrate": _test_tetrate,
+    # Local LLM models - each gets its own tester
+    **{f"local:{model_id}": _create_local_llm_tester(model_id) for model_id in LOCAL_LLM_MODELS},
 }
 
 
@@ -951,6 +1090,32 @@ def _execute_provider_test(
     return result, duration
 
 
+def _check_answer_correctness(response: str) -> tuple[bool, str]:
+    """Check if response contains the correct answer (32 great-great-great grandparents)."""
+    import re
+
+    response_lower = response.lower()
+
+    # Check for correct answer (32)
+    if re.search(r"\b32\b", response) or "thirty-two" in response_lower or "thirty two" in response_lower:
+        return True, "✅ CORRECT - The answer is 32 great-great-great-grandparents."
+
+    # Check for common wrong answers using word boundaries to avoid partial matches
+    wrong_answers = [
+        (r"\b16\b|sixteen", "16 (off by one generation)"),
+        (r"\b64\b|sixty[- ]?four", "64 (one generation too many)"),
+        (r"\b128\b|one hundred (and )?twenty[- ]?eight", "128 (two generations too many)"),
+        (r"\b8\b|eight", "8 (way off - confused generations)"),
+        (r"\b4\b|four", "4 (way off - confused generations)"),
+        (r"\b2\b|two", "2 (way off - confused generations)"),
+    ]
+    for pattern, desc in wrong_answers:
+        if re.search(pattern, response_lower):
+            return False, f"❌ INCORRECT - Response says {desc}. Correct answer: 32."
+
+    return False, "❓ UNCLEAR - Could not find a clear numeric answer. Correct answer: 32."
+
+
 def _render_test_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
     _print_result(result)
 
@@ -958,11 +1123,27 @@ def _render_test_output(args: argparse.Namespace, result: TestResult, duration: 
     max_tokens: int = getattr(args, "max_tokens", 2048)
 
     if result.api_status and result.full_output:
+        # Show model name for local_llm
+        if result.model_name:
+            print(f"\nModel: {result.model_name}")
         print("\nPrompt:")
         print(f'"{prompt}"')
         print("\nResponse:")
         print(result.full_output)
-        print(f"\nResponse time: {duration:.2f}s")
+
+        # For local LLMs, show load time and inference time separately
+        if result.load_time is not None and result.inference_time is not None:
+            print(f"\nLoad time: {result.load_time:.2f}s")
+            print(f"Inference time: {result.inference_time:.2f}s")
+            print(f"Total time: {duration:.2f}s")
+        else:
+            print(f"\nResponse time: {duration:.2f}s")
+
+        # Check correctness if using the default genealogy prompt
+        if prompt == DEFAULT_PROMPT:
+            _, verdict = _check_answer_correctness(result.full_output)
+            print(f"\nConclusion: {verdict}")
+
         if _is_response_truncated(result.full_output, result.finish_reason):
             print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
             print(f"   Consider increasing --max-tokens (current: {max_tokens})")

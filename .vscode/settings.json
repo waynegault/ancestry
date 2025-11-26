@@ -13,7 +13,12 @@
     ],
     "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingImports": "none",
-        "reportMissingModuleSource": "none"
+        "reportMissingModuleSource": "none",
+        "reportMissingTypeStubs": "none",
+        "reportUnknownVariableType": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownParameterType": "none",
+        "reportUnknownArgumentType": "none"
     },
     "files.watcherExclude": {
         "**/.git/objects/**": true,
