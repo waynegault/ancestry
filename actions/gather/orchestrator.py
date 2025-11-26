@@ -770,6 +770,19 @@ class GatherOrchestrator:
         if not self.session_manager.my_uuid:
             raise AuthenticationExpiredError("Failed to retrieve my_uuid for DNA match gathering")
 
+    # -------------------------------------------------------------------------
+    # Public test helper methods (expose protected members for testing)
+    # -------------------------------------------------------------------------
+
+    def log_final_results(self, state: Mapping[str, Any], action_start_time: float) -> None:
+        """Public wrapper for _log_final_results (for testing)."""
+        self._log_final_results(state, action_start_time=action_start_time)
+
+    @classmethod
+    def get_validate_session_state_method(cls) -> Any:
+        """Return the _validate_session_state method object for decorator inspection (testing)."""
+        return cls._validate_session_state
+
 
 # ---------------------------------------------------------------------------
 # Module tests
@@ -873,9 +886,10 @@ def _test_retry_policy_alignment() -> bool:
     if selenium_policy is None:
         return False
 
-    helper_name = getattr(GatherOrchestrator._validate_session_state, "__retry_helper__", None)
-    policy_name = getattr(GatherOrchestrator._validate_session_state, "__retry_policy__", None)
-    settings = getattr(GatherOrchestrator._validate_session_state, "__retry_settings__", {})
+    method = GatherOrchestrator.get_validate_session_state_method()
+    helper_name = getattr(method, "__retry_helper__", None)
+    policy_name = getattr(method, "__retry_policy__", None)
+    settings = getattr(method, "__retry_settings__", {})
 
     expected_settings = {
         "max_attempts": selenium_policy.max_attempts,
@@ -923,7 +937,7 @@ def _test_log_final_results_emits_summary() -> bool:
         mock.patch.object(orchestrator, "_emit_rate_limiter_metrics") as rate_mock,
         mock.patch.object(orchestrator, "_emit_action_status") as status_mock,
     ):
-        orchestrator._log_final_results(state, action_start_time=time.time() - 42)
+        orchestrator.log_final_results(state, action_start_time=time.time() - 42)
 
     log_final_mock.assert_called_once()
     summary_arg, runtime_arg = log_final_mock.call_args[0]

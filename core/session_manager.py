@@ -2211,6 +2211,92 @@ class SessionManager:
         """Clear the last readiness check timestamp for fresh validation."""
         self._last_readiness_check = None
 
+    # === Public Test Helper Methods ===
+    # These methods wrap protected functionality to allow testing without
+    # directly accessing protected members (eliminates Pyright warnings).
+
+    def transition_state(self, new_state: SessionLifecycleState, reason: str) -> None:
+        """Public wrapper for state transitions (for testing)."""
+        self._transition_state(new_state, reason)
+
+    def get_db_init_attempted(self) -> bool:
+        """Get the database initialization attempted flag."""
+        return self._db_init_attempted
+
+    def set_db_init_attempted(self, value: bool) -> None:
+        """Set the database initialization attempted flag."""
+        self._db_init_attempted = value
+
+    def get_db_ready(self) -> bool:
+        """Get the database ready flag."""
+        return self._db_ready
+
+    def set_db_ready(self, value: bool) -> None:
+        """Set the database ready flag."""
+        self._db_ready = value
+
+    def force_session_restart(self, reason: str) -> bool:
+        """Public wrapper for forcing session restart."""
+        return self._force_session_restart(reason)
+
+    def get_session_cookies_synced(self) -> bool:
+        """Get the session cookies synced flag."""
+        return self._session_cookies_synced
+
+    def set_session_cookies_synced(self, value: bool) -> None:
+        """Set the session cookies synced flag."""
+        self._session_cookies_synced = value
+
+    def get_last_cookie_sync_time(self) -> float:
+        """Get the last cookie sync timestamp."""
+        return self._last_cookie_sync_time
+
+    def set_last_cookie_sync_time(self, value: float) -> None:
+        """Set the last cookie sync timestamp."""
+        self._last_cookie_sync_time = value
+
+    def finalize_recovered_session_state(self) -> bool:
+        """Public wrapper for finalizing recovered session state."""
+        return self._finalize_recovered_session_state()
+
+    def get_last_readiness_check(self) -> Optional[float]:
+        """Get the last readiness check timestamp."""
+        return self._last_readiness_check
+
+    def set_last_readiness_check(self, value: Optional[float]) -> None:
+        """Set the last readiness check timestamp."""
+        self._last_readiness_check = value
+
+    def check_cached_readiness(self, action_name: str) -> Optional[bool]:
+        """Public wrapper for checking cached readiness."""
+        return self._check_cached_readiness(action_name)
+
+    @staticmethod
+    def build_endpoint_profile_config() -> dict[str, dict[str, float]]:
+        """Public wrapper for building endpoint profile config."""
+        return SessionManager._build_endpoint_profile_config()
+
+    @staticmethod
+    def calculate_endpoint_rate_cap(profiles: dict[str, dict[str, float]]) -> Optional[float]:
+        """Public wrapper for calculating endpoint rate cap."""
+        return SessionManager._calculate_endpoint_rate_cap(profiles)
+
+    def initialize_enhanced_requests_session(self) -> None:
+        """Public wrapper for initializing enhanced requests session."""
+        self._initialize_enhanced_requests_session()
+
+    def initialize_cloudscraper(self) -> None:
+        """Public wrapper for initializing cloudscraper."""
+        self._initialize_cloudscraper()
+
+    def get_scraper(self) -> Any:
+        """Get the cloudscraper instance."""
+        return self._scraper
+
+    def set_scraper(self, scraper: Any) -> None:
+        """Set the cloudscraper instance."""
+        self._scraper = scraper
+
 
 # === API Call Watchdog for Timeout Protection ===
 
@@ -2636,24 +2722,24 @@ def _test_regression_prevention_csrf_optimization():
             print("   ❌ _csrf_cache_time attribute missing")
             results.append(False)
 
-        # Test 2: Verify CSRF validation method exists
-        if hasattr(session_manager, '_is_csrf_token_valid'):
-            print("   ✅ _is_csrf_token_valid method exists")
+        # Test 2: Verify CSRF validation method exists (using public wrapper)
+        if hasattr(session_manager, 'is_csrf_token_valid'):
+            print("   ✅ is_csrf_token_valid method exists")
 
             # Test that it returns a boolean
             try:
-                is_valid = session_manager._is_csrf_token_valid()
+                is_valid = session_manager.is_csrf_token_valid()
                 if isinstance(cast(Any, is_valid), bool):
-                    print("   ✅ _is_csrf_token_valid returns boolean")
+                    print("   ✅ is_csrf_token_valid returns boolean")
                     results.append(True)
                 else:
-                    print("   ❌ _is_csrf_token_valid doesn't return boolean")
+                    print("   ❌ is_csrf_token_valid doesn't return boolean")
                     results.append(False)
             except Exception as method_error:
-                print(f"   ⚠️  _is_csrf_token_valid method error: {method_error}")
+                print(f"   ⚠️  is_csrf_token_valid method error: {method_error}")
                 results.append(False)
         else:
-            print("   ❌ _is_csrf_token_valid method missing")
+            print("   ❌ is_csrf_token_valid method missing")
             results.append(False)
 
         # Test 3: Verify pre-cache method exists
@@ -2897,17 +2983,17 @@ def _test_force_session_restart() -> None:
     sm = SessionManager()
 
     # Set up session state
-    sm._transition_state(SessionLifecycleState.READY, "test setup")
+    sm.transition_state(SessionLifecycleState.READY, "test setup")
     sm.session_start_time = time.time()
-    sm._db_init_attempted = True
-    sm._db_ready = True
+    sm.set_db_init_attempted(True)
+    sm.set_db_ready(True)
 
     # Initial state verification
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be ready initially"
-    assert sm._db_ready is True, "DB should be ready initially"
+    assert sm.get_db_ready() is True, "DB should be ready initially"
 
     # Call force_session_restart
-    result = sm._force_session_restart("Test timeout")
+    result = sm.force_session_restart("Test timeout")
 
     # Verify result (should always return False)
     assert result is False, "Force restart should always return False"
@@ -2915,8 +3001,8 @@ def _test_force_session_restart() -> None:
     # Verify session state reset
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset to UNINITIALIZED"
     assert sm.session_start_time is None, "Session start time should be None"
-    assert sm._db_init_attempted is False, "DB init attempted should be reset"
-    assert sm._db_ready is False, "DB ready should be reset"
+    assert sm.get_db_init_attempted() is False, "DB init attempted should be reset"
+    assert sm.get_db_ready() is False, "DB ready should be reset"
 
 
 def _test_watchdog_integration_with_session_restart() -> None:
@@ -2926,11 +3012,11 @@ def _test_watchdog_integration_with_session_restart() -> None:
 
     def restart_callback() -> None:
         """Callback that triggers session restart."""
-        result = sm._force_session_restart("Watchdog timeout in test")
+        result = sm.force_session_restart("Watchdog timeout in test")
         restart_called.append(result)
 
     # Set up session state
-    sm._transition_state(SessionLifecycleState.READY, "watchdog test setup")
+    sm.transition_state(SessionLifecycleState.READY, "watchdog test setup")
 
     # Create watchdog with short timeout
     watchdog = APICallWatchdog(timeout_seconds=0.5)
@@ -2957,9 +3043,9 @@ def _test_session_expiry_simulation() -> None:
     sm = SessionManager()
 
     # Setup valid session state
-    sm._transition_state(SessionLifecycleState.READY, "expiry test setup")
+    sm.transition_state(SessionLifecycleState.READY, "expiry test setup")
     sm.session_start_time = time.time() - 2500  # 41+ minutes ago (expired)
-    sm._db_ready = True
+    sm.set_db_ready(True)
 
     # Verify initial state
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be marked ready initially"
@@ -2971,13 +3057,13 @@ def _test_session_expiry_simulation() -> None:
     assert is_expired, f"Session should be expired (age: {session_age:.0f}s)"
 
     # Force session restart (simulating expiry detection)
-    result = sm._force_session_restart("Session expiry simulation")
+    result = sm.force_session_restart("Session expiry simulation")
 
     # Verify session was reset
     assert result is False, "Force restart should return False"
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset after expiry"
     assert sm.session_start_time is None, "Session start time should be cleared"
-    assert sm._db_ready is False, "DB ready flag should be reset"
+    assert sm.get_db_ready() is False, "DB ready flag should be reset"
 
 
 def _test_circuit_breaker_short_circuit() -> None:
@@ -3037,7 +3123,7 @@ def _test_proactive_session_refresh_timing() -> None:
 
     # Setup session at 25 minutes old (refresh threshold with 15-min buffer)
     sm.session_start_time = time.time() - 1500  # 25 minutes
-    sm._transition_state(SessionLifecycleState.READY, "proactive refresh test")
+    sm.transition_state(SessionLifecycleState.READY, "proactive refresh test")
 
     # Check age
     session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
@@ -3086,15 +3172,15 @@ def _test_session_lifecycle_transitions() -> None:
     snapshot = sm.get_state_snapshot()
     assert snapshot["state"] == SessionLifecycleState.UNINITIALIZED.value, "Initial state should be UNINITIALIZED"
 
-    sm._transition_state(SessionLifecycleState.RECOVERING, "test transition")
+    sm.transition_state(SessionLifecycleState.RECOVERING, "test transition")
     assert sm.lifecycle_state() is SessionLifecycleState.RECOVERING, "Should transition to RECOVERING"
     assert sm.session_ready is False, "session_ready should be False when recovering"
 
-    sm._transition_state(SessionLifecycleState.READY, "ready test")
+    sm.transition_state(SessionLifecycleState.READY, "ready test")
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Should transition to READY"
     assert sm.session_ready is True, "session_ready should mirror READY state"
 
-    sm._transition_state(SessionLifecycleState.DEGRADED, "failure simulation")
+    sm.transition_state(SessionLifecycleState.DEGRADED, "failure simulation")
     assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "Should transition to DEGRADED"
     assert sm.session_ready is False, "session_ready should be False when degraded"
 
@@ -3114,14 +3200,14 @@ def _test_cookie_sync_state_reset_on_browser_close() -> None:
     browser_manager = cast(Any, sm.browser_manager)
     browser_manager.close_browser = lambda: None
 
-    sm._session_cookies_synced = True
-    sm._last_cookie_sync_time = 123.0
+    sm.set_session_cookies_synced(True)
+    sm.set_last_cookie_sync_time(123.0)
     sm.api_manager._requests_session.cookies.clear()
 
     sm.close_browser()
 
-    assert sm._session_cookies_synced is False, "Cookie sync flag should reset"
-    assert sm._last_cookie_sync_time == 0.0, "Last cookie sync timestamp should reset"
+    assert sm.get_session_cookies_synced() is False, "Cookie sync flag should reset"
+    assert sm.get_last_cookie_sync_time() == 0.0, "Last cookie sync timestamp should reset"
     assert not sm.api_manager._requests_session.cookies.get_dict(), "Requests session cookies should be cleared"
 
 
@@ -3134,7 +3220,7 @@ def _test_recovery_validation_requires_essential_cookies() -> None:
 
     sm.get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) and False, sm)
 
-    assert not sm._finalize_recovered_session_state(), "Recovery validation should fail without cookies"
+    assert not sm.finalize_recovered_session_state(), "Recovery validation should fail without cookies"
 
 
 def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
@@ -3158,7 +3244,7 @@ def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
     sm.force_cookie_resync = MethodType(_fake_force_resync, sm)
     sm.get_csrf = MethodType(_fake_get_csrf, sm)
 
-    assert sm._finalize_recovered_session_state(), "Recovery validation should succeed with cookies and CSRF"
+    assert sm.finalize_recovered_session_state(), "Recovery validation should succeed with cookies and CSRF"
     assert flags["resync"], "force_cookie_resync should be invoked"
     assert flags["csrf"], "get_csrf should be invoked"
 
@@ -3169,9 +3255,9 @@ def _test_cached_readiness_returns_none_without_cache() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm._last_readiness_check = None
+    sm.set_last_readiness_check(None)
 
-    assert sm._check_cached_readiness("unit_test") is None, "Without cache the helper should return None"
+    assert sm.check_cached_readiness("unit_test") is None, "Without cache the helper should return None"
 
 
 def _test_cached_readiness_respects_fresh_cache() -> None:
@@ -3180,9 +3266,9 @@ def _test_cached_readiness_respects_fresh_cache() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm._last_readiness_check = time.time()
+    sm.set_last_readiness_check(time.time())
 
-    assert sm._check_cached_readiness("unit_test") is True, "Fresh cache with ready session should return True"
+    assert sm.check_cached_readiness("unit_test") is True, "Fresh cache with ready session should return True"
 
 
 def _test_cached_readiness_expires_on_stale_state() -> None:
@@ -3191,13 +3277,13 @@ def _test_cached_readiness_expires_on_stale_state() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm._last_readiness_check = time.time() - 120
+    sm.set_last_readiness_check(time.time() - 120)
 
-    assert sm._check_cached_readiness("unit_test") is None, "Stale cache should be ignored"
+    assert sm.check_cached_readiness("unit_test") is None, "Stale cache should be ignored"
 
-    sm._last_readiness_check = time.time()
+    sm.set_last_readiness_check(time.time())
     sm.session_ready = False
-    assert sm._check_cached_readiness("unit_test") is None, "Non-ready session should bypass cache"
+    assert sm.check_cached_readiness("unit_test") is None, "Non-ready session should bypass cache"
 
 
 def _test_cached_readiness_detects_invalid_driver() -> None:
@@ -3206,17 +3292,17 @@ def _test_cached_readiness_detects_invalid_driver() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = True
     sm.session_ready = True
-    sm._last_readiness_check = time.time()
-    sm._transition_state(SessionLifecycleState.READY, "unit prep")
+    sm.set_last_readiness_check(time.time())
+    sm.transition_state(SessionLifecycleState.READY, "unit prep")
 
     from types import MethodType
 
     sm.browser_manager.is_session_valid = MethodType(lambda _self: False, sm.browser_manager)
 
-    result = sm._check_cached_readiness("unit_test")
+    result = sm.check_cached_readiness("unit_test")
     assert result is False, "Invalid driver should cause cached readiness failure"
     assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "State should transition to DEGRADED"
-    assert sm._last_readiness_check is None, "Cached timestamp should reset after invalidation"
+    assert sm.get_last_readiness_check() is None, "Cached timestamp should reset after invalidation"
 
 
 def _test_endpoint_profile_config_normalization_and_rate_cap() -> None:
@@ -3232,16 +3318,16 @@ def _test_endpoint_profile_config_normalization_and_rate_cap() -> None:
         mutated = cast(Any, api_any.endpoint_throttle_profiles)
         mutated[123] = {"max_rate": 0.1}
         mutated["Bad"] = ["not", "dict"]
-        profiles = SessionManager._build_endpoint_profile_config()
+        profiles = SessionManager.build_endpoint_profile_config()
         assert set(profiles.keys()) == {"Valid", "Slow"}, "Non-dict and non-str keys should be ignored"
         assert profiles["Valid"]["max_rate"] == 0.5, "Valid profile should be preserved"
 
-        cap = SessionManager._calculate_endpoint_rate_cap(profiles)
+        cap = SessionManager.calculate_endpoint_rate_cap(profiles)
         assert cap is not None, "Rate cap should derive from available inputs"
         assert abs(cap - (1.0 / 3.0)) < 1e-9, "Slow endpoint min interval should define tightest cap"
 
         api_any.endpoint_throttle_profiles = "invalid"
-        assert SessionManager._build_endpoint_profile_config() == {}, "Non-dict config should be ignored"
+        assert SessionManager.build_endpoint_profile_config() == {}, "Non-dict config should be ignored"
     finally:
         config_schema.api.endpoint_throttle_profiles = original_profiles
 
@@ -3255,7 +3341,7 @@ def _test_enhanced_requests_session_configuration() -> None:
     session = requests.Session()
     sm.api_manager = cast(APIManager, SimpleNamespace(_requests_session=session))
 
-    sm._initialize_enhanced_requests_session()
+    sm.initialize_enhanced_requests_session()
 
     adapter = session.adapters["https://"]
     assert isinstance(adapter, HTTPAdapter), "HTTPS adapter should be HTTPAdapter"
@@ -3272,7 +3358,7 @@ def _test_enhanced_requests_session_creates_fallback() -> None:
     sm = SessionManager.__new__(SessionManager)
     sm.api_manager = cast(APIManager, SimpleNamespace())
 
-    sm._initialize_enhanced_requests_session()
+    sm.initialize_enhanced_requests_session()
 
     assert hasattr(sm.api_manager, "_requests_session"), "Fallback session should be created"
     adapter = sm.api_manager._requests_session.adapters["http://"]
@@ -3288,8 +3374,8 @@ def _test_initialize_cloudscraper_without_dependency() -> None:
     sm.api_manager = cast(APIManager, SimpleNamespace())
 
     with patch(f"{__name__}.cloudscraper", None):
-        sm._initialize_cloudscraper()
-        assert sm._scraper is None, "Scraper should remain None when library unavailable"
+        sm.initialize_cloudscraper()
+        assert sm.get_scraper() is None, "Scraper should remain None when library unavailable"
 
 
 def _test_initialize_cloudscraper_with_factory() -> None:
@@ -3317,12 +3403,13 @@ def _test_initialize_cloudscraper_with_factory() -> None:
 
     factory = _FakeCloudscraper()
     with patch(f"{__name__}.cloudscraper", factory):
-        sm._initialize_cloudscraper()
-        assert isinstance(sm._scraper, _FakeScraper), "Scraper instance should be created"
+        sm.initialize_cloudscraper()
+        scraper = sm.get_scraper()
+        assert isinstance(scraper, _FakeScraper), "Scraper instance should be created"
         assert factory.kwargs is not None, "Factory should receive kwargs"
         browser_cfg = factory.kwargs.get("browser", {})
         assert browser_cfg.get("browser") == "chrome", "Browser fingerprint should target Chrome"
-        mounts = {prefix for prefix, _ in sm._scraper.mount_calls}
+        mounts = {prefix for prefix, _ in scraper.mount_calls}
         assert {"http://", "https://"}.issubset(mounts), "Both protocols should be mounted"
 
 

@@ -4129,11 +4129,19 @@ def _test_performance_tracking() -> None:
                 self._recent_slow_calls = 0
                 self._avg_response_time = 0.0
 
-        mock_session = cast(SessionManager, MockSessionManager())
+            def get_response_time_count(self) -> int:
+                """Get number of tracked response times."""
+                return len(self._response_times)
+
+            def get_avg_response_time(self) -> float:
+                """Get average response time."""
+                return self._avg_response_time
+
+        mock_session = MockSessionManager()
 
         # Test performance tracking doesn't crash
         try:
-            _update_messaging_performance(mock_session, 1.5)
+            _update_messaging_performance(cast(SessionManager, mock_session), 1.5)
             tracking_works = True
         except Exception:
             tracking_works = False
@@ -4142,9 +4150,9 @@ def _test_performance_tracking() -> None:
         print(f"   {status} Performance tracking executes without errors")
         results.append(tracking_works)
 
-        # Test attributes are updated
-        has_response_times = len(mock_session._response_times) > 0  # type: ignore[union-attr]
-        has_avg_time = mock_session._avg_response_time > 0  # type: ignore[union-attr]
+        # Test attributes are updated using public getters
+        has_response_times = mock_session.get_response_time_count() > 0
+        has_avg_time = mock_session.get_avg_response_time() > 0
 
         attributes_updated = has_response_times and has_avg_time
         status = "✅" if attributes_updated else "❌"
