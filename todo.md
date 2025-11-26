@@ -207,31 +207,55 @@ def _test_429_handling():
 
 ---
 
-### 🟠 MEDIUM: Domain-Specific Exception Hierarchy
+### ✅ COMPLETED: Domain-Specific Exception Hierarchy (Nov 2025)
 
 **Problem:** Generic exceptions (`Exception`, `ValueError`) used throughout.
 
-**Suggested Approach:**
-Create exception hierarchy in `core/exceptions.py`:
-```python
-class AncestryError(Exception): """Base"""
-class ConfigurationError(AncestryError): """Config issues"""
-class APIError(AncestryError): """API failures"""
-class AuthenticationError(APIError): """Auth failures"""
-class DatabaseError(AncestryError): """DB issues"""
-class RateLimitError(APIError): """Rate limiting"""
-```
+**Solution Implemented:**
+Exception hierarchy exists in `core/error_handling.py`:
+- `AncestryError` - Base exception for all project errors
+- `RetryableError` - Errors that should trigger automatic retry
+  - `APIRateLimitError` - 429 rate limiting (with `retry_after` parameter)
+  - `NetworkTimeoutError` - Transient network issues
+  - `DatabaseConnectionError` - DB connection failures
+  - `BrowserSessionError` - Browser/session issues
+- `FatalError` - Errors that should NOT retry
+  - `DataValidationError` - Invalid data format
+  - `ConfigurationError` - Missing/invalid config
+  - `AuthenticationError` - Auth failures
+
+**Additional utilities:**
+- `@retry_on_failure` decorator - Automatic retry with exponential backoff
+- `@graceful_degradation` decorator - Fallback value on error
+- `@error_context` decorator - Add context to error logs
+- `SessionCircuitBreaker` - Fail-fast after repeated failures
 
 ---
 
-### 🟠 MEDIUM: Startup Health Checks and Runtime Monitoring
+### ✅ COMPLETED: Startup Health Checks and Runtime Monitoring (Nov 2025)
 
 **Problem:** No systematic way to verify system readiness before operations.
 
-**Suggested Approach:**
-1. Create `core/health_check.py` with `HealthCheck` protocol
-2. Implement checks: `DatabaseHealthCheck`, `APIHealthCheck`, `FileSystemHealthCheck`, `CacheHealthCheck`
-3. Run all health checks at startup
+**Solution Implemented:**
+Created `core/health_check.py` with comprehensive health check system:
+
+**Components:**
+- `HealthStatus` enum - HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN states
+- `HealthCheckResult` dataclass - Individual check result with timing
+- `HealthReport` dataclass - Aggregated results with overall status
+- `HealthCheck` Protocol - Interface for consistent check implementation
+
+**Implemented Checks:**
+- `DatabaseHealthCheck` - Validates DB connectivity and basic queries
+- `FileSystemHealthCheck` - Checks Data/Cache/Logs directories
+- `CacheHealthCheck` - Verifies cache system functionality
+- `ConfigurationHealthCheck` - Validates configuration settings
+- `APIHealthCheck` - Tests API connectivity (optional)
+
+**Usage:**
+- `run_startup_health_checks()` - Run at application startup
+- `run_interactive_health_check()` - Interactive report for main menu
+- `HealthCheckRunner` - Orchestrates all registered health checks
 
 ---
 
