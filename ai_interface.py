@@ -2358,7 +2358,7 @@ def _test_configurable_provider_failover() -> bool:
             return ProviderResponse(content="OK", raw_response={"provider": self.name})
 
     with suppress_logging():
-        session_stub = _SessionManagerStub()
+        session_stub = cast("SessionManager", _SessionManagerStub())
         api_config = config_schema.api
         original_provider = config_schema.ai_provider
         original_fallbacks = list(getattr(config_schema, "ai_provider_fallbacks", []))
@@ -2435,13 +2435,13 @@ def _test_moonshot_adapter_routing() -> bool:
             return ProviderResponse(content="MOONSHOT-ADAPTER", raw_response={'provider': self.name})
 
     with suppress_logging():
-        session_stub = _SessionManagerStub()
+        session_stub = cast("SessionManager", _SessionManagerStub())
         api_config = config_schema.api
         original_provider = config_schema.ai_provider
         original_fallbacks = list(getattr(config_schema, "ai_provider_fallbacks", []))
-        original_key = getattr(api_config, "moonshot_api_key", None)
-        original_model = getattr(api_config, "moonshot_ai_model", None)
-        original_base = getattr(api_config, "moonshot_ai_base_url", None)
+        original_key = api_config.moonshot_api_key
+        original_model = api_config.moonshot_ai_model
+        original_base = api_config.moonshot_ai_base_url
         original_adapter = _PROVIDER_ADAPTERS.get("moonshot")
 
         try:
@@ -2561,8 +2561,10 @@ def _test_genealogical_extraction(session_manager: SessionManager) -> bool:
     if names_count > 0 or locations_count > 0 or dates_count > 0:
         logger.info("✅ AI successfully extracted meaningful genealogical data")
         return True
-    logger.warning("⚠️ AI did not extract expected genealogical entities from test context")
-    return True  # Still return True as extraction worked, just didn't find expected data
+    logger.error(
+        "❌ AI failed to extract expected genealogical entities from test context - investigate prompts or provider"
+    )
+    return False
 
 
 def _test_reply_generation(session_manager: SessionManager) -> bool:

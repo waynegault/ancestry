@@ -102,8 +102,9 @@ class LocalLLMProvider(BaseProvider):
             raise ProviderUnavailableError(f"Local LLM API call failed: {exc}") from exc
 
         content: str | None = None
-        if getattr(response, "choices", None):
-            first_choice = response.choices[0]
+        choices = getattr(response, "choices", None)
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
             message = getattr(first_choice, "message", None)
             if message and getattr(message, "content", None):
                 content = str(message.content).strip()

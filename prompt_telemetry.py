@@ -12,6 +12,7 @@ Key Fields:
 Aggregation utilities produce per-variant stats (counts, success rate, avg tasks).
 Safe to import even if log directory missing (auto-creates). Failures are logged but non-fatal.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -23,6 +24,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from observability.metrics_registry import metrics
+
+try:  # pragma: no cover - optional import for CLI context
+    from config import config_schema
+except Exception:  # pragma: no cover - keep CLI usable without full config
+    config_schema = None
 
 if TYPE_CHECKING:
     from common_params import ExtractionExperimentEvent
@@ -37,6 +43,7 @@ SCORING_INPUTS_MAX_CHARS = 800
 REGRESSION_ALERT_WINDOW = 80
 REGRESSION_ALERT_MIN_EVENTS = 6
 REGRESSION_ALERT_THRESHOLD = 7.5
+DEFAULT_FALLBACK_CHAIN = ["deepseek", "gemini", "moonshot", "local_llm", "grok", "inception", "tetrate"]
 
 
 def _stable_hash(value: str | None) -> str | None:
@@ -82,6 +89,60 @@ def _filter_events_by_provider(events: list[dict[str, Any]], provider_filter: st
     return filtered
 
 
+def _parse_fallback_chain(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _fallback_chain_from_config() -> tuple[str | None, list[str]]:
+    if config_schema is None:
+        return None, []
+    primary_provider: str | None = None
+    fallback_order: list[str] = []
+    try:
+        primary_provider = getattr(config_schema, "ai_provider", None)
+    except Exception:  # pragma: no cover - defensive
+        primary_provider = None
+    try:
+        configured = getattr(config_schema, "ai_provider_fallbacks", None)
+        if configured:
+            fallback_order = [str(entry).strip() for entry in configured if str(entry).strip()]
+    except Exception:  # pragma: no cover - defensive
+        fallback_order = []
+    if not fallback_order and primary_provider:
+        fallback_order = [primary_provider]
+    return primary_provider, fallback_order
+
+
+def _fallback_chain_from_env() -> list[str]:
+    env_value = os.getenv("AI_PROVIDER_FALLBACKS")
+    return _parse_fallback_chain(env_value)
+
+
+def _resolve_fallback_chain_info() -> dict[str, Any]:
+    """Return snapshot of current provider + fallback order."""
+
+    env_chain = _fallback_chain_from_env()
+    if env_chain:
+        fallback_order = env_chain
+        primary = env_chain[0]
+        source = "environment"
+    else:
+        primary, fallback_order = _fallback_chain_from_config()
+        source = "config_schema" if fallback_order else "default"
+
+    if not fallback_order:
+        fallback_order = DEFAULT_FALLBACK_CHAIN.copy()
+
+    primary = primary or (fallback_order[0] if fallback_order else None)
+    return {
+        "primary_provider": primary,
+        "fallback_order": fallback_order,
+        "source": source if fallback_order else "default",
+    }
+
+
 def _collect_variant_quality_sequences(events: list[dict[str, Any]]) -> dict[str, list[float]]:
     sequences: dict[str, list[float]] = {}
     for ev in events:
@@ -124,8 +185,12 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
             "suggested_tasks_count": len(list(event_data.suggested_tasks)) if event_data.suggested_tasks else 0,
             "raw_chars": len(event_data.raw_response_text) if isinstance(event_data.raw_response_text, str) else None,
             "user_hash": _stable_hash(event_data.user_id),
-            "quality_score": round(float(event_data.quality_score), 2) if isinstance(event_data.quality_score, (int, float)) else None,
-            "component_coverage": round(float(event_data.component_coverage), 3) if isinstance(event_data.component_coverage, (int, float)) else None,
+            "quality_score": round(float(event_data.quality_score), 2)
+            if isinstance(event_data.quality_score, (int, float))
+            else None,
+            "component_coverage": round(float(event_data.component_coverage), 3)
+            if isinstance(event_data.component_coverage, (int, float))
+            else None,
             "anomaly_summary": event_data.anomaly_summary or None,
             "provider": provider_value,
             "provider_model": provider_model,
@@ -136,6 +201,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
         _record_prometheus_ai_metrics(event_data, event.get("quality_score"))
         # Lightweight auto-alert hook (Phase 11.2 item 2)
         from contextlib import suppress
+
         with suppress(Exception):
             _auto_analyze_and_alert()
             _auto_detect_regression_drop()
@@ -317,7 +383,9 @@ def _compute_variant_metrics(variants: dict[str, dict[str, Any]]) -> dict[str, A
     return result_variants
 
 
-def _compare_control_alt(result_variants: dict[str, Any], min_events_per_variant: int, quality_margin: float, success_margin: float) -> dict[str, Any]:
+def _compare_control_alt(
+    result_variants: dict[str, Any], min_events_per_variant: int, quality_margin: float, success_margin: float
+) -> dict[str, Any]:
     """Compare control vs alt and derive improvement flags."""
     control = result_variants.get("control")
     alt = result_variants.get("alt")
@@ -333,9 +401,13 @@ def _compare_control_alt(result_variants: dict[str, Any], min_events_per_variant
     return improvement
 
 
-def analyze_experiments(window: int = 200, min_events_per_variant: int = 10,
-                        quality_margin: float = 5.0, success_margin: float = 0.05,
-                        provider: str | None = None) -> dict[str, Any]:
+def analyze_experiments(
+    window: int = 200,
+    min_events_per_variant: int = 10,
+    quality_margin: float = 5.0,
+    success_margin: float = 0.05,
+    provider: str | None = None,
+) -> dict[str, Any]:
     """Compute comparative statistics for variants.
 
     Returns dict with per-variant metrics and potential improvement flags.
@@ -388,7 +460,7 @@ def _auto_analyze_and_alert() -> None:
         "type": "variant_performance_improvement",
         "signature": signature,
         "analysis": analysis,
-        "message": "Alt variant shows performance improvement meeting thresholds; consider promotion"
+        "message": "Alt variant shows performance improvement meeting thresholds; consider promotion",
     }
     _write_alert(alert)
 
@@ -402,7 +474,7 @@ def _calculate_quality_drop(scores: list[float]) -> float | None:
     recent = scores[-window:]
     if len(recent) < min_events:
         return None
-    previous_slice = scores[-(window * 2):-window]
+    previous_slice = scores[-(window * 2) : -window]
     if len(previous_slice) < min_events:
         previous_slice = scores[:-window]
     if len(previous_slice) < min_events:
@@ -447,8 +519,9 @@ def _auto_detect_regression_drop() -> None:
 
 
 # === Quality Baseline & Regression Detection (Phase 11.2 Item 3) ===
-def build_quality_baseline(variant: str = "control", window: int = 300, min_events: int = 8,
-                           provider: str | None = None) -> dict[str, Any] | None:
+def build_quality_baseline(
+    variant: str = "control", window: int = 300, min_events: int = 8, provider: str | None = None
+) -> dict[str, Any] | None:
     events = _load_recent_events(window, provider=provider)
     scores: list[float] = []
     for e in events:
@@ -462,6 +535,7 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
                 continue
     if len(scores) < min_events:
         return None
+    fallback_snapshot = _resolve_fallback_chain_info()
     baseline = {
         "variant": variant,
         "count": len(scores),
@@ -470,6 +544,9 @@ def build_quality_baseline(variant: str = "control", window: int = 300, min_even
         "p75": statistics.quantiles(scores, n=4)[2] if len(scores) >= 4 else None,
         "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "provider": provider or "all",
+        "primary_provider": fallback_snapshot.get("primary_provider"),
+        "fallback_order": fallback_snapshot.get("fallback_order"),
+        "fallback_source": fallback_snapshot.get("source"),
     }
     try:
         with Path(QUALITY_BASELINE_FILE).open("w", encoding="utf-8") as fh:
@@ -518,8 +595,9 @@ def _collect_variant_scores(events: list[dict[str, Any]], variant: str) -> list[
     return scores
 
 
-def detect_quality_regression(current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control",
-                              provider: str | None = None) -> dict[str, Any]:
+def detect_quality_regression(
+    current_window: int = 120, drop_threshold: float = 15.0, variant: str = "control", provider: str | None = None
+) -> dict[str, Any]:
     baseline, error = _get_matching_baseline(variant, provider)
     if error:
         return error
@@ -532,7 +610,13 @@ def detect_quality_regression(current_window: int = 120, drop_threshold: float =
     median_then = baseline.get("median_quality") or 0
     drop = median_then - median_now
     regression = drop >= drop_threshold
-    return {"status": "ok", "median_now": median_now, "baseline_median": median_then, "drop": round(drop, 2), "regression": regression}
+    return {
+        "status": "ok",
+        "median_now": median_now,
+        "baseline_median": median_then,
+        "drop": round(drop, 2),
+        "regression": regression,
+    }
 
 
 # === Internal Test Suite (for run_all_tests detection & coverage) ===
@@ -540,6 +624,7 @@ def _test_record_and_summarize() -> None:
     """Record several events and verify summary reflects them."""
     for i in range(3):
         from common_params import ExtractionExperimentEvent
+
         event = ExtractionExperimentEvent(
             variant_label="control",
             prompt_key=f"k{i}",
@@ -567,6 +652,7 @@ def _test_variant_analysis() -> None:
     """Add alt variant events then run analyze_experiments for improvement structure."""
     for i in range(2):
         from common_params import ExtractionExperimentEvent
+
         event = ExtractionExperimentEvent(
             variant_label="alt",
             prompt_key=f"alt{i}",
@@ -592,6 +678,7 @@ def _test_build_baseline_and_regression() -> None:
     to_add = max(0, needed - existing)
     for i in range(to_add):
         from common_params import ExtractionExperimentEvent
+
         event = ExtractionExperimentEvent(
             variant_label="control",
             prompt_key=f"b{i}",
@@ -605,9 +692,27 @@ def _test_build_baseline_and_regression() -> None:
         )
         record_extraction_experiment_event(event)
     baseline = build_quality_baseline(variant="control", window=300, min_events=8, provider="gemini")
-    assert baseline is None or baseline.get("variant") == "control"
-    reg = detect_quality_regression(current_window=120, drop_threshold=9999, variant="control", provider="gemini")  # Force non-regression
+    if baseline:
+        assert baseline.get("variant") == "control"
+        assert "fallback_order" in baseline and isinstance(baseline["fallback_order"], list)
+    reg = detect_quality_regression(
+        current_window=120, drop_threshold=9999, variant="control", provider="gemini"
+    )  # Force non-regression
     assert "status" in reg
+
+
+def _test_fallback_snapshot_helper() -> None:
+    """Ensure fallback snapshot resolves env overrides."""
+    original_value = os.environ.get("AI_PROVIDER_FALLBACKS")
+    try:
+        os.environ["AI_PROVIDER_FALLBACKS"] = "foo, bar ,baz"
+        snapshot = _resolve_fallback_chain_info()
+        assert snapshot["fallback_order"][:3] == ["foo", "bar", "baz"]
+    finally:
+        if original_value is None:
+            os.environ.pop("AI_PROVIDER_FALLBACKS", None)
+        else:
+            os.environ["AI_PROVIDER_FALLBACKS"] = original_value
 
 
 def prompt_telemetry_module_tests() -> bool:
@@ -618,18 +723,34 @@ def prompt_telemetry_module_tests() -> bool:
     suite = TestSuite("Prompt Telemetry", "prompt_telemetry.py")
     suite.start_suite()
     with suppress_logging():
-        suite.run_test("Record & summarize", _test_record_and_summarize,
-                       "Events appended and reflected in summary",
-                       "Append 3 control events then summarize",
-                       "Check summary event count")
-        suite.run_test("Variant analysis", _test_variant_analysis,
-                       "Analysis returns variants block",
-                       "Add alt events & analyze",
-                       "Check analyze_experiments structure")
-        suite.run_test("Baseline & regression", _test_build_baseline_and_regression,
-                       "Baseline build attempt and regression status retrieval",
-                       "Ensure enough control events then build baseline & detect",
-                       "Check baseline + regression keys")
+        suite.run_test(
+            "Record & summarize",
+            _test_record_and_summarize,
+            "Events appended and reflected in summary",
+            "Append 3 control events then summarize",
+            "Check summary event count",
+        )
+        suite.run_test(
+            "Variant analysis",
+            _test_variant_analysis,
+            "Analysis returns variants block",
+            "Add alt events & analyze",
+            "Check analyze_experiments structure",
+        )
+        suite.run_test(
+            "Baseline & regression",
+            _test_build_baseline_and_regression,
+            "Baseline build attempt and regression status retrieval",
+            "Ensure enough control events then build baseline & detect",
+            "Check baseline + regression keys",
+        )
+        suite.run_test(
+            "Fallback snapshot helper",
+            _test_fallback_snapshot_helper,
+            "Env overrides should be respected",
+            "Override AI_PROVIDER_FALLBACKS and fetch snapshot",
+            "Ensure parsed fallback order matches override",
+        )
     return suite.finish_suite()
 
 
@@ -641,17 +762,25 @@ run_comprehensive_tests = create_standard_test_runner(prompt_telemetry_module_te
 if __name__ == "__main__":
     import argparse
     import json as _json
+
     parser = argparse.ArgumentParser(description="Prompt Experiment Telemetry Utilities")
     parser.add_argument("--summary", action="store_true", help="Print telemetry summary (default last 1000 events)")
     parser.add_argument("--last", type=int, default=1000, help="Number of recent events to summarize")
     parser.add_argument("--analyze", action="store_true", help="Run variant performance analysis")
-    parser.add_argument("--build-baseline", action="store_true", help="Build quality baseline from recent control events")
+    parser.add_argument(
+        "--build-baseline", action="store_true", help="Build quality baseline from recent control events"
+    )
     parser.add_argument("--check-regression", action="store_true", help="Check for quality regression vs baseline")
     parser.add_argument("--variant", default="control", help="Variant key for baseline/regression (default control)")
     parser.add_argument("--provider", default=None, help="Filter telemetry to a specific provider (optional)")
     parser.add_argument("--window", type=int, default=200, help="Event window size for analysis/baseline")
-    parser.add_argument("--drop-threshold", type=float, default=15.0, help="Median quality drop threshold for regression detection")
+    parser.add_argument(
+        "--drop-threshold", type=float, default=15.0, help="Median quality drop threshold for regression detection"
+    )
     parser.add_argument("--min-events", type=int, default=8, help="Minimum events required to build baseline")
+    parser.add_argument(
+        "--show-fallback-order", action="store_true", help="Print resolved primary provider and fallback chain"
+    )
     parser.add_argument("--self-test", action="store_true", help="Run internal test suite and exit (for harness)")
     args = parser.parse_args()
 
@@ -663,18 +792,34 @@ if __name__ == "__main__":
         print(_json.dumps(analyze_experiments(window=args.window, provider=args.provider), indent=2))
         ran_action = True
     if args.build_baseline:
-        baseline = build_quality_baseline(variant=args.variant, window=args.window, min_events=args.min_events, provider=args.provider)
+        baseline = build_quality_baseline(
+            variant=args.variant, window=args.window, min_events=args.min_events, provider=args.provider
+        )
         if baseline:
             print(_json.dumps(baseline, indent=2))
         else:
             print("Baseline not built (insufficient events)")
         ran_action = True
     if args.check_regression:
-        print(_json.dumps(detect_quality_regression(current_window=args.window, drop_threshold=args.drop_threshold, variant=args.variant, provider=args.provider), indent=2))
+        print(
+            _json.dumps(
+                detect_quality_regression(
+                    current_window=args.window,
+                    drop_threshold=args.drop_threshold,
+                    variant=args.variant,
+                    provider=args.provider,
+                ),
+                indent=2,
+            )
+        )
+        ran_action = True
+    if args.show_fallback_order:
+        print(_json.dumps(_resolve_fallback_chain_info(), indent=2))
         ran_action = True
 
     if args.self_test or (not ran_action) or os.environ.get("RUN_INTERNAL_TESTS"):
         from contextlib import suppress
+
         with suppress(Exception):
             prompt_telemetry_module_tests()
     elif not ran_action:

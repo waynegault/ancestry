@@ -1019,9 +1019,10 @@ For issues or questions:
   - Active providers: Moonshot (Kimi), DeepSeek, Google Gemini, Local LLM (LM Studio), Inception Mercury, Grok (xAI)
   - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
   - INCEPTION_* when ai_provider=inception: INCEPTION_API_KEY, INCEPTION_AI_MODEL, INCEPTION_AI_BASE_URL
-  - XAI_* when ai_provider=grok: XAI_API_KEY, XAI_MODEL (default grok-4-fast-non-reasoning), XAI_API_HOST (default api.x.ai)
+  - XAI_* when ai_provider=grok: XAI_API_KEY, XAI_MODEL (default grok-4-fast-non-reasoning), XAI_API_HOST (default api.x.ai), optional XAI_API_BASE_URL (OpenAI-compatible gateways; must end with /v1 and defaults to `https://{host}/v1`)
   - AI_PROVIDER_FALLBACKS (optional): comma-separated failover order (default `deepseek,gemini,moonshot,local_llm,grok,inception,tetrate`); providers without credentials/SDKs are skipped automatically.
   - Quick connectivity check: run `python ai_api_test.py --provider gemini` (script now lives at repo root) to validate credentials before invoking the main workflow
+  - Grok fallback: `ai_api_test.py` now auto-detects when `xai-sdk` is unavailable and tunnels through the OpenAI client. Set `XAI_API_BASE_URL` when pointing at a proxy; otherwise the tester derives `https://{XAI_API_HOST}/v1` automatically.
   - Default base URL: http://localhost:1234/v1 (LM Studio)
 
   #### Configuring AI Provider Fallbacks & Adapters
@@ -1037,6 +1038,61 @@ For issues or questions:
   - During `_call_ai_model()` each provider is attempted sequentially; adapters signal availability (credentials, SDK imports) and return `ProviderResponse` objects. Providers that raise or return `None` automatically defer to the next entry without leaking partial state.
   - Use `python ai_api_test.py --provider <name>` to validate credentials before updating fallback chains, then run `python prompt_telemetry.py --baseline` after live runs to capture new success/quality metrics.
   - Troubleshooting order changes: set `AI_PROVIDER_FALLBACKS=gemini,deepseek` (or similar) temporarily, rerun `python run_all_tests.py` to ensure the TestSuite verifies `_test_configurable_provider_failover`, and monitor `Logs/prompt_experiments.jsonl` for quality regressions.
+
+  ##### Adapter Lifecycle Flow
+
+  1. **Implement adapter** – subclass `ProviderAdapter` in `ai/providers/` and override `is_available()` plus `call()` so dependencies and configuration checks stay isolated from `ai_interface.py`.
+  2. **Register adapter** – append `_register_provider("provider_name", ProviderClass)` near the top of `ai_interface.py`. Registration automatically unlocks failover routing, rate limiting, and telemetry wiring.
+  3. **Provide configuration** – add any required API keys, base URLs, or model names to `config/config_schema.py` + `.env`. Adapters read all credentials from `config_schema.api` to remain test-friendly.
+  4. **Validate + baseline** – run `python ai_api_test.py --provider <name>` for smoke coverage, then update telemetry baselines (see below) so quality gates know about the new routing path.
+
+  ```text
+  action prompt -> _call_ai_model()
+      -> rate limiter guard
+      -> adapter registry (availability checks)
+      -> ProviderAdapter.call()
+      -> ProviderResponse → telemetry (prompt_telemetry.record_extraction_experiment_event)
+  ```
+
+  ##### Provider Failover Troubleshooting Checklist
+
+  - **Confirm config** – run `python ai_api_test.py --provider <name>` with the same env vars as production to verify credentials, base URLs, and models.
+  - **Inspect fallback chain** – run `python prompt_telemetry.py --show-fallback-order` (new helper) to print the active provider order pulled from config/env.
+  - **Simulate failures** – temporarily reorder `AI_PROVIDER_FALLBACKS` (e.g., move `local_llm` first) and invoke `_test_configurable_provider_failover()` via `python -m ai_interface` tests to ensure routing behaves as expected.
+  - **Rebuild baselines** – whenever the fallback order or adapter behavior changes, run `python prompt_telemetry.py --build-baseline --provider <primary>` after at least 8 fresh production events so regression gates track the new provider/model mix.
+  - **Monitor telemetry** – watch `Logs/prompt_experiments.jsonl` plus the Prometheus `ai_quality` metric for spikes; `python prompt_telemetry.py --check-regression --provider <name>` quickly flags drops >15 points.
+
+  ##### AI Interface Self-Check Guardrails
+
+  - Live Test 10 ("Intent Classification") now fails when prompts cannot be loaded or when `_test_genealogical_extraction()` returns zero names/locations/dates. This prevents silent passes when `ai_prompts.json` is empty or malformed.
+  - Typical failure log lines:
+    - `Failed to load 'dna_match_analysis' prompt from JSON, using fallback.`
+    - `DNA match analysis JSON parsing failed: Expecting value: line 1 column 1 (char 0)`
+    - `❌ AI failed to extract expected genealogical entities from test context - investigate prompts or provider`
+  - Recovery steps:
+    1. Validate `ai_prompts.json` (e.g., `python -m json.tool ai_prompts.json`) and restore the prompt payloads if parsing fails.
+    2. Run `python ai_api_test.py --provider <name>` to confirm the active adapter can classify and extract data with the restored prompts.
+    3. Rerun `python -m ai_interface` (or the full `python run_all_tests.py`) with `SKIP_LIVE_API_TESTS` unset so the regression test exercises the real provider path again.
+  - Set `SKIP_LIVE_API_TESTS=true` only when parallel CI requires skipping live calls. Keep it unset locally so the guardrails continue to catch prompt regressions immediately.
+
+  ##### Live AI Test Toggle (`SKIP_LIVE_API_TESTS`)
+
+  - The `.env` file now defines `SKIP_LIVE_API_TESTS=false` by default. Set it to `true` only when CI or local smoke runs must avoid live browser/API calls (e.g., network-restricted agents).
+  - `python run_all_tests.py` always forces `SKIP_LIVE_API_TESTS=true` internally for deterministic CI behavior. To exercise the live tests (Action 7 intent classification / DNA extraction), run the specific module directly after clearing the variable:
+
+    ```powershell
+    set SKIP_LIVE_API_TESTS=
+    python -m ai_interface
+    ```
+
+    or, for PowerShell 7+:
+
+    ```powershell
+    $env:SKIP_LIVE_API_TESTS="false"
+    python -m ai_interface
+    ```
+
+  - Several modules (`ai_interface.py`, `action9_process_productive.py`, `test_integration_workflow.py`, etc.) honor this flag, so keeping it explicit in `.env` makes it obvious which environment you are running (CI-safe vs. live validation).
 
 - LM Studio quick-start checklist (real use)
   1) Install LM Studio and open it

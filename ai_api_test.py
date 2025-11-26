@@ -615,7 +615,7 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
         return TestResult("gemini", False, False, messages)
 
     api_key = os.getenv("GOOGLE_API_KEY")
-    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-1.5-flash")
+    model_name = os.getenv("GOOGLE_AI_MODEL", "gemini-2.5-flash")
     base_url = os.getenv("GOOGLE_AI_BASE_URL", "")
 
     if not api_key:
@@ -639,19 +639,19 @@ def _test_gemini(prompt: str, max_tokens: int) -> TestResult:
 
         _describe_gemini_models(client, model_name, messages)
 
-        # Create config
+        # Create config using proper type
         config = None
         if genai_types:
-            config = {
-                "candidateCount": 1,
-                "maxOutputTokens": max_tokens,
-                "temperature": 0.7,
-            }
+            config = genai_types.GenerateContentConfig(
+                candidate_count=1,
+                max_output_tokens=max_tokens,
+                temperature=0.7,
+            )
 
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
-            config=cast(Any, config),
+            config=config,
         )
 
         success, full_output, finish_reason_str = _parse_gemini_response(response, messages)
