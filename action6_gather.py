@@ -5647,27 +5647,68 @@ def _test_module_initialization():
 
 
 def _test_core_functionality():
-    """Test all core DNA match gathering functions"""
+    """Test actual behavior of core DNA match gathering functions"""
+    import inspect
+    from unittest.mock import MagicMock
 
-    # Test get_matches function availability
-    assert callable(get_matches), "get_matches should be callable"
+    # Test get_matches function signature and type hints
+    sig = inspect.signature(get_matches)
+    params = list(sig.parameters.keys())
+    assert "session_manager" in params, "get_matches requires session_manager parameter"
+    assert "current_page" in params, "get_matches requires current_page parameter"
+    assert sig.return_annotation is not inspect.Signature.empty, "get_matches should have return type hint"
 
-    # Test coord function availability
-    assert callable(coord), "coord function should be callable"
+    # Test coord function signature accepts optional start page
+    coord_sig = inspect.signature(coord)
+    coord_params = coord_sig.parameters
+    assert "session_manager" in coord_params, "coord requires session_manager"
+    assert "start" in coord_params, "coord requires start parameter"
+    assert coord_params["start"].default is None, "coord start parameter should default to None"
 
-    # Test navigation function
-    assert callable(nav_to_list), "nav_to_list should be callable"
+    # Test nav_to_list returns bool and checks session validity
+    nav_sig = inspect.signature(nav_to_list)
+    assert nav_sig.return_annotation is bool or str(nav_sig.return_annotation) == "bool", (
+        "nav_to_list should return bool"
+    )
+
+    # Test nav_to_list with invalid session_manager returns False
+    mock_session_manager = MagicMock()
+    mock_session_manager.is_sess_valid.return_value = False
+    mock_session_manager.my_uuid = None
+    result = nav_to_list(mock_session_manager)
+    assert result is False, "nav_to_list should return False for invalid session"
 
 
 def _test_data_processing_functions():
-    """Test all data processing and preparation functions"""
+    """Test actual behavior of data processing and preparation functions"""
+    import inspect
+
     from actions.gather import persistence as gather_persistence_module
 
-    assert callable(gather_persistence_module.process_batch_lookups)
-    assert callable(gather_persistence_module.prepare_and_commit_batch_data)
+    # Test process_batch_lookups function signature and return type
+    lookup_sig = inspect.signature(gather_persistence_module.process_batch_lookups)
+    params = lookup_sig.parameters
+    assert "batch_session" in params, "process_batch_lookups requires batch_session"
+    assert "matches_on_page" in params, "process_batch_lookups requires matches_on_page"
+    assert "current_page" in params, "process_batch_lookups requires current_page"
+    assert "page_statuses" in params, "process_batch_lookups requires page_statuses"
 
-    # Test _execute_bulk_db_operations function exists
-    assert callable(_execute_bulk_db_operations), "_execute_bulk_db_operations should be callable"
+    # Test prepare_and_commit_batch_data function signature
+    commit_sig = inspect.signature(gather_persistence_module.prepare_and_commit_batch_data)
+    commit_params = commit_sig.parameters
+    assert "batch_session" in commit_params, "prepare_and_commit requires batch_session"
+    assert "session_manager" in commit_params, "prepare_and_commit requires session_manager"
+    assert "matches_to_process_later" in commit_params, "prepare_and_commit requires matches list"
+
+    # Test _execute_bulk_db_operations function signature
+    bulk_sig = inspect.signature(_execute_bulk_db_operations)
+    bulk_params = bulk_sig.parameters
+    assert "session" in bulk_params, "_execute_bulk_db_operations requires session"
+    assert "prepared_bulk_data" in bulk_params, "_execute_bulk_db_operations requires prepared data"
+    assert "existing_persons_map" in bulk_params, "_execute_bulk_db_operations requires existing map"
+    assert bulk_sig.return_annotation is bool or str(bulk_sig.return_annotation) == "bool", (
+        "_execute_bulk_db_operations should return bool"
+    )
 
 
 def _test_edge_cases():

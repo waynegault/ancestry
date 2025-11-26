@@ -4648,17 +4648,46 @@ def _test_login_status_function() -> None:
 
 
 def _test_module_registration() -> None:
-    """Test module registration functions and core function availability"""
-    # Test that module registration functions work
-    assert callable(auto_register_module), "auto_register_module should be available"
-    assert callable(register_function), "register_function should be available"
-    assert callable(get_function), "get_function should be available"
-    assert callable(is_function_available), "is_function_available should be available"
+    """Test module registration functions with behavior validation"""
 
-    # Test that core functions are available
-    assert "format_name" in globals(), "format_name should be in globals"
-    assert "get_rate_limiter" in globals(), "get_rate_limiter should be in globals (replaces RateLimiter)"
-    assert "SessionManager" in globals(), "SessionManager should be in globals"
+    # Test 1: auto_register_module returns expected type
+    # Note: Don't call on this module to avoid infinite loop
+    assert callable(auto_register_module), "auto_register_module should be callable"
+
+    # Test 2: register_function and get_function work correctly
+    def _test_func() -> str:
+        return "test_value"
+
+    register_function("_test_unique_func", _test_func)
+    retrieved = get_function("_test_unique_func")
+    assert retrieved is not None, "get_function should retrieve registered function"
+    assert retrieved() == "test_value", "Retrieved function should execute correctly"
+
+    # Test 3: is_function_available works
+    assert is_function_available("_test_unique_func") is True, (
+        "is_function_available should return True for registered function"
+    )
+    assert is_function_available("_nonexistent_func_xyz") is False, (
+        "is_function_available should return False for unregistered function"
+    )
+
+    # Test 4: format_name behavior
+    assert format_name(None) == "Valued Relative", "format_name should handle None"
+    assert format_name("") == "Valued Relative", "format_name should handle empty string"
+    assert format_name("john doe") == "John Doe", "format_name should title case names"
+    assert format_name("JOHN DOE") == "John Doe", "format_name should normalize uppercase"
+
+    # Test 5: get_rate_limiter returns singleton
+    limiter1 = get_rate_limiter()
+    limiter2 = get_rate_limiter()
+    assert limiter1 is limiter2, "get_rate_limiter should return singleton"
+    assert hasattr(limiter1, 'wait'), "Rate limiter should have wait method"
+
+    # Test 6: SessionManager can be imported from core module
+    from core.session_manager import SessionManager as SM
+
+    assert isinstance(SM, type), "SessionManager should be a class"
+    assert hasattr(SM, 'is_sess_valid'), "SessionManager should have is_sess_valid method"
 
 
 def _test_performance_validation() -> None:

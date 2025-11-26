@@ -1965,62 +1965,51 @@ def _validate_score_result(score: int, expected_score: int, test_name: str) -> N
 
 
 def test_module_initialization() -> None:
-    """Test that all required Action 10 functions are available and callable"""
-    required_functions = [
-        "main",
-        "load_gedcom_data",
-        "filter_and_score_individuals",
-        "analyze_top_match",
-        "get_user_criteria",
-        "display_top_matches",
-        "display_relatives",
-        "validate_config",
-        "calculate_match_score_cached",
-        "sanitize_input",
-        "parse_command_line_args",
-    ]
+    """Test that core Action 10 functions work correctly with proper behavior validation"""
+    import inspect
 
-    print(f"📋 Testing availability of {len(required_functions)} core functions:")
-    for func_name in required_functions:
-        print(f"   • {func_name}")
+    print("📋 Testing core Action 10 function behavior:")
 
-    try:
-        found_functions: list[str] = []
-        callable_functions: list[str] = []
+    # Test 1: sanitize_input behavior
+    print("   • Testing sanitize_input:")
+    assert sanitize_input("  test  ") == "test", "Should trim whitespace"
+    assert sanitize_input("") is None, "Should return None for empty string"
+    assert sanitize_input("   ") is None, "Should return None for whitespace-only"
+    assert sanitize_input("valid input") == "valid input", "Should preserve valid input"
+    print("   ✅ sanitize_input: All behavior tests passed")
 
-        for func_name in required_functions:
-            if func_name in globals():
-                found_functions.append(func_name)
-                if callable(globals()[func_name]):
-                    callable_functions.append(func_name)
-                    print(f"   ✅ {func_name}: Found and callable")
-                else:
-                    print(f"   ❌ {func_name}: Found but not callable")
-            else:
-                print(f"   ❌ {func_name}: Not found")
+    # Test 2: parse_command_line_args returns argparse.Namespace
+    print("   • Testing parse_command_line_args:")
+    args = parse_command_line_args()
+    assert hasattr(args, 'auto_input'), "Should have auto_input attribute"
+    assert hasattr(args, 'reference_id'), "Should have reference_id attribute"
+    assert hasattr(args, 'gedcom_file'), "Should have gedcom_file attribute"
+    assert hasattr(args, 'max_results'), "Should have max_results attribute"
+    assert isinstance(args.max_results, int), "max_results should be an integer"
+    print("   ✅ parse_command_line_args: Returns valid argparse.Namespace")
 
-        # Test configuration
-        config_available = True  # config_schema is always available (non-None type)
-        config_has_api = hasattr(config_schema, "api")
+    # Test 3: Verify function signatures are correct
+    print("   • Testing function signatures:")
+    main_sig = inspect.signature(main)
+    assert 'session_manager' in main_sig.parameters, "main should accept session_manager"
 
-        print("📊 Results:")
-        print(f"   Functions found: {len(found_functions)}/{len(required_functions)}")
-        print(f"   Functions callable: {len(callable_functions)}/{len(found_functions)}")
-        print(f"   Config available: {config_available}")
-        print(f"   Config has API: {config_has_api}")
+    load_gedcom_sig = inspect.signature(load_gedcom_data)
+    load_gedcom_params = list(load_gedcom_sig.parameters.keys())
+    assert 'gedcom_path' in load_gedcom_params, "load_gedcom_data should accept gedcom_path"
 
-        assert len(found_functions) == len(required_functions), (
-            f"Missing functions: {set(required_functions) - set(found_functions)}"
-        )
-        assert len(callable_functions) == len(found_functions), (
-            f"Non-callable functions: {set(found_functions) - set(callable_functions)}"
-        )
-        assert config_available, "Configuration schema not available"
+    calculate_score_sig = inspect.signature(calculate_match_score_cached)
+    assert len(calculate_score_sig.parameters) > 0, "calculate_match_score_cached should have parameters"
+    print("   ✅ Function signatures: All verified")
 
-        # Return True explicitly (not part of TestSuite, standalone function)
-    except (NameError, AssertionError) as e:
-        print(f"❌ Module initialization failed: {e}")
-        raise  # Fail the test if functions are missing
+    # Test 4: config_schema availability and structure
+    print("   • Testing configuration:")
+    assert config_schema is not None, "config_schema should be available"
+    assert hasattr(config_schema, "api"), "config_schema should have api attribute"
+    assert hasattr(config_schema, "date_flexibility"), "config_schema should have date_flexibility"
+    assert hasattr(config_schema, "common_scoring_weights"), "config_schema should have scoring_weights"
+    print("   ✅ Configuration: Schema structure verified")
+
+    print("📊 Results: All core function tests passed")
 
 
 def test_config_defaults() -> None:

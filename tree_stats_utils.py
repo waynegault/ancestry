@@ -632,14 +632,41 @@ def _empty_ethnicity_commonality() -> dict[str, Any]:
 
 # === MODULE TESTS ===
 def _test_statistics_functions_available() -> None:
-    """Test that all required functions are available."""
-    required_functions = [
-        'calculate_tree_statistics',
-        'calculate_ethnicity_commonality',
-        '_empty_statistics',
-        '_empty_ethnicity_commonality',
-    ]
-    assert all(func in globals() for func in required_functions), "All functions should be available"
+    """Test that statistics functions work correctly with behavior validation."""
+    import inspect
+
+    # Test 1: calculate_tree_statistics signature
+    sig = inspect.signature(calculate_tree_statistics)
+    params = list(sig.parameters.keys())
+    assert 'session' in params, "calculate_tree_statistics should accept session"
+    assert 'profile_id' in params, "calculate_tree_statistics should accept profile_id"
+    assert 'force_refresh' in params, "calculate_tree_statistics should accept force_refresh"
+    assert sig.parameters['force_refresh'].default is False, "force_refresh should default to False"
+
+    # Test 2: _empty_statistics returns correct structure
+    empty_stats = _empty_statistics("test_profile_123")
+    assert isinstance(empty_stats, dict), "_empty_statistics should return dict"
+    assert empty_stats['total_matches'] == 0, "Empty stats should have 0 total_matches"
+    assert empty_stats['in_tree_count'] == 0, "Empty stats should have 0 in_tree_count"
+    assert empty_stats['out_tree_count'] == 0, "Empty stats should have 0 out_tree_count"
+    assert empty_stats['profile_id'] == "test_profile_123", "Empty stats should preserve profile_id"
+    assert 'calculated_at' in empty_stats, "Empty stats should have calculated_at"
+    assert isinstance(empty_stats['ethnicity_regions'], dict), "ethnicity_regions should be dict"
+
+    # Test 3: _empty_ethnicity_commonality returns correct structure
+    empty_eth = _empty_ethnicity_commonality()
+    assert isinstance(empty_eth, dict), "_empty_ethnicity_commonality should return dict"
+    assert 'shared_regions' in empty_eth, "Should have shared_regions key"
+    assert empty_eth['similarity_score'] == 0.0, "Empty should have 0.0 similarity_score"
+    assert empty_eth['shared_regions'] == [], "Empty should have empty shared_regions"
+    assert 'calculated_at' in empty_eth, "Should have calculated_at timestamp"
+
+    # Test 4: calculate_ethnicity_commonality signature
+    eth_sig = inspect.signature(calculate_ethnicity_commonality)
+    eth_params = list(eth_sig.parameters.keys())
+    assert 'session' in eth_params, "calculate_ethnicity_commonality should accept session"
+    assert 'owner_profile_id' in eth_params, "calculate_ethnicity_commonality should accept owner_profile_id"
+    assert 'match_person_id' in eth_params, "calculate_ethnicity_commonality should accept match_person_id"
 
 
 def _test_calculate_tree_statistics_with_valid_profile() -> None:

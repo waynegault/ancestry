@@ -3996,27 +3996,16 @@ def _test_circuit_breaker_config() -> None:
     """Test circuit breaker decorator configuration reflects Action 6 lessons."""
     import inspect
 
+    from core.error_handling import CircuitBreakerConfig
+
     print("📋 Testing circuit breaker configuration:")
     results: list[bool] = []
 
     # Get the decorators applied to send_messages_to_matches
     func = send_messages_to_matches
 
-    # Check if function has the expected attributes from decorators
-    test_cases = [
-        ("Function is callable", callable(func)),
-        ("Function has error handling", hasattr(func, '__wrapped__') or hasattr(func, '__name__')),
-        ("Function name preserved", func.__name__ == 'send_messages_to_matches'),
-    ]
-
-    for description, condition in test_cases:
-        status = "✅" if condition else "❌"
-        print(f"   {status} {description}")
-        results.append(condition)
-
-    # Test that the function can be imported and called (basic validation)
+    # Test 1: Verify function signature is intact after decoration
     try:
-        # Verify the function signature is intact
         sig = inspect.signature(func)
         has_session_manager = 'session_manager' in sig.parameters
         status = "✅" if has_session_manager else "❌"
@@ -4026,38 +4015,86 @@ def _test_circuit_breaker_config() -> None:
         print(f"   ❌ Function signature validation failed: {e}")
         results.append(False)
 
+    # Test 2: Verify function name preserved through decoration
+    name_preserved = func.__name__ == 'send_messages_to_matches'
+    status = "✅" if name_preserved else "❌"
+    print(f"   {status} Function name preserved through decoration: {func.__name__}")
+    results.append(name_preserved)
+
+    # Test 3: Test CircuitBreakerConfig behavior with valid values
+    try:
+        config = CircuitBreakerConfig(failure_threshold=10, recovery_timeout=60)
+        threshold_valid = config.failure_threshold == 10
+        timeout_valid = config.recovery_timeout == 60
+        status = "✅" if threshold_valid and timeout_valid else "❌"
+        print(f"   {status} CircuitBreakerConfig accepts expected parameters (threshold=10, timeout=60)")
+        results.append(threshold_valid and timeout_valid)
+    except Exception as e:
+        print(f"   ❌ CircuitBreakerConfig initialization failed: {e}")
+        results.append(False)
+
+    # Test 4: Verify CircuitBreakerConfig has all required fields with correct defaults
+    try:
+        config = CircuitBreakerConfig()  # Use defaults
+        has_threshold = hasattr(config, 'failure_threshold') and config.failure_threshold == 5
+        has_recovery = hasattr(config, 'recovery_timeout') and config.recovery_timeout == 60
+        has_success = hasattr(config, 'success_threshold') and config.success_threshold == 3
+        all_fields_valid = has_threshold and has_recovery and has_success
+        status = "✅" if all_fields_valid else "❌"
+        print(f"   {status} CircuitBreakerConfig has correct default values (5, 60, 3)")
+        results.append(all_fields_valid)
+    except Exception as e:
+        print(f"   ❌ CircuitBreakerConfig field validation failed: {e}")
+        results.append(False)
+
     print(f"📊 Results: {sum(results)}/{len(results)} circuit breaker configuration tests passed")
 
 
 def _test_session_death_cascade_detection() -> None:
-    """Test session death cascade detection and handling."""
+    """Test session death cascade detection and error handling behavior."""
     print("📋 Testing session death cascade detection:")
     results: list[bool] = []
 
+    # Test 1: Create MaxApiFailuresExceededError with context and verify attributes
     try:
-        # Test that MaxApiFailuresExceededError is available
-        error_available = True  # MaxApiFailuresExceededError is always available
-        status = "✅" if error_available else "❌"
-        print(f"   {status} MaxApiFailuresExceededError class available")
-        results.append(error_available)
-
-        # Test cascade detection string matching
-        test_error = ConnectionError("Session death cascade detected in test")
-        cascade_detected = "Session death cascade detected" in str(test_error)
-        status = "✅" if cascade_detected else "❌"
-        print(f"   {status} Cascade detection string matching")
-        results.append(cascade_detected)
-
-        # Test error inheritance
         cascade_error = MaxApiFailuresExceededError("Test cascade error", context={"source": "Action 8"})
-        # MaxApiFailuresExceededError should inherit from Exception
-        is_exception = issubclass(type(cascade_error), BaseException)
-        status = "✅" if is_exception else "❌"
-        print(f"   {status} MaxApiFailuresExceededError inherits from Exception")
-        results.append(is_exception)
-
+        has_context = hasattr(cascade_error, 'context') and cascade_error.context.get("source") == "Action 8"
+        has_message = "Test cascade error" in str(cascade_error)
+        test_passed = has_context and has_message
+        status = "✅" if test_passed else "❌"
+        print(f"   {status} MaxApiFailuresExceededError created with context and message")
+        results.append(test_passed)
     except Exception as e:
-        print(f"   ❌ Session death cascade detection test failed: {e}")
+        print(f"   ❌ MaxApiFailuresExceededError creation failed: {e}")
+        results.append(False)
+
+    # Test 2: Verify cascade detection string matching pattern
+    test_error = ConnectionError("Session death cascade detected in test")
+    cascade_detected = "Session death cascade detected" in str(test_error)
+    status = "✅" if cascade_detected else "❌"
+    print(f"   {status} Cascade detection string matching pattern works")
+    results.append(cascade_detected)
+
+    # Test 3: Verify error is catchable as Exception
+    try:
+        cascade_error = MaxApiFailuresExceededError("Test error")
+        raise cascade_error
+    except Exception as caught:
+        is_catchable = isinstance(caught, MaxApiFailuresExceededError)
+        status = "✅" if is_catchable else "❌"
+        print(f"   {status} MaxApiFailuresExceededError is catchable as Exception")
+        results.append(is_catchable)
+
+    # Test 4: Error message is preserved
+    try:
+        test_msg = "Cascade failure after 10 consecutive errors"
+        error = MaxApiFailuresExceededError(test_msg)
+        msg_preserved = test_msg in str(error)
+        status = "✅" if msg_preserved else "❌"
+        print(f"   {status} Error message preserved in exception")
+        results.append(msg_preserved)
+    except Exception as e:
+        print(f"   ❌ Error message test failed: {e}")
         results.append(False)
 
     print(f"📊 Results: {sum(results)}/{len(results)} cascade detection tests passed")
