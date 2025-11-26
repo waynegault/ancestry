@@ -1996,11 +1996,7 @@ class SessionManager:
             csrf_cookie_names = ['_dnamatches-matchlistui-x-csrf-token', '_csrf']
 
             driver_cookies_list = cast(list[dict[str, Any]], driver.get_cookies())
-            driver_cookies_dict = {
-                c["name"]: c["value"]
-                for c in driver_cookies_list
-                if "name" in c and "value" in c
-            }
+            driver_cookies_dict = {c["name"]: c["value"] for c in driver_cookies_list if "name" in c and "value" in c}
 
             for name in csrf_cookie_names:
                 if driver_cookies_dict.get(name):

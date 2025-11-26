@@ -999,15 +999,11 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
     try:
         # Use public API for performance tracking (max_history=50 for messaging)
         if hasattr(session_manager, "update_response_time_tracking"):
-            session_manager.update_response_time_tracking(
-                duration, slow_threshold=15.0, max_history=50
-            )
+            session_manager.update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
         elif hasattr(session_manager, "reset_response_time_tracking"):
             # Fallback: initialize if needed then update
             session_manager.reset_response_time_tracking()
-            session_manager.update_response_time_tracking(
-                duration, slow_threshold=15.0, max_history=50
-            )
+            session_manager.update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
 
     except Exception as exc:  # pragma: no cover - telemetry safety
         logger.debug(f"Failed to update messaging performance tracking: {exc}")
