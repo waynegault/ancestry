@@ -35,8 +35,8 @@ OpenAI: Any | None = _OpenAI
 
 genai_import_error: str | None = None
 try:
-    from google import genai
-    from google.genai import types as genai_types
+    from google import genai  # type: ignore[import-untyped]
+    from google.genai import types as genai_types  # type: ignore[import-untyped]
 except ImportError as import_error:  # pragma: no cover - optional dependency
     genai = None
     genai_types = None
@@ -954,15 +954,18 @@ def _execute_provider_test(
 def _render_test_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
     _print_result(result)
 
+    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
+    max_tokens: int = getattr(args, "max_tokens", 2048)
+
     if result.api_status and result.full_output:
         print("\nPrompt:")
-        print(f'"{args.prompt}"')
+        print(f'"{prompt}"')
         print("\nResponse:")
         print(result.full_output)
         print(f"\nResponse time: {duration:.2f}s")
         if _is_response_truncated(result.full_output, result.finish_reason):
             print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
-            print(f"   Consider increasing --max-tokens (current: {args.max_tokens})")
+            print(f"   Consider increasing --max-tokens (current: {max_tokens})")
         print()
         return
 
@@ -975,17 +978,24 @@ def _render_test_output(args: argparse.Namespace, result: TestResult, duration: 
 
 
 def _run_single_provider(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    tester = _require_provider_tester(args.provider, parser)
-    if not _ensure_provider_env_ready(args.provider, interactive=False):
+    provider: str = getattr(args, "provider", "")
+    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
+    max_tokens: int = getattr(args, "max_tokens", 2048)
+
+    tester = _require_provider_tester(provider, parser)
+    if not _ensure_provider_env_ready(provider, interactive=False):
         return 1
 
-    print(f"\nTesting provider: {args.provider}")
-    result, duration = _execute_provider_test(tester, args.prompt, args.max_tokens)
+    print(f"\nTesting provider: {provider}")
+    result, duration = _execute_provider_test(tester, prompt, max_tokens)
     _render_test_output(args, result, duration)
     return 0
 
 
 def _interactive_provider_loop(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
+    max_tokens: int = getattr(args, "max_tokens", 2048)
+
     while True:
         provider = _prompt_for_provider()
         if provider is None:
@@ -996,7 +1006,7 @@ def _interactive_provider_loop(args: argparse.Namespace, parser: argparse.Argume
             continue
 
         print(f"\nTesting provider: {provider}")
-        result, duration = _execute_provider_test(tester, args.prompt, args.max_tokens)
+        result, duration = _execute_provider_test(tester, prompt, max_tokens)
         _render_test_output(args, result, duration)
 
 
@@ -1005,14 +1015,18 @@ def main(argv: list[str] | None = None) -> int:
     _ensure_env_loaded(".env", parser)
     args = parser.parse_args(argv)
 
-    if args.env_file and args.env_file != ".env":
-        _ensure_env_loaded(args.env_file, parser)
+    env_file: str = getattr(args, "env_file", ".env")
+    provider: str | None = getattr(args, "provider", None)
 
-    if not args.provider and _should_prefer_local_llm():
+    if env_file and env_file != ".env":
+        _ensure_env_loaded(env_file, parser)
+
+    if not provider and _should_prefer_local_llm():
         print("⚙️ Defaulting to local_llm provider for automated test execution.")
-        args.provider = "local_llm"
+        provider = "local_llm"
+        setattr(args, "provider", provider)
 
-    if args.provider:
+    if provider:
         return _run_single_provider(args, parser)
 
     _interactive_provider_loop(args, parser)
