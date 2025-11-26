@@ -1,4 +1,4 @@
-- All 71 modules pass tests with 100% success rate after improvements
+- All 117 modules pass tests with 100% success rate (966 tests)
 # Ancestry Genealogical Research Automation
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/waynegault/ancestry)
@@ -18,13 +18,15 @@ This project automates genealogical research workflows on Ancestry.com, includin
 ## Key Features
 
 - **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 115 test modules with 100% standardized test infrastructure
+- **Comprehensive Testing**: 117 test modules with 966 tests and 100% standardized test infrastructure
 - **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
 - **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
-- **Developer Tools**: Code graph visualization, centralized test utilities, performance profiling
+- **Developer Tools**: Code graph visualization, centralized test utilities with decorators and factories, performance profiling
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Test Utility Framework Expansion (Nov 26)** - Added test decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and fixture factories (`create_test_match()`) to `test_utilities.py`. Enables isolated testing with minimal setup and consistent test patterns across all 117 modules.
+- ✅ **Developer Experience Quick Wins (Nov 26)** - Added `requirements-dev.txt` (separate test dependencies), `SECURITY.md` (vulnerability reporting), and `.editorconfig` (consistent formatting) for better developer onboarding and contribution workflow.
 - ✅ **Startup Health Check System (Nov 26)** - Created `core/health_check.py` with comprehensive health check infrastructure: `HealthStatus` enum (HEALTHY/DEGRADED/UNHEALTHY/UNKNOWN), `HealthCheckResult` and `HealthReport` dataclasses for tracking check results with timing, `HealthCheck` Protocol for consistent interface. Implemented `DatabaseHealthCheck`, `FileSystemHealthCheck`, `CacheHealthCheck`, `ConfigurationHealthCheck`, and `APIHealthCheck`. `HealthCheckRunner` orchestrates all checks with `run_startup_health_checks()` for startup validation and `run_interactive_health_check()` for menu display.
 - ✅ **Unified Configuration Validation Layer (Nov 26)** - Created `config/validator.py` with comprehensive startup validation: `ConfigurationValidator` class validates ALL config sections (environment, database, API, rate limiting, Selenium, AI provider, paths, processing limits) with clear actionable error messages. Added `health` menu action for interactive configuration health check. `ValidationReport` aggregates pass/fail results with severity levels.
 - ✅ **SessionManager Public API Expansion (Nov 26)** - Added public methods for performance tracking (`update_response_time_tracking`, `reset_response_time_tracking`), CSRF caching (`set_cached_csrf_token`, `get_cached_csrf_token`), and session validation (`update_cookie_sync_time`, `clear_last_readiness_check`). Eliminates protected member access patterns in action modules.
@@ -260,6 +262,15 @@ ruff check
 
 All test modules use centralized helpers from `test_utilities.py` to eliminate duplication and ensure consistent behavior:
 
+**Test Decorators:**
+- `@with_temp_database` - Creates an isolated SQLite database for each test with automatic cleanup
+- `@with_mock_session` - Provides a mock SessionManager with common methods pre-configured
+- `@with_test_config` - Temporarily overrides configuration settings for test isolation
+
+**Test Fixture Factories:**
+- `create_test_person(uuid=..., profile_id=..., name=...)` - Factory for Person model instances with realistic defaults
+- `create_test_match(person_id=..., shared_cm=..., relationship=...)` - Factory for DnaMatch test fixtures
+
 **Temporary File Helpers:**
 - `temp_directory(prefix="test-", cleanup=True)` - Context manager for temporary directories with automatic cleanup
 - `temp_file(suffix="", prefix="test-", mode="w+")` - Context manager for temporary files with automatic cleanup
@@ -267,11 +278,27 @@ All test modules use centralized helpers from `test_utilities.py` to eliminate d
 
 **Test Infrastructure:**
 - `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
-- All 115 test modules use this pattern for uniform output and exit codes
+- All 117 test modules use this pattern for uniform output and exit codes
 
 **Usage Example:**
 ```python
-from test_utilities import temp_file, temp_directory
+from test_utilities import (
+    with_temp_database, with_mock_session, with_test_config,
+    create_test_person, create_test_match, temp_file
+)
+
+# Decorator-based test isolation
+@with_temp_database
+def test_database_operation(session):
+    person = create_test_person(name="Test User")
+    session.add(person)
+    session.commit()
+    # Database is automatically cleaned up after test
+
+@with_mock_session
+def test_session_operation(mock_session):
+    mock_session.driver_live = True
+    assert mock_session.is_sess_valid()
 
 # Use temporary file with automatic cleanup
 with temp_file(suffix='.json', mode='w+') as f:
