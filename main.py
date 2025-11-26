@@ -575,7 +575,7 @@ def _test_validate_action_config() -> bool:
 
     # Verify return annotation if present
     if sig.return_annotation != inspect.Parameter.empty:
-        assert sig.return_annotation == bool, "validate_action_config should return bool"
+        assert sig.return_annotation is bool, "validate_action_config should return bool"
 
     # Actually invoke and verify behavior
     result = validate_action_config()

@@ -57,7 +57,6 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Callable, Optional, cast
@@ -158,14 +157,8 @@ class _GedcomCacheState:
     cache: Optional[GedcomData] = None
 
 
-@lru_cache(maxsize=1)
-def _get_gedcom_utils_module() -> ModuleType:
-    """Lazy-load gedcom_utils to access private helpers without direct import."""
-    return importlib.import_module("gedcom_utils")
-
-
 def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
-    return gedcom_utils._normalize_id(value)
+    return gedcom_utils.normalize_id(value)
 
 
 FAMILY_INFO_KEYWORDS = (

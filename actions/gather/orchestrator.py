@@ -70,7 +70,7 @@ class GatherOrchestratorHooks:
     calculate_failure_threshold: Callable[[int], int]
 
 
-def _initialize_gather_state() -> dict[str, Any]:
+def initialize_gather_state() -> dict[str, Any]:
     """Initializes counters and state variables for the gathering process."""
 
     return {
@@ -97,7 +97,7 @@ def _initialize_gather_state() -> dict[str, Any]:
     }
 
 
-def _validate_start_page(start_arg: Any) -> int:
+def validate_start_page(start_arg: Any) -> int:
     """Validates and returns the starting page number."""
 
     try:
@@ -117,7 +117,7 @@ def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional
     """Resolve the effective start page, optionally resuming from checkpoint."""
 
     if start_arg is not None:
-        return _validate_start_page(start_arg), False, None
+        return validate_start_page(start_arg), False, None
 
     checkpoint_data = load_checkpoint()
     if not checkpoint_data:
@@ -202,7 +202,7 @@ class GatherOrchestrator:
         start: Optional[int],
         action_start_time: float,
     ) -> tuple[dict[str, Any], int]:
-        state = _initialize_gather_state()
+        state = initialize_gather_state()
         state["run_started_at"] = action_start_time
         state["requested_start_page"] = start
         start_page, resumed_from_checkpoint, checkpoint_data = _determine_start_page(start)
@@ -801,14 +801,14 @@ def _make_stub_hooks() -> GatherOrchestratorHooks:
 
 
 def _test_initialize_helpers() -> bool:
-    state = _initialize_gather_state()
+    state = initialize_gather_state()
     assert isinstance(state, dict)
     required_keys = {"total_new", "total_updated", "total_pages_processed"}
     assert required_keys.issubset(state.keys())
 
-    assert _validate_start_page("7") == 7
-    assert _validate_start_page(-2) == 1
-    assert _validate_start_page("invalid") == 1
+    assert validate_start_page("7") == 7
+    assert validate_start_page(-2) == 1
+    assert validate_start_page("invalid") == 1
     return True
 
 

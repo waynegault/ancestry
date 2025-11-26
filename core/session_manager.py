@@ -1999,7 +1999,7 @@ class SessionManager:
             driver_cookies_dict = {
                 c["name"]: c["value"]
                 for c in driver_cookies_list
-                if isinstance(c, dict) and "name" in c and "value" in c
+                if "name" in c and "value" in c
             }
 
             for name in csrf_cookie_names:
@@ -2161,6 +2161,59 @@ class SessionManager:
     def clear_session_caches(cls) -> int:
         """Clear all session caches for fresh initialization"""
         return clear_session_cache()
+
+    def update_response_time_tracking(
+        self,
+        duration: float,
+        slow_threshold: float = 5.0,
+        max_history: int = 20,
+    ) -> None:
+        """Update response time tracking metrics.
+
+        Public method to safely update performance tracking without
+        directly accessing protected attributes.
+
+        Args:
+            duration: Response time in seconds
+            slow_threshold: Duration above which calls are considered slow
+            max_history: Maximum number of response times to track
+        """
+        self._response_times.append(duration)
+        if len(self._response_times) > max_history:
+            self._response_times.pop(0)
+
+        if self._response_times:
+            self._avg_response_time = sum(self._response_times) / len(self._response_times)
+
+        if duration > slow_threshold:
+            self._recent_slow_calls += 1
+        else:
+            self._recent_slow_calls = max(0, self._recent_slow_calls - 1)
+
+        self._recent_slow_calls = min(self._recent_slow_calls, 10)
+
+    def reset_response_time_tracking(self) -> None:
+        """Reset response time tracking to initial state."""
+        self._response_times = []
+        self._recent_slow_calls = 0
+        self._avg_response_time = 0.0
+
+    def update_cookie_sync_time(self, sync_time: float) -> None:
+        """Update the last cookie sync timestamp."""
+        self._last_cookie_sync_time = sync_time
+
+    def set_cached_csrf_token(self, token: str, cache_time: float) -> None:
+        """Set the cached CSRF token and cache timestamp."""
+        self._cached_csrf_token = token
+        self._csrf_cache_time = cache_time
+
+    def get_cached_csrf_token(self) -> tuple[Optional[str], float]:
+        """Get the cached CSRF token and cache timestamp."""
+        return self._cached_csrf_token, self._csrf_cache_time
+
+    def clear_last_readiness_check(self) -> None:
+        """Clear the last readiness check timestamp for fresh validation."""
+        self._last_readiness_check = None
 
 
 # === API Call Watchdog for Timeout Protection ===

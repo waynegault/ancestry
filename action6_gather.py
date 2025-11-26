@@ -125,24 +125,13 @@ def _update_session_performance_tracking(
         return
 
     try:
-        if not hasattr(session_manager, "_response_times"):
-            session_manager._response_times = []
-            session_manager._recent_slow_calls = 0
-            session_manager._avg_response_time = 0.0
-
-        response_times = session_manager._response_times
-        response_times.append(duration)
-        if len(response_times) > 20:
-            response_times.pop(0)
-
-        session_manager._avg_response_time = sum(response_times) / len(response_times)
-
-        if duration > 5.0:
-            session_manager._recent_slow_calls += 1
-        else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
-
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+        # Use public API for performance tracking
+        if hasattr(session_manager, "update_response_time_tracking"):
+            session_manager.update_response_time_tracking(duration, slow_threshold=5.0)
+        elif hasattr(session_manager, "reset_response_time_tracking"):
+            # Fallback: initialize if needed then update
+            session_manager.reset_response_time_tracking()
+            session_manager.update_response_time_tracking(duration, slow_threshold=5.0)
 
     except Exception as exc:  # pragma: no cover - defensive telemetry
         logger.debug(f"Failed to update session performance tracking: {exc}")
@@ -191,7 +180,6 @@ from selenium.common.exceptions import (
     NoSuchCookieException,
     WebDriverException,
 )
-from selenium.webdriver.remote.webdriver import WebDriver
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession  # Alias Session
@@ -397,15 +385,13 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     metadata: dict[str, Any] = metadata_raw
 
     regions = cast(list[dict[str, Any]], metadata.get("tree_owner_regions", []))
-    if not isinstance(regions, list) or not regions:
+    if not regions:
         logger.debug("No ethnicity regions configured; skipping ethnicity enrichment")
         return [], {}
 
     region_keys: list[str] = []
     column_map: dict[str, str] = {}
     for region in regions:
-        if not isinstance(region, dict):
-            continue
         key = region.get("key")
         column_name = region.get("column_name")
         if key and column_name:
@@ -514,8 +500,7 @@ def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[st
         logger.warning("Cannot access CSRF cookies: browser driver missing")
         return None
 
-    driver_typed = cast(WebDriver, driver)
-    cookies = cast(list[dict[str, Any]], cast(Any, driver_typed).get_cookies())
+    cookies = cast(list[dict[str, Any]], cast(Any, driver).get_cookies())
     for cookie_name in csrf_cookie_names:
         for cookie in cookies:
             if cookie['name'] == cookie_name:
@@ -3281,7 +3266,7 @@ def _add_ethnicity_data(
     if existing_dna_match is None or _needs_ethnicity_refresh(existing_dna_match):
         # Use prefetched ethnicity data from sequential API fetch
         prefetched_ethnicity = cast(Optional[dict[str, Optional[int]]], match.get("_prefetched_ethnicity"))
-        if prefetched_ethnicity and isinstance(prefetched_ethnicity, dict):
+        if prefetched_ethnicity:
             ethnicity_updates = _filter_changed_ethnicity_values(existing_dna_match, prefetched_ethnicity)
             if ethnicity_updates:
                 dna_dict_base.update(ethnicity_updates)
@@ -3984,7 +3969,7 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
 
     if cookie_sync_needed:
         session_manager.sync_cookies_to_requests()
-        session_manager._last_cookie_sync_time = current_time
+        session_manager.update_cookie_sync_time(current_time)
         logger.debug("Smart cookie sync performed (cookies were stale)")
     elif not cookie_sync_needed:
         logger.debug("Skipping cookie sync - cookies are fresh")
@@ -4045,8 +4030,7 @@ def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
     """Cache CSRF token in session manager."""
     import time as time_module
 
-    session_manager._cached_csrf_token = csrf_token
-    session_manager._csrf_cache_time = time_module.time()
+    session_manager.set_cached_csrf_token(csrf_token, time_module.time())
 
 
 def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
@@ -4059,8 +4043,7 @@ def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any
     import time as time_module
 
     # Check if we have a cached CSRF token that's still valid
-    cached_csrf_token = session_manager._cached_csrf_token
-    cached_csrf_time = session_manager._csrf_cache_time
+    cached_csrf_token, cached_csrf_time = session_manager.get_cached_csrf_token()
     csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
 
     if cached_csrf_token and csrf_cache_valid:
@@ -4202,7 +4185,7 @@ def _handle_303_session_refresh(
             logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
 
         # Force clear readiness check cache to ensure fresh validation
-        session_manager._last_readiness_check = None
+        session_manager.clear_last_readiness_check()
         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
 
         # Force session refresh with cleared cache
@@ -5597,10 +5580,10 @@ def _test_module_initialization():
     print("📋 Testing Action 6 module initialization:")
     results: list[bool] = []
 
-    # Test _initialize_gather_state function
-    print("   • Testing _initialize_gather_state...")
+    # Test initialize_gather_state function
+    print("   • Testing initialize_gather_state...")
     try:
-        state: Any = gather_orchestrator._initialize_gather_state()
+        state: Any = gather_orchestrator.initialize_gather_state()
         is_dict = isinstance(state, dict)
 
         required_keys = ["total_new", "total_updated", "total_pages_processed"]
@@ -5615,11 +5598,11 @@ def _test_module_initialization():
         assert keys_present, "Should have all required keys in state"
 
     except Exception as e:
-        print(f"   ❌ _initialize_gather_state: Exception {e}")
+        print(f"   ❌ initialize_gather_state: Exception {e}")
         results.extend([False, False])
 
-    # Test _validate_start_page function
-    print("   • Testing _validate_start_page...")
+    # Test validate_start_page function
+    print("   • Testing validate_start_page...")
     validation_tests = [
         ("5", 5, "String number conversion"),
         (10, 10, "Integer input handling"),
@@ -5630,7 +5613,7 @@ def _test_module_initialization():
 
     for input_val, expected, description in validation_tests:
         try:
-            result = gather_orchestrator._validate_start_page(input_val)
+            result = gather_orchestrator.validate_start_page(input_val)
             matches_expected = result == expected
 
             status = "✅" if matches_expected else "❌"
@@ -5715,14 +5698,14 @@ def _test_edge_cases():
     """Test edge cases and boundary conditions"""
     from actions.gather import orchestrator as gather_orchestrator
 
-    # Test _validate_start_page with edge cases
-    result = gather_orchestrator._validate_start_page("invalid")
+    # Test validate_start_page with edge cases
+    result = gather_orchestrator.validate_start_page("invalid")
     assert result == 1, "Should handle invalid string input"
 
-    result = gather_orchestrator._validate_start_page(-5)
+    result = gather_orchestrator.validate_start_page(-5)
     assert result == 1, "Should handle negative numbers"
 
-    result = gather_orchestrator._validate_start_page(0)
+    result = gather_orchestrator.validate_start_page(0)
     assert result == 1, "Should handle zero input"
 
 
@@ -5754,19 +5737,19 @@ def _test_performance():
 
     from actions.gather import orchestrator as gather_orchestrator
 
-    # Test _initialize_gather_state performance
+    # Test initialize_gather_state performance
     start_time = time.time()
     for _ in range(100):
-        state = gather_orchestrator._initialize_gather_state()
+        state = gather_orchestrator.initialize_gather_state()
         assert isinstance(state, dict), "Should return dict each time"
     duration = time.time() - start_time
 
     assert duration < 1.0, f"100 state initializations should be fast, took {duration:.3f}s"
 
-    # Test _validate_start_page performance
+    # Test validate_start_page performance
     start_time = time.time()
     for i in range(1000):
-        result = gather_orchestrator._validate_start_page(f"page_{i}_12345")
+        result = gather_orchestrator.validate_start_page(f"page_{i}_12345")
         assert isinstance(result, int), "Should return integer"
     duration = time.time() - start_time
 
@@ -5895,10 +5878,10 @@ def _test_legacy_function_error_handling():
     else:
         raise AssertionError("Lookup should propagate database errors for visibility")
 
-    result = gather_orchestrator._validate_start_page(None)
+    result = gather_orchestrator.validate_start_page(None)
     assert result == 1, "Should handle None gracefully"
 
-    result = gather_orchestrator._validate_start_page("not_a_number_12345")
+    result = gather_orchestrator.validate_start_page("not_a_number_12345")
     assert result == 1, "Should handle invalid input gracefully"
 
     print("     ✅ Legacy function error handling works correctly")

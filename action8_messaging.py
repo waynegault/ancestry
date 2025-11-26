@@ -997,24 +997,17 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
         duration: Duration of the operation in seconds
     """
     try:
-        if not hasattr(session_manager, "_response_times"):
-            session_manager._response_times = []
-            session_manager._recent_slow_calls = 0
-            session_manager._avg_response_time = 0.0
-
-        response_times = session_manager._response_times
-        response_times.append(duration)
-        if len(response_times) > 50:
-            response_times.pop(0)
-
-        session_manager._avg_response_time = sum(response_times) / len(response_times)
-
-        if duration > 15.0:  # OPTIMIZATION: Align slow-call threshold with Action 6
-            session_manager._recent_slow_calls += 1
-        else:
-            session_manager._recent_slow_calls = max(0, session_manager._recent_slow_calls - 1)
-
-        session_manager._recent_slow_calls = min(session_manager._recent_slow_calls, 10)
+        # Use public API for performance tracking (max_history=50 for messaging)
+        if hasattr(session_manager, "update_response_time_tracking"):
+            session_manager.update_response_time_tracking(
+                duration, slow_threshold=15.0, max_history=50
+            )
+        elif hasattr(session_manager, "reset_response_time_tracking"):
+            # Fallback: initialize if needed then update
+            session_manager.reset_response_time_tracking()
+            session_manager.update_response_time_tracking(
+                duration, slow_threshold=15.0, max_history=50
+            )
 
     except Exception as exc:  # pragma: no cover - telemetry safety
         logger.debug(f"Failed to update messaging performance tracking: {exc}")
@@ -4113,9 +4106,32 @@ def _test_performance_tracking() -> None:
         print(f"   {status} _update_messaging_performance function available")
         results.append(func_exists)
 
-        # Test with mock session manager
+        # Test with mock session manager that implements the public API
         class MockSessionManager:
-            pass
+            def __init__(self) -> None:
+                self._response_times: list[float] = []
+                self._recent_slow_calls: int = 0
+                self._avg_response_time: float = 0.0
+
+            def update_response_time_tracking(
+                self, duration: float, slow_threshold: float = 5.0, max_history: int = 20
+            ) -> None:
+                """Mock implementation of public API."""
+                self._response_times.append(duration)
+                if len(self._response_times) > max_history:
+                    self._response_times.pop(0)
+                if self._response_times:
+                    self._avg_response_time = sum(self._response_times) / len(self._response_times)
+                if duration > slow_threshold:
+                    self._recent_slow_calls += 1
+                else:
+                    self._recent_slow_calls = max(0, self._recent_slow_calls - 1)
+                self._recent_slow_calls = min(self._recent_slow_calls, 10)
+
+            def reset_response_time_tracking(self) -> None:
+                self._response_times = []
+                self._recent_slow_calls = 0
+                self._avg_response_time = 0.0
 
         mock_session = cast(SessionManager, MockSessionManager())
 
@@ -4130,15 +4146,14 @@ def _test_performance_tracking() -> None:
         print(f"   {status} Performance tracking executes without errors")
         results.append(tracking_works)
 
-        # Test attributes are created
-        has_response_times = hasattr(mock_session, '_response_times')
-        has_slow_calls = hasattr(mock_session, '_recent_slow_calls')
-        has_avg_time = hasattr(mock_session, '_avg_response_time')
+        # Test attributes are updated
+        has_response_times = len(mock_session._response_times) > 0  # type: ignore[union-attr]
+        has_avg_time = mock_session._avg_response_time > 0  # type: ignore[union-attr]
 
-        attributes_created = has_response_times and has_slow_calls and has_avg_time
-        status = "✅" if attributes_created else "❌"
-        print(f"   {status} Performance tracking attributes created")
-        results.append(attributes_created)
+        attributes_updated = has_response_times and has_avg_time
+        status = "✅" if attributes_updated else "❌"
+        print(f"   {status} Performance tracking attributes updated")
+        results.append(attributes_updated)
 
     except Exception as e:
         print(f"   ❌ Performance tracking test failed: {e}")

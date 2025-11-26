@@ -227,7 +227,7 @@ def _is_record(obj: Any) -> bool:
 # _is_name_rec removed - unused helper function
 
 
-def _normalize_id(xref_id: Optional[str]) -> Optional[str]:
+def normalize_id(xref_id: Optional[str]) -> Optional[str]:
     if not xref_id:
         return None
 
@@ -263,7 +263,7 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
     else:
         logger.debug(f"extract_and_fix_id: Invalid input type '{type(raw_id).__name__}'.")
         return None
-    return _normalize_id(id_to_normalize)
+    return normalize_id(id_to_normalize)
 
 
 # Helper functions for _get_full_name
@@ -1503,8 +1503,8 @@ def _extract_spouse_ids_from_family(fam: Any) -> tuple[Optional[str], Optional[s
     husb_ref = fam.sub_tag(TAG_HUSBAND)
     wife_ref = fam.sub_tag(TAG_WIFE)
 
-    husb_id = _normalize_id(husb_ref.xref_id) if husb_ref and hasattr(husb_ref, "xref_id") else None
-    wife_id = _normalize_id(wife_ref.xref_id) if wife_ref and hasattr(wife_ref, "xref_id") else None
+    husb_id = normalize_id(husb_ref.xref_id) if husb_ref and hasattr(husb_ref, "xref_id") else None
+    wife_id = normalize_id(wife_ref.xref_id) if wife_ref and hasattr(wife_ref, "xref_id") else None
 
     return husb_id, wife_id
 
@@ -2189,7 +2189,7 @@ class GedcomData:
                     logger.debug(f"Skipping record with no xref_id: Type={type(indi_record).__name__}")
             return False, True
 
-        norm_id = _normalize_id(indi_record.xref_id)
+        norm_id = normalize_id(indi_record.xref_id)
         if not norm_id:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Skipping INDI with unnormalizable xref_id: {indi_record.xref_id}")
@@ -2250,7 +2250,7 @@ class GedcomData:
         for parent_tag in [TAG_HUSBAND, TAG_WIFE]:
             parent_ref = fam.sub_tag(parent_tag)
             if parent_ref and hasattr(parent_ref, "xref_id"):
-                parent_id = _normalize_id(parent_ref.xref_id)
+                parent_id = normalize_id(parent_ref.xref_id)
                 if parent_id:
                     parents.add(parent_id)
                 elif logger.isEnabledFor(logging.DEBUG):
@@ -2268,7 +2268,7 @@ class GedcomData:
                 )
             return False, True
 
-        child_id = _normalize_id(child_tag.xref_id)
+        child_id = normalize_id(child_tag.xref_id)
         if not child_id:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
@@ -2522,7 +2522,7 @@ class GedcomData:
                     related_individuals.append(indi)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"Could not find Individual object for related ID: {rel_id}")
-        related_individuals.sort(key=lambda x: (_normalize_id(getattr(x, "xref_id", None)) or ""))
+        related_individuals.sort(key=lambda x: (normalize_id(getattr(x, "xref_id", None)) or ""))
         return related_individuals
 
     def get_related_individuals(
@@ -2534,7 +2534,7 @@ class GedcomData:
             logger.warning(f"get_related_individuals: Invalid input individual object: {type(individual)}")
             return []
 
-        target_id = _normalize_id(individual.xref_id if individual is not None else None)
+        target_id = normalize_id(individual.xref_id if individual is not None else None)
         if not target_id:
             return []
 
@@ -2595,8 +2595,8 @@ class GedcomData:
         Returns:
             A human-readable string explaining the relationship path
         """
-        id1_norm = _normalize_id(id1)
-        id2_norm = _normalize_id(id2)
+        id1_norm = normalize_id(id1)
+        id2_norm = normalize_id(id2)
 
         # Check for None after normalization
         if not id1_norm or not id2_norm:
@@ -2793,12 +2793,12 @@ class _FakeNameObject:
         return self._formatted
 
 
-def _test_normalize_id_variants() -> bool:
-    assert _normalize_id("@I123@") == "I123"
-    assert _normalize_id("i-42") == "I-42"
-    assert _normalize_id("Family I999 note") == "I999"
-    assert _normalize_id("12345") == "12345"
-    assert _normalize_id("???") is None
+def _testnormalize_id_variants() -> bool:
+    assert normalize_id("@I123@") == "I123"
+    assert normalize_id("i-42") == "I-42"
+    assert normalize_id("Family I999 note") == "I999"
+    assert normalize_id("12345") == "12345"
+    assert normalize_id("???") is None
     return True
 
 
@@ -2891,7 +2891,7 @@ def module_tests() -> bool:
     suite = TestSuite("gedcom_utils", "gedcom_utils.py")
     suite.run_test(
         "Normalize GEDCOM IDs",
-        _test_normalize_id_variants,
+        _testnormalize_id_variants,
         "Ensures GEDCOM IDs normalize from standard, fallback, and numeric formats.",
     )
     suite.run_test(

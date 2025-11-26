@@ -25,6 +25,8 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **SessionManager Public API Expansion (Nov 26)** - Added public methods for performance tracking (`update_response_time_tracking`, `reset_response_time_tracking`), CSRF caching (`set_cached_csrf_token`, `get_cached_csrf_token`), and session validation (`update_cookie_sync_time`, `clear_last_readiness_check`). Eliminates protected member access patterns in action modules.
+- ✅ **Function Visibility Improvements (Nov 26)** - Made `gedcom_utils.normalize_id()` and `actions.gather.orchestrator.initialize_gather_state()/validate_start_page()` public functions for cross-module use. Fixed E721 type comparison and N817 camelcase import linter errors.
 - ✅ **AI Provider Adapter Framework (Nov 29)** - Added `ai/providers/base.py` plus Gemini and DeepSeek adapters, introduced `ai/prompts.py` for centralized prompt/experiment loading, and refactored `ai_interface.py` to register providers through the adapter registry with structured telemetry payloads.
 - ✅ **CacheBackend Protocol (Nov 25)** - Created `core/cache_backend.py` with unified cache interface: `CacheBackend` and `ScopedCacheBackend` protocols, `CacheStats`/`CacheHealth` dataclasses, and `CacheFactory` for centralized backend management. Step 2 of cache stack unification (Track 4).
 - ✅ **Cache Stack Inventory (Nov 25)** - Completed Step 1 of Track 4 (Cache Unification): analyzed 6 cache modules (5,678 lines), identified 28 import sites, documented 3 import cycles, and created consumer mapping. Ready for Step 2: Design `CacheBackend` protocol.

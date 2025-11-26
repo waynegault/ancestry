@@ -4684,10 +4684,10 @@ def _test_module_registration() -> None:
     assert hasattr(limiter1, 'wait'), "Rate limiter should have wait method"
 
     # Test 6: SessionManager can be imported from core module
-    from core.session_manager import SessionManager as SM
+    from core.session_manager import SessionManager as SessionMgr
 
-    assert isinstance(SM, type), "SessionManager should be a class"
-    assert hasattr(SM, 'is_sess_valid'), "SessionManager should have is_sess_valid method"
+    assert isinstance(SessionMgr, type), "SessionManager should be a class"
+    assert hasattr(SessionMgr, 'is_sess_valid'), "SessionManager should have is_sess_valid method"
 
 
 def _test_performance_validation() -> None:
