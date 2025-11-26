@@ -131,11 +131,6 @@ class ConfigValidator:
         return errors
 
 
-def validate_path_exists(path: Union[str, Path]) -> bool:
-    """Validate that a path exists."""
-    return Path(path).exists() if path else False
-
-
 # Import centralized file extension validation utility
 
 
@@ -356,8 +351,7 @@ class SeleniumConfig:
     implicit_wait: int = 10
     explicit_wait: int = 20
     api_timeout: int = 30  # Add API timeout for requests
-    two_fa_code_entry_timeout: int = 300  # 5 minutes for 2FA code entry
-    two_fa_code_entry_timeout: int = 180  # Timeout for 2FA code entry
+    two_fa_code_entry_timeout: int = 180  # 3 minutes for 2FA code entry
 
     # Features
     disable_images: bool = False

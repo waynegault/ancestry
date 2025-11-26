@@ -317,11 +317,6 @@ def get_gedcom_data() -> Optional[Any]:
 
 # Import required modules and functions
 
-# REMOVED: Helper functions for _search_gedcom_for_names - Dead code
-# Use search_gedcom_for_criteria from gedcom_search_utils instead
-# REMOVED: Helper functions for _search_api_for_names - Dead code
-# REMOVED: _search_api_for_names - Dead code, use search_ancestry_api_persons from person_search instead
-
 
 #####################################################
 # Data Classes for Better Organization
@@ -3044,9 +3039,6 @@ def _load_templates_for_action9() -> dict[str, str]:
     except Exception as e:
         logger.error(f"Error loading templates for Action 9: {e}", exc_info=True)
         return {}
-
-
-# REMOVED: _search_ancestry_tree - Dead code, use search_persons from person_search instead
 
 
 def _identify_and_get_person_details(log_prefix: str) -> Optional[dict[str, Any]]:

@@ -51,9 +51,7 @@ from memory_utils import fast_json_loads
 BS4_AVAILABLE = True
 
 # --- Local imports ---
-# Avoid importing from utils to prevent config dependency during testing
-# Instead, we'll define format_name locally
-
+# Import format_name from utils (canonical implementation with full name particle handling)
 # --- Test framework imports ---
 # Import specific functions from gedcom_utils
 from common_params import GraphContext
@@ -61,6 +59,7 @@ from test_framework import (
     TestSuite,
     suppress_logging,
 )
+from utils import format_name
 
 
 class GedcomTagProtocol(Protocol):
@@ -113,50 +112,10 @@ def _are_spouses(person1_id: str, person2_id: str, reader: Any) -> bool:
     return _are_spouses_orig(person1_id, person2_id, reader)
 
 
-def _clean_gedcom_slashes(name: str) -> str:
-    """Remove GEDCOM-style slashes from name."""
-    cleaned = re.sub(r"\s*/([^/]+)/\s*", r" \1 ", name)  # Middle
-    cleaned = re.sub(r"^/([^/]+)/\s*", r"\1 ", cleaned)  # Start
-    return re.sub(r"\s*/([^/]+)/$", r" \1", cleaned)  # End
-
-
-def _format_single_word(word: str) -> str:
-    """Format a single word in a name."""
-    if not word:
-        return ""
-
-    # Preserve fully uppercase words (likely initials/acronyms)
-    if word.isupper() and len(word) <= 3:
-        return word
-    # Handle name particles and prefixes
-    if word.lower() in {"mc", "mac", "o'"}:
-        return word.capitalize()
-    # Handle quoted nicknames
-    if word.startswith('"') and word.endswith('"'):
-        return f'"{word[1:-1].title()}"'
-    # Regular title case
-    return word.title()
-
-
-def format_name(name: Optional[str]) -> str:
-    """
-    Formats a person's name string to title case, preserving uppercase components
-    (like initials or acronyms) and handling None/empty input gracefully.
-    Also removes GEDCOM-style slashes around surnames anywhere in the string.
-    """
-    if not name:
-        return "Valued Relative"
-
-    if name.isdigit() or re.fullmatch(r"[^a-zA-Z]+", name):
-        return name.strip()
-
-    try:
-        cleaned_name = _clean_gedcom_slashes(name.strip())
-        words = cleaned_name.split()
-        formatted_words = [_format_single_word(word) for word in words if word]
-        return " ".join(formatted_words)
-    except Exception:
-        return name.title()
+# NOTE: _clean_gedcom_slashes, _format_single_word, and format_name were removed
+# to eliminate duplication. format_name is now imported from utils.py which has
+# a more comprehensive implementation with better handling of name particles,
+# Mc/Mac prefixes, hyphenated names, and quoted nicknames.
 
 
 def _find_direct_relationship(
@@ -2140,9 +2099,9 @@ def _run_validation_tests(suite: TestSuite) -> None:
         # Test with empty string
         assert format_name("") == "Valued Relative"
 
-        # Test with whitespace
+        # Test with whitespace - canonical format_name returns "Valued Relative" for empty/whitespace
         result = format_name("   ")
-        assert not result, "Whitespace-only input should return empty string"
+        assert result == "Valued Relative", "Whitespace-only input should return 'Valued Relative'"
 
         # Test name formatting handles various edge cases
         test_cases = [

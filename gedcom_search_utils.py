@@ -86,31 +86,9 @@ from relationship_utils import (
     format_relationship_path_unified,
 )
 
-# Default configuration values
-DEFAULT_CONFIG = {
-    "DATE_FLEXIBILITY": {"year_match_range": 10},
-    "COMMON_SCORING_WEIGHTS": {
-        # --- Name Weights ---
-        "contains_first_name": 25,  # if the input first name is in the candidate first name
-        "contains_surname": 25,  # if the input surname is in the candidate surname
-        "bonus_both_names_contain": 25,  # additional bonus if both first and last name achieved a score
-        # --- Existing Date Weights ---
-        "exact_birth_date": 25,  # if input date of birth is exact with candidate date of birth
-        "exact_death_date": 25,  # if input date of death is exact with candidate date of death
-        "birth_year_match": 20,  # if input birth year matches candidate birth year
-        "death_year_match": 20,  # if input death year matches candidate death year
-        "birth_year_close": 10,  # if input birth year is within range of candidate birth year
-        "death_year_close": 10,  # if input death year is within range of candidate death year
-        # --- Place Weights ---
-        "birth_place_match": 20,  # if input birth place matches candidate birth place
-        "death_place_match": 20,  # if input death place matches candidate death place
-        # --- Gender Weight ---
-        "gender_match": 15,  # if input gender matches candidate gender
-        # --- Bonus Weights ---
-        "bonus_birth_date_and_place": 15,  # bonus if both birth date and place match
-        "bonus_death_date_and_place": 15,  # bonus if both death date and place match
-    },
-}
+# NOTE: Scoring weights are defined in config_schema.common_scoring_weights
+# (config/config_schema.py). Do NOT duplicate weight definitions here.
+# The config system is always available via ConfigManager().get_config().
 
 
 # Global cache for GEDCOM data with enhanced caching
@@ -374,18 +352,16 @@ def _prepare_search_criteria(search_criteria: dict[str, Any]) -> tuple[dict[str,
 
 
 def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
-    """Get scoring weights and date flexibility configuration."""
-    # Get scoring weights
-    if config_schema:
-        scoring_weights = cast(dict[str, Any], dict(config_schema.common_scoring_weights))
-    else:
-        scoring_weights = cast(dict[str, Any], DEFAULT_CONFIG["COMMON_SCORING_WEIGHTS"])
+    """Get scoring weights and date flexibility configuration.
 
-    # Get date flexibility
-    if config_schema:
-        date_flex_value: Any = getattr(config_schema, "date_flexibility", None)
-    else:
-        date_flex_value = DEFAULT_CONFIG["DATE_FLEXIBILITY"]
+    Uses config_schema.common_scoring_weights as the single source of truth.
+    The config system is always available via ConfigManager().get_config().
+    """
+    # Get scoring weights from config_schema (always available)
+    scoring_weights = cast(dict[str, Any], dict(config_schema.common_scoring_weights))
+
+    # Get date flexibility from config_schema
+    date_flex_value: Any = getattr(config_schema, "date_flexibility", None)
 
     # Convert to dict format expected by calculate_match_score
     if isinstance(date_flex_value, dict):

@@ -79,9 +79,7 @@ except ImportError:  # pragma: no cover - optional dependency
     xai_system_message = None
     xai_user_message = None
 
-DEFAULT_PROMPT = (
-    "I'm interested in genealogy. Could you succinctly tell me the maximum number of great-great-great grandparents I may be descended from?"
-)
+DEFAULT_PROMPT = "I'm interested in genealogy. Could you succinctly tell me the maximum number of great-great-great grandparents I may be descended from?"
 
 # Cloud API providers
 CLOUD_PROVIDERS = ("moonshot", "deepseek", "gemini", "inception", "grok", "tetrate")
@@ -816,93 +814,170 @@ def _warm_up_model(client: Any, model_id: str) -> tuple[bool, float]:
         return False, time.time() - start
 
 
+def _check_local_llm_prerequisites(
+    model_id: str,
+) -> tuple[TestResult | None, str, str, str]:
+    """Check prerequisites for local LLM testing.
+
+    Returns: (early_return_result, provider_name, api_key, base_url)
+    If early_return_result is not None, caller should return it immediately.
+    """
+    provider_name = f"local:{model_id}"
+
+    if OpenAI is None:
+        return (
+            TestResult(provider_name, False, False, ["OpenAI library not available. Install the openai package."]),
+            provider_name,
+            "",
+            "",
+        )
+
+    api_key = os.getenv("LOCAL_LLM_API_KEY") or ""
+    base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
+
+    if not base_url:
+        return (
+            TestResult(provider_name, False, False, ["LOCAL_LLM_BASE_URL not configured."]),
+            provider_name,
+            api_key,
+            base_url,
+        )
+
+    return None, provider_name, api_key, base_url
+
+
+def _prepare_local_llm_client(
+    model_id: str, api_key: str, base_url: str, messages: list[str]
+) -> tuple[TestResult | None, Any | None, str, bool, float]:
+    """Prepare LM Studio and warm up the model.
+
+    Returns: (early_return_result, client, normalized_url, endpoint_ok, load_time)
+    If early_return_result is not None, caller should return it immediately.
+    """
+    provider_name = f"local:{model_id}"
+
+    _maybe_start_lm_studio(base_url, messages)
+    normalized_base_url, endpoint_ok = _normalize_local_llm_endpoint(base_url, messages)
+
+    # Check if model is available in LM Studio
+    is_available, available_models = _check_model_loaded(normalized_base_url, model_id)
+    if not is_available:
+        if not available_models:
+            messages.append("⚠️  LM Studio not running or not accessible")
+        else:
+            messages.append(f"⚠️  Model '{model_id}' not found in LM Studio.")
+            messages.append(f"   Available models: {', '.join(available_models)}")
+        return (
+            TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id),
+            None,
+            normalized_base_url,
+            endpoint_ok,
+            0.0,
+        )
+
+    client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
+
+    # Warm up: trigger model load (if needed) before timing
+    messages.append(f"Loading model: {model_id}...")
+    warm_ok, load_time = _warm_up_model(client, model_id)
+    if not warm_ok:
+        messages.append(f"⚠️  Failed to load model '{model_id}'")
+        return (
+            TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id),
+            None,
+            normalized_base_url,
+            endpoint_ok,
+            load_time,
+        )
+    messages.append(f"✓ Model ready (load time: {load_time:.1f}s)")
+
+    return None, client, normalized_base_url, endpoint_ok, load_time
+
+
+def _execute_local_llm_inference(
+    model_id: str,
+    api_key: str,
+    normalized_base_url: str,
+    endpoint_ok: bool,
+    load_time: float,
+    prompt: str,
+    max_tokens: int,
+    messages: list[str],
+) -> TestResult:
+    """Execute the inference request and return the result."""
+    provider_name = f"local:{model_id}"
+    inference_start = time.time()
+
+    try:
+        # Create client with timeout for inference and NO retries
+        client_with_timeout = OpenAI(
+            api_key=api_key or "lm-studio",
+            base_url=normalized_base_url,
+            timeout=20.0,  # 20 second timeout for inference
+            max_retries=0,  # No retries - fail fast on timeout
+        )
+        # Use only user message - some models (e.g., Mistral) don't support system role
+        completion = client_with_timeout.chat.completions.create(
+            model=model_id,
+            messages=[{"role": "user", "content": prompt}],
+            stream=False,
+            temperature=0.7,
+            max_tokens=max_tokens,
+        )
+        inference_time = time.time() - inference_start
+
+        if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
+            full_output = completion.choices[0].message.content.strip()
+            finish_reason = getattr(completion.choices[0], "finish_reason", None)
+            messages.append(_build_messages_preview(full_output))
+            return TestResult(
+                provider_name,
+                True,
+                endpoint_ok,
+                messages,
+                full_output=full_output,
+                finish_reason=finish_reason,
+                model_name=model_id,
+                load_time=load_time,
+                inference_time=inference_time,
+            )
+
+        messages.append("Local LLM returned an empty response.")
+        return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
+
+    except Exception as exc:
+        inference_time = time.time() - inference_start
+        error_msg = _format_provider_error(provider_name, exc)
+        if "timeout" in str(exc).lower() or "timed out" in str(exc).lower():
+            error_msg = f"⏱️  TIMEOUT after {inference_time:.1f}s - model too slow for practical use"
+        elif "no models loaded" in str(exc).lower():
+            error_msg += f" Please ensure '{model_id}' is loaded in LM Studio."
+        messages.append(error_msg)
+        return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
+
+
 def _create_local_llm_tester(model_id: str) -> Callable[[str, int], TestResult]:
     """Factory function to create a tester for a specific local LLM model."""
 
     def _test_local_model(prompt: str, max_tokens: int) -> TestResult:
-        provider_name = f"local:{model_id}"
+        # Phase 1: Check prerequisites
+        early_result, _provider_name, api_key, base_url = _check_local_llm_prerequisites(model_id)
+        if early_result is not None:
+            return early_result
+
         messages: list[str] = []
-        if OpenAI is None:
-            messages.append("OpenAI library not available. Install the openai package.")
-            return TestResult(provider_name, False, False, messages)
 
-        api_key = os.getenv("LOCAL_LLM_API_KEY") or ""
-        base_url = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
+        # Phase 2: Prepare client and warm up model
+        early_result, _client, normalized_url, endpoint_ok, load_time = _prepare_local_llm_client(
+            model_id, api_key, base_url, messages
+        )
+        if early_result is not None:
+            return early_result
 
-        if not base_url:
-            messages.append("LOCAL_LLM_BASE_URL not configured.")
-            return TestResult(provider_name, False, False, messages)
-
-        _maybe_start_lm_studio(base_url, messages)
-        normalized_base_url, endpoint_ok = _normalize_local_llm_endpoint(base_url, messages)
-
-        # Check if model is available in LM Studio
-        is_available, available_models = _check_model_loaded(normalized_base_url, model_id)
-        if not is_available:
-            if not available_models:
-                messages.append("⚠️  LM Studio not running or not accessible")
-            else:
-                messages.append(f"⚠️  Model '{model_id}' not found in LM Studio.")
-                messages.append(f"   Available models: {', '.join(available_models)}")
-            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id)
-
-        client = OpenAI(api_key=api_key or "lm-studio", base_url=normalized_base_url)
-
-        # Warm up: trigger model load (if needed) before timing
-        messages.append(f"Loading model: {model_id}...")
-        warm_ok, load_time = _warm_up_model(client, model_id)
-        if not warm_ok:
-            messages.append(f"⚠️  Failed to load model '{model_id}'")
-            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id)
-        messages.append(f"✓ Model ready (load time: {load_time:.1f}s)")
-
-        # Now time only the inference (with 20s timeout, no retries)
-        inference_start = time.time()
-        try:
-            # Create client with timeout for inference and NO retries
-            client_with_timeout = OpenAI(
-                api_key=api_key or "lm-studio",
-                base_url=normalized_base_url,
-                timeout=20.0,  # 20 second timeout for inference
-                max_retries=0,  # No retries - fail fast on timeout
-            )
-            # Use only user message - some models (e.g., Mistral) don't support system role
-            completion = client_with_timeout.chat.completions.create(
-                model=model_id,
-                messages=[
-                    {"role": "user", "content": prompt},
-                ],
-                stream=False,
-                temperature=0.7,
-                max_tokens=max_tokens,
-            )
-            inference_time = time.time() - inference_start
-            if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
-                full_output = completion.choices[0].message.content.strip()
-                finish_reason = getattr(completion.choices[0], "finish_reason", None)
-                messages.append(_build_messages_preview(full_output))
-                return TestResult(
-                    provider_name,
-                    True,
-                    endpoint_ok,
-                    messages,
-                    full_output=full_output,
-                    finish_reason=finish_reason,
-                    model_name=model_id,
-                    load_time=load_time,
-                    inference_time=inference_time,
-                )
-            messages.append("Local LLM returned an empty response.")
-            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
-        except Exception as exc:
-            inference_time = time.time() - inference_start
-            error_msg = _format_provider_error(provider_name, exc)
-            if "timeout" in str(exc).lower() or "timed out" in str(exc).lower():
-                error_msg = f"⏱️  TIMEOUT after {inference_time:.1f}s - model too slow for practical use"
-            elif "no models loaded" in str(exc).lower():
-                error_msg += f" Please ensure '{model_id}' is loaded in LM Studio."
-            messages.append(error_msg)
-            return TestResult(provider_name, False, endpoint_ok, messages, model_name=model_id, load_time=load_time)
+        # Phase 3: Execute inference
+        return _execute_local_llm_inference(
+            model_id, api_key, normalized_url, endpoint_ok, load_time, prompt, max_tokens, messages
+        )
 
     return _test_local_model
 
@@ -1116,38 +1191,49 @@ def _check_answer_correctness(response: str) -> tuple[bool, str]:
     return False, "❓ UNCLEAR - Could not find a clear numeric answer. Correct answer: 32."
 
 
-def _render_test_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
-    _print_result(result)
+def _render_timing_info(result: TestResult, duration: float) -> None:
+    """Render timing information (load time, inference time, or response time)."""
+    if result.load_time is not None and result.inference_time is not None:
+        print(f"\nLoad time: {result.load_time:.2f}s")
+        print(f"Inference time: {result.inference_time:.2f}s")
+        print(f"Total time: {duration:.2f}s")
+    else:
+        print(f"\nResponse time: {duration:.2f}s")
 
+
+def _render_correctness_check(prompt: str, result: TestResult, max_tokens: int) -> None:
+    """Check and render correctness verdict and truncation warnings."""
+    if prompt == DEFAULT_PROMPT:
+        _, verdict = _check_answer_correctness(result.full_output or "")
+        print(f"\nConclusion: {verdict}")
+
+    if result.full_output and _is_response_truncated(result.full_output, result.finish_reason):
+        print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
+        print(f"   Consider increasing --max-tokens (current: {max_tokens})")
+
+
+def _render_successful_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
+    """Render output for successful API calls."""
     prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
     max_tokens: int = getattr(args, "max_tokens", 2048)
 
+    if result.model_name:
+        print(f"\nModel: {result.model_name}")
+    print("\nPrompt:")
+    print(f'"{prompt}"')
+    print("\nResponse:")
+    print(result.full_output)
+
+    _render_timing_info(result, duration)
+    _render_correctness_check(prompt, result, max_tokens)
+    print()
+
+
+def _render_test_output(args: argparse.Namespace, result: TestResult, duration: float) -> None:
+    _print_result(result)
+
     if result.api_status and result.full_output:
-        # Show model name for local_llm
-        if result.model_name:
-            print(f"\nModel: {result.model_name}")
-        print("\nPrompt:")
-        print(f'"{prompt}"')
-        print("\nResponse:")
-        print(result.full_output)
-
-        # For local LLMs, show load time and inference time separately
-        if result.load_time is not None and result.inference_time is not None:
-            print(f"\nLoad time: {result.load_time:.2f}s")
-            print(f"Inference time: {result.inference_time:.2f}s")
-            print(f"Total time: {duration:.2f}s")
-        else:
-            print(f"\nResponse time: {duration:.2f}s")
-
-        # Check correctness if using the default genealogy prompt
-        if prompt == DEFAULT_PROMPT:
-            _, verdict = _check_answer_correctness(result.full_output)
-            print(f"\nConclusion: {verdict}")
-
-        if _is_response_truncated(result.full_output, result.finish_reason):
-            print(f"⚠️  WARNING: Response appears truncated (finish_reason: {result.finish_reason or 'unknown'})")
-            print(f"   Consider increasing --max-tokens (current: {max_tokens})")
-        print()
+        _render_successful_output(args, result, duration)
         return
 
     if result.api_status or not result.messages:

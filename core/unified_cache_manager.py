@@ -227,6 +227,43 @@ class UnifiedCacheManager:
             self._emit_cache_operation(service, endpoint, "set")
             self._update_cache_hit_ratio(service, endpoint)
 
+    def _invalidate_by_key(self, key: str) -> int:
+        """Invalidate a specific cache entry by key. Must hold _lock."""
+        entry = self._entries.get(key)
+        if entry is None:
+            return 0
+        self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
+        del self._entries[key]
+        self._update_cache_hit_ratio(entry.service, entry.endpoint)
+        return 1
+
+    def _invalidate_by_service_endpoint(self, service: str, endpoint: str) -> int:
+        """Invalidate all entries for a specific service + endpoint. Must hold _lock."""
+        keys_to_delete = [(k, v) for k, v in self._entries.items() if v.service == service and v.endpoint == endpoint]
+        for k, v in keys_to_delete:
+            self._emit_cache_operation(v.service, v.endpoint, "invalidate")
+            del self._entries[k]
+        if keys_to_delete:
+            self._update_cache_hit_ratio(service, endpoint)
+        return len(keys_to_delete)
+
+    def _invalidate_by_service(self, service: str) -> int:
+        """Invalidate all entries for a service. Must hold _lock."""
+        keys_to_delete = [(k, v) for k, v in self._entries.items() if v.service == service]
+        for k, v in keys_to_delete:
+            self._emit_cache_operation(v.service, v.endpoint, "invalidate")
+            del self._entries[k]
+            self._update_cache_hit_ratio(v.service, v.endpoint)
+        return len(keys_to_delete)
+
+    def _invalidate_all(self) -> int:
+        """Invalidate entire cache. Must hold _lock."""
+        for entry in self._entries.values():
+            self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
+        count = len(self._entries)
+        self._entries.clear()
+        return count
+
     def invalidate(
         self,
         service: Optional[str] = None,
@@ -245,41 +282,14 @@ class UnifiedCacheManager:
             Number of entries invalidated
         """
         with self._lock:
-            count = 0
-
             if key is not None:
-                # Invalidate specific key
-                entry = self._entries.get(key)
-                if entry is not None:
-                    self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
-                    del self._entries[key]
-                    self._update_cache_hit_ratio(entry.service, entry.endpoint)
-                    count = 1
+                count = self._invalidate_by_key(key)
             elif service is not None and endpoint is not None:
-                # Invalidate all entries for specific service + endpoint
-                keys_to_delete = [
-                    (k, v) for k, v in self._entries.items() if v.service == service and v.endpoint == endpoint
-                ]
-                for k, v in keys_to_delete:
-                    self._emit_cache_operation(v.service, v.endpoint, "invalidate")
-                    del self._entries[k]
-                if keys_to_delete:
-                    self._update_cache_hit_ratio(service, endpoint)
-                count = len(keys_to_delete)
+                count = self._invalidate_by_service_endpoint(service, endpoint)
             elif service is not None:
-                # Invalidate all entries for service
-                keys_to_delete = [(k, v) for k, v in self._entries.items() if v.service == service]
-                for k, v in keys_to_delete:
-                    self._emit_cache_operation(v.service, v.endpoint, "invalidate")
-                    del self._entries[k]
-                    self._update_cache_hit_ratio(v.service, v.endpoint)
-                count = len(keys_to_delete)
+                count = self._invalidate_by_service(service)
             else:
-                # Invalidate entire cache
-                for entry in self._entries.values():
-                    self._emit_cache_operation(entry.service, entry.endpoint, "invalidate")
-                count = len(self._entries)
-                self._entries.clear()
+                count = self._invalidate_all()
 
             self._stats["global"]["total_entries"] = len(self._entries)
             logger.info(f"Cache invalidated: {count} entries")
@@ -700,20 +710,18 @@ def _test_cache_singleton_instance() -> bool:
     return True
 
 
-def _test_cache_realistic_access_patterns() -> bool:
-    """Simulate mixed workloads and confirm hit rate floor."""
-    cache = get_unified_cache()
-    cache.clear()
-
-    # Seed cache with realistic patterns using trimmed counts for quick execution
+def _seed_profile_data(cache: "UnifiedCacheManager") -> None:
+    """Seed profile data with access pattern."""
     profile_payload = {"contactable": True}
     for idx in range(30):
         cache.set("ancestry", "profile_details", f"PROFILE_{idx:03d}", profile_payload, ttl=86400)
-
     for idx in range(30):
         for _ in range(2):
             cache.get("ancestry", "profile_details", f"PROFILE_{idx:03d}")
 
+
+def _seed_combined_data(cache: "UnifiedCacheManager") -> None:
+    """Seed combined details with variable access pattern."""
     combined_payload = {"shared_segments": 5}
     for idx in range(60):
         cache.set("ancestry", "combined_details", f"MATCH_{idx:04d}", combined_payload, ttl=3600)
@@ -722,6 +730,9 @@ def _test_cache_realistic_access_patterns() -> bool:
         for _ in range(access_count):
             cache.get("ancestry", "combined_details", f"MATCH_{idx:04d}")
 
+
+def _seed_badge_and_relationship_data(cache: "UnifiedCacheManager") -> None:
+    """Seed badge and relationship data."""
     badge_payload = {"badge": "DNA"}
     for idx in range(40):
         cache.set("ancestry", "badge_details", f"BADGE_{idx:04d}", badge_payload, ttl=3600)
@@ -733,6 +744,9 @@ def _test_cache_realistic_access_patterns() -> bool:
         cache.set("ancestry", "relationship_prob", f"REL_{idx:04d}", rel_payload, ttl=7200)
         cache.get("ancestry", "relationship_prob", f"REL_{idx:04d}")
 
+
+def _seed_tree_data(cache: "UnifiedCacheManager") -> None:
+    """Seed tree search data."""
     tree_payload = {"ids": [f"ID_{i}" for i in range(10)]}
     for batch in range(4):
         key = f"TREE_{batch:02d}"
@@ -740,14 +754,10 @@ def _test_cache_realistic_access_patterns() -> bool:
         for _ in range(3):
             cache.get("ancestry", "tree_search", key)
 
-    endpoints = [
-        "profile_details",
-        "combined_details",
-        "badge_details",
-        "relationship_prob",
-        "tree_search",
-    ]
 
+def _verify_cache_hit_rates(cache: "UnifiedCacheManager") -> bool:
+    """Verify cache statistics meet minimum thresholds."""
+    endpoints = ["profile_details", "combined_details", "badge_details", "relationship_prob", "tree_search"]
     total_hits = 0
     total_misses = 0
     for endpoint in endpoints:
@@ -760,6 +770,19 @@ def _test_cache_realistic_access_patterns() -> bool:
     overall_hit_rate = (total_hits / total_accesses) * 100 if total_accesses else 0.0
     assert overall_hit_rate >= 35.0, "Overall hit rate should meet minimum target"
     return True
+
+
+def _test_cache_realistic_access_patterns() -> bool:
+    """Simulate mixed workloads and confirm hit rate floor."""
+    cache = get_unified_cache()
+    cache.clear()
+
+    _seed_profile_data(cache)
+    _seed_combined_data(cache)
+    _seed_badge_and_relationship_data(cache)
+    _seed_tree_data(cache)
+
+    return _verify_cache_hit_rates(cache)
 
 
 def _test_create_ancestry_cache_config() -> bool:

@@ -594,59 +594,6 @@ class SendMessageResponse:
         return result
 
 
-# --- API Rate Limiter ---
-class ApiRateLimiter:
-    """Simple rate limiter for API calls to prevent overwhelming Ancestry servers."""
-
-    def __init__(self, max_calls_per_minute: int = 60, max_calls_per_hour: int = 1000) -> None:
-        self.max_calls_per_minute = max_calls_per_minute
-        self.max_calls_per_hour = max_calls_per_hour
-        self.minute_calls: list[datetime] = []
-        self.hour_calls: list[datetime] = []
-
-    def can_make_request(self) -> bool:
-        """Check if we can make a request without exceeding rate limits."""
-        current_time = datetime.now()
-
-        # Clean old entries
-        self.minute_calls = [t for t in self.minute_calls if (current_time - t).total_seconds() < 60]
-        self.hour_calls = [t for t in self.hour_calls if (current_time - t).total_seconds() < 3600]
-
-        # Check limits
-        if len(self.minute_calls) >= self.max_calls_per_minute:
-            return False
-        return not len(self.hour_calls) >= self.max_calls_per_hour
-
-    def record_request(self) -> None:
-        """Record that a request was made."""
-        current_time = datetime.now()
-        self.minute_calls.append(current_time)
-        self.hour_calls.append(current_time)
-
-    def wait_time_until_available(self) -> float:
-        """Get the time in seconds to wait until next request is allowed."""
-        if self.can_make_request():
-            return 0.0
-
-        current_time = datetime.now()
-
-        # Check minute limit
-        if len(self.minute_calls) >= self.max_calls_per_minute:
-            oldest_minute_call = min(self.minute_calls)
-            return max(0, 60 - (current_time - oldest_minute_call).total_seconds())
-
-        # Check hour limit
-        if len(self.hour_calls) >= self.max_calls_per_hour:
-            oldest_hour_call = min(self.hour_calls)
-            return max(0, 3600 - (current_time - oldest_hour_call).total_seconds())
-
-        return 0.0
-
-
-# Global rate limiter instance
-rate_limiter = ApiRateLimiter()
-
-
 # --- Helper Functions for parse_ancestry_person_details ---
 
 # Sub-helpers for _extract_name_from_api_details
@@ -1487,16 +1434,17 @@ def _validate_suggest_api_inputs(owner_tree_id: str):
         raise AncestryError("owner_tree_id is required for suggest API - Provide a valid tree ID")
 
 
-def _apply_rate_limiting(api_description: str):
-    """Apply rate limiting if available."""
-    if rate_limiter and PYDANTIC_AVAILABLE:
-        if not rate_limiter.can_make_request():
-            wait_time = rate_limiter.wait_time_until_available()
-            logger.warning(f"Rate limit reached for {api_description}. Waiting {wait_time:.1f}s")
-            import time
+def _apply_rate_limiting(api_description: str) -> None:
+    """Apply rate limiting using the global AdaptiveRateLimiter."""
+    try:
+        from rate_limiter import get_adaptive_rate_limiter
 
-            time.sleep(wait_time)
-        rate_limiter.record_request()
+        rate_limiter = get_adaptive_rate_limiter()
+        wait_time = rate_limiter.wait(api_description)
+        if wait_time > 0.1:  # Log only significant waits
+            logger.debug(f"Rate limit wait for {api_description}: {wait_time:.2f}s")
+    except Exception as e:
+        logger.debug(f"Rate limiting unavailable for {api_description}: {e}")
 
 
 def _build_suggest_url(owner_tree_id: str, base_url: str, search_criteria: dict[str, Any]) -> str:

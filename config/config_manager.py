@@ -818,50 +818,18 @@ class ConfigManager:
             if fallback_list:
                 config["ai_provider_fallbacks"] = fallback_list
 
-        ai_ctx_msgs = os.getenv("AI_CONTEXT_MESSAGES_COUNT")
-        if ai_ctx_msgs:
-            try:
-                config["ai_context_messages_count"] = int(ai_ctx_msgs)
-            except ValueError:
-                logger.warning(f"Invalid AI_CONTEXT_MESSAGES_COUNT: {ai_ctx_msgs}")
-
-        ai_ctx_max_words = os.getenv("AI_CONTEXT_MESSAGE_MAX_WORDS")
-        if ai_ctx_max_words:
-            try:
-                config["ai_context_message_max_words"] = int(ai_ctx_max_words)
-            except ValueError:
-                logger.warning(f"Invalid AI_CONTEXT_MESSAGE_MAX_WORDS: {ai_ctx_max_words}")
-
-        ai_ctx_window = os.getenv("AI_CONTEXT_WINDOW_MESSAGES")
-        if ai_ctx_window:
-            try:
-                config["ai_context_window_messages"] = int(ai_ctx_window)
-            except ValueError:
-                logger.warning(f"Invalid AI_CONTEXT_WINDOW_MESSAGES: {ai_ctx_window}")
+        # Use helper functions for integer env vars
+        ConfigManager._load_int_env_var(config, "AI_CONTEXT_MESSAGES_COUNT", "ai_context_messages_count")
+        ConfigManager._load_int_env_var(config, "AI_CONTEXT_MESSAGE_MAX_WORDS", "ai_context_message_max_words")
+        ConfigManager._load_int_env_var(config, "AI_CONTEXT_WINDOW_MESSAGES", "ai_context_window_messages")
 
     @staticmethod
     def _load_timeout_config_from_env(config: dict[str, Any]) -> None:
         """Load timeout configuration from environment variables."""
-        refresh_cooldown = os.getenv("PROACTIVE_REFRESH_COOLDOWN")
-        if refresh_cooldown:
-            try:
-                config["proactive_refresh_cooldown_seconds"] = int(refresh_cooldown)
-            except ValueError:
-                logger.warning(f"Invalid PROACTIVE_REFRESH_COOLDOWN: {refresh_cooldown}")
-
-        refresh_interval = os.getenv("PROACTIVE_REFRESH_INTERVAL")
-        if refresh_interval:
-            try:
-                config["proactive_refresh_interval_seconds"] = int(refresh_interval)
-            except ValueError:
-                logger.warning(f"Invalid PROACTIVE_REFRESH_INTERVAL: {refresh_interval}")
-
-        a6_coord_timeout = os.getenv("ACTION6_COORD_TIMEOUT")
-        if a6_coord_timeout:
-            try:
-                config["action6_coord_timeout_seconds"] = int(a6_coord_timeout)
-            except ValueError:
-                logger.warning(f"Invalid ACTION6_COORD_TIMEOUT: {a6_coord_timeout}")
+        # Use helper functions for integer env vars
+        ConfigManager._load_int_env_var(config, "PROACTIVE_REFRESH_COOLDOWN", "proactive_refresh_cooldown_seconds")
+        ConfigManager._load_int_env_var(config, "PROACTIVE_REFRESH_INTERVAL", "proactive_refresh_interval_seconds")
+        ConfigManager._load_int_env_var(config, "ACTION6_COORD_TIMEOUT", "action6_coord_timeout_seconds")
 
     @staticmethod
     def _load_env_var_if_present(api_config: dict[str, Any], env_var: str, config_key: str) -> None:
