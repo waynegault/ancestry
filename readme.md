@@ -25,6 +25,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 ## Recent Improvements (November 2025)
 
+- ✅ **Unified Configuration Validation Layer (Nov 26)** - Created `config/validator.py` with comprehensive startup validation: `ConfigurationValidator` class validates ALL config sections (environment, database, API, rate limiting, Selenium, AI provider, paths, processing limits) with clear actionable error messages. Added `health` menu action for interactive configuration health check. `ValidationReport` aggregates pass/fail results with severity levels.
 - ✅ **SessionManager Public API Expansion (Nov 26)** - Added public methods for performance tracking (`update_response_time_tracking`, `reset_response_time_tracking`), CSRF caching (`set_cached_csrf_token`, `get_cached_csrf_token`), and session validation (`update_cookie_sync_time`, `clear_last_readiness_check`). Eliminates protected member access patterns in action modules.
 - ✅ **Function Visibility Improvements (Nov 26)** - Made `gedcom_utils.normalize_id()` and `actions.gather.orchestrator.initialize_gather_state()/validate_start_page()` public functions for cross-module use. Fixed E721 type comparison and N817 camelcase import linter errors.
 - ✅ **AI Provider Adapter Framework (Nov 29)** - Added `ai/providers/base.py` plus Gemini and DeepSeek adapters, introduced `ai/prompts.py` for centralized prompt/experiment loading, and refactored `ai_interface.py` to register providers through the adapter registry with structured telemetry payloads.

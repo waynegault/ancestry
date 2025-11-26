@@ -417,6 +417,19 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
+                id="health",
+                name="Configuration Health Check",
+                description="Validate all configuration settings and show detailed report",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=145,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
                 id="t",
                 name="Toggle Console Log Level",
                 description="Toggle between INFO and DEBUG log levels",

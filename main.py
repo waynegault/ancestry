@@ -105,6 +105,7 @@ _run_all_tests = _cli_helpers.run_all_tests
 _open_graph_visualization = _cli_helpers.open_graph_visualization
 _show_analytics_dashboard = _cli_helpers.show_analytics_dashboard
 _show_cache_statistics = _cli_helpers.show_cache_statistics
+_run_config_health_check = _cli_helpers.run_config_health_check
 _run_schema_migrations_action = _cli_helpers.run_schema_migrations_action
 _toggle_log_level = _cli_helpers.toggle_log_level
 _show_metrics_report = _cli_helpers.show_metrics_report
@@ -330,6 +331,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("setup-grafana", _run_grafana_setup)
     registry.set_action_function("graph", _open_graph_visualization)
     registry.set_action_function("s", _show_cache_statistics)
+    registry.set_action_function("health", _run_config_health_check)
     registry.set_action_function("migrate-db", _run_schema_migrations_action)
     registry.set_action_function("t", _toggle_log_level)
     registry.set_action_function("c", _clear_screen)

@@ -476,6 +476,27 @@ class MainCLIHelpers:
         input("\nPress Enter to continue...")
 
     # ------------------------------------------------------------------
+    # Configuration health check
+    # ------------------------------------------------------------------
+
+    def run_config_health_check(self) -> None:
+        """Run comprehensive configuration health check and display report."""
+        try:
+            os.system("cls" if os.name == "nt" else "clear")
+            from config.validator import run_health_check
+
+            run_health_check()
+            self._logger.debug("Configuration health check completed")
+        except ImportError as exc:
+            self._logger.error("Configuration validator not available: %s", exc)
+            print("Configuration health check module not available.")
+        except Exception as exc:  # pragma: no cover - console I/O
+            self._logger.error("Error running configuration health check: %s", exc, exc_info=True)
+            print("Error running configuration health check. Check logs for details.")
+
+        input("\nPress Enter to continue...")
+
+    # ------------------------------------------------------------------
     # Database/schema utilities
     # ------------------------------------------------------------------
 
