@@ -43,6 +43,8 @@ except Exception:  # pragma: no cover - fallback when bootstrap module missing
         logger_obj = logging.getLogger(module_name)
         module_globals["logger"] = logger_obj
         return logger_obj
+
+
 logger = setup_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -200,6 +202,7 @@ def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], b
 
     return _create_standard_test_runner(test_func)
 
+
 # === SESSION COMPONENT CACHE ===
 
 
@@ -276,11 +279,10 @@ class SessionComponentCache(_TypedBaseCacheModule):
                     # Return deep copy for mutable objects to prevent cache corruption
                     if isinstance(component, (dict, list)):
                         import copy
+
                         return copy.deepcopy(component)
                     return component
-                logger.debug(
-                    f"Cache EXPIRED for {component_type} (age: {age:.1f}s)"
-                )
+                logger.debug(f"Cache EXPIRED for {component_type} (age: {age:.1f}s)")
                 # Let existing cache eviction handle cleanup
 
             logger.debug(f"Cache MISS for {component_type}")
@@ -447,9 +449,7 @@ def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], 
             # Cache for future use if expensive
             if creation_time > 0.1:  # Only cache expensive operations
                 _session_cache.cache_component(component_type, component)
-                logger.debug(
-                    f"Cached {component_type} (creation time: {creation_time:.2f}s)"
-                )
+                logger.debug(f"Cached {component_type} (creation time: {creation_time:.2f}s)")
 
             return component
 
@@ -460,22 +460,110 @@ def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], 
 
 def cached_database_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for DatabaseManager caching"""
-    return cached_session_component("database_manager")
+
+    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(creation_func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            cached_component = _session_cache.get_cached_component("database_manager")
+            if cached_component is not None:
+                logger.debug("Reusing cached database_manager")
+                return cast(R, cached_component)
+
+            logger.debug("Creating new database_manager")
+            start_time = time.time()
+            component = creation_func(*args, **kwargs)
+            creation_time = time.time() - start_time
+
+            if creation_time > 0.1:
+                _session_cache.cache_component("database_manager", component)
+                logger.debug(f"Cached database_manager (creation time: {creation_time:.2f}s)")
+
+            return component
+
+        return wrapper
+
+    return decorator
 
 
 def cached_browser_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for BrowserManager caching"""
-    return cached_session_component("browser_manager")
+
+    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(creation_func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            cached_component = _session_cache.get_cached_component("browser_manager")
+            if cached_component is not None:
+                logger.debug("Reusing cached browser_manager")
+                return cast(R, cached_component)
+
+            logger.debug("Creating new browser_manager")
+            start_time = time.time()
+            component = creation_func(*args, **kwargs)
+            creation_time = time.time() - start_time
+
+            if creation_time > 0.1:
+                _session_cache.cache_component("browser_manager", component)
+                logger.debug(f"Cached browser_manager (creation time: {creation_time:.2f}s)")
+
+            return component
+
+        return wrapper
+
+    return decorator
 
 
 def cached_api_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for APIManager caching"""
-    return cached_session_component("api_manager")
+
+    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(creation_func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            cached_component = _session_cache.get_cached_component("api_manager")
+            if cached_component is not None:
+                logger.debug("Reusing cached api_manager")
+                return cast(R, cached_component)
+
+            logger.debug("Creating new api_manager")
+            start_time = time.time()
+            component = creation_func(*args, **kwargs)
+            creation_time = time.time() - start_time
+
+            if creation_time > 0.1:
+                _session_cache.cache_component("api_manager", component)
+                logger.debug(f"Cached api_manager (creation time: {creation_time:.2f}s)")
+
+            return component
+
+        return wrapper
+
+    return decorator
 
 
 def cached_session_validator() -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator specifically for SessionValidator caching"""
-    return cached_session_component("session_validator")
+
+    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
+        @wraps(creation_func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            cached_component = _session_cache.get_cached_component("session_validator")
+            if cached_component is not None:
+                logger.debug("Reusing cached session_validator")
+                return cast(R, cached_component)
+
+            logger.debug("Creating new session_validator")
+            start_time = time.time()
+            component = creation_func(*args, **kwargs)
+            creation_time = time.time() - start_time
+
+            if creation_time > 0.1:
+                _session_cache.cache_component("session_validator", component)
+                logger.debug(f"Cached session_validator (creation time: {creation_time:.2f}s)")
+
+            return component
+
+        return wrapper
+
+    return decorator
 
 
 # === SESSION STATE OPTIMIZATION ===
