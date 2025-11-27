@@ -475,9 +475,9 @@ def detect_status_change_to_in_tree(person: Person) -> bool:
 def load_message_templates() -> dict[str, str]:
     """Load message templates from database MessageTemplate table."""
     try:
-        from session_utils import get_global_session  # Use global session only
+        from session_utils import get_session_manager  # Use global session only
 
-        session_manager = get_global_session()
+        session_manager = get_session_manager()
         if session_manager is None:
             logger.critical(
                 "No global session registered. main.py must register the global session before loading templates."
@@ -560,9 +560,9 @@ def ensure_message_personalizer() -> Optional[_Any]:
     """Lazily initialize and return the MessagePersonalizer when session is ready."""
     if _MESSAGE_STATE.personalizer is None and MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
         try:
-            from session_utils import get_global_session  # Local import to avoid import-time session access
+            from session_utils import get_session_manager  # Local import to avoid import-time session access
 
-            session_mgr = get_global_session()
+            session_mgr = get_session_manager()
             if session_mgr:
                 _MESSAGE_STATE.personalizer = MessagePersonalizer()
             else:
@@ -775,13 +775,13 @@ def _get_session_manager(session_manager: Optional[SessionManager]) -> Optional[
         return session_manager
 
     try:
-        from session_utils import get_global_session as runtime_get_global_session
+        from session_utils import get_session_manager as runtime_get_session_manager
     except Exception as exc:
         logger.critical(f"Failed to import session_utils while loading global session: {exc}")
         return None
 
     try:
-        sm = runtime_get_global_session()
+        sm = runtime_get_session_manager()
     except Exception as exc:
         logger.critical(f"Failed to obtain global session: {exc}")
         return None
@@ -2258,10 +2258,10 @@ def _format_predicted_relationship(rel_str: str) -> str:
 
 def _get_owner_profile_id() -> Optional[str]:
     """Get tree owner's profile ID from session manager or config."""
-    from session_utils import get_global_session
+    from session_utils import get_session_manager
 
     # Try to get from session manager first
-    session_manager = get_global_session()
+    session_manager = get_session_manager()
     if session_manager:
         owner_profile_id = session_manager.my_profile_id
         if owner_profile_id:
@@ -4882,11 +4882,11 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
 def _test_status_change_template_exists() -> bool:
     """Test that In_Tree-Status_Change_Update template exists in database."""
     from database import MessageTemplate
-    from session_utils import get_global_session
+    from session_utils import get_session_manager
 
     # Skip test if no global session available (like other live tests)
     try:
-        sm = get_global_session()
+        sm = get_session_manager()
         if sm is None:
             logger.info("Skipping live test (no global session available)")
             return True

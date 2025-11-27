@@ -13,10 +13,11 @@ ARCHITECTURE (DI-based):
 4. All action functions receive session_manager as first parameter
 5. Helper functions use @requires_session decorator or get_session_manager()
 
-MIGRATION PATH:
-- set_global_session() → register_session_manager() (both work, prefer DI)
-- get_global_session() → get_session_manager() (both work, prefer DI)
-- get_authenticated_session() → use @requires_session decorator
+API:
+- register_session_manager() - Register SessionManager at startup
+- get_session_manager() - Get SessionManager from DI container
+- is_session_available() - Check if session is registered
+- @requires_session - Decorator for functions needing session
 
 BENEFITS:
 - Testability: Easy to inject mocks via DI container
@@ -67,6 +68,7 @@ GLOBAL_SESSION = _State()
 def _get_di_container() -> Any:
     """Get the DI container (lazy import to avoid circular dependencies)."""
     from core.dependency_injection import get_container
+
     return get_container()
 
 
@@ -186,10 +188,7 @@ def requires_session(
                 sm.ensure_session_ready(func_action_name, skip_csrf=skip_csrf)
             except Exception as e:
                 logger.error(f"Session not ready for {func_action_name}: {e}")
-                raise SessionNotAvailableError(
-                    func.__name__,
-                    f"Session exists but is not ready: {e}"
-                ) from e
+                raise SessionNotAvailableError(func.__name__, f"Session exists but is not ready: {e}") from e
 
             # Inject session if requested
             if inject_session:
@@ -199,37 +198,6 @@ def requires_session(
         return wrapper
 
     return decorator
-
-
-# ==============================================
-# LEGACY FUNCTIONS (BACKWARD COMPATIBILITY)
-# ==============================================
-
-
-def set_global_session(session_manager: SessionManager) -> None:
-    """
-    Register a SessionManager as the global session.
-
-    DEPRECATED: Use register_session_manager() instead.
-    Kept for backward compatibility - internally calls register_session_manager().
-
-    Args:
-        session_manager: The SessionManager instance to register globally
-    """
-    register_session_manager(session_manager)
-
-
-def get_global_session() -> Optional[SessionManager]:
-    """
-    Get the global session manager if it exists.
-
-    DEPRECATED: Use get_session_manager() instead.
-    Kept for backward compatibility - internally calls get_session_manager().
-
-    Returns:
-        Optional[SessionManager]: The cached session manager, or None if not set
-    """
-    return get_session_manager()
 
 
 def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
@@ -272,7 +240,7 @@ def _assert_global_session_exists() -> None:
     if not is_session_available():
         raise RuntimeError(
             "No session available. main.py must call register_session_manager() "
-            "(or set_global_session()) before any actions or tests can run. "
+            "Ensure main.py has called register_session_manager() before any actions or tests can run. "
             "If running a script directly, ensure main.py has been run first."
         )
 
@@ -338,6 +306,7 @@ def clear_cached_session() -> None:
     # Clear DI container registration
     try:
         from core.dependency_injection import ServiceRegistry
+
         ServiceRegistry.clear_container("default")
     except Exception:
         pass
@@ -440,7 +409,7 @@ def _test_global_session_set() -> bool:
     mock_sm = MagicMock()
     mock_sm.my_uuid = "test-uuid-12345"
     mock_sm.ensure_session_ready.return_value = True
-    set_global_session(mock_sm)
+    register_session_manager(mock_sm)
 
     # Get global session
     sm, uuid = get_authenticated_session("Test Action")
@@ -464,7 +433,7 @@ def _test_ensure_session_for_tests_wrapper() -> bool:
     mock_sm = MagicMock()
     mock_sm.my_uuid = "wrapper-test-uuid"
     mock_sm.ensure_session_ready.return_value = True
-    set_global_session(mock_sm)
+    register_session_manager(mock_sm)
 
     # Test wrapper
     sm, uuid = ensure_session_for_tests("Test Action")

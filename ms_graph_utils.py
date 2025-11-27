@@ -56,9 +56,7 @@ logger.debug("Loading MS Graph configuration from environment...")
 CLIENT_ID: Optional[str] = os.getenv("MS_GRAPH_CLIENT_ID")
 # Tenant ID (Directory ID). Defaults to 'consumers' for multi-tenant apps / personal accounts.
 # Use 'common' for multi-tenant work/school/personal, or specific tenant ID.
-TENANT_ID: Optional[str] = os.getenv(
-    "MS_GRAPH_TENANT_ID", "consumers"
-)  # Default to consumers
+TENANT_ID: Optional[str] = os.getenv("MS_GRAPH_TENANT_ID", "consumers")  # Default to consumers
 
 # --- Critical Check: Client ID is Required ---
 if not CLIENT_ID:
@@ -94,9 +92,7 @@ try:
         logger.error("config.database.data_dir is None. Cache will be in-memory only.")
         cache_filepath = None
 except Exception as dir_err:
-    logger.error(
-        f"Could not create DATA_DIR for MSAL cache: {dir_err}. Cache will be in-memory only."
-    )
+    logger.error(f"Could not create DATA_DIR for MSAL cache: {dir_err}. Cache will be in-memory only.")
     cache_filepath = None  # Set path to None if directory fails
 
 # Step 6: Initialize MSAL Serializable Token Cache
@@ -112,9 +108,7 @@ if cache_filepath:
         else:
             logger.debug("MSAL cache file not found. Starting with empty cache.")
     except Exception as e:
-        logger.warning(
-            f"Failed to load MSAL cache from {cache_filepath}: {e}. Starting with empty cache."
-        )
+        logger.warning(f"Failed to load MSAL cache from {cache_filepath}: {e}. Starting with empty cache.")
 
 
 # Step 8: Define function to save cache on script exit
@@ -134,9 +128,7 @@ def save_cache_on_exit() -> None:
             cache_filepath.parent.mkdir(parents=True, exist_ok=True)
             # Serialize and write cache data
             cache_data_to_save = persistent_cache.serialize()
-            logger.debug(
-                f"Serialized cache data length: {len(cache_data_to_save)} bytes."
-            )
+            logger.debug(f"Serialized cache data length: {len(cache_data_to_save)} bytes.")
             cache_filepath.write_text(cache_data_to_save, encoding="utf-8")
             logger.debug("Successfully saved MSAL token cache.")
             # Optional: Reset flag manually after save if needed, though MSAL might handle this.
@@ -144,9 +136,7 @@ def save_cache_on_exit() -> None:
         else:
             logger.debug("MSAL cache unchanged since last load/save. No save needed.")
     except Exception as e:
-        logger.error(
-            f"Failed to save MSAL cache to {cache_filepath}: {e}", exc_info=True
-        )
+        logger.error(f"Failed to save MSAL cache to {cache_filepath}: {e}", exc_info=True)
 
 
 # End of save_cache_on_exit
@@ -164,13 +154,9 @@ if CLIENT_ID and authority:  # Only initialize if config is valid
             authority=authority,
             token_cache=persistent_cache,  # Link the persistent cache
         )
-        logger.debug(
-            "Initialized shared MSAL PublicClientApplication with persistent cache."
-        )
+        logger.debug("Initialized shared MSAL PublicClientApplication with persistent cache.")
     except Exception as msal_init_e:
-        logger.error(
-            f"Failed to initialize MSAL PublicClientApplication: {msal_init_e}"
-        )
+        logger.error(f"Failed to initialize MSAL PublicClientApplication: {msal_init_e}")
         msal_app_instance = None  # Ensure it's None on failure
 
 # --- Core Authentication and API Functions ---
@@ -233,7 +219,9 @@ def _process_device_flow_result(result: Optional[dict[str, Any]]) -> Optional[st
 
     if "access_token" in result:
         logger.info("Access token acquired successfully via device flow.")
-        user_info = result.get("id_token_claims", {}).get("preferred_username") or result.get("id_token_claims", {}).get("name", "Unknown User")
+        user_info = result.get("id_token_claims", {}).get("preferred_username") or result.get(
+            "id_token_claims", {}
+        ).get("name", "Unknown User")
         logger.info(f"Authenticated as: {user_info}")
 
         # Save cache immediately after successful authentication
@@ -248,7 +236,9 @@ def _process_device_flow_result(result: Optional[dict[str, Any]]) -> Optional[st
         return result["access_token"]
 
     if "error_description" in result:
-        logger.error(f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}")
+        logger.error(
+            f"Failed to acquire token via device flow: {result.get('error_description', 'No description provided')}"
+        )
         return None
 
     logger.error(f"Device flow failed, timed out, or returned unexpected result: {result}")
@@ -323,9 +313,13 @@ def _handle_list_query_http_error(http_err: requests.exceptions.HTTPError) -> No
     """Handle HTTP errors from list query."""
     status_code = http_err.response.status_code
     if status_code in {401, 403}:
-        logger.error(f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}")
+        logger.error(
+            f"MS Graph Auth Error ({status_code}) querying To-Do lists. Token expired or invalid permissions? Error: {http_err}"
+        )
     elif status_code == 404:
-        logger.error(f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}")
+        logger.error(
+            f"MS Graph Not Found Error (404) querying To-Do lists. Base API endpoint correct? Error: {http_err}"
+        )
     else:
         logger.error(f"HTTP error querying To-Do lists: {http_err}", exc_info=False)
 
@@ -386,7 +380,9 @@ def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, li
     """Handle HTTP errors from task creation."""
     status_code = http_err.response.status_code
     if status_code in {401, 403}:
-        logger.error(f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}")
+        logger.error(
+            f"MS Graph Auth Error ({status_code}) creating task. Token expired/invalid permissions? Error: {http_err}"
+        )
     elif status_code == 400:
         logger.error(f"MS Graph Bad Request (400) creating task. Payload invalid? Error: {http_err}")
     elif status_code == 404:
@@ -417,10 +413,7 @@ def _build_task_payload(
 
     if due_date:
         # MS Graph expects dueDateTime in specific format
-        task_data["dueDateTime"] = {
-            "dateTime": f"{due_date}T00:00:00",
-            "timeZone": "UTC"
-        }
+        task_data["dueDateTime"] = {"dateTime": f"{due_date}T00:00:00", "timeZone": "UTC"}
 
     if categories:
         task_data["categories"] = categories
@@ -526,9 +519,7 @@ def test_initialization():
     assert hasattr(config.database, "data_dir"), "Config should have database.data_dir"
     # Test token cache directory creation capability
     cache_dir = config.database.data_dir or Path()
-    assert (
-        cache_dir.exists() or cache_dir.parent.exists()
-    ), "Cache directory or parent should be accessible"
+    assert cache_dir.exists() or cache_dir.parent.exists(), "Cache directory or parent should be accessible"
 
     # Test MSAL availability
     assert msal is not None, "MSAL library should be available"
@@ -542,9 +533,7 @@ def test_core_functionality():
     """Test core Graph API functions."""
 
     # Test authentication function structure
-    assert callable(
-        acquire_token_device_flow
-    ), "acquire_token_device_flow should be callable"
+    assert callable(acquire_token_device_flow), "acquire_token_device_flow should be callable"
 
     # Test with mock MSAL client using test data
     test_token_12345 = "test_token_12345"
@@ -557,16 +546,12 @@ def test_core_functionality():
             "user_code": "TEST12345",
             "device_code": "DEV12345",
         }
-        mock_app.acquire_token_by_device_flow.return_value = {
-            "access_token": test_token_12345
-        }
+        mock_app.acquire_token_by_device_flow.return_value = {"access_token": test_token_12345}
 
         # Test device flow with mock response
         result = acquire_token_device_flow()
         # Result may be None due to mocked environment, which is acceptable
-        assert result is None or isinstance(
-            result, str
-        ), "Device flow should return None or string"
+        assert result is None or isinstance(result, str), "Device flow should return None or string"
 
 
 def test_edge_cases():
@@ -598,6 +583,7 @@ def test_edge_cases():
         try:
             # Test that permission errors are handled
             from pathlib import Path
+
             with Path("test_file").open("w", encoding="utf-8") as f:
                 f.write("test")
         except PermissionError:
@@ -635,9 +621,7 @@ def test_performance():
     start_time = time.time()
 
     # Simulate Graph API call structure
-    mock_response = {
-        "value": [{"id": f"item_{i}", "name": f"Test Item {i}"} for i in range(100)]
-    }
+    mock_response = {"value": [{"id": f"item_{i}", "name": f"Test Item {i}"} for i in range(100)]}
 
     # Test data processing
     processed_count = 0
@@ -713,11 +697,8 @@ def test_enhanced_task_creation():
         "title": "Test Task",
         "body": {"content": "Test body", "contentType": "text"},
         "importance": "high",
-        "dueDateTime": {
-            "dateTime": f"{test_due_date}T00:00:00",
-            "timeZone": "UTC"
-        },
-        "categories": test_categories
+        "dueDateTime": {"dateTime": f"{test_due_date}T00:00:00", "timeZone": "UTC"},
+        "categories": test_categories,
     }
 
     assert "importance" in task_data, "Task data should include importance"
@@ -734,7 +715,7 @@ def test_enhanced_task_creation():
         "3rd cousin": "normal",
         "4th cousin": "normal",
         "5th cousin": "low",
-        "distant": "low"
+        "distant": "low",
     }
 
     for relationship, expected_priority in relationship_priority_map.items():

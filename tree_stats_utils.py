@@ -107,9 +107,9 @@ def _collect_explicit_profile_ids(profile_ids: Optional[list[str]]) -> list[str]
 
 def _get_session_profile_id() -> Optional[str]:
     try:
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        session_manager = get_global_session()
+        session_manager = get_session_manager()
         if session_manager and session_manager.my_profile_id:
             return session_manager.my_profile_id
     except Exception:
@@ -183,9 +183,9 @@ def _validate_profile_owner(session: Session, profile_id: str) -> bool:
         return True
 
     # Check if this is the tree owner (not a DNA match)
-    from session_utils import get_global_session
+    from session_utils import get_session_manager
 
-    session_manager = get_global_session()
+    session_manager = get_session_manager()
     tree_owner_id = session_manager.my_profile_id if session_manager else None
 
     # Fallback to .env if session manager not available
@@ -562,9 +562,9 @@ def calculate_ethnicity_commonality(session: Session, owner_profile_id: str, mat
 
     try:
         # Check if owner_profile_id is the tree owner (not in Person table)
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        session_manager = get_global_session()
+        session_manager = get_session_manager()
         tree_owner_id = session_manager.my_profile_id if session_manager else None
 
         # Fallback to .env if session manager not available
@@ -679,9 +679,9 @@ def _test_calculate_tree_statistics_with_valid_profile() -> None:
     try:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
@@ -754,9 +754,9 @@ def _test_statistics_cache_hit() -> None:
     try:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
 
@@ -785,9 +785,9 @@ def _test_statistics_match_counts() -> None:
     try:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
@@ -867,9 +867,9 @@ def _test_statistics_with_tree_owner() -> None:
     try:
         # Use tree owner profile_id from session manager or .env fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
 
@@ -892,9 +892,9 @@ def _test_statistics_timestamp_format() -> None:
     try:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)
@@ -916,9 +916,9 @@ def _test_statistics_ethnicity_regions_structure() -> None:
     try:
         # Use tree owner profile_id from session manager or test config fallback
         from config import config_schema
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
-        sm = get_global_session()
+        sm = get_session_manager()
         tree_owner_id = sm.my_profile_id if sm else config_schema.test.test_profile_id
         assert tree_owner_id is not None, "Tree owner ID should not be None"
         stats = calculate_tree_statistics(session, tree_owner_id)

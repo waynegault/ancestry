@@ -9,7 +9,7 @@ sys.path.append(str(Path.cwd()))
 
 from core.action_runner import exec_actn
 from core.workflow_actions import gather_dna_matches, process_productive_messages_action, srch_inbox_actn
-from session_utils import get_global_session
+from session_utils import get_session_manager
 from test_framework import TestSuite
 from test_utilities import LiveSessionHandle, create_standard_test_runner, live_session_fixture
 
@@ -33,7 +33,7 @@ def _run_with_live_session(action_label: str, executor: Callable[[LiveSessionHan
         _log_skip(action_label, "SKIP_LIVE_API_TESTS=true")
         return True
 
-    if get_global_session() is None:
+    if get_session_manager() is None:
         _log_skip(action_label, "global session not initialized (run main.py to authenticate before tests)")
         return True
 

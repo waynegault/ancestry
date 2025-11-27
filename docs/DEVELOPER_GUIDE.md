@@ -119,7 +119,7 @@ def process_matches(session_manager: SessionManager, matches: list):
 
 **Key Features:**
 - Uses DI container (`core/dependency_injection.py`)
-- Backward compatible: `get_global_session()` still works
+- Modern DI pattern: use `get_session_manager()` and `register_session_manager()`
 - Thread-safe access
 - Clear error messages via `SessionNotAvailableError`
 

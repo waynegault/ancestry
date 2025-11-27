@@ -2550,10 +2550,10 @@ def test_api_search_test_person() -> None:
     try:
         # Import API search function
         from api_search_core import search_ancestry_api_for_person
-        from session_utils import get_global_session
+        from session_utils import get_session_manager
 
         # Get global session (must be initialized by main.py)
-        session_manager = get_global_session()
+        session_manager = get_session_manager()
 
         if not session_manager:
             print(
@@ -3410,9 +3410,9 @@ if __name__ == "__main__":
         print("🧪 Running Action 10 comprehensive test suite...")
 
         # Initialize session for tests if running standalone
-        from session_utils import get_global_session, set_global_session
+        from session_utils import get_session_manager, register_session_manager
 
-        if not get_global_session():
+        if not get_session_manager():
             print("⚙️ Initializing global session for standalone tests...")
             try:
                 # Create a session manager (this may launch browser if needed by tests)
@@ -3421,7 +3421,7 @@ if __name__ == "__main__":
                 # Use 'action10_api_test' to allow skipping strict 'trees' cookie check if configured
                 if not sm.ensure_session_ready(action_name="action10_api_test"):
                     print("⚠️ Failed to ensure session is ready - API tests may fail")
-                set_global_session(sm)
+                register_session_manager(sm)
                 print("✅ Global session initialized")
             except Exception as e:
                 print(f"⚠️ Failed to initialize session: {e}")
@@ -3436,7 +3436,7 @@ if __name__ == "__main__":
             success = False
         finally:
             # Cleanup session if we created it
-            sm = get_global_session()
+            sm = get_session_manager()
             if sm:
                 print("🧹 Closing session...")
                 sm.close_sess()

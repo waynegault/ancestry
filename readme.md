@@ -920,7 +920,7 @@ For issues or questions:
 - Eliminated module-level SessionManager creation in action11.py; switched to global session usage only
 - Consolidated Action 11 authentication to a single path via session_utils.get_authenticated_session()
 - Removed redundant login/cookie helper functions from action11.py
-- Updated action8_messaging.py to load templates and get session via session_utils.get_global_session()
+- Updated action8_messaging.py to load templates and get session via session_utils.get_session_manager()
 - Updated scripts/test_editrelationships_shape.py to require/use the global session
 - Deferred Action 8 template loading to runtime (lazy initialization); eliminated import-time CRITICALs
 - Added de-duplication for gender inference DEBUG logs in relationship_utils
@@ -975,7 +975,7 @@ For issues or questions:
 
 - Session Architecture
   - Exactly one SessionManager instance created by main.py
-  - Registered globally via session_utils.set_global_session()
+  - Registered globally via session_utils.register_session_manager()
   - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
 
 - API Endpoints (do not change these - they work!)
