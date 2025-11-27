@@ -58,6 +58,23 @@ try:
         handle_error,
         safe_execute,
     )
+    from .protocols import (
+        APIResponse,
+        BudgetInfo,
+        CacheProtocol,
+        CorrelationData,
+        DatabaseSessionProtocol,
+        HealthStatus,
+        JSONDict,
+        JSONList,
+        JSONValue,
+        LoggerProtocol,
+        MatchData,
+        PersonData,
+        RateLimiterMetrics,
+        RateLimiterProtocol,
+        TestResult,
+    )
     from .session_manager import SessionManager
     from .session_validator import SessionValidator
 except ImportError:
@@ -100,26 +117,57 @@ except ImportError:
     handle_error = DummyComponent("handle_error")
     safe_execute = DummyComponent("safe_execute")
     ErrorContext = DummyComponent("ErrorContext")
+    # Protocol dummies
+    RateLimiterProtocol = DummyComponent("RateLimiterProtocol")
+    DatabaseSessionProtocol = DummyComponent("DatabaseSessionProtocol")
+    LoggerProtocol = DummyComponent("LoggerProtocol")
+    CacheProtocol = DummyComponent("CacheProtocol")
+    APIResponse = DummyComponent("APIResponse")
+    PersonData = DummyComponent("PersonData")
+    MatchData = DummyComponent("MatchData")
+    RateLimiterMetrics = DummyComponent("RateLimiterMetrics")
+    BudgetInfo = DummyComponent("BudgetInfo")
+    TestResult = DummyComponent("TestResult")
+    HealthStatus = DummyComponent("HealthStatus")
+    CorrelationData = DummyComponent("CorrelationData")
+    JSONValue = DummyComponent("JSONValue")
+    JSONDict = DummyComponent("JSONDict")
+    JSONList = DummyComponent("JSONList")
 
 __all__ = [
     "APIError",
     "APIManager",
+    "APIResponse",
     "AppError",
     "AuthenticationError",
     "BrowserError",
     "BrowserManager",
+    "BudgetInfo",
+    "CacheProtocol",
     "ConfigurationError",
+    "CorrelationData",
     "DIContainer",
     "DIScope",
     "DatabaseError",
     "DatabaseManager",
+    "DatabaseSessionProtocol",
     "ErrorCategory",
     "ErrorContext",
     "ErrorSeverity",
+    "HealthStatus",
     "Injectable",
+    "JSONDict",
+    "JSONList",
+    "JSONValue",
+    "LoggerProtocol",
+    "MatchData",
     "NetworkError",
+    "PersonData",
+    "RateLimiterMetrics",
+    "RateLimiterProtocol",
     "SessionManager",
     "SessionValidator",
+    "TestResult",
     "ValidationError",
     "configure_dependencies",
     "error_handler",
@@ -233,6 +281,7 @@ except ImportError:
     # If running from subdirectory, add parent to path
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from test_utilities import create_standard_test_runner
 

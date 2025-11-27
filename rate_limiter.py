@@ -1075,7 +1075,8 @@ class AdaptiveRateLimiter:
         minutes = int((seconds % 3600) // 60)
         return f"~{hours}h {minutes}m"
 
-    def log_throttle_warning(self, wait_time: float, reason: str = "") -> None:
+    @staticmethod
+    def log_throttle_warning(wait_time: float, reason: str = "") -> None:
         """
         Log a user-visible warning when throttling occurs.
 
@@ -1875,13 +1876,13 @@ def _test_health_status() -> None:
     # Single 429: should be degraded
     limiter.on_429_error()
     status = limiter.get_health_status()
-    assert status in ("degraded", "throttled"), f"After 429, expected degraded/throttled, got: {status}"
+    assert status in {"degraded", "throttled"}, f"After 429, expected degraded/throttled, got: {status}"
 
     # Multiple 429s: should be throttled or critical
     for _ in range(5):
         limiter.on_429_error()
     status = limiter.get_health_status()
-    assert status in ("throttled", "critical"), f"After many 429s, expected throttled/critical, got: {status}"
+    assert status in {"throttled", "critical"}, f"After many 429s, expected throttled/critical, got: {status}"
 
 
 if __name__ == "__main__":

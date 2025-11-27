@@ -137,8 +137,7 @@ def correlation_context(
 
     try:
         logger.debug(
-            f"[{ctx.correlation_id}] Started: {operation_name}"
-            + (f" (parent={parent_id})" if parent_id else "")
+            f"[{ctx.correlation_id}] Started: {operation_name}" + (f" (parent={parent_id})" if parent_id else "")
         )
         yield ctx
     finally:
