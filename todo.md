@@ -363,14 +363,33 @@ with correlation_context("action6_gather", metadata={"page": 1}) as ctx:
 
 ---
 
-### 🟠 MEDIUM: Rate Limiter Observability
+### ✅ COMPLETED: Rate Limiter Observability (Nov 2025)
 
-**Problem:** Rate limiting is opaque; users don't know when throttling occurs.
+**Problem:** Rate limiting was opaque; users didn't know when throttling occurred.
 
-**Suggested Approach:**
-1. Add rate limiter metrics: requests per second, queue depth, throttle time
-2. Add progress indication: "Rate limited, waiting 2.3s..."
-3. Add rate limit budget calculation
+**Solution Implemented:**
+1. ✅ Added `get_status_message()` - Returns human-readable status with rate, tokens, and errors
+2. ✅ Added `calculate_budget()` - Calculates estimated requests for a time period
+3. ✅ Added `get_health_status()` - Returns health as "optimal"/"degraded"/"throttled"/"critical"
+4. ✅ Added 3 new tests validating observability features (total: 18 tests)
+
+**Usage Example:**
+```python
+from rate_limiter import AdaptiveRateLimiter
+
+limiter = AdaptiveRateLimiter()
+
+# Check current status
+print(limiter.get_status_message())  # "⚡ Rate: 0.50 req/s | Tokens: 10.0/10.0"
+
+# Get budget for next minute
+budget = limiter.calculate_budget(60.0)
+print(f"Can make ~{budget['estimated_requests']} requests in 60s")
+
+# Check health
+if limiter.get_health_status() == "critical":
+    logger.warning("Rate limiter in critical state - consider backing off")
+```
 
 ---
 

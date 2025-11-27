@@ -986,6 +986,109 @@ class AdaptiveRateLimiter:
             cap_fragment,
         )
 
+    def get_status_message(self) -> str:
+        """
+        Get a human-readable status message for the rate limiter.
+
+        Returns:
+            A formatted string describing current rate limiter state.
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter()
+            >>> print(limiter.get_status_message())
+            "⚡ Rate: 0.50 req/s | Tokens: 10.0/10.0 | Avg wait: 0.00s"
+        """
+        metrics = self.get_metrics()
+        parts = [
+            f"⚡ Rate: {metrics.current_fill_rate:.2f} req/s",
+            f"Tokens: {metrics.tokens_available:.1f}/{self.capacity:.1f}",
+        ]
+        if metrics.avg_wait_time > 0:
+            parts.append(f"Avg wait: {metrics.avg_wait_time:.2f}s")
+        if metrics.error_429_count > 0:
+            parts.append(f"429 errors: {metrics.error_429_count}")
+        return " | ".join(parts)
+
+    def estimate_time_for_requests(self, num_requests: int) -> float:
+        """
+        Estimate time needed to complete N requests at current rate.
+
+        Args:
+            num_requests: Number of requests to estimate.
+
+        Returns:
+            Estimated time in seconds.
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter(rate=0.5)
+            >>> limiter.estimate_time_for_requests(100)
+            200.0  # 100 requests at 0.5/s = 200 seconds
+        """
+        if self.fill_rate <= 0:
+            return float("inf")
+        return num_requests / self.fill_rate
+
+    def get_rate_budget(self, time_window_seconds: float = 60.0) -> int:
+        """
+        Calculate how many requests can be made in a time window.
+
+        Args:
+            time_window_seconds: Time window in seconds (default: 60s).
+
+        Returns:
+            Number of requests that can be made without throttling.
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter(rate=0.5)
+            >>> limiter.get_rate_budget(60)
+            30  # 0.5 requests/sec * 60 sec = 30 requests
+        """
+        return int(self.fill_rate * time_window_seconds)
+
+    def format_eta(self, remaining_requests: int) -> str:
+        """
+        Format an ETA string for remaining requests.
+
+        Args:
+            remaining_requests: Number of requests remaining.
+
+        Returns:
+            Human-readable ETA string (e.g., "~3m 20s").
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter(rate=0.5)
+            >>> limiter.format_eta(100)
+            "~3m 20s"
+        """
+        if self.fill_rate <= 0 or remaining_requests <= 0:
+            return "unknown"
+
+        seconds = remaining_requests / self.fill_rate
+
+        if seconds < 60:
+            return f"~{seconds:.0f}s"
+        if seconds < 3600:
+            minutes = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"~{minutes}m {secs}s"
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"~{hours}h {minutes}m"
+
+    def log_throttle_warning(self, wait_time: float, reason: str = "") -> None:
+        """
+        Log a user-visible warning when throttling occurs.
+
+        Args:
+            wait_time: How long we're waiting.
+            reason: Optional reason for the throttle.
+        """
+        if wait_time < 0.1:
+            return  # Don't log very short waits
+
+        reason_str = f" ({reason})" if reason else ""
+        logger.info(f"⏳ Rate limited{reason_str}, waiting {wait_time:.1f}s...")
+
     @property
     def current_delay(self) -> float:
         """Approximate current per-request delay derived from fill rate."""
@@ -1004,6 +1107,71 @@ class AdaptiveRateLimiter:
     def initial_fill_rate(self) -> float:
         """Expose starting fill rate for diagnostics and logging."""
         return self._initial_fill_rate
+
+    def calculate_budget(self, time_period_seconds: float = 60.0) -> dict[str, Any]:
+        """
+        Calculate the rate limit budget for a given time period.
+
+        Args:
+            time_period_seconds: Time period to calculate budget for (default: 60s).
+
+        Returns:
+            Dictionary with budget information:
+            - estimated_requests: Number of requests possible in time period
+            - time_period_seconds: The time period used
+            - current_fill_rate: Current rate in requests per second
+            - available_tokens: Currently available tokens in bucket
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter(initial_fill_rate=2.0)
+            >>> budget = limiter.calculate_budget(60.0)
+            >>> print(f"Can make ~{budget['estimated_requests']} requests in 60s")
+        """
+        with self._lock:
+            requests_from_rate = self.fill_rate * time_period_seconds
+            requests_from_tokens = self.tokens
+            return {
+                "estimated_requests": int(requests_from_rate + requests_from_tokens),
+                "time_period_seconds": time_period_seconds,
+                "current_fill_rate": self.fill_rate,
+                "available_tokens": self.tokens,
+            }
+
+    def get_health_status(self) -> str:
+        """
+        Get the current health status of the rate limiter.
+
+        Returns:
+            One of: 'optimal', 'degraded', 'throttled', 'critical'
+            - optimal: No issues, rate at or above initial
+            - degraded: Slightly below optimal (429 encountered)
+            - throttled: Significantly below optimal rate
+            - critical: Near minimum rate, severe throttling
+
+        Example:
+            >>> limiter = AdaptiveRateLimiter()
+            >>> status = limiter.get_health_status()
+            >>> if status == 'critical':
+            ...     logger.warning("Rate limiter in critical state!")
+        """
+        metrics = self.get_metrics()
+        rate_ratio = self.fill_rate / self._initial_fill_rate if self._initial_fill_rate > 0 else 1.0
+
+        # No 429s and rate not degraded = optimal
+        if metrics.error_429_count == 0 and rate_ratio >= 0.95:
+            return "optimal"
+
+        # Near minimum rate = critical
+        min_ratio = self.min_fill_rate / self._initial_fill_rate if self._initial_fill_rate > 0 else 0.1
+        if rate_ratio <= min_ratio * 1.1:  # Within 10% of minimum
+            return "critical"
+
+        # Significantly degraded (below 50% of initial)
+        if rate_ratio < 0.5:
+            return "throttled"
+
+        # Some degradation
+        return "degraded"
 
     def reset(self) -> None:
         """
@@ -1372,6 +1540,36 @@ def rate_limiter_module_tests() -> bool:
         expected_outcome="Next request delayed by configured cooldown_after_429",
     )
 
+    # Test 16: Status message output
+    suite.run_test(
+        test_name="Status message output",
+        test_func=_test_status_message,
+        test_summary="Ensure get_status_message returns appropriate status strings",
+        functions_tested="AdaptiveRateLimiter.get_status_message",
+        method_description="Test status message reflects limiter state",
+        expected_outcome="Message indicates optimal/throttled status correctly",
+    )
+
+    # Test 17: Budget calculation
+    suite.run_test(
+        test_name="Budget calculation",
+        test_func=_test_budget_calculation,
+        test_summary="Ensure calculate_budget returns correct dictionary",
+        functions_tested="AdaptiveRateLimiter.calculate_budget",
+        method_description="Calculate request budget for time period",
+        expected_outcome="Returns dict with estimated_requests, time_period, fill_rate",
+    )
+
+    # Test 18: Health status determination
+    suite.run_test(
+        test_name="Health status determination",
+        test_func=_test_health_status,
+        test_summary="Ensure get_health_status returns correct status",
+        functions_tested="AdaptiveRateLimiter.get_health_status",
+        method_description="Test health status based on 429 history and fill rate",
+        expected_outcome="Returns optimal/degraded/throttled/critical as appropriate",
+    )
+
     return suite.finish_suite()
 
 
@@ -1630,6 +1828,60 @@ def _test_endpoint_429_cooldown() -> None:
     elapsed = time.monotonic() - start
 
     assert elapsed >= 0.55, f"Expected cooldown-driven wait >=0.55s, got {elapsed:.3f}s"
+
+
+def _test_status_message() -> None:
+    """Test get_status_message returns appropriate status strings."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, capacity=5.0)
+
+    # Check basic format with rate and tokens
+    msg = limiter.get_status_message()
+    assert "Rate:" in msg, f"Expected 'Rate:' in status, got: {msg}"
+    assert "Tokens:" in msg, f"Expected 'Tokens:' in status, got: {msg}"
+
+    # After 429: should include error count
+    limiter.on_429_error()
+    msg = limiter.get_status_message()
+    assert "429 errors:" in msg, f"Expected '429 errors:' after 429, got: {msg}"
+
+
+def _test_budget_calculation() -> None:
+    """Test calculate_budget returns expected dictionary structure."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=2.0, capacity=10.0)
+
+    budget = limiter.calculate_budget(time_period_seconds=60.0)
+
+    # Check required keys exist
+    assert "estimated_requests" in budget, "Missing 'estimated_requests' key"
+    assert "time_period_seconds" in budget, "Missing 'time_period_seconds' key"
+    assert "current_fill_rate" in budget, "Missing 'current_fill_rate' key"
+    assert "available_tokens" in budget, "Missing 'available_tokens' key"
+
+    # Check values make sense
+    assert budget["time_period_seconds"] == 60.0, "time_period should match input"
+    assert budget["current_fill_rate"] == 2.0, "fill_rate should match limiter"
+    # At 2 req/s for 60s = 120 + available tokens
+    assert budget["estimated_requests"] >= 120, f"Expected at least 120 requests, got {budget['estimated_requests']}"
+
+
+def _test_health_status() -> None:
+    """Test get_health_status returns correct status based on metrics."""
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, capacity=5.0)
+
+    # Fresh limiter should be optimal
+    status = limiter.get_health_status()
+    assert status == "optimal", f"Fresh limiter should be optimal, got: {status}"
+
+    # Single 429: should be degraded
+    limiter.on_429_error()
+    status = limiter.get_health_status()
+    assert status in ("degraded", "throttled"), f"After 429, expected degraded/throttled, got: {status}"
+
+    # Multiple 429s: should be throttled or critical
+    for _ in range(5):
+        limiter.on_429_error()
+    status = limiter.get_health_status()
+    assert status in ("throttled", "critical"), f"After many 429s, expected throttled/critical, got: {status}"
 
 
 if __name__ == "__main__":
