@@ -224,6 +224,7 @@ def api_constants_module_tests() -> bool:
     # Test 3: Check for literal presence in source code
     print("Test 3: Literal presence guards")
     import inspect
+    import sys
 
     source = inspect.getsource(sys.modules[__name__])
 

@@ -440,7 +440,7 @@ These can be implemented today with minimal risk:
 | Item | Description | Status |
 |------|-------------|--------|
 | `requirements-dev.txt` | Separate test dependencies from runtime | ✅ DONE |
-| `scripts/run_tests_fast.py` | Run only unit tests (<5s total) | 30 min |
+| `scripts/run_tests_fast.py` | Run only unit tests (<5s total) | ✅ DONE |
 | Pre-commit hooks | Add hooks for Ruff, Pyright, and test execution | ✅ DONE |
 | `SECURITY.md` | Document vulnerability reporting process | ✅ DONE |
 | `.editorconfig` | Consistent formatting across editors | ✅ DONE |
@@ -512,9 +512,9 @@ These can be implemented today with minimal risk:
 | Testing Strategy | 5 items | ✅ 1 HIGH done, 4 MEDIUM |
 | Developer Experience | 1 item | 1 MEDIUM |
 | Future Enhancements | 1 item | v2.0 |
-| Quick Wins | 8 items | ✅ 4 DONE, 4 remaining |
+| Quick Wins | 8 items | ✅ 5 DONE, 3 remaining |
 
-**Total Remaining Items:** ~23 actionable items
+**Total Remaining Items:** ~22 actionable items
 **Critical Issues:** 2 (Dependency Injection, Unified API Handler)
 
 ---
