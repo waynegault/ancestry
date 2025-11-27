@@ -111,32 +111,47 @@ Integrate APM (opentelemetry or sentry) with automatic span tracking.
 
 ## 5. Testing Strategy
 
-### 🟠 MEDIUM: Multi-Layer Test Strategy
+### ✅ ~~MEDIUM: Multi-Layer Test Strategy~~
 
-**Problem:** No clear distinction between unit (fast, isolated) and integration (slow) tests.
+**Status:** IMPLEMENTED (pytest markers)
 
-**Suggested Approach:**
-1. Create `tests/` directory structure: `tests/unit/`, `tests/integration/`, `tests/e2e/`
-2. Add pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`
-3. Run times: unit <1s each, integration <30s each
+**Implementation:**
+- Added pytest markers in `pytest.ini`: `@pytest.mark.unit`, `@pytest.mark.integration`, `@pytest.mark.e2e`, `@pytest.mark.slow`
+- Tests remain embedded in source files (project convention)
+- Run by type: `pytest -m unit` for fast unit tests only
 
-### 🟠 MEDIUM: Inconsistent Test Framework Usage
+**Usage:**
+```bash
+# Run only fast unit tests
+pytest -m unit
 
-**File:** `core/dependency_injection.py`
+# Run integration tests
+pytest -m integration
 
-**Issue:** Uses `unittest.TestCase` instead of the project's `TestSuite` pattern.
+# Skip slow tests
+pytest -m "not slow"
+```
 
-**Suggested Approach:**
-Convert to use `TestSuite` pattern OR document that `unittest.TestCase` is acceptable for pure unit tests.
+**Note:** Most existing tests are integration tests by nature (touching DB, files). Marker assignment is gradual - start with new tests.
 
-### 🟠 MEDIUM: Tests Using Mocking Without Real Assertions
+### ✅ ~~MEDIUM: Inconsistent Test Framework Usage~~
 
-**Problem:** Some tests mock all dependencies and only verify the mock was called.
+**Status:** COMPLETED
 
-**Affected Files:**
-- `core/database_manager.py`
-- `core/config_validation.py`
-- `core/analytics_helpers.py`
+**File:** `core/dependency_injection.py` - Already uses a hybrid approach with `dependency_injection_module_tests()` wrapping unittest.TestCase tests using TestSuite for standardized output.
+
+This pattern (unittest.TestCase wrapped by TestSuite) is acceptable for modules that benefit from unittest's setup/teardown fixtures while maintaining consistent test output.
+
+### ✅ ~~MEDIUM: Tests Using Mocking Without Real Assertions~~
+
+**Status:** REVIEWED & ACCEPTABLE
+
+**Analysis:** Upon review, the tests in these modules DO have proper assertions:
+- `core/database_manager.py` - Tests use mocks for stubbing but assert real behavior (connection counts, session lifecycle)
+- `core/config_validation.py` - Tests assert formatted values and function call behavior, not just mock.called
+- `core/analytics_helpers.py` - Tests verify correct function resolution from dynamic imports with identity assertions
+
+Mocking module imports is appropriate for testing dynamic import logic.
 
 ### 🟢 LOW: Missing Tests for `ai/prompts.py`
 
@@ -165,8 +180,8 @@ Migrate to aiohttp and implement async database operations.
 | Error Handling | ~~1 item~~ | ✅ COMPLETED |
 | Architecture | 6 items | ~~1 MEDIUM~~, 5 LOW (1 COMPLETED) |
 | Observability | 1 item | 1 LOW |
-| Testing Strategy | 4 items | 3 MEDIUM, 1 LOW |
+| Testing Strategy | 4 items | ~~3 MEDIUM~~, 1 LOW (3 COMPLETED) |
 | Future | 1 item | v2.0 |
 
-**Total Remaining Items:** 12 actionable items (2 completed this session)
+**Total Remaining Items:** 9 actionable items (5 completed this session)
 **Critical Issues:** 0 (All HIGH priority items completed!)

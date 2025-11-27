@@ -2155,6 +2155,59 @@ def _extract_death_event(event: dict[str, Any]) -> tuple[int | None, str | None,
     return death_year, death_date_str, death_place
 
 
+def _update_event_info(
+    event_info: EventInfo,
+    extracted: tuple[int | None, str | None, str | None],
+) -> None:
+    """Update event info dict with extracted values, only if better data available.
+
+    Args:
+        event_info: Mutable EventInfo dict to update in place
+        extracted: Tuple of (year, date_str, place) from extraction function
+    """
+    year, date_str, place = extracted
+    if year is not None and event_info["year"] is None:
+        event_info["year"] = year
+    if date_str and not event_info["date"]:
+        event_info["date"] = date_str
+    if place and not event_info["place"]:
+        event_info["place"] = place
+
+
+def _process_events_list(
+    events_list: list[Any],
+) -> tuple[EventInfo, EventInfo, bool]:
+    """Process events list and extract birth/death info.
+
+    Args:
+        events_list: List of event dicts from API response
+
+    Returns:
+        Tuple of (birth_info, death_info, is_living)
+    """
+    birth_info: EventInfo = {"year": None, "date": None, "place": None}
+    death_info: EventInfo = {"year": None, "date": None, "place": None}
+    is_living = True
+
+    for event in events_list:
+        if not isinstance(event, dict):
+            continue
+
+        event_dict = cast(dict[str, Any], event)
+        event_type = event_dict.get("t", "")
+
+        # Handle both old format ("B", "D") and new format ("Birth", "Death")
+        if event_type in {"B", "Birth"}:
+            extracted = _extract_birth_event(event)
+            _update_event_info(birth_info, extracted)
+        elif event_type in {"D", "Death"}:
+            is_living = False
+            extracted = _extract_death_event(event)
+            _update_event_info(death_info, extracted)
+
+    return birth_info, death_info, is_living
+
+
 def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Parse TreesUI List API response to extract standardized person data.
@@ -2180,40 +2233,14 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
             gender = person_raw.get("Gender", "")
 
             # Extract events (birth and death)
-            birth_info: EventInfo = {"year": None, "date": None, "place": None}
-            death_info: EventInfo = {"year": None, "date": None, "place": None}
-            is_living = True
-
             # Support both uppercase "Events" and lowercase "events" from API response
             events_list = person_raw.get("Events") or person_raw.get("events", [])
             if isinstance(events_list, list):
-                for event in events_list:
-                    if not isinstance(event, dict):
-                        continue
-
-                    event_dict = cast(dict[str, Any], event)
-                    event_type = event_dict.get("t", "")
-
-                    # Handle both old format ("B", "D") and new format ("Birth", "Death")
-                    if event_type in {"B", "Birth"}:
-                        extracted = _extract_birth_event(event)
-                        # Only update if we get better data (don't overwrite with empty values)
-                        if extracted[0] is not None and birth_info["year"] is None:
-                            birth_info["year"] = extracted[0]
-                        if extracted[1] and not birth_info["date"]:
-                            birth_info["date"] = extracted[1]
-                        if extracted[2] and not birth_info["place"]:
-                            birth_info["place"] = extracted[2]
-                    elif event_type in {"D", "Death"}:
-                        is_living = False
-                        extracted = _extract_death_event(event)
-                        # Only update if we get better data (don't overwrite with empty values)
-                        if extracted[0] is not None and death_info["year"] is None:
-                            death_info["year"] = extracted[0]
-                        if extracted[1] and not death_info["date"]:
-                            death_info["date"] = extracted[1]
-                        if extracted[2] and not death_info["place"]:
-                            death_info["place"] = extracted[2]
+                birth_info, death_info, is_living = _process_events_list(events_list)
+            else:
+                birth_info = {"year": None, "date": None, "place": None}
+                death_info = {"year": None, "date": None, "place": None}
+                is_living = True
 
             # Construct standardized suggestion dict
             suggestion = {
