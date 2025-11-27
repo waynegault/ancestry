@@ -1825,9 +1825,9 @@ def _load_test_person_data_from_env() -> dict[str, Any]:
         # GEDCOM expected score (with full data including birth place)
         # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
         "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "200")),
-        # API expected score (API typically lacks birth place data, so lower score)
-        # Breakdown: name(25+25+50) + birth_year(25) = 125
-        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "125")),
+        # API expected score - now extracts birth place from all response formats
+        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
+        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "200")),
     }
 
 
@@ -2353,9 +2353,9 @@ def _get_test_person_config() -> dict[str, Any]:
         # GEDCOM expected score (with full data including birth place)
         # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
         "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "200")),
-        # API expected score (API typically lacks birth place data, so lower score)
-        # Breakdown: name(25+25+50) + birth_year(25) = 125
-        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "125")),
+        # API expected score - now extracts birth place from all response formats
+        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
+        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "200")),
     }
 
 
@@ -2598,7 +2598,7 @@ def test_api_search_test_person() -> None:
         print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
         print(f"   Score: {top_result.get('score', 0)}")
 
-        # API uses expected_api_score (typically lower due to missing birth place data)
+        # API uses expected_api_score (should match GEDCOM score now that birth place is extracted)
         expected_score = config.get('expected_api_score', 0)
         actual_score = int(top_result.get('score', 0))
 

@@ -2040,6 +2040,26 @@ def _extract_year_from_normalized_date(nd: str) -> int | None:
     return None
 
 
+def _extract_year_from_string_date(date_str: str) -> int | None:
+    """Extract year from various string date formats.
+
+    Handles formats like:
+    - "15/6/1941" (DD/MM/YYYY)
+    - "6/15/1941" (MM/DD/YYYY)
+    - "1941" (year only)
+    - "15 Jun 1941" (text month)
+    """
+    import re
+    if not date_str:
+        return None
+
+    # Try to find a 4-digit year anywhere in the string
+    year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', date_str)
+    if year_match:
+        return int(year_match.group(1))
+    return None
+
+
 def _extract_date_string_from_dict(date_obj: dict[str, Any]) -> tuple[int | None, str | None]:
     """Extract year and date string from old format date object."""
     year = date_obj.get("y")
@@ -2059,45 +2079,77 @@ def _extract_date_string_from_dict(date_obj: dict[str, Any]) -> tuple[int | None
 
 
 def _extract_birth_event(event: dict[str, Any]) -> tuple[int | None, str | None, str | None]:
-    """Extract birth year, date string, and place from birth event."""
-    # Try new format first (isGetFullPersonObject=true response)
-    # New format: d = "15 November 1893" (string), nd = "1893-11-15" (normalized), p = "Fyvie, Aberdeenshire" (string)
+    """Extract birth year, date string, and place from birth event.
+
+    Handles multiple API response formats:
+    1. New format (isGetFullPersonObject=true): d="15 Nov 1893", nd="1893-11-15", p="Fyvie"
+    2. Intermediate format: d="15/6/1941", p="Banff, Scotland" (no "nd" key)
+    3. Old format: d={y:1893, m:11, d:15}, p={n:"Fyvie"}
+    """
     if "nd" in event:
+        # New format with normalized date
         birth_year = _extract_year_from_normalized_date(event.get("nd", ""))
         birth_date_str = event.get("d", "")  # Formatted date string
         birth_place = event.get("p", "")  # Place string
     else:
-        # Old format: d = {y: 1893, m: 11, d: 15}, p = {n: "Fyvie"}
+        # Old format OR intermediate format (string without "nd")
         date_obj = event.get("d", {})
+        place_obj = event.get("p", {})
+
         if isinstance(date_obj, dict):
             birth_year, birth_date_str = _extract_date_string_from_dict(date_obj)
+        elif isinstance(date_obj, str):
+            # Intermediate format: "d" is string like "15/6/1941" without "nd"
+            birth_date_str = date_obj
+            birth_year = _extract_year_from_string_date(date_obj)
         else:
             birth_year, birth_date_str = None, None
 
-        place_obj = event.get("p", {})
-        birth_place = cast(dict[str, Any], place_obj).get("n", "") if isinstance(place_obj, dict) else None
+        # Handle place - can be dict {"n": "place"} or string "place"
+        if isinstance(place_obj, dict):
+            birth_place = cast(dict[str, Any], place_obj).get("n", "")
+        elif isinstance(place_obj, str):
+            birth_place = place_obj
+        else:
+            birth_place = None
 
     return birth_year, birth_date_str, birth_place
 
 
 def _extract_death_event(event: dict[str, Any]) -> tuple[int | None, str | None, str | None]:
-    """Extract death year, date string, and place from death event."""
-    # Try new format first (isGetFullPersonObject=true response)
-    # New format: d = "18 Mar 1915" (string), nd = "1915-03-18" (normalized), p = "France and Flanders" (string)
+    """Extract death year, date string, and place from death event.
+
+    Handles multiple API response formats:
+    1. New format (isGetFullPersonObject=true): d="18 Mar 1915", nd="1915-03-18", p="France"
+    2. Intermediate format: d="18/3/1915", p="France" (no "nd" key)
+    3. Old format: d={y:1915, m:3, d:18}, p={n:"France"}
+    """
     if "nd" in event:
+        # New format with normalized date
         death_year = _extract_year_from_normalized_date(event.get("nd", ""))
         death_date_str = event.get("d", "")  # Formatted date string
         death_place = event.get("p", "")  # Place string
     else:
-        # Old format: d = {y: 1915, m: 3, d: 18}, p = {n: "France"}
+        # Old format OR intermediate format (string without "nd")
         date_obj = event.get("d", {})
+        place_obj = event.get("p", {})
+
         if isinstance(date_obj, dict):
             death_year, death_date_str = _extract_date_string_from_dict(date_obj)
+        elif isinstance(date_obj, str):
+            # Intermediate format: "d" is string like "18/3/1915" without "nd"
+            death_date_str = date_obj
+            death_year = _extract_year_from_string_date(date_obj)
         else:
             death_year, death_date_str = None, None
 
-        place_obj = event.get("p", {})
-        death_place = cast(dict[str, Any], place_obj).get("n", "") if isinstance(place_obj, dict) else None
+        # Handle place - can be dict {"n": "place"} or string "place"
+        if isinstance(place_obj, dict):
+            death_place = cast(dict[str, Any], place_obj).get("n", "")
+        elif isinstance(place_obj, str):
+            death_place = place_obj
+        else:
+            death_place = None
 
     return death_year, death_date_str, death_place
 
@@ -2131,7 +2183,8 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
             death_info: EventInfo = {"year": None, "date": None, "place": None}
             is_living = True
 
-            events_list = person_raw.get("Events", [])
+            # Support both uppercase "Events" and lowercase "events" from API response
+            events_list = person_raw.get("Events") or person_raw.get("events", [])
             if isinstance(events_list, list):
                 for event in events_list:
                     if not isinstance(event, dict):
