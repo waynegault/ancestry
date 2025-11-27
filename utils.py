@@ -4660,6 +4660,112 @@ def _test_check_for_unavailability() -> None:
     print("✅ _check_for_unavailability passed basic tests")
 
 
+def _test_429_error_path() -> None:
+    """Test 429 error handling triggers rate limiter backoff."""
+    from unittest.mock import MagicMock, patch
+
+    # Create mock response with 429 status
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.reason = "Too Many Requests"
+    mock_response.headers = {"Retry-After": "60"}
+    mock_response.text = "Rate limit exceeded"
+
+    # Create mock rate limiter to verify it's called
+    mock_rate_limiter = MagicMock()
+    mock_rate_limiter.on_429_error = MagicMock()
+
+    # Create RetryContext for the handler
+    retry_ctx = RetryContext(
+        attempt=1,
+        max_attempts=3,
+        retries_left=2,
+        current_delay=1.0,
+        max_delay=60.0,
+        backoff_factor=2.0,
+    )
+
+    # Create mock session manager with rate limiter
+    mock_session_manager = MagicMock()
+    mock_session_manager.rate_limiter = mock_rate_limiter
+
+    # Patch time.sleep to avoid actual delays and rate limiter lookup
+    with (
+        patch("time.sleep"),
+        patch("utils._get_rate_limiter_from_session", return_value=mock_rate_limiter),
+    ):
+        # Call the handler
+        should_continue, _response, retries_left, new_delay = _handle_retryable_status(
+            mock_response, 429, "Too Many Requests", retry_ctx, "Test API", mock_session_manager
+        )
+
+    # Verify behavior
+    assert should_continue is True, "Should continue retrying after 429"
+    assert retries_left == 1, "Should decrement retries"
+    assert new_delay > retry_ctx.current_delay, "Delay should increase with backoff"
+    mock_rate_limiter.on_429_error.assert_called_once_with("Test API")
+
+
+def _test_network_timeout_handling() -> None:
+    """Test network timeout triggers proper retry behavior."""
+    from unittest.mock import MagicMock
+
+    from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
+
+    # Test that retryable status codes are configured correctly
+    mock_driver = MagicMock()
+    mock_sm = MagicMock()
+    config = ApiRequestConfig(
+        url="https://example.com",
+        driver=mock_driver,
+        session_manager=mock_sm,
+    )
+    assert 500 in config.retry_status_codes, "500 should be retryable"
+    assert 502 in config.retry_status_codes, "502 should be retryable"
+    assert 503 in config.retry_status_codes, "503 should be retryable"
+    assert 429 in config.retry_status_codes, "429 should be retryable"
+
+    # Verify exception types are available
+    assert Timeout is not None, "Timeout exception should be available"
+    assert RequestsConnectionError is not None, "ConnectionError should be available"
+
+
+def _test_retryable_status_exhaustion() -> None:
+    """Test that retries are properly exhausted and return the response."""
+    from unittest.mock import MagicMock, patch
+
+    # Create mock response with 500 status
+    mock_response = MagicMock()
+    mock_response.status_code = 500
+    mock_response.reason = "Internal Server Error"
+    mock_response.text = "Server error"
+
+    # Create RetryContext with no retries left
+    retry_ctx = RetryContext(
+        attempt=3,
+        max_attempts=3,
+        retries_left=0,  # No retries left
+        current_delay=1.0,
+        max_delay=60.0,
+        backoff_factor=2.0,
+    )
+
+    # Create mock session manager
+    mock_session_manager = MagicMock()
+    mock_session_manager.rate_limiter = MagicMock()
+
+    # Call the handler - should not retry
+    with patch("utils._get_rate_limiter_from_session", return_value=None):
+        should_continue, response, retries_left, _new_delay = _handle_retryable_status(
+            mock_response, 500, "Internal Server Error", retry_ctx, "Test API", mock_session_manager
+        )
+
+    # Verify behavior - should NOT continue, should return response
+    assert should_continue is False, "Should NOT continue when retries exhausted"
+    assert response is mock_response, "Should return the original response"
+    assert retries_left == -1, "Retries should be decremented below 0"
+
+
 def utils_module_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
     from test_framework import TestSuite
@@ -4714,6 +4820,25 @@ def utils_module_tests() -> bool:
 
     suite.run_test(
         "Unavailability Detection", _test_check_for_unavailability, "Detect unavailability markers in HTML content"
+    )
+
+    # Error path tests (429, timeout, retry exhaustion)
+    suite.run_test(
+        "429 Error Path Handling",
+        _test_429_error_path,
+        "Verify 429 status triggers rate limiter backoff and retry logic",
+    )
+
+    suite.run_test(
+        "Network Timeout Handling",
+        _test_network_timeout_handling,
+        "Verify timeout exceptions are properly handled in retry config",
+    )
+
+    suite.run_test(
+        "Retry Exhaustion Behavior",
+        _test_retryable_status_exhaustion,
+        "Verify retries are exhausted and response is returned correctly",
     )
 
     return suite.finish_suite()

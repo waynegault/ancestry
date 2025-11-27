@@ -569,7 +569,11 @@ def _calculate_candidate_score(
     criteria: dict[str, Any],
 ) -> tuple[float, FieldScoreDict, list[str]]:
     try:
-        score, field_scores, reasons = calculate_match_score(criteria, cand, None, None)
+        # Use explicit scoring weights and date flexibility from config for consistency
+        # with GEDCOM search (filter_and_score_individuals)
+        scoring_weights = dict(config_schema.common_scoring_weights) if config_schema else None
+        date_flexibility = {"year_match_range": config_schema.date_flexibility if config_schema else 5}
+        score, field_scores, reasons = calculate_match_score(criteria, cand, scoring_weights, date_flexibility)
         normalized_field_scores: FieldScoreDict = dict(field_scores or {})
         return float(score or 0), normalized_field_scores, list(reasons or [])
     except Exception as e:
