@@ -18,7 +18,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 ## Key Features
 
 - **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 120 test modules with 993 tests and 100% standardized test infrastructure
+- **Comprehensive Testing**: 121 test modules with 1000+ tests and 100% standardized test infrastructure
 - **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
 - **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
 - **Developer Tools**: Code graph visualization, centralized test utilities with decorators and factories, performance profiling
@@ -279,7 +279,7 @@ All test modules use centralized helpers from `test_utilities.py` to eliminate d
 
 **Test Infrastructure:**
 - `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
-- All 120 test modules use this pattern for uniform output and exit codes
+- All 121 test modules use this pattern for uniform output and exit codes
 
 **Usage Example:**
 ```python
@@ -755,7 +755,7 @@ For issues or questions:
   - Added `RetryPolicy` enum - Predefined retry policies: `NONE` (0 retries), `API` (3 retries, 1s delay), `RESILIENT` (5 retries, 2s delay)
   - Added `APIManager.request()` - Unified entry point for all API calls integrating rate limiting, cookie sync, retries with exponential backoff/jitter
   - Added 4 new tests: RequestConfig dataclass, RequestResult dataclass, request() method signature, RetryPolicy enum (13 tests total)
-  - All 120 test modules pass with 100% success rate
+  - All 121 test modules pass with 100% success rate
 - Next Step: Track 5 Step 3 - Migrate callers to `session_manager.api_manager.request()`
 
 2025-11-03
