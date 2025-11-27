@@ -9,26 +9,7 @@ This document contains actionable items for the Ancestry Research Automation Pla
 
 ---
 
-## 1. Test Quality Improvements
-
-### 🟠 MEDIUM: Remaining Tests to Review
-
-| File | Issue |
-|------|-------|
-| `config/config_schema.py` | Some config tests only check existence |
-| `database.py` | Some tests swallow exceptions with `pass` |
-
-### 🟠 MEDIUM: Missing Behavior Verification
-
-| File | Lines | Issue |
-|------|-------|-------|
-| `action8_messaging.py` | 4080-4090 | Performance tracking attributes created but usage not verified |
-| `action9_process_productive.py` | 3831-3835 | Retry helper behavior not tested |
-| `action10.py` | 2019-2053 | Config effects on behavior not tested |
-
----
-
-## 2. Large File Opportunities
+## 1. Large File Opportunities
 
 ### 🟢 LOW: File Size Reduction
 
@@ -42,7 +23,7 @@ Only split if maintainability becomes an issue.
 
 ---
 
-## 3. Error Handling Improvements
+## 2. Error Handling Improvements
 
 ### 🟠 MEDIUM: Inconsistent Error Path Testing
 
@@ -62,7 +43,7 @@ def _test_429_handling():
 
 ---
 
-## 4. Architecture Improvements
+## 3. Architecture Improvements
 
 ### 🟠 MEDIUM: Dependency Graph Cleanup and Import Ordering
 
@@ -118,7 +99,7 @@ Enhance migration system with forward/backward migrations, dependencies, and dry
 
 ---
 
-## 5. Observability & Monitoring
+## 4. Observability & Monitoring
 
 ### 🟢 LOW: Production Performance Monitoring
 
@@ -129,7 +110,7 @@ Integrate APM (opentelemetry or sentry) with automatic span tracking.
 
 ---
 
-## 6. Testing Strategy
+## 5. Testing Strategy
 
 ### 🟠 MEDIUM: Multi-Layer Test Strategy
 
@@ -164,7 +145,7 @@ Add tests for prompt loading/validation.
 
 ---
 
-## 7. Future Enhancements
+## 6. Future Enhancements
 
 ### ⚠️ LOW (v2.0): Async/Await for I/O Operations
 
@@ -181,7 +162,6 @@ Migrate to aiohttp and implement async database operations.
 
 | Category | Count | Priority Breakdown |
 |----------|-------|-------------------|
-| Test Quality | 2 items | 2 MEDIUM |
 | Large Files | 1 item | 1 LOW |
 | Error Handling | 1 item | 1 MEDIUM |
 | Architecture | 6 items | 1 MEDIUM, 5 LOW |
@@ -189,5 +169,5 @@ Migrate to aiohttp and implement async database operations.
 | Testing Strategy | 4 items | 3 MEDIUM, 1 LOW |
 | Future | 1 item | v2.0 |
 
-**Total Remaining Items:** 16 actionable items
+**Total Remaining Items:** 14 actionable items
 **Critical Issues:** 0 (All HIGH priority items completed!)
