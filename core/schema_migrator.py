@@ -264,7 +264,8 @@ def rollback_migration(
         return True
 
     logger.info("Rolling back migration %s - %s", migration.version, migration.description)
-    migration.downgrade(engine)  # type: ignore[misc]  # We checked has_rollback()
+    assert migration.downgrade is not None  # Guaranteed by has_rollback() check above
+    migration.downgrade(engine)
     _remove_applied_version(engine, version)
     logger.info("Successfully rolled back migration %s", version)
     return True
