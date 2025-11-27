@@ -153,9 +153,19 @@ This pattern (unittest.TestCase wrapped by TestSuite) is acceptable for modules 
 
 Mocking module imports is appropriate for testing dynamic import logic.
 
-### 🟢 LOW: Missing Tests for `ai/prompts.py`
+### ✅ ~~LOW: Missing Tests for `ai/prompts.py`~~
 
-Add tests for prompt loading/validation.
+**Status:** COMPLETED
+
+Added 8 comprehensive tests for prompt loading/validation:
+- `supports_json_prompts` returns bool
+- `load_prompts` returns dict structure
+- `get_prompt` handles missing keys gracefully
+- `get_prompt_with_experiment` fallback behavior
+- `get_prompt_version` handles missing keys
+- `record_extraction_experiment_event` no-raise guarantee
+- Valid prompts structure validation
+- String return for valid keys
 
 ---
 
@@ -180,8 +190,8 @@ Migrate to aiohttp and implement async database operations.
 | Error Handling | ~~1 item~~ | ✅ COMPLETED |
 | Architecture | 6 items | ~~1 MEDIUM~~, 5 LOW (1 COMPLETED) |
 | Observability | 1 item | 1 LOW |
-| Testing Strategy | 4 items | ~~3 MEDIUM~~, 1 LOW (3 COMPLETED) |
+| Testing Strategy | 4 items | ~~3 MEDIUM~~, ~~1 LOW~~ (4 COMPLETED) |
 | Future | 1 item | v2.0 |
 
-**Total Remaining Items:** 9 actionable items (5 completed this session)
+**Total Remaining Items:** 8 actionable items (6 completed this session)
 **Critical Issues:** 0 (All HIGH priority items completed!)
