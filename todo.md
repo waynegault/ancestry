@@ -9,86 +9,14 @@ This document contains actionable items for the Ancestry Research Automation Pla
 
 ---
 
-## Table of Contents
-1. [Test Quality Issues](#1-test-quality-issues)
-2. [Large File Opportunities](#2-large-file-opportunities)
-3. [Error Handling Improvements](#3-error-handling-improvements)
-4. [Configuration Issues](#4-configuration-issues)
-5. [Architecture Improvements](#5-architecture-improvements)
-6. [Observability & Monitoring](#6-observability--monitoring)
-7. [Testing Strategy](#7-testing-strategy)
-8. [Developer Experience](#8-developer-experience)
-9. [Future Enhancements](#9-future-enhancements)
-10. [Quick Wins](#10-quick-wins)
-11. [Implementation Priority](#implementation-priority)
-
----
-
-## 1. Test Quality Issues
-
-### ✅ COMPLETED: Smoke Tests Converted to Behavior Tests
-
-The following tests have been converted from smoke tests (checking `callable()` or `is not None`) to actual behavior tests:
-
-| File | Status | Description |
-|------|--------|-------------|
-| `action6_gather.py` | ✅ Fixed | `_test_core_functionality` and `_test_data_processing_functions` now test actual signatures and behavior |
-| `action8_messaging.py` | ✅ Fixed | Circuit breaker config tests now validate actual config values and defaults |
-| `action8_messaging.py` | ✅ Fixed | Cascade detection tests now verify error attributes and catchability |
-| `action8_messaging.py` | ✅ Fixed | Performance tracking tests now use proper mock with public API |
-| `action10.py` | ✅ Fixed | `test_module_initialization` now tests `sanitize_input`, `parse_command_line_args` behavior |
-| `tree_stats_utils.py` | ✅ Fixed | `_test_statistics_functions_available` now tests function signatures and return structures |
-| `diagnose_chrome.py` | ✅ Fixed | `_test_diagnostic_functions_available` now tests actual behavior and return values |
-| `utils.py` | ✅ Fixed | `_test_module_registration` now tests actual function registration and retrieval |
-| `main.py` | ✅ Fixed | All smoke tests converted to behavioral tests (Nov 2025) |
-
-### ✅ COMPLETED: Protected Member Access Refactoring (Nov 2025)
-
-SessionManager now exposes public methods for performance tracking and CSRF caching:
-- `update_response_time_tracking()` - Public method for tracking API response times
-- `reset_response_time_tracking()` - Reset tracking state
-- `update_cookie_sync_time()` - Update last cookie sync timestamp
-- `set_cached_csrf_token()` / `get_cached_csrf_token()` - CSRF token cache management
-- `clear_last_readiness_check()` - Force fresh session validation
-
-Functions made public:
-- `gedcom_utils.normalize_id()` (was `_normalize_id`)
-- `actions.gather.orchestrator.initialize_gather_state()` (was `_initialize_gather_state`)
-- `actions.gather.orchestrator.validate_start_page()` (was `_validate_start_page`)
+## 1. Test Quality Improvements
 
 ### 🟠 MEDIUM: Remaining Tests to Review
 
-| File | Line | Test Name | Issue |
-|------|------|-----------|-------|
-| `config/config_schema.py` | Multiple | Config tests | Some only check existence |
-| `database.py` | Multiple | DB tests | Some swallow exceptions with `pass` |
-
-**Suggested Approach:**
-Replace `callable()` checks with actual invocations using test data:
-```python
-# Before (smoke test)
-def _test_core_functions():
-    assert callable(some_function)
-
-# After (behavior test)
-def _test_core_functions():
-    result = some_function(test_input)
-    assert isinstance(result, expected_type)
-    assert result.some_property == expected_value
-```
-
----
-
-### ✅ COMPLETED: Tests With `except Exception: pass` (Nov 2025)
-
-Most tests that previously swallowed exceptions have been fixed:
-- `main.py` - All smoke tests now properly test behavior
-- Protected member access patterns replaced with public API calls
-
-**Remaining (low priority):**
-- Some config tests may still use defensive exception handling (intentional for config loading)
-
----
+| File | Issue |
+|------|-------|
+| `config/config_schema.py` | Some config tests only check existence |
+| `database.py` | Some tests swallow exceptions with `pass` |
 
 ### 🟠 MEDIUM: Missing Behavior Verification
 
@@ -106,7 +34,7 @@ Most tests that previously swallowed exceptions have been fixed:
 
 | File | Lines | Suggestion |
 |------|-------|------------|
-| `utils.py` | ~5000 | Consider extracting login/consent functions to `auth_utils.py` |
+| `utils.py` | ~4700 | Consider extracting login/consent functions to `auth_utils.py` |
 | `core/session_manager.py` | ~3600 | Consider extracting cookie management to separate module |
 | `core/error_handling.py` | ~2029 | Split into: `exceptions.py`, `retry.py`, `circuit_breaker.py`, `decorators.py` |
 
@@ -134,115 +62,7 @@ def _test_429_handling():
 
 ---
 
-## 4. Configuration Issues
-
-### ✅ COMPLETED: Unified Configuration Validation Layer (Nov 2025)
-
-**Problem:** Configuration is spread across `.env`, `config_schema.py`, and multiple validation points. Missing values cause runtime failures rather than startup failures.
-
-**Solution Implemented:**
-1. Created `config/validator.py` with `ConfigurationValidator` class
-2. Validates ALL required config at startup with clear, actionable error messages
-3. Added `health` menu action for configuration health check
-4. `ValidationReport` aggregates results with error/warning severity levels
-
-**Components:**
-- `ConfigurationValidator` - Comprehensive validation for all config sections
-- `ValidationResult` - Individual check result with name, status, message, suggestion
-- `ValidationReport` - Aggregated results with `passed`, `errors`, `warnings` properties
-- `run_startup_validation()` - Call at application startup
-- `run_health_check()` - Interactive health check for main menu
-
-**New Menu Action:**
-- Type `health` in main menu to run comprehensive configuration health check
-- Shows detailed report with pass/fail for each category
-- Provides actionable suggestions for failures
-
----
-
-## 5. Architecture Improvements
-
-### ✅ COMPLETED: Dependency Injection for SessionManager (Nov 2025)
-
-**Problem:** `session_utils.py` used global state (`set_global_session()`, `get_global_session()`), making testing difficult.
-
-**Solution Implemented:**
-1. ✅ Integrated with existing `DIContainer` in `core/dependency_injection.py`
-2. ✅ Created `register_session_manager()` - registers SessionManager in DI container
-3. ✅ Created `get_session_manager()` - resolves from DI container with legacy fallback
-4. ✅ Created `@requires_session` decorator - validates session availability before function execution
-5. ✅ Created `SessionNotAvailableError` - clear error type for missing sessions
-6. ✅ Maintained backward compatibility - `set_global_session()` and `get_global_session()` work as aliases
-
-**New API:**
-```python
-# Registration (at startup in core/lifecycle.py)
-from session_utils import register_session_manager
-register_session_manager(session_manager)
-
-# Access (anywhere in code)
-from session_utils import get_session_manager, is_session_available
-sm = get_session_manager()
-if is_session_available():
-    # Use session...
-
-# Decorator (for functions requiring session)
-from session_utils import requires_session, SessionNotAvailableError
-
-@requires_session()
-def my_function():
-    sm = get_session_manager()
-    # Use sm...
-
-@requires_session(inject_session=True)
-def my_function(session_manager: SessionManager, other_arg: str):
-    # session_manager is automatically injected as first argument
-    pass
-```
-
-**Benefits:**
-- Testability: Easy to inject mocks via DI container
-- Single source of truth: One SessionManager instance
-- Thread safety: DI container is thread-safe
-- Type safety: Protocol-based interface checking
-- Explicit dependencies: Clear what functions need sessions
-- Backward compatible: All existing callers work without changes
-
----
-
-### ✅ COMPLETED: Unified API Request Handler with Retry/Rate Limiting (Nov 2025)
-
-**Problem:** Similar API call patterns repeated across `api_utils.py`, `api_search_utils.py`, `dna_ethnicity_utils.py` with inconsistent error handling.
-
-**Solution Implemented:**
-The unified API request handler exists in `core/api_manager.py`:
-
-**Components:**
-- `RequestConfig` dataclass - Centralized request configuration with sensible defaults
-- `RequestResult` dataclass - Structured response with data, status, and metadata
-- `RetryPolicy` enum - Predefined retry policies (NONE, API, RESILIENT)
-- `APIManager.request()` method - Unified entry point with:
-  - Rate limiting integration via AdaptiveRateLimiter
-  - Configurable retry policies with exponential backoff
-  - Cookie synchronization with browser
-  - Comprehensive metrics recording
-
-**Usage:**
-```python
-config = RequestConfig(
-    url="https://api.example.com/data",
-    method="POST",
-    json_data={"key": "value"},
-    retry_policy=RetryPolicy.RESILIENT,
-)
-result = api_manager.request(config)
-if result.success:
-    print(result.json)
-```
-
-**Remaining:** Migrate remaining direct `requests.*` calls to use `APIManager.request()`
-
----
+## 4. Architecture Improvements
 
 ### 🟠 MEDIUM: Dependency Graph Cleanup and Import Ordering
 
@@ -252,99 +72,6 @@ if result.success:
 1. Create `scripts/analyze_imports.py` to generate dependency graph
 2. Move shared types/protocols to `core/types.py`
 3. Add CI check that fails on new circular imports
-
----
-
-### ✅ COMPLETED: Type Safety with Protocol Classes (Nov 2025)
-
-**Problem:** Code used `Any`, duck typing, and dynamic attributes which hid errors until runtime.
-
-**Solution Implemented:**
-Created `core/protocols.py` with:
-
-**Protocol Classes:**
-- `RateLimiterProtocol` - Interface for rate limiter implementations
-- `DatabaseSessionProtocol` - Interface for database sessions
-- `LoggerProtocol` - Interface for logger implementations
-- `CacheProtocol` - Interface for cache implementations
-
-**TypedDict Definitions:**
-- `APIResponse` - Standard API response structure
-- `PersonData` - Person data from DNA matches
-- `MatchData` - DNA match data structure
-- `RateLimiterMetrics` - Rate limiter metrics
-- `BudgetInfo` - Rate limit budget information
-- `TestResult` - Test execution result
-- `HealthStatus` - System health status
-- `CorrelationData` - Correlation context data
-
-**Type Aliases:**
-- `JSONValue`, `JSONDict`, `JSONList` - JSON-compatible types
-- `Headers`, `QueryParams`, `FormData` - HTTP-related types
-
-**Usage Example:**
-```python
-from core.protocols import RateLimiterProtocol, APIResponse
-
-def make_request(limiter: RateLimiterProtocol, url: str) -> APIResponse:
-    limiter.wait()
-    response = requests.get(url)
-    return APIResponse(success=response.ok, status_code=response.status_code)
-```
-
----
-
-### ✅ COMPLETED: Domain-Specific Exception Hierarchy (Nov 2025)
-
-**Problem:** Generic exceptions (`Exception`, `ValueError`) used throughout.
-
-**Solution Implemented:**
-Exception hierarchy exists in `core/error_handling.py`:
-- `AncestryError` - Base exception for all project errors
-- `RetryableError` - Errors that should trigger automatic retry
-  - `APIRateLimitError` - 429 rate limiting (with `retry_after` parameter)
-  - `NetworkTimeoutError` - Transient network issues
-  - `DatabaseConnectionError` - DB connection failures
-  - `BrowserSessionError` - Browser/session issues
-- `FatalError` - Errors that should NOT retry
-  - `DataValidationError` - Invalid data format
-  - `ConfigurationError` - Missing/invalid config
-  - `AuthenticationError` - Auth failures
-
-**Additional utilities:**
-- `@retry_on_failure` decorator - Automatic retry with exponential backoff
-- `@graceful_degradation` decorator - Fallback value on error
-- `@error_context` decorator - Add context to error logs
-- `SessionCircuitBreaker` - Fail-fast after repeated failures
-
----
-
-### ✅ COMPLETED: Startup Health Checks and Runtime Monitoring (Nov 2025)
-
-**Problem:** No systematic way to verify system readiness before operations.
-
-**Solution Implemented:**
-Created `core/health_check.py` with comprehensive health check system:
-
-**Components:**
-- `HealthStatus` enum - HEALTHY, DEGRADED, UNHEALTHY, UNKNOWN states
-- `HealthCheckResult` dataclass - Individual check result with timing
-- `HealthReport` dataclass - Aggregated results with overall status
-- `HealthCheck` Protocol - Interface for consistent check implementation
-
-**Implemented Checks:**
-- `DatabaseHealthCheck` - Validates DB connectivity and basic queries
-- `FileSystemHealthCheck` - Checks Data/Cache/Logs directories
-- `CacheHealthCheck` - Verifies cache system functionality
-- `ConfigurationHealthCheck` - Validates configuration settings
-- `APIHealthCheck` - Tests API connectivity (optional)
-
-**Usage:**
-- `run_startup_health_checks()` - Run at application startup
-- `run_interactive_health_check()` - Interactive report for main menu
-- `HealthCheckRunner` - Orchestrates all registered health checks
-
----
 
 ### 🟢 LOW: Extract Business Logic from UI/Orchestration
 
@@ -357,8 +84,6 @@ Create `actions/gather/` package structure:
 - `data_processor.py` - business logic
 - `persistence.py` - database operations
 
----
-
 ### 🟢 LOW: Unified Cache Interface with Clear Invalidation
 
 **Problem:** Multiple cache systems with inconsistent interfaces.
@@ -367,8 +92,6 @@ Create `actions/gather/` package structure:
 1. Create `core/cache/interface.py` with `Cache` protocol
 2. Implement adapters: `DiskCache`, `MemoryCache`, `DatabaseCache`
 3. Add explicit TTL and cache versioning
-
----
 
 ### 🟢 LOW: Browser Automation Service Layer
 
@@ -379,16 +102,12 @@ Create `actions/gather/` package structure:
 2. Implement page object pattern
 3. Create mock browser service for testing
 
----
-
 ### 🟢 LOW: Runtime Feature Toggle Framework
 
 **Problem:** Features hardcoded on/off in code.
 
 **Suggested Approach:**
 Create `core/feature_flags.py` with `FeatureFlags` class for A/B testing and gradual rollout.
-
----
 
 ### 🟢 LOW: Database Schema Evolution System
 
@@ -399,63 +118,7 @@ Enhance migration system with forward/backward migrations, dependencies, and dry
 
 ---
 
-## 6. Observability & Monitoring
-
-### ✅ COMPLETED: Structured Logging with Correlation IDs (Nov 2025)
-
-**Problem:** Logging is inconsistent without request correlation.
-
-**Solution Implemented:**
-Created `core/correlation.py` with comprehensive correlation tracking:
-- `CorrelationContext` dataclass - Holds correlation ID, operation name, timing, metadata
-- `correlation_context()` context manager - Automatically tracks operation start/end with timing
-- `CorrelationFilter` - Logging filter that adds correlation_id to all log records
-- `generate_correlation_id()` - Creates unique 8-char hex identifiers
-- `get_correlation_id()` / `get_correlation_context()` - Thread-safe context retrieval
-- Nested context support with parent ID tracking
-- Helper functions: `log_with_context()`, `log_operation_start()`, `log_operation_end()`
-- 7 comprehensive tests
-
-**Usage:**
-```python
-from core.correlation import correlation_context, get_correlation_id
-
-with correlation_context("action6_gather", metadata={"page": 1}) as ctx:
-    logger.info(f"[{ctx.correlation_id}] Processing page")
-    # All operations within this context can be traced
-```
-
----
-
-### ✅ COMPLETED: Rate Limiter Observability (Nov 2025)
-
-**Problem:** Rate limiting was opaque; users didn't know when throttling occurred.
-
-**Solution Implemented:**
-1. ✅ Added `get_status_message()` - Returns human-readable status with rate, tokens, and errors
-2. ✅ Added `calculate_budget()` - Calculates estimated requests for a time period
-3. ✅ Added `get_health_status()` - Returns health as "optimal"/"degraded"/"throttled"/"critical"
-4. ✅ Added 3 new tests validating observability features (total: 18 tests)
-
-**Usage Example:**
-```python
-from rate_limiter import AdaptiveRateLimiter
-
-limiter = AdaptiveRateLimiter()
-
-# Check current status
-print(limiter.get_status_message())  # "⚡ Rate: 0.50 req/s | Tokens: 10.0/10.0"
-
-# Get budget for next minute
-budget = limiter.calculate_budget(60.0)
-print(f"Can make ~{budget['estimated_requests']} requests in 60s")
-
-# Check health
-if limiter.get_health_status() == "critical":
-    logger.warning("Rate limiter in critical state - consider backing off")
-```
-
----
+## 5. Observability & Monitoring
 
 ### 🟢 LOW: Production Performance Monitoring
 
@@ -466,25 +129,7 @@ Integrate APM (opentelemetry or sentry) with automatic span tracking.
 
 ---
 
-## 7. Testing Strategy
-
-### ✅ COMPLETED: Test Utility Framework and Pattern Library (Nov 2025)
-
-**Problem:** Test setup code duplicated across modules.
-
-**Solution Implemented:**
-1. ✅ Expanded `test_utilities.py` with decorators: `@with_temp_database`, `@with_mock_session`, `@with_test_config`
-2. ✅ Added fixture factories: `create_test_match()`, `create_test_person()`
-3. ✅ Established test quality bar with comprehensive assertions
-
-**New Test Utilities:**
-- `@with_temp_database` - Creates isolated SQLite database for each test
-- `@with_mock_session` - Provides mock SessionManager with common methods
-- `@with_test_config` - Temporarily overrides config settings
-- `create_test_match()` - Factory for DnaMatch test fixtures with realistic defaults
-- `create_test_person()` - Factory for Person test fixtures
-
----
+## 6. Testing Strategy
 
 ### 🟠 MEDIUM: Multi-Layer Test Strategy
 
@@ -495,8 +140,6 @@ Integrate APM (opentelemetry or sentry) with automatic span tracking.
 2. Add pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`
 3. Run times: unit <1s each, integration <30s each
 
----
-
 ### 🟠 MEDIUM: Inconsistent Test Framework Usage
 
 **File:** `core/dependency_injection.py`
@@ -505,8 +148,6 @@ Integrate APM (opentelemetry or sentry) with automatic span tracking.
 
 **Suggested Approach:**
 Convert to use `TestSuite` pattern OR document that `unittest.TestCase` is acceptable for pure unit tests.
-
----
 
 ### 🟠 MEDIUM: Tests Using Mocking Without Real Assertions
 
@@ -517,40 +158,13 @@ Convert to use `TestSuite` pattern OR document that `unittest.TestCase` is accep
 - `core/config_validation.py`
 - `core/analytics_helpers.py`
 
----
-
 ### 🟢 LOW: Missing Tests for `ai/prompts.py`
 
 Add tests for prompt loading/validation.
 
 ---
 
-## 8. Developer Experience
-
-### ✅ COMPLETED: Comprehensive Developer Handbook (Nov 2025)
-
-**Problem:** README was 2,000+ lines mixing user guide, technical details, and change log.
-
-**Solution Implemented:**
-Created `docs/DEVELOPER_GUIDE.md` with:
-- Architecture overview with layer diagram
-- Core component documentation (SessionManager, APIManager, RateLimiter, ErrorHandling, Correlation)
-- Testing framework guide with TestSuite pattern
-- Code quality standards (Ruff, Pyright, pre-commit)
-- Common patterns (action functions, transactions, UUID handling, checkpoints)
-- Debugging guide for rate limiting, sessions, database, AI extraction
-- File organization reference
-- Contributing guidelines
-
-**Documentation Split:**
-- `README.md` - Project overview, installation, quick start
-- `docs/DEVELOPER_GUIDE.md` - Architecture, patterns, testing, debugging
-- `SECURITY.md` - Vulnerability reporting
-- `CHANGELOG.md` - Version history (TODO: create from README changes)
-
----
-
-## 9. Future Enhancements
+## 7. Future Enhancements
 
 ### ⚠️ LOW (v2.0): Async/Await for I/O Operations
 
@@ -563,119 +177,17 @@ Migrate to aiohttp and implement async database operations.
 
 ---
 
-## 10. Quick Wins
-
-These can be implemented today with minimal risk:
-
-| Item | Description | Status |
-|------|-------------|--------|
-| `requirements-dev.txt` | Separate test dependencies from runtime | ✅ DONE |
-| `scripts/run_tests_fast.py` | Run only unit tests (<5s total) | ✅ DONE |
-| Pre-commit hooks | Add hooks for Ruff, Pyright, and test execution | ✅ DONE |
-| `SECURITY.md` | Document vulnerability reporting process | ✅ DONE |
-| `.editorconfig` | Consistent formatting across editors | ✅ DONE |
-| Type stubs | Add stubs for third-party libraries missing them | ✅ DONE |
-| GitHub Actions | CI/CD workflows (if using GitHub) | ✅ DONE |
-| `docker-compose.yml` | Reproducible development environment | ✅ DONE |
-
----
-
-## Implementation Priority
-
-### Phase 1 - Foundation (Weeks 1-2)
-| Item | Section | Priority |
-|------|---------|----------|
-| Unified Configuration Validation | §4 | 🔴 HIGH |
-| Domain-Specific Exceptions | §5 | 🟠 MEDIUM |
-| Health Check System | §5 | 🟠 MEDIUM |
-
-### Phase 2 - Quality (Weeks 3-4)
-| Item | Section | Priority |
-|------|---------|----------|
-| ~~Dependency Injection for SessionManager~~ | §5 | ✅ DONE |
-| Circular Import Cleanup | §5 | 🟠 MEDIUM |
-| ~~Test Utility Framework~~ | §7 | ✅ DONE |
-| ~~Convert smoke tests to behavior tests~~ | §1 | ✅ DONE |
-| ~~Fix tests with `except Exception: pass`~~ | §1 | ✅ DONE |
-
-### Phase 3 - Architecture (Weeks 5-8)
-| Item | Section | Priority |
-|------|---------|----------|
-| ~~Unified API Request Handler~~ | §5 | ✅ DONE |
-| Extract Action Module Business Logic | §5 | 🟢 LOW |
-| ~~Type Safety with Protocols~~ | §5 | ✅ DONE |
-
-### Phase 4 - Observability (Weeks 9-10)
-| Item | Section | Priority |
-|------|---------|----------|
-| ~~Structured Logging~~ | §6 | ✅ DONE |
-| Performance Monitoring | §6 | 🟢 LOW |
-| Rate Limiter Transparency | §6 | 🟠 MEDIUM |
-
-### Phase 5 - Advanced (Weeks 11-12)
-| Item | Section | Priority |
-|------|---------|----------|
-| Caching Strategy Consistency | §5 | 🟢 LOW |
-| Multi-Layer Test Suite | §7 | 🟠 MEDIUM |
-| Browser Service Layer | §5 | 🟢 LOW |
-
-### Phase 6 - Future (Post v1.0)
-| Item | Section | Priority |
-|------|---------|----------|
-| Feature Flags | §5 | 🟢 LOW |
-| Enhanced Migration Framework | §5 | 🟢 LOW |
-| ~~Developer Documentation~~ | §8 | ✅ DONE |
-| Async/Await | §9 | ⚠️ v2.0 |
-
----
-
-## Summary Statistics
+## Summary
 
 | Category | Count | Priority Breakdown |
 |----------|-------|-------------------|
-| Test Quality Issues | 1 item | ✅ 7 fixed, 1 MEDIUM remaining |
-| Large File Opportunities | 1 item | 1 LOW |
+| Test Quality | 2 items | 2 MEDIUM |
+| Large Files | 1 item | 1 LOW |
 | Error Handling | 1 item | 1 MEDIUM |
-| Config Issues | 0 items | ✅ COMPLETED (Unified Validation Layer) |
-| Architecture Improvements | 11 items | ✅ 1 HIGH done, 4 MEDIUM, 4 LOW |
-| Observability | 3 items | ✅ 2 done, 1 LOW |
-| Testing Strategy | 5 items | ✅ 1 HIGH done, 4 MEDIUM |
-| Developer Experience | 1 item | ✅ COMPLETED |
-| Future Enhancements | 1 item | v2.0 |
-| Quick Wins | 8 items | ✅ ALL DONE |
+| Architecture | 6 items | 1 MEDIUM, 5 LOW |
+| Observability | 1 item | 1 LOW |
+| Testing Strategy | 4 items | 3 MEDIUM, 1 LOW |
+| Future | 1 item | v2.0 |
 
-**Total Remaining Items:** ~15 actionable items
+**Total Remaining Items:** 16 actionable items
 **Critical Issues:** 0 (All HIGH priority items completed!)
-
----
-
-## Completed Items (Reference)
-
-The following major items have been completed:
-
-- ✅ All 119 modules at 100% code quality score (linting)
-- ✅ All 985 tests passing with 100% success rate
-- ✅ **Dependency Injection for SessionManager** (session_utils.py) - DI container integration, `@requires_session` decorator, backward-compatible API
-- ✅ Unified Configuration Validation Layer (config/validator.py) with health check menu action
-- ✅ Unified API Request Handler (core/api_manager.py) with RequestConfig, RequestResult, RetryPolicy
-- ✅ Structured Logging with Correlation IDs (core/correlation.py) - thread-safe request tracking
-- ✅ Rate Limiter Observability (rate_limiter.py) - `get_status_message()`, `calculate_budget()`, `get_health_status()`
-- ✅ Type Safety with Protocols (core/protocols.py) - Protocol classes, TypedDicts, and type aliases
-- ✅ Developer Documentation (docs/DEVELOPER_GUIDE.md) - Architecture, patterns, testing, debugging
-- ✅ Smoke tests converted to behavior tests (7 files: action6_gather, action8_messaging, action10, tree_stats_utils, diagnose_chrome, utils, main)
-- ✅ Test Utility Framework expanded with decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and factories (`create_test_match()`)
-- ✅ Quick Wins: `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, pre-commit hooks, type stubs, `docker-compose.yml`
-- ✅ Fast test runner: `scripts/run_tests_fast.py` for rapid iteration
-- ✅ Docker support: Dockerfile, docker-compose.yml, docker-compose.dev.yml for containerized development
-- ✅ Triple Circuit Breaker Implementation consolidated
-- ✅ Duplicate `format_name()` implementations merged
-- ✅ Duplicate `ApiRateLimiter` class removed
-- ✅ Duplicate `_api_req` function removed (`_call_api_request_unified`)
-- ✅ Duplicate scoring weights (DEFAULT_CONFIG) removed
-- ✅ Config loading pattern duplication fixed
-- ✅ Config duplicate field definition fixed
-- ✅ Dead code cleanup (unused classes/functions)
-- ✅ REMOVED markers cleaned up
-- ✅ Database transaction pattern reviewed (intentional design)
-- ✅ `_parse_date()` reviewed (proper delegation pattern)
-- ✅ `_build_filter_params` reviewed (no duplication exists)
