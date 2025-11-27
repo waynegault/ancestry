@@ -2050,6 +2050,7 @@ def _extract_year_from_string_date(date_str: str) -> int | None:
     - "15 Jun 1941" (text month)
     """
     import re
+
     if not date_str:
         return None
 
@@ -2195,18 +2196,24 @@ def _parse_treesui_list_response(treesui_response: list[dict[str, Any]]) -> list
 
                     # Handle both old format ("B", "D") and new format ("Birth", "Death")
                     if event_type in {"B", "Birth"}:
-                        (
-                            birth_info["year"],
-                            birth_info["date"],
-                            birth_info["place"],
-                        ) = _extract_birth_event(event)
+                        extracted = _extract_birth_event(event)
+                        # Only update if we get better data (don't overwrite with empty values)
+                        if extracted[0] is not None and birth_info["year"] is None:
+                            birth_info["year"] = extracted[0]
+                        if extracted[1] and not birth_info["date"]:
+                            birth_info["date"] = extracted[1]
+                        if extracted[2] and not birth_info["place"]:
+                            birth_info["place"] = extracted[2]
                     elif event_type in {"D", "Death"}:
                         is_living = False
-                        (
-                            death_info["year"],
-                            death_info["date"],
-                            death_info["place"],
-                        ) = _extract_death_event(event)
+                        extracted = _extract_death_event(event)
+                        # Only update if we get better data (don't overwrite with empty values)
+                        if extracted[0] is not None and death_info["year"] is None:
+                            death_info["year"] = extracted[0]
+                        if extracted[1] and not death_info["date"]:
+                            death_info["date"] = extracted[1]
+                        if extracted[2] and not death_info["place"]:
+                            death_info["place"] = extracted[2]
 
             # Construct standardized suggestion dict
             suggestion = {
