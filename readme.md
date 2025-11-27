@@ -701,7 +701,9 @@ grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ## Documentation
 
 ### Core Documentation
-- **README.md** (this file) - Complete project documentation
+- **README.md** (this file) - Project overview, installation, quick start
+- **`docs/DEVELOPER_GUIDE.md`** - Architecture, patterns, testing, debugging guide
+- **`SECURITY.md`** - Vulnerability reporting process
 - **`.github/copilot-instructions.md`** - AI-assisted development guidelines
 - **`docs/review_todo.md`** - Technical debt and quality improvement checklist (Updated Nov 18, 2025)
 - **`docs/MAINTAINER_HANDOFF.md`** - Comprehensive handoff brief for next maintainer (Created Nov 25, 2025)

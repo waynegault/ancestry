@@ -463,17 +463,26 @@ Add tests for prompt loading/validation.
 
 ## 8. Developer Experience
 
-### 🟠 MEDIUM: Comprehensive Developer Handbook
+### ✅ COMPLETED: Comprehensive Developer Handbook (Nov 2025)
 
-**Problem:** README is 2,000+ lines mixing user guide, technical details, and change log.
+**Problem:** README was 2,000+ lines mixing user guide, technical details, and change log.
 
-**Suggested Approach:**
-Split documentation:
-- `README.md` - project overview, quick start
-- `docs/USER_GUIDE.md` - how to use the tool
-- `docs/DEVELOPER_GUIDE.md` - architecture, patterns, testing
-- `docs/API_REFERENCE.md` - endpoint documentation
-- `CHANGELOG.md` - version history
+**Solution Implemented:**
+Created `docs/DEVELOPER_GUIDE.md` with:
+- Architecture overview with layer diagram
+- Core component documentation (SessionManager, APIManager, RateLimiter, ErrorHandling, Correlation)
+- Testing framework guide with TestSuite pattern
+- Code quality standards (Ruff, Pyright, pre-commit)
+- Common patterns (action functions, transactions, UUID handling, checkpoints)
+- Debugging guide for rate limiting, sessions, database, AI extraction
+- File organization reference
+- Contributing guidelines
+
+**Documentation Split:**
+- `README.md` - Project overview, installation, quick start
+- `docs/DEVELOPER_GUIDE.md` - Architecture, patterns, testing, debugging
+- `SECURITY.md` - Vulnerability reporting
+- `CHANGELOG.md` - Version history (TODO: create from README changes)
 
 ---
 
@@ -551,7 +560,7 @@ These can be implemented today with minimal risk:
 |------|---------|----------|
 | Feature Flags | §5 | 🟢 LOW |
 | Enhanced Migration Framework | §5 | 🟢 LOW |
-| Developer Documentation | §8 | 🟠 MEDIUM |
+| ~~Developer Documentation~~ | §8 | ✅ DONE |
 | Async/Await | §9 | ⚠️ v2.0 |
 
 ---
@@ -565,13 +574,13 @@ These can be implemented today with minimal risk:
 | Error Handling | 1 item | 1 MEDIUM |
 | Config Issues | 0 items | ✅ COMPLETED (Unified Validation Layer) |
 | Architecture Improvements | 11 items | 1 HIGH, 5 MEDIUM, 4 LOW |
-| Observability | 3 items | ✅ 1 done, 1 MEDIUM, 1 LOW |
+| Observability | 3 items | ✅ 2 done, 1 LOW |
 | Testing Strategy | 5 items | ✅ 1 HIGH done, 4 MEDIUM |
-| Developer Experience | 1 item | 1 MEDIUM |
+| Developer Experience | 1 item | ✅ COMPLETED |
 | Future Enhancements | 1 item | v2.0 |
 | Quick Wins | 8 items | ✅ ALL DONE |
 
-**Total Remaining Items:** ~19 actionable items
+**Total Remaining Items:** ~17 actionable items
 **Critical Issues:** 1 (Dependency Injection)
 
 ---
@@ -581,10 +590,12 @@ These can be implemented today with minimal risk:
 The following major items have been completed:
 
 - ✅ All 118 modules at 100% code quality score (linting)
-- ✅ All 973 tests passing with 100% success rate
+- ✅ All 976 tests passing with 100% success rate
 - ✅ Unified Configuration Validation Layer (config/validator.py) with health check menu action
 - ✅ Unified API Request Handler (core/api_manager.py) with RequestConfig, RequestResult, RetryPolicy
 - ✅ Structured Logging with Correlation IDs (core/correlation.py) - thread-safe request tracking
+- ✅ Rate Limiter Observability (rate_limiter.py) - `get_status_message()`, `calculate_budget()`, `get_health_status()`
+- ✅ Developer Documentation (docs/DEVELOPER_GUIDE.md) - Architecture, patterns, testing, debugging
 - ✅ Smoke tests converted to behavior tests (7 files: action6_gather, action8_messaging, action10, tree_stats_utils, diagnose_chrome, utils, main)
 - ✅ Test Utility Framework expanded with decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and factories (`create_test_match()`)
 - ✅ Quick Wins: `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, pre-commit hooks, type stubs, `docker-compose.yml`
