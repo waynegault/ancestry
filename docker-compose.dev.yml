@@ -1,0 +1,27 @@
+# Docker Compose override for development
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# This adds development-specific configuration like hot-reload
+
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Use builder stage for dev tools
+    volumes:
+      # Mount source code for live editing
+      - .:/app
+      # Mount .env for development
+      - ./.env:/app/.env:ro
+      # Exclude __pycache__ from mount
+      - /app/__pycache__
+      - /app/.venv
+    environment:
+      - LOG_LEVEL=DEBUG
+      - SKIP_LIVE_API_TESTS=true
+    command: ["python", "-u", "main.py"]
