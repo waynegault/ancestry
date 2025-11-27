@@ -174,14 +174,37 @@ def _test_429_handling():
 
 ---
 
-### 🔴 HIGH: Unified API Request Handler with Retry/Rate Limiting
+### ✅ COMPLETED: Unified API Request Handler with Retry/Rate Limiting (Nov 2025)
 
 **Problem:** Similar API call patterns repeated across `api_utils.py`, `api_search_utils.py`, `dna_ethnicity_utils.py` with inconsistent error handling.
 
-**Suggested Approach:**
-1. Create `core/api_client.py` with single `APIClient` class
-2. Implement `request()` method that handles: rate limiting, retries, cookie sync, error standardization
-3. Move all API endpoint constants to `core/api_endpoints.py`
+**Solution Implemented:**
+The unified API request handler exists in `core/api_manager.py`:
+
+**Components:**
+- `RequestConfig` dataclass - Centralized request configuration with sensible defaults
+- `RequestResult` dataclass - Structured response with data, status, and metadata
+- `RetryPolicy` enum - Predefined retry policies (NONE, API, RESILIENT)
+- `APIManager.request()` method - Unified entry point with:
+  - Rate limiting integration via AdaptiveRateLimiter
+  - Configurable retry policies with exponential backoff
+  - Cookie synchronization with browser
+  - Comprehensive metrics recording
+
+**Usage:**
+```python
+config = RequestConfig(
+    url="https://api.example.com/data",
+    method="POST",
+    json_data={"key": "value"},
+    retry_policy=RetryPolicy.RESILIENT,
+)
+result = api_manager.request(config)
+if result.success:
+    print(result.json)
+```
+
+**Remaining:** Migrate remaining direct `requests.*` calls to use `APIManager.request()`
 
 ---
 
@@ -445,7 +468,7 @@ These can be implemented today with minimal risk:
 | `SECURITY.md` | Document vulnerability reporting process | ✅ DONE |
 | `.editorconfig` | Consistent formatting across editors | ✅ DONE |
 | Type stubs | Add stubs for third-party libraries missing them | 1 hr |
-| GitHub Actions | CI/CD workflows (if using GitHub) | 1 hr |
+| GitHub Actions | CI/CD workflows (if using GitHub) | ✅ DONE |
 | `docker-compose.yml` | Reproducible development environment | 2 hr |
 
 ---
@@ -471,7 +494,7 @@ These can be implemented today with minimal risk:
 ### Phase 3 - Architecture (Weeks 5-8)
 | Item | Section | Priority |
 |------|---------|----------|
-| Unified API Request Handler | §5 | 🔴 HIGH |
+| ~~Unified API Request Handler~~ | §5 | ✅ DONE |
 | Extract Action Module Business Logic | §5 | 🟢 LOW |
 | Type Safety with Protocols | §5 | 🟠 MEDIUM |
 
@@ -507,15 +530,15 @@ These can be implemented today with minimal risk:
 | Large File Opportunities | 1 item | 1 LOW |
 | Error Handling | 1 item | 1 MEDIUM |
 | Config Issues | 0 items | ✅ COMPLETED (Unified Validation Layer) |
-| Architecture Improvements | 11 items | 2 HIGH, 5 MEDIUM, 4 LOW |
+| Architecture Improvements | 11 items | 1 HIGH, 5 MEDIUM, 4 LOW |
 | Observability | 3 items | 2 MEDIUM, 1 LOW |
 | Testing Strategy | 5 items | ✅ 1 HIGH done, 4 MEDIUM |
 | Developer Experience | 1 item | 1 MEDIUM |
 | Future Enhancements | 1 item | v2.0 |
-| Quick Wins | 8 items | ✅ 5 DONE, 3 remaining |
+| Quick Wins | 8 items | ✅ 6 DONE, 2 remaining |
 
-**Total Remaining Items:** ~22 actionable items
-**Critical Issues:** 2 (Dependency Injection, Unified API Handler)
+**Total Remaining Items:** ~20 actionable items
+**Critical Issues:** 1 (Dependency Injection)
 
 ---
 
@@ -526,6 +549,7 @@ The following major items have been completed:
 - ✅ All 117 modules at 100% code quality score (linting)
 - ✅ All 966 tests passing with 100% success rate
 - ✅ Unified Configuration Validation Layer (config/validator.py) with health check menu action
+- ✅ Unified API Request Handler (core/api_manager.py) with RequestConfig, RequestResult, RetryPolicy
 - ✅ Smoke tests converted to behavior tests (7 files: action6_gather, action8_messaging, action10, tree_stats_utils, diagnose_chrome, utils, main)
 - ✅ Test Utility Framework expanded with decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and factories (`create_test_match()`)
 - ✅ Quick Wins: `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, pre-commit hooks
