@@ -590,14 +590,18 @@ def test_edge_cases():
         assert result is None or isinstance(result, str)
 
     # Test file operations error handling
-    with patch("builtins.open", side_effect=PermissionError("Test permission error")):
+    # Use a mock to verify permission error handling without creating real files
+    mock_file = MagicMock()
+    mock_file.__enter__ = MagicMock(return_value=mock_file)
+    mock_file.__exit__ = MagicMock(return_value=False)
+    with patch("pathlib.Path.open", side_effect=PermissionError("Test permission error")):
         try:
             # Test that permission errors are handled
             from pathlib import Path
             with Path("test_file").open("w", encoding="utf-8") as f:
                 f.write("test")
         except PermissionError:
-            pass  # Expected behavior
+            pass  # Expected behavior - permission errors should be caught
 
 
 def test_integration():

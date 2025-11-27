@@ -81,6 +81,48 @@ age_seconds = session_manager.session_age_seconds()
 - `is_sess_valid()` - Check if session is authenticated
 - `session_age_seconds()` - Get session age for timeout management
 
+### Session Management (`session_utils.py`)
+
+Dependency injection-based session access with backward compatibility:
+
+```python
+from session_utils import (
+    register_session_manager,  # Register at startup
+    get_session_manager,       # Get session (preferred)
+    is_session_available,      # Check availability
+    requires_session,          # Decorator
+    SessionNotAvailableError,  # Exception
+)
+
+# At startup (core/lifecycle.py does this automatically)
+session_manager = SessionManager()
+register_session_manager(session_manager)
+
+# Access anywhere in code
+sm = get_session_manager()
+if sm and is_session_available():
+    # Use session...
+    pass
+
+# Decorator for functions requiring session
+@requires_session()
+def my_function():
+    sm = get_session_manager()
+    # Use sm...
+
+# Auto-inject session as first argument
+@requires_session(inject_session=True)
+def process_matches(session_manager: SessionManager, matches: list):
+    # session_manager is automatically injected
+    pass
+```
+
+**Key Features:**
+- Uses DI container (`core/dependency_injection.py`)
+- Backward compatible: `get_global_session()` still works
+- Thread-safe access
+- Clear error messages via `SessionNotAvailableError`
+
 ### APIManager (`core/api_manager.py`)
 
 Unified API request handling with retry and rate limiting:

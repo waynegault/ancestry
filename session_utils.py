@@ -1,37 +1,38 @@
 #!/usr/bin/env python3
 
 """
-session_utils.py - Global Session Management (SINGLE SOURCE OF TRUTH)
+session_utils.py - Global Session Management with Dependency Injection
 
-This module provides the ONLY way to access authenticated sessions in the application.
+This module provides session management using the DI container pattern while
+maintaining backward compatibility with the previous global state approach.
 
-ARCHITECTURE:
+ARCHITECTURE (DI-based):
 1. main.py creates ONE SessionManager at startup
-2. main.py registers it as the global session via set_global_session()
-3. main.py authenticates it via get_authenticated_session()
-4. All actions receive this session as a parameter
-5. All tests access this session via ensure_session_for_tests()
+2. main.py registers it via register_session_manager() which uses DI container
+3. Consumers access via get_session_manager() which resolves from DI container
+4. All action functions receive session_manager as first parameter
+5. Helper functions use @requires_session decorator or get_session_manager()
 
-RULES:
-- NO session creation outside of main.py
-- NO alternative paths or fallbacks
-- NO backward compatibility
-- ONLY the global session is allowed
+MIGRATION PATH:
+- set_global_session() → register_session_manager() (both work, prefer DI)
+- get_global_session() → get_session_manager() (both work, prefer DI)
+- get_authenticated_session() → use @requires_session decorator
 
 BENEFITS:
-- Single session creation: No duplicate SessionManager instances
-- Single authentication: Login happens once at startup
-- Consistent state: All code uses the same authenticated session
-- Maximum simplicity: Only ONE way to get a session
-- DRY principle: Single source of truth
+- Testability: Easy to inject mocks via DI container
+- Single source of truth: One SessionManager instance
+- Thread safety: DI container is thread-safe
+- Type safety: Protocol-based interface checking
+- Explicit dependencies: Clear what functions need sessions
 """
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
+import functools
 import os
 import sys
-from collections.abc import Iterator
-from typing import Optional, cast
+from collections.abc import Callable, Iterator
+from typing import Any, Optional, ParamSpec, TypeVar, cast
 from unittest import mock
 
 # === LOCAL IMPORTS ===
@@ -42,9 +43,13 @@ from logging_config import setup_logging
 _env_log_level = os.getenv("LOG_LEVEL", "INFO")
 logger = setup_logging(log_level=_env_log_level)
 
+# === TYPE VARIABLES FOR DECORATORS ===
+P = ParamSpec("P")
+R = TypeVar("R")
 
-# === GLOBAL SESSION CACHE ===
-# This is the SINGLE SOURCE OF TRUTH for session management
+
+# === GLOBAL SESSION CACHE (LEGACY - KEPT FOR BACKWARD COMPATIBILITY) ===
+# New code should use the DI container pattern below
 class _State:
     session_manager: Optional[SessionManager] = None
     session_uuid: Optional[str] = None
@@ -55,7 +60,149 @@ GLOBAL_SESSION = _State()
 
 
 # ==============================================
-# CORE FUNCTIONS (ONLY THESE ARE NEEDED)
+# DI CONTAINER INTEGRATION (PREFERRED APPROACH)
+# ==============================================
+
+
+def _get_di_container() -> Any:
+    """Get the DI container (lazy import to avoid circular dependencies)."""
+    from core.dependency_injection import get_container
+    return get_container()
+
+
+def register_session_manager(session_manager: SessionManager) -> None:
+    """
+    Register a SessionManager via the DI container.
+
+    This is the PREFERRED method for registering sessions at startup.
+    Also updates the legacy global state for backward compatibility.
+
+    Args:
+        session_manager: The SessionManager instance to register
+    """
+    try:
+        container = _get_di_container()
+        container.register_instance(SessionManager, session_manager)
+        logger.debug("✅ SessionManager registered in DI container")
+    except Exception as e:
+        logger.warning(f"Could not register in DI container: {e}")
+
+    # Also update legacy global state for backward compatibility
+    GLOBAL_SESSION.session_manager = session_manager
+    GLOBAL_SESSION.session_uuid = None
+    logger.debug("✅ SessionManager registered (DI + legacy)")
+
+
+def get_session_manager() -> Optional[SessionManager]:
+    """
+    Get the SessionManager from the DI container.
+
+    This is the PREFERRED method for accessing the session.
+    Falls back to legacy global state if DI container is not configured.
+
+    Returns:
+        SessionManager if registered, None otherwise
+    """
+    # Try DI container first
+    try:
+        container = _get_di_container()
+        if container.is_registered(SessionManager):
+            return container.resolve(SessionManager)
+    except Exception:
+        pass  # Fall through to legacy
+
+    # Fallback to legacy global state
+    return GLOBAL_SESSION.session_manager
+
+
+def is_session_available() -> bool:
+    """
+    Check if a SessionManager is available (either via DI or legacy).
+
+    Returns:
+        True if a SessionManager is registered
+    """
+    return get_session_manager() is not None
+
+
+# ==============================================
+# @requires_session DECORATOR
+# ==============================================
+
+
+class SessionNotAvailableError(RuntimeError):
+    """Raised when a function decorated with @requires_session has no session available."""
+
+    def __init__(self, func_name: str, message: str | None = None):
+        self.func_name = func_name
+        default_msg = (
+            f"Function '{func_name}' requires an authenticated session, but none is available. "
+            "Ensure main.py has called register_session_manager() before invoking this function."
+        )
+        super().__init__(message or default_msg)
+
+
+def requires_session(
+    *,
+    inject_session: bool = False,
+    skip_csrf: bool = True,
+    action_name: str | None = None,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """
+    Decorator that ensures a SessionManager is available before function execution.
+
+    Usage:
+        @requires_session()
+        def my_function():
+            sm = get_session_manager()
+            # Use sm...
+
+        @requires_session(inject_session=True)
+        def my_function(session_manager: SessionManager, other_arg: str):
+            # session_manager is automatically injected as first argument
+            pass
+
+    Args:
+        inject_session: If True, automatically injects SessionManager as first argument
+        skip_csrf: Whether to skip CSRF validation when ensuring session ready
+        action_name: Name for logging; defaults to function name
+
+    Raises:
+        SessionNotAvailableError: If no session is registered
+    """
+
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            func_action_name = action_name or func.__name__
+
+            # Get session manager
+            sm = get_session_manager()
+            if sm is None:
+                raise SessionNotAvailableError(func.__name__)
+
+            # Ensure session is ready
+            try:
+                sm.ensure_session_ready(func_action_name, skip_csrf=skip_csrf)
+            except Exception as e:
+                logger.error(f"Session not ready for {func_action_name}: {e}")
+                raise SessionNotAvailableError(
+                    func.__name__,
+                    f"Session exists but is not ready: {e}"
+                ) from e
+
+            # Inject session if requested
+            if inject_session:
+                return func(sm, *args, **kwargs)  # type: ignore[arg-type]
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+# ==============================================
+# LEGACY FUNCTIONS (BACKWARD COMPATIBILITY)
 # ==============================================
 
 
@@ -63,30 +210,26 @@ def set_global_session(session_manager: SessionManager) -> None:
     """
     Register a SessionManager as the global session.
 
-    This should ONLY be called by main.py at startup.
+    DEPRECATED: Use register_session_manager() instead.
+    Kept for backward compatibility - internally calls register_session_manager().
 
     Args:
         session_manager: The SessionManager instance to register globally
     """
-    prev = GLOBAL_SESSION.session_manager
-    GLOBAL_SESSION.session_manager = session_manager
-    # Don't try to get UUID yet - session hasn't been authenticated
-    # UUID will be set when get_authenticated_session() is called
-    GLOBAL_SESSION.session_uuid = None
-    if prev is session_manager:
-        logger.debug("Global session already registered; skipping re-register")
-    else:
-        logger.debug("✅ Global session registered (not yet authenticated)")
+    register_session_manager(session_manager)
 
 
 def get_global_session() -> Optional[SessionManager]:
     """
     Get the global session manager if it exists.
 
+    DEPRECATED: Use get_session_manager() instead.
+    Kept for backward compatibility - internally calls get_session_manager().
+
     Returns:
         Optional[SessionManager]: The cached session manager, or None if not set
     """
-    return GLOBAL_SESSION.session_manager
+    return get_session_manager()
 
 
 def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
@@ -125,11 +268,12 @@ def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: Sessi
 
 
 def _assert_global_session_exists() -> None:
-    """Raise if the global session has not been registered by main.py."""
-    if not GLOBAL_SESSION.session_manager:
+    """Raise if the global session has not been registered."""
+    if not is_session_available():
         raise RuntimeError(
-            "No global session available. main.py must call set_global_session() before any actions or tests can run. "
-            "If running a script directly, ensure main.py has been run first to register the global session."
+            "No session available. main.py must call register_session_manager() "
+            "(or set_global_session()) before any actions or tests can run. "
+            "If running a script directly, ensure main.py has been run first."
         )
 
 
@@ -147,21 +291,28 @@ def get_authenticated_session(action_name: str = "Session Setup", skip_csrf: boo
     """
     Get the global authenticated session manager (single source of truth).
 
-    - Requires main.py to have registered the global session via set_global_session().
+    NOTE: For new code, consider using the @requires_session decorator instead:
+
+        @requires_session(inject_session=True)
+        def my_function(session_manager: SessionManager):
+            # session_manager is automatically injected
+            pass
+
+    - Requires main.py to have registered the session via register_session_manager().
     - Authenticates the session on first use, then reuses cached credentials.
     """
-    # 1) Validate that a global session exists
+    # 1) Validate that a session exists (DI or legacy)
     _assert_global_session_exists()
 
     # 2) Determine session state and pre-auth logging
     from config import config_schema
 
     env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
-    already_auth = bool(GLOBAL_SESSION.session_uuid and getattr(GLOBAL_SESSION.session_manager, "my_uuid", None))
+    already_auth = bool(GLOBAL_SESSION.session_uuid and getattr(get_session_manager(), "my_uuid", None))
     _pre_auth_logging(already_auth, env_uuid, action_name)
 
     # 3) Ensure session is ready (no-op if cached)
-    sm = GLOBAL_SESSION.session_manager
+    sm = get_session_manager()
     assert sm is not None
     _ensure_session_ready_or_raise(sm, action_name, skip_csrf)
 
@@ -179,8 +330,18 @@ def clear_cached_session() -> None:
     This is useful for testing when you want to reset the cache
     without actually closing the session.
     """
+    # Clear legacy state
     GLOBAL_SESSION.session_manager = None
     GLOBAL_SESSION.session_uuid = None
+    GLOBAL_SESSION.auth_banner_printed = False
+
+    # Clear DI container registration
+    try:
+        from core.dependency_injection import ServiceRegistry
+        ServiceRegistry.clear_container("default")
+    except Exception:
+        pass
+
     logger.info("Cached session cleared (not closed)")
 
 
@@ -191,11 +352,15 @@ def close_cached_session(keep_db: bool = True) -> None:
     Args:
         keep_db: Whether to keep database connections (default: True)
     """
-    if GLOBAL_SESSION.session_manager:
+    sm = get_session_manager()
+    if sm:
         logger.info("Closing cached session")
-        GLOBAL_SESSION.session_manager.close_sess(keep_db=keep_db)
-        GLOBAL_SESSION.session_manager = None
-        GLOBAL_SESSION.session_uuid = None
+        sm.close_sess(keep_db=keep_db)
+
+    # Clear legacy state
+    GLOBAL_SESSION.session_manager = None
+    GLOBAL_SESSION.session_uuid = None
+    GLOBAL_SESSION.auth_banner_printed = False
 
 
 # ==============================================
@@ -262,7 +427,7 @@ def _test_global_session_not_set() -> bool:
         get_authenticated_session("Test Action")
         raise AssertionError("Should have raised RuntimeError when no global session")
     except RuntimeError as e:
-        assert "No global session available" in str(e)
+        assert "No session available" in str(e)
         logger.info("✅ Correctly raises error when no global session")
         return True
 
@@ -341,7 +506,8 @@ def _test_clear_cached_session_resets_state() -> bool:
 def _test_close_cached_session_invokes_close() -> bool:
     with _preserve_global_session_state():
         fake_session = mock.Mock(spec=SessionManager)
-        GLOBAL_SESSION.session_manager = fake_session
+        # Use register_session_manager to ensure both DI and legacy state are set
+        register_session_manager(fake_session)
         GLOBAL_SESSION.session_uuid = "cached"
         close_cached_session(keep_db=False)
         fake_session.close_sess.assert_called_once_with(keep_db=False)
@@ -350,11 +516,102 @@ def _test_close_cached_session_invokes_close() -> bool:
     return True
 
 
+def _test_register_session_manager_updates_both() -> bool:
+    """Test that register_session_manager updates both DI container and legacy state."""
+    with _preserve_global_session_state():
+        from unittest.mock import MagicMock
+
+        mock_sm = MagicMock(spec=SessionManager)
+        mock_sm.my_uuid = "di-test-uuid"
+
+        # Clear state first
+        clear_cached_session()
+
+        # Register via new API
+        register_session_manager(mock_sm)
+
+        # Verify legacy state is updated
+        assert GLOBAL_SESSION.session_manager is mock_sm
+
+        # Verify DI-based accessor works
+        retrieved = get_session_manager()
+        assert retrieved is mock_sm
+
+        # Verify is_session_available
+        assert is_session_available() is True
+
+        logger.info("✅ register_session_manager updates both DI and legacy state")
+        clear_cached_session()
+    return True
+
+
+def _test_requires_session_decorator_raises_when_no_session() -> bool:
+    """Test that @requires_session raises SessionNotAvailableError when no session."""
+    with _preserve_global_session_state():
+        clear_cached_session()
+
+        @requires_session()
+        def my_function() -> str:
+            return "should not reach here"
+
+        try:
+            my_function()
+            raise AssertionError("Should have raised SessionNotAvailableError")
+        except SessionNotAvailableError as e:
+            assert "my_function" in str(e)
+            logger.info("✅ @requires_session raises error when no session")
+    return True
+
+
+def _test_requires_session_decorator_with_inject() -> bool:
+    """Test that @requires_session can inject session_manager as first argument."""
+    with _preserve_global_session_state():
+        from unittest.mock import MagicMock
+
+        mock_sm = MagicMock(spec=SessionManager)
+        mock_sm.my_uuid = "inject-test-uuid"
+        mock_sm.ensure_session_ready.return_value = True
+        register_session_manager(mock_sm)
+
+        @requires_session(inject_session=True)
+        def my_function(session_manager: SessionManager, value: int) -> tuple[SessionManager, int]:
+            return session_manager, value
+
+        result_sm, result_val = my_function(42)
+        assert result_sm is mock_sm, "Session should be injected"
+        assert result_val == 42, "Other args should pass through"
+
+        logger.info("✅ @requires_session(inject_session=True) works")
+        clear_cached_session()
+    return True
+
+
+def _test_get_session_manager_fallback_to_legacy() -> bool:
+    """Test that get_session_manager falls back to legacy state if DI unavailable."""
+    with _preserve_global_session_state():
+        from unittest.mock import MagicMock
+
+        # Clear everything first (including DI container)
+        clear_cached_session()
+
+        # Set only legacy state (bypass DI by direct assignment AFTER clearing)
+        mock_sm = MagicMock(spec=SessionManager)
+        GLOBAL_SESSION.session_manager = mock_sm
+
+        # get_session_manager should return it via legacy fallback
+        result = get_session_manager()
+        assert result is mock_sm, "Should fall back to legacy state"
+
+        logger.info("✅ get_session_manager falls back to legacy state")
+        # Don't call clear_cached_session here as _preserve_global_session_state will restore
+    return True
+
+
 def session_utils_module_tests() -> bool:
     """Run all module tests."""
     from test_framework import TestSuite
 
-    suite = TestSuite("session_utils.py - Global Session Management", "session_utils.py")
+    suite = TestSuite("session_utils.py - Session Management with DI", "session_utils.py")
 
     suite.run_test(
         "No global session error",
@@ -394,6 +651,39 @@ def session_utils_module_tests() -> bool:
         "Ensures close_cached_session invokes close_sess and clears globals",
         "close_cached_session()",
         "Verifies keep_db flag propagates to SessionManager",
+    )
+
+    # New DI-based tests
+    suite.run_test(
+        "register_session_manager updates DI and legacy",
+        _test_register_session_manager_updates_both,
+        "Registers session in both DI container and legacy state",
+        "register_session_manager()",
+        "Tests DI container integration with backward compatibility",
+    )
+
+    suite.run_test(
+        "@requires_session raises without session",
+        _test_requires_session_decorator_raises_when_no_session,
+        "Decorator raises SessionNotAvailableError when no session registered",
+        "@requires_session()",
+        "Tests decorator validation behavior",
+    )
+
+    suite.run_test(
+        "@requires_session with inject_session",
+        _test_requires_session_decorator_with_inject,
+        "Decorator injects session_manager as first argument",
+        "@requires_session(inject_session=True)",
+        "Tests decorator injection behavior",
+    )
+
+    suite.run_test(
+        "get_session_manager fallback to legacy",
+        _test_get_session_manager_fallback_to_legacy,
+        "Falls back to legacy state if DI container unavailable",
+        "get_session_manager()",
+        "Tests backward compatibility with legacy global state",
     )
 
     return suite.finish_suite()

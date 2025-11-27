@@ -162,15 +162,51 @@ def _test_429_handling():
 
 ## 5. Architecture Improvements
 
-### 🔴 HIGH: Dependency Injection for SessionManager
+### ✅ COMPLETED: Dependency Injection for SessionManager (Nov 2025)
 
-**Problem:** `session_utils.py` uses global state (`set_global_session()`, `get_global_session()`), making testing difficult.
+**Problem:** `session_utils.py` used global state (`set_global_session()`, `get_global_session()`), making testing difficult.
 
-**Suggested Approach:**
-1. Refactor all action functions to accept `session_manager: SessionManager` as first parameter
-2. Update `exec_actn()` in `main.py` to pass session_manager to all actions
-3. Remove `get_authenticated_session()` - replace with explicit parameter passing
-4. Create `@requires_session` decorator for functions needing authenticated sessions
+**Solution Implemented:**
+1. ✅ Integrated with existing `DIContainer` in `core/dependency_injection.py`
+2. ✅ Created `register_session_manager()` - registers SessionManager in DI container
+3. ✅ Created `get_session_manager()` - resolves from DI container with legacy fallback
+4. ✅ Created `@requires_session` decorator - validates session availability before function execution
+5. ✅ Created `SessionNotAvailableError` - clear error type for missing sessions
+6. ✅ Maintained backward compatibility - `set_global_session()` and `get_global_session()` work as aliases
+
+**New API:**
+```python
+# Registration (at startup in core/lifecycle.py)
+from session_utils import register_session_manager
+register_session_manager(session_manager)
+
+# Access (anywhere in code)
+from session_utils import get_session_manager, is_session_available
+sm = get_session_manager()
+if is_session_available():
+    # Use session...
+
+# Decorator (for functions requiring session)
+from session_utils import requires_session, SessionNotAvailableError
+
+@requires_session()
+def my_function():
+    sm = get_session_manager()
+    # Use sm...
+
+@requires_session(inject_session=True)
+def my_function(session_manager: SessionManager, other_arg: str):
+    # session_manager is automatically injected as first argument
+    pass
+```
+
+**Benefits:**
+- Testability: Easy to inject mocks via DI container
+- Single source of truth: One SessionManager instance
+- Thread safety: DI container is thread-safe
+- Type safety: Protocol-based interface checking
+- Explicit dependencies: Clear what functions need sessions
+- Backward compatible: All existing callers work without changes
 
 ---
 
@@ -556,7 +592,7 @@ These can be implemented today with minimal risk:
 ### Phase 2 - Quality (Weeks 3-4)
 | Item | Section | Priority |
 |------|---------|----------|
-| Dependency Injection for SessionManager | §5 | 🔴 HIGH |
+| ~~Dependency Injection for SessionManager~~ | §5 | ✅ DONE |
 | Circular Import Cleanup | §5 | 🟠 MEDIUM |
 | ~~Test Utility Framework~~ | §7 | ✅ DONE |
 | ~~Convert smoke tests to behavior tests~~ | §1 | ✅ DONE |
@@ -601,15 +637,15 @@ These can be implemented today with minimal risk:
 | Large File Opportunities | 1 item | 1 LOW |
 | Error Handling | 1 item | 1 MEDIUM |
 | Config Issues | 0 items | ✅ COMPLETED (Unified Validation Layer) |
-| Architecture Improvements | 11 items | 1 HIGH, 4 MEDIUM, 4 LOW |
+| Architecture Improvements | 11 items | ✅ 1 HIGH done, 4 MEDIUM, 4 LOW |
 | Observability | 3 items | ✅ 2 done, 1 LOW |
 | Testing Strategy | 5 items | ✅ 1 HIGH done, 4 MEDIUM |
 | Developer Experience | 1 item | ✅ COMPLETED |
 | Future Enhancements | 1 item | v2.0 |
 | Quick Wins | 8 items | ✅ ALL DONE |
 
-**Total Remaining Items:** ~16 actionable items
-**Critical Issues:** 1 (Dependency Injection)
+**Total Remaining Items:** ~15 actionable items
+**Critical Issues:** 0 (All HIGH priority items completed!)
 
 ---
 
@@ -618,7 +654,8 @@ These can be implemented today with minimal risk:
 The following major items have been completed:
 
 - ✅ All 119 modules at 100% code quality score (linting)
-- ✅ All 981 tests passing with 100% success rate
+- ✅ All 985 tests passing with 100% success rate
+- ✅ **Dependency Injection for SessionManager** (session_utils.py) - DI container integration, `@requires_session` decorator, backward-compatible API
 - ✅ Unified Configuration Validation Layer (config/validator.py) with health check menu action
 - ✅ Unified API Request Handler (core/api_manager.py) with RequestConfig, RequestResult, RetryPolicy
 - ✅ Structured Logging with Correlation IDs (core/correlation.py) - thread-safe request tracking

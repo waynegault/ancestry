@@ -339,10 +339,10 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
 
     session_manager = SessionManager()
 
-    from session_utils import set_global_session
+    from session_utils import register_session_manager
 
-    set_global_session(session_manager)
-    logger.debug("✅ SessionManager registered as global session")
+    register_session_manager(session_manager)
+    logger.debug("✅ SessionManager registered via DI container")
 
     return session_manager, sleep_state
 
