@@ -192,7 +192,7 @@ def requires_session(
 
             # Inject session if requested
             if inject_session:
-                return func(sm, *args, **kwargs)  # type: ignore[arg-type]
+                return cast(R, func(sm, *args, **kwargs))
             return func(*args, **kwargs)
 
         return wrapper

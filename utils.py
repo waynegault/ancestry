@@ -549,34 +549,6 @@ def fast_json_loads(json_str: str) -> Any:
         return json.loads(json_str)
 
 
-def fast_json_dumps(obj: Any, indent: Optional[int] = None, ensure_ascii: bool = False) -> str:
-    """
-    Fast JSON serialization with fallback to standard library.
-    Uses orjson if available, otherwise standard json.
-
-    Args:
-        obj: Object to serialize
-        indent: Optional indentation for pretty printing
-        ensure_ascii: Whether to escape non-ASCII characters
-
-    Returns:
-        JSON string
-    """
-    try:
-        # Dynamic import to handle missing orjson gracefully
-        orjson = __import__('orjson')
-        if indent:
-            # orjson doesn't support indent, fall back to json for pretty printing
-            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        # Fast compact serialization
-        return orjson.dumps(obj).decode('utf-8')
-    except (ImportError, ModuleNotFoundError):
-        if indent:
-            return json.dumps(obj, indent=indent, ensure_ascii=ensure_ascii)
-        # Optimized compact serialization
-        return json.dumps(obj, separators=(',', ':'), ensure_ascii=ensure_ascii)
-
-
 # --- Third-party and local imports ---
 # Keep the warning for optional dependencies, but don't define dummies.
 # If essential ones fail, other parts of the code will raise errors.
@@ -1065,77 +1037,6 @@ def _calculate_sleep_time(
     jitter = random.uniform(0, jitter_seconds) if jitter_seconds > 0 else 0.0
     sleep_time = min(base + jitter, max_delay)
     return max(0.1, sleep_time)
-
-
-# Helper functions for ensure_browser_open
-
-
-def _extract_driver_from_args(args: tuple[Any, ...]) -> Optional[DriverType]:
-    """Extract WebDriver instance from positional arguments."""
-    if not args:
-        return None
-
-    first_arg = args[0]
-
-    if _is_session_manager_like(first_arg):
-        return first_arg.driver
-
-    if isinstance(first_arg, WebDriver):
-        return first_arg
-
-    return None
-
-
-def _extract_driver_from_kwargs(kwargs: dict[str, Any]) -> Optional[DriverType]:
-    """Extract WebDriver instance from keyword arguments."""
-    # Check for direct driver argument
-    driver_candidate = kwargs.get("driver")
-    if isinstance(driver_candidate, WebDriver):
-        return driver_candidate
-
-    # Check for session_manager argument
-    session_candidate = kwargs.get("session_manager")
-    if session_candidate and _is_session_manager_like(session_candidate):
-        return session_candidate.driver
-
-    return None
-
-
-def _find_driver_instance(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Optional[DriverType]:
-    """Find WebDriver instance from args or kwargs."""
-    driver = _extract_driver_from_args(args)
-    if driver:
-        return driver
-
-    return _extract_driver_from_kwargs(kwargs)
-
-
-def _validate_driver_instance(driver_instance: Optional[DriverType], func_name: str) -> None:
-    """Validate that driver instance exists and browser is open."""
-    if not driver_instance:
-        raise TypeError(f"Function '{func_name}' decorated with @ensure_browser_open requires a WebDriver instance.")
-
-    if not is_browser_open(driver_instance):
-        raise WebDriverException(f"Browser session invalid/closed when calling function '{func_name}'")
-
-
-def ensure_browser_open(func: Callable[P, R]) -> Callable[P, R]:
-    """Decorator to ensure browser session is valid before executing."""
-
-    @wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        # Find driver instance from args or kwargs
-        driver_instance = _find_driver_instance(args, kwargs)
-
-        # Validate driver instance and browser state
-        _validate_driver_instance(driver_instance, func.__name__)
-
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-# End of ensure_browser_open
 
 
 def time_wait(wait_description: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -4501,7 +4402,6 @@ def _test_decorators() -> None:
     """Test decorator availability and basic functionality"""
     # Test retry decorator availability
     assert callable(retry), "retry decorator should be callable"
-    assert callable(ensure_browser_open), "ensure_browser_open decorator should be callable"
     assert callable(time_wait), "time_wait decorator should be callable"
 
     # Basic decorator functionality test

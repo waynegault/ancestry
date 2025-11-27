@@ -161,8 +161,8 @@ class CorrelationFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: PLR6301
         """Add correlation_id to the log record."""
         ctx = get_correlation_context()
-        record.correlation_id = ctx.correlation_id if ctx else "-"  # type: ignore[attr-defined]
-        record.operation_name = ctx.operation_name if ctx else "-"  # type: ignore[attr-defined]
+        setattr(record, "correlation_id", ctx.correlation_id if ctx else "-")
+        setattr(record, "operation_name", ctx.operation_name if ctx else "-")
         return True
 
 

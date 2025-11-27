@@ -611,27 +611,6 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]],
 
 
 # ==============================================
-# LEGACY COMPATIBILITY FUNCTIONS
-# ==============================================
-
-
-# For backward compatibility with existing code
-def cache_session_component(component_type: str, component: Any) -> bool:
-    """Legacy function for caching session components."""
-    return _unified_cache_manager.session_cache.cache_component(component_type, component)
-
-
-def get_cached_session_component(component_type: str) -> Optional[Any]:
-    """Legacy function for retrieving cached session components."""
-    return _unified_cache_manager.session_cache.get_cached_component(component_type)
-
-
-def create_api_cache_key(endpoint: str, params: dict[str, Any]) -> str:
-    """Legacy function for creating API cache keys."""
-    return _unified_cache_manager.api_cache.create_api_cache_key(endpoint, params)
-
-
-# ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
 # These test functions are extracted from the main test suite for better
