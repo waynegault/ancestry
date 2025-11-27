@@ -1822,7 +1822,12 @@ def _load_test_person_data_from_env() -> dict[str, Any]:
         "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
         "gender": os.getenv("TEST_PERSON_GENDER", "m"),
         "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
-        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235")),
+        # GEDCOM expected score (with full data including birth place)
+        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
+        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "200")),
+        # API expected score (API typically lacks birth place data, so lower score)
+        # Breakdown: name(25+25+50) + birth_year(25) = 125
+        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "125")),
     }
 
 
@@ -2345,7 +2350,12 @@ def _get_test_person_config() -> dict[str, Any]:
         "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
         "gender": os.getenv("TEST_PERSON_GENDER", "m"),
         "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
-        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "235")),
+        # GEDCOM expected score (with full data including birth place)
+        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
+        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "200")),
+        # API expected score (API typically lacks birth place data, so lower score)
+        # Breakdown: name(25+25+50) + birth_year(25) = 125
+        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "125")),
     }
 
 
@@ -2588,18 +2598,25 @@ def test_api_search_test_person() -> None:
         print(f"   Death: {top_result.get('death_date', 'N/A')} in {top_result.get('death_place', 'N/A')}")
         print(f"   Score: {top_result.get('score', 0)}")
 
-        expected_score = config.get('expected_score', 0)
-        actual_score = float(top_result.get('score', 0))
+        # API uses expected_api_score (typically lower due to missing birth place data)
+        expected_score = config.get('expected_api_score', 0)
+        actual_score = int(top_result.get('score', 0))
 
         # Validate that we got proper data (not "Unknown_0")
         assert top_result.get('name') != "Unknown", "Name should be parsed correctly, not 'Unknown'"
         assert top_result.get('id') != "Unknown_0", "Person ID should be parsed correctly, not 'Unknown_0'"
         assert top_result.get('score', 0) > 0, "Score should be greater than 0"
-        # Allow score variation - API scoring may change, just verify it's reasonable
-        min_acceptable_score = expected_score * 0.5  # Allow 50% variance
-        assert actual_score >= min_acceptable_score, (
-            f"API score too low: expected at least {min_acceptable_score}, got {actual_score}"
+
+        # Print expected score validation status
+        print(
+            f"   Expected score validation: {Colors.GREEN if actual_score == expected_score else Colors.RED}"
+            f"{actual_score == expected_score}{Colors.RESET} (Expected: {expected_score}, Actual: {actual_score})"
         )
+
+        # Strict score validation - API and GEDCOM use identical scoring mechanism
+        # but API typically has less data (e.g., missing birth place)
+        assert actual_score >= 50, f"API search should score at least 50, got {actual_score}"
+        assert actual_score == expected_score, f"API search should score exactly {expected_score}, got {actual_score}"
 
         print(f"\n{Colors.GREEN}✅ API search test passed{Colors.RESET}")
         print(f"   • Name parsed correctly: {top_result.get('name')}")
