@@ -164,3 +164,156 @@ class GeminiProvider(BaseProvider):
         response = self._generate_content(client, model_name, full_prompt, generation_config)
         text = self._extract_response_text(response)
         return ProviderResponse(content=text, raw_response=response)
+
+
+# =============================================================================
+# Module Tests
+# =============================================================================
+
+
+def _test_gemini_provider_initialization() -> None:
+    """Test GeminiProvider initialization."""
+    from types import SimpleNamespace
+
+    # Test with mock config
+    mock_config = SimpleNamespace(
+        api=SimpleNamespace(
+            google_api_key="test_key",
+            google_ai_model="gemini-1.5-flash",
+        )
+    )
+    provider = GeminiProvider(mock_config)
+    assert provider.name == "gemini"
+    assert provider._config == mock_config
+
+
+def _test_gemini_is_available() -> None:
+    """Test is_available method."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(api=SimpleNamespace(google_api_key="test"))
+    provider = GeminiProvider(mock_config)
+    # Will return False if google.genai is not installed, True if installed
+    result = provider.is_available()
+    assert isinstance(result, bool)
+
+
+def _test_gemini_get_api_credentials() -> None:
+    """Test _get_api_credentials method."""
+    from types import SimpleNamespace
+
+    # Test with valid config
+    valid_config = SimpleNamespace(
+        api=SimpleNamespace(
+            google_api_key="test_api_key",
+            google_ai_model="gemini-1.5-flash",
+        )
+    )
+    provider = GeminiProvider(valid_config)
+    api_key, model_name = provider._get_api_credentials()
+    assert api_key == "test_api_key"
+    assert model_name == "gemini-1.5-flash"
+
+    # Test with missing config
+    missing_config = SimpleNamespace(api=None)
+    provider_missing = GeminiProvider(missing_config)
+    try:
+        provider_missing._get_api_credentials()
+        raise AssertionError("Should have raised ProviderConfigurationError")
+    except ProviderConfigurationError:
+        pass  # Expected
+
+
+def _test_gemini_build_generation_config() -> None:
+    """Test _build_generation_config method."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(api=SimpleNamespace())
+    provider = GeminiProvider(mock_config)
+
+    request = ProviderRequest(
+        system_prompt="Test",
+        user_content="Hello",
+        max_tokens=500,
+        temperature=0.5,
+    )
+    config = provider._build_generation_config(request)
+    # Should return dict or config object depending on SDK availability
+    assert config is not None
+
+
+def _test_gemini_extract_response_text() -> None:
+    """Test _extract_response_text static method."""
+    # Test with None response
+    result = GeminiProvider._extract_response_text(None)
+    assert result is None
+
+    # Test with mock response that has text
+    from types import SimpleNamespace
+
+    mock_response = SimpleNamespace(text="  Test response  ")
+    result = GeminiProvider._extract_response_text(mock_response)
+    assert result == "Test response"
+
+    # Test with empty text
+    empty_response = SimpleNamespace(text="")
+    result = GeminiProvider._extract_response_text(empty_response)
+    assert result is None
+
+
+def gemini_provider_module_tests() -> bool:
+    """Run module tests for Gemini provider."""
+    from testing.test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Gemini Provider", "ai/providers/gemini.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Provider initialization",
+            _test_gemini_provider_initialization,
+            "Should initialize with config",
+            "GeminiProvider.__init__",
+            "Test provider name and config storage",
+        )
+        suite.run_test(
+            "is_available method",
+            _test_gemini_is_available,
+            "Should return bool based on SDK availability",
+            "GeminiProvider.is_available",
+            "Test SDK detection",
+        )
+        suite.run_test(
+            "Get API credentials",
+            _test_gemini_get_api_credentials,
+            "Should extract credentials from config",
+            "GeminiProvider._get_api_credentials",
+            "Test credential extraction and validation",
+        )
+        suite.run_test(
+            "Build generation config",
+            _test_gemini_build_generation_config,
+            "Should create generation config",
+            "GeminiProvider._build_generation_config",
+            "Test config building",
+        )
+        suite.run_test(
+            "Extract response text",
+            _test_gemini_extract_response_text,
+            "Should extract text from response",
+            "GeminiProvider._extract_response_text",
+            "Test response parsing",
+        )
+
+    return suite.finish_suite()
+
+
+from testing.test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(gemini_provider_module_tests)
+
+if __name__ == "__main__":
+    import sys
+
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

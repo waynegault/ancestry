@@ -52,13 +52,14 @@ from core.error_handling import (
     APIError,
     AuthenticationError,
     BrowserError,
+    MaxApiFailuresExceededError,
     api_retry as _api_retry,
     selenium_retry,
     with_api_recovery as _with_api_recovery,
     with_enhanced_recovery as _with_enhanced_recovery,
 )
 
-# === ACTION 7 ERROR CLASSES (Action 8 Pattern)
+# === ACTION 7 IMPORTS ===
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import (
@@ -79,41 +80,6 @@ JSONDict = dict[str, Any]
 JSONList = list[JSONDict]
 HeadersDict = dict[str, Optional[str]]
 ApiResponseType = Any
-
-
-# Define Action 6/8-style error types for inbox processing
-class MaxApiFailuresExceededError(Exception):
-    """Custom exception for exceeding API failure threshold in inbox processing."""
-
-
-if TYPE_CHECKING:
-    from core.error_handling import (
-        APIError as APIErrorBaseError,
-        AuthenticationError as AuthenticationErrorBaseError,
-        BrowserError as BrowserErrorBaseError,
-    )
-else:
-    BrowserErrorBaseError = BrowserError
-    APIErrorBaseError = APIError
-    AuthenticationErrorBaseError = AuthenticationError
-
-
-class BrowserSessionError(BrowserErrorBaseError):
-    """Browser session-specific errors."""
-
-    pass
-
-
-class APIRateLimitError(APIErrorBaseError):
-    """API rate limit specific errors."""
-
-    pass
-
-
-class AuthenticationExpiredError(AuthenticationErrorBaseError):
-    """Authentication expiration specific errors."""
-
-    pass
 
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===

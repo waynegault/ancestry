@@ -4981,8 +4981,6 @@ def _test_determine_next_action_status_change() -> bool:
     """Test determine_next_action when status changed to in-tree."""
     from unittest.mock import Mock, patch
 
-    from actions import action8_messaging
-
     # Create mock person with recent tree addition
     person = Mock(spec=Person)
     person.id = 201
@@ -4998,8 +4996,8 @@ def _test_determine_next_action_status_change() -> bool:
     person.conversation_state = conv_state
 
     # Mock detect_status_change_to_in_tree to return True
-    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=True):
-        action, next_date = action8_messaging.determine_next_action(person, "test")
+    with patch(f'{__name__}.detect_status_change_to_in_tree', return_value=True):
+        action, next_date = determine_next_action(person, "test")
 
     # Verify status_changed action
     assert action == 'status_changed', f"Expected 'status_changed', got '{action}'"
@@ -5012,8 +5010,6 @@ def _test_determine_next_action_status_change() -> bool:
 def _test_determine_next_action_await_reply() -> bool:
     """Test determine_next_action when in active dialogue awaiting reply."""
     from unittest.mock import Mock, patch
-
-    from actions import action8_messaging
 
     # Create mock person in active dialogue
     person = Mock(spec=Person)
@@ -5029,8 +5025,8 @@ def _test_determine_next_action_await_reply() -> bool:
     person.conversation_state = conv_state
 
     # Mock detect_status_change_to_in_tree to return False
-    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
-        action, next_date = action8_messaging.determine_next_action(person, "test")
+    with patch(f'{__name__}.detect_status_change_to_in_tree', return_value=False):
+        action, next_date = determine_next_action(person, "test")
 
     # Verify await_reply action
     assert action == 'await_reply', f"Expected 'await_reply', got '{action}'"
@@ -5043,8 +5039,6 @@ def _test_determine_next_action_await_reply() -> bool:
 def _test_determine_next_action_research_needed() -> bool:
     """Test determine_next_action when research is needed."""
     from unittest.mock import Mock, patch
-
-    from actions import action8_messaging
 
     # Create mock person with pending questions
     person = Mock(spec=Person)
@@ -5060,8 +5054,8 @@ def _test_determine_next_action_research_needed() -> bool:
     person.conversation_state = conv_state
 
     # Mock detect_status_change_to_in_tree to return False
-    with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
-        action, next_date = action8_messaging.determine_next_action(person, "test")
+    with patch(f'{__name__}.detect_status_change_to_in_tree', return_value=False):
+        action, next_date = determine_next_action(person, "test")
 
     # Verify research_needed action
     assert action == 'research_needed', f"Expected 'research_needed', got '{action}'"
@@ -5075,7 +5069,6 @@ def _test_determine_next_action_send_follow_up() -> bool:
     """Test determine_next_action schedules follow-up with adaptive timing."""
     from unittest.mock import Mock, patch
 
-    from actions import action8_messaging
     from config import config_schema
 
     # Temporarily set production mode for adaptive timing
@@ -5098,8 +5091,8 @@ def _test_determine_next_action_send_follow_up() -> bool:
         person.conversation_state = conv_state
 
         # Mock detect_status_change_to_in_tree to return False
-        with patch.object(action8_messaging, 'detect_status_change_to_in_tree', return_value=False):
-            action, next_date = action8_messaging.determine_next_action(person, "test")
+        with patch(f'{__name__}.detect_status_change_to_in_tree', return_value=False):
+            action, next_date = determine_next_action(person, "test")
 
         # Verify send_follow_up action with scheduled date
         assert action == 'send_follow_up', f"Expected 'send_follow_up', got '{action}'"

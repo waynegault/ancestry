@@ -113,3 +113,129 @@ class LocalLLMProvider(BaseProvider):
             logger.error("Local LLM returned an empty or invalid response structure.")
 
         return ProviderResponse(content=content, raw_response=response)
+
+
+# =============================================================================
+# Module Tests
+# =============================================================================
+
+
+def _test_local_llm_provider_initialization() -> None:
+    """Test LocalLLMProvider initialization."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(
+        api=SimpleNamespace(
+            local_llm_api_key="lm-studio",
+            local_llm_model="local-model",
+            local_llm_base_url="http://localhost:1234/v1",
+        )
+    )
+    provider = LocalLLMProvider(mock_config)
+    assert provider.name == "local_llm"
+    assert provider._config == mock_config
+
+
+def _test_local_llm_is_available() -> None:
+    """Test is_available method."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(api=SimpleNamespace())
+    provider = LocalLLMProvider(mock_config)
+    result = provider.is_available()
+    assert isinstance(result, bool)
+
+
+def _test_local_llm_get_api_settings() -> None:
+    """Test _get_api_settings method."""
+    from types import SimpleNamespace
+
+    valid_config = SimpleNamespace(
+        api=SimpleNamespace(
+            local_llm_api_key="lm-studio",
+            local_llm_model="local-model",
+            local_llm_base_url="http://localhost:1234/v1",
+        )
+    )
+    provider = LocalLLMProvider(valid_config)
+    api_key, model_name, base_url = provider._get_api_settings()
+    assert api_key == "lm-studio"
+    assert model_name == "local-model"
+    assert base_url == "http://localhost:1234/v1"
+
+    # Test with missing config
+    missing_config = SimpleNamespace(api=None)
+    provider_missing = LocalLLMProvider(missing_config)
+    try:
+        provider_missing._get_api_settings()
+        raise AssertionError("Should have raised ProviderConfigurationError")
+    except ProviderConfigurationError:
+        pass
+
+
+def _test_local_llm_build_request() -> None:
+    """Test _build_request static method."""
+    request = ProviderRequest(
+        system_prompt="You are a local assistant.",
+        user_content="Test prompt",
+        max_tokens=256,
+        temperature=0.8,
+    )
+    payload = LocalLLMProvider._build_request(request, "local-model")
+
+    assert payload["model"] == "local-model"
+    assert payload["max_tokens"] == 256
+    assert payload["temperature"] == 0.8
+    assert payload["stream"] is False
+    assert len(payload["messages"]) == 2
+
+
+def local_llm_provider_module_tests() -> bool:
+    """Run module tests for Local LLM provider."""
+    from testing.test_framework import TestSuite, suppress_logging
+
+    suite = TestSuite("Local LLM Provider", "ai/providers/local_llm.py")
+    suite.start_suite()
+
+    with suppress_logging():
+        suite.run_test(
+            "Provider initialization",
+            _test_local_llm_provider_initialization,
+            "Should initialize with config",
+            "LocalLLMProvider.__init__",
+            "Test provider name and config storage",
+        )
+        suite.run_test(
+            "is_available method",
+            _test_local_llm_is_available,
+            "Should return bool based on SDK availability",
+            "LocalLLMProvider.is_available",
+            "Test SDK detection",
+        )
+        suite.run_test(
+            "Get API settings",
+            _test_local_llm_get_api_settings,
+            "Should extract settings from config",
+            "LocalLLMProvider._get_api_settings",
+            "Test settings extraction",
+        )
+        suite.run_test(
+            "Build request",
+            _test_local_llm_build_request,
+            "Should build valid request payload",
+            "LocalLLMProvider._build_request",
+            "Test request building",
+        )
+
+    return suite.finish_suite()
+
+
+from testing.test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(local_llm_provider_module_tests)
+
+if __name__ == "__main__":
+    import sys
+
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
