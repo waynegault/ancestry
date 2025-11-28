@@ -27,7 +27,7 @@ import psutil
 from tqdm.auto import tqdm
 
 if TYPE_CHECKING:
-    from common_params import ProgressIndicatorConfig
+    from core.common_params import ProgressIndicatorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class ProgressIndicator:
         total: Optional[int] = None,
         config: Optional['ProgressIndicatorConfig'] = None,
     ):
-        from common_params import ProgressIndicatorConfig
+        from core.common_params import ProgressIndicatorConfig
 
         resolved_config = config if config is not None else ProgressIndicatorConfig()
 
@@ -274,7 +274,7 @@ def create_progress_indicator(
     **kwargs: Any
 ) -> ProgressIndicator:
     """Factory function to create progress indicators"""
-    from common_params import ProgressIndicatorConfig
+    from core.common_params import ProgressIndicatorConfig
 
     # Create config from parameters
     config = ProgressIndicatorConfig(
@@ -406,7 +406,7 @@ def core_progress_indicators_module_tests() -> bool:
     Comprehensive test suite for progress_indicators.py.
     Tests progress tracking, ETA calculations, and progress decorators.
     """
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite(
@@ -475,7 +475,7 @@ def core_progress_indicators_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_progress_indicators_module_tests)
 

@@ -13,7 +13,7 @@ if __package__ in {None, ""}:
 
 from core.error_handling import MaxApiFailuresExceededError
 from standard_imports import setup_module
-from test_framework import TestSuite, create_standard_test_runner
+from testing.test_framework import TestSuite, create_standard_test_runner
 
 if TYPE_CHECKING:
     from core.session_manager import SessionManager

@@ -31,8 +31,8 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from logging_config import setup_logging
-from test_framework import TestSuite, create_standard_test_runner
+from core.logging_config import setup_logging
+from testing.test_framework import TestSuite, create_standard_test_runner
 
 
 class GrafanaCheckerProtocol(Protocol):
@@ -227,8 +227,8 @@ class MainCLIHelpers:
         """Display the conversation analytics dashboard."""
 
         try:
-            from conversation_analytics import print_analytics_dashboard
             from core.session_manager import SessionManager
+            from observability.conversation_analytics import print_analytics_dashboard
 
             print("\n" + "=" * 80)
             print("LOADING ANALYTICS DASHBOARD")
@@ -363,7 +363,7 @@ class MainCLIHelpers:
 
     def _show_base_cache_stats(self) -> bool:
         try:
-            from cache import get_cache_stats
+            from caching.cache import get_cache_stats
 
             base_stats = get_cache_stats()
             if base_stats:
@@ -383,7 +383,7 @@ class MainCLIHelpers:
 
     def _show_unified_cache_stats(self) -> bool:
         try:
-            from cache_manager import get_unified_cache_manager
+            from caching.cache_manager import get_unified_cache_manager
 
             unified_mgr = get_unified_cache_manager()
             comprehensive_stats = unified_mgr.get_comprehensive_stats()
@@ -427,7 +427,7 @@ class MainCLIHelpers:
 
     def _show_performance_cache_stats(self) -> bool:
         try:
-            from performance_cache import get_cache_stats as get_perf_stats
+            from performance.performance_cache import get_cache_stats as get_perf_stats
 
             perf_stats = get_perf_stats()
             if perf_stats:

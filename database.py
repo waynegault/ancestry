@@ -62,15 +62,16 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-# === LOCAL IMPORTS ===
-from common_params import MatchIdentifiers
 from config import config_schema
+
+# === LOCAL IMPORTS ===
+from core.common_params import MatchIdentifiers
 from core.database_manager import backup_database, db_transn
 
 # === MODULE CONFIGURATION ===
 # Use global cached config instance
 # Note: SessionManager imported locally when needed to avoid circular imports
-from test_framework import (
+from testing.test_framework import (
     TestSuite,
     suppress_logging,
 )
@@ -2437,7 +2438,7 @@ def _process_conversation_logs(sess: Session, log_upserts: list[dict[str, Any]],
     logger.debug(f"{log_prefix}Successfully inserted {processed_logs_count} ConversationLog entries.")
 
     # Update conversation_metrics for each person with a new log entry
-    from conversation_analytics import update_conversation_metrics
+    from observability.conversation_analytics import update_conversation_metrics
 
     for log_data in log_inserts_mappings:
         people_id = log_data.get("people_id")
@@ -3291,7 +3292,7 @@ if __name__ == "__main__":
     # Step 1: Setup basic logging for standalone execution
     # Use a temporary logger setup if the main one fails or is unavailable
     try:
-        from logging_config import setup_logging  # Local import
+        from core.logging_config import setup_logging  # Local import
 
         # Use unified logging configuration; LOG_FILE is taken from .env
         standalone_logger = setup_logging(
@@ -3785,7 +3786,7 @@ def database_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(database_module_tests)
 

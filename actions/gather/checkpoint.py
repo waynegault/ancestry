@@ -15,8 +15,8 @@ if __package__ in {None, ""}:
 
 from config import config_schema
 from standard_imports import setup_module
-from test_framework import TestSuite, create_standard_test_runner
-from test_utilities import atomic_write_file
+from testing.test_framework import TestSuite, create_standard_test_runner
+from testing.test_utilities import atomic_write_file
 
 logger = setup_module(globals(), __name__)
 

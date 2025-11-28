@@ -63,7 +63,7 @@ except Exception:  # pragma: no cover - logging fallback
         return logger_obj
 
 try:
-    from test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
+    from testing.test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
 except Exception:  # pragma: no cover - lightweight fallback for optional dependency
 
     @dataclass
@@ -462,7 +462,7 @@ def observability_metrics_exporter_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(observability_metrics_exporter_module_tests)
 

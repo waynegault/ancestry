@@ -135,7 +135,7 @@ class ConfigValidator:
 
 
 # Import centralized validation utilities
-from test_utilities import validate_positive_integer
+from testing.test_utilities import validate_positive_integer
 
 
 @dataclass
@@ -1109,7 +1109,7 @@ def _test_database_config() -> None:
 
 def _test_selenium_config() -> None:
     """Test SeleniumConfig creation and validation."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1139,7 +1139,7 @@ def _test_selenium_config() -> None:
 
 def _test_api_config() -> None:
     """Test APIConfig creation and validation."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1173,7 +1173,7 @@ def _test_api_config() -> None:
 
 def _test_logging_config() -> None:
     """Test LoggingConfig creation and validation."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1219,7 +1219,7 @@ def _test_retry_policy_config() -> None:
 
 def _test_cache_config() -> None:
     """Test CacheConfig creation and validation."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1247,7 +1247,7 @@ def _test_cache_config() -> None:
 
 def _test_security_config() -> None:
     """Test SecurityConfig creation and validation."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1269,7 +1269,7 @@ def _test_security_config() -> None:
 
 def _test_config_schema_creation() -> None:
     """Test ConfigSchema creation with default sub-configs."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test default creation
@@ -1294,7 +1294,7 @@ def _test_config_schema_creation() -> None:
 
 def _test_config_schema_to_dict() -> None:
     """Test ConfigSchema to_dict method."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         config = ConfigSchema()
@@ -1321,7 +1321,7 @@ def _test_config_schema_to_dict() -> None:
 
 def _test_config_schema_from_dict() -> None:
     """Test ConfigSchema from_dict method."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Create a test dictionary
@@ -1354,7 +1354,7 @@ def _test_config_schema_from_dict() -> None:
 
 def _test_config_schema_validation() -> None:
     """Test ConfigSchema validation method."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test valid configuration
@@ -1375,7 +1375,7 @@ def _test_edge_cases() -> None:
     import tempfile
     from pathlib import Path
 
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test Path handling in configs
@@ -1398,7 +1398,7 @@ def _test_edge_cases() -> None:
 
 def _test_integration() -> None:
     """Test integration between different config components."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Create a full configuration
@@ -1424,7 +1424,7 @@ def _test_performance() -> None:
     """Test performance and memory efficiency."""
     import time
 
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         start_time = time.time()
@@ -1450,7 +1450,7 @@ def _test_performance() -> None:
 
 def _test_function_structure() -> None:
     """Test that all expected methods and properties exist."""
-    from test_framework import assert_valid_function, suppress_logging
+    from testing.test_framework import assert_valid_function, suppress_logging
 
     with suppress_logging():
         # Test ConfigSchema methods
@@ -1480,7 +1480,7 @@ def _test_function_structure() -> None:
 
 def _test_import_dependencies() -> None:
     """Test that all required imports and dependencies are available."""
-    from test_framework import suppress_logging
+    from testing.test_framework import suppress_logging
 
     with suppress_logging():
         # Test dataclass functionality
@@ -1576,7 +1576,7 @@ def config_schema_module_tests() -> bool:
     Returns:
         bool: True if all tests pass, False otherwise
     """
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     # Initialize test suite
     suite = TestSuite("ConfigSchema", __name__)
@@ -1613,7 +1613,7 @@ def config_schema_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(config_schema_module_tests)
 

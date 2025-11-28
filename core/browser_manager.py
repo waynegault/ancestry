@@ -38,7 +38,7 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
-from chromedriver import init_webdvr
+from browser.chromedriver import init_webdvr
 
 # === LOCAL IMPORTS ===
 from config.config_manager import ConfigManager
@@ -572,7 +572,7 @@ def core_browser_manager_module_tests() -> bool:
     """
     Comprehensive test suite for browser_manager.py (decomposed).
     """
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite("Browser Management & WebDriver Operations", "browser_manager.py")
@@ -672,7 +672,7 @@ def core_browser_manager_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_browser_manager_module_tests)
 

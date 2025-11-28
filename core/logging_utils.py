@@ -50,7 +50,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     """
     # Try to use centralized logging config first
     try:
-        from logging_config import logger as central_logger, setup_logging
+        from core.logging_config import logger as central_logger, setup_logging
 
         # Initialize centralized logging if not already done
         if not _CentralizedLoggingState.setup_complete:
@@ -502,7 +502,7 @@ def logging_utils_module_tests() -> bool:
         bool: True if all tests pass, False otherwise
     """
     try:
-        from test_framework import TestSuite
+        from testing.test_framework import TestSuite
 
         suite = TestSuite("Logging Utils Comprehensive Tests", __name__)
         suite.start_suite()
@@ -616,7 +616,7 @@ def logging_utils_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(logging_utils_module_tests)
 

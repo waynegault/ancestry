@@ -41,7 +41,7 @@ from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
-from cache import (
+from caching.cache import (
     cache,  # Global cache instance
     clear_cache,  # Cache clearing
     get_cache_stats,  # Statistics
@@ -67,7 +67,7 @@ if TYPE_CHECKING:
         def get_health_status(self) -> dict[str, Any]: ...
 
 else:  # pragma: no cover - runtime import for actual implementation
-    from cache import BaseCacheModule
+    from caching.cache import BaseCacheModule
 
 # === SESSION CACHE INTEGRATION ===
 from core.session_cache import (
@@ -894,7 +894,7 @@ if __name__ == "__main__":
 
 def system_cache_module_tests() -> bool:
     """Comprehensive test suite for system_cache.py using the unified TestSuite."""
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("System Cache", "core/system_cache.py")
     suite.start_suite()
@@ -976,7 +976,7 @@ def system_cache_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(system_cache_module_tests)
 

@@ -430,7 +430,7 @@ def create_composite_validator(
 
 def validation_factory_module_tests() -> bool:
     """Comprehensive tests for validation factory."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Validation Factory", "core/validation_factory.py")
     suite.start_suite()
@@ -594,7 +594,7 @@ def validation_factory_module_tests() -> bool:
 
 
 # Use centralized test runner
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(validation_factory_module_tests)
 

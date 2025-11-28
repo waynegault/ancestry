@@ -41,7 +41,7 @@ from core.error_handling import (
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from standard_imports import setup_module
-from test_framework import TestSuite, create_standard_test_runner
+from testing.test_framework import TestSuite, create_standard_test_runner
 from utils import log_final_summary, log_starting_position
 
 logger = setup_module(globals(), __name__)
@@ -708,7 +708,7 @@ class GatherOrchestrator:
         logger.info("Average Wait Time:     %.3fs", metrics.avg_wait_time)
 
         try:
-            from rate_limiter import persist_rate_limiter_state
+            from core.rate_limiter import persist_rate_limiter_state
 
             persist_rate_limiter_state(limiter, metrics)
             logger.debug("Persisted rate limiter state for next run reuse")

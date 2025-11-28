@@ -254,7 +254,7 @@ def _test_get_message_type_category() -> bool:
 
 def module_tests() -> bool:
     """Test message type functionality."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Message Types Module", "messaging/message_types.py")
 
@@ -301,7 +301,7 @@ def module_tests() -> bool:
 
 if __name__ == "__main__":
     # Import test framework only when running as main (Pylance-friendly)
-    from test_framework import create_standard_test_runner
+    from testing.test_framework import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()

@@ -13,8 +13,8 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(REPO_ROOT))
 
 from standard_imports import setup_module
-from test_framework import TestSuite
-from test_utilities import create_standard_test_runner
+from testing.test_framework import TestSuite
+from testing.test_utilities import create_standard_test_runner
 
 logger = setup_module(globals(), __name__)
 
@@ -108,7 +108,7 @@ def log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: str
     """Log the adaptive rate limiter plan without instantiating it early."""
 
     try:
-        from rate_limiter import get_persisted_rate_state
+        from core.rate_limiter import get_persisted_rate_state
     except ImportError:
         logger.debug("Rate limiter module unavailable during configuration summary")
         return

@@ -572,7 +572,7 @@ def _test_circuit_breaker_consecutive_successes_after_recovery() -> bool:
 def circuit_breaker_module_tests() -> bool:
     """Comprehensive test suite for core/circuit_breaker.py"""
     try:
-        from test_framework import TestSuite
+        from testing.test_framework import TestSuite
     except ImportError:
         # Fallback test implementation when test_framework is not available
         print("⚠️  test_framework not available, running basic tests...")
@@ -731,7 +731,7 @@ def circuit_breaker_module_tests() -> bool:
 
 # Use centralized test runner utility
 try:
-    from test_utilities import create_standard_test_runner
+    from testing.test_utilities import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(circuit_breaker_module_tests)
 except ImportError:

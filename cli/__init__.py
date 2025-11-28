@@ -13,7 +13,7 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from test_framework import TestSuite, create_standard_test_runner
+from testing.test_framework import TestSuite, create_standard_test_runner
 
 CLI_ENTRY_POINTS: dict[str, str] = {
     "maintenance": "cli.maintenance:MainCLIHelpers",

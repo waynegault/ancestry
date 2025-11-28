@@ -27,7 +27,7 @@ import time
 from importlib import import_module
 from typing import Any, Callable, Optional, Protocol, cast
 
-from action10 import run_gedcom_then_api_fallback
+from actions.action10 import run_gedcom_then_api_fallback
 from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
 from core.action_registry import (
     ActionMetadata,
@@ -60,7 +60,7 @@ from core.workflow_actions import (
     send_messages_action,
     srch_inbox_actn,
 )
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 from ui.menu import render_main_menu
 
 
@@ -87,7 +87,7 @@ else:
 
 _grafana_checker: GrafanaCheckerProtocol | None = None
 try:
-    _grafana_checker_module = import_module("grafana_checker")
+    _grafana_checker_module = import_module("performance.grafana_checker")
 except Exception:
     _grafana_checker = None
 else:
@@ -483,11 +483,11 @@ def _test_edge_case_handling() -> bool:
     import inspect
 
     required_modules = [
-        ("action6_gather", "coord"),  # Main coordinator function
-        ("action7_inbox", "InboxProcessor"),  # Main class
-        ("action8_messaging", "send_messages_to_matches"),  # Main function
-        ("action9_process_productive", "process_productive_messages"),  # Main function
-        ("action10", "main"),  # Main function
+        ("actions.action6_gather", "coord"),  # Main coordinator function
+        ("actions.action7_inbox", "InboxProcessor"),  # Main class
+        ("actions.action8_messaging", "send_messages_to_matches"),  # Main function
+        ("actions.action9_process_productive", "process_productive_messages"),  # Main function
+        ("actions.action10", "main"),  # Main function
     ]
 
     for module_name, expected_export in required_modules:
@@ -501,7 +501,7 @@ def _test_edge_case_handling() -> bool:
             sig = inspect.signature(export)
             # All coordinator functions should accept session_manager as first param
             params = list(sig.parameters.keys())
-            if module_name == "action6_gather":
+            if module_name == "actions.action6_gather":
                 assert "session_manager" in params, "coord should accept session_manager parameter"
             # Verify return annotation exists for type safety
             if sig.return_annotation != inspect.Parameter.empty:
@@ -593,7 +593,7 @@ def _test_action_integration() -> bool:
     """
     import inspect
 
-    from action10 import main as run_action10
+    from actions.action10 import main as run_action10
 
     actions_to_test: list[tuple[str, Callable[..., Any]]] = [
         ("gather_dna_matches", gather_dna_matches),
@@ -719,7 +719,7 @@ def _test_exception_handling_coverage() -> bool:
 def main_module_tests() -> bool:
     """Comprehensive regression suite for main.py."""
 
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = cast(Any, TestSuite("Main Application Controller & Menu System", "main.py"))
     suite.start_suite()

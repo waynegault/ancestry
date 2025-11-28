@@ -328,7 +328,7 @@ def _test_registry_component_names_sorted() -> None:
 def cache_registry_module_tests() -> bool:
     """Test suite for cache registry orchestration helpers."""
 
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite("Cache Registry", __name__)
@@ -357,7 +357,7 @@ def cache_registry_module_tests() -> bool:
         return suite.finish_suite()
 
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(cache_registry_module_tests)
 

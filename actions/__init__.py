@@ -1,10 +1,14 @@
 """Action package entry point.
 
-This package hosts in-progress extractions from the legacy
-`action6_gather.py` module so that future refactors can
-incrementally migrate orchestration, fetching, checkpointing,
-persistence, and metrics helpers without breaking the existing
-entry points.
+This package contains the main action modules for the Ancestry automation:
+- action6_gather: DNA match gathering from Ancestry
+- action7_inbox: Inbox processing and message classification
+- action8_messaging: Automated messaging to DNA matches
+- action9_process_productive: Processing productive conversations
+- action10: GEDCOM analysis and genealogical intelligence
+
+It also hosts extractions from action6_gather module for better organization:
+- gather/: Checkpoint, fetch, metrics, orchestration, persistence helpers
 """
 
 from __future__ import annotations
@@ -29,19 +33,40 @@ from .gather.orchestrator import GatherOrchestrator
 from .gather.persistence import GatherBatchSummary, GatherPersistenceService
 
 if TYPE_CHECKING:
-    from action6_gather import coord as gather_coord
+    from actions.action6_gather import coord as gather_coord
+
+
+# Action module lazy imports to avoid circular dependencies
+_ACTION_MODULES = {
+    "action6_gather": ".action6_gather",
+    "action7_inbox": ".action7_inbox",
+    "action8_messaging": ".action8_messaging",
+    "action9_process_productive": ".action9_process_productive",
+    "action10": ".action10",
+}
 
 
 def __getattr__(name: str):
-    """Lazy import to avoid circular import with action6_gather."""
+    """Lazy import to avoid circular import with action modules."""
     if name == "gather_coord":
-        from action6_gather import coord
+        from actions.action6_gather import coord
 
         return coord
+    if name in _ACTION_MODULES:
+        import importlib
+
+        return importlib.import_module(_ACTION_MODULES[name], __name__)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
+    # Action modules
+    "action6_gather",
+    "action7_inbox",
+    "action8_messaging",
+    "action9_process_productive",
+    "action10",
+    # Gather subpackage exports
     "GatherBatchSummary",
     "GatherCheckpointPlan",
     "GatherCheckpointService",

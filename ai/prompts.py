@@ -19,7 +19,7 @@ from standard_imports import setup_module
 logger = setup_module(globals(), __name__)
 
 try:  # pragma: no cover - optional import path
-    from ai_prompt_utils import get_prompt as _legacy_get_prompt, load_prompts as _legacy_load_prompts
+    from ai.ai_prompt_utils import get_prompt as _legacy_get_prompt, load_prompts as _legacy_load_prompts
 except ImportError:  # pragma: no cover - fall back to built-ins
     _legacy_get_prompt = None
     _legacy_load_prompts = None
@@ -201,7 +201,7 @@ def _test_get_prompt_returns_string_for_valid_key() -> bool:
 
 def module_tests() -> bool:
     """Run ai/prompts.py module tests."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("AI Prompts", "ai/prompts.py")
     suite.start_suite()
@@ -258,7 +258,7 @@ def module_tests() -> bool:
 
 
 # Standard test runner integration
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(module_tests)
 

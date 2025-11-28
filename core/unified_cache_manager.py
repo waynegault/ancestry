@@ -1044,7 +1044,7 @@ def _test_cache_endpoint_statistics() -> bool:
 
 def unified_cache_manager_module_tests() -> bool:
     """Comprehensive test suite for unified_cache_manager.py"""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Unified Cache Manager", "core/unified_cache_manager.py")
     suite.start_suite()

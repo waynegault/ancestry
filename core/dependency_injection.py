@@ -35,7 +35,7 @@ import inspect
 import unittest
 from functools import wraps
 
-from test_utilities import EmptyTestService
+from testing.test_utilities import EmptyTestService
 
 _TestServiceBase = cast(type[object], EmptyTestService)
 
@@ -790,7 +790,7 @@ class TestDIContainer(unittest.TestCase):
 
 def dependency_injection_module_tests() -> bool:
     """Run dependency injection tests and return success status."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     def _run_unittest_case(case_cls: type[unittest.TestCase], case_name: str) -> None:
         """Execute a unittest.TestCase method and raise on failure for standardized reporting."""
@@ -836,6 +836,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(dependency_injection_module_tests)

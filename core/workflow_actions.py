@@ -13,10 +13,10 @@ if __package__ in {None, ""}:
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
 
+from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
 from config.config_manager import ConfigManager
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
-from my_selectors import WAIT_FOR_PAGE_SELECTOR
 from standard_imports import setup_module
 from utils import nav_to_page
 
@@ -29,28 +29,28 @@ config = config_manager.get_config()
 
 def _get_coord() -> Any:
     """Lazy import of coord from action6_gather to avoid circular imports."""
-    from action6_gather import coord
+    from actions.action6_gather import coord
 
     return coord
 
 
 def _get_inbox_processor() -> Any:
     """Lazy import of InboxProcessor from action7_inbox to avoid circular imports."""
-    from action7_inbox import InboxProcessor
+    from actions.action7_inbox import InboxProcessor
 
     return InboxProcessor
 
 
 def _get_send_messages() -> Any:
     """Lazy import of send_messages_to_matches from action8_messaging."""
-    from action8_messaging import send_messages_to_matches
+    from actions.action8_messaging import send_messages_to_matches
 
     return send_messages_to_matches
 
 
 def _get_process_productive() -> Any:
     """Lazy import of process_productive_messages from action9_process_productive."""
-    from action9_process_productive import process_productive_messages
+    from actions.action9_process_productive import process_productive_messages
 
     return process_productive_messages
 
@@ -393,7 +393,7 @@ def _test_process_productive_messages_action_decorator_applied() -> bool:
 
 def module_tests() -> bool:
     """Run module tests for workflow_actions."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("core.workflow_actions", "core/workflow_actions.py")
 
@@ -433,7 +433,7 @@ def module_tests() -> bool:
 if __name__ == "__main__":
     import sys
 
-    from test_framework import create_standard_test_runner
+    from testing.test_framework import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()

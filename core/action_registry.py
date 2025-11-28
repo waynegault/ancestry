@@ -745,7 +745,7 @@ def _test_specific_action_attributes() -> bool:
 
 def action_registry_module_tests() -> bool:
     """Run the action registry test suite."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("ActionRegistry", "core/action_registry.py")
     suite.start_suite()
@@ -769,7 +769,7 @@ def action_registry_module_tests() -> bool:
 
 
 try:
-    from test_utilities import create_standard_test_runner
+    from testing.test_utilities import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(action_registry_module_tests)
 except ImportError:  # pragma: no cover - fallback for minimal test environments

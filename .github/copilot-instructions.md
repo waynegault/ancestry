@@ -17,7 +17,7 @@ python run_all_tests.py --fast
 python run_all_tests.py --analyze-logs
 
 # Single module test
-python -m action6_gather
+python -m actions.action6_gather
 ```
 
 ### Rate Limiting Monitoring
@@ -230,7 +230,7 @@ python prompt_telemetry.py --stats
 python run_all_tests.py              # Sequential (all 58 modules)
 python run_all_tests.py --fast       # Parallel execution
 python run_all_tests.py --analyze-logs  # Performance analysis
-python -m action6_gather             # Single module tests
+python -m actions.action6_gather     # Single module tests
 ```
 
 ### Debugging Rate Limiting
@@ -596,10 +596,18 @@ finally:
 ## File Organization
 
 ```
-action6-11.py           # 11 action modules (gather, inbox, messaging, etc.)
 main.py                 # Entry point with menu, exec_actn() pattern
 database.py             # SQLAlchemy ORM models
 utils.py                # RateLimiter, nav helpers, login flows
+core_imports.py         # Core import system and function registry
+standard_imports.py     # Standardized imports - single source of truth
+actions/
+  action6_gather.py     # DNA match gathering
+  action7_inbox.py      # Inbox processing
+  action8_messaging.py  # Automated messaging
+  action9_process_productive.py  # Productive conversation processing
+  action10.py           # GEDCOM analysis and genealogical intelligence
+  gather/               # Checkpoint, fetch, metrics, orchestration, persistence
 core/
   session_manager.py    # Central orchestrator (THE critical component)
   browser_manager.py    # WebDriver lifecycle
@@ -609,12 +617,24 @@ core/
 config/
   config_schema.py      # Type-safe dataclass definitions
   config_manager.py     # .env loading and validation
-ai_interface.py         # Multi-provider AI abstraction
-ai_prompts.json         # Prompt library with versioning
-extraction_quality.py   # Quality scoring for AI extractions
-prompt_telemetry.py     # AI performance monitoring
-quality_regression_gate.py  # Quality gate for CI/CD
-test_framework.py       # TestSuite, assertion utilities
+ai/
+  ai_interface.py       # Multi-provider AI abstraction
+  ai_prompts.json       # Prompt library with versioning
+  prompt_telemetry.py   # AI performance monitoring
+  quality_regression_gate.py  # Quality gate for CI/CD
+caching/                # Disk-based cache implementation (concrete)
+  cache.py              # High-performance disk caching
+  cache_manager.py      # Centralized cache management
+  cache_retention.py    # Retention policies for cache directories
+testing/
+  test_framework.py     # TestSuite, assertion utilities
+  test_utilities.py     # Centralized test helper functions
+  test_integration_workflow.py  # Integration workflow tests
+  code_quality_checker.py  # Code quality metrics and analysis
+  dead_code_scan.py     # Dead code detection
+  import_audit.py       # Import standardization auditing
+  check_type_ignores.py # Type ignore directive scanning
+  run_tests_fast.py     # Fast unit test runner
 run_all_tests.py        # Test orchestrator with parallel execution
 ```
 

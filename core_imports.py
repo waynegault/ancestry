@@ -273,7 +273,7 @@ def get_stats() -> dict[str, Any]:
 def get_logger(name: Optional[str] = None) -> logging.Logger:
     """Get a properly configured logger with smart fallback."""
     try:
-        from logging_config import logger
+        from core.logging_config import logger
 
         return logger
     except ImportError:
@@ -362,7 +362,7 @@ def cleanup_registry() -> None:
 
 def _test_function_registration() -> None:
     """Test function registration and retrieval."""
-    from test_utilities import mock_func_with_param as test_func
+    from testing.test_utilities import mock_func_with_param as test_func
 
     register_function("test_func", test_func)
     assert is_function_available(
@@ -412,7 +412,7 @@ def _test_context_manager() -> None:
 
 def core_imports_module_tests() -> bool:
     """Module-specific tests for core_imports.py functionality."""
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Core Imports", "core_imports.py")
 
@@ -432,7 +432,7 @@ def core_imports_module_tests() -> bool:
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 # Use centralized test runner utility
 run_comprehensive_tests = create_standard_test_runner(core_imports_module_tests)

@@ -11,7 +11,7 @@ and includes login/session verification logic closely tied to SessionManager.
 # === CORE INFRASTRUCTURE ===
 from core.logging_utils import log_action_banner
 from standard_imports import setup_module
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 # === MODULE SETUP ===
 logger = setup_module(globals(), __name__)
@@ -69,13 +69,13 @@ from selenium.webdriver.remote.webelement import WebElement
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
-from api_constants import (
+from api.api_constants import (
     API_PATH_UUID_LEGACY,
 )
-from common_params import NavigationConfig, RetryContext
+from browser.selenium_utils import DriverProtocol, WebElementProtocol
+from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile, resolve_retry_policy
 from observability.metrics_registry import metrics
-from selenium_utils import DriverProtocol, WebElementProtocol
 
 # === TYPE ALIASES ===
 # Define type aliases
@@ -580,8 +580,8 @@ try:
     # Initialize logger with standardized pattern
     logger = get_logger(__name__)
 
-    from my_selectors import *
-    from selenium_utils import (
+    from browser.css_selectors import *
+    from browser.selenium_utils import (
         is_browser_open,
         is_elem_there,
     )
@@ -1109,7 +1109,7 @@ def get_rate_limiter(
     Returns:
         AdaptiveRateLimiter: The unified rate limiter singleton
     """
-    from rate_limiter import get_adaptive_rate_limiter
+    from core.rate_limiter import get_adaptive_rate_limiter
 
     return get_adaptive_rate_limiter(
         initial_fill_rate=initial_fill_rate,
@@ -4479,7 +4479,7 @@ def _test_circuit_breaker() -> None:
 def _test_rate_limiter() -> None:
     """Test AdaptiveRateLimiter interface and functionality"""
     # Reset global rate limiter to ensure clean state
-    from rate_limiter import reset_global_rate_limiter
+    from core.rate_limiter import reset_global_rate_limiter
 
     reset_global_rate_limiter()
 
@@ -4768,7 +4768,7 @@ def _test_retryable_status_exhaustion() -> None:
 
 def utils_module_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Core Utilities & Session Management", "utils.py")  # Basic utility functions
 

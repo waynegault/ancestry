@@ -122,7 +122,7 @@ SEPARATOR_LINE: Final[str] = "=" * 70
 SECTION_SEPARATOR: Final[str] = "\n" + SEPARATOR_LINE
 
 # Import code quality checker
-from code_quality_checker import CodeQualityChecker, QualityMetrics
+from testing.code_quality_checker import CodeQualityChecker, QualityMetrics
 
 
 def _fix_trailing_whitespace() -> None:
@@ -570,13 +570,19 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
     """
     try:
         # Import and run quality checker
-        from code_quality_checker import CodeQualityChecker
+        from testing.code_quality_checker import CodeQualityChecker
 
         checker = CodeQualityChecker()
         current_dir = Path()
 
         # Check key files for quality
-        key_files = ["action10.py", "utils.py", "main.py", "python_best_practices.py", "code_quality_checker.py"]
+        key_files = [
+            "actions/action10.py",
+            "utils.py",
+            "main.py",
+            "python_best_practices.py",
+            "code_quality_checker.py",
+        ]
 
         quality_scores: list[tuple[str, float]] = []
         total_score = 0
@@ -1226,10 +1232,15 @@ def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], di
     if module_name in suite_env_modules:
         env["RUN_INTERNAL_TESTS"] = "1"
 
+    # Convert file path to module name for proper import resolution
+    # e.g., "core\common_params.py" -> "core.common_params"
+    module_import_name = module_name.replace("\\", ".").replace("/", ".").removesuffix(".py")
+
     if coverage:
-        cmd += ["-m", "coverage", "run", "--append", module_name]
+        cmd += ["-m", "coverage", "run", "--append", "-m", module_import_name]
     else:
-        cmd.append(module_name)
+        # Use -m flag to run as a module, ensuring proper import resolution
+        cmd += ["-m", module_import_name]
 
     return cmd, env
 

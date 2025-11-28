@@ -87,7 +87,7 @@ def _test_reverse_string_single_char() -> bool:
 def module_tests() -> bool:
     """Test suite for basic examples."""
     # Import here to avoid circular dependencies
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Basic Test Examples", "example_basic_test.py")
 
@@ -113,7 +113,7 @@ def module_tests() -> bool:
 
 if __name__ == "__main__":
     # Import here to avoid circular dependencies
-    from test_framework import create_standard_test_runner
+    from testing.test_framework import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()

@@ -41,7 +41,7 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import RequestException
 
 # === LOCAL IMPORTS ===
-from api_constants import (
+from api.api_constants import (
     API_PATH_CSRF_TOKEN,
     API_PATH_PROFILE_ID,
     API_PATH_UUID_NAVHEADER,
@@ -51,8 +51,8 @@ from observability.metrics_registry import metrics
 
 if TYPE_CHECKING:
     from core.browser_manager import BrowserManager
+    from core.rate_limiter import AdaptiveRateLimiter
     from core.session_manager import SessionManager
-    from rate_limiter import AdaptiveRateLimiter
 
 
 # === REQUEST CONFIGURATION ===
@@ -1339,7 +1339,7 @@ def api_manager_module_tests() -> bool:
     """
     Comprehensive test suite for core/api_manager.py (decomposed).
     """
-    from test_framework import (
+    from testing.test_framework import (
         TestSuite,
     )
 
@@ -1463,6 +1463,6 @@ if __name__ == "__main__":
 
 
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(api_manager_module_tests)

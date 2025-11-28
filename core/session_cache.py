@@ -83,7 +83,7 @@ def warm_cache_with_data(*_: Any, **__: Any) -> bool:
 
 
 try:  # pragma: no cover - cache module optional during some tests
-    from cache import (
+    from caching.cache import (
         BaseCacheModule as _BaseCacheModule,
         cache as _cache_instance,
         get_cache_stats as _get_cache_stats,
@@ -156,7 +156,7 @@ def _load_config_schema_snapshot() -> Optional[Any]:
 
 
 try:
-    from test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
+    from testing.test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
 except Exception:  # pragma: no cover - minimal fallback for optional dependency
 
     @dataclass
@@ -192,7 +192,7 @@ def create_standard_test_runner(test_func: Callable[[], bool]) -> Callable[[], b
     """Import the shared runner lazily with a fallback."""
 
     try:
-        from test_utilities import create_standard_test_runner as _create_standard_test_runner
+        from testing.test_utilities import create_standard_test_runner as _create_standard_test_runner
     except Exception:
 
         def _runner() -> bool:

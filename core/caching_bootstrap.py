@@ -110,7 +110,7 @@ def _test_ensure_caching_initialized_sets_state() -> bool:
 
 
 def caching_bootstrap_module_tests() -> bool:
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("core/caching_bootstrap.py - Caching Bootstrap", "core/caching_bootstrap.py")
 
@@ -134,7 +134,7 @@ def caching_bootstrap_module_tests() -> bool:
     return suite.finish_suite()
 
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(caching_bootstrap_module_tests)
 

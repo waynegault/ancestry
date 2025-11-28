@@ -313,7 +313,7 @@ python run_all_tests.py --fast
 python -m rate_limiter
 
 # Quick unit tests only
-python scripts/run_tests_fast.py
+python testing/run_tests_fast.py
 ```
 
 ---

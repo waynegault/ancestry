@@ -501,7 +501,7 @@ def get_metrics_registry() -> MetricRegistry:
 # Test suite
 def core_metrics_collector_module_tests() -> bool:
     """Run comprehensive tests for metrics collection system."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("MetricsCollector", "core/metrics_collector.py")
     suite.start_suite()
@@ -624,7 +624,7 @@ def core_metrics_collector_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_metrics_collector_module_tests)
 

@@ -27,11 +27,11 @@ from core.action_runner import (
     get_database_manager,
 )
 from core.config_validation import validate_action_config
+from core.logging_config import setup_logging
 from core.session_manager import SessionManager
-from logging_config import setup_logging
 from standard_imports import setup_module
-from test_framework import TestSuite
-from test_utilities import create_standard_test_runner
+from testing.test_framework import TestSuite
+from testing.test_utilities import create_standard_test_runner
 
 logger = setup_module(globals(), __name__)
 
@@ -339,7 +339,7 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
 
     session_manager = SessionManager()
 
-    from session_utils import register_session_manager
+    from core.session_utils import register_session_manager
 
     register_session_manager(session_manager)
     logger.debug("✅ SessionManager registered via DI container")
@@ -440,7 +440,7 @@ def _log_action_registry_status() -> None:
 def _run_chrome_diagnostics() -> None:
     """Run Chrome/ChromeDriver diagnostics in silent mode and log the outcome."""
     try:
-        from diagnose_chrome import run_silent_diagnostic
+        from browser.diagnose_chrome import run_silent_diagnostic
 
         success, message = run_silent_diagnostic()
         if success:
@@ -475,7 +475,7 @@ def pre_authenticate_session() -> None:
     before the menu displays, preventing authentication delays during actions.
     """
     try:
-        from session_utils import get_authenticated_session
+        from core.session_utils import get_authenticated_session
 
         # Authenticate session - this will start browser if needed
         logger.debug("Pre-authenticating global session for immediate availability...")
@@ -496,7 +496,7 @@ def pre_authenticate_session() -> None:
 def pre_authenticate_ms_graph() -> None:
     """Pre-authenticate MS Graph for MS To-Do integration."""
     try:
-        from ms_graph_utils import acquire_token_device_flow
+        from integrations.ms_graph_utils import acquire_token_device_flow
 
         logger.debug("Attempting MS Graph authentication at startup...")
         ms_token = acquire_token_device_flow()

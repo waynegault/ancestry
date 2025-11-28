@@ -187,7 +187,7 @@ def _test_render_main_menu_callable() -> bool:
 
 def module_tests() -> bool:
     """Run module tests for ui.menu."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("ui.menu", "ui/menu.py")
 
@@ -231,7 +231,7 @@ def module_tests() -> bool:
 
 
 if __name__ == "__main__":
-    from test_framework import create_standard_test_runner
+    from testing.test_framework import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()

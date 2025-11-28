@@ -184,7 +184,7 @@ def core_package_module_tests() -> bool:
     Comprehensive test suite for core package initialization.
     Tests package structure, imports, and component availability.
     """
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("Core Package Initialization", "core.__init__.py")
     suite.start_suite()
@@ -276,14 +276,14 @@ def core_package_module_tests() -> bool:
 
 # Use centralized test runner utility
 try:
-    from test_utilities import create_standard_test_runner
+    from testing.test_utilities import create_standard_test_runner
 except ImportError:
     # If running from subdirectory, add parent to path
     import sys
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from test_utilities import create_standard_test_runner
+    from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_package_module_tests)
 

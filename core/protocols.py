@@ -383,7 +383,7 @@ def _test_health_status() -> None:
 
 def protocols_module_tests() -> bool:
     """Run protocol module tests."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Type Protocols", "core/protocols.py")
 
@@ -443,7 +443,7 @@ _parent_dir = str(Path(__file__).parent.parent)
 if _parent_dir not in sys.path:
     sys.path.insert(0, _parent_dir)
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(protocols_module_tests)
 

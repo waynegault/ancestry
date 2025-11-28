@@ -45,8 +45,8 @@ __all__ = [
 # Module Tests
 # ---------------------------------------------------------------------------
 
-from test_framework import TestSuite
-from test_utilities import create_standard_test_runner
+from testing.test_framework import TestSuite
+from testing.test_utilities import create_standard_test_runner
 
 
 def _test_config_manager_instance() -> bool:

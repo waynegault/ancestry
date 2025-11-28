@@ -14,7 +14,7 @@ Usage:
 Replaces inconsistent patterns:
 - from core_imports import auto_register_module, get_logger, ...
 - try: from core_imports import ... except ImportError: ...
-- from logging_config import logger
+- from core.logging_config import logger
 - Various fallback patterns
 """
 
@@ -144,7 +144,7 @@ def get_unified_test_framework() -> Any:
     """Get the unified test framework, with fallback to individual tests."""
     # Using modern test_framework.py instead of deprecated test_framework_unified
     try:
-        from test_framework import TestSuite
+        from testing.test_framework import TestSuite
 
         return TestSuite
     except ImportError:
@@ -212,7 +212,7 @@ except ImportError:
     register_function = None
 
 # Pattern 3 - Mixed logger sources (found in 10+ files)
-from logging_config import logger
+from core.logging_config import logger
 
 # Pattern 4 - Manual registration blocks (found in 40+ files)
 try:
@@ -265,7 +265,7 @@ logger = setup_module(globals(), __name__)
 # Use centralized test runner utility
 import contextlib
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
@@ -291,7 +291,7 @@ def _test_logger_creation() -> None:
 
 def _test_function_registration() -> None:
     """Test function registration."""
-    from test_utilities import sample_function
+    from testing.test_utilities import sample_function
 
     register_function("test_sample_func", sample_function)
     assert is_function_available("test_sample_func"), "Function should be registered"
@@ -358,7 +358,7 @@ def _test_standard_library_availability() -> None:
 
 def _test_module_cleanup() -> None:
     """Test module cleanup."""
-    from test_utilities import temp_function
+    from testing.test_utilities import temp_function
 
     register_function("temp_test_function", temp_function)
     assert is_function_available("temp_test_function"), "Temp function should be registered"
@@ -385,7 +385,7 @@ def _test_performance() -> None:
 
 def standard_imports_module_tests() -> bool:
     """Comprehensive test suite for standard_imports.py."""
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     print("🔧 Running Standard Imports comprehensive test suite...")
 
@@ -394,7 +394,7 @@ def standard_imports_module_tests() -> bool:
         logger = setup_module(globals(), __name__)
         assert logger is not None
         print("✅ Module setup test passed")
-        from test_utilities import mock_func
+        from testing.test_utilities import mock_func
 
         register_function("test_standard_imports", mock_func)
         assert is_function_available("test_standard_imports")

@@ -1433,7 +1433,7 @@ def _test_invalid_config_data() -> bool:
 
 def _test_config_file_integration() -> bool:
     """Test configuration file integration."""
-    from test_utilities import temp_file
+    from testing.test_utilities import temp_file
 
     # Test with temporary config file
     with temp_file(suffix='.yaml', mode='w+') as temp_f:
@@ -1559,7 +1559,7 @@ def config_manager_module_tests() -> bool:
     Tests configuration management, validation, and loading functionality.
     """
 
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Configuration Management & Validation", "config_manager.py")
     suite.start_suite()

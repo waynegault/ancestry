@@ -707,7 +707,7 @@ def _test_registry_get() -> None:
 
 
 def schema_migrator_module_tests() -> bool:
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite("Schema Migrator", __name__)
@@ -785,7 +785,7 @@ def schema_migrator_module_tests() -> bool:
         return suite.finish_suite()
 
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(schema_migrator_module_tests)
 

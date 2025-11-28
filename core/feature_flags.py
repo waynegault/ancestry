@@ -481,7 +481,7 @@ def _test_convenience_function() -> bool:
 
 def module_tests() -> bool:
     """Run feature flags module tests."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("Feature Flags", "core/feature_flags.py")
     suite.start_suite()
@@ -544,7 +544,7 @@ def module_tests() -> bool:
 
 
 # Standard test runner integration
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(module_tests)
 

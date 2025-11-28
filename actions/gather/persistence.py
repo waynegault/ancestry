@@ -21,7 +21,7 @@ from core.database_manager import db_transn
 from core.session_manager import SessionManager
 from database import DnaMatch, FamilyTree, Person, PersonStatusEnum
 from standard_imports import setup_module
-from test_framework import TestSuite, create_standard_test_runner
+from testing.test_framework import TestSuite, create_standard_test_runner
 
 logger = setup_module(globals(), __name__)
 

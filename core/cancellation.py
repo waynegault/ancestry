@@ -138,7 +138,7 @@ def cancellation_module_tests() -> bool:
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite(
@@ -199,7 +199,7 @@ def cancellation_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(cancellation_module_tests)
 

@@ -300,7 +300,7 @@ def _record_action_analytics(
     final_outcome = context.succeeded
 
     try:
-        from analytics import log_event, pop_transient_extras
+        from observability.analytics import log_event, pop_transient_extras
 
         extras = pop_transient_extras()
         log_event(
@@ -519,7 +519,7 @@ def _test_should_close_session_logic() -> bool:
 
 
 def action_runner_module_tests() -> bool:
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     suite = TestSuite("core/action_runner.py - Action Runner Helpers", "core/action_runner.py")
 
@@ -559,7 +559,7 @@ def action_runner_module_tests() -> bool:
     return suite.finish_suite()
 
 
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(action_runner_module_tests)
 

@@ -103,7 +103,7 @@ def core_main_module_tests() -> bool:
     Comprehensive test suite for core/__main__.py.
     Tests core package structure and module availability.
     """
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
         suite = TestSuite(
@@ -156,7 +156,7 @@ def core_main_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_main_module_tests)
 

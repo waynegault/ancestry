@@ -33,7 +33,7 @@ from database import (
     Person,
 )
 from standard_imports import setup_module
-from test_framework import TestSuite, create_standard_test_runner
+from testing.test_framework import TestSuite, create_standard_test_runner
 from utils import log_in, login_status
 
 logger = setup_module(globals(), __name__)
@@ -311,7 +311,7 @@ def _initialize_ethnicity_columns_from_metadata(db_manager: SessionManager) -> b
         True if columns added successfully, False if metadata file doesn't exist
     """
     try:
-        from dna_ethnicity_utils import initialize_ethnicity_columns_from_metadata
+        from genealogy.dna.dna_ethnicity_utils import initialize_ethnicity_columns_from_metadata
 
         logger.debug("Checking for saved ethnicity metadata...")
         return initialize_ethnicity_columns_from_metadata(db_manager)
@@ -744,7 +744,7 @@ def _test_initialize_db_manager_engine_invokes_initializer() -> bool:
 def _test_initialize_ethnicity_columns_from_metadata_imports_module() -> bool:
     sentinel = object()
     fake_module = SimpleNamespace(initialize_ethnicity_columns_from_metadata=lambda _mgr: sentinel)
-    with mock.patch.dict(sys.modules, {"dna_ethnicity_utils": fake_module}):
+    with mock.patch.dict(sys.modules, {"genealogy.dna.dna_ethnicity_utils": fake_module}):
         session_manager = SimpleNamespace()
         result = _initialize_ethnicity_columns_from_metadata(cast(SessionManager, session_manager))
     assert result is sentinel

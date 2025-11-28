@@ -90,8 +90,8 @@ def require_interactive_session(action_label: str) -> Callable[[Callable[..., An
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from test_framework import TestSuite
-from test_utilities import create_standard_test_runner
+from testing.test_framework import TestSuite
+from testing.test_utilities import create_standard_test_runner
 
 
 def _test_navigation_requires_driver() -> bool:

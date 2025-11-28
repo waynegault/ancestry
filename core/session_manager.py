@@ -77,7 +77,7 @@ import contextlib
 import importlib
 from functools import lru_cache
 
-from api_constants import API_PATH_UUID_NAVHEADER
+from api.api_constants import API_PATH_UUID_NAVHEADER
 from config import config_schema
 from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
@@ -1837,9 +1837,9 @@ class SessionManager:
             str: Tree ID if successful, None otherwise
         """
         try:
-            import api_utils as local_api_utils
+            import api.api_utils as local_api_utils
         except ImportError as e:
-            logger.error(f"get_my_tree_id: Failed to import api_utils: {e}")
+            logger.error(f"get_my_tree_id: Failed to import api.api_utils: {e}")
             raise ImportError(f"api_utils module failed to import: {e}") from e
 
         tree_name_config = config_schema.api.tree_name
@@ -1879,10 +1879,10 @@ class SessionManager:
             str: Tree owner name if successful, None otherwise
         """
         try:
-            import api_utils as local_api_utils
+            import api.api_utils as local_api_utils
         except ImportError as e:
-            logger.error(f"get_tree_owner: Failed to import api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}") from e
+            logger.error(f"get_tree_owner: Failed to import api.api_utils: {e}")
+            raise ImportError(f"api.api_utils module failed to import: {e}") from e
 
         if not tree_id:
             logger.warning("Cannot get tree owner: tree_id is missing.")
@@ -3415,7 +3415,7 @@ def _test_initialize_cloudscraper_with_factory() -> None:
 
 def core_session_manager_module_tests() -> bool:
     """Comprehensive test suite for session_manager.py (decomposed)."""
-    from test_framework import TestSuite, suppress_logging
+    from testing.test_framework import TestSuite, suppress_logging
 
     # Warnings already suppressed at module level when __name__ == "__main__"
     with suppress_logging():
@@ -3722,7 +3722,7 @@ def core_session_manager_module_tests() -> bool:
 
 
 # Use centralized test runner utility from test_utilities
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(core_session_manager_module_tests)
 

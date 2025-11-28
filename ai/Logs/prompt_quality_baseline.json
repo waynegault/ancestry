@@ -1,0 +1,20 @@
+{
+  "variant": "control",
+  "count": 50,
+  "median_quality": 51.0,
+  "p25": 50.0,
+  "p75": 52.0,
+  "created_utc": "2025-11-28T15:15:23+00:00",
+  "provider": "gemini",
+  "primary_provider": "inception",
+  "fallback_order": [
+    "deepseek",
+    "gemini",
+    "moonshot",
+    "local_llm",
+    "grok",
+    "inception",
+    "tetrate"
+  ],
+  "fallback_source": "config_schema"
+}

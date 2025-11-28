@@ -1274,7 +1274,7 @@ def error_handling_module_tests() -> bool:
     Core Error Handling module test suite.
     Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
     """
-    from test_framework import (
+    from testing.test_framework import (
         TestSuite,
         suppress_logging,
     )
@@ -1989,7 +1989,7 @@ def test_error_context() -> None:
 # Standalone Test Block
 # =============================================
 # Use centralized test runner utility
-from test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(error_handling_module_tests)
 

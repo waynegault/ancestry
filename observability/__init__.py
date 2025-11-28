@@ -83,7 +83,7 @@ def _test_is_metrics_exporter_running_returns_bool() -> bool:
 
 def module_tests() -> bool:
     """Run module tests for observability package."""
-    from test_framework import TestSuite
+    from testing.test_framework import TestSuite
 
     suite = TestSuite("observability", "observability/__init__.py")
 
@@ -121,7 +121,7 @@ def module_tests() -> bool:
 
 
 if __name__ == "__main__":
-    from test_framework import create_standard_test_runner
+    from testing.test_framework import create_standard_test_runner
 
     run_comprehensive_tests = create_standard_test_runner(module_tests)
     success = run_comprehensive_tests()

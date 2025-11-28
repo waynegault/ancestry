@@ -27,7 +27,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 
 - ✅ **Correlation ID System (Nov 27)** - Created `core/correlation.py` for request tracking: `CorrelationContext` dataclass holds correlation ID, operation name, timing, and metadata. `correlation_context()` context manager tracks operation start/end with timing. `CorrelationFilter` adds correlation_id to log records. Supports nested contexts with parent ID tracking. 7 comprehensive tests.
 - ✅ **Test Utility Framework Expansion (Nov 26)** - Added test decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and fixture factories (`create_test_match()`) to `test_utilities.py`. Enables isolated testing with minimal setup and consistent test patterns across all 117 modules.
-- ✅ **Developer Experience Quick Wins (Nov 26)** - Added `requirements-dev.txt` (separate test dependencies), `SECURITY.md` (vulnerability reporting), `.editorconfig` (consistent formatting), and `scripts/run_tests_fast.py` (fast unit tests in <5s) for better developer onboarding and contribution workflow.
+- ✅ **Developer Experience Quick Wins (Nov 26)** - Added `requirements-dev.txt` (separate test dependencies), `SECURITY.md` (vulnerability reporting), `.editorconfig` (consistent formatting), and `testing/run_tests_fast.py` (fast unit tests in <5s) for better developer onboarding and contribution workflow.
 - ✅ **Startup Health Check System (Nov 26)** - Created `core/health_check.py` with comprehensive health check infrastructure: `HealthStatus` enum (HEALTHY/DEGRADED/UNHEALTHY/UNKNOWN), `HealthCheckResult` and `HealthReport` dataclasses for tracking check results with timing, `HealthCheck` Protocol for consistent interface. Implemented `DatabaseHealthCheck`, `FileSystemHealthCheck`, `CacheHealthCheck`, `ConfigurationHealthCheck`, and `APIHealthCheck`. `HealthCheckRunner` orchestrates all checks with `run_startup_health_checks()` for startup validation and `run_interactive_health_check()` for menu display.
 - ✅ **Unified Configuration Validation Layer (Nov 26)** - Created `config/validator.py` with comprehensive startup validation: `ConfigurationValidator` class validates ALL config sections (environment, database, API, rate limiting, Selenium, AI provider, paths, processing limits) with clear actionable error messages. Added `health` menu action for interactive configuration health check. `ValidationReport` aggregates pass/fail results with severity levels.
 - ✅ **SessionManager Public API Expansion (Nov 26)** - Added public methods for performance tracking (`update_response_time_tracking`, `reset_response_time_tracking`), CSRF caching (`set_cached_csrf_token`, `get_cached_csrf_token`), and session validation (`update_cookie_sync_time`, `clear_last_readiness_check`). Eliminates protected member access patterns in action modules.
@@ -58,7 +58,7 @@ This project automates genealogical research workflows on Ancestry.com, includin
 - ✅ **Action 10 Comparison Pipeline (Nov 20)** - Added `_ComparisonConfig`, `_ComparisonResults`, and helper trio (collect → execute → render) so GEDCOM/API fallback runs through a typed pipeline with a single rendering surface.
 - ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
 - ✅ **Pyright + Ruff Hardening (Nov 18)** - Pyright now runs in `standard` mode with `reportReturnType`, `reportUnusedVariable`, and `reportDuplicateImport` elevated to errors, while Ruff extends into PLR cyclomatic-complexity/argument-count checks with tuned thresholds so CI blocks regressions immediately.
-- ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
+- ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `testing/import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
 - ✅ **CLI Maintenance Module (Nov 21)** - Non-essential menu helpers now live in `cli/maintenance.py`, and `main.py` simply instantiates `MainCLIHelpers` and re-exports the bound methods so the entrypoint focuses on action orchestration.
 - ✅ **Main Menu Test Suite Re-embedded (Nov 21)** - The `main.py` regression suite now lives at the bottom of the entrypoint, so tests stay co-located with the code they cover; run it via the main menu helper or `python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"`.
 - ✅ **Main.py Refactoring (Nov 25)** - Extracted application lifecycle management (startup, shutdown, session pre-authentication) into `core/lifecycle.py`, reducing `main.py` to a focused entry point that delegates to specialized modules.
@@ -134,28 +134,28 @@ python core/schema_migrator.py --show-applied
 
 All commands accept `--db-path` (defaults to `Data/ancestry.db`) so you can point at backups before promoting schema changes.
 ```bash
-python action6_gather.py
+python -m actions.action6_gather
 ```
 
 ### Action 7: Inbox Processing
 Process and analyze inbox messages with AI classification.
 
 ```bash
-python action7_inbox.py
+python -m actions.action7_inbox
 ```
 
 ### Action 8: Intelligent Messaging
 Send AI-powered messages to DNA matches with context awareness.
 
 ```bash
-python action8_messaging.py
+python -m actions.action8_messaging
 ```
 
 ### Action 9: Productive Conversation Management
 Manage ongoing productive conversations with automated follow-ups.
 
 ```bash
-python action9_process_productive.py
+python -m actions.action9_process_productive
 ```
 
 #### Shared Messaging Helpers (`messaging/workflow_helpers.py`)
@@ -225,7 +225,7 @@ Analyze GEDCOM files and score potential matches.
   - Session authentication occurs once via session_utils.get_authenticated_session; no redundant re-login or cookie syncs
 
 ```bash
-python action10.py
+python -m actions.action10
 ```
 
 ## Testing
@@ -244,7 +244,7 @@ python run_all_tests.py --integration
 python run_all_tests.py --analyze-logs
 
 # Run specific module tests
-python -m action6_gather
+python -m actions.action6_gather
 # Main menu regression tests (embedded within main.py)
 python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"
 ```
@@ -399,19 +399,19 @@ If you see thousands of errors or errors from `.git` files:
 
 **Type Ignore Guard (Nov 19, 2025)**
 - `code_quality_checker.py` now surfaces any `type: ignore[...]` directives as explicit violations so module tests immediately fail when suppressions creep in.
-- `scripts/check_type_ignores.py` provides a fast repository-wide scan that exits non-zero if a directive appears anywhere outside vendor directories.
+- `testing/check_type_ignores.py` provides a fast repository-wide scan that exits non-zero if a directive appears anywhere outside vendor directories.
 
 ```powershell
-python scripts/check_type_ignores.py
+python testing/check_type_ignores.py
 ```
 
 Run the guard locally (or wire it into CI) to maintain the zero-ignore baseline captured in `docs/review_todo.md`.
 
 ### Maintenance Scripts
 
-- `scripts/check_type_ignores.py`: Fast repository-wide scan for `type: ignore[...]` directives; exits non-zero if any are found outside allowed/vendor locations.
+- `testing/check_type_ignores.py`: Fast repository-wide scan for `type: ignore[...]` directives; exits non-zero if any are found outside allowed/vendor locations.
 - `scripts/maintain_code_graph.py`: Maintains `docs/code_graph.json` by removing stale nodes and edges; run as `python scripts/maintain_code_graph.py remove_node <node_id>`.
-- `scripts/dead_code_scan.py`: Dead-code scanner for one-off analysis; invoke via `python scripts/dead_code_scan.py` to generate a conservative list of candidate unused helpers for manual review.
+- `testing/dead_code_scan.py`: Dead-code scanner for one-off analysis; invoke via `python testing/dead_code_scan.py` to generate a conservative list of candidate unused helpers for manual review.
 
 ### Testing
 - Write tests for all new functionality
@@ -711,7 +711,7 @@ grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
 ### Quality & Architecture
 - **`docs/DOCUMENTATION_AUDIT.md`** - Documentation quality analysis and best practices
 - **`docs/code_graph.json`** - Complete codebase structure and relationships (28,627 lines)
-- **`import_audit.py`** - Automated scanner + TestSuite that enforces canonical `setup_module(globals(), __name__)` usage across the repo
+- **`testing/import_audit.py`** - Automated scanner + TestSuite that enforces canonical `setup_module(globals(), __name__)` usage across the repo
 - **`visualize_code_graph.html`** - Interactive D3.js code graph visualization
 
 ### Test Examples
