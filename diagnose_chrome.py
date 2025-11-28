@@ -26,11 +26,13 @@ from typing import Any, Optional
 # Windows-specific import - only available on Windows
 _winreg_module: Optional[ModuleType] = None
 if platform.system() == "Windows":
-    import winreg as _winreg_import
+    import winreg
 
-    _winreg_module = _winreg_import
+    _winreg_module = winreg
+else:
+    winreg = None  # Define winreg as None for type checker on non-Windows
 
-# Use module-level alias for winreg to maintain compatibility
+# Use module-level alias for consistent typing across platforms
 winreg = _winreg_module
 
 

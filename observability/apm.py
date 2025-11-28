@@ -37,7 +37,7 @@ from collections.abc import Generator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -344,7 +344,6 @@ def trace(
         def another_function():
             pass
     """
-    from typing import cast
 
     def decorator(func: F) -> F:
         span_name = name or func.__qualname__
