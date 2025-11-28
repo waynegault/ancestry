@@ -344,6 +344,7 @@ def trace(
         def another_function():
             pass
     """
+    from typing import cast
 
     def decorator(func: F) -> F:
         span_name = name or func.__qualname__
@@ -354,7 +355,7 @@ def trace(
             with tracer.span(span_name, attributes):
                 return func(*args, **kwargs)
 
-        return wrapper  # type: ignore[return-value]
+        return cast(F, wrapper)
 
     return decorator
 

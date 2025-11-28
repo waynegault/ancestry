@@ -15,12 +15,23 @@ import contextlib
 import importlib
 import json
 import os
+import platform
 import subprocess
 import sys
-import winreg
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from types import ModuleType
+from typing import Any, Optional
+
+# Windows-specific import - only available on Windows
+_winreg_module: Optional[ModuleType] = None
+if platform.system() == "Windows":
+    import winreg as _winreg_import
+
+    _winreg_module = _winreg_import
+
+# Use module-level alias for winreg to maintain compatibility
+winreg = _winreg_module
 
 
 @lru_cache(maxsize=1)
@@ -42,6 +53,10 @@ def print_header(title: str) -> None:
 
 def get_chrome_version_from_registry() -> str | None:
     """Get Chrome version from Windows Registry."""
+    # Only available on Windows
+    if winreg is None:
+        return None
+
     try:
         # Try HKEY_CURRENT_USER first (user-specific installation)
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon") as key:
@@ -493,8 +508,8 @@ def check_disk_space() -> bool:
     try:
         import shutil
 
-        # Check system drive
-        system_drive = os.getenv("SYSTEMDRIVE", "C:")
+        # Check system drive - platform-specific
+        system_drive = os.getenv("SYSTEMDRIVE", "C:") if platform.system() == "Windows" else str(Path.home())
         total, used, free = shutil.disk_usage(system_drive)
 
         free_gb = free / (1024**3)
@@ -1021,13 +1036,24 @@ def _test_silent_diagnostic() -> bool:
 
 
 def diagnose_chrome_module_tests() -> bool:
-    """Comprehensive test suite for diagnose_chrome.py"""
+    """Comprehensive test suite for diagnose_chrome.py
+
+    Note: This module is designed for Windows Chrome diagnostics.
+    On non-Windows platforms, only cross-platform tests are run.
+    """
     from test_framework import TestSuite
 
     suite = TestSuite("Chrome/ChromeDriver Diagnostic Tool", "diagnose_chrome.py")
     suite.start_suite()
 
-    # Test function availability
+    # Check if running on Windows
+    is_windows = platform.system() == "Windows"
+
+    if not is_windows:
+        # On non-Windows, only run cross-platform tests
+        suite.add_warning("Running on non-Windows platform - some tests skipped")
+
+    # Test function availability - cross-platform (just checks callability)
     suite.run_test(
         "Diagnostic Functions Available",
         _test_diagnostic_functions_available,
@@ -1036,7 +1062,7 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify all diagnostic functions exist in module",
     )
 
-    # Test header formatting
+    # Test header formatting - cross-platform
     suite.run_test(
         "Header Formatting",
         _test_print_header_formatting,
@@ -1045,7 +1071,7 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify header contains title and separator lines",
     )
 
-    # Test version parsing and compatibility
+    # Test version parsing and compatibility - cross-platform logic
     suite.run_test(
         "Chrome Version Parsing",
         _test_chrome_version_parsing,
@@ -1054,7 +1080,7 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify same major versions are compatible, different are not",
     )
 
-    # Test path validation functions
+    # Test path validation functions - uses platform-specific paths but has fallbacks
     suite.run_test(
         "Path Validation",
         _test_path_validation,
@@ -1063,7 +1089,7 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify functions return proper boolean values",
     )
 
-    # Test preferences file validation
+    # Test preferences file validation - cross-platform (uses temp files)
     suite.run_test(
         "Preferences Validation",
         _test_preferences_validation,
@@ -1072,7 +1098,7 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify valid JSON passes, invalid JSON fails",
     )
 
-    # Test recommendation building
+    # Test recommendation building - cross-platform logic
     suite.run_test(
         "Recommendation Building",
         _test_recommendation_building,
@@ -1081,14 +1107,18 @@ def diagnose_chrome_module_tests() -> bool:
         "Verify correct issue detection and guidance generation",
     )
 
-    # Test silent diagnostic
-    suite.run_test(
-        "Silent Diagnostic",
-        _test_silent_diagnostic,
-        "Silent diagnostic should return proper tuple format",
-        "Test run_silent_diagnostic function structure",
-        "Verify function returns (bool, str) tuple format",
-    )
+    # Test silent diagnostic - only on Windows (uses registry)
+    if is_windows:
+        suite.run_test(
+            "Silent Diagnostic",
+            _test_silent_diagnostic,
+            "Silent diagnostic should return proper tuple format",
+            "Test run_silent_diagnostic function structure",
+            "Verify function returns (bool, str) tuple format",
+        )
+    else:
+        # Skip test but add to count
+        suite.add_warning("Silent Diagnostic test skipped (Windows-only)")
 
     return suite.finish_suite()
 
