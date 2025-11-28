@@ -644,7 +644,7 @@ def warm_session_cache() -> bool:
 # === TESTING FUNCTIONS ===
 
 
-def _test_session_component_cache_initialization():
+def _test_session_component_cache_initialization() -> bool:
     """Test SessionComponentCache initialization"""
     cache_instance = SessionComponentCache()
 
@@ -658,7 +658,7 @@ def _test_session_component_cache_initialization():
     return True
 
 
-def _test_config_hash_generation():
+def _test_config_hash_generation() -> bool:
     """Test configuration hash generation"""
     cache_instance = SessionComponentCache()
 
@@ -678,7 +678,7 @@ def _test_config_hash_generation():
     return True
 
 
-def _test_component_caching_and_retrieval():
+def _test_component_caching_and_retrieval() -> bool:
     """Test caching and retrieving components"""
     cache_instance = SessionComponentCache()
 
@@ -699,7 +699,7 @@ def _test_component_caching_and_retrieval():
     return True
 
 
-def _test_cache_expiration():
+def _test_cache_expiration() -> bool:
     """Test cache expiration based on TTL"""
     cache_instance = SessionComponentCache()
 
@@ -733,7 +733,7 @@ def _test_cache_expiration():
         CACHE_CONFIG.component_ttl_seconds = original_ttl
 
 
-def _test_cached_session_component_decorator():
+def _test_cached_session_component_decorator() -> bool:
     """Test cached_session_component decorator"""
     call_count = {"count": 0}
 
@@ -759,7 +759,7 @@ def _test_cached_session_component_decorator():
     return True
 
 
-def _test_cache_stats():
+def _test_cache_stats() -> bool:
     """Test cache statistics retrieval"""
     # Get cache stats
     stats = get_session_cache_stats()
@@ -772,7 +772,7 @@ def _test_cache_stats():
     return True
 
 
-def _test_clear_session_cache():
+def _test_clear_session_cache() -> bool:
     """Test clearing session cache"""
     cache_instance = SessionComponentCache()
 
@@ -794,7 +794,7 @@ def _test_clear_session_cache():
     return True
 
 
-def _test_warm_session_cache():
+def _test_warm_session_cache() -> bool:
     """Test warming session cache"""
     # Warm cache
     warm_session_cache()

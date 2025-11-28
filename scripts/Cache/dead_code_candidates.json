@@ -1,0 +1,26 @@
+[
+  {
+    "name": "get_deprecation_message",
+    "file": "dead_code_scan.py",
+    "lineno": 190,
+    "kind": "module_function",
+    "owner": null,
+    "total_refs": 1
+  },
+  {
+    "name": "ensure_ready",
+    "file": "archive/lm_studio_manager.py",
+    "lineno": 187,
+    "kind": "method",
+    "owner": "LMStudioManager",
+    "total_refs": 1
+  },
+  {
+    "name": "create_manager_from_config",
+    "file": "archive/lm_studio_manager.py",
+    "lineno": 234,
+    "kind": "module_function",
+    "owner": null,
+    "total_refs": 1
+  }
+]

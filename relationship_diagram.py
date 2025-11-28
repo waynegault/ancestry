@@ -15,10 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def generate_relationship_diagram(
-    person1_name: str,
-    person2_name: str,
-    relationship_path: list[dict[str, str]],
-    diagram_style: str = "vertical"
+    person1_name: str, person2_name: str, relationship_path: list[dict[str, str]], diagram_style: str = "vertical"
 ) -> str:
     """
     Generate a text-based relationship diagram showing the path between two people.
@@ -57,11 +54,7 @@ def generate_relationship_diagram(
     return _generate_vertical_diagram(person1_name, person2_name, relationship_path)
 
 
-def _generate_vertical_diagram(
-    _: str,
-    __: str,
-    relationship_path: list[dict[str, str]]
-) -> str:
+def _generate_vertical_diagram(_: str, __: str, relationship_path: list[dict[str, str]]) -> str:
     """Generate a vertical relationship diagram."""
     lines: list[str] = []
     lines.append("Relationship Path:")
@@ -88,11 +81,7 @@ def _generate_vertical_diagram(
     return "\n".join(lines)
 
 
-def _generate_horizontal_diagram(
-    _: str,
-    __: str,
-    relationship_path: list[dict[str, str]]
-) -> str:
+def _generate_horizontal_diagram(_: str, __: str, relationship_path: list[dict[str, str]]) -> str:
     """Generate a horizontal relationship diagram."""
     names = [step.get('name', 'Unknown') for step in relationship_path]
     relationships = [step.get('relationship', '') for step in relationship_path[1:]]
@@ -112,11 +101,7 @@ def _generate_horizontal_diagram(
     return "".join(diagram_parts)
 
 
-def _generate_compact_diagram(
-    person1_name: str,
-    person2_name: str,
-    relationship_path: list[dict[str, str]]
-) -> str:
+def _generate_compact_diagram(person1_name: str, person2_name: str, relationship_path: list[dict[str, str]]) -> str:
     """Generate a compact relationship diagram."""
     if len(relationship_path) <= 2:
         return f"{person1_name} → {person2_name}"
@@ -135,10 +120,7 @@ def _generate_compact_diagram(
 
 
 def format_relationship_for_message(
-    person1_name: str,
-    person2_name: str,
-    relationship_path: list[dict[str, str]],
-    include_diagram: bool = True
+    person1_name: str, person2_name: str, relationship_path: list[dict[str, str]], include_diagram: bool = True
 ) -> str:
     """
     Format a relationship path for inclusion in a message.
@@ -184,7 +166,7 @@ def test_vertical_diagram():
     path = [
         {'name': 'Wayne Gault', 'relationship': 'self'},
         {'name': 'Fraser Gault', 'relationship': 'father'},
-        {'name': 'John Gault', 'relationship': 'grandfather'}
+        {'name': 'John Gault', 'relationship': 'grandfather'},
     ]
 
     diagram = generate_relationship_diagram("Wayne Gault", "John Gault", path, "vertical")
@@ -202,7 +184,7 @@ def test_horizontal_diagram():
     path = [
         {'name': 'Wayne', 'relationship': 'self'},
         {'name': 'Fraser', 'relationship': 'father'},
-        {'name': 'John', 'relationship': 'grandfather'}
+        {'name': 'John', 'relationship': 'grandfather'},
     ]
 
     diagram = generate_relationship_diagram("Wayne", "John", path, "horizontal")
@@ -216,10 +198,7 @@ def test_horizontal_diagram():
 def test_compact_diagram():
     """Test compact diagram generation."""
     # Test with 2 people
-    path2 = [
-        {'name': 'Wayne', 'relationship': 'self'},
-        {'name': 'Fraser', 'relationship': 'father'}
-    ]
+    path2 = [{'name': 'Wayne', 'relationship': 'self'}, {'name': 'Fraser', 'relationship': 'father'}]
     diagram2 = generate_relationship_diagram("Wayne", "Fraser", path2, "compact")
     assert "Wayne → Fraser" in diagram2, "Should show direct connection"
 
@@ -229,7 +208,7 @@ def test_compact_diagram():
         {'name': 'Person2', 'relationship': 'rel2'},
         {'name': 'Person3', 'relationship': 'rel3'},
         {'name': 'Person4', 'relationship': 'rel4'},
-        {'name': 'Person5', 'relationship': 'rel5'}
+        {'name': 'Person5', 'relationship': 'rel5'},
     ]
     diagram_many = generate_relationship_diagram("Wayne", "Person5", path_many, "compact")
     assert "generations" in diagram_many, "Should indicate multiple generations"
@@ -237,10 +216,7 @@ def test_compact_diagram():
 
 def test_message_formatting():
     """Test relationship formatting for messages."""
-    path = [
-        {'name': 'Wayne Gault', 'relationship': 'self'},
-        {'name': 'Fraser Gault', 'relationship': 'father'}
-    ]
+    path = [{'name': 'Wayne Gault', 'relationship': 'self'}, {'name': 'Fraser Gault', 'relationship': 'father'}]
 
     # Test with diagram
     message_with_diagram = format_relationship_for_message("Wayne Gault", "Fraser Gault", path, include_diagram=True)
@@ -248,19 +224,16 @@ def test_message_formatting():
     assert "Relationship Path:" in message_with_diagram, "Should include diagram"
 
     # Test without diagram
-    message_without_diagram = format_relationship_for_message("Wayne Gault", "Fraser Gault", path, include_diagram=False)
+    message_without_diagram = format_relationship_for_message(
+        "Wayne Gault", "Fraser Gault", path, include_diagram=False
+    )
     assert "father" in message_without_diagram, "Should include relationship"
     assert "Relationship Path:" not in message_without_diagram, "Should not include diagram"
 
 
-def _test_empty_relationship_path():
+def _test_empty_relationship_path() -> bool:
     """Test diagram generation with empty relationship path."""
-    diagram = generate_relationship_diagram(
-        "Wayne Gault",
-        "John Smith",
-        [],
-        "vertical"
-    )
+    diagram = generate_relationship_diagram("Wayne Gault", "John Smith", [], "vertical")
 
     assert "Wayne Gault" in diagram, "Should include person1 name"
     assert "John Smith" in diagram, "Should include person2 name"
@@ -270,19 +243,11 @@ def _test_empty_relationship_path():
     return True
 
 
-def _test_single_step_relationship():
+def _test_single_step_relationship() -> bool:
     """Test diagram generation with single step relationship."""
-    path = [
-        {'name': 'Wayne Gault', 'relationship': 'self'},
-        {'name': 'Fraser Gault', 'relationship': 'father'}
-    ]
+    path = [{'name': 'Wayne Gault', 'relationship': 'self'}, {'name': 'Fraser Gault', 'relationship': 'father'}]
 
-    diagram = generate_relationship_diagram(
-        "Wayne Gault",
-        "Fraser Gault",
-        path,
-        "vertical"
-    )
+    diagram = generate_relationship_diagram("Wayne Gault", "Fraser Gault", path, "vertical")
 
     assert "Wayne Gault" in diagram, "Should include person1 name"
     assert "Fraser Gault" in diagram, "Should include person2 name"
@@ -292,19 +257,11 @@ def _test_single_step_relationship():
     return True
 
 
-def _test_invalid_diagram_style():
+def _test_invalid_diagram_style() -> bool:
     """Test diagram generation with invalid style defaults to vertical."""
-    path = [
-        {'name': 'Wayne Gault', 'relationship': 'self'},
-        {'name': 'Fraser Gault', 'relationship': 'father'}
-    ]
+    path = [{'name': 'Wayne Gault', 'relationship': 'self'}, {'name': 'Fraser Gault', 'relationship': 'father'}]
 
-    diagram = generate_relationship_diagram(
-        "Wayne Gault",
-        "Fraser Gault",
-        path,
-        "invalid_style"
-    )
+    diagram = generate_relationship_diagram("Wayne Gault", "Fraser Gault", path, "invalid_style")
 
     # Should default to vertical style
     assert "Wayne Gault" in diagram, "Should include person1 name"
@@ -315,12 +272,12 @@ def _test_invalid_diagram_style():
     return True
 
 
-def _test_all_diagram_styles():
+def _test_all_diagram_styles() -> bool:
     """Test all three diagram styles produce different output."""
     path = [
         {'name': 'Wayne Gault', 'relationship': 'self'},
         {'name': 'Fraser Gault', 'relationship': 'father'},
-        {'name': 'John Gault', 'relationship': 'grandfather'}
+        {'name': 'John Gault', 'relationship': 'grandfather'},
     ]
 
     vertical = generate_relationship_diagram("Wayne Gault", "John Gault", path, "vertical")
@@ -341,12 +298,9 @@ def _test_all_diagram_styles():
     return True
 
 
-def _test_format_relationship_simple():
+def _test_format_relationship_simple() -> bool:
     """Test simple relationship formatting for messages."""
-    path = [
-        {'name': 'Wayne Gault', 'relationship': 'self'},
-        {'name': 'Fraser Gault', 'relationship': 'father'}
-    ]
+    path = [{'name': 'Wayne Gault', 'relationship': 'self'}, {'name': 'Fraser Gault', 'relationship': 'father'}]
 
     formatted = format_relationship_for_message("Wayne Gault", "Fraser Gault", path)
 
@@ -359,14 +313,14 @@ def _test_format_relationship_simple():
     return True
 
 
-def _test_format_relationship_complex():
+def _test_format_relationship_complex() -> bool:
     """Test complex relationship formatting for messages."""
     path = [
         {'name': 'Wayne Gault', 'relationship': 'self'},
         {'name': 'Fraser Gault', 'relationship': 'father'},
         {'name': 'John Gault', 'relationship': 'grandfather'},
         {'name': 'Mary Smith', 'relationship': 'grandmother'},
-        {'name': 'Jane Smith', 'relationship': 'aunt'}
+        {'name': 'Jane Smith', 'relationship': 'aunt'},
     ]
 
     formatted = format_relationship_for_message("Wayne Gault", "Jane Smith", path)
@@ -380,7 +334,7 @@ def _test_format_relationship_complex():
     return True
 
 
-def _test_format_relationship_empty_path():
+def _test_format_relationship_empty_path() -> bool:
     """Test relationship formatting with empty path."""
     formatted = format_relationship_for_message("Wayne Gault", "John Smith", [])
 
@@ -407,7 +361,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_empty_relationship_path,
             "Empty relationship path handled correctly",
             "Test diagram generation with empty relationship path",
-            "Verify simple arrow format for empty path"
+            "Verify simple arrow format for empty path",
         )
 
         suite.run_test(
@@ -415,7 +369,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_single_step_relationship,
             "Single step relationship diagram generated correctly",
             "Test diagram generation with single step relationship",
-            "Verify diagram with just two people (self and one relation)"
+            "Verify diagram with just two people (self and one relation)",
         )
 
         suite.run_test(
@@ -423,7 +377,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_invalid_diagram_style,
             "Invalid diagram style defaults to vertical correctly",
             "Test diagram generation with invalid style",
-            "Verify invalid style defaults to vertical format"
+            "Verify invalid style defaults to vertical format",
         )
 
         # Style comparison test
@@ -432,7 +386,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_all_diagram_styles,
             "All diagram styles produce different output correctly",
             "Test all three diagram styles produce different output",
-            "Verify vertical, horizontal, and compact styles are distinct"
+            "Verify vertical, horizontal, and compact styles are distinct",
         )
 
         # Original tests
@@ -441,7 +395,7 @@ def relationship_diagram_module_tests() -> bool:
             test_vertical_diagram,
             "Vertical diagrams generated correctly with proper formatting and arrows",
             "Test vertical relationship diagram generation",
-            "Testing vertical diagram with multiple generations and relationship labels"
+            "Testing vertical diagram with multiple generations and relationship labels",
         )
 
         suite.run_test(
@@ -449,7 +403,7 @@ def relationship_diagram_module_tests() -> bool:
             test_horizontal_diagram,
             "Horizontal diagrams generated correctly with proper formatting and arrows",
             "Test horizontal relationship diagram generation",
-            "Testing horizontal diagram with inline relationship display"
+            "Testing horizontal diagram with inline relationship display",
         )
 
         suite.run_test(
@@ -457,7 +411,7 @@ def relationship_diagram_module_tests() -> bool:
             test_compact_diagram,
             "Compact diagrams generated correctly for various path lengths",
             "Test compact relationship diagram generation",
-            "Testing compact diagram with generation count for long paths"
+            "Testing compact diagram with generation count for long paths",
         )
 
         # Message formatting tests
@@ -466,7 +420,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_format_relationship_simple,
             "Simple relationship formatted correctly for message",
             "Test simple relationship formatting for messages",
-            "Verify formatting with single relationship step"
+            "Verify formatting with single relationship step",
         )
 
         suite.run_test(
@@ -474,7 +428,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_format_relationship_complex,
             "Complex relationship formatted correctly for message",
             "Test complex relationship formatting for messages",
-            "Verify formatting with multiple relationship steps"
+            "Verify formatting with multiple relationship steps",
         )
 
         suite.run_test(
@@ -482,7 +436,7 @@ def relationship_diagram_module_tests() -> bool:
             _test_format_relationship_empty_path,
             "Empty path relationship formatted correctly",
             "Test relationship formatting with empty path",
-            "Verify formatting handles empty path gracefully"
+            "Verify formatting handles empty path gracefully",
         )
 
         suite.run_test(
@@ -490,7 +444,7 @@ def relationship_diagram_module_tests() -> bool:
             test_message_formatting,
             "Relationship information formatted correctly for message inclusion",
             "Test relationship formatting for messages",
-            "Testing message formatting with and without diagrams"
+            "Testing message formatting with and without diagrams",
         )
 
     return suite.finish_suite()

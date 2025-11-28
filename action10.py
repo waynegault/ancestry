@@ -1808,29 +1808,6 @@ def _debug_wrapper(test_func: Callable[[], None]) -> Callable[[], None]:
     return test_func
 
 
-def _load_test_person_data_from_env() -> dict[str, Any]:
-    """Load test person data from .env configuration."""
-    import os
-
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    return {
-        "first_name": os.getenv("TEST_PERSON_FIRST_NAME", "Fraser"),
-        "last_name": os.getenv("TEST_PERSON_LAST_NAME", "Gault"),
-        "birth_year": int(os.getenv("TEST_PERSON_BIRTH_YEAR", "1941")),
-        "gender": os.getenv("TEST_PERSON_GENDER", "m"),
-        "birth_place": os.getenv("TEST_PERSON_BIRTH_PLACE", "Banff"),
-        # GEDCOM expected score (with full data including birth place)
-        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
-        "expected_score": int(os.getenv("TEST_PERSON_EXPECTED_SCORE", "200")),
-        # API expected score - now extracts birth place from all response formats
-        # Breakdown: name(25+25+50) + birth_year(25) + birth_place(25) + bonus(50) = 200
-        "expected_api_score": int(os.getenv("TEST_PERSON_EXPECTED_API_SCORE", "200")),
-    }
-
-
 def _register_input_validation_tests(
     suite: Any,
     debug_wrapper: Callable[..., Any],
@@ -2181,7 +2158,7 @@ def test_fraser_gault_scoring_algorithm() -> None:
     from test_framework import Colors, format_score_breakdown_table, format_search_criteria
 
     # Load test person data from .env
-    test_data = _load_test_person_data_from_env()
+    test_data = _get_test_person_config()
 
     # Load GEDCOM data - MUST be available for this test
     gedcom_data = get_cached_gedcom()

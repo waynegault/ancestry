@@ -76,6 +76,7 @@ _DYNAMIC_METRIC_DEFAULTS: dict[str, dict[str, float]] = {
 
 class HealthStatus(Enum):
     """Health status levels for different system components."""
+
     EXCELLENT = "excellent"
     GOOD = "good"
     FAIR = "fair"
@@ -86,6 +87,7 @@ class HealthStatus(Enum):
 
 class AlertLevel(Enum):
     """Alert levels for health monitoring."""
+
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -95,6 +97,7 @@ class AlertLevel(Enum):
 @dataclass
 class HealthMetric:
     """Individual health metric data structure."""
+
     name: str
     value: float
     threshold_warning: float
@@ -119,6 +122,7 @@ class HealthMetric:
 @dataclass
 class HealthAlert:
     """Health alert data structure."""
+
     level: AlertLevel
     component: str
     message: str
@@ -195,12 +199,32 @@ class SessionHealthMonitor:
     def _initialize_metrics(self) -> None:
         """Initialize health metrics with workload-appropriate thresholds for 724-page processing."""
         metrics_config = {
-            "api_response_time": {"warning": 15.0, "critical": 25.0, "weight": 2.0},  # OPTIMIZATION: Less pessimistic thresholds (was 5.0/10.0)
+            "api_response_time": {
+                "warning": 15.0,
+                "critical": 25.0,
+                "weight": 2.0,
+            },  # OPTIMIZATION: Less pessimistic thresholds (was 5.0/10.0)
             "memory_usage_mb": {"warning": 200.0, "critical": 400.0, "weight": 1.5},
-            "error_rate": {"warning": 10.0, "critical": 25.0, "weight": 3.0},  # WORKLOAD-APPROPRIATE: Errors per hour for 724-page workload
-            "session_age_minutes": {"warning": 600.0, "critical": 1200.0, "weight": 1.0},  # WORKLOAD-APPROPRIATE: 10-20 hours for 724 pages
-            "browser_age_minutes": {"warning": 120.0, "critical": 180.0, "weight": 2.5},  # WORKLOAD-APPROPRIATE: 2-3 hours browser lifetime
-            "pages_since_refresh": {"warning": 50.0, "critical": 75.0, "weight": 2.0},  # WORKLOAD-APPROPRIATE: More pages before refresh
+            "error_rate": {
+                "warning": 10.0,
+                "critical": 25.0,
+                "weight": 3.0,
+            },  # WORKLOAD-APPROPRIATE: Errors per hour for 724-page workload
+            "session_age_minutes": {
+                "warning": 600.0,
+                "critical": 1200.0,
+                "weight": 1.0,
+            },  # WORKLOAD-APPROPRIATE: 10-20 hours for 724 pages
+            "browser_age_minutes": {
+                "warning": 120.0,
+                "critical": 180.0,
+                "weight": 2.5,
+            },  # WORKLOAD-APPROPRIATE: 2-3 hours browser lifetime
+            "pages_since_refresh": {
+                "warning": 50.0,
+                "critical": 75.0,
+                "weight": 2.0,
+            },  # WORKLOAD-APPROPRIATE: More pages before refresh
             "cpu_usage_percent": {"warning": 70.0, "critical": 90.0, "weight": 1.0},
             "disk_usage_percent": {"warning": 85.0, "critical": 95.0, "weight": 0.5},
         }
@@ -211,7 +235,7 @@ class SessionHealthMonitor:
                 value=0.0,
                 threshold_warning=config["warning"],
                 threshold_critical=config["critical"],
-                weight=config["weight"]
+                weight=config["weight"],
             )
             self.metrics_history[name] = deque(maxlen=100)
 
@@ -299,8 +323,9 @@ class SessionHealthMonitor:
             self._last_metric_alert_level[metric_name] = level
             self._last_metric_alert_time[metric_name] = now
 
-    def _create_alert(self, level: AlertLevel, component: str, message: str,
-                     metric_name: str, metric_value: float, threshold: float):
+    def _create_alert(
+        self, level: AlertLevel, component: str, message: str, metric_name: str, metric_value: float, threshold: float
+    ):
         """Create a new health alert."""
         alert = HealthAlert(
             level=level,
@@ -308,7 +333,7 @@ class SessionHealthMonitor:
             message=message,
             metric_name=metric_name,
             metric_value=metric_value,
-            threshold=threshold
+            threshold=threshold,
         )
 
         self.alerts.append(alert)
@@ -339,13 +364,13 @@ class SessionHealthMonitor:
                 if metric.value <= metric.threshold_warning * 0.5:
                     metric_score = 100.0  # Excellent
                 elif metric.value <= metric.threshold_warning * 0.8:
-                    metric_score = 80.0   # Good
+                    metric_score = 80.0  # Good
                 elif metric.value <= metric.threshold_warning:
-                    metric_score = 60.0   # Fair
+                    metric_score = 60.0  # Fair
                 elif metric.value <= metric.threshold_critical:
-                    metric_score = 30.0   # Poor
+                    metric_score = 30.0  # Poor
                 else:
-                    metric_score = 0.0    # Critical
+                    metric_score = 0.0  # Critical
 
                 # Apply weighted average
                 total_score += metric_score * metric.weight
@@ -433,11 +458,11 @@ class SessionHealthMonitor:
 
         # Aggregate all risk factors
         risk_score = (
-            health_risk +
-            self._calculate_api_response_risk() +
-            self._calculate_error_rate_risk() +
-            self._calculate_memory_trend_risk() +
-            self._calculate_critical_metrics_risk()
+            health_risk
+            + self._calculate_api_response_risk()
+            + self._calculate_error_rate_risk()
+            + self._calculate_memory_trend_risk()
+            + self._calculate_critical_metrics_risk()
         )
 
         return min(1.0, risk_score)
@@ -498,11 +523,7 @@ class SessionHealthMonitor:
         self._check_error_rate_early_warning(current_time)
 
     def _process_error_window_threshold(
-        self,
-        window_name: str,
-        errors_in_window: int,
-        threshold: int,
-        current_time: float
+        self, window_name: str, errors_in_window: int, threshold: int, current_time: float
     ) -> None:
         """Process error threshold breach for a specific time window."""
         warning_key = f"{window_name}_{threshold}"
@@ -522,7 +543,7 @@ class SessionHealthMonitor:
             metric_name="error_rate_early_warning",
             metric_value=errors_in_window,
             threshold=threshold,
-            timestamp=current_time
+            timestamp=current_time,
         )
 
         self.alerts.append(alert)
@@ -561,9 +582,9 @@ class SessionHealthMonitor:
         # Check different time windows for early warning - WORKLOAD-APPROPRIATE for 724 pages
         time_windows = [
             (1800, 500, "30-minute"),  # 500 errors in 30 minutes (cascade failure)
-            (900, 200, "15-minute"),   # 200 errors in 15 minutes (severe issues)
-            (300, 75, "5-minute"),     # 75 errors in 5 minutes (moderate issues)
-            (60, 15, "1-minute"),      # 15 errors in 1 minute (immediate issues)
+            (900, 200, "15-minute"),  # 200 errors in 15 minutes (severe issues)
+            (300, 75, "5-minute"),  # 75 errors in 5 minutes (moderate issues)
+            (60, 15, "1-minute"),  # 15 errors in 1 minute (immediate issues)
         ]
 
         for window_seconds, threshold, window_name in time_windows:
@@ -589,7 +610,7 @@ class SessionHealthMonitor:
             (900, "15-minute"),
             (1800, "30-minute"),
             (3600, "1-hour"),
-            (7200, "2-hour")
+            (7200, "2-hour"),
         ]
 
         error_rates = {}
@@ -599,7 +620,7 @@ class SessionHealthMonitor:
             error_rates[window_name] = {
                 "count": errors_in_window,
                 "rate_per_minute": errors_in_window / (window_seconds / 60),
-                "window_seconds": window_seconds
+                "window_seconds": window_seconds,
             }
 
         # Determine risk level - WORKLOAD-APPROPRIATE for 724-page processing
@@ -631,7 +652,7 @@ class SessionHealthMonitor:
             "risk_level": risk_level,
             "recommendation": recommendation,
             "error_types": dict(self.error_counts),
-            "recent_alerts": [alert for alert in self.alerts if current_time - alert.timestamp < 3600]
+            "recent_alerts": [alert for alert in self.alerts if current_time - alert.timestamp < 3600],
         }
 
     def _trigger_emergency_intervention(self, pattern_type: str, error_count: int, window: str) -> None:
@@ -655,11 +676,13 @@ class SessionHealthMonitor:
                 metric_name="emergency_intervention",
                 metric_value=error_count,
                 threshold=500 if window == "30-minute" else 200,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
             self.alerts.append(alert)
 
-            logger.critical(f"{self._safety_prefix()}🚨 EMERGENCY INTERVENTION COMPLETE - Processing should halt immediately")
+            logger.critical(
+                f"{self._safety_prefix()}🚨 EMERGENCY INTERVENTION COMPLETE - Processing should halt immediately"
+            )
 
         except Exception as e:
             logger.error(f"Failed to trigger emergency intervention: {e}")
@@ -685,7 +708,7 @@ class SessionHealthMonitor:
                 metric_name="immediate_intervention",
                 metric_value=error_count,
                 threshold=200 if window == "15-minute" else 75,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
             self.alerts.append(alert)
 
@@ -718,7 +741,7 @@ class SessionHealthMonitor:
                 metric_name="enhanced_monitoring",
                 metric_value=error_count,
                 threshold=75,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
             self.alerts.append(alert)
 
@@ -745,18 +768,18 @@ class SessionHealthMonitor:
             "emergency_halt": {
                 "requested": self._emergency_halt_requested,
                 "reason": self._emergency_halt_reason,
-                "timestamp": self._emergency_halt_timestamp
+                "timestamp": self._emergency_halt_timestamp,
             },
             "immediate_intervention": {
                 "requested": self._immediate_intervention_requested,
                 "reason": self._immediate_intervention_reason,
-                "timestamp": self._immediate_intervention_timestamp
+                "timestamp": self._immediate_intervention_timestamp,
             },
             "enhanced_monitoring": {
                 "active": self._enhanced_monitoring_active,
                 "reason": self._enhanced_monitoring_reason,
-                "timestamp": self._enhanced_monitoring_timestamp
-            }
+                "timestamp": self._enhanced_monitoring_timestamp,
+            },
         }
 
     def reset_intervention_flags(self) -> None:
@@ -824,8 +847,9 @@ class SessionHealthMonitor:
 
             # Clean old warning timestamps
             warning_cutoff = current_time - 3600  # 1 hour
-            old_warnings = [key for key, timestamp in self.error_rate_warnings_sent.items()
-                          if timestamp < warning_cutoff]
+            old_warnings = [
+                key for key, timestamp in self.error_rate_warnings_sent.items() if timestamp < warning_cutoff
+            ]
             for key in old_warnings:
                 del self.error_rate_warnings_sent[key]
 
@@ -846,7 +870,7 @@ class SessionHealthMonitor:
 
             # Increase monitoring intervals to reduce overhead
             self._monitoring_interval = 60.0  # Check every minute instead of 30 seconds
-            self._cleanup_interval = 600.0    # Clean up every 10 minutes instead of 5
+            self._cleanup_interval = 600.0  # Clean up every 10 minutes instead of 5
 
             # Increase deque sizes for longer data retention
             if self.error_timestamps.maxlen is None or self.error_timestamps.maxlen < 3000:
@@ -885,8 +909,8 @@ class SessionHealthMonitor:
                     "error_timestamps_usage": f"{len(self.error_timestamps)}/{self.error_timestamps.maxlen}",
                     "metrics_history_total": sum(len(hist) for hist in self.metrics_history.values()),
                     "alerts_retention_hours": 4,
-                    "warnings_retention_hours": 1
-                }
+                    "warnings_retention_hours": 1,
+                },
             }
 
         except Exception as e:
@@ -983,27 +1007,35 @@ class SessionHealthMonitor:
             "health_status": health_status.value,
             "risk_score": risk_score,
             "risk_level": self._get_risk_level(risk_score),
-            "metrics": {name: {
-                "value": metric.value,
-                "status": metric.status.value,
-                "threshold_warning": metric.threshold_warning,
-                "threshold_critical": metric.threshold_critical
-            } for name, metric in self.current_metrics.items()},
+            "metrics": {
+                name: {
+                    "value": metric.value,
+                    "status": metric.status.value,
+                    "threshold_warning": metric.threshold_warning,
+                    "threshold_critical": metric.threshold_critical,
+                }
+                for name, metric in self.current_metrics.items()
+            },
             "recent_alerts": [
                 {
                     "level": alert.level.value,
                     "component": alert.component,
                     "message": alert.message,
-                    "timestamp": alert.timestamp
-                } for alert in self.alerts[-5:]  # Last 5 alerts
+                    "timestamp": alert.timestamp,
+                }
+                for alert in self.alerts[-5:]  # Last 5 alerts
             ],
             "recommended_actions": self.get_recommended_actions(),
             "performance_summary": {
-                "avg_api_response_time": sum(self.api_response_times) / len(self.api_response_times) if self.api_response_times else 0,
+                "avg_api_response_time": sum(self.api_response_times) / len(self.api_response_times)
+                if self.api_response_times
+                else 0,
                 "total_errors": sum(self.error_counts.values()),
-                "avg_page_processing_time": sum(self.page_processing_times) / len(self.page_processing_times) if self.page_processing_times else 0,
-                "current_memory_mb": self.memory_usage_history[-1] if self.memory_usage_history else 0
-            }
+                "avg_page_processing_time": sum(self.page_processing_times) / len(self.page_processing_times)
+                if self.page_processing_times
+                else 0,
+                "current_memory_mb": self.memory_usage_history[-1] if self.memory_usage_history else 0,
+            },
         }
 
     @staticmethod
@@ -1057,8 +1089,9 @@ class SessionHealthMonitor:
                         "status": metric.status.value,
                         "threshold_warning": metric.threshold_warning,
                         "threshold_critical": metric.threshold_critical,
-                        "timestamp": metric.timestamp
-                    } for name, metric in self.current_metrics.items()
+                        "timestamp": metric.timestamp,
+                    }
+                    for name, metric in self.current_metrics.items()
                 },
                 "alerts": [
                     {
@@ -1068,8 +1101,9 @@ class SessionHealthMonitor:
                         "metric_name": alert.metric_name,
                         "metric_value": alert.metric_value,
                         "threshold": alert.threshold,
-                        "timestamp": alert.timestamp
-                    } for alert in self.alerts
+                        "timestamp": alert.timestamp,
+                    }
+                    for alert in self.alerts
                 ],
                 "error_timestamps": list(self.error_timestamps),
                 "error_counts": dict(self.error_counts),
@@ -1081,9 +1115,9 @@ class SessionHealthMonitor:
                     "immediate_intervention_requested": self._immediate_intervention_requested,
                     "enhanced_monitoring_active": self._enhanced_monitoring_active,
                     "monitoring_interval": self._monitoring_interval,
-                    "last_cleanup_time": self._last_cleanup_time
+                    "last_cleanup_time": self._last_cleanup_time,
                 },
-                "performance_stats": self.get_performance_stats()
+                "performance_stats": self.get_performance_stats(),
             }
 
             # Save checkpoint to file
@@ -1109,7 +1143,7 @@ class SessionHealthMonitor:
                 value=metric_data["value"],
                 threshold_warning=metric_data["threshold_warning"],
                 threshold_critical=metric_data["threshold_critical"],
-                timestamp=metric_data.get("timestamp", time.time())
+                timestamp=metric_data.get("timestamp", time.time()),
             )
             self.current_metrics[name] = metric
 
@@ -1128,7 +1162,7 @@ class SessionHealthMonitor:
                 metric_name=alert_data["metric_name"],
                 metric_value=alert_data["metric_value"],
                 threshold=alert_data["threshold"],
-                timestamp=alert_data["timestamp"]
+                timestamp=alert_data["timestamp"],
             )
             self.alerts.append(alert)
 
@@ -1146,10 +1180,14 @@ class SessionHealthMonitor:
             self.api_response_times = deque(session_state["api_response_times"], maxlen=self.api_response_times.maxlen)
 
         if "page_processing_times" in session_state:
-            self.page_processing_times = deque(session_state["page_processing_times"], maxlen=self.page_processing_times.maxlen)
+            self.page_processing_times = deque(
+                session_state["page_processing_times"], maxlen=self.page_processing_times.maxlen
+            )
 
         if "memory_usage_history" in session_state:
-            self.memory_usage_history = deque(session_state["memory_usage_history"], maxlen=self.memory_usage_history.maxlen)
+            self.memory_usage_history = deque(
+                session_state["memory_usage_history"], maxlen=self.memory_usage_history.maxlen
+            )
 
     def _restore_intervention_state_from_state(self, session_state: dict[str, Any]) -> None:
         """Restore intervention state from session state."""
@@ -1265,15 +1303,17 @@ class SessionHealthMonitor:
                     with checkpoint_file.open(encoding='utf-8') as f:
                         data = json.load(f)
 
-                    checkpoints.append({
-                        "name": checkpoint_file.stem,
-                        "file_path": str(checkpoint_file),
-                        "created_time": data.get("timestamp", stat.st_mtime),
-                        "file_size_kb": stat.st_size / 1024,
-                        "session_start_time": data.get("session_start_time"),
-                        "health_score": data.get("performance_stats", {}).get("health_score", "N/A"),
-                        "total_errors": data.get("performance_stats", {}).get("total_errors", 0)
-                    })
+                    checkpoints.append(
+                        {
+                            "name": checkpoint_file.stem,
+                            "file_path": str(checkpoint_file),
+                            "created_time": data.get("timestamp", stat.st_mtime),
+                            "file_size_kb": stat.st_size / 1024,
+                            "session_start_time": data.get("session_start_time"),
+                            "health_score": data.get("performance_stats", {}).get("health_score", "N/A"),
+                            "total_errors": data.get("performance_stats", {}).get("total_errors", 0),
+                        }
+                    )
 
                 except Exception as e:
                     logger.debug(f"Failed to read checkpoint metadata for {checkpoint_file.name}: {e}")
@@ -1298,21 +1338,23 @@ class SessionHealthMonitor:
                 session_data = {}
 
             # Add health monitoring state
-            session_data.update({
-                "health_monitor": {
-                    "session_start_time": self.session_start_time,
-                    "current_metrics": {name: metric.value for name, metric in self.current_metrics.items()},
-                    "error_count": len(self.error_timestamps),
-                    "alert_count": len(self.alerts),
-                    "health_score": self.calculate_health_score(),
-                    "intervention_state": {
-                        "emergency_halt": self._emergency_halt_requested,
-                        "immediate_intervention": self._immediate_intervention_requested,
-                        "enhanced_monitoring": self._enhanced_monitoring_active
-                    }
-                },
-                "timestamp": time.time()
-            })
+            session_data.update(
+                {
+                    "health_monitor": {
+                        "session_start_time": self.session_start_time,
+                        "current_metrics": {name: metric.value for name, metric in self.current_metrics.items()},
+                        "error_count": len(self.error_timestamps),
+                        "alert_count": len(self.alerts),
+                        "health_score": self.calculate_health_score(),
+                        "intervention_state": {
+                            "emergency_halt": self._emergency_halt_requested,
+                            "immediate_intervention": self._immediate_intervention_requested,
+                            "enhanced_monitoring": self._enhanced_monitoring_active,
+                        },
+                    },
+                    "timestamp": time.time(),
+                }
+            )
 
             # Save to persistent state file
             state_file = state_dir / "current_session.json"
@@ -1378,6 +1420,7 @@ class SessionHealthMonitor:
 # Global health monitor instance
 class _HealthMonitorSingleton:
     """Singleton container for health monitor instance."""
+
     instance: Optional[SessionHealthMonitor] = None
 
 
@@ -1396,6 +1439,7 @@ def initialize_health_monitoring() -> Any:
 
 
 # === INTEGRATION HELPERS ===
+
 
 def integrate_with_session_manager(session_manager: Any) -> Any:
     """Integrate health monitoring with session manager."""
@@ -1452,50 +1496,59 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
         "thread_pool_workers": 3,
         "batch_size": 8,
         "token_bucket_fill_rate": 2.5,
-        "action_required": "continue"
+        "action_required": "continue",
     }
 
     if risk_score > 0.8:
         # Emergency settings
-        recommendations.update({
-            "max_concurrency": 1,
-            "thread_pool_workers": 1,
-            "batch_size": 1,
-            "token_bucket_fill_rate": 1.0,
-            "action_required": "emergency_refresh"
-        })
+        recommendations.update(
+            {
+                "max_concurrency": 1,
+                "thread_pool_workers": 1,
+                "batch_size": 1,
+                "token_bucket_fill_rate": 1.0,
+                "action_required": "emergency_refresh",
+            }
+        )
     elif risk_score > 0.6:
         # Critical settings
-        recommendations.update({
-            "max_concurrency": 1,
-            "thread_pool_workers": 1,
-            "batch_size": 3,
-            "token_bucket_fill_rate": 1.5,
-            "action_required": "immediate_refresh"
-        })
+        recommendations.update(
+            {
+                "max_concurrency": 1,
+                "thread_pool_workers": 1,
+                "batch_size": 3,
+                "token_bucket_fill_rate": 1.5,
+                "action_required": "immediate_refresh",
+            }
+        )
     elif risk_score > 0.4:
         # Warning settings
-        recommendations.update({
-            "max_concurrency": 2,
-            "thread_pool_workers": 2,
-            "batch_size": 5,
-            "token_bucket_fill_rate": 2.0,
-            "action_required": "schedule_refresh"
-        })
+        recommendations.update(
+            {
+                "max_concurrency": 2,
+                "thread_pool_workers": 2,
+                "batch_size": 5,
+                "token_bucket_fill_rate": 2.0,
+                "action_required": "schedule_refresh",
+            }
+        )
     elif health_score > 80:
         # Excellent health - can optimize
-        recommendations.update({
-            "max_concurrency": 4,
-            "thread_pool_workers": 4,
-            "batch_size": 10,
-            "token_bucket_fill_rate": 3.0,
-            "action_required": "optimize"
-        })
+        recommendations.update(
+            {
+                "max_concurrency": 4,
+                "thread_pool_workers": 4,
+                "batch_size": 10,
+                "token_bucket_fill_rate": 3.0,
+                "action_required": "optimize",
+            }
+        )
 
     return recommendations
 
 
 # === SESSION STATE PERSISTENCE INTEGRATION ===
+
 
 def enable_session_state_persistence(
     session_manager: Optional[Any] = None,
@@ -1546,13 +1599,13 @@ def create_recovery_checkpoint(
                 # Capture session manager state
                 session_data["session_manager_state"] = {
                     "session_ready": getattr(session_manager, 'session_ready', False),
-                    "browser_active": hasattr(session_manager, 'browser_manager') and
-                                    getattr(session_manager.browser_manager, 'driver', None) is not None,
+                    "browser_active": hasattr(session_manager, 'browser_manager')
+                    and getattr(session_manager.browser_manager, 'driver', None) is not None,
                     "database_ready": hasattr(session_manager, 'db_manager'),
                     "api_ready": hasattr(session_manager, 'api_manager'),
                     "current_action": getattr(session_manager, 'current_action', None),
                     "pages_processed": getattr(session_manager, 'pages_processed', 0),
-                    "matches_processed": getattr(session_manager, 'matches_processed', 0)
+                    "matches_processed": getattr(session_manager, 'matches_processed', 0),
                 }
 
                 # Add browser health state if available
@@ -1602,7 +1655,7 @@ def get_session_recovery_status() -> dict[str, Any]:
             "latest_checkpoint": checkpoints[0] if checkpoints else None,
             "crash_recovery_available": crash_recovery_available,
             "checkpoints": checkpoints[:5],  # Last 5 checkpoints
-            "recovery_recommendations": _get_recovery_recommendations(checkpoints, crash_recovery_available)
+            "recovery_recommendations": _get_recovery_recommendations(checkpoints, crash_recovery_available),
         }
 
     except Exception as e:
@@ -1640,7 +1693,7 @@ def _get_recovery_recommendations(
 # ==============================================
 
 
-def _test_health_monitor_initialization():
+def _test_health_monitor_initialization() -> bool:
     """Test health monitor initialization."""
     monitor = SessionHealthMonitor()
     assert monitor is not None
@@ -1648,7 +1701,7 @@ def _test_health_monitor_initialization():
     assert monitor.session_start_time > 0
 
 
-def _test_metric_updates():
+def _test_metric_updates() -> bool:
     """Test metric update functionality."""
     monitor = SessionHealthMonitor()
     monitor.update_metric("api_response_time", 3.5)
@@ -1656,7 +1709,7 @@ def _test_metric_updates():
     assert len(monitor.metrics_history["api_response_time"]) == 1
 
 
-def _test_health_score_calculation():
+def _test_health_score_calculation() -> bool:
     """Test health score calculation."""
     monitor = SessionHealthMonitor()
     # Set all metrics to excellent values
@@ -1671,7 +1724,7 @@ def _test_health_score_calculation():
     assert score <= 20, f"Expected low score for critical metrics, got {score}"
 
 
-def _test_risk_prediction():
+def _test_risk_prediction() -> bool:
     """Test session death risk prediction."""
     monitor = SessionHealthMonitor()
     risk = monitor.predict_session_death_risk()
@@ -1684,7 +1737,7 @@ def _test_risk_prediction():
     assert risk > 0.3, f"Expected elevated risk with bad conditions, got {risk}"
 
 
-def _test_alert_system():
+def _test_alert_system() -> bool:
     """Test health alert system."""
     monitor = SessionHealthMonitor()
     monitor.update_metric("api_response_time", 16.0)
@@ -1695,7 +1748,7 @@ def _test_alert_system():
     assert len(critical_alerts) > 0, "Critical alert should have been created"
 
 
-def _test_performance_tracking():
+def _test_performance_tracking() -> bool:
     """Test performance tracking functionality."""
     monitor = SessionHealthMonitor()
     monitor.record_api_response_time(2.5)
@@ -1706,7 +1759,7 @@ def _test_performance_tracking():
     assert len(monitor.page_processing_times) == 1
 
 
-def _test_dashboard_generation():
+def _test_dashboard_generation() -> bool:
     """Test health dashboard generation."""
     monitor = SessionHealthMonitor()
     dashboard = monitor.get_health_dashboard()
@@ -1719,7 +1772,7 @@ def _test_dashboard_generation():
     assert isinstance(dashboard["recommended_actions"], list)
 
 
-def _test_integration_helpers():
+def _test_integration_helpers() -> bool:
     """Test integration helper functions."""
     recommendations = get_performance_recommendations(90.0, 0.1)
     assert "max_concurrency" in recommendations
@@ -1729,16 +1782,17 @@ def _test_integration_helpers():
     assert emergency_recs["action_required"] == "emergency_refresh"
 
 
-def _test_global_instance():
+def _test_global_instance() -> bool:
     """Test global health monitor instance."""
     monitor1 = get_health_monitor()
     monitor2 = get_health_monitor()
     assert monitor1 is monitor2, "get_health_monitor should return singleton instance"
 
 
-def _test_memory_pressure_monitoring():
+def _test_memory_pressure_monitoring() -> bool:
     """Test health monitoring under memory pressure conditions."""
     import time
+
     monitor = SessionHealthMonitor()
     monitor.optimize_for_long_session()
     assert monitor._monitoring_interval == 60.0, "Should optimize monitoring interval"
@@ -1753,9 +1807,10 @@ def _test_memory_pressure_monitoring():
     assert monitor.error_timestamps.maxlen == 3000, "Should have increased capacity for long sessions"
 
 
-def _test_resource_constraint_handling():
+def _test_resource_constraint_handling() -> bool:
     """Test system behavior under resource constraints."""
     import time
+
     monitor = SessionHealthMonitor()
     current_time = time.time()
     for i in range(100):
@@ -1768,9 +1823,10 @@ def _test_resource_constraint_handling():
     assert interval == 5.0, f"Enhanced monitoring should use 5s interval, got {interval}"
 
 
-def _test_long_session_resource_management():
+def _test_long_session_resource_management() -> bool:
     """Test resource management for 20+ hour sessions."""
     import time
+
     monitor = SessionHealthMonitor()
     session_start = time.time() - (20 * 3600)
     monitor.session_start_time = session_start
@@ -1788,7 +1844,7 @@ def _test_long_session_resource_management():
             metric_name="test_metric",
             metric_value=i,
             threshold=50,
-            timestamp=alert_time
+            timestamp=alert_time,
         )
         monitor.alerts.append(alert)
     stats = monitor.get_performance_stats()
@@ -1807,9 +1863,10 @@ def _test_long_session_resource_management():
     assert final_errors > 0, "Should keep some recent errors"
 
 
-def _test_session_checkpoint_creation():
+def _test_session_checkpoint_creation() -> bool:
     """Test session checkpoint creation and restoration."""
     from pathlib import Path
+
     monitor = SessionHealthMonitor()
     monitor.update_metric("error_rate", 50.0)
     monitor.record_error("test_error")
@@ -1824,7 +1881,7 @@ def _test_session_checkpoint_creation():
     assert len(new_monitor.error_timestamps) > 0, "Should restore error timestamps"
 
 
-def _test_session_state_persistence():
+def _test_session_state_persistence() -> bool:
     """Test session state persistence to disk."""
     monitor = SessionHealthMonitor()
     monitor.update_metric("memory_usage_mb", 75.0)
@@ -1838,7 +1895,7 @@ def _test_session_state_persistence():
     assert "health_monitor" in recovered_data, "Should include health monitor state"
 
 
-def _test_checkpoint_management():
+def _test_checkpoint_management() -> bool:
     """Test checkpoint listing and cleanup functionality."""
     monitor = SessionHealthMonitor()
     monitor.create_session_checkpoint("test_checkpoint_1")
@@ -1851,9 +1908,10 @@ def _test_checkpoint_management():
         assert "file_size_kb" in checkpoint, "Should include file size"
 
 
-def _test_auto_checkpoint_functionality():
+def _test_auto_checkpoint_functionality() -> bool:
     """Test automatic checkpoint creation."""
     import time
+
     monitor = SessionHealthMonitor()
     monitor.auto_checkpoint(interval_minutes=1)
     monitor._last_checkpoint_time = time.time() - 120
@@ -1885,13 +1943,55 @@ def health_monitor_tests() -> bool:
         ("Dashboard Generation", _test_dashboard_generation, True, "direct", "Test dashboard generation"),
         ("Integration Helpers", _test_integration_helpers, True, "direct", "Test integration helpers"),
         ("Global Instance", _test_global_instance, "Test global instance", "direct", "Test global instance"),
-        ("Memory Pressure Monitoring", _test_memory_pressure_monitoring, "Test memory monitoring", "direct", "Test memory monitoring"),
-        ("Resource Constraint Handling", _test_resource_constraint_handling, "Test resource constraints", "direct", "Test resource constraints"),
-        ("Long Session Resource Management", _test_long_session_resource_management, "Test long session management", "direct", "Test long session management"),
-        ("Session Checkpoint Creation", _test_session_checkpoint_creation, "Test checkpoint creation", "direct", "Test checkpoint creation"),
-        ("Session State Persistence", _test_session_state_persistence, "Test state persistence", "direct", "Test state persistence"),
-        ("Checkpoint Management", _test_checkpoint_management, "Test checkpoint management", "direct", "Test checkpoint management"),
-        ("Auto Checkpoint Functionality", _test_auto_checkpoint_functionality, "Test auto checkpoint", "direct", "Test auto checkpoint"),
+        (
+            "Memory Pressure Monitoring",
+            _test_memory_pressure_monitoring,
+            "Test memory monitoring",
+            "direct",
+            "Test memory monitoring",
+        ),
+        (
+            "Resource Constraint Handling",
+            _test_resource_constraint_handling,
+            "Test resource constraints",
+            "direct",
+            "Test resource constraints",
+        ),
+        (
+            "Long Session Resource Management",
+            _test_long_session_resource_management,
+            "Test long session management",
+            "direct",
+            "Test long session management",
+        ),
+        (
+            "Session Checkpoint Creation",
+            _test_session_checkpoint_creation,
+            "Test checkpoint creation",
+            "direct",
+            "Test checkpoint creation",
+        ),
+        (
+            "Session State Persistence",
+            _test_session_state_persistence,
+            "Test state persistence",
+            "direct",
+            "Test state persistence",
+        ),
+        (
+            "Checkpoint Management",
+            _test_checkpoint_management,
+            "Test checkpoint management",
+            "direct",
+            "Test checkpoint management",
+        ),
+        (
+            "Auto Checkpoint Functionality",
+            _test_auto_checkpoint_functionality,
+            "Test auto checkpoint",
+            "direct",
+            "Test auto checkpoint",
+        ),
     ]
 
     # Run all tests from the list

@@ -5573,7 +5573,7 @@ def _test_combined_details_cache_helpers() -> bool:
     return True
 
 
-def _test_module_initialization():
+def _test_module_initialization() -> bool:
     """Test module initialization and state functions with detailed verification"""
     from actions.gather import orchestrator as gather_orchestrator
 
@@ -5629,7 +5629,7 @@ def _test_module_initialization():
     print(f"📊 Results: {sum(results)}/{len(results)} initialization tests passed")
 
 
-def _test_core_functionality():
+def _test_core_functionality() -> bool:
     """Test actual behavior of core DNA match gathering functions"""
     import inspect
     from unittest.mock import MagicMock
@@ -5662,7 +5662,7 @@ def _test_core_functionality():
     assert result is False, "nav_to_list should return False for invalid session"
 
 
-def _test_data_processing_functions():
+def _test_data_processing_functions() -> bool:
     """Test actual behavior of data processing and preparation functions"""
     import inspect
 
@@ -5694,7 +5694,7 @@ def _test_data_processing_functions():
     )
 
 
-def _test_edge_cases():
+def _test_edge_cases() -> bool:
     """Test edge cases and boundary conditions"""
     from actions.gather import orchestrator as gather_orchestrator
 
@@ -5709,7 +5709,7 @@ def _test_edge_cases():
     assert result == 1, "Should handle zero input"
 
 
-def _test_integration():
+def _test_integration() -> bool:
     """Test integration with external dependencies"""
     import inspect
     from unittest.mock import MagicMock
@@ -5731,7 +5731,7 @@ def _test_integration():
     assert len(coord_params) > 0, "coord should accept parameters"
 
 
-def _test_performance():
+def _test_performance() -> bool:
     """Test performance of data processing operations"""
     import time
 
@@ -5756,7 +5756,7 @@ def _test_performance():
     assert duration < 0.5, f"1000 page validations should be fast, took {duration:.3f}s"
 
 
-def _test_retryable_error_constructor():
+def _test_retryable_error_constructor() -> bool:
     """Test RetryableError constructor with conflicting parameters"""
     print("   • Test 1: RetryableError constructor parameter conflict bug")
     try:
@@ -5775,7 +5775,7 @@ def _test_retryable_error_constructor():
         raise
 
 
-def _test_database_connection_error_constructor():
+def _test_database_connection_error_constructor() -> bool:
     """Test DatabaseConnectionError constructor"""
     print("   • Test 2: DatabaseConnectionError constructor")
     try:
@@ -5791,7 +5791,7 @@ def _test_database_connection_error_constructor():
         raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}") from e
 
 
-def _test_database_transaction_rollback():
+def _test_database_transaction_rollback() -> bool:
     """Test database transaction rollback scenario simulation"""
     import sqlite3
     from unittest.mock import patch
@@ -5816,7 +5816,7 @@ def _test_database_transaction_rollback():
         raise AssertionError(f"Database transaction rollback simulation failed: {e}") from e
 
 
-def _test_all_error_class_constructors():
+def _test_all_error_class_constructors() -> bool:
     """Test all error class constructors to prevent future regressions"""
     from core.error_handling import (
         APIRateLimitError,
@@ -5854,7 +5854,7 @@ def _test_all_error_class_constructors():
             raise
 
 
-def _test_legacy_function_error_handling():
+def _test_legacy_function_error_handling() -> bool:
     """Test legacy function error handling"""
     from unittest.mock import MagicMock
 
@@ -5887,7 +5887,7 @@ def _test_legacy_function_error_handling():
     print("     ✅ Legacy function error handling works correctly")
 
 
-def _test_timeout_and_retry_handling():
+def _test_timeout_and_retry_handling() -> bool:
     """Test timeout and retry handling configuration"""
     from config import config_schema
 
@@ -5911,7 +5911,7 @@ def _test_timeout_and_retry_handling():
     )
 
 
-def _test_duplicate_record_handling():
+def _test_duplicate_record_handling() -> bool:
     """Test duplicate record handling during retry scenarios"""
     print("   • Test 7: Duplicate record handling during retry scenarios")
 
@@ -5942,7 +5942,7 @@ def _test_duplicate_record_handling():
     print("     ✅ Duplicate detection prevents UNIQUE violations both in-memory and pre-insert")
 
 
-def _test_error_handling():
+def _test_error_handling() -> bool:
     """
     Test error handling scenarios including the critical RetryableError constructor bug
     that caused Action 6 database transaction failures.
@@ -6035,7 +6035,7 @@ def _test_thread_pool_configuration() -> bool:
     return True
 
 
-def _test_regression_prevention_database_bulk_insert():
+def _test_regression_prevention_database_bulk_insert() -> bool:
     """
     🛡️ REGRESSION TEST: Database bulk insert condition logic.
 
@@ -6060,7 +6060,7 @@ def _test_regression_prevention_database_bulk_insert():
     return success
 
 
-def _test_regression_prevention_configuration_respect():
+def _test_regression_prevention_configuration_respect() -> bool:
     """
     🛡️ REGRESSION TEST: Configuration settings respect.
 
@@ -6104,7 +6104,7 @@ def _test_regression_prevention_configuration_respect():
     return success
 
 
-def _test_dynamic_api_failure_threshold():
+def _test_dynamic_api_failure_threshold() -> bool:
     """
     🔧 TEST: Dynamic API failure threshold calculation.
 
@@ -6202,7 +6202,7 @@ def _test_cm_relationship_fallback() -> bool:
     return True
 
 
-def _test_regression_prevention_session_management():
+def _test_regression_prevention_session_management() -> bool:
     """
     🛡️ REGRESSION TEST: Session management and stability.
 
@@ -6242,7 +6242,7 @@ def _test_regression_prevention_session_management():
     return success
 
 
-def _test_303_redirect_detection():
+def _test_303_redirect_detection() -> bool:
     """Test that would have detected the 303 redirect authentication issue."""
     from unittest.mock import Mock, patch
 

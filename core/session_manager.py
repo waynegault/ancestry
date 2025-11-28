@@ -2479,7 +2479,7 @@ class APICallWatchdog:
 
 
 # === Decomposed Helper Functions ===
-def _test_session_manager_initialization():
+def _test_session_manager_initialization() -> bool:
     """Test SessionManager initialization with detailed component verification"""
     required_components = [
         ("db_manager", "DatabaseManager for database operations"),
@@ -2526,7 +2526,7 @@ def _test_session_manager_initialization():
         return False
 
 
-def _test_component_manager_availability():
+def _test_component_manager_availability() -> bool:
     """Test component manager availability with detailed type verification"""
     component_tests = [
         ("db_manager", "DatabaseManager", "Database operations and connection pooling"),
@@ -2565,7 +2565,7 @@ def _test_component_manager_availability():
         return False
 
 
-def _test_database_operations():
+def _test_database_operations() -> bool:
     """Test database operations with detailed result verification"""
     database_operations = [
         ("ensure_db_ready", "Ensure database is ready for operations"),
@@ -2628,7 +2628,7 @@ def _test_database_operations():
         return False
 
 
-def _test_browser_operations():
+def _test_browser_operations() -> bool:
     session_manager = SessionManager()
     result = session_manager.start_browser("test_action")
     assert isinstance(result, bool), "start_browser should return bool"
@@ -2636,7 +2636,7 @@ def _test_browser_operations():
     return True
 
 
-def _test_property_access():
+def _test_property_access() -> bool:
     session_manager = SessionManager()
     properties_to_check = [
         "my_profile_id",
@@ -2653,7 +2653,7 @@ def _test_property_access():
     return True
 
 
-def _test_component_delegation():
+def _test_component_delegation() -> bool:
     session_manager = SessionManager()
     db_result = session_manager.ensure_db_ready()
     assert isinstance(db_result, bool), "Database delegation should work"
@@ -2662,7 +2662,7 @@ def _test_component_delegation():
     return True
 
 
-def _test_initialization_performance():
+def _test_initialization_performance() -> bool:
     import time
 
     session_managers: list[SessionManager] = []
@@ -2680,7 +2680,7 @@ def _test_initialization_performance():
     return True
 
 
-def _test_error_handling():
+def _test_error_handling() -> bool:
     session_manager = SessionManager()
     try:
         session_manager.ensure_db_ready()
@@ -2693,7 +2693,7 @@ def _test_error_handling():
     return True
 
 
-def _test_regression_prevention_csrf_optimization():
+def _test_regression_prevention_csrf_optimization() -> bool:
     """
     🛡️ REGRESSION TEST: CSRF token caching optimization.
 
@@ -2760,7 +2760,7 @@ def _test_regression_prevention_csrf_optimization():
     return success
 
 
-def _test_regression_prevention_property_access():
+def _test_regression_prevention_property_access() -> bool:
     """
     🛡️ REGRESSION TEST: SessionManager property access stability.
 
@@ -2813,7 +2813,7 @@ def _test_regression_prevention_property_access():
     return True
 
 
-def _test_regression_prevention_initialization_stability():
+def _test_regression_prevention_initialization_stability() -> bool:
     """
     🛡️ REGRESSION TEST: SessionManager initialization stability.
 

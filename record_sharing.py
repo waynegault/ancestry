@@ -15,10 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def format_record_reference(
-    record_type: str,
-    person_name: str,
-    record_details: dict[str, str],
-    include_source: bool = True
+    record_type: str, person_name: str, record_details: dict[str, str], include_source: bool = True
 ) -> str:
     """
     Format a genealogical record reference for inclusion in messages.
@@ -65,11 +62,7 @@ def format_record_reference(
     return description
 
 
-def format_multiple_records(
-    person_name: str,
-    records: list[dict[str, Any]],
-    max_records: int = 3
-) -> str:
+def format_multiple_records(person_name: str, records: list[dict[str, Any]], max_records: int = 3) -> str:
     """
     Format multiple record references for a person.
 
@@ -121,11 +114,7 @@ def format_multiple_records(
     return result
 
 
-def create_record_sharing_message(
-    person_name: str,
-    records: list[dict[str, Any]],
-    context: str = ""
-) -> str:
+def create_record_sharing_message(person_name: str, records: list[dict[str, Any]], context: str = "") -> str:
     """
     Create a complete message about shared records.
 
@@ -173,11 +162,7 @@ def extract_record_url(record_details: dict[str, str]) -> Optional[str]:
     return None
 
 
-def format_record_with_link(
-    record_type: str,
-    person_name: str,
-    record_details: dict[str, str]
-) -> str:
+def format_record_with_link(record_type: str, person_name: str, record_details: dict[str, str]) -> str:
     """
     Format a record reference with clickable link if available.
 
@@ -210,11 +195,7 @@ def format_record_with_link(
 
 def test_basic_record_formatting():
     """Test basic record reference formatting."""
-    details = {
-        'date': '1941',
-        'place': 'Banff, Banffshire, Scotland',
-        'source': 'Birth Certificate'
-    }
+    details = {'date': '1941', 'place': 'Banff, Banffshire, Scotland', 'source': 'Birth Certificate'}
 
     result = format_record_reference('Birth', 'Fraser Gault', details)
 
@@ -227,11 +208,7 @@ def test_basic_record_formatting():
 
 def test_record_without_source():
     """Test record formatting without source citation."""
-    details = {
-        'date': '1941',
-        'place': 'Banff, Scotland',
-        'source': 'Birth Certificate'
-    }
+    details = {'date': '1941', 'place': 'Banff, Scotland', 'source': 'Birth Certificate'}
 
     result = format_record_reference('Birth', 'Fraser Gault', details, include_source=False)
 
@@ -242,18 +219,9 @@ def test_record_without_source():
 def test_multiple_records_formatting():
     """Test formatting multiple records."""
     records = [
-        {
-            'type': 'Birth',
-            'details': {'date': '1941', 'place': 'Banff, Scotland', 'source': 'Birth Certificate'}
-        },
-        {
-            'type': 'Census',
-            'details': {'date': '1951', 'place': 'Aberdeen, Scotland', 'source': '1951 Census'}
-        },
-        {
-            'type': 'Death',
-            'details': {'date': '2020', 'place': 'Edinburgh, Scotland', 'source': 'Death Certificate'}
-        }
+        {'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland', 'source': 'Birth Certificate'}},
+        {'type': 'Census', 'details': {'date': '1951', 'place': 'Aberdeen, Scotland', 'source': '1951 Census'}},
+        {'type': 'Death', 'details': {'date': '2020', 'place': 'Edinburgh, Scotland', 'source': 'Death Certificate'}},
     ]
 
     result = format_multiple_records('Fraser Gault', records, max_records=2)
@@ -271,7 +239,7 @@ def test_record_with_url():
         'date': '1941',
         'place': 'Banff, Scotland',
         'source': 'Birth Certificate',
-        'url': 'https://www.ancestry.co.uk/records/12345'
+        'url': 'https://www.ancestry.co.uk/records/12345',
     }
 
     result = format_record_with_link('Birth', 'Fraser Gault', details)
@@ -283,12 +251,7 @@ def test_record_with_url():
 
 def test_complete_sharing_message():
     """Test complete record sharing message creation."""
-    records = [
-        {
-            'type': 'Birth',
-            'details': {'date': '1941', 'place': 'Banff, Scotland'}
-        }
-    ]
+    records = [{'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland'}}]
 
     context = "I found some records that might help with your research:"
     result = create_record_sharing_message('Fraser Gault', records, context)
@@ -316,14 +279,9 @@ def test_url_extraction():
     assert url_invalid is None, "Should return None for invalid URL"
 
 
-def _test_minimal_record_formatting():
+def _test_minimal_record_formatting() -> bool:
     """Test record formatting with minimal details."""
-    formatted = format_record_reference(
-        "Birth",
-        "John Smith",
-        {},
-        include_source=False
-    )
+    formatted = format_record_reference("Birth", "John Smith", {}, include_source=False)
 
     assert "John Smith" in formatted, "Should include person name"
     assert "birth" in formatted.lower(), "Should include record type"
@@ -332,14 +290,9 @@ def _test_minimal_record_formatting():
     return True
 
 
-def _test_record_with_date_only():
+def _test_record_with_date_only() -> bool:
     """Test record formatting with only date."""
-    formatted = format_record_reference(
-        "Death",
-        "Mary Brown",
-        {'date': '1920'},
-        include_source=False
-    )
+    formatted = format_record_reference("Death", "Mary Brown", {'date': '1920'}, include_source=False)
 
     assert "Mary Brown" in formatted, "Should include person name"
     assert "1920" in formatted, "Should include date"
@@ -349,13 +302,10 @@ def _test_record_with_date_only():
     return True
 
 
-def _test_record_with_place_only():
+def _test_record_with_place_only() -> bool:
     """Test record formatting with only place."""
     formatted = format_record_reference(
-        "Census",
-        "William Gault",
-        {'place': 'Aberdeen, Scotland'},
-        include_source=False
+        "Census", "William Gault", {'place': 'Aberdeen, Scotland'}, include_source=False
     )
 
     assert "William Gault" in formatted, "Should include person name"
@@ -366,7 +316,7 @@ def _test_record_with_place_only():
     return True
 
 
-def _test_empty_multiple_records():
+def _test_empty_multiple_records() -> bool:
     """Test multiple records formatting with empty list."""
     formatted = format_multiple_records("John Smith", [])
 
@@ -378,14 +328,9 @@ def _test_empty_multiple_records():
     return True
 
 
-def _test_single_record_in_list():
+def _test_single_record_in_list() -> bool:
     """Test multiple records formatting with single record."""
-    records = [
-        {
-            'type': 'Birth',
-            'details': {'date': '1850', 'place': 'Scotland'}
-        }
-    ]
+    records = [{'type': 'Birth', 'details': {'date': '1850', 'place': 'Scotland'}}]
 
     formatted = format_multiple_records("John Smith", records)
 
@@ -397,7 +342,7 @@ def _test_single_record_in_list():
     return True
 
 
-def _test_record_url_extraction_missing():
+def _test_record_url_extraction_missing() -> bool:
     """Test URL extraction with missing URL."""
     url = extract_record_url({})
 
@@ -407,7 +352,7 @@ def _test_record_url_extraction_missing():
     return True
 
 
-def _test_record_url_extraction_present():
+def _test_record_url_extraction_present() -> bool:
     """Test URL extraction with present URL."""
     test_url = "https://www.ancestry.co.uk/test"
     url = extract_record_url({'url': test_url})
@@ -418,13 +363,9 @@ def _test_record_url_extraction_present():
     return True
 
 
-def _test_record_with_link_no_url():
+def _test_record_with_link_no_url() -> bool:
     """Test record formatting with link when no URL present."""
-    formatted = format_record_with_link(
-        "Birth",
-        "Jane Doe",
-        {'date': '1900'}
-    )
+    formatted = format_record_with_link("Birth", "Jane Doe", {'date': '1900'})
 
     assert "Jane Doe" in formatted, "Should include person name"
     assert "1900" in formatted, "Should include date"
@@ -433,12 +374,9 @@ def _test_record_with_link_no_url():
     return True
 
 
-def _test_sharing_message_minimal():
+def _test_sharing_message_minimal() -> bool:
     """Test sharing message creation with minimal parameters."""
-    message = create_record_sharing_message(
-        "John Smith",
-        []
-    )
+    message = create_record_sharing_message("John Smith", [])
 
     assert isinstance(message, str), "Should return string"
     assert "John Smith" in message, "Should include person name"
@@ -461,7 +399,7 @@ def record_sharing_module_tests() -> bool:
             _test_minimal_record_formatting,
             "Minimal record formatting works correctly",
             "Test record formatting with minimal details",
-            "Verify formatting with no date, place, or source"
+            "Verify formatting with no date, place, or source",
         )
 
         suite.run_test(
@@ -469,7 +407,7 @@ def record_sharing_module_tests() -> bool:
             _test_record_with_date_only,
             "Record with date only formatted correctly",
             "Test record formatting with only date",
-            "Verify formatting with date but no place or source"
+            "Verify formatting with date but no place or source",
         )
 
         suite.run_test(
@@ -477,7 +415,7 @@ def record_sharing_module_tests() -> bool:
             _test_record_with_place_only,
             "Record with place only formatted correctly",
             "Test record formatting with only place",
-            "Verify formatting with place but no date or source"
+            "Verify formatting with place but no date or source",
         )
 
         suite.run_test(
@@ -485,7 +423,7 @@ def record_sharing_module_tests() -> bool:
             _test_empty_multiple_records,
             "Empty multiple records handled correctly",
             "Test multiple records formatting with empty list",
-            "Verify graceful handling of empty record list"
+            "Verify graceful handling of empty record list",
         )
 
         suite.run_test(
@@ -493,7 +431,7 @@ def record_sharing_module_tests() -> bool:
             _test_single_record_in_list,
             "Single record in list formatted correctly",
             "Test multiple records formatting with single record",
-            "Verify formatting with one record in list"
+            "Verify formatting with one record in list",
         )
 
         suite.run_test(
@@ -501,7 +439,7 @@ def record_sharing_module_tests() -> bool:
             _test_record_url_extraction_missing,
             "Missing URL extraction handled correctly",
             "Test URL extraction with missing URL",
-            "Verify None returned for missing URL"
+            "Verify None returned for missing URL",
         )
 
         suite.run_test(
@@ -509,7 +447,7 @@ def record_sharing_module_tests() -> bool:
             _test_record_url_extraction_present,
             "URL extraction works correctly",
             "Test URL extraction with present URL",
-            "Verify URL returned correctly"
+            "Verify URL returned correctly",
         )
 
         suite.run_test(
@@ -517,7 +455,7 @@ def record_sharing_module_tests() -> bool:
             _test_record_with_link_no_url,
             "Record with link (no URL) formatted correctly",
             "Test record formatting with link when no URL present",
-            "Verify formatting without URL"
+            "Verify formatting without URL",
         )
 
         suite.run_test(
@@ -525,7 +463,7 @@ def record_sharing_module_tests() -> bool:
             _test_sharing_message_minimal,
             "Minimal sharing message created correctly",
             "Test sharing message creation with minimal parameters",
-            "Verify message with empty records list"
+            "Verify message with empty records list",
         )
 
         # Original tests
@@ -534,7 +472,7 @@ def record_sharing_module_tests() -> bool:
             test_basic_record_formatting,
             "Record references formatted correctly with all details",
             "Test basic record formatting",
-            "Testing record formatting with date, place, and source"
+            "Testing record formatting with date, place, and source",
         )
 
         suite.run_test(
@@ -542,7 +480,7 @@ def record_sharing_module_tests() -> bool:
             test_record_without_source,
             "Record formatted correctly without source citation",
             "Test record formatting without source",
-            "Testing optional source citation parameter"
+            "Testing optional source citation parameter",
         )
 
         suite.run_test(
@@ -550,7 +488,7 @@ def record_sharing_module_tests() -> bool:
             test_multiple_records_formatting,
             "Multiple records formatted correctly with max limit",
             "Test multiple record formatting",
-            "Testing record list with max_records limit"
+            "Testing record list with max_records limit",
         )
 
         suite.run_test(
@@ -558,7 +496,7 @@ def record_sharing_module_tests() -> bool:
             test_record_with_url,
             "Record formatted correctly with clickable URL",
             "Test record formatting with URL",
-            "Testing URL inclusion in record references"
+            "Testing URL inclusion in record references",
         )
 
         suite.run_test(
@@ -566,7 +504,7 @@ def record_sharing_module_tests() -> bool:
             test_complete_sharing_message,
             "Complete message created with context and records",
             "Test complete message creation",
-            "Testing full message generation with context"
+            "Testing full message generation with context",
         )
 
         suite.run_test(
@@ -574,7 +512,7 @@ def record_sharing_module_tests() -> bool:
             test_url_extraction,
             "URLs extracted and validated correctly",
             "Test URL extraction",
-            "Testing URL extraction with valid/invalid/missing URLs"
+            "Testing URL extraction with valid/invalid/missing URLs",
         )
 
     return suite.finish_suite()

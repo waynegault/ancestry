@@ -20,7 +20,7 @@ def create_research_guidance_prompt(
     shared_dna_cm: Optional[float] = None,
     common_ancestors: Optional[list[str]] = None,
     missing_info: Optional[list[str]] = None,
-    available_records: Optional[list[dict[str, Any]]] = None
+    available_records: Optional[list[dict[str, Any]]] = None,
 ) -> str:
     """
     Create an AI prompt for generating research guidance.
@@ -94,7 +94,7 @@ def create_conversation_response_prompt(
     person_name: str,
     their_message: str,
     conversation_context: Optional[str] = None,
-    relationship_info: Optional[dict[str, Any]] = None
+    relationship_info: Optional[dict[str, Any]] = None,
 ) -> str:
     """
     Create an AI prompt for generating a conversational response.
@@ -152,7 +152,7 @@ def create_brick_wall_analysis_prompt(
     ancestor_name: str,
     known_facts: list[str],
     unknown_facts: list[str],
-    searched_collections: Optional[list[str]] = None
+    searched_collections: Optional[list[str]] = None,
 ) -> str:
     """
     Create an AI prompt for brick wall analysis.
@@ -219,7 +219,7 @@ def test_basic_research_guidance_prompt():
         person_name="Fraser Gault",
         relationship="father",
         shared_dna_cm=3400.0,
-        missing_info=["birth certificate", "military service"]
+        missing_info=["birth certificate", "military service"],
     )
 
     assert "Fraser Gault" in prompt, "Should include person name"
@@ -231,10 +231,7 @@ def test_basic_research_guidance_prompt():
 
 def test_prompt_with_common_ancestors():
     """Test prompt with common ancestors."""
-    prompt = create_research_guidance_prompt(
-        person_name="John Smith",
-        common_ancestors=["William Gault", "Mary Brown"]
-    )
+    prompt = create_research_guidance_prompt(person_name="John Smith", common_ancestors=["William Gault", "Mary Brown"])
 
     assert "John Smith" in prompt, "Should include person name"
     assert "William Gault" in prompt, "Should include common ancestor"
@@ -244,20 +241,11 @@ def test_prompt_with_common_ancestors():
 def test_prompt_with_available_records():
     """Test prompt with available records."""
     records = [
-        {
-            'type': 'Birth',
-            'details': {'date': '1941', 'place': 'Banff, Scotland'}
-        },
-        {
-            'type': 'Census',
-            'details': {'date': '1951', 'place': 'Aberdeen, Scotland'}
-        }
+        {'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland'}},
+        {'type': 'Census', 'details': {'date': '1951', 'place': 'Aberdeen, Scotland'}},
     ]
 
-    prompt = create_research_guidance_prompt(
-        person_name="Fraser Gault",
-        available_records=records
-    )
+    prompt = create_research_guidance_prompt(person_name="Fraser Gault", available_records=records)
 
     assert "Fraser Gault" in prompt, "Should include person name"
     assert "Birth" in prompt, "Should include record type"
@@ -270,7 +258,7 @@ def test_conversation_response_prompt():
     prompt = create_conversation_response_prompt(
         person_name="John Smith",
         their_message="Do you have any information about William Gault?",
-        relationship_info={'relationship': '2nd cousin', 'shared_dna_cm': 212.0}
+        relationship_info={'relationship': '2nd cousin', 'shared_dna_cm': 212.0},
     )
 
     assert "John Smith" in prompt, "Should include person name"
@@ -285,7 +273,7 @@ def test_brick_wall_analysis_prompt():
         ancestor_name="William Gault",
         known_facts=["Born 1875 in Banff", "Married Mary Brown 1895"],
         unknown_facts=["Death date", "Death place", "Occupation"],
-        searched_collections=["Scotland Birth Records", "Scotland Census 1881-1901"]
+        searched_collections=["Scotland Birth Records", "Scotland Census 1881-1901"],
     )
 
     assert "William Gault" in prompt, "Should include ancestor name"
@@ -294,7 +282,7 @@ def test_brick_wall_analysis_prompt():
     assert "Scotland Birth Records" in prompt, "Should include searched collections"
 
 
-def _test_minimal_research_guidance_prompt():
+def _test_minimal_research_guidance_prompt() -> bool:
     """Test research guidance prompt with minimal parameters."""
     prompt = create_research_guidance_prompt(person_name="Jane Doe")
 
@@ -307,11 +295,11 @@ def _test_minimal_research_guidance_prompt():
     return True
 
 
-def _test_complete_research_guidance_prompt():
+def _test_complete_research_guidance_prompt() -> bool:
     """Test research guidance prompt with all parameters."""
     records = [
         {'type': 'Birth', 'details': {'date': '1941', 'place': 'Banff, Scotland'}},
-        {'type': 'Census', 'details': {'date': '1951', 'place': 'Aberdeen, Scotland'}}
+        {'type': 'Census', 'details': {'date': '1951', 'place': 'Aberdeen, Scotland'}},
     ]
 
     prompt = create_research_guidance_prompt(
@@ -320,7 +308,7 @@ def _test_complete_research_guidance_prompt():
         shared_dna_cm=3400.0,
         common_ancestors=["William Gault", "Mary Brown"],
         missing_info=["birth certificate", "military service"],
-        available_records=records
+        available_records=records,
     )
 
     # Verify all sections present
@@ -338,12 +326,9 @@ def _test_complete_research_guidance_prompt():
     return True
 
 
-def _test_research_guidance_prompt_structure():
+def _test_research_guidance_prompt_structure() -> bool:
     """Test research guidance prompt structure and formatting."""
-    prompt = create_research_guidance_prompt(
-        person_name="Test Person",
-        missing_info=["birth date", "death place"]
-    )
+    prompt = create_research_guidance_prompt(person_name="Test Person", missing_info=["birth date", "death place"])
 
     # Verify structure
     lines = prompt.split('\n')
@@ -357,11 +342,10 @@ def _test_research_guidance_prompt_structure():
     return True
 
 
-def _test_minimal_conversation_response_prompt():
+def _test_minimal_conversation_response_prompt() -> bool:
     """Test conversation response prompt with minimal parameters."""
     prompt = create_conversation_response_prompt(
-        person_name="John Smith",
-        their_message="Hello, I think we might be related."
+        person_name="John Smith", their_message="Hello, I think we might be related."
     )
 
     assert "John Smith" in prompt, "Should include person name"
@@ -373,13 +357,13 @@ def _test_minimal_conversation_response_prompt():
     return True
 
 
-def _test_complete_conversation_response_prompt():
+def _test_complete_conversation_response_prompt() -> bool:
     """Test conversation response prompt with all parameters."""
     prompt = create_conversation_response_prompt(
         person_name="John Smith",
         their_message="Do you have any information about William Gault?",
         conversation_context="We previously discussed the Gault family tree.",
-        relationship_info={'relationship': '2nd cousin', 'shared_dna_cm': 212.0}
+        relationship_info={'relationship': '2nd cousin', 'shared_dna_cm': 212.0},
     )
 
     # Verify all sections present
@@ -394,12 +378,9 @@ def _test_complete_conversation_response_prompt():
     return True
 
 
-def _test_conversation_response_prompt_structure():
+def _test_conversation_response_prompt_structure() -> bool:
     """Test conversation response prompt structure."""
-    prompt = create_conversation_response_prompt(
-        person_name="Test Person",
-        their_message="Test message"
-    )
+    prompt = create_conversation_response_prompt(person_name="Test Person", their_message="Test message")
 
     # Verify structure
     lines = prompt.split('\n')
@@ -414,12 +395,10 @@ def _test_conversation_response_prompt_structure():
     return True
 
 
-def _test_minimal_brick_wall_analysis_prompt():
+def _test_minimal_brick_wall_analysis_prompt() -> bool:
     """Test brick wall analysis prompt with minimal parameters."""
     prompt = create_brick_wall_analysis_prompt(
-        ancestor_name="William Gault",
-        known_facts=["Born 1875"],
-        unknown_facts=["Death date"]
+        ancestor_name="William Gault", known_facts=["Born 1875"], unknown_facts=["Death date"]
     )
 
     assert "William Gault" in prompt, "Should include ancestor name"
@@ -431,13 +410,13 @@ def _test_minimal_brick_wall_analysis_prompt():
     return True
 
 
-def _test_complete_brick_wall_analysis_prompt():
+def _test_complete_brick_wall_analysis_prompt() -> bool:
     """Test brick wall analysis prompt with all parameters."""
     prompt = create_brick_wall_analysis_prompt(
         ancestor_name="William Gault",
         known_facts=["Born 1875 in Banff", "Married Mary Brown 1895", "Had 5 children"],
         unknown_facts=["Death date", "Death place", "Occupation", "Parents' names"],
-        searched_collections=["Scotland Birth Records", "Scotland Census 1881-1901", "Scotland Death Records"]
+        searched_collections=["Scotland Birth Records", "Scotland Census 1881-1901", "Scotland Death Records"],
     )
 
     # Verify all sections present
@@ -453,12 +432,10 @@ def _test_complete_brick_wall_analysis_prompt():
     return True
 
 
-def _test_brick_wall_analysis_prompt_structure():
+def _test_brick_wall_analysis_prompt_structure() -> bool:
     """Test brick wall analysis prompt structure."""
     prompt = create_brick_wall_analysis_prompt(
-        ancestor_name="Test Ancestor",
-        known_facts=["Fact 1"],
-        unknown_facts=["Unknown 1"]
+        ancestor_name="Test Ancestor", known_facts=["Fact 1"], unknown_facts=["Unknown 1"]
     )
 
     # Verify structure
@@ -487,7 +464,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_minimal_research_guidance_prompt,
             "Minimal research guidance prompt created successfully",
             "Test research guidance prompt with minimal parameters",
-            "Verify prompt with only person name"
+            "Verify prompt with only person name",
         )
 
         suite.run_test(
@@ -495,7 +472,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_complete_research_guidance_prompt,
             "Complete research guidance prompt created successfully",
             "Test research guidance prompt with all parameters",
-            "Verify prompt with all sections: person, relationship, DNA, ancestors, missing info, records"
+            "Verify prompt with all sections: person, relationship, DNA, ancestors, missing info, records",
         )
 
         suite.run_test(
@@ -503,7 +480,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_research_guidance_prompt_structure,
             "Research guidance prompt structure validated",
             "Test research guidance prompt structure and formatting",
-            "Verify prompt has correct header, sections, and formatting"
+            "Verify prompt has correct header, sections, and formatting",
         )
 
         suite.run_test(
@@ -511,7 +488,7 @@ def research_guidance_prompts_module_tests() -> bool:
             test_basic_research_guidance_prompt,
             "Research guidance prompts created correctly with all details",
             "Test basic research guidance prompt",
-            "Testing prompt with person info, relationship, DNA, and missing info"
+            "Testing prompt with person info, relationship, DNA, and missing info",
         )
 
         suite.run_test(
@@ -519,7 +496,7 @@ def research_guidance_prompts_module_tests() -> bool:
             test_prompt_with_common_ancestors,
             "Prompts include common ancestor information",
             "Test prompt with common ancestors",
-            "Testing common ancestor inclusion in prompts"
+            "Testing common ancestor inclusion in prompts",
         )
 
         suite.run_test(
@@ -527,7 +504,7 @@ def research_guidance_prompts_module_tests() -> bool:
             test_prompt_with_available_records,
             "Prompts include available record information",
             "Test prompt with available records",
-            "Testing record inclusion in prompts"
+            "Testing record inclusion in prompts",
         )
 
         # Conversation response prompt tests
@@ -536,7 +513,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_minimal_conversation_response_prompt,
             "Minimal conversation response prompt created successfully",
             "Test conversation response prompt with minimal parameters",
-            "Verify prompt with only person name and message"
+            "Verify prompt with only person name and message",
         )
 
         suite.run_test(
@@ -544,7 +521,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_complete_conversation_response_prompt,
             "Complete conversation response prompt created successfully",
             "Test conversation response prompt with all parameters",
-            "Verify prompt with relationship, tree info, and all details"
+            "Verify prompt with relationship, tree info, and all details",
         )
 
         suite.run_test(
@@ -552,7 +529,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_conversation_response_prompt_structure,
             "Conversation response prompt structure validated",
             "Test conversation response prompt structure",
-            "Verify prompt has correct structure and formatting"
+            "Verify prompt has correct structure and formatting",
         )
 
         suite.run_test(
@@ -560,7 +537,7 @@ def research_guidance_prompts_module_tests() -> bool:
             test_conversation_response_prompt,
             "Conversation prompts created correctly",
             "Test conversation response prompt",
-            "Testing conversational prompt generation"
+            "Testing conversational prompt generation",
         )
 
         # Brick wall analysis prompt tests
@@ -569,7 +546,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_minimal_brick_wall_analysis_prompt,
             "Minimal brick wall analysis prompt created successfully",
             "Test brick wall analysis prompt with minimal parameters",
-            "Verify prompt with only ancestor name and basic facts"
+            "Verify prompt with only ancestor name and basic facts",
         )
 
         suite.run_test(
@@ -577,7 +554,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_complete_brick_wall_analysis_prompt,
             "Complete brick wall analysis prompt created successfully",
             "Test brick wall analysis prompt with all parameters",
-            "Verify prompt with all facts, unknowns, and searched collections"
+            "Verify prompt with all facts, unknowns, and searched collections",
         )
 
         suite.run_test(
@@ -585,7 +562,7 @@ def research_guidance_prompts_module_tests() -> bool:
             _test_brick_wall_analysis_prompt_structure,
             "Brick wall analysis prompt structure validated",
             "Test brick wall analysis prompt structure",
-            "Verify prompt has correct structure and formatting"
+            "Verify prompt has correct structure and formatting",
         )
 
         suite.run_test(
@@ -593,7 +570,7 @@ def research_guidance_prompts_module_tests() -> bool:
             test_brick_wall_analysis_prompt,
             "Brick wall analysis prompts created correctly",
             "Test brick wall analysis prompt",
-            "Testing brick wall prompt with known/unknown facts"
+            "Testing brick wall prompt with known/unknown facts",
         )
 
     return suite.finish_suite()

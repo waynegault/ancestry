@@ -50,6 +50,7 @@ from cache import (
 )
 
 if TYPE_CHECKING:
+
     class BaseCacheModule:
         """Lightweight stub mirroring the runtime BaseCacheModule for typing."""
 
@@ -125,9 +126,7 @@ class APIResponseCache(BaseCacheModule):
         logger.debug("APIResponseCache initialized for Phase 5.2")
 
     @staticmethod
-    def _get_api_cache_key(
-        service: str, method: str, params: dict[str, Any]
-    ) -> str:
+    def _get_api_cache_key(service: str, method: str, params: dict[str, Any]) -> str:
         """Generate cache key for API requests"""
         # Create a stable hash of parameters
         param_str = json.dumps(params, sort_keys=True, default=str)
@@ -175,9 +174,7 @@ class APIResponseCache(BaseCacheModule):
             logger.warning(f"Failed to cache {service}.{method} response: {e}")
             return False
 
-    def get_cached_api_response(
-        self, service: str, method: str, params: dict[str, Any]
-    ) -> Optional[Any]:
+    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Optional[Any]:
         """Retrieve cached API response if valid"""
         if not cache:
             return None
@@ -216,9 +213,7 @@ class APIResponseCache(BaseCacheModule):
             stats["ai_hit_rate"] = 0.0
 
         if stats["ancestry_requests"] > 0:
-            stats["ancestry_hit_rate"] = (
-                stats["ancestry_cache_hits"] / stats["ancestry_requests"]
-            ) * 100
+            stats["ancestry_hit_rate"] = (stats["ancestry_cache_hits"] / stats["ancestry_requests"]) * 100
         else:
             stats["ancestry_hit_rate"] = 0.0
 
@@ -256,9 +251,7 @@ class DatabaseQueryCache(BaseCacheModule):
 
         return get_unified_cache_key("db_query", query_hash)
 
-    def cache_query_result(
-        self, query: str, params: tuple[Any, ...], result: Any, ttl: Optional[int] = None
-    ) -> bool:
+    def cache_query_result(self, query: str, params: tuple[Any, ...], result: Any, ttl: Optional[int] = None) -> bool:
         """Cache database query result"""
         if not cache:
             return False
@@ -381,9 +374,7 @@ class MemoryOptimizer(BaseCacheModule):
                 self._memory_stats["gc_collections"] += 1
                 self._memory_stats["memory_freed_mb"] += memory_freed
 
-            logger.debug(
-                f"Memory optimization: freed {memory_freed:.2f}MB in {optimization_time:.3f}s"
-            )
+            logger.debug(f"Memory optimization: freed {memory_freed:.2f}MB in {optimization_time:.3f}s")
 
             return {
                 "optimized": True,
@@ -426,9 +417,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable[[Callab
             params = {"args": args, "kwargs": kwargs}
 
             # Try to get cached response
-            cached_response = _api_cache.get_cached_api_response(
-                service, method, params
-            )
+            cached_response = _api_cache.get_cached_api_response(service, method, params)
             if cached_response is not None:
                 return cached_response
 
@@ -616,7 +605,6 @@ def clear_system_caches() -> dict[str, Union[int, str]]:
 def warm_system_caches() -> bool:
     """Warm system caches with frequently used data"""
     try:
-
         # Warm session cache
         from core.session_cache import warm_session_cache
 
@@ -646,7 +634,7 @@ def warm_system_caches() -> bool:
 
 
 # === TESTING FUNCTIONS ===
-def _test_database_query_cache_initialization():
+def _test_database_query_cache_initialization() -> bool:
     """Test DatabaseQueryCache initialization"""
     cache_instance = DatabaseQueryCache()
 
@@ -663,7 +651,7 @@ def _test_database_query_cache_initialization():
     return True
 
 
-def _test_memory_optimizer_initialization():
+def _test_memory_optimizer_initialization() -> bool:
     """Test MemoryOptimizer initialization"""
     optimizer = MemoryOptimizer()
 
@@ -680,7 +668,7 @@ def _test_memory_optimizer_initialization():
     return True
 
 
-def _test_cached_database_query_decorator():
+def _test_cached_database_query_decorator() -> bool:
     """Test cached_database_query decorator"""
     call_count = {"count": 0}
 
@@ -707,8 +695,9 @@ def _test_cached_database_query_decorator():
     return True
 
 
-def _test_memory_optimized_decorator():
+def _test_memory_optimized_decorator() -> bool:
     """Test memory_optimized decorator"""
+
     @memory_optimized(gc_threshold=0.5)
     def memory_intensive_function() -> int:
         # Create some objects
@@ -723,7 +712,7 @@ def _test_memory_optimized_decorator():
     return True
 
 
-def _test_system_cache_stats():
+def _test_system_cache_stats() -> bool:
     """Test system cache statistics retrieval"""
     # Get cache stats
     stats = get_system_cache_stats()
@@ -739,7 +728,7 @@ def _test_system_cache_stats():
     return True
 
 
-def _test_clear_system_caches():
+def _test_clear_system_caches() -> bool:
     """Test clearing system caches (non-destructive - cache may be in use)"""
     # Cache some data first
     api_cache = APIResponseCache()
@@ -763,7 +752,7 @@ def _test_clear_system_caches():
         return True
 
 
-def _test_warm_system_caches():
+def _test_warm_system_caches() -> bool:
     """Test warming system caches"""
     # Warm caches
     result = warm_system_caches()
@@ -805,9 +794,7 @@ def test_system_cache_performance():
         api_speedup = first_call_time / max(second_call_time, 0.001)
         results["api_cache_test"] = api_speedup > 5
 
-        logger.info(
-            f"API Cache: {first_call_time:.3f}s → {second_call_time:.3f}s ({api_speedup:.1f}x speedup)"
-        )
+        logger.info(f"API Cache: {first_call_time:.3f}s → {second_call_time:.3f}s ({api_speedup:.1f}x speedup)")
 
         # Test database caching
         @cached_database_query(ttl=60)
@@ -826,16 +813,12 @@ def test_system_cache_performance():
         db_speedup = first_db_time / max(second_db_time, 0.001)
         results["db_cache_test"] = db_speedup > 3
 
-        logger.info(
-            f"DB Cache: {first_db_time:.3f}s → {second_db_time:.3f}s ({db_speedup:.1f}x speedup)"
-        )
+        logger.info(f"DB Cache: {first_db_time:.3f}s → {second_db_time:.3f}s ({db_speedup:.1f}x speedup)")
 
         # Test memory optimization
         _memory_optimizer.get_memory_usage_mb()
         optimization_result = _memory_optimizer.optimize_memory()
-        results["memory_optimization_test"] = optimization_result.get(
-            "optimized", False
-        )
+        results["memory_optimization_test"] = optimization_result.get("optimized", False)
 
         logger.info(f"Memory optimization: {optimization_result}")
 
@@ -890,9 +873,7 @@ if __name__ == "__main__":
     print("\n🎯 Phase 5.2 Optimization Summary:")
     print("=" * 70)
     all_passed = success1 and success2 and success3
-    print(
-        f"Overall Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}"
-    )
+    print(f"Overall Result: {'✅ ALL TESTS PASSED' if all_passed else '❌ SOME TESTS FAILED'}")
     print(f"API Caching: {'✅ WORKING' if success1 else '❌ ISSUES'}")
     print(f"Statistics: {'✅ AVAILABLE' if success2 else '❌ UNAVAILABLE'}")
     print(f"Management: {'✅ FUNCTIONAL' if success3 else '❌ BROKEN'}")

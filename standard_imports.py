@@ -289,9 +289,10 @@ def _test_logger_creation() -> None:
     assert hasattr(logger, "warning"), "Logger should have warning method"
 
 
-def _test_function_registration():
+def _test_function_registration() -> None:
     """Test function registration."""
     from test_utilities import sample_function
+
     register_function("test_sample_func", sample_function)
     assert is_function_available("test_sample_func"), "Function should be registered"
     retrieved_func = get_function("test_sample_func")
@@ -309,7 +310,7 @@ def _test_duplicate_setup_detection() -> None:
     assert test_globals.get(_SETUP_LOGGER_KEY) is duplicate_logger
 
 
-def _test_safe_imports():
+def _test_safe_imports() -> None:
     """Test safe imports."""
     result = safe_import("os")
     assert result is not None, "Should successfully import existing module"
@@ -322,7 +323,7 @@ def _test_safe_imports():
     assert result == "fallback", "Should return fallback for missing item"
 
 
-def _test_import_standardization():
+def _test_import_standardization() -> None:
     """Test import standardization."""
     try:
         standardize_module_imports()
@@ -332,36 +333,43 @@ def _test_import_standardization():
     assert success, "standardize_module_imports should not crash"
 
 
-def _test_core_imports_availability():
+def _test_core_imports_availability() -> None:
     """Test core imports availability."""
     required_functions = [
-        "auto_register_module", "get_logger", "standardize_module_imports",
-        "safe_execute", "register_function", "get_function", "is_function_available",
+        "auto_register_module",
+        "get_logger",
+        "standardize_module_imports",
+        "safe_execute",
+        "register_function",
+        "get_function",
+        "is_function_available",
     ]
     for func_name in required_functions:
         assert func_name in globals(), f"Function {func_name} should be available"
         assert callable(globals()[func_name]), f"Function {func_name} should be callable"
 
 
-def _test_standard_library_availability():
+def _test_standard_library_availability() -> None:
     """Test standard library availability."""
     required_modules = ["os", "sys", "time", "logging"]
     for module_name in required_modules:
         assert module_name in globals(), f"Module {module_name} should be imported"
 
 
-def _test_module_cleanup():
+def _test_module_cleanup() -> None:
     """Test module cleanup."""
     from test_utilities import temp_function
+
     register_function("temp_test_function", temp_function)
     assert is_function_available("temp_test_function"), "Temp function should be registered"
     with contextlib.suppress(Exception):
         cleanup_registry()
 
 
-def _test_performance():
+def _test_performance() -> None:
     """Test performance."""
     import time
+
     start_time = time.time()
     for i in range(100):
         get_standard_logger(f"test_module_{i}")
@@ -387,6 +395,7 @@ def standard_imports_module_tests() -> bool:
         assert logger is not None
         print("✅ Module setup test passed")
         from test_utilities import mock_func
+
         register_function("test_standard_imports", mock_func)
         assert is_function_available("test_standard_imports")
         print("✅ Function registration test passed")
@@ -411,46 +420,76 @@ def standard_imports_module_tests() -> bool:
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Module setup and initialization", test_module_setup,
-         "Module setup function properly initializes logging and registration",
-         "Test setup_module function with test globals and module name",
-         "Module setup creates valid logger with expected methods"),
-        ("Logger creation and functionality", test_logger_creation,
-         "Standard logger creation works correctly with proper methods",
-         "Test get_standard_logger function and verify logger methods",
-         "Logger creation provides complete logging interface"),
-        ("Function registration system", test_function_registration,
-         "Function registration and retrieval works correctly",
-         "Test register_function, is_function_available, and get_function",
-         "Function registration system properly stores and retrieves functions"),
-        ("Duplicate setup_module detection", _test_duplicate_setup_detection,
-         "Duplicate setup_module invocations reuse cache without re-registering",
-         "Call setup_module twice for same module",
-         "Duplicate invocations return cached logger and set sentinel"),
-        ("Safe import functionality", test_safe_imports,
-         "Safe import functions handle both success and failure cases",
-         "Test safe_import and safe_import_from with existing and missing modules",
-         "Safe imports provide proper fallback handling for missing modules"),
-        ("Import standardization", test_import_standardization,
-         "Import standardization runs without errors",
-         "Test standardize_module_imports function execution",
-         "Import standardization completes successfully"),
-        ("Core imports availability", test_core_imports_availability,
-         "All required core import functions are available and callable",
-         "Test availability of auto_register_module, get_logger, and other core functions",
-         "Core imports provide complete function registry and logging capabilities"),
-        ("Standard library availability", test_standard_library_availability,
-         "Required standard library modules are imported and available",
-         "Test availability of os, sys, time, logging modules",
-         "Standard library modules are properly imported and accessible"),
-        ("Module cleanup functionality", test_module_cleanup,
-         "Module cleanup and registry management works correctly",
-         "Test cleanup_registry function and temporary function cleanup",
-         "Module cleanup provides proper registry management"),
-        ("Performance validation", test_performance,
-         "Module operations complete within reasonable time limits",
-         "Test performance of logger creation and function registration",
-         "Performance operations complete efficiently for batch operations"),
+        (
+            "Module setup and initialization",
+            test_module_setup,
+            "Module setup function properly initializes logging and registration",
+            "Test setup_module function with test globals and module name",
+            "Module setup creates valid logger with expected methods",
+        ),
+        (
+            "Logger creation and functionality",
+            test_logger_creation,
+            "Standard logger creation works correctly with proper methods",
+            "Test get_standard_logger function and verify logger methods",
+            "Logger creation provides complete logging interface",
+        ),
+        (
+            "Function registration system",
+            test_function_registration,
+            "Function registration and retrieval works correctly",
+            "Test register_function, is_function_available, and get_function",
+            "Function registration system properly stores and retrieves functions",
+        ),
+        (
+            "Duplicate setup_module detection",
+            _test_duplicate_setup_detection,
+            "Duplicate setup_module invocations reuse cache without re-registering",
+            "Call setup_module twice for same module",
+            "Duplicate invocations return cached logger and set sentinel",
+        ),
+        (
+            "Safe import functionality",
+            test_safe_imports,
+            "Safe import functions handle both success and failure cases",
+            "Test safe_import and safe_import_from with existing and missing modules",
+            "Safe imports provide proper fallback handling for missing modules",
+        ),
+        (
+            "Import standardization",
+            test_import_standardization,
+            "Import standardization runs without errors",
+            "Test standardize_module_imports function execution",
+            "Import standardization completes successfully",
+        ),
+        (
+            "Core imports availability",
+            test_core_imports_availability,
+            "All required core import functions are available and callable",
+            "Test availability of auto_register_module, get_logger, and other core functions",
+            "Core imports provide complete function registry and logging capabilities",
+        ),
+        (
+            "Standard library availability",
+            test_standard_library_availability,
+            "Required standard library modules are imported and available",
+            "Test availability of os, sys, time, logging modules",
+            "Standard library modules are properly imported and accessible",
+        ),
+        (
+            "Module cleanup functionality",
+            test_module_cleanup,
+            "Module cleanup and registry management works correctly",
+            "Test cleanup_registry function and temporary function cleanup",
+            "Module cleanup provides proper registry management",
+        ),
+        (
+            "Performance validation",
+            test_performance,
+            "Module operations complete within reasonable time limits",
+            "Test performance of logger creation and function registration",
+            "Performance operations complete efficiently for batch operations",
+        ),
     ]
 
     # Run all tests from the list

@@ -75,9 +75,7 @@ load_dotenv()
 from test_framework import Colors
 
 # --- Define log format constants ---
-LOG_FORMAT: str = (
-    "%(asctime)s %(levelname).3s [%(module)-8.8s %(funcName)-8.8s %(lineno)-4d] %(message)s"
-)
+LOG_FORMAT: str = "%(asctime)s %(levelname).3s [%(module)-8.8s %(funcName)-8.8s %(lineno)-4d] %(message)s"
 DATE_FORMAT: str = "%H:%M:%S.%f"[:-3]  # Format: HH:MM:SS.milliseconds
 
 # --- Early Setup Logger (for logging config process itself) ---
@@ -267,10 +265,12 @@ class AlignedMessageFormatter(logging.Formatter):
 
 # End of AlignedMessageFormatter class
 
+
 # --- Initialization Flag ---
 # Tracks if logging has been set up to avoid adding duplicate handlers.
 class _LoggingState:
     """Manages logging initialization state."""
+
     initialized: bool = False
 
 
@@ -367,9 +367,7 @@ def setup_logging(
     logging.getLogger("urllib3").setLevel(logging.ERROR)
     logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
     logging.getLogger("selenium").setLevel(logging.WARNING)
-    logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(
-        logging.WARNING
-    )
+    logging.getLogger("selenium.webdriver.remote.remote_connection").setLevel(logging.WARNING)
     logging.getLogger("selenium.webdriver.common.service").setLevel(logging.WARNING)
     logging.getLogger("websockets").setLevel(logging.INFO)
     logging.getLogger("undetected_chromedriver").setLevel(logging.WARNING)
@@ -467,7 +465,7 @@ def logging_config_module_tests() -> bool:
 
         suite.run_test(
             "Missing directory handling",
-            test_missing_directory,
+            test_directory_creation,
             "Test missing directories are created automatically for log files",
             "Missing directory handling ensures logging continues even with missing paths",
             "Missing log directories are automatically created when needed",
@@ -569,9 +567,7 @@ def test_logger_creation():
         results.append(test_passed)
         assert actual == expected, f"{test_name} should be {expected}, got {actual}"
 
-    print(
-        f"📊 Results: {sum(results)}/{len(results)} logger configuration tests passed"
-    )
+    print(f"📊 Results: {sum(results)}/{len(results)} logger configuration tests passed")
 
 
 def test_default_configuration():
@@ -664,30 +660,6 @@ def test_invalid_log_level():
     # Should default to INFO for invalid levels
     test_logger = setup_logging("test.log", "INVALID_LEVEL")
     assert test_logger is not None
-
-
-def test_missing_directory():
-    """Test creation of missing log directories."""
-    from test_utilities import temp_directory
-
-    with temp_directory():
-        original_init_state = _LoggingState.initialized
-        _LoggingState.initialized = False  # Reset to allow fresh setup
-
-        # Note: We cannot safely modify LOG_DIRECTORY at runtime.
-        # Instead, we test that the current LOG_DIRECTORY works.
-        setup_logging("test.log", "INFO")
-
-        # Check that directory exists (using current LOG_DIRECTORY)
-        directory_exists = LOG_DIRECTORY.exists()
-
-        # Close all handlers to release file locks before temp dir cleanup
-        for handler in logger.handlers[:]:
-            handler.close()
-            logger.removeHandler(handler)
-
-        _LoggingState.initialized = original_init_state
-        assert directory_exists
 
 
 def test_reinitialize_logging():

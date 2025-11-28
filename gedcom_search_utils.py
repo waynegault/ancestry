@@ -1318,14 +1318,28 @@ def test_performance():
     assert duration < 0.1, f"Criterion matching should be fast, took {duration:.3f}s"
 
 
-def test_memory_efficiency():
+def test_memory_efficiency() -> None:
     """Test memory usage remains reasonable during extensive searches."""
+    try:
+        import psutil
+
+        process = psutil.Process()
+        memory_before = process.memory_info().rss / 1024 / 1024  # MB
+    except ImportError:
+        # psutil not available, skip actual memory check but verify operations complete
+        for i in range(50):
+            matches_criterion("test", {"test": f"value_{i}"}, f"test_value_{i}")
+        return
+
     # Test that repeated operations don't accumulate excessive memory
     for i in range(50):
         matches_criterion("test", {"test": f"value_{i}"}, f"test_value_{i}")
 
-    # If we get here without memory issues, test passes
-    assert True, "Memory usage should remain reasonable"
+    memory_after = process.memory_info().rss / 1024 / 1024  # MB
+    memory_increase = memory_after - memory_before
+
+    # Memory increase should be less than 50MB for these simple operations
+    assert memory_increase < 50, f"Memory increased by {memory_increase:.1f}MB, expected < 50MB"
 
 
 def test_error_recovery() -> None:

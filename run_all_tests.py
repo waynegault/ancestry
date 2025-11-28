@@ -41,8 +41,16 @@ Usage:
     python run_all_tests.py                # Run all tests with detailed reporting
     python run_all_tests.py --fast         # Run with parallel execution optimization
     python run_all_tests.py --benchmark    # Run with detailed performance benchmarking
+    python run_all_tests.py --integration  # Run integration tests with live API access
+    python run_all_tests.py --slow         # Include slow simulation tests
+    python run_all_tests.py --skip-linter  # Skip linter checks
     python run_all_tests.py --analyze-logs # Analyze application logs for performance metrics
     python run_all_tests.py --fast --analyze-logs  # Run tests and then analyze logs
+
+Modes:
+    Default: Unit tests only, SKIP_LIVE_API_TESTS=true, SKIP_SLOW_TESTS=true
+    --integration: Enables live browser/API tests with real authenticated sessions
+    --slow: Enables 724-page workload simulation and other long-running tests
 
 IMPORTANT: Always run tests in venv (virtual environment)
     Windows: .venv\\Scripts\activate
@@ -1544,13 +1552,26 @@ def _setup_test_environment() -> tuple[bool, bool, bool, bool]:
         print("⚠️ PERFORMANCE: psutil not installed; disabling monitoring features.")
         enable_monitoring = False
 
-    # Set environment variable to skip live API tests that require browser/network
-    # Note: Some modules (action8_messaging, gedcom_utils) have tests that work better with live sessions
-    # but should still complete within timeout even when skipped
-    os.environ["SKIP_LIVE_API_TESTS"] = "true"
+    # Handle SKIP_LIVE_API_TESTS based on mode
+    # Integration mode enables live API tests for full end-to-end validation
+    if enable_integration:
+        # Unset SKIP_LIVE_API_TESTS to allow live browser/API tests
+        os.environ.pop("SKIP_LIVE_API_TESTS", None)
+        os.environ["SKIP_LIVE_API_TESTS"] = "false"
+        print("🌐 LIVE API MODE: Browser and API tests will execute with real sessions")
+    else:
+        # Set environment variable to skip live API tests that require browser/network
+        # Note: Some modules (action8_messaging, gedcom_utils) have tests that work better with live sessions
+        # but should still complete within timeout even when skipped
+        os.environ["SKIP_LIVE_API_TESTS"] = "true"
 
     # Set environment variable to skip slow simulation tests (724-page workload, etc.)
-    os.environ["SKIP_SLOW_TESTS"] = "true"
+    # unless --slow flag is provided
+    if "--slow" not in sys.argv:
+        os.environ["SKIP_SLOW_TESTS"] = "true"
+    else:
+        os.environ.pop("SKIP_SLOW_TESTS", None)
+        print("🐢 SLOW TESTS: Including slow simulation tests")
 
     return enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration
 
@@ -1559,7 +1580,7 @@ def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool, enable_in
     """Print test suite header with mode information."""
     print("\nANCESTRY PROJECT - COMPREHENSIVE TEST SUITE")
     if enable_integration:
-        print("🔗 INTEGRATION MODE: Running end-to-end workflow tests")
+        print("🔗 INTEGRATION MODE: Running end-to-end workflow tests with live API access")
     if enable_fast_mode:
         print("🚀 FAST MODE: Parallel execution enabled")
     if enable_benchmark:

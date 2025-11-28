@@ -1325,7 +1325,7 @@ class ConfigManager:
 # ==============================================
 
 
-def _test_config_manager_initialization():
+def _test_config_manager_initialization() -> bool:
     """Test ConfigManager class initialization."""
     assert callable(ConfigManager), "ConfigManager should be callable"
 
@@ -1341,9 +1341,10 @@ def _test_config_manager_initialization():
     # Verify essential attributes exist
     assert hasattr(manager, "_config_cache"), "Should have _config_cache attribute"
     assert hasattr(manager, "config_file"), "Should have config_file attribute"
+    return True
 
 
-def _test_config_validation():
+def _test_config_validation() -> bool:
     """Test configuration validation functions."""
     manager = ConfigManager(auto_load=False)
     assert hasattr(manager, "validate_config"), "Should have validate_config method"
@@ -1357,9 +1358,10 @@ def _test_config_validation():
     validation_result = manager.validate_config()
     assert isinstance(validation_result, list), "validate_config should return list of errors"
     assert len(validation_result) == 0, f"Config should be valid, got errors: {validation_result}"
+    return True
 
 
-def _test_config_loading():
+def _test_config_loading() -> bool:
     """Test configuration loading functionality."""
     manager = ConfigManager(auto_load=False)
     assert hasattr(manager, "get_config"), "Should have get_config method"
@@ -1372,9 +1374,10 @@ def _test_config_loading():
     assert hasattr(config, "api"), "Config should have api section"
     assert hasattr(config, "selenium"), "Config should have selenium section"
     assert hasattr(config, "database"), "Config should have database section"
+    return True
 
 
-def _test_config_access():
+def _test_config_access() -> bool:
     """Test configuration value access."""
     manager = ConfigManager(auto_load=False)
     config = manager.load_config()
@@ -1387,9 +1390,10 @@ def _test_config_access():
     # Test another config value
     timeout = config.selenium.page_load_timeout
     assert isinstance(timeout, int), f"page_load_timeout should be int, got {type(timeout)}"
+    return True
 
 
-def _test_missing_config_handling():
+def _test_missing_config_handling() -> bool:
     """Test handling of missing configuration."""
     manager = ConfigManager(auto_load=False)
     config = manager.load_config()
@@ -1399,9 +1403,10 @@ def _test_missing_config_handling():
 
     # Verify defaults are applied for common settings
     assert config.api.max_pages >= 1, "max_pages should have sensible default"
+    return True
 
 
-def _test_invalid_config_data():
+def _test_invalid_config_data() -> bool:
     """Test handling of invalid configuration data."""
     import os
 
@@ -1423,9 +1428,10 @@ def _test_invalid_config_data():
         os.environ["REQUESTS_PER_SECOND"] = original_rps
     elif "REQUESTS_PER_SECOND" in os.environ:
         del os.environ["REQUESTS_PER_SECOND"]
+    return True
 
 
-def _test_config_file_integration():
+def _test_config_file_integration() -> bool:
     """Test configuration file integration."""
     from test_utilities import temp_file
 
@@ -1438,9 +1444,10 @@ def _test_config_file_integration():
         config = manager.load_config()
         assert config is not None, "Should load default config"
         assert hasattr(config, "api"), "Config should have api section"
+    return True
 
 
-def _test_environment_integration():
+def _test_environment_integration() -> bool:
     """Test environment variable integration."""
     manager = ConfigManager(auto_load=False)
     assert hasattr(manager, "environment"), "Should have environment attribute"
@@ -1452,9 +1459,10 @@ def _test_environment_integration():
     # Test that environment affects behavior
     config = manager.load_config()
     assert config is not None, "Should load config for current environment"
+    return True
 
 
-def _test_config_access_performance():
+def _test_config_access_performance() -> bool:
     """Test configuration access performance."""
     import time
 
@@ -1467,9 +1475,10 @@ def _test_config_access_performance():
     elapsed = time.time() - start
 
     assert elapsed < 1.0, f"Config access should be fast, took {elapsed:.3f}s"
+    return True
 
 
-def _test_config_error_handling():
+def _test_config_error_handling() -> bool:
     """Test configuration error handling."""
     # Test that ConfigManager handles various scenarios gracefully
     manager = ConfigManager(auto_load=False)
@@ -1483,9 +1492,10 @@ def _test_config_error_handling():
     # Validate should return list of errors (empty if valid)
     result = manager.validate_config()
     assert isinstance(result, list), "validate_config should return list"
+    return True
 
 
-def _test_requests_per_second_loading():
+def _test_requests_per_second_loading() -> bool:
     """Test REQUESTS_PER_SECOND environment variable loading."""
     import os
 
@@ -1535,6 +1545,7 @@ def _test_requests_per_second_loading():
 
         # Reload dotenv to restore .env file values
         load_dotenv(override=True)
+    return True
 
 
 # ==============================================

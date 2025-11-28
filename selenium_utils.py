@@ -214,16 +214,6 @@ def safe_click(driver: Optional[WebDriver], element: Optional[WebElement]) -> bo
     return True
 
 
-@safe_execute(default_return="", log_errors=False)
-def get_element_text(element: Optional[WebElement]) -> str:
-    """Get text from element with unified error handling."""
-    if not element:
-        return ""
-
-    element_proto = cast(WebElementProtocol, element)
-    return element_proto.text or ""
-
-
 @safe_execute(default_return=False, log_errors=False)
 def is_element_visible(element: Optional[WebElement]) -> bool:
     """Check if element is visible with unified error handling."""
@@ -295,7 +285,6 @@ def _test_element_helpers() -> None:
 
     assert extract_text(mock_element) == "Hello"
     assert extract_attribute(mock_element, "href") == "https://example"
-    assert get_element_text(mock_element) == "Hello"
     assert is_element_visible(mock_element) is True
     assert not extract_attribute(None, "href")
     assert not is_element_visible(None)

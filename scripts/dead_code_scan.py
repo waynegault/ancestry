@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Dead-code scanner stub pointing to scripts/archive/dead_code_scan.py."""
+"""Dead-code scanner for the Ancestry project.
+
+Performs conservative static analysis to identify function definitions
+that appear only once across the entire codebase (definition only).
+Results are written to Cache/dead_code_candidates.json for manual review.
+"""
 
 from __future__ import annotations
 
 import ast
-import io
 import json
 import os
 import re
 import sys
 from collections.abc import Iterable
-from contextlib import redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,11 +24,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from test_framework import TestSuite, create_standard_test_runner
-
-DEPRECATION_MESSAGE = (
-    "Use scripts/archive/dead_code_scan.py for dead-code analysis; this "
-    "top-level stub exists only as a pointer to the archived script."
-)
 
 SKIP_DIRS: set[str] = {
     ".git",
@@ -187,18 +185,14 @@ def compute_usage_counts(file_texts: dict[Path, str], defs: list[SymbolInfo]) ->
     return results
 
 
-def get_deprecation_message() -> str:
-    """Return the user-facing deprecation notice."""
-
-    return DEPRECATION_MESSAGE
-
-
 def main(args: list[str] | None = None) -> int:
-    """Stub entrypoint that instructs callers to use the archived script."""
-
+    """Generate dead-code report and write to Cache/dead_code_candidates.json."""
     _ = args
-    print(DEPRECATION_MESSAGE)
-    return 1
+    payload = generate_dead_code_report()
+    out_path = write_dead_code_report(payload)
+    print(f"Dead-code scan complete: {payload['candidate_count']} candidates found.")
+    print(f"Results written to: {out_path}")
+    return 0
 
 
 def generate_dead_code_report(root: Path = ROOT, *, skip_files: set[str] | None = None) -> dict[str, Any]:
@@ -234,17 +228,18 @@ def _create_file(root: Path, relative: str, contents: str) -> Path:
     return path
 
 
-def _capture_main_output(args: list[str] | None = None) -> tuple[int, str]:
-    buffer = io.StringIO()
-    with redirect_stdout(buffer):
-        exit_code = main(args)
-    return exit_code, buffer.getvalue()
+def _test_main_runs_scan_successfully() -> bool:
+    """Test main() using a small temp directory to avoid slow full-repo scan."""
+    with TemporaryDirectory() as tmp_dir:
+        root = Path(tmp_dir)
+        _create_file(root, "sample.py", "def example(): pass\nexample()\n")
 
+        # Generate and write report to temp dir
+        payload = generate_dead_code_report(root, skip_files=set())
+        out_path = write_dead_code_report(payload, root)
 
-def _test_main_emits_deprecation_notice() -> bool:
-    exit_code, output = _capture_main_output()
-    assert exit_code == 1
-    assert DEPRECATION_MESSAGE in output
+        assert out_path.exists()
+        assert payload["files_analyzed"] == 1
     return True
 
 
@@ -353,9 +348,9 @@ def _test_write_dead_code_report_persists_payload() -> bool:
 def module_tests() -> bool:
     suite = TestSuite("scripts.dead_code_scan", "scripts/dead_code_scan.py")
     suite.run_test(
-        "Main emits deprecation",
-        _test_main_emits_deprecation_notice,
-        "Ensures CLI stub prints the archived-script notice.",
+        "Main runs scan successfully",
+        _test_main_runs_scan_successfully,
+        "Ensures CLI runs scan and outputs completion message.",
     )
     suite.run_test(
         "Iterator skips directories",

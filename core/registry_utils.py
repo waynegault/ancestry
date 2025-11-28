@@ -168,9 +168,7 @@ class SmartFunctionRegistry:
 smart_registry = SmartFunctionRegistry()
 
 
-def auto_register_module(
-    module_globals: dict[str, Any], module_name: Optional[str] = None
-) -> int:
+def auto_register_module(module_globals: dict[str, Any], module_name: Optional[str] = None) -> int:
     """
     One-line function to replace massive auto-registration blocks.
 
@@ -248,11 +246,25 @@ def core_registry_utils_module_tests() -> bool:
         # Test basic registration
         test_registry = SmartFunctionRegistry()
 
-        # Create mock module globals
+        # Create mock module globals with real test functions
+        def mock_test_function() -> str:
+            """Mock function that returns a value for testing."""
+            return "test"
+
+        def mock_comprehensive_tests() -> bool:
+            """Mock comprehensive test function that validates behavior."""
+            # Actually test something - verify the function can execute and return
+            result = mock_test_function()
+            return result == "test"
+
+        def mock_api_method() -> str:
+            """Mock API method that returns expected value."""
+            return "api"
+
         mock_globals = {
-            "test_function": lambda: "test",
-            "run_comprehensive_tests": lambda: True,
-            "call_api_method": lambda: "api",
+            "test_function": mock_test_function,
+            "run_comprehensive_tests": mock_comprehensive_tests,
+            "call_api_method": mock_api_method,
             "_private_function": lambda: "private",
             "normal_variable": "not_callable",
             "create_object": lambda: "object",
@@ -263,25 +275,15 @@ def core_registry_utils_module_tests() -> bool:
 
         # Should register 4 functions (excluding private and non-callable)
         assert count >= 3, f"Expected at least 3 registrations, got {count}"
-        assert test_registry.is_available(
-            "test_function"
-        ), "test_function should be available"
-        assert test_registry.is_available(
-            "run_comprehensive_tests"
-        ), "run_comprehensive_tests should be available"
-        assert not test_registry.is_available(
-            "_private_function"
-        ), "private function should not be registered"
-        assert not test_registry.is_available(
-            "normal_variable"
-        ), "non-callable should not be registered"
+        assert test_registry.is_available("test_function"), "test_function should be available"
+        assert test_registry.is_available("run_comprehensive_tests"), "run_comprehensive_tests should be available"
+        assert not test_registry.is_available("_private_function"), "private function should not be registered"
+        assert not test_registry.is_available("normal_variable"), "non-callable should not be registered"
 
         # Test stats
         stats = test_registry.get_stats()
         assert stats["modules_processed"] == 1, "Should have processed 1 module"
-        assert (
-            stats["total_registered"] >= 3
-        ), "Should have registered at least 3 functions"
+        assert stats["total_registered"] >= 3, "Should have registered at least 3 functions"
 
         logger.info("✅ Registry utils comprehensive tests passed")
 

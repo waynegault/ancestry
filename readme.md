@@ -411,7 +411,7 @@ Run the guard locally (or wire it into CI) to maintain the zero-ignore baseline 
 
 - `scripts/check_type_ignores.py`: Fast repository-wide scan for `type: ignore[...]` directives; exits non-zero if any are found outside allowed/vendor locations.
 - `scripts/maintain_code_graph.py`: Maintains `docs/code_graph.json` by removing stale nodes and edges; run as `python scripts/maintain_code_graph.py remove_node <node_id>`.
-- `scripts/archive/dead_code_scan.py`: Archived dead-code scanner used for one-off analysis; invoke via `python scripts/archive/dead_code_scan.py` when you want a conservative list of candidate unused helpers for manual review.
+- `scripts/dead_code_scan.py`: Dead-code scanner for one-off analysis; invoke via `python scripts/dead_code_scan.py` to generate a conservative list of candidate unused helpers for manual review.
 
 ### Testing
 - Write tests for all new functionality

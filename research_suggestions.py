@@ -8,6 +8,7 @@ geographic locations, time periods, and available Ancestry collections.
 Author: Wayne Gault
 Created: October 21, 2025
 """
+
 from __future__ import annotations
 
 import logging
@@ -126,20 +127,14 @@ def _generate_strategies(
     strategies: list[str] = []
 
     if relationship_context:
-        strategies.append(
-            f"Focus on the common ancestor line connecting you as {relationship_context}"
-        )
+        strategies.append(f"Focus on the common ancestor line connecting you as {relationship_context}")
 
     if locations:
         primary_location = locations[0]
-        strategies.append(
-            f"Search parish registers and civil records in {primary_location}"
-        )
+        strategies.append(f"Search parish registers and civil records in {primary_location}")
 
     if common_ancestors:
-        strategies.append(
-            "Use DNA matches to verify the relationship path to common ancestors"
-        )
+        strategies.append("Use DNA matches to verify the relationship path to common ancestors")
 
     return strategies
 
@@ -184,9 +179,7 @@ def generate_research_suggestions(
     strategies = list(dict.fromkeys(strategies))[:3]  # Top 3 unique strategies
 
     # Format message
-    formatted_message = _format_research_suggestion_message(
-        collections, record_types, strategies
-    )
+    formatted_message = _format_research_suggestion_message(collections, record_types, strategies)
 
     return {
         "collections": collections,
@@ -215,9 +208,7 @@ def _format_research_suggestion_message(
     message_parts: list[str] = []
 
     if collections or record_types:
-        message_parts.append(
-            "Based on our connection, you might find these records helpful:"
-        )
+        message_parts.append("Based on our connection, you might find these records helpful:")
 
         if collections:
             message_parts.append("\n\nRelevant Ancestry Collections:")
@@ -235,9 +226,7 @@ def _format_research_suggestion_message(
             message_parts.append(f"  • {strategy}")
 
     if message_parts:
-        message_parts.append(
-            "\n\nWould you like me to share specific records from my tree?"
-        )
+        message_parts.append("\n\nWould you like me to share specific records from my tree?")
         return "".join(message_parts)
 
     return ""
@@ -248,17 +237,13 @@ def _format_research_suggestion_message(
 # ==============================================
 
 
-def _test_basic_research_suggestions():
+def _test_basic_research_suggestions() -> bool:
     """Test basic research suggestion generation."""
-    common_ancestors = [
-        {"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}
-    ]
+    common_ancestors = [{"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}]
     locations = ["Aberdeen, Scotland"]
     time_periods = ["1850"]
 
-    result = generate_research_suggestions(
-        common_ancestors, locations, time_periods, "3rd cousin"
-    )
+    result = generate_research_suggestions(common_ancestors, locations, time_periods, "3rd cousin")
 
     assert isinstance(result, dict), "Should return dictionary"
     assert "collections" in result, "Should have collections"
@@ -280,7 +265,7 @@ def _test_basic_research_suggestions():
     return True
 
 
-def _test_multiple_locations():
+def _test_multiple_locations() -> bool:
     """Test research suggestions with multiple locations."""
     common_ancestors = []
     locations = ["Scotland", "Ireland", "England"]
@@ -292,15 +277,13 @@ def _test_multiple_locations():
 
     # Should include collections from all three regions
     message = result["formatted_message"]
-    assert any(
-        region in message for region in ["Scotland", "Ireland", "England"]
-    ), "Should mention at least one region"
+    assert any(region in message for region in ["Scotland", "Ireland", "England"]), "Should mention at least one region"
 
     logger.info("✓ Multiple location suggestions work correctly")
     return True
 
 
-def _test_time_period_collections():
+def _test_time_period_collections() -> bool:
     """Test time period specific collection suggestions."""
     common_ancestors = []
     locations = []
@@ -309,15 +292,13 @@ def _test_time_period_collections():
     result = generate_research_suggestions(common_ancestors, locations, time_periods)
 
     assert len(result["collections"]) > 0, "Should suggest time-period collections"
-    assert any(
-        "Census" in col for col in result["collections"]
-    ), "Should suggest census records"
+    assert any("Census" in col for col in result["collections"]), "Should suggest census records"
 
     logger.info("✓ Time period collection suggestions work correctly")
     return True
 
 
-def _test_empty_input():
+def _test_empty_input() -> bool:
     """Test research suggestions with empty input."""
     result = generate_research_suggestions([], [], [])
 
@@ -333,7 +314,7 @@ def _test_empty_input():
 # ==============================================
 
 
-def _test_location_collections_extraction():
+def _test_location_collections_extraction() -> bool:
     """Test location-based collection extraction."""
     locations = ["Scotland", "Ireland"]
     collections = _extract_location_collections(locations)
@@ -346,7 +327,7 @@ def _test_location_collections_extraction():
     return True
 
 
-def _test_time_period_collections_extraction():
+def _test_time_period_collections_extraction() -> bool:
     """Test time period-based collection extraction."""
     time_periods = ["1850", "1920"]
     collections = _extract_time_period_collections(time_periods)
@@ -358,11 +339,9 @@ def _test_time_period_collections_extraction():
     return True
 
 
-def _test_record_types_generation():
+def _test_record_types_generation() -> bool:
     """Test record type generation from common ancestors."""
-    common_ancestors = [
-        {"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}
-    ]
+    common_ancestors = [{"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}]
     record_types = _generate_record_types(common_ancestors)
 
     assert isinstance(record_types, list), "Should return list"
@@ -372,11 +351,9 @@ def _test_record_types_generation():
     return True
 
 
-def _test_strategies_generation():
+def _test_strategies_generation() -> bool:
     """Test research strategies generation."""
-    common_ancestors = [
-        {"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}
-    ]
+    common_ancestors = [{"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"}]
     locations = ["Aberdeen, Scotland"]
     strategies = _generate_strategies("3rd cousin", locations, common_ancestors)
 
@@ -387,18 +364,16 @@ def _test_strategies_generation():
     return True
 
 
-def _test_complete_research_suggestions():
+def _test_complete_research_suggestions() -> bool:
     """Test complete research suggestions with all parameters."""
     common_ancestors = [
         {"name": "John Smith", "birth_year": "1850", "birth_place": "Aberdeen, Scotland"},
-        {"name": "Mary Brown", "birth_year": "1855", "birth_place": "Banff, Scotland"}
+        {"name": "Mary Brown", "birth_year": "1855", "birth_place": "Banff, Scotland"},
     ]
     locations = ["Aberdeen, Scotland", "Banff, Scotland"]
     time_periods = ["1850", "1855"]
 
-    result = generate_research_suggestions(
-        common_ancestors, locations, time_periods, "2nd cousin"
-    )
+    result = generate_research_suggestions(common_ancestors, locations, time_periods, "2nd cousin")
 
     # Verify all sections present
     assert isinstance(result, dict), "Should return dictionary"
@@ -417,19 +392,16 @@ def _test_complete_research_suggestions():
     return True
 
 
-def _test_result_limits():
+def _test_result_limits() -> bool:
     """Test that results are limited to reasonable numbers."""
     # Create many locations to test limiting
     locations = [f"Location{i}" for i in range(20)]
     time_periods = [str(1800 + i) for i in range(20)]
     common_ancestors = [
-        {"name": f"Person{i}", "birth_year": str(1800 + i), "birth_place": f"Place{i}"}
-        for i in range(20)
+        {"name": f"Person{i}", "birth_year": str(1800 + i), "birth_place": f"Place{i}"} for i in range(20)
     ]
 
-    result = generate_research_suggestions(
-        common_ancestors, locations, time_periods
-    )
+    result = generate_research_suggestions(common_ancestors, locations, time_periods)
 
     # Verify limits are applied
     assert len(result["collections"]) <= 5, "Should limit collections to 5"
@@ -440,17 +412,13 @@ def _test_result_limits():
     return True
 
 
-def _test_formatted_message_structure():
+def _test_formatted_message_structure() -> bool:
     """Test formatted message structure."""
-    common_ancestors = [
-        {"name": "John Smith", "birth_year": "1850", "birth_place": "Scotland"}
-    ]
+    common_ancestors = [{"name": "John Smith", "birth_year": "1850", "birth_place": "Scotland"}]
     locations = ["Scotland"]
     time_periods = ["1850"]
 
-    result = generate_research_suggestions(
-        common_ancestors, locations, time_periods
-    )
+    result = generate_research_suggestions(common_ancestors, locations, time_periods)
 
     message = result["formatted_message"]
     assert isinstance(message, str), "Message should be string"
@@ -474,7 +442,7 @@ def research_suggestions_tests() -> bool:
             _test_location_collections_extraction,
             "Location collections extraction works correctly",
             "Test location-based collection extraction",
-            "Verify _extract_location_collections() returns appropriate collections"
+            "Verify _extract_location_collections() returns appropriate collections",
         )
 
         suite.run_test(
@@ -482,7 +450,7 @@ def research_suggestions_tests() -> bool:
             _test_time_period_collections_extraction,
             "Time period collections extraction works correctly",
             "Test time period-based collection extraction",
-            "Verify _extract_time_period_collections() returns appropriate collections"
+            "Verify _extract_time_period_collections() returns appropriate collections",
         )
 
         suite.run_test(
@@ -490,7 +458,7 @@ def research_suggestions_tests() -> bool:
             _test_record_types_generation,
             "Record types generation works correctly",
             "Test record type generation from common ancestors",
-            "Verify _generate_record_types() returns appropriate record types"
+            "Verify _generate_record_types() returns appropriate record types",
         )
 
         suite.run_test(
@@ -498,7 +466,7 @@ def research_suggestions_tests() -> bool:
             _test_strategies_generation,
             "Research strategies generation works correctly",
             "Test research strategies generation",
-            "Verify _generate_strategies() returns appropriate strategies"
+            "Verify _generate_strategies() returns appropriate strategies",
         )
 
         # Main function tests
@@ -515,7 +483,7 @@ def research_suggestions_tests() -> bool:
             _test_complete_research_suggestions,
             "Complete research suggestions work correctly",
             "Test complete research suggestions with all parameters",
-            "Verify all sections present with multiple ancestors and locations"
+            "Verify all sections present with multiple ancestors and locations",
         )
 
         suite.run_test(
@@ -539,7 +507,7 @@ def research_suggestions_tests() -> bool:
             _test_result_limits,
             "Result limits work correctly",
             "Test that results are limited to reasonable numbers",
-            "Verify collections limited to 5, record types to 3, strategies to 3"
+            "Verify collections limited to 5, record types to 3, strategies to 3",
         )
 
         suite.run_test(
@@ -547,7 +515,7 @@ def research_suggestions_tests() -> bool:
             _test_formatted_message_structure,
             "Formatted message structure works correctly",
             "Test formatted message structure",
-            "Verify message is non-empty string with proper formatting"
+            "Verify message is non-empty string with proper formatting",
         )
 
         suite.run_test(

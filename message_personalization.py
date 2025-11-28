@@ -95,7 +95,7 @@ class MessagePersonalizer:
             "geographic_context_priority": ["Scotland", "Ireland", "England", "Poland", "Ukraine"],
             "ab_testing_split_ratio": 0.5,  # 50/50 split for A/B testing
             "min_usage_for_optimization": 10,  # Minimum usage before optimization kicks in
-            "effectiveness_threshold": 6.0  # Minimum effectiveness score to consider template good
+            "effectiveness_threshold": 6.0,  # Minimum effectiveness score to consider template good
         }
 
     def _build_personalization_registry(self) -> dict[str, Callable[[dict[str, Any]], str]]:
@@ -124,7 +124,6 @@ class MessagePersonalizer:
             "research_topic": self._identify_research_topic,
             "specific_research_needs": self._format_research_needs,
             "collaboration_proposal": self._create_collaboration_proposal,
-
             # New advanced functions
             "dna_segment_analysis": self._create_dna_segment_analysis,
             "migration_pattern_context": self._create_migration_pattern_context,
@@ -135,7 +134,7 @@ class MessagePersonalizer:
             "occupation_social_context": self._create_occupation_social_context,
             "family_size_analysis": self._create_family_size_analysis,
             "generational_gap_analysis": self._create_generational_gap_analysis,
-            "document_preservation_likelihood": self._create_document_preservation_likelihood
+            "document_preservation_likelihood": self._create_document_preservation_likelihood,
         }
 
     def create_personalized_message(
@@ -308,7 +307,9 @@ class MessagePersonalizer:
 
             # If alternative is significantly better, use it
             if alt_score > current_score + 1.0:
-                logger.info(f"A/B testing: switching from '{template_key}' to '{alt_template}' (score: {alt_score:.1f} vs {current_score:.1f})")
+                logger.info(
+                    f"A/B testing: switching from '{template_key}' to '{alt_template}' (score: {alt_score:.1f} vs {current_score:.1f})"
+                )
                 return alt_template
 
         return template_key
@@ -319,7 +320,7 @@ class MessagePersonalizer:
         template_families = {
             "initial_contact": ["initial_contact_v2", "initial_contact_research_focused"],
             "follow_up": ["follow_up_detailed", "follow_up_casual"],
-            "research_collaboration": ["research_collaboration_formal", "research_collaboration_friendly"]
+            "research_collaboration": ["research_collaboration_formal", "research_collaboration_friendly"],
         }
 
         for family_name, templates in template_families.items():
@@ -332,7 +333,12 @@ class MessagePersonalizer:
     def _add_data_based_functions(self, extracted_data: dict[str, Any], selected_functions: list[str]) -> None:
         """Add personalization functions based on available data."""
         if extracted_data.get("dna_information"):
-            dna_functions = ["dna_segment_analysis", "dna_ethnicity_correlation", "estimated_relationship", "shared_dna_amount"]
+            dna_functions = [
+                "dna_segment_analysis",
+                "dna_ethnicity_correlation",
+                "estimated_relationship",
+                "shared_dna_amount",
+            ]
             best_dna_func = self._get_best_performing_function(dna_functions)
             if best_dna_func:
                 selected_functions.append(best_dna_func)
@@ -406,7 +412,7 @@ class MessagePersonalizer:
         extracted_data: dict[str, Any],
         base_format_data: dict[str, str],
         person_data: Optional[dict[str, Any]] = None,
-        selected_functions: Optional[list[str]] = None
+        selected_functions: Optional[list[str]] = None,
     ) -> dict[str, str]:
         """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
@@ -483,7 +489,7 @@ class MessagePersonalizer:
             "dna_segment_analysis": "DNA analysis could help us identify our connection.",
             "migration_pattern_context": "Understanding family migration helps trace our ancestry.",
             "historical_context_analysis": "Historical context provides valuable research insights.",
-            "occupation_social_context": "Family occupations provide insights into our ancestors' lives."
+            "occupation_social_context": "Family occupations provide insights into our ancestors' lives.",
         }
         return fallback_values.get(func_name, "our family research")
 
@@ -495,7 +501,7 @@ class MessagePersonalizer:
 
         # Get up to 3 most relevant names
         ancestor_names: list[str] = []
-        for name_data in structured_names[:self.personalization_config["max_ancestors_to_mention"]]:
+        for name_data in structured_names[: self.personalization_config["max_ancestors_to_mention"]]:
             if isinstance(name_data, dict):
                 # Explicitly cast to dict[str, Any] for pyright
                 name_dict: dict[str, Any] = name_data
@@ -608,7 +614,7 @@ class MessagePersonalizer:
 
         # Questions based on research gaps
         research_questions: list[str] = extracted_data.get("research_questions", [])
-        for question in research_questions[:self.personalization_config["max_research_questions"]]:
+        for question in research_questions[: self.personalization_config["max_research_questions"]]:
             if question:
                 questions.append(f"Do you have any information about {question.lower()}?")
 
@@ -649,7 +655,7 @@ class MessagePersonalizer:
             return ""
 
         location_names: list[str] = []
-        for location in locations[:self.personalization_config["max_locations_to_mention"]]:
+        for location in locations[: self.personalization_config["max_locations_to_mention"]]:
             if isinstance(location, dict):
                 loc_dict: dict[str, Any] = location
                 place = str(loc_dict.get("place", ""))
@@ -794,7 +800,9 @@ class MessagePersonalizer:
         # Insights from relationships
         relationships: list[Any] = extracted_data.get("relationships", [])
         if relationships:
-            insights.append("The family relationships you mentioned help clarify some connections I've been researching.")
+            insights.append(
+                "The family relationships you mentioned help clarify some connections I've been researching."
+            )
 
         return " ".join(insights) if insights else "This information is very valuable for our family research."
 
@@ -836,9 +844,7 @@ class MessagePersonalizer:
         dna_info: list[Any] = extracted_data.get("dna_information", [])
         if dna_info:
             detail = str(dna_info[0])
-            return (
-                f"The DNA detail you mentioned ({detail}) helps narrow down our shared ancestors to just a few generations."
-            )
+            return f"The DNA detail you mentioned ({detail}) helps narrow down our shared ancestors to just a few generations."
         shared_cm = extracted_data.get("shared_dna_cm")
         if shared_cm:
             return f"Sharing roughly {shared_cm} cM usually indicates a fairly recent common ancestor."
@@ -847,7 +853,9 @@ class MessagePersonalizer:
     @staticmethod
     def _format_shared_ancestor_info(extracted_data: dict[str, Any]) -> str:
         """Format shared ancestor information."""
-        shared_ancestors: list[Any] = extracted_data.get("shared_ancestors") or extracted_data.get("structured_names") or []
+        shared_ancestors: list[Any] = (
+            extracted_data.get("shared_ancestors") or extracted_data.get("structured_names") or []
+        )
         names: list[str] = []
         for ancestor in shared_ancestors[:2]:
             if isinstance(ancestor, dict):
@@ -882,7 +890,9 @@ class MessagePersonalizer:
     @staticmethod
     def _format_research_needs(extracted_data: dict[str, Any]) -> str:
         """Format specific research needs."""
-        research_needs: list[Any] = extracted_data.get("research_needs") or extracted_data.get("research_questions") or []
+        research_needs: list[Any] = (
+            extracted_data.get("research_needs") or extracted_data.get("research_questions") or []
+        )
         if research_needs:
             need = str(research_needs[0]).rstrip(". ")
             return f"I'm looking for additional documents or stories that might clarify {need}."
@@ -896,9 +906,7 @@ class MessagePersonalizer:
             loc_dict: dict[str, Any] = locations[0]
             place = str(loc_dict.get("place", ""))
             if place:
-                return (
-                    f"Perhaps we could share our findings about families in {place} and work together on any remaining mysteries."
-                )
+                return f"Perhaps we could share our findings about families in {place} and work together on any remaining mysteries."
         return "Perhaps we could share our research findings and work together to solve any family history mysteries."
 
     # ========== NEW ADVANCED PERSONALIZATION FUNCTIONS ==========
@@ -1000,7 +1008,9 @@ class MessagePersonalizer:
                 if "Ireland" in place:
                     return "Irish records can be challenging due to the 1922 Public Record Office fire, but many alternatives exist."
                 if "England" in place:
-                    return "English records are extensive, with civil registration from 1837 and excellent parish records."
+                    return (
+                        "English records are extensive, with civil registration from 1837 and excellent parish records."
+                    )
                 if "Poland" in place or "Ukraine" in place:
                     return "Eastern European records require specialized research due to border changes and wartime losses."
 
@@ -1069,11 +1079,26 @@ class MessagePersonalizer:
         occupation_lower = occupation.lower()
 
         occupation_contexts = {
-            ("farmer", "agricultural"): f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records.",
-            ("miner", "mining"): f"{person}'s mining work indicates industrial family history, often with company records and mining community connections.",
-            ("fisherman", "fishing"): f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections.",
-            ("teacher", "educator"): f"{person}'s teaching profession indicates educated family background with potential school and community records.",
-            ("merchant", "trader"): f"{person}'s merchant work suggests business connections and potential commercial records.",
+            (
+                "farmer",
+                "agricultural",
+            ): f"{person}'s agricultural work suggests rural family roots, which often means strong community ties and local records.",
+            (
+                "miner",
+                "mining",
+            ): f"{person}'s mining work indicates industrial family history, often with company records and mining community connections.",
+            (
+                "fisherman",
+                "fishing",
+            ): f"{person}'s fishing occupation suggests coastal family traditions and maritime community connections.",
+            (
+                "teacher",
+                "educator",
+            ): f"{person}'s teaching profession indicates educated family background with potential school and community records.",
+            (
+                "merchant",
+                "trader",
+            ): f"{person}'s merchant work suggests business connections and potential commercial records.",
         }
 
         for keywords, context in occupation_contexts.items():
@@ -1203,7 +1228,7 @@ class MessageEffectivenessTracker:
             "CONFUSED": 2,
             "UNINTERESTED": 1,
             "DESIST": 0,
-            "OTHER": 2
+            "OTHER": 2,
         }
 
     @staticmethod
@@ -1222,7 +1247,7 @@ class MessageEffectivenessTracker:
                     "personalization_effectiveness": {},
                     "response_analytics": {},
                     "optimization_insights": {},
-                    "last_updated": datetime.now().isoformat()
+                    "last_updated": datetime.now().isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error loading effectiveness data: {e}")
@@ -1235,7 +1260,7 @@ class MessageEffectivenessTracker:
         response_intent: str,
         response_quality_score: float,
         conversation_length: int,
-        genealogical_data_extracted: int
+        genealogical_data_extracted: int,
     ) -> None:
         """
         Track the effectiveness of a message and its response.
@@ -1267,8 +1292,8 @@ class MessageEffectivenessTracker:
             current_avg_length = template_stats["avg_conversation_length"]
             normalized_length = max(conversation_length, 0)
             template_stats["avg_conversation_length"] = (
-                (current_avg_length * (total_sent - 1) + normalized_length) / total_sent
-            )
+                current_avg_length * (total_sent - 1) + normalized_length
+            ) / total_sent
 
             if response_intent != "NO_RESPONSE":
                 template_stats["responses_received"] += 1
@@ -1282,14 +1307,14 @@ class MessageEffectivenessTracker:
                 current_avg = template_stats["avg_response_quality"]
                 response_count = template_stats["responses_received"]
                 template_stats["avg_response_quality"] = (
-                    (current_avg * (response_count - 1) + response_quality_score) / response_count
-                )
+                    current_avg * (response_count - 1) + response_quality_score
+                ) / response_count
 
                 # Update average data extracted
                 current_data_avg = template_stats["avg_data_extracted"]
                 template_stats["avg_data_extracted"] = (
-                    (current_data_avg * (response_count - 1) + genealogical_data_extracted) / response_count
-                )
+                    current_data_avg * (response_count - 1) + genealogical_data_extracted
+                ) / response_count
 
             # Track personalization function effectiveness
             for func_name in personalization_functions_used:
@@ -1297,7 +1322,7 @@ class MessageEffectivenessTracker:
                     self.effectiveness_data["personalization_effectiveness"][func_name] = {
                         "usage_count": 0,
                         "positive_responses": 0,
-                        "avg_engagement_score": 0.0
+                        "avg_engagement_score": 0.0,
                     }
 
                 func_stats = self.effectiveness_data["personalization_effectiveness"][func_name]
@@ -1311,9 +1336,7 @@ class MessageEffectivenessTracker:
                 engagement_score = self.response_categories.get(response_intent, 2)
                 current_avg = func_stats["avg_engagement_score"]
                 usage_count = func_stats["usage_count"]
-                func_stats["avg_engagement_score"] = (
-                    (current_avg * (usage_count - 1) + engagement_score) / usage_count
-                )
+                func_stats["avg_engagement_score"] = (current_avg * (usage_count - 1) + engagement_score) / usage_count
 
             # Update last modified
             self.effectiveness_data["last_updated"] = datetime.now().isoformat()
@@ -1321,7 +1344,9 @@ class MessageEffectivenessTracker:
             # Save updated data
             self._save_effectiveness_data()
 
-            logger.info(f"Tracked message effectiveness for template '{template_key}' with response '{response_intent}'")
+            logger.info(
+                f"Tracked message effectiveness for template '{template_key}' with response '{response_intent}'"
+            )
 
         except Exception as e:
             logger.error(f"Error tracking message response: {e}")
@@ -1362,10 +1387,14 @@ class MessageEffectivenessTracker:
             worst_template = min(template_scores.keys(), key=lambda k: template_scores[k])
 
             if template_scores[best_template] > 7.0:
-                recommendations.append(f"Template '{best_template}' is performing excellently (score: {template_scores[best_template]:.1f}). Consider using it more frequently.")
+                recommendations.append(
+                    f"Template '{best_template}' is performing excellently (score: {template_scores[best_template]:.1f}). Consider using it more frequently."
+                )
 
             if template_scores[worst_template] < 4.0:
-                recommendations.append(f"Template '{worst_template}' needs improvement (score: {template_scores[worst_template]:.1f}). Consider revising or replacing.")
+                recommendations.append(
+                    f"Template '{worst_template}' needs improvement (score: {template_scores[worst_template]:.1f}). Consider revising or replacing."
+                )
 
         # Analyze personalization function effectiveness
         func_effectiveness: dict[str, float] = {}
@@ -1379,10 +1408,14 @@ class MessageEffectivenessTracker:
             worst_func = min(func_effectiveness.keys(), key=lambda k: func_effectiveness[k])
 
             if func_effectiveness[best_func] > 0.7:
-                recommendations.append(f"Personalization function '{best_func}' is highly effective ({func_effectiveness[best_func]:.1%} positive response rate). Use it more often.")
+                recommendations.append(
+                    f"Personalization function '{best_func}' is highly effective ({func_effectiveness[best_func]:.1%} positive response rate). Use it more often."
+                )
 
             if func_effectiveness[worst_func] < 0.3:
-                recommendations.append(f"Personalization function '{worst_func}' has low effectiveness ({func_effectiveness[worst_func]:.1%} positive response rate). Consider improving or replacing.")
+                recommendations.append(
+                    f"Personalization function '{worst_func}' has low effectiveness ({func_effectiveness[worst_func]:.1%} positive response rate). Consider improving or replacing."
+                )
 
         return recommendations
 
@@ -1408,16 +1441,12 @@ def test_message_personalization() -> bool:
 
     # Test data
     test_extracted_data = {
-        "structured_names": [
-            {"full_name": "John Smith", "nicknames": [], "maiden_name": None}
-        ],
+        "structured_names": [{"full_name": "John Smith", "nicknames": [], "maiden_name": None}],
         "vital_records": [
             {"person": "John Smith", "event_type": "birth", "date": "1850", "place": "Aberdeen, Scotland"}
         ],
-        "locations": [
-            {"place": "Aberdeen, Scotland", "context": "birthplace", "time_period": "1850"}
-        ],
-        "research_questions": ["finding John Smith's parents"]
+        "locations": [{"place": "Aberdeen, Scotland", "context": "birthplace", "time_period": "1850"}],
+        "research_questions": ["finding John Smith's parents"],
     }
 
     test_person_data = {"username": "TestUser"}
@@ -1426,15 +1455,12 @@ def test_message_personalization() -> bool:
         "predicted_relationship": "3rd cousin",
         "actual_relationship": "3rd cousin",
         "relationship_path": "Through John Smith (1850-1920)",
-        "total_rows": "150"
+        "total_rows": "150",
     }
 
     # Test message creation
     message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        test_person_data,
-        test_extracted_data,
-        test_base_data
+        "Enhanced_In_Tree-Initial", test_person_data, test_extracted_data, test_base_data
     )
 
     success = len(message) > 100 and "John Smith" in message
@@ -1448,10 +1474,7 @@ def test_fallback_template_path() -> bool:
     # Force empty templates to guarantee fallback path
     personalizer.templates = {"In_Tree-Initial": "Hello {name}!"}
     msg, _ = personalizer.create_personalized_message(
-        "Totally_Unknown_Template",
-        {"username": "UserX"},
-        {},
-        {"name": "UserX"}
+        "Totally_Unknown_Template", {"username": "UserX"}, {}, {"name": "UserX"}
     )
     # Either fallback message or resolved fallback template must appear
     return ("UserX" in msg) and len(msg) > 10
@@ -1460,11 +1483,13 @@ def test_fallback_template_path() -> bool:
 def test_shared_ancestors_formatting() -> bool:
     """Validate proper Oxford-comma style formatting for multiple ancestors."""
     p = MessagePersonalizer()
-    data = {"structured_names": [
-        {"full_name": "Alice Brown"},
-        {"full_name": "Robert Clark"},
-        {"full_name": "Sarah Davis"},
-    ]}
+    data = {
+        "structured_names": [
+            {"full_name": "Alice Brown"},
+            {"full_name": "Robert Clark"},
+            {"full_name": "Sarah Davis"},
+        ]
+    }
     formatted = p._format_shared_ancestors(data)
     # Expect: "Alice Brown, Robert Clark, and Sarah Davis"
     return formatted.count(",") == 2 and formatted.endswith("Sarah Davis") and " and " in formatted
@@ -1474,18 +1499,20 @@ def test_location_context_limit() -> bool:
     """Ensure location context respects max_locations_to_mention constraint."""
     p = MessagePersonalizer()
     p.personalization_config["max_locations_to_mention"] = 2
-    data = {"locations": [
-        {"place": "Aberdeen"},
-        {"place": "Glasgow"},
-        {"place": "Edinburgh"},
-    ]}
+    data = {
+        "locations": [
+            {"place": "Aberdeen"},
+            {"place": "Glasgow"},
+            {"place": "Edinburgh"},
+        ]
+    }
     ctx = p._format_location_context(data)
     # Should include only two locations and the word 'and' between them
     # Pattern: ' Aberdeen and Glasgow' (order preserved, third excluded)
     return ctx.strip().count(" ") <= 2 and "Edinburgh" not in ctx and "and" in ctx
 
 
-def _test_personalizer_initialization():
+def _test_personalizer_initialization() -> bool:
     """Test MessagePersonalizer initialization."""
     personalizer = MessagePersonalizer()
 
@@ -1498,7 +1525,7 @@ def _test_personalizer_initialization():
     return True
 
 
-def _test_personalization_config():
+def _test_personalization_config() -> bool:
     """Test personalization configuration loading."""
     personalizer = MessagePersonalizer()
     config = personalizer.personalization_config
@@ -1512,7 +1539,7 @@ def _test_personalization_config():
     return True
 
 
-def _test_personalization_registry():
+def _test_personalization_registry() -> bool:
     """Test personalization functions registry."""
     personalizer = MessagePersonalizer()
     registry = personalizer.personalization_functions_registry
@@ -1526,7 +1553,7 @@ def _test_personalization_registry():
     return True
 
 
-def _test_effectiveness_tracker_initialization():
+def _test_effectiveness_tracker_initialization() -> bool:
     """Test MessageEffectivenessTracker initialization."""
     tracker = MessageEffectivenessTracker()
 
@@ -1538,7 +1565,7 @@ def _test_effectiveness_tracker_initialization():
     return True
 
 
-def _test_shared_ancestors_formatting_empty():
+def _test_shared_ancestors_formatting_empty() -> bool:
     """Test shared ancestors formatting with empty data."""
     personalizer = MessagePersonalizer()
     formatted = personalizer._format_shared_ancestors({})
@@ -1550,7 +1577,7 @@ def _test_shared_ancestors_formatting_empty():
     return True
 
 
-def _test_location_context_formatting_empty():
+def _test_location_context_formatting_empty() -> bool:
     """Test location context formatting with empty data."""
     personalizer = MessagePersonalizer()
     formatted = personalizer._format_location_context({})
@@ -1563,7 +1590,7 @@ def _test_location_context_formatting_empty():
     return True
 
 
-def _test_dna_context_creation():
+def _test_dna_context_creation() -> bool:
     """Test DNA context creation."""
     personalizer = MessagePersonalizer()
     context = personalizer._create_dna_context({'shared_dna_cm': 212.0, 'relationship': '2nd cousin'})
@@ -1596,12 +1623,7 @@ def _test_null_and_none_inputs() -> None:
         assert "NoneType" in str(e), f"Should raise descriptive error for None inputs, got: {e}"
 
     # Test with empty dicts (this should work)
-    message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        {},
-        {},
-        {}
-    )
+    message, _ = personalizer.create_personalized_message("Enhanced_In_Tree-Initial", {}, {}, {})
     assert isinstance(message, str), "Should return string with empty dicts"
     assert len(message) > 0, "Should return non-empty message with empty dicts"
 
@@ -1619,10 +1641,7 @@ def _test_malformed_extracted_data() -> None:
     }
 
     message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        {"username": "Test"},
-        malformed_data,
-        {"name": "Test"}
+        "Enhanced_In_Tree-Initial", {"username": "Test"}, malformed_data, {"name": "Test"}
     )
 
     assert isinstance(message, str), "Should handle malformed data without crashing"
@@ -1640,21 +1659,14 @@ def _test_unicode_and_special_characters() -> None:
             {"full_name": "Müller, Jürgen"},
             {"full_name": "Владимир Путин"},
             {"full_name": "李明"},
-            {"full_name": "O'Connor-Władysław"}
+            {"full_name": "O'Connor-Władysław"},
         ],
-        "vital_records": [
-            {"person": "José María", "event_type": "birth", "date": "1850", "place": "Málaga, España"}
-        ],
-        "locations": [
-            {"place": "Köln, Deutschland", "context": "residence", "time_period": "1900s"}
-        ]
+        "vital_records": [{"person": "José María", "event_type": "birth", "date": "1850", "place": "Málaga, España"}],
+        "locations": [{"place": "Köln, Deutschland", "context": "residence", "time_period": "1900s"}],
     }
 
     message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        {"username": "Tëst Üsér"},
-        unicode_data,
-        {"name": "Tëst Üsér"}
+        "Enhanced_In_Tree-Initial", {"username": "Tëst Üsér"}, unicode_data, {"name": "Tëst Üsér"}
     )
 
     assert isinstance(message, str), "Should handle Unicode characters"
@@ -1674,17 +1686,13 @@ def _test_extremely_long_inputs() -> None:
 
     long_data = {
         "structured_names": [{"full_name": long_name}] * 50,  # 50 extremely long names
-        "vital_records": [
-            {"person": long_name, "event_type": "birth", "date": "1800", "place": very_long_place}
-        ] * 20,  # 20 records with long data
-        "locations": [{"place": very_long_place, "context": "residence"}] * 30
+        "vital_records": [{"person": long_name, "event_type": "birth", "date": "1800", "place": very_long_place}]
+        * 20,  # 20 records with long data
+        "locations": [{"place": very_long_place, "context": "residence"}] * 30,
     }
 
     message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        {"username": "Test"},
-        long_data,
-        {"name": "Test"}
+        "Enhanced_In_Tree-Initial", {"username": "Test"}, long_data, {"name": "Test"}
     )
 
     assert isinstance(message, str), "Should handle extremely long inputs"
@@ -1712,10 +1720,7 @@ def _test_missing_template_keys() -> None:
 
     # Provide minimal format data (missing most keys)
     message, _ = personalizer.create_personalized_message(
-        "test_complex",
-        {"username": "Test"},
-        {"structured_names": []},
-        {"name": "Test User"}
+        "test_complex", {"username": "Test"}, {"structured_names": []}, {"name": "Test User"}
     )
 
     assert isinstance(message, str), "Should handle missing template keys"
@@ -1738,10 +1743,7 @@ def _test_zero_and_negative_numbers() -> None:
     }
 
     message, _ = personalizer.create_personalized_message(
-        "Enhanced_In_Tree-Initial",
-        {"username": "Test"},
-        edge_case_data,
-        {"name": "Test", "total_rows": "0"}
+        "Enhanced_In_Tree-Initial", {"username": "Test"}, edge_case_data, {"name": "Test", "total_rows": "0"}
     )
 
     assert isinstance(message, str), "Should handle zero and negative numbers"
@@ -1769,11 +1771,7 @@ def _test_format_single_vital_record_edge_cases() -> None:
     assert result is None, "Should return None when date and place both missing"
 
     # Test with only date
-    result = personalizer._format_single_vital_record({
-        "person": "John Smith",
-        "event_type": "birth",
-        "date": "1850"
-    })
+    result = personalizer._format_single_vital_record({"person": "John Smith", "event_type": "birth", "date": "1850"})
     assert isinstance(result, str), "Should format with date only"
     assert "John Smith" in result, "Should include person name"
     assert "1850" in result, "Should include date"
@@ -1796,7 +1794,7 @@ def message_personalization_module_tests() -> bool:
             _test_personalizer_initialization,
             "MessagePersonalizer initialized correctly",
             "Test MessagePersonalizer initialization",
-            "Verify personalizer creates with all required attributes"
+            "Verify personalizer creates with all required attributes",
         )
 
         suite.run_test(
@@ -1804,7 +1802,7 @@ def message_personalization_module_tests() -> bool:
             _test_personalization_config,
             "Personalization config loaded correctly",
             "Test personalization configuration loading",
-            "Verify config has all required settings"
+            "Verify config has all required settings",
         )
 
         suite.run_test(
@@ -1812,7 +1810,7 @@ def message_personalization_module_tests() -> bool:
             _test_personalization_registry,
             "Personalization registry built correctly",
             "Test personalization functions registry",
-            "Verify registry has all required functions"
+            "Verify registry has all required functions",
         )
 
         suite.run_test(
@@ -1820,7 +1818,7 @@ def message_personalization_module_tests() -> bool:
             _test_effectiveness_tracker_initialization,
             "MessageEffectivenessTracker initialized correctly",
             "Test MessageEffectivenessTracker initialization",
-            "Verify tracker creates with required attributes"
+            "Verify tracker creates with required attributes",
         )
 
         # Edge case tests
@@ -1829,7 +1827,7 @@ def message_personalization_module_tests() -> bool:
             _test_shared_ancestors_formatting_empty,
             "Empty shared ancestors formatted correctly",
             "Test shared ancestors formatting with empty list",
-            "Verify graceful handling of empty ancestor list"
+            "Verify graceful handling of empty ancestor list",
         )
 
         suite.run_test(
@@ -1837,7 +1835,7 @@ def message_personalization_module_tests() -> bool:
             _test_location_context_formatting_empty,
             "Empty location context formatted correctly",
             "Test location context formatting with empty list",
-            "Verify graceful handling of empty location list"
+            "Verify graceful handling of empty location list",
         )
 
         suite.run_test(
@@ -1845,7 +1843,7 @@ def message_personalization_module_tests() -> bool:
             _test_dna_context_creation,
             "DNA context created correctly",
             "Test DNA context creation",
-            "Verify DNA context formatting with sample data"
+            "Verify DNA context formatting with sample data",
         )
 
         # Negative path tests
@@ -1854,7 +1852,7 @@ def message_personalization_module_tests() -> bool:
             _test_null_and_none_inputs,
             "Handles None/null inputs gracefully",
             "Test with None person_data, extracted_data, base_format_data",
-            "Verify no crashes on None inputs and fallback message generation"
+            "Verify no crashes on None inputs and fallback message generation",
         )
 
         suite.run_test(
@@ -1862,7 +1860,7 @@ def message_personalization_module_tests() -> bool:
             _test_malformed_extracted_data,
             "Handles malformed structured data",
             "Test with invalid structured_names, vital_records, locations",
-            "Verify resilience to incorrect data types in extraction results"
+            "Verify resilience to incorrect data types in extraction results",
         )
 
         suite.run_test(
@@ -1870,7 +1868,7 @@ def message_personalization_module_tests() -> bool:
             _test_unicode_and_special_characters,
             "Preserves/handles Unicode characters",
             "Test with names like José María, Müller, Владимир, 李明, O'Connor-Władysław",
-            "Verify internationalization support and special character handling"
+            "Verify internationalization support and special character handling",
         )
 
         suite.run_test(
@@ -1878,7 +1876,7 @@ def message_personalization_module_tests() -> bool:
             _test_extremely_long_inputs,
             "Handles extremely long names and text",
             "Test with 500-char names, 1000-char places, 50+ records",
-            "Verify reasonable message length limits despite large input data"
+            "Verify reasonable message length limits despite large input data",
         )
 
         suite.run_test(
@@ -1886,7 +1884,7 @@ def message_personalization_module_tests() -> bool:
             _test_missing_template_keys,
             "Handles missing template placeholder keys",
             "Test with template containing {missing_key_1}, {missing_key_2}",
-            "Verify no unreplaced placeholders in output when keys missing"
+            "Verify no unreplaced placeholders in output when keys missing",
         )
 
         suite.run_test(
@@ -1894,7 +1892,7 @@ def message_personalization_module_tests() -> bool:
             _test_zero_and_negative_numbers,
             "Handles zero/negative numbers in data",
             "Test with shared_dna_cm=0.0, birth_year=-100, total_rows=-5",
-            "Verify edge case numeric values don't cause crashes"
+            "Verify edge case numeric values don't cause crashes",
         )
 
         suite.run_test(
@@ -1902,7 +1900,7 @@ def message_personalization_module_tests() -> bool:
             _test_format_single_vital_record_edge_cases,
             "_format_single_vital_record handles edge cases",
             "Test with None, non-dict, empty dict, missing fields",
-            "Verify proper None returns and graceful degradation for invalid inputs"
+            "Verify proper None returns and graceful degradation for invalid inputs",
         )
 
         # Original tests
@@ -1951,4 +1949,5 @@ if __name__ == "__main__":
     """
     success = run_comprehensive_tests()
     import sys
+
     sys.exit(0 if success else 1)
