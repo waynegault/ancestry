@@ -53,7 +53,6 @@ if str(_project_root) not in sys.path:
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
-import sys
 import threading
 import time
 from collections import deque
@@ -1707,6 +1706,7 @@ def _test_health_monitor_initialization() -> bool:
     assert monitor is not None
     assert len(monitor.current_metrics) > 0
     assert monitor.session_start_time > 0
+    return True
 
 
 def _test_metric_updates() -> bool:
@@ -1715,6 +1715,7 @@ def _test_metric_updates() -> bool:
     monitor.update_metric("api_response_time", 3.5)
     assert monitor.current_metrics["api_response_time"].value == 3.5
     assert len(monitor.metrics_history["api_response_time"]) == 1
+    return True
 
 
 def _test_health_score_calculation() -> bool:
@@ -1730,6 +1731,7 @@ def _test_health_score_calculation() -> bool:
         monitor.update_metric(metric_name, metric.threshold_critical + 1)
     score = monitor.calculate_health_score()
     assert score <= 20, f"Expected low score for critical metrics, got {score}"
+    return True
 
 
 def _test_risk_prediction() -> bool:
@@ -1743,6 +1745,7 @@ def _test_risk_prediction() -> bool:
     monitor.memory_usage_history.extend([100, 200, 300])
     risk = monitor.predict_session_death_risk()
     assert risk > 0.3, f"Expected elevated risk with bad conditions, got {risk}"
+    return True
 
 
 def _test_alert_system() -> bool:
@@ -1754,6 +1757,7 @@ def _test_alert_system() -> bool:
     monitor.update_metric("api_response_time", 26.0)
     critical_alerts = [a for a in monitor.alerts if a.level == AlertLevel.CRITICAL]
     assert len(critical_alerts) > 0, "Critical alert should have been created"
+    return True
 
 
 def _test_performance_tracking() -> bool:
@@ -1765,6 +1769,7 @@ def _test_performance_tracking() -> bool:
     assert monitor.error_counts["ConnectionError"] == 1
     monitor.record_page_processing_time(45.0)
     assert len(monitor.page_processing_times) == 1
+    return True
 
 
 def _test_dashboard_generation() -> bool:
@@ -1778,6 +1783,7 @@ def _test_dashboard_generation() -> bool:
     assert isinstance(dashboard["risk_score"], (float))
     assert isinstance(dashboard["metrics"], dict)
     assert isinstance(dashboard["recommended_actions"], list)
+    return True
 
 
 def _test_integration_helpers() -> bool:
@@ -1788,6 +1794,7 @@ def _test_integration_helpers() -> bool:
     emergency_recs = get_performance_recommendations(20.0, 0.9)
     assert emergency_recs["max_concurrency"] == 1
     assert emergency_recs["action_required"] == "emergency_refresh"
+    return True
 
 
 def _test_global_instance() -> bool:
@@ -1795,6 +1802,7 @@ def _test_global_instance() -> bool:
     monitor1 = get_health_monitor()
     monitor2 = get_health_monitor()
     assert monitor1 is monitor2, "get_health_monitor should return singleton instance"
+    return True
 
 
 def _test_memory_pressure_monitoring() -> bool:
@@ -1813,6 +1821,7 @@ def _test_memory_pressure_monitoring() -> bool:
         monitor.error_timestamps.append(current_time - i)
     assert len(monitor.error_timestamps) == 100, "Should have 100 error timestamps"
     assert monitor.error_timestamps.maxlen == 3000, "Should have increased capacity for long sessions"
+    return True
 
 
 def _test_resource_constraint_handling() -> bool:
@@ -1829,6 +1838,7 @@ def _test_resource_constraint_handling() -> bool:
     assert monitor.is_enhanced_monitoring_active(), "Should activate enhanced monitoring"
     interval = monitor._get_adaptive_monitoring_interval(current_time)
     assert interval == 5.0, f"Enhanced monitoring should use 5s interval, got {interval}"
+    return True
 
 
 def _test_long_session_resource_management() -> bool:
@@ -1869,6 +1879,7 @@ def _test_long_session_resource_management() -> bool:
     assert final_errors <= initial_errors, "Should clean up old errors"
     assert final_alerts > 0, "Should keep some recent alerts"
     assert final_errors > 0, "Should keep some recent errors"
+    return True
 
 
 def _test_session_checkpoint_creation() -> bool:
@@ -1887,6 +1898,7 @@ def _test_session_checkpoint_creation() -> bool:
     assert "error_rate" in new_monitor.current_metrics, "Should restore metrics"
     assert new_monitor.current_metrics["error_rate"].value >= 0, "Should restore metric with valid value"
     assert len(new_monitor.error_timestamps) > 0, "Should restore error timestamps"
+    return True
 
 
 def _test_session_state_persistence() -> bool:
@@ -1901,6 +1913,7 @@ def _test_session_state_persistence() -> bool:
     assert recovered_data is not None, "Should recover session state"
     assert "test_key" in recovered_data, "Should recover custom data"
     assert "health_monitor" in recovered_data, "Should include health monitor state"
+    return True
 
 
 def _test_checkpoint_management() -> bool:
@@ -1914,6 +1927,7 @@ def _test_checkpoint_management() -> bool:
         assert "name" in checkpoint, "Should include checkpoint name"
         assert "created_time" in checkpoint, "Should include creation time"
         assert "file_size_kb" in checkpoint, "Should include file size"
+    return True
 
 
 def _test_auto_checkpoint_functionality() -> bool:
@@ -1927,6 +1941,7 @@ def _test_auto_checkpoint_functionality() -> bool:
     checkpoints = monitor.list_available_checkpoints()
     auto_checkpoints = [cp for cp in checkpoints if cp["name"].startswith("auto_checkpoint")]
     assert len(auto_checkpoints) >= 1, "Should create auto checkpoints"
+    return True
 
 
 # ==============================================

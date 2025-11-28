@@ -69,7 +69,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import hashlib
 import shutil
-import sys
 import time
 from collections import deque
 from collections.abc import Iterable, Sized
@@ -1564,15 +1563,17 @@ def _test_cache_performance() -> bool:
     # Performance test - basic operations should be fast
     import time
 
-    start_time = time.time()
-
-    # Cast cache to Any to avoid type errors
+    # Warm up the cache so initialization cost doesn't skew measurements
     cache_obj = cast(Any, cache)
+    cache_obj.set("perf_warmup", "warm")
+    cache_obj.get("perf_warmup")
+
+    start_time = time.perf_counter()
     for i in range(100):
         cache_obj.set(f"perf_test_{i}", f"value_{i}")
         cache_obj.get(f"perf_test_{i}")
 
-    duration = time.time() - start_time
+    duration = time.perf_counter() - start_time
     assert duration < 5.0, f"100 cache operations took {duration}s, should be under 5s"
     return True
 

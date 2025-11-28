@@ -25,7 +25,6 @@ if str(_project_root) not in sys.path:
 import contextlib
 import io
 import logging
-import sys
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, cast

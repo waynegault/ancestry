@@ -26,6 +26,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
+from sqlalchemy import text as sa_text
+
 if __package__ in {None, ""}:
     parent_dir = str(Path(__file__).resolve().parent.parent)
     if parent_dir not in sys.path:
@@ -240,8 +242,11 @@ class DatabaseHealthCheck(HealthCheck):
                 )
 
             # Execute simple query to verify connectivity
+            text_func: Callable[[str], object] | None = getattr(db_manager, "_text_func", None)
+            query = text_func("SELECT 1") if callable(text_func) else sa_text("SELECT 1")
+
             with engine.connect() as conn:
-                result = conn.execute(db_manager._text_func("SELECT 1"))
+                result = conn.execute(query)
                 _ = result.fetchone()
 
             # Clean up
@@ -473,14 +478,15 @@ class SessionHealthCheck(HealthCheck):
         try:
             # Check if session is valid
             is_valid = self._session_manager.is_sess_valid()
-            session_age = self._session_manager.session_age_seconds()
+            session_age = self._session_manager.session_age_seconds
+            age_value = session_age if session_age is not None else 0.0
 
             if is_valid:
                 return HealthCheckResult(
                     name=self.name,
                     status=HealthStatus.HEALTHY,
-                    message=f"Session valid (age: {session_age:.0f}s)",
-                    details={"age_seconds": session_age},
+                    message=f"Session valid (age: {age_value:.0f}s)",
+                    details={"age_seconds": age_value},
                 )
 
             return HealthCheckResult(

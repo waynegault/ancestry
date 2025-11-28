@@ -12,7 +12,6 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import ast
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory

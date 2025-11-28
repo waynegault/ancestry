@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
 
 # from concurrent.futures import ThreadPoolExecutor, as_completed - removed unused
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, cast
+from typing import Any, Callable, Literal, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -49,9 +49,6 @@ from caching.cache_manager import (
 from config import config_schema
 from core.common_params import ConversationProcessingContext
 from core.error_handling import (
-    APIError,
-    AuthenticationError,
-    BrowserError,
     MaxApiFailuresExceededError,
     api_retry as _api_retry,
     selenium_retry,

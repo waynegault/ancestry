@@ -24,7 +24,6 @@ import importlib
 import json
 import os
 import subprocess
-import sys
 import winreg
 from functools import lru_cache
 from pathlib import Path

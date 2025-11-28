@@ -14,7 +14,6 @@ if str(_project_root) not in sys.path:
 import json
 import logging
 import subprocess
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path

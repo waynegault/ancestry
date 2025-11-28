@@ -193,7 +193,8 @@ def requires_session(
 
             # Inject session if requested
             if inject_session:
-                return cast(R, func(sm, *args, **kwargs))
+                session_callable = cast(Callable[..., R], func)
+                return session_callable(sm, *args, **kwargs)
             return func(*args, **kwargs)
 
         return wrapper
@@ -547,7 +548,8 @@ def _test_requires_session_decorator_with_inject() -> bool:
         def my_function(session_manager: SessionManager, value: int) -> tuple[SessionManager, int]:
             return session_manager, value
 
-        result_sm, result_val = my_function(42)
+        injected_call = cast(Callable[[int], tuple[SessionManager, int]], my_function)
+        result_sm, result_val = injected_call(42)
         assert result_sm is mock_sm, "Session should be injected"
         assert result_val == 42, "Other args should pass through"
 

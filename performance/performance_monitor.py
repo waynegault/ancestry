@@ -61,7 +61,6 @@ import contextlib
 import gc
 import json
 import statistics
-import sys
 import threading
 import time
 from collections import defaultdict, deque

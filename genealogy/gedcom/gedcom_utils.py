@@ -64,7 +64,6 @@ import importlib
 import logging
 import os
 import re
-import sys
 import time
 from collections import deque
 from collections.abc import Collection, Mapping

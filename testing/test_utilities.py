@@ -1044,7 +1044,7 @@ def with_test_config(overrides: Optional[dict[str, Any]] = None) -> Callable[[Ca
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Build test config with defaults and overrides
-            test_config = {
+            test_config: dict[str, Any] = {
                 "max_pages": 1,
                 "requests_per_second": 0.3,
                 "debug_mode": False,

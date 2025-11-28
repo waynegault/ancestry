@@ -53,7 +53,6 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import logging
-import sys
 import time
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, suppress

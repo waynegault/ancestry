@@ -64,7 +64,6 @@ logger = setup_module(globals(), __name__)
 
 # --- Standard library imports ---
 import hashlib
-import sys
 import time
 from pathlib import Path
 from typing import Any, Optional, cast

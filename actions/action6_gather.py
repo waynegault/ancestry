@@ -5627,6 +5627,7 @@ def _test_module_initialization() -> bool:
             results.append(False)
 
     print(f"📊 Results: {sum(results)}/{len(results)} initialization tests passed")
+    return all(results)
 
 
 def _test_core_functionality() -> bool:
@@ -5661,6 +5662,8 @@ def _test_core_functionality() -> bool:
     result = nav_to_list(mock_session_manager)
     assert result is False, "nav_to_list should return False for invalid session"
 
+    return True
+
 
 def _test_data_processing_functions() -> bool:
     """Test actual behavior of data processing and preparation functions"""
@@ -5693,6 +5696,8 @@ def _test_data_processing_functions() -> bool:
         "_execute_bulk_db_operations should return bool"
     )
 
+    return True
+
 
 def _test_edge_cases() -> bool:
     """Test edge cases and boundary conditions"""
@@ -5707,6 +5712,8 @@ def _test_edge_cases() -> bool:
 
     result = gather_orchestrator.validate_start_page(0)
     assert result == 1, "Should handle zero input"
+
+    return True
 
 
 def _test_integration() -> bool:
@@ -5729,6 +5736,8 @@ def _test_integration() -> bool:
     coord_sig = inspect.signature(coord)
     coord_params = list(coord_sig.parameters.keys())
     assert len(coord_params) > 0, "coord should accept parameters"
+
+    return True
 
 
 def _test_performance() -> bool:
@@ -5755,6 +5764,8 @@ def _test_performance() -> bool:
 
     assert duration < 0.5, f"1000 page validations should be fast, took {duration:.3f}s"
 
+    return True
+
 
 def _test_retryable_error_constructor() -> bool:
     """Test RetryableError constructor with conflicting parameters"""
@@ -5769,6 +5780,7 @@ def _test_retryable_error_constructor() -> bool:
         assert error.recovery_hint == "Check database connectivity and retry"
         assert "session_id" in error.context
         print("     ✅ RetryableError constructor handles conflicting parameters correctly")
+        return True
     except TypeError as e:
         if "got multiple values for keyword argument" in str(e):
             raise AssertionError(f"CRITICAL: RetryableError constructor bug still exists: {e}") from e
@@ -5787,6 +5799,7 @@ def _test_database_connection_error_constructor() -> bool:
         assert db_error.error_code == "DB_CONNECTION_FAILED"
         assert db_error.recovery_hint and "temporarily unavailable" in db_error.recovery_hint
         print("     ✅ DatabaseConnectionError constructor works correctly")
+        return True
     except TypeError as e:
         raise AssertionError(f"DatabaseConnectionError constructor has parameter conflicts: {e}") from e
 
@@ -5812,6 +5825,7 @@ def _test_database_transaction_rollback() -> bool:
                 assert "Transaction failed:" in retryable_error.message
                 assert retryable_error.context["error_type"] == "IntegrityError"
                 print("     ✅ Database rollback error handling works correctly")
+            return True
     except Exception as e:
         raise AssertionError(f"Database transaction rollback simulation failed: {e}") from e
 
@@ -5853,6 +5867,8 @@ def _test_all_error_class_constructors() -> bool:
                 ) from e
             raise
 
+    return True
+
 
 def _test_legacy_function_error_handling() -> bool:
     """Test legacy function error handling"""
@@ -5885,6 +5901,7 @@ def _test_legacy_function_error_handling() -> bool:
     assert result == 1, "Should handle invalid input gracefully"
 
     print("     ✅ Legacy function error handling works correctly")
+    return True
 
 
 def _test_timeout_and_retry_handling() -> bool:
@@ -5909,6 +5926,8 @@ def _test_timeout_and_retry_handling() -> bool:
         "     ✅ coord timeout and Selenium retry policy satisfy long-run safety requirements"
         f" ({actual_timeout}s timeout, {selenium_policy.max_attempts} attempts)."
     )
+
+    return True
 
 
 def _test_duplicate_record_handling() -> bool:
@@ -5940,6 +5959,7 @@ def _test_duplicate_record_handling() -> bool:
         raise AssertionError("IntegrityError should be raised when duplicate profile IDs remain in payload")
 
     print("     ✅ Duplicate detection prevents UNIQUE violations both in-memory and pre-insert")
+    return True
 
 
 def _test_error_handling() -> bool:
@@ -5964,6 +5984,7 @@ def _test_error_handling() -> bool:
     print("   - Duplicate record handling during retries")
     print("   - Multiple final summary reporting issues")
     print("🎉 All error handling tests passed - Action 6 database transaction bugs prevented!")
+    return True
 
 
 def _test_bulk_insert_condition_with_records() -> bool:

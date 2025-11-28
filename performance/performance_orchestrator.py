@@ -67,7 +67,6 @@ logger = setup_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import gc
-import sys
 import threading
 import time
 from collections import defaultdict, deque
