@@ -383,9 +383,9 @@ class MainCLIHelpers:
 
     def _show_unified_cache_stats(self) -> bool:
         try:
-            from caching.cache_manager import get_unified_cache_manager
+            from caching.cache_manager import get_cache_coordinator
 
-            unified_mgr = get_unified_cache_manager()
+            unified_mgr = get_cache_coordinator()
             comprehensive_stats = unified_mgr.get_comprehensive_stats()
             stats_shown = False
 

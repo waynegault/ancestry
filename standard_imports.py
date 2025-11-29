@@ -140,16 +140,18 @@ def safe_import_from(module_name: str, item_name: str, fallback: Any = None) -> 
 
 
 # === TESTING INTEGRATION ===
-def get_unified_test_framework() -> Any:
-    """Get the unified test framework, with fallback to individual tests."""
-    # Using modern test_framework.py instead of deprecated test_framework_unified
-    try:
-        from testing.test_framework import TestSuite
+def get_unified_test_framework() -> type:
+    """Get the unified test framework (TestSuite class).
 
-        return TestSuite
-    except ImportError:
-        # Fallback to legacy test framework
-        return None
+    Returns:
+        TestSuite class from testing.test_framework
+
+    Raises:
+        ImportError: If test framework cannot be imported
+    """
+    from testing.test_framework import TestSuite
+
+    return TestSuite
 
 
 # === EXPORTS ===

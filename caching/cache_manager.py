@@ -1,49 +1,14 @@
 #!/usr/bin/env python3
 
 """
-Centralized Cache Management & Intelligent Coordination Engine
+Centralized Cache Management - Unified cache coordination for the application.
 
-Advanced cache orchestration platform providing centralized cache management,
-intelligent coordination strategies, and comprehensive performance optimization
-with sophisticated cache lifecycle management, multi-tier caching, and
-professional-grade cache orchestration for genealogical automation workflows.
+Provides CacheCoordinator which orchestrates:
+- SessionComponentCache: Session state and component caching
+- APICacheManager: API response caching with TTL
+- SystemCacheManager: System-wide cache and configuration
 
-Cache Orchestration:
-• Centralized cache management with intelligent coordination and resource optimization
-• Advanced multi-tier caching with intelligent cache hierarchy and performance optimization
-• Sophisticated cache lifecycle management with automated cleanup and optimization protocols
-• Comprehensive cache synchronization with multi-process coordination and conflict resolution
-• Intelligent cache warming with predictive data loading and optimization strategies
-• Integration with performance monitoring systems for comprehensive cache intelligence
-
-Performance Intelligence:
-• Advanced cache analytics with detailed performance metrics and optimization insights
-• Intelligent cache sizing with automatic optimization and resource management algorithms
-• Sophisticated cache invalidation with intelligent dependency tracking and cleanup protocols
-• Comprehensive performance monitoring with real-time analytics and optimization recommendations
-• Advanced cache coordination with intelligent load balancing and resource distribution
-• Integration with performance systems for comprehensive cache performance optimization
-
-Resource Management:
-• Intelligent memory management with optimized resource allocation and cleanup strategies
-• Advanced cache persistence with reliable storage and recovery mechanisms
-• Sophisticated cache migration with seamless data transfer and version compatibility
-• Comprehensive backup and recovery with automated data protection and restoration
-• Intelligent cache partitioning with optimized data distribution and access patterns
-• Integration with resource management systems for comprehensive cache orchestration
-
-Foundation Services:
-Provides the essential cache management infrastructure that enables centralized,
-high-performance caching through intelligent coordination, comprehensive performance
-optimization, and professional cache management for genealogical automation workflows.
-
-Consolidated from:
-- core/session_cache.py - Session-specific caching
-- api_cache.py - API response caching
-- core/system_cache.py - System-wide caching
-
-This module now provides unified cache management for all cache types while
-maintaining the specialized functionality of each cache system.
+Consolidated from core/session_cache.py, api_cache.py, and core/system_cache.py.
 """
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
@@ -536,9 +501,6 @@ class CacheCoordinator:
 # Global cache coordinator instance
 _cache_coordinator = CacheCoordinator()
 
-# Backward compatibility alias
-_unified_cache_manager = _cache_coordinator
-
 
 # ==============================================
 # PUBLIC API FUNCTIONS
@@ -550,30 +512,24 @@ def get_cache_coordinator() -> CacheCoordinator:
     return _cache_coordinator
 
 
-# Backward compatibility alias
-def get_unified_cache_manager() -> CacheCoordinator:
-    """Get the global cache coordinator (deprecated, use get_cache_coordinator)."""
-    return _cache_coordinator
-
-
 def get_session_cache_stats() -> dict[str, Any]:
     """Get session cache statistics."""
-    return _unified_cache_manager.session_cache.get_stats()
+    return _cache_coordinator.session_cache.get_stats()
 
 
 def get_api_cache_stats() -> dict[str, Any]:
     """Get API cache statistics."""
-    return _unified_cache_manager.api_cache.get_stats()
+    return _cache_coordinator.api_cache.get_stats()
 
 
 def get_system_cache_stats() -> dict[str, Any]:
     """Get system cache statistics."""
-    return _unified_cache_manager.system_cache.get_stats()
+    return _cache_coordinator.system_cache.get_stats()
 
 
 def warm_all_caches() -> bool:
     """Warm all cache subsystems."""
-    return _unified_cache_manager.warm_all_caches()
+    return _cache_coordinator.warm_all_caches()
 
 
 # ==============================================
@@ -591,13 +547,13 @@ def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], 
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             # Try to get cached component
-            cached = _unified_cache_manager.session_cache.get_cached_component(component_type)
+            cached = _cache_coordinator.session_cache.get_cached_component(component_type)
             if cached is not None:
                 return cached
 
             # Create and cache component
             result = func(*args, **kwargs)
-            _unified_cache_manager.session_cache.cache_component(component_type, result)
+            _cache_coordinator.session_cache.cache_component(component_type, result)
             return result
 
         return cast(Callable[P, R], wrapper)
@@ -617,13 +573,13 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]],
             method = parts[1] if len(parts) > 1 else endpoint
 
             # Try to get cached result
-            cached_result = _unified_cache_manager.api_cache.get_cached_api_response(service, method, kwargs)
+            cached_result = _cache_coordinator.api_cache.get_cached_api_response(service, method, kwargs)
             if cached_result is not None:
                 return cached_result
 
             # Call function and cache result
             result = func(*args, **kwargs)
-            _unified_cache_manager.api_cache.cache_api_response(service, method, kwargs, result, ttl)
+            _cache_coordinator.api_cache.cache_api_response(service, method, kwargs, result, ttl)
             return result
 
         return cast(Callable[P, R], wrapper)
@@ -784,7 +740,7 @@ def _test_error_handling() -> bool:
         manager.api_cache.cache_api_response("", "", {}, None, ttl=60)
         manager.api_cache.get_cached_api_response("", "", {})
     except Exception as e:
-        assert False, f"Cache should handle edge cases gracefully: {e}"
+        raise AssertionError(f"Cache should handle edge cases gracefully: {e}") from e
     return True
 
 
@@ -796,7 +752,7 @@ def _test_recovery_mechanisms() -> bool:
         result = manager.warm_all_caches()
         assert isinstance(result, bool), "warm_all_caches should return bool"
     except Exception as e:
-        assert False, f"Cache warming should not raise: {e}"
+        raise AssertionError(f"Cache warming should not raise: {e}") from e
     return True
 
 
@@ -810,10 +766,13 @@ def _test_data_corruption_handling() -> bool:
 
 
 def _test_data_encryption() -> bool:
-    """Test cache configuration supports encryption settings."""
+    """Test cache infrastructure is available for encryption support."""
     # Encryption is handled at the storage layer (diskcache)
-    # Verify cache infrastructure is available
-    assert cache is not None or True, "Cache should be available or gracefully degraded"
+    # Verify CacheCoordinator can be instantiated and has required subsystems
+    manager = CacheCoordinator()
+    assert manager.session_cache is not None, "Session cache should be available"
+    assert manager.api_cache is not None, "API cache should be available"
+    assert manager.system_cache is not None, "System cache should be available"
     return True
 
 

@@ -21,15 +21,7 @@ logger = setup_module(globals(), __name__)
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Optional
-
-    from selenium.webdriver.remote.webdriver import WebDriver as _WebDriverForTyping
-
     from core.session_manager import SessionManager
-
-    def login_status(session_manager: "SessionManager", disable_ui_fallback: bool = False) -> Optional[bool]: ...
-
-    def consent(driver: _WebDriverForTyping) -> bool: ...
 else:
     # Runtime import to avoid circular dependency issues
     SessionManager = None
@@ -39,8 +31,8 @@ else:
 # === STANDARD LIBRARY IMPORTS ===
 import base64  # For make_ube
 import binascii  # For make_ube
+import contextlib
 import json
-import logging
 import random  # Used by RateLimiter jitter calculations
 import re
 import time
@@ -68,9 +60,6 @@ from selenium.webdriver.remote.webelement import WebElement
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
-from api.api_constants import (
-    API_PATH_UUID_LEGACY,
-)
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile, resolve_retry_policy
@@ -495,9 +484,6 @@ class ApiRequestConfig:
 
 
 # === MODULE CONSTANTS ===
-# Re-export API constants for backwards compatibility
-API_PATH_UUID = API_PATH_UUID_LEGACY
-
 # Key constants for API responses
 KEY_UCDMID = "ucdmid"
 KEY_TEST_ID = "testId"
@@ -531,57 +517,37 @@ def fast_json_loads(json_str: str) -> Any:
 
 
 # --- Third-party and local imports ---
-# Keep the warning for optional dependencies, but don't define dummies.
-# If essential ones fail, other parts of the code will raise errors.
-try:
-    from requests import Response as RequestsResponse
-    from requests.cookies import RequestsCookieJar
-    from requests.exceptions import HTTPError, JSONDecodeError, RequestException
-    from selenium.common.exceptions import (
-        ElementClickInterceptedException,
-        ElementNotInteractableException,
-        NoSuchCookieException,
-        NoSuchElementException,
-        StaleElementReferenceException,
-        TimeoutException,
-        UnexpectedAlertPresentException,
-        WebDriverException,
-    )
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.common.keys import Keys
-    from selenium.webdriver.remote.webdriver import WebDriver
-    from selenium.webdriver.support import expected_conditions
-    from selenium.webdriver.support.wait import WebDriverWait
+from requests import Response as RequestsResponse
+from requests.cookies import RequestsCookieJar
+from requests.exceptions import HTTPError, JSONDecodeError, RequestException
+from selenium.common.exceptions import (
+    ElementClickInterceptedException,
+    ElementNotInteractableException,
+    NoSuchCookieException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+    UnexpectedAlertPresentException,
+    WebDriverException,
+)
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.wait import WebDriverWait
 
-    # --- Local application imports ---
-    # Assume these are essential or handled elsewhere if missing
-    from config import config_schema
-    from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
+# --- Local application imports ---
+from config import config_schema
+from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
 
-    # Initialize logger with standardized pattern
-    logger = get_logger(__name__)
+# Initialize logger with standardized pattern
+logger = get_logger(__name__)
 
-    from browser.css_selectors import *
-    from browser.selenium_utils import (
-        is_browser_open,
-        is_elem_there,
-    )
-
-    # Do NOT import api_utils here at the top level
-
-except ImportError as import_err:
-    # Log failure for other imports but don't define dummies
-    logging.critical(
-        f"Essential dependency import failed in utils.py: {import_err}. Script cannot continue.",
-        exc_info=True,
-    )
-    # Re-raise the error to stop execution
-    raise import_err
-
-# --- Test framework imports ---
-import contextlib
-
-# test_framework imports removed - not directly accessed in this module
+from browser.css_selectors import *
+from browser.selenium_utils import (
+    is_browser_open,
+    is_elem_there,
+)
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
@@ -2351,12 +2317,6 @@ def make_ube(driver: DriverType) -> Optional[str]:
     ube_data = _build_ube_payload(ancsessionid)
     return _encode_ube_payload(ube_data)
 
-
-# End of make_ube
-
-# NewRelic and tracing header generation functions removed - unused (45 lines)
-# These were for generating NewRelic, traceparent, and tracestate headers
-# Can be restored from git history if needed in the future
 
 # ----------------------------------------------------------------------------
 # Login Functions (Remain in utils.py)
