@@ -44,6 +44,7 @@ Thumbs.db
 
 # Log Files
 /Logs/
+ai/Logs/
 *.log
 
 # Temporary and Development Files
