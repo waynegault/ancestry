@@ -1499,10 +1499,9 @@ def integrate_with_action6(action6_module: Any) -> Any:
 def get_performance_recommendations(health_score: float, risk_score: float) -> dict[str, Any]:
     """Get specific performance setting recommendations based on health."""
     recommendations: dict[str, Any] = {
-        "max_concurrency": 3,
-        "thread_pool_workers": 3,
+        "max_concurrency": 1,
         "batch_size": 8,
-        "token_bucket_fill_rate": 2.5,
+        "requests_per_second": 0.3,
         "action_required": "continue",
     }
 
@@ -1511,9 +1510,8 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
         recommendations.update(
             {
                 "max_concurrency": 1,
-                "thread_pool_workers": 1,
                 "batch_size": 1,
-                "token_bucket_fill_rate": 1.0,
+                "requests_per_second": 0.2,
                 "action_required": "emergency_refresh",
             }
         )
@@ -1522,9 +1520,8 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
         recommendations.update(
             {
                 "max_concurrency": 1,
-                "thread_pool_workers": 1,
                 "batch_size": 3,
-                "token_bucket_fill_rate": 1.5,
+                "requests_per_second": 0.22,
                 "action_required": "immediate_refresh",
             }
         )
@@ -1532,10 +1529,9 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
         # Warning settings
         recommendations.update(
             {
-                "max_concurrency": 2,
-                "thread_pool_workers": 2,
+                "max_concurrency": 1,
                 "batch_size": 5,
-                "token_bucket_fill_rate": 2.0,
+                "requests_per_second": 0.26,
                 "action_required": "schedule_refresh",
             }
         )
@@ -1543,10 +1539,9 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
         # Excellent health - can optimize
         recommendations.update(
             {
-                "max_concurrency": 4,
-                "thread_pool_workers": 4,
+                "max_concurrency": 1,
                 "batch_size": 10,
-                "token_bucket_fill_rate": 3.0,
+                "requests_per_second": 0.35,
                 "action_required": "optimize",
             }
         )

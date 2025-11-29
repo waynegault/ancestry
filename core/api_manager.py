@@ -960,17 +960,6 @@ class APIManager:
 
         return None
 
-    @staticmethod
-    def get_uuid() -> Optional[str]:
-        """
-        Retrieve user UUID (DNA test GUID).
-
-        Note: UUID is now fetched from API by session_manager.get_my_uuid().
-        This method is deprecated and returns None.
-        """
-        logger.debug("get_uuid() called - UUID should be fetched via session_manager.get_my_uuid()")
-        return None
-
     def _ensure_profile_id(self) -> bool:
         """Ensure my_profile_id is set; returns True on success."""
         if self.my_profile_id:
@@ -1114,7 +1103,6 @@ def _test_api_request_methods() -> bool:
         api_methods = [
             "get_csrf_token",
             "get_profile_id",
-            "get_uuid",
             "clear_identifiers",
         ]
         available_methods: list[str] = []

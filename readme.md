@@ -664,7 +664,7 @@ The project includes comprehensive Grafana dashboards for monitoring:
 ### Common Issues
 
 **429 Rate Limit Errors:**
-- Check `THREAD_POOL_WORKERS=1` in `.env`
+- Ensure `MAX_CONCURRENCY=1` in `.env` (sequential mode only)
 - Check `REQUESTS_PER_SECOND=0.4` in `.env`
 - Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"`
 

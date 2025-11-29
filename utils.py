@@ -4463,27 +4463,63 @@ def _test_session_manager() -> None:
 
 
 def _test_api_request_function() -> None:
-    """Test _api_req function availability and signature"""
-    # Test _api_req function availability
-    assert callable(_api_req), "_api_req function should be callable"
+    """Test legacy _api_req wrapper delegates to implementation with config."""
+    import sys
+    from unittest.mock import MagicMock, patch
 
-    # Test function signature (should not raise errors)
-    import inspect as inspect_module
+    driver = MagicMock()
+    session_manager = MagicMock()
+    headers = {"X-Test": "1"}
+    payload = {"value": 42}
 
-    sig = inspect_module.signature(_api_req)
-    assert len(sig.parameters) >= 2, "_api_req should accept multiple parameters"
+    with patch.object(sys.modules[__name__], "_api_req_impl") as mock_impl:
+        mock_impl.return_value = {"ok": True}
+        result = _api_req(
+            url="https://example.com",
+            driver=driver,
+            session_manager=session_manager,
+            method="POST",
+            headers=headers,
+            data=payload,
+            force_text_response=True,
+        )
+
+    mock_impl.assert_called_once()
+    config_arg = mock_impl.call_args.args[0]
+    assert isinstance(config_arg, ApiRequestConfig), "_api_req should pass ApiRequestConfig to implementation"
+    assert config_arg.url == "https://example.com"
+    assert config_arg.method == "POST"
+    assert config_arg.driver is driver
+    assert config_arg.session_manager is session_manager
+    assert config_arg.headers == headers
+    assert config_arg.data == payload
+    assert config_arg.force_text_response is True
+    assert result == {"ok": True}
 
 
 def _test_login_status_function() -> None:
-    """Test login_status function availability and signature"""
-    # Test login_status function availability
-    assert callable(login_status), "login_status function should be callable"
+    """Test login_status prioritizes API check with UI fallback when needed."""
+    import sys
+    from unittest.mock import MagicMock, patch
 
-    # Test function signature
-    import inspect as inspect_module
+    session_manager = MagicMock()
+    session_manager.is_sess_valid.return_value = True
+    session_manager.driver = MagicMock()
+    session_manager.sync_cookies_to_requests = MagicMock()
+    session_manager.api_manager.verify_api_login_status.return_value = True
 
-    sig = inspect_module.signature(login_status)
-    assert "session_manager" in sig.parameters, "login_status should accept session_manager parameter"
+    result = login_status(session_manager, disable_ui_fallback=True)
+    assert result is True, "login_status should return API result when definitive"
+
+    session_manager.api_manager.verify_api_login_status.return_value = None
+    with patch.object(
+        sys.modules[__name__],
+        "_perform_ui_login_check_with_navigation",
+        return_value=False,
+    ) as mock_ui_check:
+        result = login_status(session_manager, disable_ui_fallback=False)
+    mock_ui_check.assert_called_once()
+    assert result is False, "login_status should return UI fallback result when API ambiguous"
 
 
 def _test_module_registration() -> None:

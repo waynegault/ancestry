@@ -444,7 +444,6 @@ class APIConfig:
     # Previous parallel processing with ThreadPoolExecutor caused burst requests
     # that triggered Ancestry API rate limits (72-second penalties per 429 error)
     max_concurrency: int = 1  # Sequential processing only
-    thread_pool_workers: int = 2  # Number of worker threads for thread pool (loaded from THREAD_POOL_WORKERS env var)
 
     # Pagination settings
     max_pages: int = 0  # 0 means no limit
@@ -461,7 +460,6 @@ class APIConfig:
 
     # Unified Adaptive Rate Limiter Settings (Token Bucket)
     token_bucket_capacity: float = 10.0  # Token bucket capacity for burst handling (replaces burst_limit)
-    token_bucket_fill_rate: float = 2.0  # Tokens added per second (Deprecated: use requests_per_second)
     rate_limiter_429_backoff: float = 0.90  # Multiplier applied to rate on 429 error (10% reduction - Softer backoff)
     rate_limiter_success_factor: float = 1.05  # Multiplier applied to rate on success (5% increase - Faster recovery)
     rate_limiter_min_rate: float = 0.1  # Minimum allowed requests per second

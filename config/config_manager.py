@@ -200,7 +200,6 @@ class ConfigManager:
 
         safe_rps = 0.3
         self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
-        self._align_token_bucket_fill_rate(api, unsafe_requested)
         self._align_rate_limiter_max_rate(api, unsafe_requested)
 
     @staticmethod
@@ -261,27 +260,6 @@ class ConfigManager:
 
         api.requests_per_second = safe_rps
         return safe_rps
-
-    def _align_token_bucket_fill_rate(self, api: Any, unsafe_requested: bool) -> None:
-        """Keep token bucket fill rate aligned with the enforced RPS."""
-
-        if unsafe_requested:
-            return
-
-        target_rps = getattr(api, "requests_per_second", 0.3)
-        token_fill_rate = getattr(api, "token_bucket_fill_rate", target_rps)
-        if token_fill_rate <= target_rps:
-            return
-
-        if not getattr(type(self), "_token_fill_rate_clamp_logged", False):
-            logger.info(
-                "Token bucket fill rate %.2f higher than requests_per_second %.2f; aligning values",
-                token_fill_rate,
-                target_rps,
-            )
-            setattr(type(self), "_token_fill_rate_clamp_logged", True)
-
-        api.token_bucket_fill_rate = target_rps
 
     def _align_rate_limiter_max_rate(self, api: Any, unsafe_requested: bool) -> None:
         """Keep rate limiter max rate aligned with the enforced RPS."""
@@ -459,7 +437,6 @@ class ConfigManager:
             # Auto-detect API settings
             api_config = {
                 "max_concurrency": min(cpu_count * 2, 16),  # 2x CPU cores, max 16
-                "thread_pool_workers": min(cpu_count * 2, 12),  # Conservative for stability
                 "request_timeout": 30 if memory_gb >= 8 else 60,  # Shorter timeout for high-memory systems
                 "max_retries": 3,
                 "retry_backoff_factor": 2.0,
@@ -671,7 +648,6 @@ class ConfigManager:
 
         api_config = auto_detected.get("api", {})
         print(f"   Concurrency: {api_config.get('max_concurrency', 'Default')}")
-        print(f"   Thread Pool: {api_config.get('thread_pool_workers', 'Default')}")
 
         cache_config = auto_detected.get("cache", {})
         print(f"   Memory Cache: {cache_config.get('memory_cache_size', 'Default')}MB")
@@ -1034,7 +1010,6 @@ class ConfigManager:
         self._set_int_config(config, "api", "max_pages", "MAX_PAGES")
         self._set_int_config(config, "api", "max_relationship_prob_fetches", "MAX_RELATIONSHIP_PROB_FETCHES")
         self._set_int_config(config, "api", "max_concurrency", "MAX_CONCURRENCY")
-        self._set_int_config(config, "api", "thread_pool_workers", "THREAD_POOL_WORKERS")
         self._set_int_config(config, "api", "burst_limit", "BURST_LIMIT")
         self._set_int_config(config, "api", "token_bucket_success_threshold", "TOKEN_BUCKET_SUCCESS_THRESHOLD")
 
@@ -1045,7 +1020,6 @@ class ConfigManager:
         self._set_float_config(config, "api", "backoff_factor", "BACKOFF_FACTOR")
         self._set_float_config(config, "api", "decrease_factor", "DECREASE_FACTOR")
         self._set_float_config(config, "api", "token_bucket_capacity", "TOKEN_BUCKET_CAPACITY")
-        self._set_float_config(config, "api", "token_bucket_fill_rate", "TOKEN_BUCKET_FILL_RATE")
         self._set_float_config(config, "api", "target_match_throughput", "TARGET_MATCH_THROUGHPUT")
         self._set_float_config(config, "api", "max_throughput_catchup_delay", "MAX_THROUGHPUT_CATCHUP_DELAY")
 
