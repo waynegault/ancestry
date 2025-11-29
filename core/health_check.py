@@ -478,7 +478,7 @@ class SessionHealthCheck(HealthCheck):
         try:
             # Check if session is valid
             is_valid = self._session_manager.is_sess_valid()
-            session_age = self._session_manager.session_age_seconds
+            session_age = self._session_manager.session_age_seconds()
             age_value = session_age if session_age is not None else 0.0
 
             if is_valid:

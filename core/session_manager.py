@@ -25,11 +25,10 @@ import time
 from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, NotRequired, Optional, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 from unittest.mock import patch
 
 from core.error_handling import (
-    api_retry,
     error_context,
     graceful_degradation,
     timeout_protection,
@@ -45,8 +44,10 @@ from core.session_cache import (
 
 if TYPE_CHECKING:
     from selenium.webdriver.remote.webdriver import WebDriver as WebDriverType
+    from sqlalchemy.orm import Session as SqlAlchemySession
 else:
     WebDriverType = Any
+    SqlAlchemySession = Any
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -69,7 +70,6 @@ import contextlib
 import importlib
 from functools import lru_cache
 
-from api.api_constants import API_PATH_UUID_NAVHEADER
 from config import config_schema
 from core.api_manager import APIManager
 from core.browser_manager import BrowserManager
@@ -109,7 +109,7 @@ class SessionLifecycleState(Enum):
     DEGRADED = "DEGRADED"
 
 
-from core.protocols import SessionHealthMonitor, SupportsBrowserConsoleLogs
+from core.protocols import SessionHealthMonitor
 from core.session_mixins import SessionHealthMixin, SessionIdentifierMixin
 
 
@@ -219,6 +219,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self.session_health_monitor['is_alive'].set()  # Initially alive
 
         self._metrics_exporter_started = False
+        self._last_session_refresh_reason: str = "startup"
 
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
@@ -244,6 +245,12 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         init_time = time.time() - start_time
         logger.debug(f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}")
+
+    @property
+    def driver(self) -> Optional[WebDriverType]:
+        """Expose the active WebDriver for helpers that still require it."""
+
+        return cast(Optional[WebDriverType], getattr(self.browser_manager, "driver", None))
 
     @staticmethod
     @cached_database_manager()
@@ -324,7 +331,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         return limiter
 
     @staticmethod
-    def _get_utils_attr(attr_name: str) -> Any:
+    def _get_utils_attr_static(attr_name: str) -> Any:
         """Safely retrieve an attribute from the utils module."""
 
         utils_module = _load_utils_module()
@@ -333,12 +340,17 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         except AttributeError as exc:  # pragma: no cover - defensive logging
             raise AttributeError(f"utils module missing attribute '{attr_name}'") from exc
 
+    def _get_utils_attr(self, attr_name: str) -> Any:
+        """Instance-friendly wrapper to satisfy mixin expectations."""
+
+        return self._get_utils_attr_static(attr_name)
+
     @staticmethod
     def _resolve_rate_limiter_factory() -> Optional[Callable[..., Any]]:
         """Import the rate limiter factory if it is available."""
 
         try:
-            return SessionManager._get_utils_attr("get_rate_limiter")
+            return SessionManager._get_utils_attr_static("get_rate_limiter")
         except (ImportError, ModuleNotFoundError, AttributeError):
             return None
 
@@ -660,6 +672,20 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         return ready_checks_ok and identifiers_ok and owner_ok
 
+    def ensure_db_ready(self) -> bool:
+        """Ensure the database layer is initialized and ready for use."""
+
+        if self._db_ready:
+            return True
+
+        try:
+            self._db_ready = bool(self.db_manager.ensure_ready())
+            return self._db_ready
+        except Exception as exc:
+            logger.error(f"Failed to prepare database: {exc}", exc_info=True)
+            self._db_ready = False
+            return False
+
     def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool:
         """
         Ensure the session is ready for operations.
@@ -715,6 +741,25 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         logger.debug(f"Session readiness check completed in {check_time:.3f}s, status: {self.session_ready}")
         self._update_session_metrics()
         return readiness_ok
+
+    def get_db_conn(self) -> Optional[SqlAlchemySession]:
+        """Borrow a database session from the pool after ensuring readiness."""
+
+        if not self.ensure_db_ready():
+            return None
+        return self.db_manager.get_session()
+
+    def return_session(self, session: Optional[SqlAlchemySession]) -> None:
+        """Return a previously borrowed database session."""
+
+        self.db_manager.return_session(session)
+
+    def get_db_conn_context(self) -> contextlib.AbstractContextManager[Optional[SqlAlchemySession]]:
+        """Context manager wrapper around DatabaseManager.get_session_context."""
+
+        if not self.ensure_db_ready():
+            return contextlib.nullcontext(None)
+        return self.db_manager.get_session_context()
 
     def _verify_sess(self) -> bool:
         """
@@ -832,11 +877,6 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             logger.error(f"Session recovery failed: {e}", exc_info=True)
 
         return False
-
-    def _attempt_session_recovery(self, reason: str = "browser_error") -> bool:
-        """Public wrapper so callers avoid touching the private helper."""
-
-        return self._attempt_session_recovery(reason=reason)
 
     # UNIVERSAL SESSION HEALTH MONITORING METHODS
     # (Moved to SessionHealthMixin)
@@ -958,22 +998,22 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         return False, missing_str
 
-    def _perform_final_cookie_check(self, cookie_names: list[str]) -> bool:
+    def _perform_final_cookie_check(self, names: list[str]) -> bool:
         """Perform final cookie check after timeout.
 
         Args:
-            cookie_names: List of required cookie names
+            names: List of required cookie names
 
         Returns:
             True if all cookies found, False otherwise
         """
         try:
             if not self.is_sess_valid():
-                logger.warning(f"Timeout waiting for cookies. Missing: {cookie_names}.")
+                logger.warning(f"Timeout waiting for cookies. Missing: {names}.")
                 return False
 
             current_cookies_lower = self._get_current_cookie_names()
-            missing_final = [name for name in cookie_names if name.lower() not in current_cookies_lower]
+            missing_final = [name for name in names if name.lower() not in current_cookies_lower]
 
             if missing_final:
                 logger.warning(f"Timeout waiting for cookies. Missing: {missing_final}.")
@@ -983,10 +1023,10 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             return True
 
         except Exception:
-            logger.warning(f"Timeout waiting for cookies. Missing: {cookie_names}.")
+            logger.warning(f"Timeout waiting for cookies. Missing: {names}.")
             return False
 
-    def _get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
+    def _get_cookies(self, names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
 
@@ -994,7 +1034,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         and continuous session validity checking.
 
         Args:
-            cookie_names: List of cookie names to wait for
+            names: List of cookie names to wait for
             timeout: Maximum time to wait in seconds
 
         Returns:
@@ -1005,8 +1045,8 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             return False
 
         start_time = time.time()
-        logger.debug(f"Waiting up to {timeout}s for cookies: {cookie_names}...")
-        required_lower = {name.lower() for name in cookie_names}
+        logger.debug(f"Waiting up to {timeout}s for cookies: {names}...")
+        required_lower = {name.lower() for name in names}
         interval = 0.5
         last_missing_str = ""
 
@@ -1018,7 +1058,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
                 all_found, last_missing_str = self._check_cookies_available(required_lower, last_missing_str)
                 if all_found:
-                    logger.debug(f"All required cookies found: {cookie_names}.")
+                    logger.debug(f"All required cookies found: {names}.")
                     return True
 
                 time.sleep(interval)
@@ -1034,7 +1074,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
                 logger.error(f"Unexpected error during cookie retrieval: {e}")
                 time.sleep(interval * 2)
 
-        return self._perform_final_cookie_check(cookie_names)
+        return self._perform_final_cookie_check(names)
 
     def _should_skip_cookie_sync(self, current_time: float, force: bool = False) -> bool:
         """
@@ -1399,6 +1439,11 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         cache_age = time.time() - self._csrf_cache_time
         return cache_age < self._csrf_cache_duration
 
+    def is_csrf_token_valid(self) -> bool:
+        """Public wrapper so callers can check CSRF cache health."""
+
+        return self._is_csrf_token_valid()
+
     def _update_session_metrics(self, force_zero: bool = False) -> None:
         """Update Prometheus session uptime gauge."""
         try:
@@ -1413,11 +1458,18 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         except Exception:
             logger.debug("Failed to update session uptime metric", exc_info=True)
 
-    @staticmethod
-    def _record_session_refresh_metric(reason: str) -> None:
+    def session_age_seconds(self) -> Optional[float]:
+        """Return the age of the current browser session in seconds."""
+
+        if not self.session_start_time:
+            return None
+        return time.time() - self.session_start_time
+
+    def _record_session_refresh_metric(self, reason: str) -> None:
         """Increment session refresh counter for a specific reason."""
         try:
             safe_reason = reason or "unknown"
+            self._last_session_refresh_reason = safe_reason
             metrics().session_refresh.inc(safe_reason)
         except Exception:
             logger.debug("Failed to record session refresh metric", exc_info=True)

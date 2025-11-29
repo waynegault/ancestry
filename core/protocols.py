@@ -60,6 +60,10 @@ class RateLimiterProtocol(Protocol):
         """Report successful request for rate adaptation."""
         ...
 
+    def on_429_error(self, endpoint: str | None = None) -> None:
+        """Report 429 errors so the limiter can back off."""
+        ...
+
 
 class SupportsBrowserConsoleLogs(Protocol):
     """Protocol for WebDrivers that expose get_log for console inspection."""
@@ -78,14 +82,6 @@ class SessionHealthMonitor(TypedDict):
     death_cascade_count: int
     browser_death_count: NotRequired[int]
     last_browser_health_check: NotRequired[float]
-
-    def on_429_error(self, endpoint: str | None = None) -> None:
-        """Report 429 error for rate backoff."""
-        ...
-
-    def get_metrics(self) -> Any:
-        """Get current rate limiter metrics."""
-        ...
 
 
 @runtime_checkable

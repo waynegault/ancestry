@@ -120,7 +120,7 @@ logging.getLogger('uc').setLevel(logging.ERROR)
 
 logger: logging.Logger = logging.getLogger("logger")
 logger.setLevel(logging.DEBUG)  # Set base level to DEBUG; handlers control final output
-# logger.propagate = False  # Removed to allow propagation to root logger (where handlers are)
+logger.propagate = True  # Keep propagation enabled so handlers on the root logger are used
 
 # --- Test framework imports ---
 from testing.test_framework import (
@@ -406,9 +406,9 @@ def logging_config_module_tests() -> bool:
         suite.run_test(
             "Logger creation verification",
             test_logger_creation,
-            "3 logger configuration tests: logger.name→'logger', logger.level→DEBUG, logger.propagate→False.",
+            "3 logger configuration tests: logger.name→'logger', logger.level→DEBUG, logger.propagate→True.",
             "Test that logger is properly created and configured with detailed verification.",
-            "Verify logger.name→'logger' identity, logger.level→DEBUG verbosity, logger.propagate→False isolation.",
+            "Verify logger.name→'logger' identity, logger.level→DEBUG verbosity, logger.propagate→True routing.",
         )
 
         suite.run_test(
@@ -555,7 +555,7 @@ def test_logger_creation():
     logger_tests = [
         ("logger.name", logger.name, "logger", "Logger name configuration"),
         ("logger.level", logger.level, logging.DEBUG, "Logger level setting"),
-        ("logger.propagate", logger.propagate, False, "Logger propagation disabled"),
+        ("logger.propagate", logger.propagate, True, "Logger propagation enabled"),
     ]
 
     print("📋 Testing logger creation and configuration:")
