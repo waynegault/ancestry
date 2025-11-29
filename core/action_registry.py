@@ -8,15 +8,14 @@ for action management throughout the application.
 Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 """
 
+import logging
 import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Optional
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 class ActionCategory(Enum):

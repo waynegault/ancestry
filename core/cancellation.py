@@ -7,6 +7,7 @@ handlers (e.g., timeouts) to request graceful shutdown of in-progress work
 running in other threads. Actions should periodically check is_cancel_requested()
 inside their main loops and exit cleanly when True.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,6 +17,7 @@ from pathlib import Path
 
 class _CancellationState:
     """Manages cancellation state for cooperative shutdown."""
+
     event = threading.Event()
     scope: str | None = None
 
@@ -45,6 +47,7 @@ def cancel_scope() -> str | None:
 # ==============================================
 # Comprehensive Test Suite
 # ==============================================
+
 
 def _test_cancellation_state_initialization() -> bool:
     """Test that cancellation state initializes correctly."""
@@ -106,6 +109,7 @@ def _test_cancel_state_thread_safety() -> bool:
 
     def check_cancel() -> None:
         import time
+
         time.sleep(0.01)  # Small delay to ensure set_cancel runs first
         results.append(is_cancel_requested())
 
@@ -136,10 +140,7 @@ def cancellation_module_tests() -> bool:
     from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
-        suite = TestSuite(
-            "Cooperative Cancellation & Shutdown Signaling",
-            "core/cancellation.py"
-        )
+        suite = TestSuite("Cooperative Cancellation & Shutdown Signaling", "core/cancellation.py")
         suite.start_suite()
 
         suite.run_test(
@@ -201,5 +202,6 @@ run_comprehensive_tests = create_standard_test_runner(cancellation_module_tests)
 
 if __name__ == "__main__":
     import sys
+
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

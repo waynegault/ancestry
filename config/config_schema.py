@@ -9,13 +9,12 @@ and schema versioning support.
 """
 
 # === CORE INFRASTRUCTURE ===
+import logging
 import os
 import sys
 from pathlib import Path
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 

@@ -22,6 +22,7 @@ class GraphContext:
     Used in gedcom_utils.py and relationship_utils.py for BFS/DFS operations.
     Accepts both dict[str, list[str]] and dict[str, set[str]] for flexibility.
     """
+
     id_to_parents: Mapping[str, Collection[str]]
     id_to_children: Mapping[str, Collection[str]]
     current_id: Optional[str] = None
@@ -37,11 +38,12 @@ class RetryContext:
     Used across multiple modules for exponential backoff retry logic.
     Defaults now match .env configuration for consistency.
     """
+
     attempt: int
     max_attempts: int
     max_delay: float
     backoff_factor: float = 1.80  # Matches .env BACKOFF_FACTOR (gentler escalation)
-    current_delay: float = 0.10   # Matches .env INITIAL_DELAY (faster initial retry)
+    current_delay: float = 0.10  # Matches .env INITIAL_DELAY (faster initial retry)
     retries_left: Optional[int] = None
     retry_status_codes: Optional[Union[list[int], set[int]]] = None
     jitter_seconds: float = 0.2
@@ -54,6 +56,7 @@ class MatchIdentifiers:
 
     Used in action6_gather.py for processing DNA matches.
     """
+
     uuid: Optional[str]
     username: str
     in_my_tree: bool
@@ -68,6 +71,7 @@ class ConversationIdentifiers:
 
     Used in action7_inbox.py and action8_messaging.py.
     """
+
     api_conv_id: str
     people_id: Optional[str] = None
     my_pid_lower: Optional[str] = None
@@ -82,6 +86,7 @@ class ApiIdentifiers:
 
     Used in api_utils.py and related modules.
     """
+
     owner_profile_id: str
     api_person_id: Optional[str] = None
     api_tree_id: Optional[str] = None
@@ -95,6 +100,7 @@ class BatchCounters:
 
     Used in action6_gather.py and other batch processing modules.
     """
+
     new: int = 0
     updated: int = 0
     skipped: int = 0
@@ -111,6 +117,7 @@ class BatchConfig:
 
     Used in action8_messaging.py and other batch processing modules.
     """
+
     commit_batch_size: int
     max_memory_mb: int
     max_items: int
@@ -124,6 +131,7 @@ class ConversationProcessingContext:
 
     Groups lookup maps and batch data collections.
     """
+
     existing_persons_map: dict[str, Any]
     existing_conv_logs: dict[tuple[str, str], Any]
     conv_log_upserts_dicts: list[dict[str, Any]]
@@ -142,6 +150,7 @@ class MessagingBatchData:
 
     Used in action8_messaging.py for collecting database updates.
     """
+
     db_logs_to_add_dicts: list[dict[str, Any]]
     person_updates: dict[int, Any]
 
@@ -153,6 +162,7 @@ class ProcessingState:
 
     Used in action8_messaging.py for tracking processing progress.
     """
+
     batch_num: int
     progress_bar: Optional[Any] = None
     processed_in_loop: int = 0
@@ -165,6 +175,7 @@ class NavigationConfig:
 
     Used in utils.py for navigate_to_page_with_retry.
     """
+
     url: str
     selector: str
     target_url_base: str
@@ -181,6 +192,7 @@ class ProgressIndicatorConfig:
 
     Used in core/progress_indicators.py for ProgressIndicator.
     """
+
     unit: str = "items"
     show_memory: bool = True
     show_rate: bool = True
@@ -198,6 +210,7 @@ class PrefetchedData:
 
     Used in action6_gather.py for _prepare_person_operation_data.
     """
+
     combined_details: Optional[dict[str, Any]] = None
     tree_data: Optional[dict[str, Any]] = None
 
@@ -209,6 +222,7 @@ class RelationshipCalcContext:
 
     Used in action11.py for _log_relationship_calculation_checks.
     """
+
     can_attempt_calculation: bool
     is_owner: bool
     can_calc_tree_ladder: bool
@@ -228,6 +242,7 @@ class MessageContext:
 
     Used in action8_messaging.py for message preparation and sending.
     """
+
     person: Any  # Person object
     message_text: str
     message_to_send_key: str
@@ -242,6 +257,7 @@ class ConversationState:
 
     Used in action8_messaging.py for conversation management.
     """
+
     existing_conversation_id: Optional[str] = None
     effective_conv_id: Optional[str] = None
     latest_out_log: Optional[Any] = None  # ConversationLog object
@@ -255,6 +271,7 @@ class MessageFlags:
 
     Used in action8_messaging.py for message sending control.
     """
+
     send_message_flag: bool
     skip_log_reason: str = ""
     message_status: str = ""
@@ -267,6 +284,7 @@ class ExtractionExperimentEvent:
 
     Used in prompt_telemetry.py for record_extraction_experiment_event.
     """
+
     variant_label: str
     prompt_key: str
     parse_success: bool
@@ -291,6 +309,7 @@ class SearchCriteria:
 
     Used in api_search_utils.py and action10.py.
     """
+
     search_name: str
     field_name: Optional[str] = None
     test_name: Optional[str] = None
@@ -305,6 +324,7 @@ class RequestConfig:
 
     Used in utils.py for _api_req and related functions.
     """
+
     url: str
     method: str = "GET"
     headers: Optional[dict[str, str]] = None
@@ -324,16 +344,13 @@ class RequestConfig:
 # Comprehensive Test Suite
 # ==============================================
 
+
 def _test_graph_context_initialization() -> bool:
     """Test GraphContext initialization."""
     id_to_parents = {"person1": ["parent1", "parent2"]}
     id_to_children = {"parent1": ["person1", "person2"]}
 
-    ctx = GraphContext(
-        id_to_parents=id_to_parents,
-        id_to_children=id_to_children,
-        current_id="person1"
-    )
+    ctx = GraphContext(id_to_parents=id_to_parents, id_to_children=id_to_children, current_id="person1")
 
     assert ctx.current_id == "person1", "Should store current_id"
     assert ctx.id_to_parents == id_to_parents, "Should store id_to_parents"
@@ -343,12 +360,7 @@ def _test_graph_context_initialization() -> bool:
 
 def _test_retry_context_initialization() -> bool:
     """Test RetryContext initialization."""
-    ctx = RetryContext(
-        attempt=1,
-        max_attempts=3,
-        max_delay=10.0,
-        backoff_factor=2.0
-    )
+    ctx = RetryContext(attempt=1, max_attempts=3, max_delay=10.0, backoff_factor=2.0)
 
     assert ctx.attempt == 1, "Should store attempt"
     assert ctx.max_attempts == 3, "Should store max_attempts"
@@ -360,11 +372,7 @@ def _test_retry_context_initialization() -> bool:
 def _test_match_identifiers_initialization() -> bool:
     """Test MatchIdentifiers initialization."""
     identifiers = MatchIdentifiers(
-        uuid="uuid-123",
-        username="testuser",
-        in_my_tree=True,
-        log_ref_short="REF001",
-        profile_id="12345"
+        uuid="uuid-123", username="testuser", in_my_tree=True, log_ref_short="REF001", profile_id="12345"
     )
 
     assert identifiers.uuid == "uuid-123", "Should store uuid"
@@ -376,11 +384,7 @@ def _test_match_identifiers_initialization() -> bool:
 
 def _test_progress_indicator_config_initialization() -> bool:
     """Test ProgressIndicatorConfig initialization."""
-    config = ProgressIndicatorConfig(
-        unit="items",
-        show_memory=True,
-        show_rate=True
-    )
+    config = ProgressIndicatorConfig(unit="items", show_memory=True, show_rate=True)
 
     assert config.unit == "items", "Should store unit"
     assert config.show_memory is True, "Should store show_memory"
@@ -390,10 +394,7 @@ def _test_progress_indicator_config_initialization() -> bool:
 
 def _test_search_criteria_initialization() -> bool:
     """Test SearchCriteria initialization."""
-    criteria = SearchCriteria(
-        search_name="John Doe",
-        field_name="name"
-    )
+    criteria = SearchCriteria(search_name="John Doe", field_name="name")
 
     assert criteria.search_name == "John Doe", "Should store search_name"
     assert criteria.field_name == "name", "Should store field_name"
@@ -402,11 +403,7 @@ def _test_search_criteria_initialization() -> bool:
 
 def _test_request_config_initialization() -> bool:
     """Test RequestConfig initialization."""
-    config = RequestConfig(
-        url="https://example.com/api",
-        method="POST",
-        use_csrf_token=True
-    )
+    config = RequestConfig(url="https://example.com/api", method="POST", use_csrf_token=True)
 
     assert config.url == "https://example.com/api", "Should store url"
     assert config.method == "POST", "Should store method"
@@ -437,10 +434,7 @@ def common_params_module_tests() -> bool:
     from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
-        suite = TestSuite(
-            "Common Parameters & Dataclass Definitions",
-            "common_params.py"
-        )
+        suite = TestSuite("Common Parameters & Dataclass Definitions", "common_params.py")
         suite.start_suite()
 
         suite.run_test(

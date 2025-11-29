@@ -8,12 +8,11 @@ application with proper logging, recovery strategies, and user-friendly messages
 """
 
 # === CORE INFRASTRUCTURE ===
+import logging
 import sys
 from pathlib import Path
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib

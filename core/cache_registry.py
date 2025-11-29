@@ -9,6 +9,7 @@ keeps light-weight metadata for operations dashboards.
 
 from __future__ import annotations
 
+import logging
 import sys
 from dataclasses import dataclass
 from importlib import import_module
@@ -16,9 +17,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Callable, Optional
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 StatsFn = Callable[[], dict[str, Any]]
 ActionFn = Callable[[], Any]

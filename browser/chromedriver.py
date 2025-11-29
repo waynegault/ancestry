@@ -752,10 +752,8 @@ def main() -> int:
 
 def test_chromedriver_initialization() -> None:
     """Test ChromeDriver initialization functionality."""
-    if is_function_available("initialize_chrome_driver"):
-        init_func = get_function("initialize_chrome_driver")
-        # Test that function exists and is callable
-        assert callable(init_func)
+    # Test that function exists and is callable
+    assert callable(init_webdvr)
 
 
 def test_preferences_file_reset() -> None:
@@ -789,9 +787,7 @@ def test_chrome_process_cleanup() -> None:
 
 def test_webdriver_initialization() -> None:
     """Test WebDriver initialization with various configurations."""
-    if is_function_available("initialize_chrome_driver"):
-        init_func = get_function("initialize_chrome_driver")
-        assert callable(init_func)
+    assert callable(init_webdvr)
 
 
 def test_chrome_options_creation() -> None:

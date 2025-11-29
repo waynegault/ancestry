@@ -11,15 +11,14 @@ Track 4 Step 2: Cache Stack Unification
 
 from __future__ import annotations
 
+import logging
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Protocol, runtime_checkable
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================

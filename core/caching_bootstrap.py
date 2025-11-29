@@ -3,13 +3,12 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from importlib import import_module
 from pathlib import Path
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 class _CachingState:
@@ -61,9 +60,7 @@ def ensure_caching_initialized() -> bool:
             logger.debug("Caching systems initialized successfully")
             state.initialized = True
         else:
-            logger.debug(
-                "Some caching systems failed to initialize, continuing with reduced performance"
-            )
+            logger.debug("Some caching systems failed to initialize, continuing with reduced performance")
         return cache_init_success
 
     logger.debug("Caching systems already initialized")

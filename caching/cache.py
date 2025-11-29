@@ -1601,10 +1601,8 @@ def _test_error_handling() -> bool:
 def _test_health_monitoring() -> bool:
     """Test cache health monitoring."""
     # Test module health functions
-    if is_function_available("get_cache_stats"):
-        stats_func = get_function("get_cache_stats")
-        stats = stats_func()
-        assert isinstance(stats, dict)
+    stats = get_cache_stats()
+    assert isinstance(stats, dict)
 
     # Test cache directory health
     if cache is not None:

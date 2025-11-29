@@ -30,6 +30,7 @@ _lock = threading.RLock()
 # Global state tracking with enhanced metrics
 class _ImportSystemState:
     """Manages import system state."""
+
     initialized = False
     project_root: Optional[Path] = None
 
@@ -283,8 +284,7 @@ def safe_execute(
     default_return: Optional[R] = None,
     suppress_errors: bool = ...,
     log_errors: bool = ...,
-) -> Callable[P, R]:
-    ...
+) -> Callable[P, R]: ...
 
 
 @overload
@@ -294,8 +294,7 @@ def safe_execute(
     default_return: Optional[R] = None,
     suppress_errors: bool = ...,
     log_errors: bool = ...,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    ...
+) -> Callable[[Callable[P, R]], Callable[P, R]]: ...
 
 
 def safe_execute(
@@ -352,9 +351,7 @@ def _test_function_registration() -> None:
     from testing.test_utilities import mock_func_with_param as test_func
 
     register_function("test_func", test_func)
-    assert is_function_available(
-        "test_func"
-    ), "Function should be available after registration"
+    assert is_function_available("test_func"), "Function should be available after registration"
     assert call_function("test_func", 5) == 10, "Function should execute correctly"
 
 
@@ -362,9 +359,7 @@ def _test_auto_registration() -> None:
     """Test auto-registration of module functions."""
     test_globals = {"test_function": lambda: "test", "_private": lambda: "private"}
     auto_register_module(test_globals, "test_module")
-    assert is_function_available(
-        "test_module.test_function"
-    ), "Auto-registered function should be available"
+    assert is_function_available("test_module.test_function"), "Auto-registered function should be available"
 
 
 def _test_performance_caching() -> None:
@@ -378,9 +373,7 @@ def _test_performance_caching() -> None:
     cache_hit_rate = stats["cache_hit_rate"]
 
     assert duration < 0.1, f"1000 lookups should be fast, took {duration:.3f}s"
-    assert (
-        cache_hit_rate > 50
-    ), f"Cache hit rate should be high, got {cache_hit_rate:.1f}%"
+    assert cache_hit_rate > 50, f"Cache hit rate should be high, got {cache_hit_rate:.1f}%"
 
 
 def _test_import_standardization() -> None:
@@ -404,11 +397,35 @@ def core_imports_module_tests() -> bool:
     suite = TestSuite("Core Imports", "core_imports.py")
 
     tests = [
-        ("Function registration and retrieval", _test_function_registration, "Test function registry", "direct", "Test function registry"),
-        ("Auto-registration", _test_auto_registration, "Test module auto-registration", "direct", "Test module auto-registration"),
+        (
+            "Function registration and retrieval",
+            _test_function_registration,
+            "Test function registry",
+            "direct",
+            "Test function registry",
+        ),
+        (
+            "Auto-registration",
+            _test_auto_registration,
+            "Test module auto-registration",
+            "direct",
+            "Test module auto-registration",
+        ),
         ("Performance caching", _test_performance_caching, "Test lookup caching", "direct", "Test lookup caching"),
-        ("Import standardization", _test_import_standardization, "Test import standardization", "direct", "Test import standardization"),
-        ("Context manager", _test_context_manager, "Test import context manager", "direct", "Test import context manager"),
+        (
+            "Import standardization",
+            _test_import_standardization,
+            "Test import standardization",
+            "direct",
+            "Test import standardization",
+        ),
+        (
+            "Context manager",
+            _test_context_manager,
+            "Test import context manager",
+            "direct",
+            "Test import context manager",
+        ),
     ]
 
     with suppress_logging():

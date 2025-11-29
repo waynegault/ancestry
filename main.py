@@ -9,13 +9,15 @@ messaging, and genealogical research tools.
 """
 
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
+# === CORE INFRASTRUCTURE ===
+import logging
 import os
 
-# === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+from core.logging_config import setup_logging
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # === TEST UTILITIES ===
 # === STANDARD LIBRARY IMPORTS ===
