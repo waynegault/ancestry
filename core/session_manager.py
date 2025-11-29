@@ -16,11 +16,6 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 import sys
 from pathlib import Path
 
-# Add parent directory to path for core_imports
-parent_dir = Path(__file__).resolve().parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)

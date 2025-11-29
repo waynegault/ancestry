@@ -34,11 +34,6 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
 
-if __package__ in {None, ""}:
-    _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-    if str(_PROJECT_ROOT) not in sys.path:
-        sys.path.insert(0, str(_PROJECT_ROOT))
-
 logger = logging.getLogger(__name__)
 
 # Import CircuitBreakerOpenError from error_handling (single source of truth)

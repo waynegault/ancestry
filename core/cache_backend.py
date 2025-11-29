@@ -17,11 +17,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Protocol, runtime_checkable
 
-# Add parent directory for imports when running as script
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)

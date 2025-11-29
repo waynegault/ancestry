@@ -24,11 +24,6 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
-# Add parent directory for imports when running as script
-parent_dir = str(Path(__file__).resolve().parent.parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 from core.cache_backend import CacheHealth, CacheStats
 from standard_imports import setup_module
 

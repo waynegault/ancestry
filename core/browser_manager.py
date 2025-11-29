@@ -12,11 +12,6 @@ import importlib
 import sys
 from pathlib import Path
 
-# Add parent directory to path for standard_imports
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
@@ -26,7 +21,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 import time
 from functools import lru_cache
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional, cast
 

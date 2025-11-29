@@ -11,13 +11,7 @@ and schema versioning support.
 # === CORE INFRASTRUCTURE ===
 import os
 import sys
-
-# Add parent directory to path for standard_imports
 from pathlib import Path
-
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
 
 from standard_imports import setup_module
 
@@ -28,7 +22,6 @@ logger = setup_module(globals(), __name__)
 # === STANDARD LIBRARY IMPORTS ===
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable, ClassVar, Optional
 
 

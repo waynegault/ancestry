@@ -13,10 +13,6 @@ import sys
 import threading
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 
 class _CancellationState:
     """Manages cancellation state for cooperative shutdown."""
@@ -132,7 +128,6 @@ def cancellation_module_tests() -> bool:
     Tests cooperative cancellation signaling and state management.
     """
     import sys
-    from pathlib import Path
 
     parent_dir = str(Path(__file__).resolve().parent.parent)
     if parent_dir not in sys.path:

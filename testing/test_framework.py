@@ -42,10 +42,6 @@ assessment, and systematic testing for professional research workflow reliabilit
 import sys
 from pathlib import Path
 
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 # === CORE INFRASTRUCTURE ===
 from standard_imports import setup_module
 
@@ -509,7 +505,6 @@ def create_isolated_test_environment() -> dict[str, Any]:
 def cleanup_test_environment(env: dict[str, Any]) -> None:
     """Clean up test environment and resources."""
     # Clean up temporary files
-    from pathlib import Path
 
     for temp_file in env.get("temp_files", []):
         try:
@@ -632,7 +627,6 @@ def _test_context_managers() -> None:
         logging.critical("This logging should be suppressed")
 
     # Test that it doesn't raise an exception
-    from pathlib import Path  # Should work fine
 
     assert Path().exists()
 

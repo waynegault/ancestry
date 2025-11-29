@@ -136,9 +136,9 @@ def ensure_imports() -> None:
         return
 
     start_time = time.time()
-    project_root = str(get_project_root())
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
+    # project_root = str(get_project_root())
+    # if project_root not in sys.path:
+    #     sys.path.insert(0, project_root)
 
     _ImportStats.data["initialization_time"] = time.time() - start_time
     _ImportStats.data["imports_resolved"] += 1
@@ -240,19 +240,6 @@ def standardize_module_imports() -> bool:
         ensure_imports()
         return True
     except Exception:
-        # Try common fallback patterns
-        fallback_patterns = [
-            str(Path(__file__).parent.parent),
-            str(Path(__file__).resolve().parent.parent),
-        ]
-
-        for pattern in fallback_patterns:
-            try:
-                if pattern not in sys.path:
-                    sys.path.insert(0, pattern)
-                return True
-            except Exception:
-                continue
         return False
 
 

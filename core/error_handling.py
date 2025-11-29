@@ -9,13 +9,7 @@ application with proper logging, recovery strategies, and user-friendly messages
 
 # === CORE INFRASTRUCTURE ===
 import sys
-
-# Add parent directory to path for standard_imports
 from pathlib import Path
-
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
 
 from standard_imports import setup_module
 

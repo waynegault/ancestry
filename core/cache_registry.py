@@ -16,10 +16,6 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Callable, Optional
 
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-
 from standard_imports import setup_module
 
 logger = setup_module(globals(), __name__)
