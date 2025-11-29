@@ -229,10 +229,6 @@ class SessionManager:
         # Initialize rate limiter (use global singleton for all API calls)
         self.rate_limiter = self._initialize_rate_limiter()
 
-        # Alias for backward compatibility with code that references dynamic_rate_limiter
-        # Both attributes point to the same RateLimiter instance
-        self.dynamic_rate_limiter = self.rate_limiter
-
         # UNIVERSAL SESSION HEALTH MONITORING (moved from action6-specific to universal)
         self.session_health_monitor: SessionHealthMonitor = {
             'is_alive': threading.Event(),
@@ -2052,22 +2048,6 @@ class SessionManager:
     def scraper(self, value: Any) -> None:
         """Set the CloudScraper instance."""
         self._scraper = value
-
-    # Compatibility properties for legacy code
-    @property
-    def browser_needed(self) -> bool:
-        """Get/set browser needed flag."""
-        return self.browser_manager.browser_needed
-
-    @browser_needed.setter
-    def browser_needed(self, value: bool) -> None:
-        """Set browser needed flag."""
-        self.browser_manager.browser_needed = value
-
-    @property
-    def _requests_session(self) -> requests.Session:
-        """Compatibility accessor for the API requests session."""
-        return self.api_manager.requests_session
 
     # Status properties
     @property

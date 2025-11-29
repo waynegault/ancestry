@@ -5432,14 +5432,14 @@ def _log_page_summary(page: int, page_new: int, page_updated: int, page_skipped:
 
 def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
     """
-    Adjusts the dynamic rate limiter's delay based on throttling feedback
+    Adjusts the adaptive rate limiter's delay based on throttling feedback
     received during the processing of the current page.
 
     Args:
         session_manager: The active SessionManager instance.
         current_page: The page number just processed (for logging context).
     """
-    limiter = getattr(session_manager, "dynamic_rate_limiter", None)
+    limiter = session_manager.rate_limiter
     if limiter is None:
         return
     if hasattr(limiter, "is_throttled") and limiter.is_throttled():

@@ -236,10 +236,6 @@ def create_registration_report() -> str:
 """
 
 
-# Backwards compatibility aliases
-function_registry = smart_registry  # For existing code compatibility
-
-
 def core_registry_utils_module_tests() -> bool:
     """Test the enhanced registration system."""
     try:

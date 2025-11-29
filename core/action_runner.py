@@ -369,7 +369,8 @@ def _log_performance_metrics(
 
 def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     if should_close:
-        if session_manager.browser_needed and session_manager.driver_live:
+        browser_manager = session_manager.browser_manager
+        if browser_manager.browser_needed and session_manager.driver_live:
             logger.debug("Closing browser session...")
             session_manager.close_browser()
             logger.debug("Browser session closed. DB connections kept.")
@@ -434,7 +435,7 @@ def exec_actn(
     action_metadata = get_action_metadata(choice)
 
     requires_browser = _determine_browser_requirement(choice, action_metadata)
-    session_manager.browser_needed = requires_browser
+    session_manager.browser_manager.browser_needed = requires_browser
     required_state = _determine_required_state(choice, requires_browser, action_metadata)
 
     try:

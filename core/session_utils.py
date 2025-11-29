@@ -3,8 +3,8 @@
 """
 session_utils.py - Global Session Management with Dependency Injection
 
-This module provides session management using the DI container pattern while
-maintaining backward compatibility with the previous global state approach.
+This module provides session management using a DI container pattern with a
+small in-module cache for authentication banners.
 
 ARCHITECTURE (DI-based):
 1. main.py creates ONE SessionManager at startup
@@ -50,15 +50,15 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-# === GLOBAL SESSION CACHE (LEGACY - KEPT FOR BACKWARD COMPATIBILITY) ===
-# New code should use the DI container pattern below
-class _State:
-    session_manager: Optional[SessionManager] = None
+# === AUTHENTICATION STATE CACHE ===
+
+
+class _AuthCache:
     session_uuid: Optional[str] = None
     auth_banner_printed: bool = False
 
 
-GLOBAL_SESSION = _State()
+_AUTH_CACHE = _AuthCache()
 
 
 # ==============================================
@@ -87,13 +87,12 @@ def register_session_manager(session_manager: SessionManager) -> None:
         container = _get_di_container()
         container.register_instance(SessionManager, session_manager)
         logger.debug("✅ SessionManager registered in DI container")
-    except Exception as e:
-        logger.warning(f"Could not register in DI container: {e}")
+    except Exception as exc:  # pragma: no cover - DI failures are fatal
+        logger.error(f"Could not register SessionManager in DI container: {exc}")
+        raise
 
-    # Also update legacy global state for backward compatibility
-    GLOBAL_SESSION.session_manager = session_manager
-    GLOBAL_SESSION.session_uuid = None
-    logger.debug("✅ SessionManager registered (DI + legacy)")
+    _AUTH_CACHE.session_uuid = None
+    _AUTH_CACHE.auth_banner_printed = False
 
 
 def get_session_manager() -> Optional[SessionManager]:
@@ -111,11 +110,10 @@ def get_session_manager() -> Optional[SessionManager]:
         container = _get_di_container()
         if container.is_registered(SessionManager):
             return container.resolve(SessionManager)
-    except Exception:
-        pass  # Fall through to legacy
-
-    # Fallback to legacy global state
-    return GLOBAL_SESSION.session_manager
+        return None
+    except Exception as exc:  # pragma: no cover - DI failures surface elsewhere
+        logger.debug(f"DI container unavailable when resolving SessionManager: {exc}", exc_info=True)
+        return None
 
 
 def is_session_available() -> bool:
@@ -223,36 +221,38 @@ def _ensure_session_ready_or_raise(session_manager: SessionManager, action_name:
 
 def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: SessionManager) -> str:
     """On first-time auth, cache UUID and print success banner; return UUID."""
+    session_uuid = getattr(session_manager, "my_uuid", None)
+    if not session_uuid:
+        raise AssertionError("UUID not available - session initialization incomplete")
+
     if not already_auth:
-        if not session_manager.my_uuid:
-            raise AssertionError("UUID not available - session initialization incomplete")
-        GLOBAL_SESSION.session_uuid = session_manager.my_uuid
-        if not GLOBAL_SESSION.auth_banner_printed:
-            logger.debug(f"✅ Global session now authenticated: UUID={GLOBAL_SESSION.session_uuid}")
-            GLOBAL_SESSION.auth_banner_printed = True
+        _AUTH_CACHE.session_uuid = session_uuid
+        if not _AUTH_CACHE.auth_banner_printed:
+            logger.debug(f"✅ Global session now authenticated: UUID={session_uuid}")
+            _AUTH_CACHE.auth_banner_printed = True
         else:
-            logger.debug(f"Global session ready (UUID={GLOBAL_SESSION.session_uuid})")
-    if GLOBAL_SESSION.session_uuid is None:
-        raise AssertionError("UUID not cached after session authentication")
-    return GLOBAL_SESSION.session_uuid
+            logger.debug(f"Global session ready (UUID={session_uuid})")
+    elif _AUTH_CACHE.session_uuid is None:
+        _AUTH_CACHE.session_uuid = session_uuid
+
+    return session_uuid
 
 
-def _assert_global_session_exists() -> None:
-    """Raise if the global session has not been registered."""
+def _assert_session_registered() -> None:
+    """Raise if the session has not been registered."""
     if not is_session_available():
         raise RuntimeError(
-            "No session available. main.py must call register_session_manager() "
-            "Ensure main.py has called register_session_manager() before any actions or tests can run. "
-            "If running a script directly, ensure main.py has been run first."
+            "No SessionManager is registered. main.py must call register_session_manager() "
+            "before any actions or tests can run."
         )
 
 
 def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
     """Centralize pre-auth logging to reduce cyclomatic complexity."""
-    if not already_auth and not GLOBAL_SESSION.auth_banner_printed:
+    if not already_auth and not _AUTH_CACHE.auth_banner_printed:
         _log_session_banner(already_auth, env_uuid, action_name)
     elif already_auth:
-        logger.debug(f"Using cached global session (UUID={GLOBAL_SESSION.session_uuid}) for {action_name}")
+        logger.debug(f"Using cached global session (UUID={_AUTH_CACHE.session_uuid}) for {action_name}")
     else:
         logger.debug(f"Re-validating global session state for {action_name}")
 
@@ -271,24 +271,26 @@ def get_authenticated_session(action_name: str = "Session Setup", skip_csrf: boo
     - Requires main.py to have registered the session via register_session_manager().
     - Authenticates the session on first use, then reuses cached credentials.
     """
-    # 1) Validate that a session exists (DI or legacy)
-    _assert_global_session_exists()
+    # 1) Validate that a session exists
+    _assert_session_registered()
 
     # 2) Determine session state and pre-auth logging
     from config import config_schema
 
     env_uuid = getattr(getattr(config_schema, 'api', object()), 'my_uuid', None)
-    already_auth = bool(GLOBAL_SESSION.session_uuid and getattr(get_session_manager(), "my_uuid", None))
+    sm = get_session_manager()
+    if sm is None:  # Safety guard; should not happen after _assert_session_registered
+        raise RuntimeError("SessionManager unexpectedly unavailable")
+
+    cached_uuid = _AUTH_CACHE.session_uuid
+    already_auth = bool(cached_uuid and getattr(sm, "my_uuid", None))
     _pre_auth_logging(already_auth, env_uuid, action_name)
 
     # 3) Ensure session is ready (no-op if cached)
-    sm = get_session_manager()
-    assert sm is not None
     _ensure_session_ready_or_raise(sm, action_name, skip_csrf)
 
     # 4) Finalize first-time auth (cache UUID and print banner once)
     session_uuid = _finalize_first_auth_and_get_uuid(already_auth, sm)
-    GLOBAL_SESSION.session_uuid = session_uuid
 
     return sm, session_uuid
 
@@ -300,10 +302,8 @@ def clear_cached_session() -> None:
     This is useful for testing when you want to reset the cache
     without actually closing the session.
     """
-    # Clear legacy state
-    GLOBAL_SESSION.session_manager = None
-    GLOBAL_SESSION.session_uuid = None
-    GLOBAL_SESSION.auth_banner_printed = False
+    _AUTH_CACHE.session_uuid = None
+    _AUTH_CACHE.auth_banner_printed = False
 
     # Clear DI container registration
     try:
@@ -313,7 +313,7 @@ def clear_cached_session() -> None:
     except Exception:
         pass
 
-    logger.info("Cached session cleared (not closed)")
+    logger.info("Cached session references cleared")
 
 
 def close_cached_session(keep_db: bool = True) -> None:
@@ -328,10 +328,7 @@ def close_cached_session(keep_db: bool = True) -> None:
         logger.info("Closing cached session")
         sm.close_sess(keep_db=keep_db)
 
-    # Clear legacy state
-    GLOBAL_SESSION.session_manager = None
-    GLOBAL_SESSION.session_uuid = None
-    GLOBAL_SESSION.auth_banner_printed = False
+    clear_cached_session()
 
 
 # ==============================================
@@ -391,134 +388,123 @@ def ensure_session_for_tests_sm_only(action_name: str = "Test Session", skip_csr
 
 def _test_global_session_not_set() -> bool:
     """Test that error is raised when no global session is set."""
-    # Clear cache first
-    clear_cached_session()
+    with _session_state_guard():
+        clear_cached_session()
 
-    try:
-        get_authenticated_session("Test Action")
-        raise AssertionError("Should have raised RuntimeError when no global session")
-    except RuntimeError as e:
-        assert "No session available" in str(e)
-        logger.info("✅ Correctly raises error when no global session")
-        return True
+        try:
+            get_authenticated_session("Test Action")
+            raise AssertionError("Should have raised RuntimeError when no global session")
+        except RuntimeError as e:
+            assert "No SessionManager is registered" in str(e)
+            logger.info("✅ Correctly raises error when no global session")
+            return True
 
 
 def _test_global_session_set() -> bool:
     """Test that global session is returned when set."""
     from unittest.mock import MagicMock
 
-    # Setup global session via API
-    mock_sm = MagicMock()
-    mock_sm.my_uuid = "test-uuid-12345"
-    mock_sm.ensure_session_ready.return_value = True
-    register_session_manager(mock_sm)
+    with _session_state_guard():
+        # Setup global session via API
+        mock_sm = MagicMock()
+        mock_sm.my_uuid = "test-uuid-12345"
+        mock_sm.ensure_session_ready.return_value = True
+        register_session_manager(mock_sm)
 
-    # Get global session
-    sm, uuid = get_authenticated_session("Test Action")
+        # Get global session
+        sm, uuid = get_authenticated_session("Test Action")
 
-    # Verify
-    assert sm == mock_sm, "Should return global session manager"
-    assert uuid == "test-uuid-12345", "Should return global UUID"
+        # Verify
+        assert sm == mock_sm, "Should return global session manager"
+        assert uuid == "test-uuid-12345", "Should return global UUID"
 
-    logger.info("✅ Global session returned correctly")
-
-    # Clean up
-    clear_cached_session()
-    return True
+        logger.info("✅ Global session returned correctly")
+        return True
 
 
 def _test_ensure_session_for_tests_wrapper() -> bool:
     """Test ensure_session_for_tests wrapper."""
     from unittest.mock import MagicMock
 
-    # Setup global session via API
-    mock_sm = MagicMock()
-    mock_sm.my_uuid = "wrapper-test-uuid"
-    mock_sm.ensure_session_ready.return_value = True
-    register_session_manager(mock_sm)
+    with _session_state_guard():
+        # Setup global session via API
+        mock_sm = MagicMock()
+        mock_sm.my_uuid = "wrapper-test-uuid"
+        mock_sm.ensure_session_ready.return_value = True
+        register_session_manager(mock_sm)
 
-    # Test wrapper
-    sm, uuid = ensure_session_for_tests("Test Action")
+        # Test wrapper
+        sm, uuid = ensure_session_for_tests("Test Action")
 
-    # Verify
-    assert sm == mock_sm, "Should return session manager"
-    assert uuid == "wrapper-test-uuid", "Should return UUID"
+        # Verify
+        assert sm == mock_sm, "Should return session manager"
+        assert uuid == "wrapper-test-uuid", "Should return UUID"
 
-    logger.info("✅ ensure_session_for_tests wrapper works")
-
-    # Clean up
-    clear_cached_session()
-    return True
+        logger.info("✅ ensure_session_for_tests wrapper works")
+        return True
 
 
 @contextlib.contextmanager
-def _preserve_global_session_state() -> Iterator[None]:
-    prev_manager = GLOBAL_SESSION.session_manager
-    prev_uuid = GLOBAL_SESSION.session_uuid
-    prev_banner = GLOBAL_SESSION.auth_banner_printed
+def _session_state_guard() -> Iterator[None]:
+    prev_manager = get_session_manager()
+    prev_uuid = _AUTH_CACHE.session_uuid
+    prev_banner = _AUTH_CACHE.auth_banner_printed
     try:
         yield
     finally:
-        GLOBAL_SESSION.session_manager = prev_manager
-        GLOBAL_SESSION.session_uuid = prev_uuid
-        GLOBAL_SESSION.auth_banner_printed = prev_banner
+        clear_cached_session()
+        if prev_manager is not None:
+            register_session_manager(prev_manager)
+        _AUTH_CACHE.session_uuid = prev_uuid
+        _AUTH_CACHE.auth_banner_printed = prev_banner
 
 
 def _test_clear_cached_session_resets_state() -> bool:
-    with _preserve_global_session_state():
-        GLOBAL_SESSION.session_manager = cast(SessionManager, mock.Mock(spec=SessionManager))
-        GLOBAL_SESSION.session_uuid = "cached"
+    with _session_state_guard():
         clear_cached_session()
-        assert GLOBAL_SESSION.session_manager is None
-        assert GLOBAL_SESSION.session_uuid is None
+        register_session_manager(cast(SessionManager, mock.Mock(spec=SessionManager)))
+        _AUTH_CACHE.session_uuid = "cached"
+        _AUTH_CACHE.auth_banner_printed = True
+        clear_cached_session()
+        assert get_session_manager() is None
+        assert _AUTH_CACHE.session_uuid is None
+        assert _AUTH_CACHE.auth_banner_printed is False
     return True
 
 
 def _test_close_cached_session_invokes_close() -> bool:
-    with _preserve_global_session_state():
+    with _session_state_guard():
+        clear_cached_session()
         fake_session = mock.Mock(spec=SessionManager)
-        # Use register_session_manager to ensure both DI and legacy state are set
         register_session_manager(fake_session)
-        GLOBAL_SESSION.session_uuid = "cached"
+        _AUTH_CACHE.session_uuid = "cached"
         close_cached_session(keep_db=False)
         fake_session.close_sess.assert_called_once_with(keep_db=False)
-        assert GLOBAL_SESSION.session_manager is None
-        assert GLOBAL_SESSION.session_uuid is None
+        assert get_session_manager() is None
     return True
 
 
-def _test_register_session_manager_updates_both() -> bool:
-    """Test that register_session_manager updates both DI container and legacy state."""
-    with _preserve_global_session_state():
+def _test_register_session_manager_updates_di() -> bool:
+    """Test that register_session_manager registers SessionManager in DI container."""
+    with _session_state_guard():
         from unittest.mock import MagicMock
 
+        clear_cached_session()
         mock_sm = MagicMock(spec=SessionManager)
         mock_sm.my_uuid = "di-test-uuid"
 
-        # Clear state first
-        clear_cached_session()
-
-        # Register via new API
         register_session_manager(mock_sm)
-
-        # Verify legacy state is updated
-        assert GLOBAL_SESSION.session_manager is mock_sm
-
-        # Verify DI-based accessor works
         retrieved = get_session_manager()
         assert retrieved is mock_sm
-
-        # Verify is_session_available
         assert is_session_available() is True
 
-        logger.info("✅ register_session_manager updates both DI and legacy state")
-        clear_cached_session()
+        logger.info("✅ register_session_manager registers SessionManager in DI container")
     return True
 
 
 def _test_requires_session_decorator_raises_when_no_session() -> bool:
     """Test that @requires_session raises SessionNotAvailableError when no session."""
-    with _preserve_global_session_state():
+    with _session_state_guard():
         clear_cached_session()
 
         @requires_session()
@@ -536,9 +522,10 @@ def _test_requires_session_decorator_raises_when_no_session() -> bool:
 
 def _test_requires_session_decorator_with_inject() -> bool:
     """Test that @requires_session can inject session_manager as first argument."""
-    with _preserve_global_session_state():
+    with _session_state_guard():
         from unittest.mock import MagicMock
 
+        clear_cached_session()
         mock_sm = MagicMock(spec=SessionManager)
         mock_sm.my_uuid = "inject-test-uuid"
         mock_sm.ensure_session_ready.return_value = True
@@ -554,28 +541,15 @@ def _test_requires_session_decorator_with_inject() -> bool:
         assert result_val == 42, "Other args should pass through"
 
         logger.info("✅ @requires_session(inject_session=True) works")
-        clear_cached_session()
     return True
 
 
-def _test_get_session_manager_fallback_to_legacy() -> bool:
-    """Test that get_session_manager falls back to legacy state if DI unavailable."""
-    with _preserve_global_session_state():
-        from unittest.mock import MagicMock
-
-        # Clear everything first (including DI container)
+def _test_get_session_manager_without_registration() -> bool:
+    """Test that get_session_manager returns None when nothing is registered."""
+    with _session_state_guard():
         clear_cached_session()
-
-        # Set only legacy state (bypass DI by direct assignment AFTER clearing)
-        mock_sm = MagicMock(spec=SessionManager)
-        GLOBAL_SESSION.session_manager = mock_sm
-
-        # get_session_manager should return it via legacy fallback
-        result = get_session_manager()
-        assert result is mock_sm, "Should fall back to legacy state"
-
-        logger.info("✅ get_session_manager falls back to legacy state")
-        # Don't call clear_cached_session here as _preserve_global_session_state will restore
+        assert get_session_manager() is None
+        logger.info("✅ get_session_manager returns None when unregistered")
     return True
 
 
@@ -627,11 +601,11 @@ def session_utils_module_tests() -> bool:
 
     # New DI-based tests
     suite.run_test(
-        "register_session_manager updates DI and legacy",
-        _test_register_session_manager_updates_both,
-        "Registers session in both DI container and legacy state",
+        "register_session_manager registers with DI",
+        _test_register_session_manager_updates_di,
+        "Registers SessionManager in the DI container",
         "register_session_manager()",
-        "Tests DI container integration with backward compatibility",
+        "Tests DI container integration without legacy state",
     )
 
     suite.run_test(
@@ -651,11 +625,11 @@ def session_utils_module_tests() -> bool:
     )
 
     suite.run_test(
-        "get_session_manager fallback to legacy",
-        _test_get_session_manager_fallback_to_legacy,
-        "Falls back to legacy state if DI container unavailable",
+        "get_session_manager without registration",
+        _test_get_session_manager_without_registration,
+        "Returns None when no SessionManager is registered",
         "get_session_manager()",
-        "Tests backward compatibility with legacy global state",
+        "Verifies absence state handling",
     )
 
     return suite.finish_suite()

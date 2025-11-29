@@ -118,11 +118,9 @@ def _wait_until_not_present(waiter: "WebDriverWait[Any]", locator: Locator) -> b
 
 
 def _get_requests_session(session_manager: "SessionManager") -> RequestsSession:
-    """Return the underlying requests session, with compatibility fallback."""
+    """Return the underlying requests session exposed by SessionManager."""
 
     req_session = getattr(session_manager, "requests_session", None)
-    if req_session is None:
-        req_session = getattr(session_manager, "_requests_session", None)
     if req_session is None:
         raise AttributeError("SessionManager is missing a requests session")
     return cast(RequestsSession, req_session)

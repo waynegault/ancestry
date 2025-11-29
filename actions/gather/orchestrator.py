@@ -617,7 +617,7 @@ class GatherOrchestrator:
 
     def _apply_rate_limiting(self, current_page_num: int) -> None:
         self.hooks.adjust_delay(self.session_manager, current_page_num)
-        limiter = getattr(self.session_manager, "dynamic_rate_limiter", None)
+        limiter = self.session_manager.rate_limiter
         if limiter is not None and hasattr(limiter, "wait"):
             limiter.wait()
 
@@ -966,7 +966,6 @@ def _test_orchestrator_coord_invokes_execution() -> bool:
         session_ready = True
         my_uuid = "UUID"
         rate_limiter = None
-        dynamic_rate_limiter = None
         session_start_time = None
 
         @staticmethod
