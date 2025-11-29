@@ -481,14 +481,18 @@ class SystemCacheManager(BaseCacheModule):
 
 
 # ==============================================
-# UNIFIED CACHE MANAGER
+# CACHE COORDINATOR
 # ==============================================
 
 
-class UnifiedCacheManager:
+class CacheCoordinator:
     """
-    Unified cache manager that coordinates all cache subsystems.
+    Cache coordinator that manages all cache subsystems.
     Provides a single interface for session, API, and system caching.
+
+    Note: This is distinct from core/unified_cache_manager.py's CacheCoordinator,
+    which is a lower-level thread-safe cache implementation.
+    This CacheCoordinator orchestrates multiple specialized cache managers.
     """
 
     def __init__(self) -> None:
@@ -529,8 +533,11 @@ class UnifiedCacheManager:
         return "unified_cache_manager"
 
 
-# Global unified cache manager instance
-_unified_cache_manager = UnifiedCacheManager()
+# Global cache coordinator instance
+_cache_coordinator = CacheCoordinator()
+
+# Backward compatibility alias
+_unified_cache_manager = _cache_coordinator
 
 
 # ==============================================
@@ -538,9 +545,15 @@ _unified_cache_manager = UnifiedCacheManager()
 # ==============================================
 
 
-def get_unified_cache_manager() -> UnifiedCacheManager:
-    """Get the global unified cache manager instance."""
-    return _unified_cache_manager
+def get_cache_coordinator() -> CacheCoordinator:
+    """Get the global cache coordinator instance."""
+    return _cache_coordinator
+
+
+# Backward compatibility alias
+def get_unified_cache_manager() -> CacheCoordinator:
+    """Get the global cache coordinator (deprecated, use get_cache_coordinator)."""
+    return _cache_coordinator
 
 
 def get_session_cache_stats() -> dict[str, Any]:
@@ -621,12 +634,12 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]],
 # ==============================================
 # MODULE-LEVEL TEST FUNCTIONS
 # ==============================================
-# These test functions test the actual UnifiedCacheManager and its subsystems.
+# These test functions test the actual CacheCoordinator and its subsystems.
 
 
 def _test_cache_manager_initialization() -> bool:
     """Test cache manager initialization creates all subsystems."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     assert manager.session_cache is not None, "Session cache should be initialized"
     assert manager.api_cache is not None, "API cache should be initialized"
     assert manager.system_cache is not None, "System cache should be initialized"
@@ -635,7 +648,7 @@ def _test_cache_manager_initialization() -> bool:
 
 def _test_cache_operations() -> bool:
     """Test basic session component cache operations."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Test caching a component
     test_component = {"test": "value", "data": [1, 2, 3]}
     success = manager.session_cache.cache_component("test_component", test_component)
@@ -646,7 +659,7 @@ def _test_cache_operations() -> bool:
 
 def _test_cache_statistics() -> bool:
     """Test cache statistics collection from all subsystems."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     stats = manager.get_comprehensive_stats()
     assert "session_cache" in stats, "Should include session cache stats"
     assert "api_cache" in stats, "Should include API cache stats"
@@ -658,7 +671,7 @@ def _test_cache_statistics() -> bool:
 
 def _test_cache_invalidation() -> bool:
     """Test that cached items expire after TTL."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Cache a test response with very short TTL
     manager.api_cache.cache_api_response("test_service", "test_endpoint", {"param": "value"}, {"result": "data"}, ttl=1)
     # Immediate retrieval should work
@@ -671,7 +684,7 @@ def _test_cache_invalidation() -> bool:
 
 def _test_eviction_policies() -> bool:
     """Test that system cache respects memory limits via GC."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Test memory optimization triggers garbage collection
     result = manager.system_cache.optimize_memory()
     assert "optimized" in result, "Should return optimization status"
@@ -681,7 +694,7 @@ def _test_eviction_policies() -> bool:
 
 def _test_performance_monitoring() -> bool:
     """Test that cache stats track performance metrics."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     api_stats = manager.api_cache.get_stats()
     assert "api_cache_hits" in api_stats, "Should track API cache hits"
     assert "api_cache_misses" in api_stats, "Should track API cache misses"
@@ -693,7 +706,7 @@ def _test_cache_performance() -> bool:
     """Test cache operations complete in reasonable time."""
     import time
 
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     start = time.time()
     for i in range(100):
         manager.api_cache.cache_api_response("perf_test", f"endpoint_{i}", {"i": i}, {"data": i}, ttl=60)
@@ -706,7 +719,7 @@ def _test_concurrent_access() -> bool:
     """Test thread-safe concurrent cache access."""
     import concurrent.futures
 
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     errors: list[str] = []
 
     def cache_operation(thread_id: int) -> None:
@@ -726,7 +739,7 @@ def _test_concurrent_access() -> bool:
 
 def _test_memory_management() -> bool:
     """Test system cache memory tracking."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     memory_mb = manager.system_cache.get_memory_usage_mb()
     assert isinstance(memory_mb, (int, float)), "Should return numeric memory usage"
     assert memory_mb >= 0, "Memory usage should be non-negative"
@@ -744,7 +757,7 @@ def _test_database_integration() -> bool:
 
 def _test_api_integration() -> bool:
     """Test API cache response storage and retrieval."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     test_data = {"matches": [1, 2, 3], "total": 3}
     manager.api_cache.cache_api_response("ancestry", "dna_matches", {"page": 1}, test_data, ttl=300)
     # Stats should reflect the cached item
@@ -755,7 +768,7 @@ def _test_api_integration() -> bool:
 
 def _test_session_management() -> bool:
     """Test session component caching lifecycle."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     stats = manager.session_cache.get_stats()
     assert "cache_hits" in stats, "Should track session cache hits"
     assert "cache_misses" in stats, "Should track session cache misses"
@@ -765,7 +778,7 @@ def _test_session_management() -> bool:
 
 def _test_error_handling() -> bool:
     """Test cache handles invalid inputs gracefully."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Test with None/empty values - should not raise
     try:
         manager.api_cache.cache_api_response("", "", {}, None, ttl=60)
@@ -777,7 +790,7 @@ def _test_error_handling() -> bool:
 
 def _test_recovery_mechanisms() -> bool:
     """Test cache warming recovers from cold start."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # warm_all_caches should not raise even on cold start
     try:
         result = manager.warm_all_caches()
@@ -789,7 +802,7 @@ def _test_recovery_mechanisms() -> bool:
 
 def _test_data_corruption_handling() -> bool:
     """Test cache handles corrupted data gracefully."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Get from non-existent key should return None, not crash
     result = manager.api_cache.get_cached_api_response("nonexistent", "endpoint", {"key": "value"})
     assert result is None, "Non-existent key should return None"
@@ -806,7 +819,7 @@ def _test_data_encryption() -> bool:
 
 def _test_access_control() -> bool:
     """Test cache isolation between services."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Cache to service A
     manager.api_cache.cache_api_response("service_a", "endpoint", {}, {"data": "a"}, ttl=60)
     # Query service B - should not get service A's data
@@ -817,7 +830,7 @@ def _test_access_control() -> bool:
 
 def _test_audit_logging() -> bool:
     """Test cache operations are trackable via stats."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Perform operations
     manager.api_cache.cache_api_response("audit", "test", {}, {"data": 1}, ttl=60)
     manager.api_cache.get_cached_api_response("audit", "test", {})
@@ -841,7 +854,7 @@ def _test_configuration_loading() -> bool:
 
 def _test_environment_adaptation() -> bool:
     """Test cache adapts to environment constraints."""
-    manager = UnifiedCacheManager()
+    manager = CacheCoordinator()
     # Memory optimization should work regardless of environment
     result = manager.system_cache.optimize_memory()
     assert "optimized" in result

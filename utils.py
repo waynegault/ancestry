@@ -54,7 +54,6 @@ from typing import (
     Callable,
     Optional,
     ParamSpec,
-    Protocol,
     TypeGuard,
     TypeVar,
     Union,
@@ -75,6 +74,7 @@ from api.api_constants import (
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile, resolve_retry_policy
+from core.protocols import RateLimiterProtocol, SessionManagerLike
 from observability.metrics_registry import metrics
 
 # === TYPE ALIASES ===
@@ -85,25 +85,6 @@ ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse,
 
 
 DriverType = Optional[WebDriver]
-
-
-class RateLimiterProtocol(Protocol):
-    """Subset of the adaptive rate limiter interface used throughout utils."""
-
-    def wait(self, api_description: Optional[str] = None) -> float:  # pragma: no cover - protocol
-        ...
-
-    def on_429_error(self, api_description: Optional[str] = None) -> None:  # pragma: no cover - protocol
-        ...
-
-    def on_success(self, api_description: Optional[str] = None) -> None:  # pragma: no cover - protocol
-        ...
-
-
-class SessionManagerLike(Protocol):
-    """Minimal SessionManager surface required for browser helpers."""
-
-    driver: DriverType  # pragma: no cover - protocol attribute
 
 
 def _is_session_manager_like(value: Any) -> TypeGuard[SessionManagerLike]:

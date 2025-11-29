@@ -168,6 +168,9 @@ class TaskInfo(TypedDict, total=False):
 # =============================================================================
 # Protocols for Duck Typing
 # =============================================================================
+# Main protocols (RateLimiterProtocol, CacheProtocol, SessionManagerProtocol)
+# are defined in core/protocols.py - import them from there.
+# These are domain-specific protocols that use the types from this module.
 
 
 class Loggable(Protocol):
@@ -186,35 +189,6 @@ class Scoreable(Protocol):
     """Protocol for objects that can be scored."""
 
     def calculate_score(self, criteria: SearchCriteria) -> MatchScore: ...
-
-
-class SessionManagerProtocol(Protocol):
-    """Protocol for session manager interface.
-
-    This allows type checking without importing the actual SessionManager,
-    which helps avoid circular imports.
-    """
-
-    def is_sess_valid(self) -> bool: ...
-    def ensure_session_ready(self) -> bool: ...
-    def ensure_db_ready(self) -> bool: ...
-    def session_age_seconds(self) -> float: ...
-
-
-class RateLimiterProtocol(Protocol):
-    """Protocol for rate limiter interface."""
-
-    def wait(self) -> None: ...
-    def reset(self) -> None: ...
-
-
-class CacheProtocol(Protocol):
-    """Protocol for cache interface."""
-
-    def get(self, key: CacheKey) -> Any | None: ...
-    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> None: ...
-    def delete(self, key: CacheKey) -> bool: ...
-    def clear(self) -> None: ...
 
 
 # =============================================================================

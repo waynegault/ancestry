@@ -135,6 +135,41 @@ class CacheProtocol(Protocol):
         ...
 
 
+@runtime_checkable
+class SessionManagerProtocol(Protocol):
+    """Protocol for session manager interface.
+
+    This allows type checking without importing the actual SessionManager,
+    which helps avoid circular imports.
+    """
+
+    def is_sess_valid(self) -> bool:
+        """Check if session is valid."""
+        ...
+
+    def ensure_session_ready(self) -> bool:
+        """Ensure session is ready for use."""
+        ...
+
+    def ensure_db_ready(self) -> bool:
+        """Ensure database is ready for use."""
+        ...
+
+    def session_age_seconds(self) -> float:
+        """Get session age in seconds."""
+        ...
+
+
+@runtime_checkable
+class SessionManagerLike(Protocol):
+    """Minimal SessionManager surface required for browser helpers.
+
+    This is a simpler protocol for functions that only need browser access.
+    """
+
+    driver: Any  # WebDriver instance
+
+
 # =============================================================================
 # TypedDict Definitions (Structured Dictionary Types)
 # =============================================================================
