@@ -161,8 +161,8 @@ def _invoke_ruff(args: list[str], timeout: int = 30) -> subprocess.CompletedProc
         return subprocess.run(command, check=False, capture_output=True, text=True, cwd=Path.cwd(), timeout=timeout)
     except subprocess.TimeoutExpired:
         print(f"⚠️ LINTER: Ruff command timed out after {timeout}s: {' '.join(args)}")
-        # Return a fake CompletedProcess to allow tests to continue
-        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr=f"Timeout after {timeout}s")
+        # Return a failed CompletedProcess to indicate timeout
+        return subprocess.CompletedProcess(args=command, returncode=1, stdout="", stderr=f"Timeout after {timeout}s")
 
 
 def _ruff_available() -> bool:

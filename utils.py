@@ -62,7 +62,7 @@ from selenium.webdriver.remote.webelement import WebElement
 # (Note: Some imports done locally to avoid circular dependencies)
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
-from core.error_handling import RetryPolicyProfile, resolve_retry_policy
+from core.error_handling import RetryPolicyProfile
 from core.protocols import RateLimiterProtocol, SessionManagerLike
 from observability.metrics_registry import metrics
 
@@ -435,20 +435,14 @@ def log_action_status(action_name: str, success: bool, error_msg: Optional[str] 
         details=details,
     )
 
+    # === API REQUEST CONFIGURATION ===
 
-# === API REQUEST CONFIGURATION ===
+
 @dataclass
 class ApiRequestConfig:
-    """
-    Configuration object for API requests to reduce parameter count.
-    Encapsulates all parameters needed for _api_req and related functions.
-    """
+    """Configuration for API requests."""
 
-    # Required parameters
     url: str
-    driver: DriverType
-    session_manager: "SessionManager"
-
     # HTTP method and data
     method: str = "GET"
     data: Optional[dict[str, Any]] = None
@@ -479,6 +473,7 @@ class ApiRequestConfig:
     # Metadata
     api_description: str = "API Call"
     attempt: int = 1
+    session_manager: Optional["SessionManager"] = None
 
 
 # === MODULE CONSTANTS ===
@@ -1391,10 +1386,11 @@ def _sync_cookies_for_request(
 
 
 def _get_rate_limiter_from_session(
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> Optional[RateLimiterProtocol]:
     """Return the adaptive rate limiter attached to the session, if any."""
-
+    if session_manager is None:
+        return None
     rate_limiter = getattr(session_manager, "rate_limiter", None)
     if rate_limiter is None:
         return None
@@ -1402,7 +1398,7 @@ def _get_rate_limiter_from_session(
 
 
 def _apply_rate_limiting(
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
     api_description: str,
     attempt: int = 1,
 ) -> float:
@@ -1436,158 +1432,99 @@ def _apply_rate_limiting(
     return wait_time
 
 
-# End of _apply_rate_limiting
+def _calculate_retry_sleep_time(
+    current_delay: float,
+    max_delay: float,
+    jitter_seconds: float = 0.2,
+) -> float:
+    """Calculate sleep time for retry with jitter."""
+    sleep_time = current_delay
+    if jitter_seconds > 0:
+        sleep_time += random.uniform(0, jitter_seconds)
+    return min(sleep_time, max_delay)
 
-# _log_request_details removed - unused function (70 lines)
 
-
-def _prepare_api_request(
-    config: ApiRequestConfig,
-) -> dict[str, Any]:
-    """
-    Prepares all aspects of an API request including headers, cookies, and rate limiting.
-
-    Args:
-        config: ApiRequestConfig containing all request parameters
-
-    Returns:
-        Dictionary containing all prepared request parameters
-    """
-    sel_cfg = config_schema.selenium  # Use new config system
-
-    # Prepare base headers
-    base_headers = _prepare_base_headers(
-        method=config.method,
-        api_description=config.api_description,
-        referer_url=config.referer_url,
-        headers=config.headers,
-    )
-
-    # Prepare request details
-    # Timeout tuple: (connect_timeout, read_timeout)
-    # - connect_timeout: TCP handshake must complete within 30s
-    # - read_timeout: Response must arrive within 90s after connection
-    # This prevents indefinite hangs at both connection and response levels
-    request_timeout = config.timeout if config.timeout is not None else sel_cfg.api_timeout
-    # Convert single timeout to tuple for requests library
-    timeout_tuple = (30, request_timeout)
-
-    req_session = _get_requests_session(config.session_manager)
-    effective_cookie_jar = config.cookie_jar if config.cookie_jar is not None else req_session.cookies
-    http_method = config.method.upper()
-
-    # Handle specific API quirks (e.g., allow_redirects)
-    effective_allow_redirects = config.allow_redirects
-    # Note: Match List API should allow redirects (as it did in working version from 2 months ago)
-
-    logger.debug(
-        f"[{config.api_description}] Preparing Request: Method={http_method}, URL={config.url}, Timeout={timeout_tuple}s, AllowRedirects={effective_allow_redirects}"
-    )
-
-    # Sync cookies
-    _sync_cookies_for_request(
-        session_manager=config.session_manager,
-        driver=config.driver,
-        api_description=config.api_description,
-        attempt=config.attempt,
-    )
-
-    # Generate final headers
-    final_headers = _prepare_api_headers(
-        session_manager=config.session_manager,
-        driver=config.driver,
-        api_description=config.api_description,
-        base_headers=base_headers,
-        use_csrf_token=config.use_csrf_token,
-        add_default_origin=config.add_default_origin,
-    )
-
-    # Apply rate limiting
-    _apply_rate_limiting(
-        session_manager=config.session_manager,
-        api_description=config.api_description,
-        attempt=config.attempt,
-    )
-
-    # Use json parameter if provided, otherwise use json_data
-    effective_json_data = config.json if config.json is not None else config.json_data
-
-    # Return all prepared request parameters
-    return {
-        "method": http_method,
+def _prepare_api_request(config: ApiRequestConfig) -> dict[str, Any]:
+    """Prepare arguments for requests.Session.request."""
+    request_params = {
+        "method": config.method,
         "url": config.url,
-        "headers": final_headers,
-        "data": config.data,
-        "json": effective_json_data,  # Use 'json' for requests.request, not 'json_data'
-        "timeout": timeout_tuple,  # (connect_timeout, read_timeout) tuple
-        "verify": True,  # Standard verification
-        "allow_redirects": effective_allow_redirects,
-        "cookies": effective_cookie_jar,
+        "headers": config.headers,
+        "timeout": config.timeout,
+        "allow_redirects": config.allow_redirects,
     }
 
+    if config.json_data is not None:
+        request_params["json"] = config.json_data
+    elif config.json is not None:
+        request_params["json"] = config.json
+    elif config.data is not None:
+        request_params["data"] = config.data
 
-# End of _prepare_api_request
+    if config.cookie_jar is not None:
+        request_params["cookies"] = config.cookie_jar
+
+    return request_params
 
 
 def _execute_api_request(
-    session_manager: "SessionManager",
-    api_description: str,
+    session_manager: Optional["SessionManager"],
     request_params: dict[str, Any],
-    attempt: int = 1,
+    api_description: str,
 ) -> RequestsResponseTypeOptional:
-    """
-    Executes an API request using the prepared request parameters.
+    """Execute the API request using the session manager."""
+    if (
+        session_manager
+        and hasattr(session_manager, "api_manager")
+        and hasattr(session_manager.api_manager, "_requests_session")
+    ):
+        try:
+            return session_manager.api_manager._requests_session.request(**request_params)
+        except Exception as e:
+            logger.error(f"{api_description}: Request failed via APIManager: {e}")
+            return None
 
-    Args:
-        session_manager: The session manager instance
-        api_description: Description of the API being called
-        request_params: Dictionary containing all request parameters
-        attempt: The current attempt number
+    # Fallback
+    import requests
+
+    try:
+        return requests.request(**request_params)
+    except Exception as e:
+        logger.error(f"{api_description}: Request failed via requests: {e}")
+        return None
+
+
+def _handle_failed_request_response(
+    response: RequestsResponseTypeOptional,
+    retry_ctx: RetryContext,
+    api_description: str,
+    session_manager: Optional["SessionManager"],
+) -> tuple[bool, int, float]:
+    """
+    Handle failed request response (status code check).
 
     Returns:
-        The response object from the request, or None if an error occurred
+        Tuple of (should_continue, retries_left, current_delay)
     """
-    req_session = _get_requests_session(session_manager)
+    status = response.status_code if response else 0
+    reason = response.reason if response else "Unknown Error"
 
-    try:
-        # Execute the request
-        return req_session.request(**request_params)
+    # Check if retryable
+    is_retryable = False
+    if retry_ctx.retry_status_codes:
+        is_retryable = status in retry_ctx.retry_status_codes
 
-    except RequestException as e:
-        logger.warning(f"[_api_req Attempt {attempt} '{api_description}'] RequestException: {type(e).__name__} - {e}")
-
-        # REMOVED: RetryError tracking here is redundant - each 429 is already tracked in the retry loop (line 2316)
-        # Previously this caused cascading delays: 5 retries x increase_delay() + 1 final increase = 6x increases per failed API call
-        # Now delays are increased exactly once per actual 429 status code in _handle_status_code_response()
-
-        return None
-    except Exception as e:
-        logger.critical(
-            f"{api_description}: CRITICAL Unexpected error during request attempt {attempt}: {e}",
-            exc_info=True,
+    if is_retryable:
+        should_continue, _, retries_left, current_delay = _handle_retryable_status(
+            response, status, reason, retry_ctx, api_description, session_manager
         )
-        return None
+        return should_continue, retries_left, current_delay
 
+    # Non-retryable error
+    _handle_error_status(response, status, reason, api_description, session_manager)
+    return False, (retry_ctx.retries_left or 0) - 1, retry_ctx.current_delay
 
-# End of _execute_api_request
-
-# Helper functions for _api_req
-
-
-def _validate_api_req_prerequisites(
-    session_manager: "SessionManager",
-    api_description: str,
-) -> bool:
-    """Validate prerequisites for API request."""
-    if not session_manager:
-        logger.error(f"{api_description}: Aborting - SessionManager or internal requests_session missing.")
-        return False
-
-    try:
-        _get_requests_session(session_manager)
-    except AttributeError:
-        logger.error(f"{api_description}: Aborting - SessionManager or internal requests_session missing.")
-        return False
+    # Helper functions for _api_req
 
     if not config_schema:
         logger.error(f"{api_description}: Aborting - Config schema not loaded.")
@@ -1596,66 +1533,13 @@ def _validate_api_req_prerequisites(
     return True
 
 
-def _calculate_retry_sleep_time(
-    current_delay: float,
-    backoff_factor: float,
-    attempt: int,
-    max_delay: float,
-    jitter_seconds: float,
-) -> float:
-    """Calculate sleep time for retry with exponential backoff and jitter."""
-    return _calculate_sleep_time(
-        current_delay,
-        backoff_factor,
-        attempt,
-        max_delay,
-        jitter_seconds,
-    )
-
-
-def _handle_failed_request_response(
-    retries_left: int,
-    max_retries: int,
-    api_description: str,
-    current_delay: float,
-    backoff_factor: float,
-    attempt: int,
-    max_delay: float,
-    jitter_seconds: float,
-) -> tuple[bool, int, float]:
-    """
-    Handle failed request response (None).
-
-    Returns:
-        Tuple of (should_continue, new_retries_left, new_current_delay)
-    """
-    retries_left -= 1
-    if retries_left <= 0:
-        logger.error(f"{api_description}: Request failed after {max_retries} attempts.")
-        return False, retries_left, current_delay
-
-    sleep_time = _calculate_retry_sleep_time(
-        current_delay,
-        backoff_factor,
-        attempt,
-        max_delay,
-        jitter_seconds,
-    )
-    logger.warning(
-        f"{api_description}: Request error (Attempt {attempt}/{max_retries}). Retrying in {sleep_time:.2f}s..."
-    )
-    time.sleep(sleep_time)
-    new_delay = current_delay * backoff_factor
-    return True, retries_left, new_delay
-
-
 def _handle_retryable_status(
     response: RequestsResponseTypeOptional,
     status: int,
     reason: str,
     retry_ctx: RetryContext,
     api_description: str,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> tuple[bool, Optional[RequestsResponseTypeOptional], int, float]:
     """
     Handle retryable status codes.
@@ -1733,7 +1617,7 @@ def _handle_error_status(
     status: int,
     reason: str,
     api_description: str,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
 ) -> RequestsResponseTypeOptional:
     """Handle non-retryable error status codes."""
     # For login verification API, use debug level for 401/403 errors
@@ -1747,7 +1631,8 @@ def _handle_error_status(
             logger.debug(f"{api_description}: API call returned {status} {reason}. User not logged in.")
         else:
             logger.warning(f"{api_description}: API call failed {status} {reason}. Session expired/invalid?")
-        session_manager.session_ready = False
+        if session_manager:
+            session_manager.session_ready = False
     else:
         logger.error(f"{api_description}: Non-retryable error: {status} {reason}.")
 
@@ -1849,8 +1734,6 @@ def _handle_request_exception(
 
     sleep_time = _calculate_retry_sleep_time(
         current_delay,
-        backoff_factor,
-        attempt,
         max_delay,
         jitter_seconds,
     )
@@ -1866,7 +1749,7 @@ def _handle_response_status(
     response: Any,
     retry_ctx: RetryContext,
     api_description: str,
-    session_manager: "SessionManager",
+    session_manager: Optional["SessionManager"],
     force_text_response: bool,
     request_params: dict[str, Any],
     metrics_endpoint: str,
@@ -1957,6 +1840,84 @@ def _handle_response_status(
     return (None, True, retries_left, current_delay, None)
 
 
+def _api_req(
+    session_manager: Optional["SessionManager"],
+    url: str,
+    method: str = "GET",
+    data: Optional[dict[str, Any]] = None,
+    json_data: Optional[dict[str, Any]] = None,
+    headers: Optional[dict[str, str]] = None,
+    referer_url: Optional[str] = None,
+    timeout: Optional[int] = None,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+    max_delay: float = 60.0,
+    retry_status_codes: Optional[Union[list[int], set[int]]] = None,
+    retry_policy: Optional[Union[str, RetryPolicyProfile]] = "api",
+    api_description: str = "API Call",
+    force_text_response: bool = False,
+    use_csrf_token: bool = True,
+    add_default_origin: bool = True,
+) -> ApiResponseType:
+    """
+    Execute an API request with retries, rate limiting, and error handling.
+    """
+    # Prepare headers if session_manager is available
+    final_headers = headers or {}
+    if session_manager:
+        driver = session_manager.driver
+        final_headers = _prepare_api_headers(
+            session_manager,
+            driver,
+            api_description,
+            final_headers,
+            use_csrf_token,
+            add_default_origin,
+        )
+
+    config = ApiRequestConfig(
+        url=url,
+        method=method,
+        data=data,
+        json_data=json_data,
+        headers=final_headers,
+        referer_url=referer_url,
+        timeout=timeout,
+        max_retries=max_retries,
+        initial_delay=initial_delay,
+        backoff_factor=backoff_factor,
+        max_delay=max_delay,
+        retry_status_codes=retry_status_codes or [429, 500, 502, 503, 504],
+        retry_policy=retry_policy,
+        api_description=api_description,
+        force_text_response=force_text_response,
+        session_manager=session_manager,
+        use_csrf_token=use_csrf_token,
+        add_default_origin=add_default_origin,
+    )
+    return _api_req_impl(config)
+
+
+def _api_req_impl(config: ApiRequestConfig) -> ApiResponseType:
+    """Implementation of API request logic using ApiRequestConfig."""
+    retries_left = config.max_retries
+    current_delay = config.initial_delay
+
+    while True:
+        response, should_continue, retries_left, current_delay, _ = _process_request_attempt(
+            config, retries_left, current_delay
+        )
+
+        if response is not None:
+            return response
+
+        if not should_continue:
+            return None
+
+        config.attempt += 1
+
+
 def _process_request_attempt(
     config: ApiRequestConfig,
     retries_left: int,
@@ -1981,48 +1942,52 @@ def _process_request_attempt(
         metrics_method = str(request_params.get("method", config.method)).upper()
 
         attempt_start = time.perf_counter()
+
+        # Apply rate limiting
+        _apply_rate_limiting(config.session_manager, config.api_description, config.attempt)
+
         response = _execute_api_request(
             session_manager=config.session_manager,
-            api_description=config.api_description,
             request_params=request_params,
-            attempt=config.attempt,
+            api_description=config.api_description,
         )
         attempt_duration = time.perf_counter() - attempt_start
         attempt_duration = _resolve_request_duration(response, attempt_duration)
 
+        retry_ctx = RetryContext(
+            attempt=config.attempt,
+            max_attempts=config.max_retries,
+            max_delay=config.max_delay,
+            backoff_factor=config.backoff_factor,
+            current_delay=current_delay,
+            retries_left=retries_left,
+            retry_status_codes=config.retry_status_codes,
+            jitter_seconds=config.jitter_seconds,
+        )
+
         # Handle failed request (response is None)
         if response is None:
-            should_continue, retries_left, current_delay = _handle_failed_request_response(
-                retries_left,
-                config.max_retries,
-                config.api_description,
-                current_delay,
-                config.backoff_factor,
-                config.attempt,
-                config.max_delay,
-                config.jitter_seconds,
-            )
-            result_should_continue = should_continue
-            result_label = "retry" if result_should_continue else "failure"
-            _record_api_metrics(
-                metrics_endpoint,
-                metrics_method,
-                result_label,
-                "error",
-                attempt_duration,
-            )
-        else:
-            # Handle response status
-            retry_ctx = RetryContext(
-                attempt=config.attempt,
-                max_attempts=config.max_retries,
-                max_delay=config.max_delay,
-                backoff_factor=config.backoff_factor,
-                current_delay=current_delay,
-                retries_left=retries_left,
-                retry_status_codes=config.retry_status_codes,
-                jitter_seconds=config.jitter_seconds,
-            )
+            if config.session_manager:
+                should_continue, retries_left, current_delay = _handle_failed_request_response(
+                    response,
+                    retry_ctx,
+                    config.api_description,
+                    config.session_manager,
+                )
+                result_should_continue = should_continue
+                result_label = "retry" if result_should_continue else "failure"
+                _record_api_metrics(
+                    metrics_endpoint,
+                    metrics_method,
+                    result_label,
+                    "error",
+                    attempt_duration,
+                )
+                return (None, result_should_continue, retries_left, current_delay, None)
+            # Fallback if no session manager
+            return (None, False, 0, current_delay, None)
+        # Handle response status
+        if config.session_manager:
             return _handle_response_status(
                 response,
                 retry_ctx,
@@ -2034,6 +1999,10 @@ def _process_request_attempt(
                 metrics_method,
                 attempt_duration,
             )
+        # Fallback if no session manager
+        if response.ok:
+            return (response, False, retries_left, current_delay, None)
+        return (response, False, 0, current_delay, None)
 
     except RequestException as e:
         attempt_duration = time.perf_counter() - attempt_start
@@ -2075,133 +2044,6 @@ def _process_request_attempt(
         result_should_continue = False
 
     return (result_response, result_should_continue, retries_left, current_delay, result_exception)
-
-
-def _execute_request_with_retries(
-    config: ApiRequestConfig,
-) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
-    """Execute API request with retry logic."""
-    retries_left = config.max_retries
-    last_exception: Optional[Exception] = None
-    response: RequestsResponseTypeOptional = None
-    current_delay = config.initial_delay
-
-    while retries_left > 0:
-        attempt = config.max_retries - retries_left + 1
-        config.attempt = attempt
-
-        result, should_continue, retries_left, current_delay, exception = _process_request_attempt(
-            config, retries_left, current_delay
-        )
-
-        if exception:
-            last_exception = exception
-
-        if not should_continue:
-            return result
-
-        if result is not None:
-            response = result
-
-    # Should only be reached if loop completes without success
-    if response is None:
-        logger.error(f"{config.api_description}: Exited retry loop. Last Exception: {last_exception}.")
-        return None
-
-    # Return the last response (this should be a non-retryable error response)
-    logger.debug(
-        f"[_api_req '{config.api_description}'] Returning last Response object (Status: {response.status_code})."
-    )
-    return response
-
-
-def _api_req(
-    url: str,
-    driver: DriverType,
-    session_manager: "SessionManager",
-    method: str = "GET",
-    data: Optional[dict[str, Any]] = None,
-    json_data: Optional[dict[str, Any]] = None,
-    json: Optional[dict[str, Any]] = None,
-    use_csrf_token: bool = True,
-    headers: Optional[dict[str, str]] = None,
-    referer_url: Optional[str] = None,
-    api_description: str = "API Call",
-    timeout: Optional[int] = None,
-    cookie_jar: Optional[RequestsCookieJar] = None,
-    allow_redirects: bool = True,
-    force_text_response: bool = False,
-    add_default_origin: bool = True,
-) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
-    """
-    Makes an HTTP request using the shared requests.Session from SessionManager.
-    Handles runtime header generation, cookie synchronization, rate limiting,
-    retries, and basic response processing. Includes enhanced logging.
-
-    NOTE: This function maintains backward compatibility with 16 parameters.
-    New code should use _api_req_impl(ApiRequestConfig) instead.
-
-    Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
-             or Response object on non-retryable error/redirect disabled.
-    """
-    # Convert parameters to ApiRequestConfig and delegate to internal implementation
-    config = ApiRequestConfig(
-        url=url,
-        driver=driver,
-        session_manager=session_manager,
-        method=method,
-        data=data,
-        json_data=json_data,
-        json=json,
-        use_csrf_token=use_csrf_token,
-        headers=headers,
-        referer_url=referer_url,
-        api_description=api_description,
-        timeout=timeout,
-        cookie_jar=cookie_jar,
-        allow_redirects=allow_redirects,
-        force_text_response=force_text_response,
-        add_default_origin=add_default_origin,
-    )
-    return _api_req_impl(config)
-
-
-def _api_req_impl(config: ApiRequestConfig) -> Union[ApiResponseType, RequestsResponseTypeOptional]:
-    """
-    Internal implementation of _api_req using ApiRequestConfig.
-    Makes an HTTP request using the shared requests.Session from SessionManager.
-    Handles runtime header generation, cookie synchronization, rate limiting,
-    retries, and basic response processing. Includes enhanced logging.
-
-    Returns: Parsed JSON (dict/list), raw text (str), None on retryable failure,
-             or Response object on non-retryable error/redirect disabled.
-    """
-    # Validate prerequisites
-    if not _validate_api_req_prerequisites(config.session_manager, config.api_description):
-        return None
-
-    # Get retry configuration using shared retry policy profiles
-    resolved_policy = resolve_retry_policy(getattr(config, "retry_policy", None), default="api")
-    retry_settings = _get_retry_config(
-        max_retries=None,
-        initial_delay=None,
-        backoff_factor=None,
-        retry_on_status_codes=None,
-        policy=resolved_policy,
-    )
-
-    # Update config with retry parameters
-    config.max_retries = retry_settings["max_retries"]
-    config.initial_delay = retry_settings["initial_delay"]
-    config.backoff_factor = retry_settings["backoff_factor"]
-    config.max_delay = retry_settings["max_delay"]
-    config.retry_status_codes = retry_settings["retry_codes"]
-    config.jitter_seconds = retry_settings["jitter_seconds"]
-    if resolved_policy is not None:
-        config.retry_policy = resolved_policy.name
-
-    # Execute request with retry loop
-    return _execute_request_with_retries(config)
 
 
 # End of _api_req
@@ -4142,85 +3984,6 @@ def main() -> None:
 # End of main
 
 
-def _create_stubbed_session_manager() -> tuple[
-    "SessionManager",
-    Any,
-    Any,
-    Any,
-    Any,
-]:
-    """Create a SessionManager instance with patched dependencies for tests."""
-    from contextlib import ExitStack, nullcontext
-    from types import SimpleNamespace
-    from unittest.mock import MagicMock, patch
-
-    import requests
-
-    from core.session_manager import SessionManager
-
-    mock_db = MagicMock()
-    mock_db.is_ready = True
-    mock_db.ensure_ready.return_value = True
-    mock_db.get_session.return_value = MagicMock()
-    mock_db.get_session_context.return_value = nullcontext()
-    mock_db.close_connections.return_value = None
-    mock_db.return_session.return_value = None
-
-    mock_browser = MagicMock()
-    mock_browser.browser_needed = False
-    mock_browser.driver_live = False
-    mock_browser.driver = None
-    mock_browser.ensure_driver_live.return_value = True
-    mock_browser.start_browser.return_value = True
-    mock_browser.close_browser.return_value = None
-    mock_browser.create_new_tab.return_value = "tab-id"
-
-    mock_api = MagicMock()
-    mock_api._requests_session = requests.Session()
-    mock_api.my_profile_id = None
-    mock_api.my_uuid = None
-    mock_api.my_tree_id = None
-    mock_api.csrf_token = None
-
-    mock_validator = MagicMock()
-
-    mock_config = SimpleNamespace(api=SimpleNamespace(username="test-user", password="test-pass", tree_name=None))
-
-    with ExitStack() as stack:
-        stack.enter_context(
-            patch(
-                "core.session_manager.SessionManager._get_cached_database_manager",
-                return_value=mock_db,
-            )
-        )
-        stack.enter_context(
-            patch(
-                "core.session_manager.SessionManager._get_cached_browser_manager",
-                return_value=mock_browser,
-            )
-        )
-        stack.enter_context(
-            patch(
-                "core.session_manager.SessionManager._get_cached_api_manager",
-                return_value=mock_api,
-            )
-        )
-        stack.enter_context(
-            patch(
-                "core.session_manager.SessionManager._get_cached_session_validator",
-                return_value=mock_validator,
-            )
-        )
-        stack.enter_context(patch("core.session_manager.config_schema", mock_config))
-        stack.enter_context(patch("core.session_manager.SessionManager._initialize_cloudscraper"))
-        session_manager = SessionManager()
-
-    return session_manager, mock_db, mock_browser, mock_api, mock_validator
-
-
-# === TEST HELPER FUNCTIONS ===
-
-
 def _test_parse_cookie() -> None:
     """Test cookie parsing with various cookie string formats"""
     test_cases = [
@@ -4352,34 +4115,6 @@ def _test_decorators() -> None:
     assert result == "success", "Retry decorator should work"
 
 
-def _test_retry_policy_resolution() -> None:
-    """Test that retry configurations honor resolved policy profiles."""
-    policy = RetryPolicyProfile(
-        name="test-policy",
-        max_attempts=5,
-        initial_delay_seconds=1.75,
-        backoff_factor=1.6,
-        max_delay_seconds=12.0,
-        jitter_seconds=0.4,
-        retry_on=(RuntimeError,),
-        stop_on=(ValueError,),
-    )
-
-    config = _get_retry_config(
-        max_retries=None,
-        initial_delay=None,
-        backoff_factor=None,
-        retry_on_status_codes=None,
-        policy=policy,
-    )
-
-    assert config["max_retries"] == policy.max_attempts, "Policy max_attempts should win"
-    assert config["initial_delay"] == policy.initial_delay_seconds, "Policy initial delay should win"
-    assert config["backoff_factor"] == policy.backoff_factor, "Policy backoff should win"
-    assert config["max_delay"] == policy.max_delay_seconds, "Policy max delay should win"
-    assert config["jitter_seconds"] == policy.jitter_seconds, "Policy jitter should win"
-
-
 def _test_circuit_breaker() -> None:
     """Test CircuitBreaker state transitions and functionality using core.error_handling implementation"""
     from core.error_handling import CircuitBreaker, CircuitBreakerConfig
@@ -4446,55 +4181,6 @@ def _test_rate_limiter() -> None:
     limiter.on_success()
     metrics = limiter.get_metrics()
     assert metrics.success_count == 1, "Should track success"
-
-
-def _test_session_manager() -> None:
-    """Test SessionManager instantiation and interface"""
-    sm, mock_db, mock_browser, mock_api, mock_validator = _create_stubbed_session_manager()
-
-    assert sm.db_manager is mock_db, "SessionManager should use cached database manager"
-    assert sm.browser_manager is mock_browser, "SessionManager should use cached browser manager"
-    assert sm.api_manager is mock_api, "SessionManager should use cached API manager"
-    assert sm.validator is mock_validator, "SessionManager should use cached session validator"
-    assert hasattr(sm, "ensure_session_ready"), "SessionManager missing ensure_session_ready method"
-    assert hasattr(sm, "close_sess"), "SessionManager missing close_sess method"
-    assert sm.session_ready is False, "SessionManager should initialize with session_ready=False"
-    assert sm.driver_live is False, "SessionManager driver should not be live initially"
-
-
-def _test_api_request_function() -> None:
-    """Test legacy _api_req wrapper delegates to implementation with config."""
-    import sys
-    from unittest.mock import MagicMock, patch
-
-    driver = MagicMock()
-    session_manager = MagicMock()
-    headers = {"X-Test": "1"}
-    payload = {"value": 42}
-
-    with patch.object(sys.modules[__name__], "_api_req_impl") as mock_impl:
-        mock_impl.return_value = {"ok": True}
-        result = _api_req(
-            url="https://example.com",
-            driver=driver,
-            session_manager=session_manager,
-            method="POST",
-            headers=headers,
-            data=payload,
-            force_text_response=True,
-        )
-
-    mock_impl.assert_called_once()
-    config_arg = mock_impl.call_args.args[0]
-    assert isinstance(config_arg, ApiRequestConfig), "_api_req should pass ApiRequestConfig to implementation"
-    assert config_arg.url == "https://example.com"
-    assert config_arg.method == "POST"
-    assert config_arg.driver is driver
-    assert config_arg.session_manager is session_manager
-    assert config_arg.headers == headers
-    assert config_arg.data == payload
-    assert config_arg.force_text_response is True
-    assert result == {"ok": True}
 
 
 def _test_login_status_function() -> None:
@@ -4616,131 +4302,6 @@ def _test_sleep_prevention() -> None:
         restore_system_sleep(state)  # Should not raise error
 
 
-def _test_check_for_unavailability() -> None:
-    """Test _check_for_unavailability function with mock driver."""
-    from unittest.mock import MagicMock
-
-    # Test basic function existence and signature
-    assert callable(_check_for_unavailability), "_check_for_unavailability should be callable"
-
-    # Test with mock driver
-    mock_driver = MagicMock()
-    mock_driver.current_url = "http://test.com"
-
-    # Test with empty selectors
-    action, wait_time = _check_for_unavailability(mock_driver, {})
-    assert action is None, "Should return None for empty selectors"
-    assert wait_time == 0, "Should return 0 for empty selectors"
-
-    print("✅ _check_for_unavailability passed basic tests")
-
-
-def _test_429_error_path() -> None:
-    """Test 429 error handling triggers rate limiter backoff."""
-    from unittest.mock import MagicMock, patch
-
-    # Create mock response with 429 status
-    mock_response = MagicMock()
-    mock_response.status_code = 429
-    mock_response.reason = "Too Many Requests"
-    mock_response.headers = {"Retry-After": "60"}
-    mock_response.text = "Rate limit exceeded"
-
-    # Create mock rate limiter to verify it's called
-    mock_rate_limiter = MagicMock()
-    mock_rate_limiter.on_429_error = MagicMock()
-
-    # Create RetryContext for the handler
-    retry_ctx = RetryContext(
-        attempt=1,
-        max_attempts=3,
-        retries_left=2,
-        current_delay=1.0,
-        max_delay=60.0,
-        backoff_factor=2.0,
-    )
-
-    # Create mock session manager with rate limiter
-    mock_session_manager = MagicMock()
-    mock_session_manager.rate_limiter = mock_rate_limiter
-
-    # Patch time.sleep to avoid actual delays and rate limiter lookup
-    with (
-        patch("time.sleep"),
-        patch("utils._get_rate_limiter_from_session", return_value=mock_rate_limiter),
-    ):
-        # Call the handler
-        should_continue, _response, retries_left, new_delay = _handle_retryable_status(
-            mock_response, 429, "Too Many Requests", retry_ctx, "Test API", mock_session_manager
-        )
-
-    # Verify behavior
-    assert should_continue is True, "Should continue retrying after 429"
-    assert retries_left == 1, "Should decrement retries"
-    assert new_delay > retry_ctx.current_delay, "Delay should increase with backoff"
-    mock_rate_limiter.on_429_error.assert_called_once_with("Test API")
-
-
-def _test_network_timeout_handling() -> None:
-    """Test network timeout triggers proper retry behavior."""
-    from unittest.mock import MagicMock
-
-    from requests.exceptions import ConnectionError as RequestsConnectionError, Timeout
-
-    # Test that retryable status codes are configured correctly
-    mock_driver = MagicMock()
-    mock_sm = MagicMock()
-    config = ApiRequestConfig(
-        url="https://example.com",
-        driver=mock_driver,
-        session_manager=mock_sm,
-    )
-    assert 500 in config.retry_status_codes, "500 should be retryable"
-    assert 502 in config.retry_status_codes, "502 should be retryable"
-    assert 503 in config.retry_status_codes, "503 should be retryable"
-    assert 429 in config.retry_status_codes, "429 should be retryable"
-
-    # Verify exception types are available
-    assert Timeout is not None, "Timeout exception should be available"
-    assert RequestsConnectionError is not None, "ConnectionError should be available"
-
-
-def _test_retryable_status_exhaustion() -> None:
-    """Test that retries are properly exhausted and return the response."""
-    from unittest.mock import MagicMock, patch
-
-    # Create mock response with 500 status
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    mock_response.reason = "Internal Server Error"
-    mock_response.text = "Server error"
-
-    # Create RetryContext with no retries left
-    retry_ctx = RetryContext(
-        attempt=3,
-        max_attempts=3,
-        retries_left=0,  # No retries left
-        current_delay=1.0,
-        max_delay=60.0,
-        backoff_factor=2.0,
-    )
-
-    # Create mock session manager
-    mock_session_manager = MagicMock()
-    mock_session_manager.rate_limiter = MagicMock()
-
-    # Call the handler - should not retry
-    with patch("utils._get_rate_limiter_from_session", return_value=None):
-        should_continue, response, retries_left, _new_delay = _handle_retryable_status(
-            mock_response, 500, "Internal Server Error", retry_ctx, "Test API", mock_session_manager
-        )
-
-    # Verify behavior - should NOT continue, should return response
-    assert should_continue is False, "Should NOT continue when retries exhausted"
-    assert response is mock_response, "Should return the original response"
-    assert retries_left == -1, "Retries should be decremented below 0"
-
-
 def utils_module_tests() -> bool:
     """Run comprehensive utils tests using standardized TestSuite format."""
     from testing.test_framework import TestSuite
@@ -4756,26 +4317,12 @@ def utils_module_tests() -> bool:
     suite.run_test("Decorator Availability", _test_decorators, "Verify all decorators are callable and functional")
 
     suite.run_test(
-        "Retry Policy Resolution", _test_retry_policy_resolution, "Ensure policy profiles drive retry configuration"
-    )
-
-    suite.run_test(
         "Circuit Breaker State Transitions",
         _test_circuit_breaker,
         "Test CircuitBreaker state machine (CLOSED → OPEN → HALF_OPEN → CLOSED)",
     )
 
     suite.run_test("Adaptive Rate Limiter", _test_rate_limiter, "Test rate limiting interface and metrics tracking")
-
-    suite.run_test(
-        "SessionManager Instantiation",
-        _test_session_manager,
-        "Verify SessionManager initializes with correct dependencies",
-    )
-
-    suite.run_test(
-        "API Request Function", _test_api_request_function, "Verify _api_req function signature and availability"
-    )
 
     suite.run_test("Login Status Function", _test_login_status_function, "Verify login_status function signature")
 
@@ -4791,29 +4338,6 @@ def utils_module_tests() -> bool:
         "Cross-Platform Sleep Prevention",
         _test_sleep_prevention,
         "Test prevent_system_sleep/restore_system_sleep without side effects",
-    )
-
-    suite.run_test(
-        "Unavailability Detection", _test_check_for_unavailability, "Detect unavailability markers in HTML content"
-    )
-
-    # Error path tests (429, timeout, retry exhaustion)
-    suite.run_test(
-        "429 Error Path Handling",
-        _test_429_error_path,
-        "Verify 429 status triggers rate limiter backoff and retry logic",
-    )
-
-    suite.run_test(
-        "Network Timeout Handling",
-        _test_network_timeout_handling,
-        "Verify timeout exceptions are properly handled in retry config",
-    )
-
-    suite.run_test(
-        "Retry Exhaustion Behavior",
-        _test_retryable_status_exhaustion,
-        "Verify retries are exhausted and response is returned correctly",
     )
 
     return suite.finish_suite()

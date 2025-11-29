@@ -124,10 +124,8 @@ def fetch_tree_owner_ethnicity_regions(
 
     response = _call_api_request(
         url=url,
-        driver=session_manager.driver,
         session_manager=session_manager,
         method="GET",
-        use_csrf_token=False,
         api_description="Tree Owner Ethnicity API",
     )
 
@@ -176,11 +174,9 @@ def fetch_ethnicity_region_names(
     logger.debug(f"Sending POST request with {len(region_keys)} region keys: {region_keys}")
     response = _call_api_request(
         url=url,
-        driver=session_manager.driver,
         session_manager=session_manager,
         method="POST",
         json_data={"regionKeys": region_keys},  # Wrap list in dict for API compatibility
-        use_csrf_token=False,
         api_description="Ethnicity Region Names API",
     )
 
@@ -239,10 +235,8 @@ def fetch_ethnicity_comparison(
 
     response = _call_api_request(
         url=url,
-        driver=session_manager.driver,
         session_manager=session_manager,
         method="GET",
-        use_csrf_token=False,
         api_description="Ethnicity Comparison API",
     )
 

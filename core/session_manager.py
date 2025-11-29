@@ -1692,15 +1692,16 @@ class SessionManager:
         if not self.get_cookies(essential_cookies, timeout=10):
             logger.warning(f"Essential cookies {essential_cookies} NOT found before CSRF token API call.")
 
+        # Sync cookies to requests session
+        self.sync_cookies_to_requests()
+
         try:
             api_request = self._get_utils_attr("_api_req")
 
             response_data = api_request(
                 url=csrf_token_url,
-                driver=self.driver,
                 session_manager=self,
                 method="GET",
-                use_csrf_token=False,
                 api_description="CSRF Token API",
                 force_text_response=True,
             )
@@ -1737,15 +1738,16 @@ class SessionManager:
         url = urljoin(config_schema.api.base_url, "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid")
         logger.debug("Attempting to fetch own profile ID (ucdmid)...")
 
+        # Sync cookies to requests session
+        self.sync_cookies_to_requests()
+
         try:
             api_request = self._get_utils_attr("_api_req")
 
             response_data = api_request(
                 url=url,
-                driver=self.driver,
                 session_manager=self,
                 method="GET",
-                use_csrf_token=False,
                 api_description="Get my profile_id",
             )
 
@@ -1793,15 +1795,16 @@ class SessionManager:
         url = urljoin(config_schema.api.base_url, API_PATH_UUID_NAVHEADER)
         logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
 
+        # Sync cookies to requests session
+        self.sync_cookies_to_requests()
+
         try:
             api_request = self._get_utils_attr("_api_req")
 
             response_data = api_request(
                 url=url,
-                driver=self.driver,
                 session_manager=self,
                 method="GET",
-                use_csrf_token=False,
                 api_description="Get UUID API",
             )
 

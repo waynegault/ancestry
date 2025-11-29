@@ -46,9 +46,9 @@ from api.api_utils import (
     call_treesui_list_api,
 )
 from config import config_schema
+from core.session_manager import SessionManager
 from research.relationship_utils import format_api_relationship_path
 from testing.test_utilities import create_standard_test_runner
-from utils import SessionManager
 
 # === MODULE LOGGER ===
 logger = get_logger(__name__)
@@ -1409,14 +1409,26 @@ def _test_edge_cases() -> None:
 
 def _test_integration() -> None:
     """Test integration with mocked external dependencies."""
+    import sys
     from unittest.mock import MagicMock, patch
+
+    # Get reference to current module to patch functions imported into its namespace
+    current_module = sys.modules[__name__]
 
     # Test search_api_for_criteria with mock session
     mock_session = MagicMock()
     mock_session.is_sess_valid.return_value = True
+    # Ensure validation passes
+    mock_session.api_manager.has_essential_identifiers = True
+    # Ensure tree ID is a string
+    mock_session.my_tree_id = "tree-123"
 
-    with patch("api.api_search_utils.call_suggest_api") as mock_suggest:
+    with (
+        patch.object(current_module, "call_suggest_api") as mock_suggest,
+        patch.object(current_module, "call_treesui_list_api") as mock_treesui,
+    ):
         mock_suggest.return_value = [{"First Name": "Test User 12345"}]
+        mock_treesui.return_value = []
 
         result = search_api_for_criteria(mock_session, {"first_name": "Test", "surname": "User"})
         assert isinstance(result, list), "Should return list of results"
@@ -1445,7 +1457,8 @@ def _test_error_handling() -> None:
 
     # Test search_api_for_criteria with invalid session
     mock_session = MagicMock()
-    mock_session.is_sess_valid.side_effect = Exception("Test error 12345")
+    # Simulate missing identifiers to trigger validation failure
+    mock_session.api_manager.has_essential_identifiers = False
 
     result = search_api_for_criteria(mock_session, {"first_name": "Test"})
     assert result == [], "Should return empty list on error"

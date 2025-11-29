@@ -158,7 +158,6 @@ logger = OptimizedLogger(raw_logger)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import importlib
 import logging
 import math
 import random
@@ -166,7 +165,6 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Literal
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
@@ -216,6 +214,7 @@ from api.api_constants import API_PATH_PROFILE_DETAILS
 from browser.css_selectors import *  # Import CSS selectors
 from browser.selenium_utils import get_driver_cookies
 from config import config_schema
+from core.api_manager import RequestConfig, RetryPolicy
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
 from database import (
@@ -240,21 +239,62 @@ from utils import (
 )
 
 
-@lru_cache(maxsize=1)
-def _get_utils_module() -> ModuleType:
-    """Lazy-load utils to access private helpers without direct import."""
-    return importlib.import_module("utils")
+def _call_api_request(
+    url: str,
+    session_manager: Optional[SessionManager] = None,
+    method: str = "GET",
+    data: Optional[dict[str, Any]] = None,
+    json_data: Optional[dict[str, Any]] = None,
+    json: Optional[dict[str, Any]] = None,
+    use_csrf_token: bool = False,
+    headers: Optional[dict[str, str]] = None,
+    referer_url: Optional[str] = None,
+    api_description: str = "API Request",
+    allow_redirects: bool = True,
+    force_text_response: bool = False,
+) -> Any:
+    """
+    Make an API request using SessionManager's APIManager.
+    Replaces legacy _call_api_request / _api_req.
+    """
+    if session_manager is None:
+        raise ValueError("session_manager is required for API requests")
 
+    # Handle 'json' vs 'json_data'
+    final_json_data = json_data if json_data is not None else json
 
-def _get_api_request_callable() -> Callable[..., Any]:
-    api_request = getattr(_get_utils_module(), "_api_req", None)
-    if not callable(api_request):
-        raise ImportError("_api_req function not available from utils")
-    return api_request
+    # Construct headers
+    final_headers = headers.copy() if headers else {}
+    if referer_url:
+        final_headers["Referer"] = referer_url
 
+    config = RequestConfig(
+        url=url,
+        method=method,
+        data=data,
+        json_data=final_json_data,
+        headers=final_headers,
+        use_csrf_token=use_csrf_token,
+        api_description=api_description,
+        allow_redirects=allow_redirects,
+        retry_policy=RetryPolicy.API,
+        force_text_response=force_text_response,
+    )
 
-def _call_api_request(*args: Any, **kwargs: Any) -> Any:
-    return _get_api_request_callable()(*args, **kwargs)
+    result = session_manager.api_manager.request(
+        config,
+        browser_manager=session_manager.browser_manager,
+        rate_limiter=session_manager.rate_limiter,
+    )
+
+    if result.success:
+        return result.data
+
+    # If failed, return response object if available (legacy behavior expected by some callers)
+    if result.response:
+        return result.response
+
+    return None
 
 
 # --- Constants ---
@@ -4078,7 +4118,7 @@ def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any
 
 
 def _call_match_list_api(
-    session_manager: SessionManager, driver: Any, my_uuid: str, current_page: int, specific_csrf_token: str
+    session_manager: SessionManager, my_uuid: str, current_page: int, specific_csrf_token: str
 ) -> Any:
     """
     Build URL and headers, then call the match list API.
@@ -4123,7 +4163,6 @@ def _call_match_list_api(
     # Call the API with fresh cookie sync
     return _call_api_request(
         url=match_list_url,
-        driver=driver,
         session_manager=session_manager,
         method="GET",
         headers=match_list_headers,
@@ -4134,7 +4173,7 @@ def _call_match_list_api(
 
 
 def _handle_303_with_redirect(
-    location: str, driver: Any, session_manager: SessionManager, match_list_headers: dict[str, str]
+    location: str, session_manager: SessionManager, match_list_headers: dict[str, str]
 ) -> Any:
     """
     Handle 303 See Other response with redirect location.
@@ -4146,7 +4185,6 @@ def _handle_303_with_redirect(
     # Retry once with the new location
     api_response_redirect = _call_api_request(
         url=location,
-        driver=driver,
         session_manager=session_manager,
         method="GET",
         headers=match_list_headers,
@@ -4163,7 +4201,7 @@ def _handle_303_with_redirect(
 
 
 def _handle_303_session_refresh(
-    session_manager: SessionManager, driver: Any, match_list_url: str, match_list_headers: dict[str, str]
+    session_manager: SessionManager, match_list_url: str, match_list_headers: dict[str, str]
 ) -> Any:
     """
     Handle 303 See Other without redirect location (session expired).
@@ -4206,7 +4244,6 @@ def _handle_303_session_refresh(
 
             api_response_refresh = _call_api_request(
                 url=match_list_url,
-                driver=driver,
                 session_manager=session_manager,
                 method="GET",
                 headers=match_list_headers,
@@ -4227,7 +4264,6 @@ def _handle_303_session_refresh(
 
 def _handle_non_dict_response(
     api_response: Any,
-    driver: Any,
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str],
@@ -4242,8 +4278,8 @@ def _handle_non_dict_response(
 
     if status == 303:
         if location:
-            return _handle_303_with_redirect(location, driver, session_manager, match_list_headers)
-        return _handle_303_session_refresh(session_manager, driver, match_list_url, match_list_headers)
+            return _handle_303_with_redirect(location, session_manager, match_list_headers)
+        return _handle_303_session_refresh(session_manager, match_list_url, match_list_headers)
 
     logger.error(
         f"Match list API did not return dict. Type: {type(api_response).__name__}, "
@@ -4255,7 +4291,6 @@ def _handle_non_dict_response(
 def _handle_match_list_response(
     api_response: Any,
     current_page: int,
-    driver: Any,
     session_manager: SessionManager,
     match_list_url: str,
     match_list_headers: dict[str, str],
@@ -4271,7 +4306,7 @@ def _handle_match_list_response(
         return None
 
     if not isinstance(api_response, dict):
-        return _handle_non_dict_response(api_response, driver, session_manager, match_list_url, match_list_headers)
+        return _handle_non_dict_response(api_response, session_manager, match_list_url, match_list_headers)
 
     return api_response
 
@@ -4394,7 +4429,6 @@ def _process_in_tree_api_response(response_in_tree: Any, sample_ids_on_page: lis
 
 def _fetch_in_tree_from_api(
     session_manager: SessionManager,
-    driver: Any,
     my_uuid: str,
     sample_ids_on_page: list[str],
     specific_csrf_token: str,
@@ -4419,9 +4453,11 @@ def _fetch_in_tree_from_api(
     parsed_base_url = urlparse(config_schema.api.base_url)
     origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
     ua_in_tree = None
-    if driver and session_manager.is_sess_valid():
+    if session_manager.driver and session_manager.is_sess_valid():
         with contextlib.suppress(Exception):
-            ua_in_tree = driver.execute_script("return navigator.userAgent;")
+            script_result = cast(Any, session_manager.driver).execute_script("return navigator.userAgent;")
+            if isinstance(script_result, str):
+                ua_in_tree = script_result
     ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
     in_tree_headers = {
         "X-CSRF-Token": specific_csrf_token,
@@ -4437,7 +4473,6 @@ def _fetch_in_tree_from_api(
     logger.debug(f"In-Tree Check Headers FULLY set in get_matches: {in_tree_headers}")
     response_in_tree = _call_api_request(
         url=in_tree_url,
-        driver=driver,
         session_manager=session_manager,
         method="POST",
         json_data={"sampleIds": sample_ids_on_page},
@@ -4452,7 +4487,6 @@ def _fetch_in_tree_from_api(
 
 def _fetch_in_tree_status(
     session_manager: SessionManager,
-    driver: Any,
     my_uuid: str,
     valid_matches_for_processing: list[dict[str, Any]],
     specific_csrf_token: str,
@@ -4472,7 +4506,7 @@ def _fetch_in_tree_status(
     # If cache miss, fetch from API
     if not in_tree_ids:
         in_tree_ids = _fetch_in_tree_from_api(
-            session_manager, driver, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
+            session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
         )
 
     return in_tree_ids
@@ -4633,7 +4667,7 @@ def get_matches(
     logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
 
     # Step 5: Call match list API
-    api_response = _call_match_list_api(session_manager, driver, my_uuid, current_page, specific_csrf_token)
+    api_response = _call_match_list_api(session_manager, my_uuid, current_page, specific_csrf_token)
 
     # Build match_list_url for use in response handling
     match_list_url = urljoin(
@@ -4647,7 +4681,7 @@ def get_matches(
     }
     # Step 6: Handle response (including 303 redirects and session refresh)
     api_response = _handle_match_list_response(
-        api_response, current_page, driver, session_manager, match_list_url, match_list_headers
+        api_response, current_page, session_manager, match_list_url, match_list_headers
     )
     if api_response is None:
         return [], None
@@ -4663,7 +4697,7 @@ def get_matches(
 
     # Step 9: Fetch in-tree status (using cache if available)
     in_tree_ids = _fetch_in_tree_status(
-        session_manager, driver, my_uuid, valid_matches_for_processing, specific_csrf_token, current_page
+        session_manager, my_uuid, valid_matches_for_processing, specific_csrf_token, current_page
     )
 
     # Step 10: Refine all matches
@@ -4831,7 +4865,6 @@ def _fetch_match_details_api(
     try:
         details_response = _call_api_request(
             url=details_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             headers=_get_api_headers(),
@@ -4917,7 +4950,6 @@ def _fetch_profile_details_api(
     try:
         profile_response = _call_api_request(
             url=profile_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             headers=_get_api_headers(),
@@ -5181,7 +5213,6 @@ def _fetch_batch_badge_details(session_manager: SessionManager, match_uuid: str)
     try:
         badge_response = _call_api_request(
             url=badge_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             use_csrf_token=False,

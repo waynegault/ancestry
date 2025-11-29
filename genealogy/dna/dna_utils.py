@@ -290,12 +290,10 @@ def _fetch_in_tree_from_api(
 
     response_in_tree = _call_api_request(
         url=in_tree_url,
-        driver=driver,
         session_manager=session_manager,
         method="POST",
         json_data={"sampleIds": sample_ids_on_page},
         headers=in_tree_headers,
-        use_csrf_token=False,
         api_description="In-Tree Status Check",
     )
 
@@ -428,11 +426,9 @@ def fetch_match_list_page(
     # Call the API
     api_result = _call_api_request(
         url=match_list_url,
-        driver=driver,
         session_manager=session_manager,
         method="GET",
         headers=match_list_headers,
-        use_csrf_token=False,
         api_description="Match List API",
         allow_redirects=True,
     )

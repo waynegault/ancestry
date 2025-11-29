@@ -1368,14 +1368,12 @@ def _make_suggest_api_request(
 
     return _call_api_request(
         url=suggest_url,
-        driver=session_manager.driver,
         session_manager=session_manager,
         method="GET",
         api_description=api_description,
         headers=custom_headers,
         referer_url=owner_facts_referer,
         timeout=timeout,
-        use_csrf_token=False,
     )
 
 
@@ -1680,7 +1678,6 @@ def _try_fallback_facts_request(
             }
             api_response = _call_api_request(
                 url=facts_api_url,
-                driver=session_manager.driver,
                 session_manager=session_manager,
                 method="GET",
                 api_description=api_description,
@@ -1842,12 +1839,10 @@ def call_getladder_api(
     try:
         relationship_data = _call_api_request(
             url=ladder_api_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             api_description=api_description,
             referer_url=ladder_referer,
-            use_csrf_token=False,
             force_text_response=True,
             timeout=api_timeout_val,
         )
@@ -1942,14 +1937,12 @@ def call_discovery_relationship_api(
 
         relationship_data = _call_api_request(
             url=discovery_api_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             api_description=api_description,
             headers=custom_headers,
             referer_url=discovery_referer,
             timeout=api_timeout_val,
-            use_csrf_token=False,
         )
 
         return _process_discovery_relationship_response(relationship_data, api_description)
@@ -2324,14 +2317,12 @@ def call_treesui_list_api(
             }
             treesui_response = _call_api_request(
                 url=treesui_url,
-                driver=session_manager.driver,
                 session_manager=session_manager,
                 method="GET",
                 api_description=api_description,
                 headers=custom_headers,
                 referer_url=owner_facts_referer,
                 timeout=timeout,
-                use_csrf_token=False,
             )
             if isinstance(treesui_response, list):
                 logger.debug(
@@ -2400,12 +2391,10 @@ def call_newfamilyview_api(
     try:
         response = _call_api_request(
             url=newfamilyview_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             api_description=api_description,
             referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id}/person/{person_id}"),
-            use_csrf_token=False,
             timeout=api_timeout_val,
         )
 
@@ -2454,12 +2443,10 @@ def call_relation_ladder_with_labels_api(
     try:
         response = _call_api_request(
             url=relation_ladder_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             api_description=api_description,
             referer_url=urljoin(base_url, f"/family-tree/tree/{tree_id}/person/{person_id}"),
-            use_csrf_token=False,
             timeout=api_timeout_val,
         )
 
@@ -2680,11 +2667,9 @@ def call_send_message_api(
 
     api_response = _call_api_request(
         url=send_api_url,
-        driver=session_manager.driver,
         session_manager=session_manager,
         method="POST",
         json_data=payload,
-        use_csrf_token=False,
         headers=api_headers,
         api_description=send_api_desc,
     )
@@ -2797,11 +2782,9 @@ def call_profile_details_api(session_manager: "SessionManager", profile_id: str)
     try:
         profile_response = _call_api_request(
             url=profile_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             headers={},
-            use_csrf_token=False,
             api_description=api_description,
             referer_url=referer_url,
         )
@@ -2963,11 +2946,9 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
         logger.debug(f"Attempting to fetch tree ID via {api_description}...")
         response_data = _call_api_request(
             url=primary_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             headers=custom_headers,
-            use_csrf_token=False,
             api_description=api_description,
             referer_url=referer_url,
         )
@@ -2988,11 +2969,9 @@ def call_header_trees_api_for_tree_id(session_manager: "SessionManager", tree_na
 
         response_data_fallback = _call_api_request(
             url=fallback_url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
             headers=custom_headers,
-            use_csrf_token=False,
             api_description=api_description_fallback,
             referer_url=referer_url,
         )
@@ -3076,10 +3055,8 @@ def call_tree_owner_api(session_manager: "SessionManager", tree_id: str) -> Opti
     try:
         response_data = _call_api_request(
             url=url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method="GET",
-            use_csrf_token=False,
             api_description=api_description,
         )
 
@@ -3112,7 +3089,6 @@ def call_enhanced_api(
     method: str = "GET",
     data: Optional[dict[str, Any]] = None,
     api_description: str = "Enhanced API Call",
-    use_csrf_token: bool = True,
 ) -> Optional[dict[str, Any]]:
     """
     Call an enhanced API endpoint with full browser-like authentication.
@@ -3158,13 +3134,11 @@ def call_enhanced_api(
         start_time = time.time()
         response = _call_api_request(
             url=url,
-            driver=session_manager.driver,
             session_manager=session_manager,
             method=method,
             data=data,
             api_description=api_description,
             referer_url=referer_url,
-            use_csrf_token=use_csrf_token,
             timeout=30,
             # Pass additional parameters for enhanced headers
             headers={"_use_enhanced_headers": "true", "_tree_id": tree_id, "_person_id": person_id},
@@ -3205,7 +3179,6 @@ def call_edit_relationships_api(
         tree_id=tree_id,
         person_id=person_id,
         api_description="Edit Relationships API",
-        use_csrf_token=False,  # Disable CSRF token for cleaner logging
     )
 
 
@@ -3235,7 +3208,6 @@ def call_relationship_ladder_api(
         tree_id=tree_id,
         person_id=person_id,
         api_description="Enhanced Relationship Ladder API",
-        use_csrf_token=False,  # Disable CSRF token for cleaner logging
     )
 
 
