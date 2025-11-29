@@ -25,14 +25,17 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import json
+
+# Import standard modules
+import logging
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-# Import standard modules
-from standard_imports import *
+from core.registry_utils import auto_register_module
 
 # Set up logging
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 class MessagePersonalizer:
@@ -62,7 +65,7 @@ class MessagePersonalizer:
                 logger.error("Global session not available. main.py must register it before loading templates.")
                 return {}
 
-            with session_manager.get_db_conn_context() as session:
+            with session_manager.db_manager.get_session_context() as session:
                 if not session:
                     logger.error("Could not get database session for template loading")
                     return {}

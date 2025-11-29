@@ -1,24 +1,18 @@
 from __future__ import annotations
 
 import json
-import sys
+import logging
 import time
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-if __package__ in {None, ""}:
-    REPO_ROOT = Path(__file__).resolve().parents[2]
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-
 from config import config_schema
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 from testing.test_utilities import atomic_write_file
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 CHECKPOINT_VERSION = "1.0"
 _DEFAULT_CHECKPOINT_PATH = Path("Cache/action6_checkpoint.json")

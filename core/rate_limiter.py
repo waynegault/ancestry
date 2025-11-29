@@ -20,15 +20,14 @@ Status: Phase 1 - Foundation
 """
 
 import json
+import logging
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, TypedDict, cast
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass

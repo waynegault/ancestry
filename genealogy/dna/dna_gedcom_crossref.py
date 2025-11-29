@@ -48,16 +48,17 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+# Import standard modules
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
-# Import standard modules
-from standard_imports import *
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 
 # Set up logging
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 @dataclass

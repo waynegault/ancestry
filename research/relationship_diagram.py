@@ -16,7 +16,8 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from standard_imports import *
+import logging
+
 from testing.test_utilities import create_standard_test_runner
 
 logger = logging.getLogger(__name__)

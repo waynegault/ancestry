@@ -22,6 +22,7 @@ if str(_project_root) not in sys.path:
 # === CORE INFRASTRUCTURE ===
 import hashlib
 import json
+import logging
 import threading
 import time
 import weakref
@@ -29,9 +30,10 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
 
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from caching.cache import (

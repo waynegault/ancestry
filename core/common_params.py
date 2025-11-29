@@ -10,7 +10,6 @@ to reduce parameter counts and improve code maintainability.
 import sys
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Optional, Union
 
 

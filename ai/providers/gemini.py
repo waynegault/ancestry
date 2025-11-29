@@ -3,6 +3,7 @@ from __future__ import annotations
 """Gemini provider adapter powered by google-genai."""
 
 import importlib
+import logging
 from collections.abc import Iterable
 from typing import Any
 
@@ -13,9 +14,8 @@ from ai.providers.base import (
     ProviderResponse,
     ProviderUnavailableError,
 )
-from standard_imports import setup_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 class GeminiProvider(BaseProvider):

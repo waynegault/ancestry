@@ -16,6 +16,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -23,9 +24,7 @@ from typing import Any, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # Import database models
 try:

@@ -47,22 +47,16 @@ and utility functions for managing the cache lifecycle (clearing, closing).
 Cache directory and default settings are configurable via `config.py`.
 """
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    get_function,
-    is_function_available,
-    setup_module,
+import logging
+import sys
+
+from core.registry_utils import (
+    auto_register_module,
 )
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 

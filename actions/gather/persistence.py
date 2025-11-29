@@ -13,6 +13,8 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload
@@ -20,10 +22,9 @@ from sqlalchemy.orm import Session as SqlAlchemySession, joinedload
 from core.database_manager import db_transn
 from core.session_manager import SessionManager
 from database import DnaMatch, FamilyTree, Person, PersonStatusEnum
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

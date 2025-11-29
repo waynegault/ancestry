@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .gather.checkpoint import GatherCheckpointPlan, GatherCheckpointService
-from .gather.fetch import GatherFetchPlan, GatherFetchService
 from .gather.metrics import (
     PageProcessingMetrics,
     accumulate_page_metrics,
@@ -64,8 +63,6 @@ __all__ = [
     "GatherBatchSummary",
     "GatherCheckpointPlan",
     "GatherCheckpointService",
-    "GatherFetchPlan",
-    "GatherFetchService",
     "GatherOrchestrator",
     "GatherPersistenceService",
     "PageProcessingMetrics",

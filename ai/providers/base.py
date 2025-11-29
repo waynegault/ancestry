@@ -2,12 +2,11 @@ from __future__ import annotations
 
 """Common types for AI provider adapters."""
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)

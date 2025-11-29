@@ -40,9 +40,9 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from selenium.webdriver.remote.webdriver import WebDriver
@@ -513,7 +513,7 @@ def validation_factory_module_tests() -> bool:
         # Valid session manager
         mock_sm = MagicMock()
         mock_sm.is_sess_valid.return_value = True
-        mock_sm.driver = MagicMock()
+        mock_sm.browser_manager.driver = MagicMock()
         mock_sm.db_session = MagicMock()
 
         assert validate_session_manager(mock_sm, "Test"), "Should be valid"

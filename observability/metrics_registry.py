@@ -4,20 +4,17 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
-from pathlib import Path
-from typing import Any, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
 
-parent_dir = Path(__file__).resolve().parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
-from config.config_schema import ObservabilityConfig
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, suppress_logging
 
-logger = setup_module(globals(), __name__)
+if TYPE_CHECKING:
+    from config.config_schema import ObservabilityConfig
+
+logger = logging.getLogger(__name__)
 
 _prometheus_import_error: Optional[Exception] = None
 
@@ -656,6 +653,8 @@ def record_internal_metric_stat(service: str, metric_name: str, stat: str, value
 
 
 def _make_enabled_settings(namespace: str = "test_observability") -> ObservabilityConfig:
+    from config.config_schema import ObservabilityConfig
+
     return ObservabilityConfig(
         enable_prometheus_metrics=True,
         metrics_namespace=namespace,
@@ -665,6 +664,8 @@ def _make_enabled_settings(namespace: str = "test_observability") -> Observabili
 
 def test_metrics_disabled_is_noop() -> None:
     """Disabling metrics should make proxies safe no-ops."""
+    from config.config_schema import ObservabilityConfig
+
     reset_metrics()
     configure_metrics(ObservabilityConfig(enable_prometheus_metrics=False))
 

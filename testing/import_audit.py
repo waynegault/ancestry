@@ -3,27 +3,20 @@
 
 from __future__ import annotations
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 import ast
+import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from standard_imports import setup_module
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 _SKIP_DIR_NAMES = {".git", "Cache", "Data", "Logs", "__pycache__", "node_modules", ".venv"}
-_SKIP_FILES = {"standard_imports.py"}
+_SKIP_FILES = set()
 
 
 @dataclass(frozen=True)

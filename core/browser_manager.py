@@ -678,9 +678,6 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         sys.path.insert(0, str(project_root))
-        from core_imports import standardize_module_imports
-
-        standardize_module_imports()
     except ImportError:
         # Fallback for testing environment
         sys.path.insert(0, str(project_root))

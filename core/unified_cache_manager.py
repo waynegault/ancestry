@@ -22,11 +22,14 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
-from observability.metrics_registry import metrics
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
+from core.registry_utils import auto_register_module
+from observability.metrics_registry import metrics
+
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 @dataclass

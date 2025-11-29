@@ -17,14 +17,13 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, Optional
 
@@ -32,6 +31,7 @@ from typing import Any, Literal, Optional
 # Global flag to track if logging has been initialized
 class _CentralizedLoggingState:
     """Manages centralized logging setup state."""
+
     setup_complete = False
 
 
@@ -189,13 +189,16 @@ def debug_if_enabled(logger: logging.Logger):
     Decorator to only execute debug logging if debug level is enabled.
     Prevents expensive f-string formatting when debug logging is disabled.
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             if logger.isEnabledFor(logging.DEBUG):
                 return func(*args, **kwargs)
             return None
+
         return wrapper
+
     return decorator
 
 
@@ -275,12 +278,15 @@ def _test_duplicate_handler_prevention() -> bool:
         # Use proper logs directory for test.log
         import os
         from pathlib import Path
+
         logs_dir = Path(os.getenv("LOG_DIR", "Logs"))
         if not logs_dir.is_absolute():
             logs_dir = (Path(__file__).parent.parent.resolve() / logs_dir).resolve()
         logs_dir.mkdir(parents=True, exist_ok=True)
         test_log_path = logs_dir / "test.log"
-        handler3 = logging.FileHandler(str(test_log_path)) if hasattr(logging, 'FileHandler') else logging.StreamHandler()
+        handler3 = (
+            logging.FileHandler(str(test_log_path)) if hasattr(logging, 'FileHandler') else logging.StreamHandler()
+        )
 
         test_logger.addHandler(handler1)
         test_logger.addHandler(handler2)
@@ -491,6 +497,7 @@ def _test_action_banner_logging() -> bool:
 # COMPREHENSIVE TEST SUITE
 # =============================================================================
 
+
 def logging_utils_module_tests() -> bool:
     """
     Comprehensive test suite for core/logging_utils.py.
@@ -523,7 +530,7 @@ def logging_utils_module_tests() -> bool:
             test_get_logger_functionality,
             "get_logger should create properly configured logger instances",
             "Logger creation provides consistent logging interface across application",
-            "Test get_logger with and without name parameters"
+            "Test get_logger with and without name parameters",
         )
 
         suite.run_test(
@@ -531,7 +538,7 @@ def logging_utils_module_tests() -> bool:
             test_duplicate_handler_prevention,
             "ensure_no_duplicate_handlers should remove duplicate logging handlers",
             "Handler deduplication prevents log message duplication",
-            "Test handler duplicate detection and removal functionality"
+            "Test handler duplicate detection and removal functionality",
         )
 
         suite.run_test(
@@ -539,7 +546,7 @@ def logging_utils_module_tests() -> bool:
             test_external_logger_suppression,
             "suppress_external_loggers should configure external library loggers",
             "External logger suppression reduces log noise from third-party libraries",
-            "Test configuration of external library logger levels and propagation"
+            "Test configuration of external library logger levels and propagation",
         )
 
         suite.run_test(
@@ -547,7 +554,7 @@ def logging_utils_module_tests() -> bool:
             test_app_logger_convenience,
             "get_app_logger should provide easy access to main application logger",
             "App logger convenience function simplifies logger access",
-            "Test get_app_logger convenience function functionality"
+            "Test get_app_logger convenience function functionality",
         )
 
         suite.run_test(
@@ -555,7 +562,7 @@ def logging_utils_module_tests() -> bool:
             test_debug_decorator,
             "debug_if_enabled decorator should optimize debug logging performance",
             "Debug decorator prevents expensive operations when debug logging disabled",
-            "Test debug_if_enabled decorator functionality and optimization"
+            "Test debug_if_enabled decorator functionality and optimization",
         )
 
         suite.run_test(
@@ -563,7 +570,7 @@ def logging_utils_module_tests() -> bool:
             test_optimized_logger_functionality,
             "OptimizedLogger should provide performance-optimized logging interface",
             "Optimized logger wrapper prevents expensive string formatting in production",
-            "Test OptimizedLogger wrapper and debug_lazy method functionality"
+            "Test OptimizedLogger wrapper and debug_lazy method functionality",
         )
 
         suite.run_test(
@@ -571,7 +578,7 @@ def logging_utils_module_tests() -> bool:
             test_centralized_logging_setup,
             "Centralized logging configuration should initialize properly",
             "Centralized setup ensures consistent logging behavior across modules",
-            "Test centralized logging initialization and configuration"
+            "Test centralized logging initialization and configuration",
         )
 
         suite.run_test(
@@ -579,7 +586,7 @@ def logging_utils_module_tests() -> bool:
             test_logging_import_fallback,
             "Logging utilities should handle import failures gracefully",
             "Fallback behavior ensures logging works even when dependencies unavailable",
-            "Test graceful handling of logging_config import failures"
+            "Test graceful handling of logging_config import failures",
         )
 
         suite.run_test(
@@ -587,7 +594,7 @@ def logging_utils_module_tests() -> bool:
             _test_action_banner_logging,
             "log_action_banner should emit standardized lifecycle messages",
             "Standardized banners enable consistent log grep patterns",
-            "Test action banner helper formatting and log levels"
+            "Test action banner helper formatting and log levels",
         )
 
         return suite.finish_suite()
@@ -623,6 +630,7 @@ run_comprehensive_tests = create_standard_test_runner(logging_utils_module_tests
 
 if __name__ == "__main__":
     import sys
+
     print("🧪 Running Logging Utils Comprehensive Tests...")
     success = logging_utils_module_tests()
     sys.exit(0 if success else 1)

@@ -25,16 +25,15 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+# Import standard modules
+import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional, cast
 
-# Import standard modules
-from standard_imports import *
-
 # Set up logging
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass

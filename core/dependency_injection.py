@@ -22,9 +22,12 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.registry_utils import auto_register_module
+
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
@@ -90,9 +93,7 @@ class DIContainer:
                 self._interfaces[interface] = type(implementation)
                 logger.debug(f"Registered singleton instance: {service_name}")
 
-    def register_transient(
-        self, interface: type[T], implementation: type[T], name: Optional[str] = None
-    ) -> None:
+    def register_transient(self, interface: type[T], implementation: type[T], name: Optional[str] = None) -> None:
         """
         Register a transient service (new instance each time).
 
@@ -111,9 +112,7 @@ class DIContainer:
             self._interfaces[interface] = implementation
             logger.debug(f"Registered transient service: {service_name}")
 
-    def register_factory(
-        self, interface: type[T], factory: Callable[[], T], name: Optional[str] = None
-    ) -> None:
+    def register_factory(self, interface: type[T], factory: Callable[[], T], name: Optional[str] = None) -> None:
         """
         Register a factory function.
 
@@ -127,9 +126,7 @@ class DIContainer:
             self._factories[service_name] = factory
             logger.debug(f"Registered factory: {service_name}")
 
-    def register_instance(
-        self, interface: type[T], instance: T, name: Optional[str] = None
-    ) -> None:
+    def register_instance(self, interface: type[T], instance: T, name: Optional[str] = None) -> None:
         """
         Register a specific instance.
 
@@ -186,9 +183,7 @@ class DIContainer:
                 logger.debug(f"Created instance via interface mapping: {service_name}")
                 return instance
 
-            raise DIResolutionError(
-                f"Cannot resolve service: {service_name} ({interface})"
-            )
+            raise DIResolutionError(f"Cannot resolve service: {service_name} ({interface})")
 
     def is_registered(self, interface: type, name: Optional[str] = None) -> bool:
         """
@@ -233,12 +228,9 @@ class DIContainer:
                 "singleton_instances": list(self._singletons.keys()),
                 "factories": list(self._factories.keys()),
                 "interface_mappings": {
-                    str(interface): str(implementation)
-                    for interface, implementation in self._interfaces.items()
+                    str(interface): str(implementation) for interface, implementation in self._interfaces.items()
                 },
-                "total_registrations": len(self._services)
-                + len(self._factories)
-                + len(self._singletons),
+                "total_registrations": len(self._services) + len(self._factories) + len(self._singletons),
             }
 
     @staticmethod
@@ -262,9 +254,7 @@ class DIContainer:
             parameters = signature.parameters
 
             # Skip 'self' parameter
-            constructor_params = {
-                name: param for name, param in parameters.items() if name != "self"
-            }
+            constructor_params = {name: param for name, param in parameters.items() if name != "self"}
 
             # Resolve dependencies
             kwargs = {}
@@ -285,9 +275,7 @@ class DIContainer:
 
             # Create instance
             instance = implementation(**kwargs)
-            logger.debug(
-                f"Created instance: {implementation.__name__} with dependencies: {list(kwargs.keys())}"
-            )
+            logger.debug(f"Created instance: {implementation.__name__} with dependencies: {list(kwargs.keys())}")
             return instance
 
         except Exception as e:
@@ -297,9 +285,7 @@ class DIContainer:
                 return implementation()
             except Exception as fallback_error:
                 logger.error(f"Fallback creation also failed: {fallback_error}")
-                raise DIResolutionError(
-                    f"Cannot create instance of {implementation}: {e}"
-                ) from e
+                raise DIResolutionError(f"Cannot create instance of {implementation}: {e}") from e
 
 
 class DIResolutionError(Exception):
@@ -509,7 +495,9 @@ class DIScope:
 
         return container
 
-    def __exit__(self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+    def __exit__(
+        self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]
+    ) -> None:
         if self._original_registrations:
             container = get_container(self.container_name)
 
@@ -822,12 +810,10 @@ if __name__ == "__main__":
     # Use centralized path management
     import sys
     from pathlib import Path
+
     project_root = str(Path(__file__).resolve().parent.parent)
     try:
         sys.path.insert(0, project_root)
-        from core_imports import ensure_imports
-
-        ensure_imports()
     except ImportError:
         # Fallback for testing environment
         sys.path.insert(0, project_root)

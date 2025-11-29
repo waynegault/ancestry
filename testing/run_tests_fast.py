@@ -16,11 +16,6 @@ import argparse
 import importlib
 import sys
 import time
-from pathlib import Path
-
-# Add project root to path
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 # Fast test modules - these complete in <2s each and provide good coverage
 FAST_TEST_MODULES = [

@@ -9,10 +9,10 @@ research including match scoring, family tree analysis, and research prioritizat
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
@@ -2531,7 +2531,7 @@ def process_productive_messages(session_manager: SessionManager) -> bool:
     finally:
         # Cleanup
         if db_state.session:
-            session_manager.return_session(db_state.session)
+            session_manager.db_manager.return_session(db_state.session)
 
 
 def _setup_configuration(session_manager: SessionManager, db_state: DatabaseState, msg_config: MessageConfig) -> bool:
@@ -2544,7 +2544,7 @@ def _setup_configuration(session_manager: SessionManager, db_state: DatabaseStat
         return False
 
     # Get database session
-    db_state.session = session_manager.get_db_conn()
+    db_state.session = session_manager.db_manager.get_session()
     if not db_state.session:
         logger.critical("Action 9: Failed to get database session.")
         return False
@@ -3585,7 +3585,7 @@ def _test_database_session_availability() -> bool:
         logger.info("Testing database session availability...")
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -3594,7 +3594,7 @@ def _test_database_session_availability() -> bool:
         person_count = db_session.query(Person).count()
         logger.info(f"✅ Database session available with {person_count} persons in database")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         return True
 
     except Exception as e:
@@ -3615,7 +3615,7 @@ def _test_message_templates_available() -> bool:
         logger.info("Testing message template availability...")
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -3630,7 +3630,7 @@ def _test_message_templates_available() -> bool:
             for template in templates[:3]:  # Show first 3
                 logger.info(f"   - {template.template_name if hasattr(template, 'template_name') else 'N/A'}")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         assert template_count > 0, "Should have at least one message template"
         return True
 

@@ -21,16 +21,13 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # === CORE INFRASTRUCTURE ===
-from core_imports import (
-    auto_register_module,
-    get_logger,
-    standardize_module_imports,
-)
+import logging
+
+from core.registry_utils import auto_register_module
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # Imports removed - not used in this module
 
-standardize_module_imports()
 auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
@@ -51,7 +48,7 @@ from research.relationship_utils import format_api_relationship_path
 from testing.test_utilities import create_standard_test_runner
 
 # === MODULE LOGGER ===
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # === MODULE CONSTANTS ===
 API_UTILS_AVAILABLE = True

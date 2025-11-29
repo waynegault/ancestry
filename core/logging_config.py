@@ -49,15 +49,14 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # --- Standard library imports ---
 import copy
-import logging
 import os
 import sys
 from pathlib import Path
@@ -90,7 +89,8 @@ log_directory = Path(os.getenv("LOG_DIR", "Logs"))
 
 # Ensure log_directory is absolute
 if not log_directory.is_absolute():
-    log_directory = (Path(__file__).parent.resolve() / log_directory).resolve()
+    # Resolve relative to project root (parent of core/)
+    log_directory = (Path(__file__).parent.parent.resolve() / log_directory).resolve()
 
 # Set module constant after resolution
 LOG_DIRECTORY = log_directory
@@ -120,7 +120,7 @@ logging.getLogger('uc').setLevel(logging.ERROR)
 
 logger: logging.Logger = logging.getLogger("logger")
 logger.setLevel(logging.DEBUG)  # Set base level to DEBUG; handlers control final output
-logger.propagate = False  # Prevent messages from propagating to the root logger
+# logger.propagate = False  # Removed to allow propagation to root logger (where handlers are)
 
 # --- Test framework imports ---
 from testing.test_framework import (
@@ -282,7 +282,7 @@ def setup_logging(
     allow_env_override: bool = True,
 ) -> logging.Logger:
     """
-    Configures the main application logger ('logger').
+    Configures the ROOT logger.
     Sets up file and console handlers with appropriate levels, formatters, and filters.
     If called again, updates existing handler levels instead of re-adding them.
 
@@ -293,7 +293,7 @@ def setup_logging(
                    for the handlers.
 
     Returns:
-        The configured 'logger' instance.
+        The configured root logger instance.
     """
     # Use LOG_FILE from .env if not specified
     if not log_file:
@@ -313,11 +313,15 @@ def setup_logging(
         log_level_upper = "INFO"
         numeric_log_level = logging.INFO
 
+    # Target the ROOT logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(numeric_log_level)  # Ensure root logger allows messages through
+
     # If already initialized, just update handler levels
     if _LoggingState.initialized:
-        for handler in logger.handlers:
+        for handler in root_logger.handlers:
             handler.setLevel(numeric_log_level)
-        return logger
+        return root_logger
 
     # Ensure log directory exists
     logs_dir = LOG_DIRECTORY.resolve()
@@ -327,9 +331,9 @@ def setup_logging(
     log_file_path = logs_dir / Path(str(log_file)).name
     log_file_for_handler = str(log_file_path)
 
-    # Clear any existing handlers
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
+    # Clear any existing handlers (including basicConfig defaults)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
 
     # Create formatters (file without colors, console with colors)
     file_formatter = AlignedMessageFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT, use_colors=False)
@@ -340,7 +344,7 @@ def setup_logging(
     file_handler = logging.FileHandler(log_file_for_handler, mode="a", encoding="utf-8")
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(numeric_log_level)
-    logger.addHandler(file_handler)
+    root_logger.addHandler(file_handler)
 
     # Configure Console Handler
     console_handler = logging.StreamHandler(sys.stderr)
@@ -361,7 +365,7 @@ def setup_logging(
             ]
         )
     )
-    logger.addHandler(console_handler)
+    root_logger.addHandler(console_handler)
 
     # Configure logging levels for external libraries
     logging.getLogger("urllib3").setLevel(logging.ERROR)
@@ -380,7 +384,7 @@ def setup_logging(
     # Mark logging as initialized
     _LoggingState.initialized = True
 
-    return logger
+    return root_logger
 
 
 # End of setup_logging
@@ -605,7 +609,8 @@ def test_setup_logging():
     """Test basic setup_logging functionality."""
     test_logger = setup_logging("test.log", "INFO")
     assert test_logger is not None
-    assert test_logger.name == "logger"
+    # setup_logging now returns the root logger
+    assert test_logger.name == "root"
 
 
 def test_log_level_setting():

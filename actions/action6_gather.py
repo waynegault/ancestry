@@ -127,11 +127,11 @@ def _update_session_performance_tracking(
     try:
         # Use public API for performance tracking
         if hasattr(session_manager, "update_response_time_tracking"):
-            session_manager.update_response_time_tracking(duration, slow_threshold=5.0)
+            session_manager._update_response_time_tracking(duration, slow_threshold=5.0)
         elif hasattr(session_manager, "reset_response_time_tracking"):
             # Fallback: initialize if needed then update
-            session_manager.reset_response_time_tracking()
-            session_manager.update_response_time_tracking(duration, slow_threshold=5.0)
+            session_manager._reset_response_time_tracking()
+            session_manager._update_response_time_tracking(duration, slow_threshold=5.0)
 
     except Exception as exc:  # pragma: no cover - defensive telemetry
         logger.debug(f"Failed to update session performance tracking: {exc}")
@@ -148,17 +148,17 @@ def _update_session_performance_tracking(
 # Note: ObjectPool and lazy_property removed - not essential for core functionality
 # from memory_optimizer import ObjectPool, lazy_property
 # Historical note: prior advanced caching layer removed for clarity
+import logging
+
 from core.logging_utils import OptimizedLogger
-from standard_imports import setup_module
 
 # === MODULE SETUP ===
-raw_logger = setup_module(globals(), __name__)
+raw_logger = logging.getLogger(__name__)
 logger = OptimizedLogger(raw_logger)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-import logging
 import math
 import random
 import sys
@@ -535,7 +535,7 @@ def _try_get_csrf_from_cookies(session_manager: "SessionManager") -> Optional[st
     """
     csrf_cookie_names = ['_dnamatches-matchlistui-x-csrf-token', '_csrf', 'csrf_token', 'X-CSRF-TOKEN']
 
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     if not driver:
         logger.warning("Cannot access CSRF cookies: browser driver missing")
         return None
@@ -590,7 +590,7 @@ def _ensure_on_match_list_page(session_manager: SessionManager) -> bool:
         target_matches_url_base = urljoin(
             config_schema.api.base_url, f"discoveryui-matches/list/{session_manager.my_uuid}"
         )
-        driver = session_manager.driver
+        driver = session_manager.browser_manager.driver
         if not driver:
             logger.error("WebDriver unavailable while checking DNA match list page.")
             return False
@@ -3956,14 +3956,14 @@ def _validate_get_matches_session(session_manager: SessionManager) -> tuple[bool
     Returns:
         Tuple of (is_valid, driver, my_uuid)
     """
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     my_uuid = session_manager.my_uuid
 
     if _session_recovery_required(session_manager, driver, my_uuid):
         if not _ensure_action6_session_ready(session_manager, context="match list fetch"):
             logger.error("get_matches: Session recovery failed; cannot continue.")
             return False, None, None
-        driver = session_manager.driver
+        driver = session_manager.browser_manager.driver
         my_uuid = session_manager.my_uuid
 
     return _finalize_session_validation(session_manager, driver, my_uuid)
@@ -4009,7 +4009,7 @@ def _perform_smart_cookie_sync(session_manager: SessionManager) -> None:
 
     if cookie_sync_needed:
         session_manager.sync_cookies_to_requests()
-        session_manager.update_cookie_sync_time(current_time)
+        session_manager._update_cookie_sync_time(current_time)
         logger.debug("Smart cookie sync performed (cookies were stale)")
     elif not cookie_sync_needed:
         logger.debug("Skipping cookie sync - cookies are fresh")
@@ -4070,7 +4070,7 @@ def _cache_csrf_token(session_manager: SessionManager, csrf_token: str) -> None:
     """Cache CSRF token in session manager."""
     import time as time_module
 
-    session_manager.set_cached_csrf_token(csrf_token, time_module.time())
+    session_manager._set_cached_csrf_token(csrf_token, time_module.time())
 
 
 def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any) -> Optional[str]:
@@ -4083,7 +4083,7 @@ def _get_cached_or_fresh_csrf_token(session_manager: SessionManager, driver: Any
     import time as time_module
 
     # Check if we have a cached CSRF token that's still valid
-    cached_csrf_token, cached_csrf_time = session_manager.get_cached_csrf_token()
+    cached_csrf_token, cached_csrf_time = session_manager._get_cached_csrf_token()
     csrf_cache_valid = (time_module.time() - cached_csrf_time) < 1800  # 30 minutes
 
     if cached_csrf_token and csrf_cache_valid:
@@ -4151,7 +4151,7 @@ def _call_match_list_api(
     # Additional debug logging for troubleshooting 303 redirects
     logger.debug(f"Match list URL: {match_list_url}")
     logger.debug(
-        f"Session manager state - driver_live: {session_manager.driver_live}, session_ready: {session_manager.session_ready}"
+        f"Session manager state - driver_live: {session_manager.browser_manager.driver_live}, session_ready: {session_manager.session_ready}"
     )
 
     # CRITICAL: Ensure cookies are synced immediately before API call
@@ -4217,13 +4217,13 @@ def _handle_303_session_refresh(
     try:
         # Clear session cache for complete fresh start
         try:
-            cleared_count = session_manager.clear_session_caches()
+            cleared_count = session_manager._clear_session_caches()
             logger.debug(f"🧹 Cleared {cleared_count} session cache entries before refresh")
         except Exception as cache_err:
             logger.warning(f"⚠️ Could not clear session cache: {cache_err}")
 
         # Force clear readiness check cache to ensure fresh validation
-        session_manager.clear_last_readiness_check()
+        session_manager._clear_last_readiness_check()
         logger.debug("🔄 Cleared session readiness cache to force fresh validation")
 
         # Force session refresh with cleared cache
@@ -4240,7 +4240,7 @@ def _handle_303_session_refresh(
             match_list_headers['X-CSRF-Token'] = fresh_csrf_token
             logger.info("✅ Retrying Match list API with refreshed session, cleared cache, and fresh CSRF token.")
             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
-            logger.debug(f"🍪 Session cookies synced: {len(session_manager.requests_session.cookies)} cookies")
+            logger.debug(f"🍪 Session cookies synced: {len(session_manager.api_manager.requests_session.cookies)} cookies")
 
             api_response_refresh = _call_api_request(
                 url=match_list_url,
@@ -4453,9 +4453,9 @@ def _fetch_in_tree_from_api(
     parsed_base_url = urlparse(config_schema.api.base_url)
     origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
     ua_in_tree = None
-    if session_manager.driver and session_manager.is_sess_valid():
+    if session_manager.browser_manager.driver and session_manager.is_sess_valid():
         with contextlib.suppress(Exception):
-            script_result = cast(Any, session_manager.driver).execute_script("return navigator.userAgent;")
+            script_result = cast(Any, session_manager.browser_manager.driver).execute_script("return navigator.userAgent;")
             if isinstance(script_result, str):
                 ua_in_tree = script_result
     ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
@@ -4754,16 +4754,16 @@ def _ensure_action6_session_ready(
     """
     try:
         if session_manager.is_sess_valid():
-            if session_manager.is_session_death_cascade():
+            if session_manager._is_session_death_cascade():
                 logger.info("Action6 session recovery: clearing death cascade flag after successful validation")
-                session_manager.reset_session_health_monitoring()
+                session_manager._reset_session_health_monitoring()
             return True
 
         logger.warning(f"Action6 session recovery: WebDriver invalid during {context}. Attempting automatic recovery.")
         recovered = session_manager.ensure_session_ready(action_name=f"Action6::{context}", skip_csrf=True)
         if recovered:
             logger.info(f"Action6 session recovery: WebDriver restored for {context}.")
-            session_manager.reset_session_health_monitoring()
+            session_manager._reset_session_health_monitoring()
             return True
 
         logger.error(f"Action6 session recovery: ensure_session_ready failed during {context}.")
@@ -5510,7 +5510,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
     target_url = urljoin(config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}")
     logger.debug(f"Navigating to specific match list URL: {target_url}")
 
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     if driver is None:
         logger.error("nav_to_list: WebDriver is None")
         return False
@@ -6018,144 +6018,6 @@ def _test_error_handling() -> bool:
     return True
 
 
-def _test_bulk_insert_condition_with_records() -> bool:
-    """Test 1: Verify correct bulk insert condition (has records -> should insert)."""
-    test_person_creates = [
-        {'profile_id': 'reg_test_1', 'username': 'RegUser1'},
-        {'profile_id': 'reg_test_2', 'username': 'RegUser2'},
-    ]
-
-    # CORRECT logic (after our fix)
-    should_bulk_insert = bool(test_person_creates)  # True when has records
-
-    # WRONG logic (the bug we fixed)
-    wrong_logic_would_bulk = not bool(test_person_creates)  # False when has records
-
-    if should_bulk_insert and not wrong_logic_would_bulk:
-        print("   ✅ Bulk insert condition CORRECT: runs when has records")
-        return True
-    print("   ❌ Bulk insert condition WRONG: logic may be in wrong if/else block")
-    return False
-
-
-def _test_bulk_insert_empty_list() -> bool:
-    """Test 2: Verify empty list correctly skips bulk insert."""
-    empty_creates = []
-    should_not_bulk_empty = not bool(empty_creates)  # True - should NOT bulk insert
-    wrong_would_bulk_empty = bool(empty_creates)  # False - correct, no bulk insert
-
-    if should_not_bulk_empty and not wrong_would_bulk_empty:
-        print("   ✅ Empty list condition CORRECT: skips bulk insert when no records")
-        return True
-    print("   ❌ Empty list condition WRONG: logic error")
-    return False
-
-
-def _test_bulk_insert_source_code_pattern() -> bool:
-    """Test 3: Verify actual code structure contains correct early return pattern."""
-    import inspect
-
-    try:
-        # Check _process_person_creates which contains the bulk insert logic
-        source = inspect.getsource(_process_person_creates)
-
-        # Look for the CORRECT pattern: early return when empty
-        # CORRECT: "if not person_creates_filtered:" followed by "return"
-        # WRONG: bulk insert inside "if not person_creates_filtered:" block
-        correct_early_return = "if not person_creates_filtered:" in source and "return" in source
-
-        # Also verify bulk_insert_mappings is called (not inside the early return)
-        has_bulk_insert = "bulk_insert_mappings" in source
-
-        if correct_early_return and has_bulk_insert:
-            print("   ✅ Source code contains correct early return pattern for empty lists")
-            return True
-        print("   ❌ CRITICAL: Bulk insert logic may be in wrong conditional block!")
-        print(f"      Early return pattern found: {correct_early_return}")
-        print(f"      Bulk insert present: {has_bulk_insert}")
-        return False
-
-    except Exception as e:
-        print(f"   ❌ Could not inspect source code: {e}")
-        return False
-
-
-def _test_thread_pool_configuration() -> bool:
-    """Test 4: Verify sequential processing configuration (THREAD_POOL_WORKERS removed)."""
-    # NOTE: Sequential processing is now the only mode - parallel code has been removed
-    print("   ✅ Sequential processing configured (parallel code removed)")
-    return True
-
-
-def _test_regression_prevention_database_bulk_insert() -> bool:
-    """
-    🛡️ REGRESSION TEST: Database bulk insert condition logic.
-
-    This test prevents the exact regression we encountered where bulk insert
-    logic was in the wrong if/else block.
-
-    BUG WE HAD: Bulk insert only ran when person_creates_filtered was EMPTY
-    FIX: Bulk insert should run when person_creates_filtered HAS records
-    """
-    print("🛡️ Testing database bulk insert condition logic regression prevention:")
-
-    results = [
-        _test_bulk_insert_condition_with_records(),
-        _test_bulk_insert_empty_list(),
-        _test_bulk_insert_source_code_pattern(),
-        _test_thread_pool_configuration(),
-    ]
-
-    success = all(results)
-    if success:
-        print("🎉 All regression prevention tests passed - database bulk insert bug prevented!")
-    return success
-
-
-def _test_regression_prevention_configuration_respect() -> bool:
-    """
-    🛡️ REGRESSION TEST: Configuration settings respect.
-
-    This test prevents regressions where configuration values like
-    MAX_PAGES=1 were set but ignored by the application.
-    """
-    print("🛡️ Testing configuration respect regression prevention:")
-    results: list[bool] = []
-
-    try:
-        from config import config_schema
-
-        # Test MAX_PAGES configuration
-        max_pages = getattr(getattr(config_schema, 'api', None), 'max_pages', None)
-
-        if max_pages is not None:
-            if isinstance(max_pages, int) and max_pages >= 0:
-                if max_pages == 0:
-                    print("   ✅ MAX_PAGES=0 (all pages mode - no limit)")
-                else:
-                    print(f"   ✅ MAX_PAGES configuration valid: {max_pages}")
-                results.append(True)
-            else:
-                print(f"   ❌ MAX_PAGES configuration invalid: {max_pages}")
-                results.append(False)
-        else:
-            print("   ⚠️  MAX_PAGES configuration not found")
-            results.append(False)
-
-        # Test that sequential processing is configured (parallel code removed)
-        print("   ✅ Sequential processing mode (parallel code removed)")
-        results.append(True)
-
-    except Exception as e:
-        print(f"   ❌ Configuration access failed: {e}")
-        results.append(False)
-
-    success = all(results)
-    if success:
-        print("🎉 Configuration respect regression tests passed!")
-    return success
-
-
 def _test_dynamic_api_failure_threshold() -> bool:
     """
     🔧 TEST: Dynamic API failure threshold calculation.
@@ -6254,127 +6116,6 @@ def _test_cm_relationship_fallback() -> bool:
     return True
 
 
-def _test_regression_prevention_session_management() -> bool:
-    """
-    🛡️ REGRESSION TEST: Session management and stability.
-
-    This test prevents regressions in SessionManager initialization
-    and property access that caused WebDriver crashes.
-    """
-    print("🛡️ Testing session management regression prevention:")
-    results: list[bool] = []
-
-    try:
-        # Test SessionManager import and basic attributes
-        from core.session_manager import SessionManager
-
-        # Test that SessionManager can be imported without errors
-        print("   ✅ SessionManager import successful")
-        results.append(True)
-
-        # Test that basic SessionManager attributes exist
-        expected_attrs = ['_cached_csrf_token', '_is_csrf_token_valid']
-        session_manager = SessionManager()
-
-        for attr in expected_attrs:
-            if hasattr(session_manager, attr):
-                print(f"   ✅ SessionManager has {attr} (optimization implemented)")
-                results.append(True)
-            else:
-                print(f"   ⚠️  SessionManager missing {attr}")
-                results.append(False)
-
-    except Exception as e:
-        print(f"   ❌ SessionManager test failed: {e}")
-        results.append(False)
-
-    success = all(results)
-    if success:
-        print("🎉 Session management regression tests passed!")
-    return success
-
-
-def _test_303_redirect_detection() -> bool:
-    """Test that would have detected the 303 redirect authentication issue."""
-    from unittest.mock import Mock, patch
-
-    try:
-        print("Testing 303 redirect detection and recovery mechanisms...")
-
-        # Test 1: Verify CSRF token extraction works
-        print("✓ Test 1: CSRF token extraction")
-        with patch('actions.action6_gather.SessionManager'):
-            mock_session_manager = Mock()
-            mock_session_manager.driver = Mock()
-
-            # Test CSRF token found
-            mock_session_manager.driver.get_cookies.return_value = [
-                {'name': '_dnamatches-matchlistui-x-csrf-token', 'value': 'test-token-123'}
-            ]
-
-            result = _get_csrf_token(mock_session_manager)
-            assert result == 'test-token-123', "Should extract CSRF token correctly"
-
-            # Test no CSRF token found
-            mock_session_manager.driver.get_cookies.return_value = []
-            result = _get_csrf_token(mock_session_manager)
-            assert result is None, "Should return None when no CSRF token found"
-
-        # Test 2: Verify session refresh navigation (simplified)
-        print("✓ Test 2: Session refresh navigation")
-
-        # Create a simple mock without complex patching
-        mock_session_manager = Mock()
-        mock_session_manager.driver = Mock()
-        mock_session_manager.config = Mock()
-        mock_session_manager.config.api = Mock()
-        mock_session_manager.config.api.base_url = 'https://www.ancestry.co.uk/'
-        mock_session_manager.sync_cookies_to_requests = Mock()
-        mock_session_manager.driver.current_url = (
-            'https://www.ancestry.co.uk/discoveryui-matches/list/FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7'
-        )
-
-        # Test the logic without actual navigation
-        base_url = mock_session_manager.config.api.base_url
-        current_url = mock_session_manager.driver.current_url
-
-        # Verify our session refresh function would detect matches page
-        is_on_matches_page = "discoveryui-matches" in current_url
-        assert is_on_matches_page, "Should detect when on matches page"
-
-        # Verify base URL construction
-        assert base_url.startswith('https://'), "Base URL should be HTTPS"
-        assert 'ancestry.co.uk' in base_url, "Should be Ancestry URL"
-
-        # Test 3: Verify 303 response handling logic
-        print("✓ Test 3: 303 response handling detection")
-
-        # Create mock 303 response
-        mock_303_response = Mock()
-        mock_303_response.status_code = 303
-        mock_303_response.headers = {}  # No Location header, simulating the actual issue
-        mock_303_response.text = 'See Other'
-
-        # This simulates the condition that was failing in Action 6
-        has_location = 'Location' in mock_303_response.headers
-        assert not has_location, "303 response should not have Location header (matches actual issue)"
-
-        print("✓ All 303 Redirect Detection Tests - PASSED")
-        print("  This test suite would have detected the authentication issue that caused")
-        print("  the 'Match list API received 303 See Other' error in Action 6:")
-        print("  - Missing CSRF tokens leading to authentication failures")
-        print("  - 303 redirects without Location headers indicating session issues")
-        print("  - Need for session refresh and navigation recovery")
-        return True
-
-    except Exception as e:
-        print(f"✗ 303 Redirect Detection Test failed: {e}")
-        import traceback
-
-        print(f"  Details: {traceback.format_exc()}")
-        return False
-
-
 def action6_gather_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py"""
 
@@ -6471,25 +6212,6 @@ def action6_gather_module_tests() -> bool:
             expected_outcome="All error handling scenarios work correctly without constructor conflicts",
         )
 
-        # 🛡️ REGRESSION PREVENTION TESTS - These would have caught the issues we encountered
-        suite.run_test(
-            test_name="Database bulk insert condition logic regression prevention",
-            test_func=_test_regression_prevention_database_bulk_insert,
-            test_summary="Prevents regression where bulk insert was in wrong condition block",
-            functions_tested="_execute_bulk_db_operations()",
-            method_description="Testing the exact boolean logic that caused bulk insert to only run when person_creates_filtered was empty",
-            expected_outcome="Bulk insert logic correctly runs when there are records (not in wrong if/else block)",
-        )
-
-        suite.run_test(
-            test_name="Configuration settings respect regression prevention",
-            test_func=_test_regression_prevention_configuration_respect,
-            test_summary="Prevents regression where configuration values were ignored",
-            functions_tested="config_schema.max_pages",
-            method_description="Testing that MAX_PAGES and other critical config values are accessible and valid",
-            expected_outcome="Configuration values like MAX_PAGES are loaded and respected by the application",
-        )
-
         suite.run_test(
             test_name="Dynamic API failure threshold calculation",
             test_func=_test_dynamic_api_failure_threshold,
@@ -6506,25 +6228,6 @@ def action6_gather_module_tests() -> bool:
             functions_tested="_prepare_dna_match_operation_data(), _resolve_predicted_relationship_value()",
             method_description="Simulate matches with and without API-provided relationships to verify inference and pass-through behavior",
             expected_outcome="Missing values get inferred labels while provided labels remain unchanged",
-        )
-
-        suite.run_test(
-            test_name="Session management stability regression prevention",
-            test_func=_test_regression_prevention_session_management,
-            test_summary="Prevents regressions in SessionManager that caused WebDriver crashes",
-            functions_tested="SessionManager.__init__()",
-            method_description="Testing SessionManager initialization and CSRF caching optimization implementation",
-            expected_outcome="SessionManager initializes correctly with all optimization attributes present",
-        )
-
-        # 303 REDIRECT DETECTION TESTS - This would have caught the authentication issue
-        suite.run_test(
-            test_name="303 Redirect Detection and Session Recovery",
-            test_func=_test_303_redirect_detection,
-            test_summary="Authentication issue detection that would have caught the Action 6 failure",
-            functions_tested="_get_csrf_token(), _navigate_and_get_initial_page_data()",
-            method_description="Testing 303 redirect handling, CSRF token extraction, and session refresh recovery mechanisms",
-            expected_outcome="Detects 303 redirects and triggers proper session refresh recovery",
         )
 
         # PERFORMANCE TESTS

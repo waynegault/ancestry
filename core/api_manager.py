@@ -23,9 +23,12 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.registry_utils import auto_register_module
+
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
@@ -312,7 +315,7 @@ class APIManager:
             return False
 
         logger.info("🔄 Attempting session recovery due to invalid browser session...")
-        if session_manager.browser_manager and session_manager.browser_manager.is_session_valid():
+        if session_manager.browser_manager and session_manager.is_sess_valid():
             logger.info("✅ Session recovery successful, retrying cookie sync...")
             return True
         logger.warning("❌ Session recovery failed or not available")
@@ -1438,9 +1441,6 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     try:
         sys.path.insert(0, str(project_root))
-        from core_imports import ensure_imports
-
-        ensure_imports()
     except ImportError:
         # Fallback for testing environment
         sys.path.insert(0, str(project_root))

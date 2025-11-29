@@ -15,6 +15,7 @@ Features:
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import time
@@ -25,9 +26,8 @@ from pathlib import Path
 from typing import Any, Optional, Protocol, runtime_checkable
 
 from core.cache_backend import CacheHealth, CacheStats
-from standard_imports import setup_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================

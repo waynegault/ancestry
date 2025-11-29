@@ -53,6 +53,9 @@ if str(_project_root) not in sys.path:
 
 # === STANDARD LIBRARY IMPORTS ===
 import json
+
+# === LOCAL IMPORTS ===
+import logging
 import threading
 import time
 from collections import deque
@@ -64,11 +67,9 @@ from typing import Any, Optional, cast
 # === THIRD-PARTY IMPORTS ===
 import psutil
 
-# === LOCAL IMPORTS ===
-from standard_imports import register_function, setup_module
 from testing.test_framework import TestSuite
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 # Default thresholds for dynamically registered metrics
@@ -2021,12 +2022,9 @@ def health_monitor_tests() -> bool:
 
 
 # Register functions for external access
-register_function("get_health_monitor", get_health_monitor)
-register_function("initialize_health_monitoring", initialize_health_monitoring)
-register_function("integrate_with_session_manager", integrate_with_session_manager)
-register_function("integrate_with_action6", integrate_with_action6)
-register_function("get_performance_recommendations", get_performance_recommendations)
-register_function("health_monitor_tests", health_monitor_tests)
+from core.registry_utils import auto_register_module
+
+auto_register_module(globals(), __name__)
 
 
 # Use centralized test runner utility

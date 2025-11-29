@@ -235,7 +235,7 @@ class MainCLIHelpers:
             print("=" * 80)
 
             sm = SessionManager()
-            db_session = sm.get_db_conn()
+            db_session = sm.db_manager.get_session()
 
             if not db_session:
                 print("✗ Failed to get database session")

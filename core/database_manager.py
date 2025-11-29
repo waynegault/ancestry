@@ -17,9 +17,12 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.registry_utils import auto_register_module
+
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
@@ -133,7 +136,7 @@ class DatabaseManager:
             "total_query_time": 0.0,
             "avg_query_time": 0.0,
             "pool_overflows": 0,
-            "pool_invalidations": 0
+            "pool_invalidations": 0,
         }
 
         # Connection health monitoring
@@ -287,6 +290,7 @@ class DatabaseManager:
             Query result with timing information
         """
         import time
+
         start_time = time.time()
 
         try:
@@ -381,10 +385,7 @@ class DatabaseManager:
 
     @staticmethod
     async def async_execute_query(
-        session: Session,
-        query: str,
-        params: Optional[dict[str, Any]] = None,
-        fetch_results: bool = True
+        session: Session, query: str, params: Optional[dict[str, Any]] = None, fetch_results: bool = True
     ) -> Optional[list[dict[str, Any]]]:
         """
         Execute a database query asynchronously.
@@ -474,9 +475,7 @@ class DatabaseManager:
         """Calculate optimal pool configuration. Returns (pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping)."""
         # Get base pool size from config
         base_pool_size = (
-            config_schema.database.pool_size
-            if config_schema and config_schema.database
-            else self._base_pool_size
+            config_schema.database.pool_size if config_schema and config_schema.database else self._base_pool_size
         )
         if not isinstance(base_pool_size, int) or base_pool_size <= 0:
             logger.warning(f"Invalid DB_POOL_SIZE '{base_pool_size}'. Using default {self._base_pool_size}.")
@@ -500,7 +499,9 @@ class DatabaseManager:
 
         return pool_size, max_overflow, pool_timeout, pool_recycle, pool_pre_ping
 
-    def _create_engine_with_config(self, pool_size: int, max_overflow: int, pool_timeout: int, pool_recycle: int, pool_pre_ping: bool) -> None:
+    def _create_engine_with_config(
+        self, pool_size: int, max_overflow: int, pool_timeout: int, pool_recycle: int, pool_pre_ping: bool
+    ) -> None:
         """Create SQLAlchemy engine with specified configuration."""
         self.engine = create_engine(
             f"sqlite:///{self.db_path}",
@@ -519,7 +520,7 @@ class DatabaseManager:
             execution_options={
                 "autocommit": False,
                 "compiled_cache": {},  # Enable query compilation caching
-            }
+            },
         )
         logger.debug(f"Created SQLAlchemy engine: ID={id(self.engine)}")
 
@@ -537,9 +538,7 @@ class DatabaseManager:
             cursor.execute("PRAGMA journal_mode=WAL;")
             cursor.execute("PRAGMA foreign_keys=ON;")
             cursor.execute("PRAGMA synchronous=NORMAL;")
-            logger.debug(
-                "SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal)."
-            )
+            logger.debug("SQLite PRAGMA settings applied (WAL, Foreign Keys, Sync Normal).")
         except sqlite3.Error as pragma_e:
             logger.error(f"Failed setting PRAGMA: {pragma_e}")
         finally:
@@ -590,9 +589,7 @@ class DatabaseManager:
             self._cleanup_failed_initialization()
             raise sql_e
         except Exception as e:
-            logger.critical(
-                f"UNEXPECTED error initializing SQLAlchemy: {e}", exc_info=True
-            )
+            logger.critical(f"UNEXPECTED error initializing SQLAlchemy: {e}", exc_info=True)
             self._cleanup_failed_initialization()
             raise e
 
@@ -615,18 +612,15 @@ class DatabaseManager:
                 # Import Base locally to avoid circular import issues
                 try:
                     from database import Base
+
                     Base.metadata.create_all(self.engine)
                     logger.debug("DB tables created successfully.")
                 except ImportError as e:
-                    logger.warning(
-                        f"Cannot create tables - Base not available from database module: {e}"
-                    )
+                    logger.warning(f"Cannot create tables - Base not available from database module: {e}")
 
             self._run_schema_migrations()
         except SQLAlchemyError as table_create_e:
-            logger.warning(
-                f"Non-critical error during DB table check/creation: {table_create_e}"
-            )
+            logger.warning(f"Non-critical error during DB table check/creation: {table_create_e}")
             # Don't raise the error, just log it and continue
 
     def _apply_schema_upgrades(self, inspector: Inspector) -> None:
@@ -707,18 +701,11 @@ class DatabaseManager:
 
         try:
             with self.engine.begin() as connection:
-                connection.execute(
-                    text(
-                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
-                    )
-                )
+                connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
                 if default_value is not None:
                     connection.execute(
-                        text(
-                            f"UPDATE {table_name} SET {column_name} = :default_value "
-                            f"WHERE {column_name} IS NULL"
-                        ),
+                        text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {column_name} IS NULL"),
                         {"default_value": default_value},
                     )
         except SQLAlchemyError as upgrade_err:
@@ -737,6 +724,7 @@ class DatabaseManager:
             Session or None if unable to create session
         """
         import time
+
         start_time = time.time()
 
         engine_id_str = id(self.engine) if self.engine else "None"
@@ -744,9 +732,7 @@ class DatabaseManager:
 
         # Initialize DB if needed
         if not self._db_init_attempted or not self.engine or not self.Session:
-            logger.debug(
-                "Engine/Session factory not ready. Triggering initialization..."
-            )
+            logger.debug("Engine/Session factory not ready. Triggering initialization...")
             try:
                 self._initialize_engine_and_session()
                 if not self.Session:
@@ -799,9 +785,7 @@ class DatabaseManager:
                 self._connection_stats["active_connections"] = max(0, self._connection_stats["active_connections"] - 1)
                 logger.debug(f"DB session {session_id} closed and returned to pool.")
             except Exception as e:
-                logger.error(
-                    f"Error closing DB session {session_id}: {e}", exc_info=True
-                )
+                logger.error(f"Error closing DB session {session_id}: {e}", exc_info=True)
                 # Track connection leak
                 self._connection_stats["connection_leaks"] += 1
         else:
@@ -813,19 +797,13 @@ class DatabaseManager:
         if session.is_active:
             try:
                 session.commit()
-                logger.debug(
-                    f"DB Context Manager: Commit successful for session {session_id}."
-                )
+                logger.debug(f"DB Context Manager: Commit successful for session {session_id}.")
             except SQLAlchemyError as commit_err:
-                logger.error(
-                    f"DB Context Manager: Commit failed for session {session_id}: {commit_err}. Rolling back."
-                )
+                logger.error(f"DB Context Manager: Commit failed for session {session_id}: {commit_err}. Rolling back.")
                 session.rollback()
                 raise
         else:
-            logger.warning(
-                f"DB Context Manager: Session {session_id} inactive after yield, skipping commit."
-            )
+            logger.warning(f"DB Context Manager: Session {session_id} inactive after yield, skipping commit.")
 
     @staticmethod
     def _rollback_session_if_active(session: Optional[Session], session_id: str) -> None:
@@ -833,13 +811,9 @@ class DatabaseManager:
         if session and session.is_active:
             try:
                 session.rollback()
-                logger.warning(
-                    f"DB Context Manager: Rollback successful for session {session_id}."
-                )
+                logger.warning(f"DB Context Manager: Rollback successful for session {session_id}.")
             except Exception as rb_err:
-                logger.error(
-                    f"DB Context Manager: Error during rollback for session {session_id}: {rb_err}"
-                )
+                logger.error(f"DB Context Manager: Error during rollback for session {session_id}: {rb_err}")
 
     @contextlib.contextmanager
     def get_session_context(self) -> Generator[Optional[Session], None, None]:
@@ -856,9 +830,7 @@ class DatabaseManager:
             session = self.get_session()
             if session:
                 session_id_for_log = str(id(session))
-                logger.debug(
-                    f"DB Context Manager: Acquired session {session_id_for_log}."
-                )
+                logger.debug(f"DB Context Manager: Acquired session {session_id_for_log}.")
                 yield session
 
                 # After the 'with' block finishes:
@@ -936,14 +908,10 @@ def module_tests() -> bool:
     )
 
     with suppress_logging():
-        suite = TestSuite(
-            "Database Manager & Connection Handling", "core/database_manager.py"
-        )
+        suite = TestSuite("Database Manager & Connection Handling", "core/database_manager.py")
 
     # Run all tests
-    print(
-        "🗄️ Running Database Manager & Connection Handling comprehensive test suite..."
-    )
+    print("🗄️ Running Database Manager & Connection Handling comprehensive test suite...")
 
     with suppress_logging():
         suite.run_test(
@@ -1044,14 +1012,10 @@ def test_database_manager_initialization() -> None:
     """Test DatabaseManager initialization with various configurations."""
     # Test memory database initialization
     db_manager = DatabaseManager(db_path=":memory:")
-    assert (
-        db_manager.db_path == ":memory:"
-    ), "Memory database path should be set correctly"
+    assert db_manager.db_path == ":memory:", "Memory database path should be set correctly"
     assert db_manager.engine is None, "Engine should be None before initialization"
     assert db_manager.Session is None, "Session should be None before initialization"
-    assert (
-        not getattr(db_manager, "_db_ready", False)
-    ), "Database should not be ready before initialization"
+    assert not getattr(db_manager, "_db_ready", False), "Database should not be ready before initialization"
 
 
 def test_engine_session_creation() -> None:
@@ -1215,12 +1179,9 @@ run_comprehensive_tests = create_standard_test_runner(module_tests)
 
 
 if __name__ == "__main__":
-    from core_imports import import_context
-
     # Use clean import context for testing
-    with import_context():
-        print("🗄️ Running Database Manager comprehensive test suite...")
-        run_comprehensive_tests()
+    print("🗄️ Running Database Manager comprehensive test suite...")
+    run_comprehensive_tests()
 
 
 # ---------------------------------------------------------------------------
@@ -1283,9 +1244,7 @@ def db_transn(session: Session):
             rollback_start = time.time()
             session.rollback()
             rollback_duration = time.time() - rollback_start
-            logger.warning(
-                "Rollback successful in %.3fs (Session=%s)", rollback_duration, session_id
-            )
+            logger.warning("Rollback successful in %.3fs (Session=%s)", rollback_duration, session_id)
             transaction_elapsed = time.time() - transaction_start
             if isinstance(exc, (sqlite3.OperationalError, sqlite3.DatabaseError)):
                 raise DatabaseConnectionError(
@@ -1335,9 +1294,7 @@ def _validate_backup_paths() -> tuple[Path, Path, Path]:
     if backup_dir is None:
         raise AncestryError("Cannot backup database: DATA_DIR is not configured.")
     if not db_path.exists():
-        raise AncestryError(
-            f"Database file '{db_path.name}' not found at {db_path}."
-        )
+        raise AncestryError(f"Database file '{db_path.name}' not found at {db_path}.")
 
     try:
         with db_path.open("rb") as handle:

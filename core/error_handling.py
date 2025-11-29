@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
-import logging
 import random
 import threading
 import time
@@ -1140,7 +1139,7 @@ def error_handler(
     return decorator
 
 
-def safe_execute(
+def execute_safely(
     func: Callable[..., Any],
     *args: Any,
     default_return: Any = None,
@@ -1148,7 +1147,7 @@ def safe_execute(
     **kwargs: Any,
 ) -> Any:
     """
-    Safely execute a function with error handling.
+    Safely execute a function with error handling (Function Wrapper).
 
     Args:
         func: Function to execute
@@ -1166,6 +1165,33 @@ def safe_execute(
         app_error = handle_error(e, context)
         logger.warning(f"Safe execution failed: {app_error.message}")
         return default_return
+
+
+def safe_execute(
+    default_return: Any = None, log_errors: bool = True, error_message: Optional[str] = None
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """
+    Decorator to safely execute a function with error handling.
+
+    Usage:
+        @safe_execute(default_return=False)
+        def my_func(): ...
+    """
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if log_errors:
+                    msg = error_message or f"Error in {func.__name__}: {e}"
+                    logger.warning(msg)
+                return default_return
+
+        return wrapper
+
+    return decorator
 
 
 class ErrorContext:
@@ -1866,8 +1892,8 @@ def test_error_handling() -> None:
     def failing_func(message: str) -> None:
         raise ValueError(message)
 
-    fallback = safe_execute(failing_func, "boom", default_return="recovered", context={"step": "safe"})
-    assert fallback == "recovered", "safe_execute should return fallback after error"
+    fallback = execute_safely(failing_func, "boom", default_return="recovered", context={"step": "safe"})
+    assert fallback == "recovered", "execute_safely should return fallback after error"
     assert recorded["contexts"][-1]["step"] == "safe", "Context dictionary should propagate to handler"
 
     direct_error = handle_error(ValueError("direct"), context={"phase": "handle"})
@@ -1964,11 +1990,8 @@ def test_error_context() -> None:
 
     register_error_handler(ContextRecordingHandler())
 
-    try:
-        with ErrorContext("test_operation", log_success=False):
-            raise RuntimeError("boom")
-    except RuntimeError:
-        pass
+    with contextlib.suppress(RuntimeError), ErrorContext("test_operation", log_success=False):
+        raise RuntimeError("boom")
 
     assert handled, "ErrorContext should route exceptions through handle_error"
     assert handled[-1].get("operation") == "test_operation"
@@ -1993,15 +2016,6 @@ if __name__ == "__main__":
     from pathlib import Path  # Use centralized path management
 
     project_root = Path(__file__).resolve().parent.parent
-    try:
-        # Replaced with standardize_module_imports()
-        from core_imports import ensure_imports
-
-        ensure_imports()
-    except ImportError:
-        # Fallback for testing environment
-        # Replaced with standardize_module_imports()
-        pass
 
     print("\U0001faea Running Error Handling comprehensive test suite...")
     try:

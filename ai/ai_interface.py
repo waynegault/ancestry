@@ -42,8 +42,6 @@ understanding of family relationships and genealogical data structures.
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 # === CORE INFRASTRUCTURE ===
 import logging
-import sys
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

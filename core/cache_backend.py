@@ -15,7 +15,6 @@ import logging
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, ClassVar, Optional, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)

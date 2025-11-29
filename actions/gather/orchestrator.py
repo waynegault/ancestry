@@ -16,6 +16,8 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
+import logging
+
 from actions.gather.checkpoint import finalize_checkpoint_after_run, load_checkpoint, persist_checkpoint
 from actions.gather.metrics import (
     PageProcessingMetrics,
@@ -40,11 +42,10 @@ from core.error_handling import (
 )
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 from utils import log_final_summary, log_starting_position
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 GatherState = dict[str, Any]
 
@@ -485,7 +486,7 @@ class GatherOrchestrator:
     ) -> Optional[SqlAlchemySession]:
         db_session: Optional[SqlAlchemySession] = None
         for retry_attempt in range(max_retries):
-            db_session = self.session_manager.get_db_conn()
+            db_session = self.session_manager.db_manager.get_session()
             if db_session:
                 state["db_connection_errors"] = 0
                 return db_session
@@ -531,7 +532,7 @@ class GatherOrchestrator:
         if not matches_on_page:
             return False
 
-        quick_db_session = self.session_manager.get_db_conn()
+        quick_db_session = self.session_manager.db_manager.get_session()
         if not quick_db_session:
             return False
 
@@ -575,7 +576,7 @@ class GatherOrchestrator:
             )
             return False
         finally:
-            self.session_manager.return_session(quick_db_session)
+            self.session_manager.db_manager.return_session(quick_db_session)
 
     def _fetch_page_matches(
         self,
@@ -613,7 +614,7 @@ class GatherOrchestrator:
             return []
         finally:
             if db_session:
-                self.session_manager.return_session(db_session)
+                self.session_manager.db_manager.return_session(db_session)
 
     def _apply_rate_limiting(self, current_page_num: int) -> None:
         self.hooks.adjust_delay(self.session_manager, current_page_num)
@@ -622,7 +623,7 @@ class GatherOrchestrator:
             limiter.wait()
 
     def _check_and_handle_session_health(self, current_page_num: int) -> bool:
-        if not self.session_manager.check_session_health():
+        if not self.session_manager._check_session_health():
             self._handle_session_death(current_page_num)
             return False
 
@@ -645,7 +646,7 @@ class GatherOrchestrator:
         session_age = time.time() - start_time
         if session_age > 800:
             logger.info("Proactively refreshing session after %.0f seconds to prevent timeout", session_age)
-            if self.session_manager.attempt_session_recovery(reason="proactive"):
+            if self.session_manager._attempt_session_recovery(reason="proactive"):
                 logger.info("✅ Proactive session refresh successful")
             else:
                 logger.error("❌ Proactive session refresh failed")
@@ -756,14 +757,14 @@ class GatherOrchestrator:
     @error_context("DNA match gathering coordination")
     def _validate_session_state(self) -> None:
         if (
-            not self.session_manager.driver
-            or not self.session_manager.driver_live
+            not self.session_manager.browser_manager.driver
+            or not self.session_manager.browser_manager.driver_live
             or not self.session_manager.session_ready
         ):
             raise BrowserSessionError(
                 "WebDriver/Session not ready for DNA match gathering",
                 context={
-                    "driver_live": self.session_manager.driver_live,
+                    "driver_live": self.session_manager.browser_manager.driver_live,
                     "session_ready": self.session_manager.session_ready,
                 },
             )
@@ -920,7 +921,14 @@ def _test_log_final_results_emits_summary() -> bool:
             return Metrics()
 
     class FakeSessionManager:
+        class FakeBrowserManager:
+            driver = object()
+            driver_live = True
+
+        browser_manager = FakeBrowserManager()
         rate_limiter: Any = FakeLimiter()
+        session_ready = True
+        my_uuid = "UUID"
 
     orchestrator = GatherOrchestrator(cast(SessionManager, FakeSessionManager()), _make_stub_hooks())
     state = {
@@ -961,8 +969,11 @@ def _test_determine_start_page_prefers_checkpoint() -> bool:
 
 def _test_orchestrator_coord_invokes_execution() -> bool:
     class FakeSessionManager:
-        driver = object()
-        driver_live = True
+        class FakeBrowserManager:
+            driver = object()
+            driver_live = True
+
+        browser_manager = FakeBrowserManager()
         session_ready = True
         my_uuid = "UUID"
         rate_limiter = None
@@ -973,7 +984,7 @@ def _test_orchestrator_coord_invokes_execution() -> bool:
             return True
 
         @staticmethod
-        def check_session_health() -> bool:
+        def _check_session_health() -> bool:
             return True
 
         @staticmethod

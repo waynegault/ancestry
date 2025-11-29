@@ -26,6 +26,8 @@ parent_dir = str(Path(__file__).resolve().parent.parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+import logging
+
 from core.cache.interface import (
     CacheConfig,
     CacheEntry,
@@ -34,9 +36,10 @@ from core.cache.interface import (
     InvalidationPattern,
 )
 from core.cache_backend import CacheHealth, CacheStats
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 # =============================================================================

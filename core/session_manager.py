@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: PLR0904
 
 """
 Refactored Session Manager - Orchestrates all session components.
@@ -15,7 +14,6 @@ performance improvement. Reduces initialization from 34.59s to <12s target.
 # === CORE INFRASTRUCTURE ===
 import logging
 import sys
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -111,27 +109,11 @@ class SessionLifecycleState(Enum):
     DEGRADED = "DEGRADED"
 
 
-class SupportsBrowserConsoleLogs(Protocol):
-    """Protocol for WebDrivers that expose get_log for console inspection."""
-
-    def get_log(self, log_type: str) -> list[dict[str, Any]]:  # pragma: no cover - protocol
-        ...
+from core.protocols import SessionHealthMonitor, SupportsBrowserConsoleLogs
+from core.session_mixins import SessionHealthMixin, SessionIdentifierMixin
 
 
-class SessionHealthMonitor(TypedDict):
-    is_alive: threading.Event
-    death_detected: threading.Event
-    last_heartbeat: float
-    heartbeat_interval: int
-    death_cascade_halt: threading.Event
-    death_timestamp: Optional[float]
-    parallel_operations: int
-    death_cascade_count: int
-    browser_death_count: NotRequired[int]
-    last_browser_health_check: NotRequired[float]
-
-
-class SessionManager:
+class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
     """
     Refactored SessionManager that orchestrates specialized managers.
 
@@ -485,16 +467,7 @@ class SessionManager:
             )
             self._scraper = None
 
-    def ensure_db_ready(self) -> bool:
-        """
-        Ensure database is ready.
-
-        Returns:
-            bool: True if database is ready, False otherwise
-        """
-        return self.db_manager.ensure_ready()
-
-    def start_browser(self, action_name: Optional[str] = None) -> bool:
+    def _start_browser(self, action_name: Optional[str] = None) -> bool:
         """
         Start the browser session.
 
@@ -508,7 +481,7 @@ class SessionManager:
         self._reset_logged_flags()
         return self.browser_manager.start_browser(action_name)
 
-    def close_browser(self) -> None:
+    def _close_browser(self) -> None:
         """Close the browser session without affecting database."""
         self.browser_manager.close_browser()
         self._reset_cookie_sync_state("browser_close")
@@ -526,13 +499,13 @@ class SessionManager:
         logger.debug(f"Starting session for: {action_name or 'Unknown Action'}")
 
         # Ensure database is ready
-        if not self.ensure_db_ready():
+        if not self.db_manager.ensure_ready():
             logger.error("Failed to ensure database ready.")
             return False
 
         # Start browser if needed
         if self.browser_manager.browser_needed:
-            browser_success = self.start_browser(action_name)
+            browser_success = self.browser_manager.start_browser(action_name)
             if not browser_success:
                 logger.error("Failed to start browser.")
                 return False
@@ -573,7 +546,7 @@ class SessionManager:
         with self._state_lock:
             return self._state
 
-    def get_state_snapshot(self) -> dict[str, Any]:
+    def _get_state_snapshot(self) -> dict[str, Any]:
         """Provide a snapshot of lifecycle state for diagnostics."""
 
         with self._state_lock:
@@ -583,13 +556,13 @@ class SessionManager:
                 "changed_at": self._state_changed_at,
             }
 
-    def request_recovery(self, reason: str) -> None:
+    def _request_recovery(self, reason: str) -> None:
         """Reset lifecycle state to UNINITIALIZED before rebuilding."""
 
         self._last_readiness_check = None
         self._transition_state(SessionLifecycleState.UNINITIALIZED, reason)
 
-    def guard_action(self, required_state: str, action_name: str) -> bool:
+    def _guard_action(self, required_state: str, action_name: str) -> bool:
         """Guard execution based on lifecycle state requirements."""
 
         normalized_required = (required_state or "").lower()
@@ -603,7 +576,7 @@ class SessionManager:
                 action_name,
                 normalized_required,
             )
-            self.request_recovery(f"{action_name} reset from DEGRADED state")
+            self._request_recovery(f"{action_name} reset from DEGRADED state")
             return True
 
         if current_state == SessionLifecycleState.UNINITIALIZED and normalized_required in {
@@ -637,7 +610,7 @@ class SessionManager:
             return None
 
         # Validate that the cached state is still accurate
-        if self.browser_manager.browser_needed and not self.browser_manager.is_session_valid():
+        if self.browser_manager.browser_needed and not self.is_sess_valid():
             logger.debug(f"Cached session readiness invalid - driver session expired (age: {time_since_check:.1f}s)")
             self._last_readiness_check = None
             self._transition_state(
@@ -743,7 +716,7 @@ class SessionManager:
         self._update_session_metrics()
         return readiness_ok
 
-    def verify_sess(self) -> bool:
+    def _verify_sess(self) -> bool:
         """
         Verify session status using login_status function.
 
@@ -780,13 +753,13 @@ class SessionManager:
             bool: True if driver exists and is responsive, False otherwise
         """
         # Simple check - verify driver exists
-        if self.driver is None:
+        if self.browser_manager.driver is None:
             return False
 
         # Enhanced check - verify driver is responsive
         try:
             # Quick responsiveness test
-            _ = self.driver.current_url
+            _ = self.browser_manager.driver.current_url
             return True
         except Exception as e:
             logger.warning(f"🔌 WebDriver session appears invalid: {e}")
@@ -820,10 +793,10 @@ class SessionManager:
         """
         try:
             logger.debug("Closing invalid browser session...")
-            self.close_browser()
+            self.browser_manager.close_browser()
 
             logger.debug("Starting new browser session...")
-            if not self.start_browser("session_recovery"):
+            if not self.browser_manager.start_browser("session_recovery"):
                 logger.error("Browser restart failed during session recovery")
                 return False
 
@@ -860,73 +833,13 @@ class SessionManager:
 
         return False
 
-    def attempt_session_recovery(self, reason: str = "browser_error") -> bool:
+    def _attempt_session_recovery(self, reason: str = "browser_error") -> bool:
         """Public wrapper so callers avoid touching the private helper."""
 
         return self._attempt_session_recovery(reason=reason)
 
     # UNIVERSAL SESSION HEALTH MONITORING METHODS
-    def check_session_health(self) -> bool:
-        """
-        Universal session health monitoring that detects session death and prevents
-        cascade failures during long-running operations.
-
-        This replaces action6-specific monitoring with universal monitoring.
-        """
-        self._update_session_metrics()
-        try:
-            # Quick session validation first
-            if not self.is_sess_valid():
-                if not self.session_health_monitor['death_detected'].is_set():
-                    self.session_health_monitor['death_detected'].set()
-                    self.session_health_monitor['is_alive'].clear()
-                    self.session_health_monitor['death_timestamp'] = time.time()
-                    logger.critical(
-                        f"🚨 SESSION DEATH DETECTED at {time.strftime('%H:%M:%S')}"
-                        f" - Universal session health monitoring triggered"
-                    )
-                return False
-
-            # Update heartbeat if session is alive
-            self.session_health_monitor['last_heartbeat'] = time.time()
-            return True
-
-        except Exception as exc:
-            logger.error(f"Session health check failed: {exc}")
-            # Assume session is dead on health check failure
-            if not self.session_health_monitor['death_detected'].is_set():
-                self.session_health_monitor['death_detected'].set()
-                self.session_health_monitor['is_alive'].clear()
-                self.session_health_monitor['death_timestamp'] = time.time()
-                logger.critical("🚨 SESSION HEALTH CHECK FAILED - Assuming session death")
-            return False
-
-    def is_session_death_cascade(self) -> bool:
-        """Check if we're in a session death cascade scenario."""
-        return self.session_health_monitor['death_detected'].is_set()
-
-    def should_halt_operations(self) -> bool:
-        """Determine if operations should halt due to session death."""
-        if self.is_session_death_cascade():
-            self.session_health_monitor['death_cascade_count'] += 1
-
-            # Halt immediately if session is dead
-            logger.warning(
-                f"⚠️  Halting operation due to session death cascade "
-                f"(cascade #{self.session_health_monitor['death_cascade_count']})"
-            )
-            return True
-        return False
-
-    def reset_session_health_monitoring(self) -> None:
-        """Reset session health monitoring (used when creating new sessions)."""
-        self.session_health_monitor['is_alive'].set()
-        self.session_health_monitor['death_detected'].clear()
-        self.session_health_monitor['last_heartbeat'] = time.time()
-        self.session_health_monitor['death_timestamp'] = None
-        self.session_health_monitor['parallel_operations'] = 0
-        self.session_health_monitor['death_cascade_count'] = 0
-        logger.debug("🔄 Session health monitoring reset for new session")
+    # (Moved to SessionHealthMixin)
 
     def _reset_logged_flags(self) -> None:
         """Reset flags used to prevent repeated logging of IDs."""
@@ -949,26 +862,26 @@ class SessionManager:
         all_ok = True
 
         # Get Profile ID
-        if not self.my_profile_id:
+        if not self.api_manager.my_profile_id:
             logger.debug("Retrieving profile ID (ucdmid)...")
-            profile_id = self.get_my_profile_id()
+            profile_id = self._get_my_profile_id()
             if not profile_id:
                 logger.error("Failed to retrieve profile ID (ucdmid).")
                 all_ok = False
 
         # Get UUID
-        if not self.my_uuid:
+        if not self.api_manager.my_uuid:
             logger.debug("Retrieving UUID (testId)...")
-            uuid_val = self.get_my_uuid()
+            uuid_val = self._get_my_uuid()
             if not uuid_val:
                 logger.error("Failed to retrieve UUID (testId).")
                 all_ok = False
 
         # Get Tree ID (only if TREE_NAME is configured)
-        if config_schema.api.tree_name and not self.my_tree_id:
+        if config_schema.api.tree_name and not self.api_manager.my_tree_id:
             logger.debug(f"Retrieving tree ID for tree name: '{config_schema.api.tree_name}'...")
             try:
-                tree_id = self.get_my_tree_id()
+                tree_id = self._get_my_tree_id()
                 if not tree_id:
                     logger.error(
                         f"TREE_NAME '{config_schema.api.tree_name}' configured, but failed to get corresponding tree ID."
@@ -1013,10 +926,10 @@ class SessionManager:
         Returns:
             Set of lowercase cookie names
         """
-        if not self.driver:
+        if not self.browser_manager.driver:
             return set()
         try:
-            driver = cast(Any, self.driver)
+            driver = cast(Any, self.browser_manager.driver)
             cookies = cast(list[dict[str, Any]], driver.get_cookies())
             return {cookie["name"].lower() for cookie in cookies if "name" in cookie}
         except Exception:
@@ -1073,7 +986,7 @@ class SessionManager:
             logger.warning(f"Timeout waiting for cookies. Missing: {cookie_names}.")
             return False
 
-    def get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
+    def _get_cookies(self, cookie_names: list[str], timeout: int = 30) -> bool:
         """
         Advanced cookie management with timeout and session validation.
 
@@ -1087,7 +1000,7 @@ class SessionManager:
         Returns:
             bool: True if all cookies found, False otherwise
         """
-        if not self.driver:
+        if not self.browser_manager.driver:
             logger.error("get_cookies: WebDriver instance is None.")
             return False
 
@@ -1099,7 +1012,7 @@ class SessionManager:
 
         while time.time() - start_time < timeout:
             try:
-                if not self.driver:
+                if not self.browser_manager.driver:
                     logger.warning("Driver became None while waiting for cookies.")
                     return False
 
@@ -1136,7 +1049,7 @@ class SessionManager:
             return True
 
         # Check 2: Prerequisites validation
-        if not self.driver or not hasattr(self.api_manager, '_requests_session'):
+        if not self.browser_manager.driver or not hasattr(self.api_manager, '_requests_session'):
             logger.debug("Cookie sync skipped: driver or requests_session not available")
             return True
 
@@ -1188,11 +1101,11 @@ class SessionManager:
             self._in_sync_cookies = True
 
             # Get cookies from WebDriver (validated in _should_skip_cookie_sync)
-            if not self.driver:
+            if not self.browser_manager.driver:
                 logger.error("Driver not available for cookie sync")
                 return
 
-            driver = cast(Any, self.driver)
+            driver = cast(Any, self.browser_manager.driver)
             driver_cookies = cast(list[dict[str, Any]], driver.get_cookies())
 
             # Validate cookies were retrieved
@@ -1219,7 +1132,7 @@ class SessionManager:
 
         self._sync_cookies_to_requests(force=force)
 
-    def force_cookie_resync(self) -> None:
+    def _force_cookie_resync(self) -> None:
         """Force a cookie resync when authentication errors occur."""
         self._session_cookies_synced = False
         self._sync_cookies_to_requests(force=True)
@@ -1246,16 +1159,16 @@ class SessionManager:
         """Ensure cookies/CSRF are available before declaring recovery success."""
 
         essential_cookies = list(self.ESSENTIAL_SESSION_COOKIES)
-        if not self.get_cookies(essential_cookies, timeout=30):
+        if not self._get_cookies(essential_cookies, timeout=30):
             logger.error(
                 "Essential cookies %s missing after session recovery",
                 essential_cookies,
             )
             return False
 
-        self.force_cookie_resync()
+        self._force_cookie_resync()
 
-        csrf_token = self.get_csrf()
+        csrf_token = self._get_csrf()
         if not csrf_token:
             logger.error("Failed to refresh CSRF token after session recovery")
             return False
@@ -1294,240 +1207,15 @@ class SessionManager:
 
         return synced_count
 
-    def check_js_errors(self) -> list[dict[str, Any]]:
-        """
-        Check for JavaScript errors in the browser console.
+    # JS Error Monitoring (Moved to SessionHealthMixin)
 
-        Returns:
-            list[Dict]: List of JavaScript errors found since last check
-        """
-        driver = self.driver
-        if not driver or not self.driver_live:
-            return []
+    # Session Restart (Moved to SessionHealthMixin)
 
-        try:
-            # Get browser logs (if available)
-            if hasattr(driver, 'get_log'):
-                log_driver = cast(SupportsBrowserConsoleLogs, driver)
-                logs = log_driver.get_log('browser')
-            else:
-                logger.debug("WebDriver does not support get_log method")
-                return []
+    # Browser Health (Moved to SessionHealthMixin)
 
-            # Filter for errors that occurred after last check
-            current_time = datetime.now(timezone.utc)
-            js_errors: list[dict[str, Any]] = []
+    # System Health Validation (Moved to SessionHealthMixin)
 
-            for log_entry in logs:
-                # Check if this is a JavaScript error
-                if log_entry.get('level') in {'SEVERE', 'ERROR'}:
-                    # Parse timestamp (browser logs use milliseconds since epoch)
-                    log_timestamp = datetime.fromtimestamp(log_entry.get('timestamp', 0) / 1000, tz=timezone.utc)
-
-                    # Only include errors since last check
-                    if log_timestamp > self.last_js_error_check:
-                        js_errors.append(
-                            {
-                                'timestamp': log_timestamp,
-                                'level': log_entry.get('level'),
-                                'message': log_entry.get('message', ''),
-                                'source': log_entry.get('source', ''),
-                            }
-                        )
-
-            # Update last check time
-            self.last_js_error_check = current_time
-
-            if js_errors:
-                logger.warning(f"Found {len(js_errors)} JavaScript errors since last check")
-                for error in js_errors:
-                    logger.debug(f"JS Error: {error['message']}")
-
-            return js_errors
-
-        except Exception as e:
-            logger.error(f"Failed to check JavaScript errors: {e}")
-            return []
-
-    def monitor_js_errors(self) -> bool:
-        """
-        Monitor JavaScript errors and log warnings if found.
-
-        Returns:
-            bool: True if no critical errors found, False if critical errors detected
-        """
-        errors = self.check_js_errors()
-
-        # Count critical errors (those that might affect functionality)
-        critical_errors = [
-            error
-            for error in errors
-            if any(
-                keyword in error['message'].lower()
-                for keyword in ['uncaught', 'reference error', 'type error', 'syntax error']
-            )
-        ]
-
-        if critical_errors:
-            logger.warning(f"Found {len(critical_errors)} critical JavaScript errors")
-            return False
-
-        return True
-
-    def restart_sess(self, url: Optional[str] = None) -> bool:
-        """
-        Restart the session.
-
-        Args:
-            url: Optional URL to navigate to after restart
-
-        Returns:
-            bool: True if restart successful, False otherwise
-        """
-        logger.info("Restarting session...")
-
-        # Close current session
-        self.close_sess(keep_db=True)
-
-        # Start new session
-        if not self.start_sess("Session Restart"):
-            logger.error("Failed to start session during restart.")
-            return False
-
-        # Ensure session is ready
-        if not self.ensure_session_ready("Session Restart"):
-            logger.error("Failed to ensure session ready during restart.")
-            self.close_sess(keep_db=True)
-            return False  # Navigate to URL if provided
-        if url and self.browser_manager.driver:
-            logger.info(f"Navigating to: {url}")
-            try:
-                from utils import nav_to_page
-
-                nav_success = nav_to_page(
-                    self.browser_manager.driver,
-                    url,
-                    selector="body",
-                    session_manager=self,
-                )
-                if not nav_success:
-                    logger.warning(f"Failed to navigate to {url} after restart.")
-                else:
-                    logger.info(f"Successfully navigated to {url}.")
-            except Exception as e:
-                logger.warning(f"Error navigating to {url} after restart: {e}")
-
-        self._record_session_refresh_metric("browser_error")
-        logger.info("Session restart completed successfully.")
-        return True
-
-    def check_browser_health(self) -> bool:
-        """Check browser health and detect browser death."""
-        current_time = time.time()
-        self.session_health_monitor['last_browser_health_check'] = current_time
-
-        # Check if browser is needed
-        if not self.browser_manager.browser_needed:
-            return True
-
-        # Check if driver exists and is responsive
-        if not self.browser_manager.is_session_valid():
-            self.session_health_monitor['browser_death_count'] = (
-                self.session_health_monitor.get('browser_death_count', 0) + 1
-            )
-            logger.warning(f"🚨 Browser death detected (count: {self.session_health_monitor['browser_death_count']})")
-            return False
-
-        return True
-
-    def attempt_browser_recovery(self, action_name: Optional[str] = None) -> bool:
-        """
-        Public method to attempt browser session recovery.
-
-        Args:
-            action_name: Optional name of the action for logging context
-
-        Returns:
-            bool: True if recovery successful, False otherwise
-        """
-        if action_name:
-            logger.info(f"Attempting browser recovery for: {action_name}")
-        return self._attempt_session_recovery(reason="browser_error")
-
-    def validate_system_health(self, action_name: str = "Unknown") -> bool:
-        """
-        Comprehensive system health validation before starting operations.
-        Consolidates health check patterns from Actions 6, 7, 8.
-
-        Args:
-            action_name: Name of the action performing the check
-
-        Returns:
-            True if system is healthy and ready for operations, False otherwise
-        """
-        try:
-            # Check 1: Session death cascade detection
-            if self.should_halt_operations():
-                cascade_count = self.session_health_monitor.get('death_cascade_count', 0)
-                logger.critical(
-                    f"🚨 {action_name}: Session death cascade detected (#{cascade_count}). "
-                    f"System is not safe for operations."
-                )
-                return False
-
-            # Check 2: Database connectivity
-            try:
-                with self.get_db_conn_context() as db_session:
-                    if not db_session:
-                        logger.critical(f"🚨 {action_name}: Failed to get database session")
-                        return False
-
-                    # Test database connectivity with timeout
-                    from sqlalchemy import text
-
-                    result = db_session.execute(text("SELECT 1")).scalar()
-                    if result != 1:
-                        logger.critical(f"🚨 {action_name}: Database query returned unexpected result")
-                        return False
-
-            except Exception as db_err:
-                logger.critical(f"🚨 {action_name}: Database connectivity error: {db_err}")
-                return False
-
-            # Check 3: Browser session validity (if available)
-            try:
-                if hasattr(self, 'is_sess_valid') and not self.is_sess_valid():
-                    logger.warning(f"⚠️ {action_name}: Browser session invalid - may affect operations")
-                    # Don't fail hard on browser issues for API-only operations
-
-            except Exception as browser_check_err:
-                logger.debug(f"{action_name}: Browser health check failed (non-critical): {browser_check_err}")
-
-            logger.debug(f"✅ {action_name}: System health check passed - all components validated")
-            return True
-
-        except Exception as health_err:
-            logger.critical(f"🚨 {action_name}: System health validation failed: {health_err}")
-            return False
-
-    def check_cascade_before_operation(self, action_name: str, operation_name: str) -> None:
-        """
-        Check for session death cascade before starting an operation.
-
-        Args:
-            action_name: Name of the action performing the check
-            operation_name: Name of the operation about to be performed
-
-        Raises:
-            Exception: If cascade detected
-        """
-        if self.should_halt_operations():
-            cascade_count = self.session_health_monitor.get('death_cascade_count', 0)
-            logger.critical(
-                f"🚨 {action_name}: CASCADE DETECTED before {operation_name}: "
-                f"Session death cascade #{cascade_count} - halting operation"
-            )
-            raise Exception(f"Session death cascade detected before {operation_name} (#{cascade_count})")
+    # Cascade Check (Moved to SessionHealthMixin)
 
     def close_sess(self, keep_db: bool = False):
         """
@@ -1539,7 +1227,8 @@ class SessionManager:
         logger.debug(f"Closing session (keep_db={keep_db})")
 
         # Close browser
-        self.close_browser()
+        self.browser_manager.close_browser()
+        self._reset_cookie_sync_state("Session closed")
 
         # Close database connections if requested
         if not keep_db:
@@ -1559,12 +1248,12 @@ class SessionManager:
 
     def _cleanup_browser(self) -> None:
         """Kill browser process and release resources."""
-        if not (self.browser_manager and self.driver_live):
+        if not (self.browser_manager and self.browser_manager.driver_live):
             return
 
         # Try graceful quit first
         try:
-            driver = self.driver
+            driver = self.browser_manager.driver
             if driver:
                 driver.quit()
         except Exception as e:
@@ -1663,316 +1352,7 @@ class SessionManager:
         return False
 
     # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
-
-    @api_retry()
-    def get_csrf(self) -> Optional[str]:
-        """
-        Retrieve CSRF token from API.
-
-        Returns:
-            str: CSRF token if successful, None otherwise
-        """
-        if not self.is_sess_valid():
-            logger.error("get_csrf: Session invalid.")
-            return None
-
-        from urllib.parse import urljoin
-
-        csrf_token_url = urljoin(config_schema.api.base_url, "discoveryui-matches/parents/api/csrfToken")
-        logger.debug(f"Attempting to fetch fresh CSRF token from: {csrf_token_url}")
-
-        # Check essential cookies
-        essential_cookies = list(self.ESSENTIAL_SESSION_COOKIES)
-        if not self.get_cookies(essential_cookies, timeout=10):
-            logger.warning(f"Essential cookies {essential_cookies} NOT found before CSRF token API call.")
-
-        # Sync cookies to requests session
-        self.sync_cookies_to_requests()
-
-        try:
-            api_request = self._get_utils_attr("_api_req")
-
-            response_data = api_request(
-                url=csrf_token_url,
-                session_manager=self,
-                method="GET",
-                api_description="CSRF Token API",
-                force_text_response=True,
-            )
-
-            if response_data and isinstance(response_data, str):
-                csrf_token_val = response_data.strip()
-                if csrf_token_val and len(csrf_token_val) > 20:
-                    logger.debug(f"CSRF token successfully retrieved (Length: {len(csrf_token_val)}).")
-                    self.api_manager.csrf_token = csrf_token_val
-                    return csrf_token_val
-                logger.error(f"CSRF token API returned empty or invalid string: '{csrf_token_val}'")
-                return None
-            logger.warning("Failed to get CSRF token response via _api_req.")
-            return None
-
-        except Exception as e:
-            logger.error(f"Unexpected error in get_csrf: {e}", exc_info=True)
-            return None
-
-    @api_retry()
-    def get_my_profile_id(self) -> Optional[str]:
-        """
-        Retrieve user's profile ID (ucdmid).
-
-        Returns:
-            str: Profile ID if successful, None otherwise
-        """
-        if not self.is_sess_valid():
-            logger.error("get_my_profile_id: Session invalid.")
-            return None
-
-        from urllib.parse import urljoin
-
-        url = urljoin(config_schema.api.base_url, "app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid")
-        logger.debug("Attempting to fetch own profile ID (ucdmid)...")
-
-        # Sync cookies to requests session
-        self.sync_cookies_to_requests()
-
-        try:
-            api_request = self._get_utils_attr("_api_req")
-
-            response_data = api_request(
-                url=url,
-                session_manager=self,
-                method="GET",
-                api_description="Get my profile_id",
-            )
-
-            if not response_data:
-                logger.warning("Failed to get profile_id response via _api_req.")
-                return None
-
-            if isinstance(response_data, dict) and "data" in response_data:
-                data_dict = response_data["data"]
-                if isinstance(data_dict, dict) and "ucdmid" in data_dict:
-                    my_profile_id_val = str(data_dict["ucdmid"]).upper()
-                    logger.debug(f"Successfully retrieved profile_id: {my_profile_id_val}")
-                    # Store in API manager
-                    self.api_manager.my_profile_id = my_profile_id_val
-                    if not self._profile_id_logged:
-                        logger.info(f"My profile id: {my_profile_id_val}")
-                        self._profile_id_logged = True
-                    return my_profile_id_val
-                logger.error("Could not find 'ucdmid' in 'data' dict of profile_id API response.")
-                return None
-            logger.error(f"Unexpected response format for profile_id API: {type(response_data)}")
-            return None
-
-        except Exception as e:
-            logger.error(f"Unexpected error in get_my_profile_id: {e}", exc_info=True)
-            return None
-
-    @api_retry()
-    def get_my_uuid(self) -> Optional[str]:
-        """
-        Retrieve user's UUID (testId).
-
-        Returns:
-            str: UUID if successful, None otherwise
-        """
-        if not self.is_sess_valid():
-            # Reduce log spam during shutdown - only log once per minute
-            if not hasattr(self, '_last_uuid_error_time') or time.time() - self._last_uuid_error_time > 60:
-                logger.error("get_my_uuid: Session invalid.")
-                self._last_uuid_error_time = time.time()
-            return None
-
-        from urllib.parse import urljoin
-
-        url = urljoin(config_schema.api.base_url, API_PATH_UUID_NAVHEADER)
-        logger.debug("Attempting to fetch own UUID (testId) from header/dna API...")
-
-        # Sync cookies to requests session
-        self.sync_cookies_to_requests()
-
-        try:
-            api_request = self._get_utils_attr("_api_req")
-
-            response_data = api_request(
-                url=url,
-                session_manager=self,
-                method="GET",
-                api_description="Get UUID API",
-            )
-
-            if response_data and isinstance(response_data, dict):
-                if "testId" in response_data:
-                    my_uuid_val = str(response_data["testId"]).upper()
-                    logger.debug(f"Successfully retrieved UUID: {my_uuid_val}")
-                    # Store in API manager
-                    self.api_manager.my_uuid = my_uuid_val
-                    if not self._uuid_logged:
-                        logger.debug(f"My uuid: {my_uuid_val}")
-                        self._uuid_logged = True
-                    return my_uuid_val
-                logger.error("Could not retrieve UUID ('testId' missing in response).")
-                return None
-            logger.error("Failed to get header/dna data via _api_req.")
-            return None
-
-        except Exception as e:
-            logger.error(f"Unexpected error in get_my_uuid: {e}", exc_info=True)
-            return None
-
-    @api_retry()
-    def get_my_tree_id(self) -> Optional[str]:
-        """
-        Retrieve user's tree ID.
-
-        Returns:
-            str: Tree ID if successful, None otherwise
-        """
-        try:
-            import api.api_utils as local_api_utils
-        except ImportError as e:
-            logger.error(f"get_my_tree_id: Failed to import api.api_utils: {e}")
-            raise ImportError(f"api_utils module failed to import: {e}") from e
-
-        tree_name_config = config_schema.api.tree_name
-        if not tree_name_config:
-            logger.debug("TREE_NAME not configured, skipping tree ID retrieval.")
-            return None
-
-        if not self.is_sess_valid():
-            logger.error("get_my_tree_id: Session invalid.")
-            return None
-
-        logger.debug(f"Delegating tree ID fetch for TREE_NAME='{tree_name_config}' to api_utils...")
-        try:
-            my_tree_id_val = local_api_utils.call_header_trees_api_for_tree_id(self, tree_name_config)
-            if my_tree_id_val:
-                # Store in API manager
-                self.api_manager.my_tree_id = my_tree_id_val
-                if not self._tree_id_logged:
-                    logger.debug(f"My tree id: {my_tree_id_val}")
-                    self._tree_id_logged = True
-                return my_tree_id_val
-            logger.warning("api_utils.call_header_trees_api_for_tree_id returned None.")
-            return None
-        except Exception as e:
-            logger.error(f"Error calling api_utils.call_header_trees_api_for_tree_id: {e}", exc_info=True)
-            return None
-
-    @api_retry()
-    def get_tree_owner(self, tree_id: Optional[str]) -> Optional[str]:
-        """
-        Retrieve tree owner name.
-
-        Args:
-            tree_id: The tree ID to get owner for
-
-        Returns:
-            str: Tree owner name if successful, None otherwise
-        """
-        try:
-            import api.api_utils as local_api_utils
-        except ImportError as e:
-            logger.error(f"get_tree_owner: Failed to import api.api_utils: {e}")
-            raise ImportError(f"api.api_utils module failed to import: {e}") from e
-
-        if not tree_id:
-            logger.warning("Cannot get tree owner: tree_id is missing.")
-            return None
-
-        if not self.is_sess_valid():
-            logger.error("get_tree_owner: Session invalid.")
-            return None
-
-        logger.debug(f"Delegating tree owner fetch for tree ID {tree_id} to api_utils...")
-        try:
-            owner_name = local_api_utils.call_tree_owner_api(self, tree_id)
-            if owner_name:
-                # Store in API manager (logging done separately in main.py startup)
-                self.api_manager.tree_owner_name = owner_name
-                return owner_name
-            logger.warning("api_utils.call_tree_owner_api returned None.")
-            return None
-        except Exception as e:
-            logger.error(f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True)
-            return None
-
-    # Database delegation methods
-    def get_db_conn(self) -> Any:
-        """Get a database session."""
-        return self.db_manager.get_session()
-
-    def return_session(self, session: Any) -> None:
-        """Return a database session."""
-        self.db_manager.return_session(session)
-
-    def get_db_conn_context(self) -> Any:
-        """Get database session context manager."""
-        return self.db_manager.get_session_context()
-
-    def cls_db_conn(self, keep_db: bool = True) -> None:
-        """Close database connections."""
-        self.db_manager.close_connections(dispose_engine=not keep_db)  # Browser delegation methods
-
-    def invalidate_csrf_cache(self) -> None:
-        """Invalidate cached CSRF token (useful on auth errors)."""
-        self._cached_csrf_token = None
-        self._csrf_cache_time = 0
-
-    @property
-    def driver(self) -> Optional[WebDriverType]:
-        """Get the WebDriver instance."""
-        return self.browser_manager.driver
-
-    @property
-    def driver_live(self) -> bool:
-        """Check if driver is live."""
-        return self.browser_manager.driver_live
-
-    def make_tab(self) -> Optional[str]:
-        """Create a new browser tab."""
-        return self.browser_manager.create_new_tab()
-
-    # API delegation methods
-    @property
-    def my_profile_id(self) -> Optional[str]:
-        """Get the user's profile ID."""
-        # Try to get from API manager first, then retrieve if needed
-        profile_id = self.api_manager.my_profile_id
-        if not profile_id:
-            profile_id = self.get_my_profile_id()
-        return profile_id
-
-    @property
-    def my_uuid(self) -> Optional[str]:
-        """Get the user's UUID."""
-        # Try to get from API manager first, then retrieve if needed
-        uuid_val = self.api_manager.my_uuid
-        if not uuid_val:
-            uuid_val = self.get_my_uuid()
-        return uuid_val
-
-    @property
-    def my_tree_id(self) -> Optional[str]:
-        """Get the user's tree ID."""
-        # Try to get from API manager first, then retrieve if needed
-        tree_id = self.api_manager.my_tree_id
-        if not tree_id and config_schema.api.tree_name:
-            tree_id = self.get_my_tree_id()
-        return tree_id
-
-    @property
-    def csrf_token(self) -> Optional[str]:
-        """Get the CSRF token with smart caching."""
-        # ⚡ OPTIMIZATION 1: Check pre-cached CSRF token first
-        if self._cached_csrf_token and self._csrf_cache_time:
-            cache_age = time.time() - self._csrf_cache_time
-            if cache_age < self._csrf_cache_duration:
-                return self._cached_csrf_token
-
-        # Return cached token from API manager if available
-        return self.api_manager.csrf_token
+    # (Moved to SessionIdentifierMixin)
 
     def _precache_csrf_token(self) -> None:
         """
@@ -2019,49 +1399,6 @@ class SessionManager:
         cache_age = time.time() - self._csrf_cache_time
         return cache_age < self._csrf_cache_duration
 
-    def is_csrf_token_valid(self) -> bool:
-        """Typed public helper for callers that need to verify CSRF freshness."""
-
-        return self._is_csrf_token_valid()
-
-    # Public properties
-    @property
-    def tree_owner_name(self) -> Optional[str]:
-        """Get the tree owner name."""
-        return self.api_manager.tree_owner_name
-
-    @property
-    def requests_session(self) -> requests.Session:
-        """Get the requests session."""
-        return self.api_manager.requests_session
-
-    # Enhanced capabilities properties
-    @property
-    def scraper(self) -> Optional[Any]:
-        """Get the CloudScraper instance for anti-bot protection."""
-        return getattr(self, "_scraper", None)
-
-    @scraper.setter
-    def scraper(self, value: Any) -> None:
-        """Set the CloudScraper instance."""
-        self._scraper = value
-
-    # Status properties
-    @property
-    def is_ready(self) -> bool:
-        """Check if the session manager is ready for work."""
-        db_ready = self.db_manager.is_ready
-        browser_ready = not self.browser_manager.browser_needed or self.browser_manager.driver_live
-        api_ready = self.api_manager.has_essential_identifiers
-        return db_ready and browser_ready and api_ready
-
-    @property
-    def session_age_seconds(self) -> Optional[float]:
-        """Get the age of the current session in seconds."""
-        if self.session_start_time:
-            return time.time() - self.session_start_time
-        return None
-
     def _update_session_metrics(self, force_zero: bool = False) -> None:
         """Update Prometheus session uptime gauge."""
         try:
@@ -2069,7 +1406,9 @@ class SessionManager:
                 metrics().session_uptime.set(0.0)
                 return
 
-            session_age = self.session_age_seconds
+            session_age = None
+            if self.session_start_time:
+                session_age = time.time() - self.session_start_time
             metrics().session_uptime.set(float(session_age) if session_age is not None else 0.0)
         except Exception:
             logger.debug("Failed to update session uptime metric", exc_info=True)
@@ -2113,13 +1452,17 @@ class SessionManager:
             self._metrics_exporter_started = False
 
     # PHASE 5.1: Session cache management methods
-    def get_session_performance_stats(self) -> dict[str, Any]:
+    def _get_session_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics for this session"""
         stats = get_session_cache_stats()
+        session_age = None
+        if self.session_start_time:
+            session_age = time.time() - self.session_start_time
+
         stats.update(
             {
                 "session_ready": self.session_ready,
-                "session_age": self.session_age_seconds,
+                "session_age": session_age,
                 "last_readiness_check_age": (
                     time.time() - self._last_readiness_check if self._last_readiness_check else None
                 ),
@@ -2131,11 +1474,11 @@ class SessionManager:
         return stats
 
     @classmethod
-    def clear_session_caches(cls) -> int:
+    def _clear_session_caches(cls) -> int:
         """Clear all session caches for fresh initialization"""
         return clear_session_cache()
 
-    def update_response_time_tracking(
+    def _update_response_time_tracking(
         self,
         duration: float,
         slow_threshold: float = 5.0,
@@ -2165,119 +1508,56 @@ class SessionManager:
 
         self._recent_slow_calls = min(self._recent_slow_calls, 10)
 
-    def reset_response_time_tracking(self) -> None:
+    def _reset_response_time_tracking(self) -> None:
         """Reset response time tracking to initial state."""
         self._response_times = []
         self._recent_slow_calls = 0
         self._avg_response_time = 0.0
 
-    def update_cookie_sync_time(self, sync_time: float) -> None:
+    def _update_cookie_sync_time(self, sync_time: float) -> None:
         """Update the last cookie sync timestamp."""
         self._last_cookie_sync_time = sync_time
 
-    def set_cached_csrf_token(self, token: str, cache_time: float) -> None:
+    def _set_cached_csrf_token(self, token: str, cache_time: float) -> None:
         """Set the cached CSRF token and cache timestamp."""
         self._cached_csrf_token = token
         self._csrf_cache_time = cache_time
 
-    def get_cached_csrf_token(self) -> tuple[Optional[str], float]:
+    def _get_cached_csrf_token(self) -> tuple[Optional[str], float]:
         """Get the cached CSRF token and cache timestamp."""
         return self._cached_csrf_token, self._csrf_cache_time
 
-    def clear_last_readiness_check(self) -> None:
+    def _clear_last_readiness_check(self) -> None:
         """Clear the last readiness check timestamp for fresh validation."""
         self._last_readiness_check = None
 
-    # === Public Test Helper Methods ===
-    # These methods wrap protected functionality to allow testing without
-    # directly accessing protected members (eliminates Pyright warnings).
+    @property
+    def my_tree_id(self) -> Optional[str]:
+        """Delegate my_tree_id to api_manager."""
+        return self.api_manager.my_tree_id
 
-    def transition_state(self, new_state: SessionLifecycleState, reason: str) -> None:
-        """Public wrapper for state transitions (for testing)."""
-        self._transition_state(new_state, reason)
+    @property
+    def my_uuid(self) -> Optional[str]:
+        """Delegate my_uuid to api_manager."""
+        return self.api_manager.my_uuid
 
-    def get_db_init_attempted(self) -> bool:
-        """Get the database initialization attempted flag."""
-        return self._db_init_attempted
+    @property
+    def my_profile_id(self) -> Optional[str]:
+        """Delegate my_profile_id to api_manager."""
+        return self.api_manager.my_profile_id
 
-    def set_db_init_attempted(self, value: bool) -> None:
-        """Set the database initialization attempted flag."""
-        self._db_init_attempted = value
+    @property
+    def csrf_token(self) -> Optional[str]:
+        """Delegate csrf_token to api_manager."""
+        return self.api_manager.csrf_token
 
-    def get_db_ready(self) -> bool:
-        """Get the database ready flag."""
-        return self._db_ready
-
-    def set_db_ready(self, value: bool) -> None:
-        """Set the database ready flag."""
-        self._db_ready = value
-
-    def force_session_restart(self, reason: str) -> bool:
-        """Public wrapper for forcing session restart."""
-        return self._force_session_restart(reason)
-
-    def get_session_cookies_synced(self) -> bool:
-        """Get the session cookies synced flag."""
-        return self._session_cookies_synced
-
-    def set_session_cookies_synced(self, value: bool) -> None:
-        """Set the session cookies synced flag."""
-        self._session_cookies_synced = value
-
-    def get_last_cookie_sync_time(self) -> float:
-        """Get the last cookie sync timestamp."""
-        return self._last_cookie_sync_time
-
-    def set_last_cookie_sync_time(self, value: float) -> None:
-        """Set the last cookie sync timestamp."""
-        self._last_cookie_sync_time = value
-
-    def finalize_recovered_session_state(self) -> bool:
-        """Public wrapper for finalizing recovered session state."""
-        return self._finalize_recovered_session_state()
-
-    def get_last_readiness_check(self) -> Optional[float]:
-        """Get the last readiness check timestamp."""
-        return self._last_readiness_check
-
-    def set_last_readiness_check(self, value: Optional[float]) -> None:
-        """Set the last readiness check timestamp."""
-        self._last_readiness_check = value
-
-    def check_cached_readiness(self, action_name: str) -> Optional[bool]:
-        """Public wrapper for checking cached readiness."""
-        return self._check_cached_readiness(action_name)
-
-    @staticmethod
-    def build_endpoint_profile_config() -> dict[str, dict[str, float]]:
-        """Public wrapper for building endpoint profile config."""
-        return SessionManager._build_endpoint_profile_config()
-
-    @staticmethod
-    def calculate_endpoint_rate_cap(profiles: dict[str, dict[str, float]]) -> Optional[float]:
-        """Public wrapper for calculating endpoint rate cap."""
-        return SessionManager._calculate_endpoint_rate_cap(profiles)
-
-    def initialize_enhanced_requests_session(self) -> None:
-        """Public wrapper for initializing enhanced requests session."""
-        self._initialize_enhanced_requests_session()
-
-    def initialize_cloudscraper(self) -> None:
-        """Public wrapper for initializing cloudscraper."""
-        self._initialize_cloudscraper()
-
-    def get_scraper(self) -> Any:
-        """Get the cloudscraper instance."""
-        return self._scraper
-
-    def set_scraper(self, scraper: Any) -> None:
-        """Set the cloudscraper instance."""
-        self._scraper = scraper
+    @property
+    def tree_owner_name(self) -> Optional[str]:
+        """Delegate tree_owner_name to api_manager."""
+        return self.api_manager.tree_owner_name
 
 
 # === API Call Watchdog for Timeout Protection ===
-
-
 class APICallWatchdog:
     """
     Monitors API calls and triggers emergency restart if operation hangs.
@@ -2559,7 +1839,7 @@ def _test_database_operations() -> bool:
         for operation_name, description in database_operations:
             try:
                 if operation_name == "ensure_db_ready":
-                    result = session_manager.ensure_db_ready()
+                    result = session_manager.db_manager.ensure_ready()
                     is_bool = isinstance(cast(Any, result), bool)
 
                     status = "✅" if is_bool else "❌"
@@ -2607,23 +1887,16 @@ def _test_database_operations() -> bool:
 
 def _test_browser_operations() -> bool:
     session_manager = SessionManager()
-    result = session_manager.start_browser("test_action")
+    result = session_manager.browser_manager.start_browser("test_action")
     assert isinstance(result, bool), "start_browser should return bool"
-    session_manager.close_browser()
+    session_manager.browser_manager.close_browser()
     return True
 
 
 def _test_property_access() -> bool:
     session_manager = SessionManager()
     properties_to_check = [
-        "my_profile_id",
-        "my_uuid",
-        "my_tree_id",
-        "csrf_token",
-        "tree_owner_name",
-        "requests_session",
-        "is_ready",
-        "session_age_seconds",
+        "session_ready",
     ]
     for prop in properties_to_check:
         assert hasattr(session_manager, prop), f"Property {prop} should exist"
@@ -2632,9 +1905,9 @@ def _test_property_access() -> bool:
 
 def _test_component_delegation() -> bool:
     session_manager = SessionManager()
-    db_result = session_manager.ensure_db_ready()
+    db_result = session_manager.db_manager.ensure_ready()
     assert isinstance(db_result, bool), "Database delegation should work"
-    browser_result = session_manager.start_browser("test")
+    browser_result = session_manager.browser_manager.start_browser("test")
     assert isinstance(browser_result, bool), "Browser delegation should work"
     return True
 
@@ -2660,11 +1933,10 @@ def _test_initialization_performance() -> bool:
 def _test_error_handling() -> bool:
     session_manager = SessionManager()
     try:
-        session_manager.ensure_db_ready()
-        session_manager.start_browser("test_action")
-        session_manager.close_browser()
+        session_manager.db_manager.ensure_ready()
+        session_manager.browser_manager.start_browser("test_action")
+        session_manager.browser_manager.close_browser()
         _ = session_manager.session_ready
-        _ = session_manager.is_ready
     except Exception as e:
         raise AssertionError(f"SessionManager should handle operations gracefully: {e}") from e
     return True
@@ -2960,17 +2232,17 @@ def _test_force_session_restart() -> None:
     sm = SessionManager()
 
     # Set up session state
-    sm.transition_state(SessionLifecycleState.READY, "test setup")
+    sm._transition_state(SessionLifecycleState.READY, "test setup")
     sm.session_start_time = time.time()
-    sm.set_db_init_attempted(True)
-    sm.set_db_ready(True)
+    sm._db_init_attempted = True
+    sm._db_ready = True
 
     # Initial state verification
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be ready initially"
-    assert sm.get_db_ready() is True, "DB should be ready initially"
+    assert sm._db_ready is True, "DB should be ready initially"
 
     # Call force_session_restart
-    result = sm.force_session_restart("Test timeout")
+    result = sm._force_session_restart("Test timeout")
 
     # Verify result (should always return False)
     assert result is False, "Force restart should always return False"
@@ -2978,8 +2250,8 @@ def _test_force_session_restart() -> None:
     # Verify session state reset
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset to UNINITIALIZED"
     assert sm.session_start_time is None, "Session start time should be None"
-    assert sm.get_db_init_attempted() is False, "DB init attempted should be reset"
-    assert sm.get_db_ready() is False, "DB ready should be reset"
+    assert sm._db_init_attempted is False, "DB init attempted should be reset"
+    assert sm._db_ready is False, "DB ready should be reset"
 
 
 def _test_watchdog_integration_with_session_restart() -> None:
@@ -2989,11 +2261,11 @@ def _test_watchdog_integration_with_session_restart() -> None:
 
     def restart_callback() -> None:
         """Callback that triggers session restart."""
-        result = sm.force_session_restart("Watchdog timeout in test")
+        result = sm._force_session_restart("Watchdog timeout in test")
         restart_called.append(result)
 
     # Set up session state
-    sm.transition_state(SessionLifecycleState.READY, "watchdog test setup")
+    sm._transition_state(SessionLifecycleState.READY, "watchdog test setup")
 
     # Create watchdog with short timeout
     watchdog = APICallWatchdog(timeout_seconds=0.5)
@@ -3020,9 +2292,9 @@ def _test_session_expiry_simulation() -> None:
     sm = SessionManager()
 
     # Setup valid session state
-    sm.transition_state(SessionLifecycleState.READY, "expiry test setup")
+    sm._transition_state(SessionLifecycleState.READY, "expiry test setup")
     sm.session_start_time = time.time() - 2500  # 41+ minutes ago (expired)
-    sm.set_db_ready(True)
+    sm._db_ready = True
 
     # Verify initial state
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Session should be marked ready initially"
@@ -3034,13 +2306,13 @@ def _test_session_expiry_simulation() -> None:
     assert is_expired, f"Session should be expired (age: {session_age:.0f}s)"
 
     # Force session restart (simulating expiry detection)
-    result = sm.force_session_restart("Session expiry simulation")
+    result = sm._force_session_restart("Session expiry simulation")
 
     # Verify session was reset
     assert result is False, "Force restart should return False"
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Lifecycle should reset after expiry"
     assert sm.session_start_time is None, "Session start time should be cleared"
-    assert sm.get_db_ready() is False, "DB ready flag should be reset"
+    assert sm._db_ready is False, "DB ready flag should be reset"
 
 
 def _test_circuit_breaker_short_circuit() -> None:
@@ -3100,7 +2372,7 @@ def _test_proactive_session_refresh_timing() -> None:
 
     # Setup session at 25 minutes old (refresh threshold with 15-min buffer)
     sm.session_start_time = time.time() - 1500  # 25 minutes
-    sm.transition_state(SessionLifecycleState.READY, "proactive refresh test")
+    sm._transition_state(SessionLifecycleState.READY, "proactive refresh test")
 
     # Check age
     session_age = time.time() - sm.session_start_time if sm.session_start_time else 0
@@ -3121,11 +2393,11 @@ def _test_retry_helper_alignment_session_manager() -> None:
 
     api_policy = config_schema.retry_policies.api
     methods_to_check = [
-        ("get_csrf", SessionManager.get_csrf),
-        ("get_my_profile_id", SessionManager.get_my_profile_id),
-        ("get_my_uuid", SessionManager.get_my_uuid),
-        ("get_my_tree_id", SessionManager.get_my_tree_id),
-        ("get_tree_owner", SessionManager.get_tree_owner),
+        ("get_csrf", SessionManager._get_csrf),
+        ("get_my_profile_id", SessionManager._get_my_profile_id),
+        ("get_my_uuid", SessionManager._get_my_uuid),
+        ("get_my_tree_id", SessionManager._get_my_tree_id),
+        ("get_tree_owner", SessionManager._get_tree_owner),
     ]
 
     for method_name, method in methods_to_check:
@@ -3146,25 +2418,25 @@ def _test_session_lifecycle_transitions() -> None:
 
     sm = SessionManager()
 
-    snapshot = sm.get_state_snapshot()
+    snapshot = sm._get_state_snapshot()
     assert snapshot["state"] == SessionLifecycleState.UNINITIALIZED.value, "Initial state should be UNINITIALIZED"
 
-    sm.transition_state(SessionLifecycleState.RECOVERING, "test transition")
+    sm._transition_state(SessionLifecycleState.RECOVERING, "test transition")
     assert sm.lifecycle_state() is SessionLifecycleState.RECOVERING, "Should transition to RECOVERING"
     assert sm.session_ready is False, "session_ready should be False when recovering"
 
-    sm.transition_state(SessionLifecycleState.READY, "ready test")
+    sm._transition_state(SessionLifecycleState.READY, "ready test")
     assert sm.lifecycle_state() is SessionLifecycleState.READY, "Should transition to READY"
     assert sm.session_ready is True, "session_ready should mirror READY state"
 
-    sm.transition_state(SessionLifecycleState.DEGRADED, "failure simulation")
+    sm._transition_state(SessionLifecycleState.DEGRADED, "failure simulation")
     assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "Should transition to DEGRADED"
     assert sm.session_ready is False, "session_ready should be False when degraded"
 
-    sm.guard_action("session_ready", "unit_test")
+    sm._guard_action("session_ready", "unit_test")
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "Guard should reset DEGRADED state for recovery"
 
-    sm.request_recovery("manual reset")
+    sm._request_recovery("manual reset")
     assert sm.lifecycle_state() is SessionLifecycleState.UNINITIALIZED, "request_recovery should reset to UNINITIALIZED"
 
 
@@ -3177,14 +2449,14 @@ def _test_cookie_sync_state_reset_on_browser_close() -> None:
     browser_manager = cast(Any, sm.browser_manager)
     browser_manager.close_browser = lambda: None
 
-    sm.set_session_cookies_synced(True)
-    sm.set_last_cookie_sync_time(123.0)
+    sm._session_cookies_synced = True
+    sm._last_cookie_sync_time = 123.0
     sm.api_manager._requests_session.cookies.clear()
 
-    sm.close_browser()
+    sm.close_sess(keep_db=True)
 
-    assert sm.get_session_cookies_synced() is False, "Cookie sync flag should reset"
-    assert sm.get_last_cookie_sync_time() == 0.0, "Last cookie sync timestamp should reset"
+    assert sm._session_cookies_synced is False, "Cookie sync flag should reset"
+    assert sm._last_cookie_sync_time == 0.0, "Last cookie sync timestamp should reset"
     assert not sm.api_manager._requests_session.cookies.get_dict(), "Requests session cookies should be cleared"
 
 
@@ -3195,9 +2467,9 @@ def _test_recovery_validation_requires_essential_cookies() -> None:
 
     from types import MethodType
 
-    sm.get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) and False, sm)
+    sm._get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) and False, sm)
 
-    assert not sm.finalize_recovered_session_state(), "Recovery validation should fail without cookies"
+    assert not sm._finalize_recovered_session_state(), "Recovery validation should fail without cookies"
 
 
 def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
@@ -3207,7 +2479,7 @@ def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
 
     from types import MethodType
 
-    sm.get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) or True, sm)
+    sm._get_cookies = MethodType(lambda _self, _names, timeout=30: bool(timeout) or True, sm)
 
     flags = {"resync": False, "csrf": False}
 
@@ -3218,10 +2490,10 @@ def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
         flags["csrf"] = True
         return "csrf-token"
 
-    sm.force_cookie_resync = MethodType(_fake_force_resync, sm)
-    sm.get_csrf = MethodType(_fake_get_csrf, sm)
+    sm._force_cookie_resync = MethodType(_fake_force_resync, sm)
+    sm._get_csrf = MethodType(_fake_get_csrf, sm)
 
-    assert sm.finalize_recovered_session_state(), "Recovery validation should succeed with cookies and CSRF"
+    assert sm._finalize_recovered_session_state(), "Recovery validation should succeed with cookies and CSRF"
     assert flags["resync"], "force_cookie_resync should be invoked"
     assert flags["csrf"], "get_csrf should be invoked"
 
@@ -3232,9 +2504,9 @@ def _test_cached_readiness_returns_none_without_cache() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm.set_last_readiness_check(None)
+    sm._last_readiness_check = None
 
-    assert sm.check_cached_readiness("unit_test") is None, "Without cache the helper should return None"
+    assert sm._check_cached_readiness("unit_test") is None, "Without cache the helper should return None"
 
 
 def _test_cached_readiness_respects_fresh_cache() -> None:
@@ -3243,9 +2515,9 @@ def _test_cached_readiness_respects_fresh_cache() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm.set_last_readiness_check(time.time())
+    sm._last_readiness_check = time.time()
 
-    assert sm.check_cached_readiness("unit_test") is True, "Fresh cache with ready session should return True"
+    assert sm._check_cached_readiness("unit_test") is True, "Fresh cache with ready session should return True"
 
 
 def _test_cached_readiness_expires_on_stale_state() -> None:
@@ -3254,13 +2526,13 @@ def _test_cached_readiness_expires_on_stale_state() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = False
     sm.session_ready = True
-    sm.set_last_readiness_check(time.time() - 120)
+    sm._last_readiness_check = time.time() - 120
 
-    assert sm.check_cached_readiness("unit_test") is None, "Stale cache should be ignored"
+    assert sm._check_cached_readiness("unit_test") is None, "Stale cache should be ignored"
 
-    sm.set_last_readiness_check(time.time())
+    sm._last_readiness_check = time.time()
     sm.session_ready = False
-    assert sm.check_cached_readiness("unit_test") is None, "Non-ready session should bypass cache"
+    assert sm._check_cached_readiness("unit_test") is None, "Non-ready session should bypass cache"
 
 
 def _test_cached_readiness_detects_invalid_driver() -> None:
@@ -3269,17 +2541,17 @@ def _test_cached_readiness_detects_invalid_driver() -> None:
     sm = SessionManager()
     sm.browser_manager.browser_needed = True
     sm.session_ready = True
-    sm.set_last_readiness_check(time.time())
-    sm.transition_state(SessionLifecycleState.READY, "unit prep")
+    sm._last_readiness_check = time.time()
+    sm._transition_state(SessionLifecycleState.READY, "unit prep")
 
     from types import MethodType
 
     sm.browser_manager.is_session_valid = MethodType(lambda _self: False, sm.browser_manager)
 
-    result = sm.check_cached_readiness("unit_test")
+    result = sm._check_cached_readiness("unit_test")
     assert result is False, "Invalid driver should cause cached readiness failure"
     assert sm.lifecycle_state() is SessionLifecycleState.DEGRADED, "State should transition to DEGRADED"
-    assert sm.get_last_readiness_check() is None, "Cached timestamp should reset after invalidation"
+    assert sm._last_readiness_check is None, "Cached timestamp should reset after invalidation"
 
 
 def _test_endpoint_profile_config_normalization_and_rate_cap() -> None:
@@ -3295,16 +2567,16 @@ def _test_endpoint_profile_config_normalization_and_rate_cap() -> None:
         mutated = cast(Any, api_any.endpoint_throttle_profiles)
         mutated[123] = {"max_rate": 0.1}
         mutated["Bad"] = ["not", "dict"]
-        profiles = SessionManager.build_endpoint_profile_config()
+        profiles = SessionManager._build_endpoint_profile_config()
         assert set(profiles.keys()) == {"Valid", "Slow"}, "Non-dict and non-str keys should be ignored"
         assert profiles["Valid"]["max_rate"] == 0.5, "Valid profile should be preserved"
 
-        cap = SessionManager.calculate_endpoint_rate_cap(profiles)
+        cap = SessionManager._calculate_endpoint_rate_cap(profiles)
         assert cap is not None, "Rate cap should derive from available inputs"
         assert abs(cap - (1.0 / 3.0)) < 1e-9, "Slow endpoint min interval should define tightest cap"
 
         api_any.endpoint_throttle_profiles = "invalid"
-        assert SessionManager.build_endpoint_profile_config() == {}, "Non-dict config should be ignored"
+        assert SessionManager._build_endpoint_profile_config() == {}, "Non-dict config should be ignored"
     finally:
         config_schema.api.endpoint_throttle_profiles = original_profiles
 
@@ -3318,7 +2590,7 @@ def _test_enhanced_requests_session_configuration() -> None:
     session = requests.Session()
     sm.api_manager = cast(APIManager, SimpleNamespace(_requests_session=session))
 
-    sm.initialize_enhanced_requests_session()
+    sm._initialize_enhanced_requests_session()
 
     adapter = session.adapters["https://"]
     assert isinstance(adapter, HTTPAdapter), "HTTPS adapter should be HTTPAdapter"
@@ -3335,7 +2607,7 @@ def _test_enhanced_requests_session_creates_fallback() -> None:
     sm = SessionManager.__new__(SessionManager)
     sm.api_manager = cast(APIManager, SimpleNamespace())
 
-    sm.initialize_enhanced_requests_session()
+    sm._initialize_enhanced_requests_session()
 
     assert hasattr(sm.api_manager, "_requests_session"), "Fallback session should be created"
     adapter = sm.api_manager._requests_session.adapters["http://"]
@@ -3351,8 +2623,8 @@ def _test_initialize_cloudscraper_without_dependency() -> None:
     sm.api_manager = cast(APIManager, SimpleNamespace())
 
     with patch(f"{__name__}.cloudscraper", None):
-        sm.initialize_cloudscraper()
-        assert sm.get_scraper() is None, "Scraper should remain None when library unavailable"
+        sm._initialize_cloudscraper()
+        assert sm._scraper is None, "Scraper should remain None when library unavailable"
 
 
 def _test_initialize_cloudscraper_with_factory() -> None:
@@ -3380,8 +2652,8 @@ def _test_initialize_cloudscraper_with_factory() -> None:
 
     factory = _FakeCloudscraper()
     with patch(f"{__name__}.cloudscraper", factory):
-        sm.initialize_cloudscraper()
-        scraper = sm.get_scraper()
+        sm._initialize_cloudscraper()
+        scraper = sm._scraper
         assert isinstance(scraper, _FakeScraper), "Scraper instance should be created"
         assert factory.kwargs is not None, "Factory should receive kwargs"
         browser_cfg = factory.kwargs.get("browser", {})

@@ -33,19 +33,7 @@ from typing import (
     cast,
 )
 
-# === OPTIONAL STANDARD IMPORTS SETUP ===
-try:
-    from standard_imports import setup_module
-except Exception:  # pragma: no cover - fallback when bootstrap module missing
-
-    def setup_module(module_globals: dict[str, object], module_name: str) -> logging.Logger:
-        logging.basicConfig(level=logging.INFO)
-        logger_obj = logging.getLogger(module_name)
-        module_globals["logger"] = logger_obj
-        return logger_obj
-
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===

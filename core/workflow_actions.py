@@ -13,14 +13,15 @@ if __package__ in {None, ""}:
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
 
+import logging
+
 from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
 from config.config_manager import ConfigManager
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
-from standard_imports import setup_module
 from utils import nav_to_page
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # Initialize config
 config_manager = ConfigManager()
@@ -85,7 +86,7 @@ def send_messages_action(session_manager: Any, *_: Any) -> bool:
         # Navigate to Base URL first (good practice before starting message loops)
         logger.debug("Navigating to Base URL before sending...")
         if not nav_to_page(
-            session_manager.driver,
+            session_manager.browser_manager.driver,
             config.api.base_url,
             WAIT_FOR_PAGE_SELECTOR,
             session_manager,

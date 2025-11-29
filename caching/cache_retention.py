@@ -11,15 +11,17 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+import logging
 import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 @dataclass(frozen=True)

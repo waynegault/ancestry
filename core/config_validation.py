@@ -12,11 +12,12 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from standard_imports import setup_module
+import logging
+
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 def check_processing_limits(config: Any) -> None:

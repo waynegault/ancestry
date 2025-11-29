@@ -62,10 +62,10 @@ from types import ModuleType, SimpleNamespace
 from typing import Any, Callable, Optional, cast
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+# from standard_imports import setup_module
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 from core.action_runner import get_api_manager, get_browser_manager
 from core.analytics_helpers import (

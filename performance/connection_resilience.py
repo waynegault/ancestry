@@ -15,17 +15,9 @@ Features:
 - Detailed logging and metrics
 """
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
+import logging
 
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-from standard_imports import setup_module
-
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 import functools
 import time
@@ -220,7 +212,7 @@ def with_periodic_health_check(
                 check_counter['count'] += 1
 
                 # Periodic health check
-                if check_counter['count'] % check_interval == 0 and not session_manager.check_session_health():
+                if check_counter['count'] % check_interval == 0 and not session_manager._check_session_health():
                     logger.warning(f"🚨 Health check failed in {operation_name} (check #{check_counter['count']})")
                     if session_manager.attempt_browser_recovery():
                         logger.info(f"✅ Recovery successful, continuing {operation_name}")

@@ -20,6 +20,8 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
+import logging
+
 from core.action_registry import get_action_registry
 from core.action_runner import (
     get_api_manager,
@@ -28,12 +30,13 @@ from core.action_runner import (
 )
 from core.config_validation import validate_action_config
 from core.logging_config import setup_logging
+from core.registry_utils import auto_register_module
 from core.session_manager import SessionManager
-from standard_imports import setup_module
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 def get_windows_console_handles() -> tuple[Optional[Any], Optional[Any]]:

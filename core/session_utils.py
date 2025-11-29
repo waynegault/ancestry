@@ -221,7 +221,12 @@ def _ensure_session_ready_or_raise(session_manager: SessionManager, action_name:
 
 def _finalize_first_auth_and_get_uuid(already_auth: bool, session_manager: SessionManager) -> str:
     """On first-time auth, cache UUID and print success banner; return UUID."""
-    session_uuid = getattr(session_manager, "my_uuid", None)
+    session_uuid = None
+    if hasattr(session_manager, "api_manager"):
+        session_uuid = session_manager.api_manager.my_uuid
+    elif hasattr(session_manager, "my_uuid"):
+        session_uuid = session_manager.my_uuid
+
     if not session_uuid:
         raise AssertionError("UUID not available - session initialization incomplete")
 
@@ -283,7 +288,14 @@ def get_authenticated_session(action_name: str = "Session Setup", skip_csrf: boo
         raise RuntimeError("SessionManager unexpectedly unavailable")
 
     cached_uuid = _AUTH_CACHE.session_uuid
-    already_auth = bool(cached_uuid and getattr(sm, "my_uuid", None))
+
+    my_uuid = None
+    if hasattr(sm, "api_manager"):
+        my_uuid = sm.api_manager.my_uuid
+    elif hasattr(sm, "my_uuid"):
+        my_uuid = sm.my_uuid
+
+    already_auth = bool(cached_uuid and my_uuid)
     _pre_auth_logging(already_auth, env_uuid, action_name)
 
     # 3) Ensure session is ready (no-op if cached)
@@ -408,6 +420,8 @@ def _test_global_session_set() -> bool:
         # Setup global session via API
         mock_sm = MagicMock()
         mock_sm.my_uuid = "test-uuid-12345"
+        # Also set api_manager.my_uuid because _finalize_first_auth_and_get_uuid checks it first
+        mock_sm.api_manager.my_uuid = "test-uuid-12345"
         mock_sm.ensure_session_ready.return_value = True
         register_session_manager(mock_sm)
 
@@ -430,6 +444,8 @@ def _test_ensure_session_for_tests_wrapper() -> bool:
         # Setup global session via API
         mock_sm = MagicMock()
         mock_sm.my_uuid = "wrapper-test-uuid"
+        # Also set api_manager.my_uuid because _finalize_first_auth_and_get_uuid checks it first
+        mock_sm.api_manager.my_uuid = "wrapper-test-uuid"
         mock_sm.ensure_session_ready.return_value = True
         register_session_manager(mock_sm)
 

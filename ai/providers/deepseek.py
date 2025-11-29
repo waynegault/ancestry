@@ -2,10 +2,9 @@ from __future__ import annotations
 
 """DeepSeek provider adapter built on the OpenAI-compatible SDK."""
 
+import logging
 from collections.abc import Sequence
 from typing import Any
-
-from standard_imports import setup_module
 
 from .base import (
     BaseProvider,
@@ -15,7 +14,7 @@ from .base import (
     ProviderUnavailableError,
 )
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - optional dependency import
     from openai import OpenAI

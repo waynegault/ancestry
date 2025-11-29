@@ -18,10 +18,11 @@ parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from core.action_registry import ActionMetadata, ActionRequirement, get_action_registry
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.action_registry import ActionMetadata, ActionRequirement, get_action_registry
+
+logger = logging.getLogger(__name__)
 
 ActionCallable = Callable[..., Any]
 MetricsProvider = Callable[[], Any]
@@ -178,7 +179,7 @@ def _ensure_required_state(
 
     elif required_state == "session_ready":
         skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
-        if not session_manager.guard_action(required_state, action_name):
+        if not session_manager._guard_action(required_state, action_name):
             result = False
         else:
             result = session_manager.ensure_session_ready(
@@ -370,9 +371,9 @@ def _log_performance_metrics(
 def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     if should_close:
         browser_manager = session_manager.browser_manager
-        if browser_manager.browser_needed and session_manager.driver_live:
+        if browser_manager.browser_needed and session_manager.browser_manager.driver_live:
             logger.debug("Closing browser session...")
-            session_manager.close_browser()
+            session_manager.close_sess(keep_db=True)
             logger.debug("Browser session closed. DB connections kept.")
         elif action_name in {"all_but_first_actn"}:
             logger.debug("Closing all connections including database...")
@@ -380,7 +381,7 @@ def _perform_session_cleanup(session_manager: SessionManager, should_close: bool
             logger.debug("All connections closed.")
         return
 
-    if session_manager.driver_live:
+    if session_manager.browser_manager.driver_live:
         logger.debug(f"Keeping session live after '{action_name}'.")
 
 

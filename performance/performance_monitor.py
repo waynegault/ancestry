@@ -40,19 +40,12 @@ performance for genealogical automation through intelligent monitoring, proactiv
 optimization, and comprehensive system health management for reliable research workflows.
 """
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 # === CORE INFRASTRUCTURE ===
-from observability.metrics_registry import metrics
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from observability.metrics_registry import metrics
+
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 

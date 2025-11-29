@@ -14,6 +14,7 @@ if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
+import logging
 from unittest import mock
 
 from sqlalchemy import create_engine, func, inspect, text
@@ -32,11 +33,10 @@ from database import (
     MessageTemplate,
     Person,
 )
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 from utils import log_in, login_status
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # Initialize config
 config_manager = ConfigManager()
@@ -109,14 +109,14 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
         # --- Close main pool FIRST ---
         if session_manager:
             logger.debug(f"Closing main DB connections before deleting data (except {profile_id_to_keep})...")
-            session_manager.cls_db_conn(keep_db=False)
+            session_manager.db_manager.close_connections(dispose_engine=True)
             logger.debug("Main DB pool closed.")
         # --- End closing main pool ---
 
         logger.debug(f"Deleting data for all people except Profile ID: {profile_id_to_keep}...")
         # Create a temporary SessionManager for this specific operation
         temp_manager = SessionManager()
-        session = temp_manager.get_db_conn()
+        session = temp_manager.db_manager.get_session()
         if session is None:
             raise Exception("Failed to get DB session via temporary manager.")
 
@@ -181,8 +181,8 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
         # Clean up the temporary session manager and its resources
         if temp_manager:
             if session:
-                temp_manager.return_session(session)
-            temp_manager.cls_db_conn(keep_db=False)  # Close the temp pool
+                temp_manager.db_manager.return_session(session)
+            temp_manager.db_manager.close_connections(dispose_engine=True)  # Close the temp pool
         logger.debug(f"Delete action (except {profile_id_to_keep}) finished.")
     return success
 
@@ -191,7 +191,7 @@ def all_but_first_actn(session_manager: SessionManager, *_extra: Any) -> bool:
 def _truncate_all_tables(temp_manager: SessionManager) -> bool:
     """Truncate all tables in the database."""
     logger.debug("Truncating all tables...")
-    truncate_session = temp_manager.get_db_conn()
+    truncate_session = temp_manager.db_manager.get_session()
     if not truncate_session:
         logger.critical("Failed to get session for truncating tables. Reset aborted.")
         return False
@@ -204,12 +204,12 @@ def _truncate_all_tables(temp_manager: SessionManager) -> bool:
             sess.query(FamilyTree).delete(synchronize_session=False)
             sess.query(Person).delete(synchronize_session=False)
             # Keep MessageType table intact
-        temp_manager.return_session(truncate_session)
+        temp_manager.db_manager.return_session(truncate_session)
         logger.debug("All tables truncated successfully.")
         return True
     except Exception as e:
         logger.error(f"Error truncating tables: {e}", exc_info=True)
-        temp_manager.return_session(truncate_session)
+        temp_manager.db_manager.return_session(truncate_session)
         return False
 
 
@@ -325,7 +325,7 @@ def _close_main_pool_for_reset(session_manager: SessionManager) -> None:
     """Close main pool and force garbage collection."""
     if session_manager:
         logger.debug("Closing main DB connections before database deletion...")
-        session_manager.cls_db_conn(keep_db=False)  # Ensure pool is closed
+        session_manager.db_manager.close_connections(dispose_engine=True)  # Ensure pool is closed
         logger.debug("Main DB pool closed.")
 
     # Force garbage collection to release any file handles
@@ -350,7 +350,7 @@ def _perform_database_reset_steps(temp_manager: SessionManager) -> tuple[bool, A
         return False, None
 
     # Step 3: Seed MessageType Table
-    recreation_session = temp_manager.get_db_conn()
+    recreation_session = temp_manager.db_manager.get_session()
     if not recreation_session:
         raise SQLAlchemyError("Failed to get session for seeding MessageTypes!")
 
@@ -413,7 +413,7 @@ def reset_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:
             # Clean up the temporary manager and its session/engine
             logger.debug("Cleaning up temporary resource manager for reset...")
             if temp_manager and recreation_session:
-                temp_manager.return_session(recreation_session)
+                temp_manager.db_manager.return_session(recreation_session)
             logger.debug("Temporary resource manager cleanup finished.")
 
     except Exception as e:
@@ -501,7 +501,7 @@ def restore_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:  # A
         # --- Close main pool FIRST ---
         if session_manager:
             logger.debug("Closing main DB connections before restore...")
-            session_manager.cls_db_conn(keep_db=False)
+            session_manager.db_manager.close_connections(dispose_engine=True)
             logger.debug("Main DB pool closed.")
         # --- End closing main pool ---
 
@@ -610,7 +610,7 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
     """
     # Phase 1 (Driver Start) is handled by exec_actn if needed.
     # We only need to check if driver is live before proceeding.
-    if not session_manager.driver_live:
+    if not session_manager.browser_manager.driver_live:
         logger.error("Driver not live. Cannot check login status.")
         print("ERROR: Browser not started. Cannot check login status.")
         print("       Select any browser-required action (1, 6-9) to start the browser.")
@@ -752,12 +752,12 @@ def _test_initialize_ethnicity_columns_from_metadata_imports_module() -> bool:
 
 
 def _test_close_main_pool_for_reset_invokes_gc() -> bool:
-    fake_manager = SimpleNamespace(cls_db_conn=mock.Mock())
+    fake_manager = SimpleNamespace(db_manager=mock.Mock())
     with mock.patch("gc.collect") as gc_collect, mock.patch("time.sleep") as sleep:
         manager_for_call = cast(SessionManager, fake_manager)
         _close_main_pool_for_reset(manager_for_call)
 
-    fake_manager.cls_db_conn.assert_called_once_with(keep_db=False)
+    fake_manager.db_manager.close_connections.assert_called_once_with(dispose_engine=True)
     assert gc_collect.call_count >= 2
     sleep.assert_called_once_with(1.0)
     return True

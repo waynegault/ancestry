@@ -48,9 +48,9 @@ if str(_project_root) not in sys.path:
 
 # === CORE INFRASTRUCTURE ===
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # --- Standard library imports ---
 import importlib

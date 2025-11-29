@@ -15,84 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
-parent_dir = Path(__file__).resolve().parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
 import requests
-
-_RuntimeObservabilityConfig: Any | None = None
-try:  # pragma: no cover - optional dependency
-    from config.config_schema import ObservabilityConfig as _RuntimeObservabilityConfig
-except Exception:
-    _RuntimeObservabilityConfig = None
 
 if TYPE_CHECKING:
     from config.config_schema import ObservabilityConfig
-elif _RuntimeObservabilityConfig is not None:
-    ObservabilityConfig = _RuntimeObservabilityConfig
-else:
 
-    @dataclass
-    class ObservabilityConfig:
-        """Fallback configuration used when full schema cannot be imported."""
+logger = logging.getLogger(__name__)
 
-        enable_prometheus_metrics: bool = False
-        metrics_export_host: str = "127.0.0.1"
-        metrics_export_port: int = 9000
-        metrics_namespace: str = "ancestry"
-        auto_start_prometheus: bool = False
-        prometheus_binary_path: Optional[str] = None
-
-        def __post_init__(self) -> None:
-            if not self.metrics_export_host:
-                raise ValueError("metrics_export_host must be non-empty")
-            if self.metrics_export_port <= 0 or self.metrics_export_port > 65535:
-                raise ValueError("metrics_export_port must be between 1 and 65535")
-            if not self.metrics_namespace:
-                raise ValueError("metrics_namespace must be non-empty")
-
-try:
-    from standard_imports import setup_module
-except Exception:  # pragma: no cover - logging fallback
-
-    def setup_module(module_globals: dict[str, Any], module_name: str) -> logging.Logger:
-        logging.basicConfig(level=logging.INFO)
-        logger_obj = logging.getLogger(module_name)
-        module_globals["logger"] = logger_obj
-        return logger_obj
-
-try:
-    from testing.test_framework import TestSuite as _FrameworkTestSuite, suppress_logging as _framework_suppress_logging
-except Exception:  # pragma: no cover - lightweight fallback for optional dependency
-
-    @dataclass
-    class _FallbackTestSuite:
-        name: str
-        module: str
-        tests_run: int = 0
-        _suite_started: bool = False
-
-        def start_suite(self) -> None:  # pragma: no cover - fallback noop
-            self._suite_started = True
-
-        def run_test(self, *_: Any, **__: Any) -> None:  # pragma: no cover - fallback noop
-            if self._suite_started:
-                self.tests_run += 1
-
-        def finish_suite(self) -> bool:  # pragma: no cover - fallback noop
-            self._suite_started = False
-            return True
-
-    @contextmanager
-    def _fallback_suppress_logging() -> Any:  # pragma: no cover - fallback noop
-        yield
-
-    _FrameworkTestSuite = _FallbackTestSuite
-    _framework_suppress_logging = _fallback_suppress_logging
-
-TestSuite = cast(type[Any], _FrameworkTestSuite)
-suppress_logging = _framework_suppress_logging
+from testing.test_framework import TestSuite, suppress_logging
 
 
 @dataclass
@@ -121,36 +51,18 @@ if TYPE_CHECKING:  # pragma: no cover - typing hints only
 else:  # pragma: no cover - runtime fallback
     WSGIServer = object
 
-try:  # pragma: no cover - metrics registry optional dependency
-    import observability.metrics_registry as _metrics_registry
-except Exception:  # pragma: no cover - provide graceful fallback
-    _metrics_registry = None
+import observability.metrics_registry as _metrics_registry
 
-_prometheus_available = False
+_prometheus_available = _metrics_registry.PROMETHEUS_AVAILABLE
+configure_metrics = _metrics_registry.configure_metrics
+get_metrics_registry = _metrics_registry.get_metrics_registry
+is_metrics_enabled = _metrics_registry.is_metrics_enabled
+reset_metrics = _metrics_registry.reset_metrics
 
-if _metrics_registry is not None:
-    _prometheus_available = _metrics_registry.PROMETHEUS_AVAILABLE
-    configure_metrics = _metrics_registry.configure_metrics
-    get_metrics_registry = _metrics_registry.get_metrics_registry
-    is_metrics_enabled = _metrics_registry.is_metrics_enabled
-    reset_metrics = _metrics_registry.reset_metrics
-else:
-
-    def configure_metrics(*_: Any, **__: Any) -> None:
-        raise RuntimeError("Metrics registry unavailable")
-
-    def get_metrics_registry() -> Any:
-        return None
-
-    def is_metrics_enabled() -> bool:
-        return False
-
-    def reset_metrics() -> None:
-        return None
 
 PROMETHEUS_AVAILABLE = _prometheus_available
 
-logger = setup_module(globals(), __name__)
+# logger = setup_module(globals(), __name__)
 
 _EXPORTER_LOCK = threading.RLock()
 
@@ -261,11 +173,7 @@ def get_exporter_status() -> dict[str, Any] | None:
     """
     with _EXPORTER_LOCK:
         if _EXPORTER_STATE.server and _EXPORTER_STATE.address:
-            return {
-                'host': _EXPORTER_STATE.address[0],
-                'port': _EXPORTER_STATE.address[1],
-                'running': True
-            }
+            return {'host': _EXPORTER_STATE.address[0], 'port': _EXPORTER_STATE.address[1], 'running': True}
         return None
 
 
@@ -293,9 +201,7 @@ def start_metrics_exporter(host: str, port: int) -> bool:
             assert server_factory is not None  # For type checkers
             server = cast(WSGIServer, server_factory(port, addr=host, registry=registry))
         except OSError as exc:
-            logger.error(
-                "Failed to start Prometheus exporter on %s:%s (%s)", host, port, exc
-            )
+            logger.error("Failed to start Prometheus exporter on %s:%s (%s)", host, port, exc)
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Unexpected error starting Prometheus exporter: %s", exc, exc_info=True)
         else:
@@ -354,6 +260,8 @@ def _find_free_port(host: str) -> tuple[str, int]:
 
 
 def _configure_observability(enabled: bool, host: str, port: int) -> None:
+    from config.config_schema import ObservabilityConfig
+
     reset_metrics()
     configure_metrics(
         ObservabilityConfig(
@@ -371,6 +279,8 @@ def _serve_metrics_endpoint(host: str, port: int, namespace: str) -> int:
             "Prometheus client library is unavailable; install 'prometheus-client' to serve metrics",
         )
         return 1
+
+    from config.config_schema import ObservabilityConfig
 
     reset_metrics()
     configure_metrics(

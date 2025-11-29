@@ -15,9 +15,13 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import safe_execute, setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+from core.error_handling import safe_execute
+from core.registry_utils import auto_register_module
+
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 

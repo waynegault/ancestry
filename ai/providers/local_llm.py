@@ -2,9 +2,8 @@ from __future__ import annotations
 
 """Local LLM (LM Studio) provider adapter."""
 
+import logging
 from typing import Any
-
-from standard_imports import setup_module
 
 from .base import (
     BaseProvider,
@@ -14,7 +13,7 @@ from .base import (
     ProviderUnavailableError,
 )
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover - optional dependency
     from openai import OpenAI

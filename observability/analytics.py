@@ -24,9 +24,9 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import json

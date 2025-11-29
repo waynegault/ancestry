@@ -39,14 +39,6 @@ implementation, consistent testing practices, and maintainable code organization
 for professional genealogical automation development and quality assurance.
 """
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 import contextlib
 import tempfile
 from collections.abc import Iterator
@@ -643,8 +635,8 @@ def create_mock_session_manager() -> MagicMock:
     sm = MagicMock()
     sm.session_ready = True
     sm.get_db_conn.return_value = MagicMock(spec=Session)
-    sm.driver = MagicMock()
-    sm.requests_session = MagicMock()
+    sm.browser_manager.driver = MagicMock()
+    sm.api_manager.requests_session = MagicMock()
     return sm
 
 
@@ -684,7 +676,7 @@ def live_session_fixture(
     from testing.test_framework import database_rollback_test
 
     session_manager, session_uuid = ensure_session_for_tests(action_name, skip_csrf)
-    db_session = session_manager.get_db_conn()
+    db_session = session_manager.db_manager.get_session()
     if db_session is None:
         raise RuntimeError("SessionManager did not return a database session; ensure DB is ready before running tests.")
 
@@ -697,7 +689,7 @@ def live_session_fixture(
             )
     finally:
         with contextlib.suppress(Exception):
-            session_manager.return_session(db_session)
+            session_manager.db_manager.return_session(db_session)
 
 
 def create_test_database() -> Session:
@@ -1005,7 +997,7 @@ def with_mock_session(func: Callable[..., Any]) -> Callable[..., Any]:
     Example:
         @with_mock_session
         def test_api_call(session_manager):
-            session_manager.requests_session.get.return_value.status_code = 200
+            session_manager.api_manager.requests_session.get.return_value.status_code = 200
             # Test code using session_manager
     """
     import functools
@@ -1303,8 +1295,8 @@ def _test_create_mock_session_manager() -> None:
     sm = create_mock_session_manager()
     assert sm.session_ready is True
     assert sm.get_db_conn.return_value is not None
-    assert sm.driver is not None
-    assert sm.requests_session is not None
+    assert sm.browser_manager.driver is not None
+    assert sm.api_manager.requests_session is not None
 
 
 def _test_create_test_database() -> None:
@@ -1418,8 +1410,8 @@ def _test_with_mock_session_decorator() -> None:
     def inner_test(session_manager: MagicMock) -> bool:
         # Verify mock is properly configured
         assert session_manager.session_ready is True
-        assert session_manager.driver is not None
-        assert session_manager.requests_session is not None
+        assert session_manager.browser_manager.driver is not None
+        assert session_manager.api_manager.requests_session is not None
         return True
 
     result = inner_test()

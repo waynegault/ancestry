@@ -18,10 +18,10 @@ Features:
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 1 OPTIMIZATIONS ===
 # === STANDARD LIBRARY IMPORTS ===
@@ -1021,7 +1021,7 @@ class InboxProcessor:
 
     def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
         """Get database session and create comparator for inbox processing."""
-        session = self.session_manager.get_db_conn()
+        session = self.session_manager.db_manager.get_session()
         if not session:
             logger.critical("search_inbox: Failed to get DB session. Aborting.")
             return None, None, None
@@ -2067,7 +2067,7 @@ class InboxProcessor:
             if override is not None:
                 return override
 
-            db_session = self.session_manager.get_db_conn()
+            db_session = self.session_manager.db_manager.get_session()
             person = self._load_person_for_importance(db_session, person_id)
             if not person:
                 return "normal"
@@ -2657,7 +2657,7 @@ class InboxProcessor:
                 )
 
             # Track analytics for received message
-            db_session = self.session_manager.get_db_conn()
+            db_session = self.session_manager.db_manager.get_session()
             if db_session and self._track_message_analytics(
                 session=db_session,
                 people_id=people_id,
@@ -2718,7 +2718,7 @@ class InboxProcessor:
             )
 
             # Track analytics for sent message
-            db_session = self.session_manager.get_db_conn()
+            db_session = self.session_manager.db_manager.get_session()
             if db_session and self._track_message_analytics(
                 session=db_session,
                 people_id=people_id,
@@ -3638,7 +3638,8 @@ def _test_task_importance_calculation() -> None:
 
     sm = MagicMock()
     mock_db_session = MagicMock()
-    sm.get_db_conn.return_value = mock_db_session
+    # sm.get_db_conn.return_value = mock_db_session
+    sm.db_manager.get_session.return_value = mock_db_session
 
     processor = InboxProcessor(session_manager=sm)
 

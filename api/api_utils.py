@@ -47,12 +47,13 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-)
+import logging
+
+from core.registry_utils import auto_register_module
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
@@ -1425,7 +1426,7 @@ def _try_direct_suggest_fallback(
     direct_response_obj = None
 
     try:
-        cookies = session_manager.requests_session.cookies.get_dict()
+        cookies = session_manager.api_manager.requests_session.cookies.get_dict()
 
         direct_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -1604,7 +1605,7 @@ def _try_direct_facts_request(
 
     direct_response_obj = None
     try:
-        cookies = session_manager.requests_session.cookies.get_dict()
+        cookies = session_manager.api_manager.requests_session.cookies.get_dict()
 
         direct_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",

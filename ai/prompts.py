@@ -12,11 +12,13 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import importlib
+import logging
 from typing import Any, Callable
 
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 try:  # pragma: no cover - optional import path
     from ai.ai_prompt_utils import get_prompt as _legacy_get_prompt, load_prompts as _legacy_load_prompts

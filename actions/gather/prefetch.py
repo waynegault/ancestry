@@ -11,14 +11,17 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
+import logging
+
 from core.error_handling import MaxApiFailuresExceededError
-from standard_imports import setup_module
+from core.registry_utils import auto_register_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 
 if TYPE_CHECKING:
     from core.session_manager import SessionManager
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 @dataclass(frozen=True)
@@ -527,7 +530,7 @@ def _enforce_session_health_for_prefetch(
     if processed_count % 10 != 0:
         return
 
-    if session_manager.check_session_health():
+    if session_manager._check_session_health():
         return
 
     logger.critical("🚨 Session death detected at item %d/%d. Aborting.", processed_count, num_candidates)

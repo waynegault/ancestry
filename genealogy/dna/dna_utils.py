@@ -22,9 +22,9 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
@@ -85,7 +85,7 @@ def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
     target_url = urljoin(config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}")
     logger.debug(f"Navigating to DNA matches page: {target_url}")
 
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     if driver is None:
         logger.error("nav_to_dna_matches_page: WebDriver is None")
         return False
@@ -369,10 +369,10 @@ def _sync_cookies_to_session(driver: Any, session_manager: SessionManager) -> No
         logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
 
         # Clear and re-sync all cookies to ensure fresh state
-        if hasattr(session_manager, 'requests_session') and session_manager.requests_session:
-            session_manager.requests_session.cookies.clear()
+        if hasattr(session_manager, 'requests_session') and session_manager.api_manager.requests_session:
+            session_manager.api_manager.requests_session.cookies.clear()
             # Cast cookies to Any to avoid type errors with set method
-            cookies_obj = cast(Any, session_manager.requests_session.cookies)
+            cookies_obj = cast(Any, session_manager.api_manager.requests_session.cookies)
             for cookie in browser_cookies:
                 cookies_obj.set(
                     cookie['name'], cookie['value'], domain=cookie.get('domain', ''), path=cookie.get('path', '/')

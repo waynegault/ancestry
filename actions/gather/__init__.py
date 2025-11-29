@@ -9,7 +9,6 @@ into independently testable components.
 from __future__ import annotations
 
 from .checkpoint import GatherCheckpointPlan, GatherCheckpointService
-from .fetch import GatherFetchPlan, GatherFetchService
 from .metrics import (
     PageProcessingMetrics,
     accumulate_page_metrics,
@@ -46,8 +45,6 @@ __all__ = [
     "GatherBatchSummary",
     "GatherCheckpointPlan",
     "GatherCheckpointService",
-    "GatherFetchPlan",
-    "GatherFetchService",
     "GatherOrchestrator",
     "GatherPersistenceService",
     "PageProcessingMetrics",

@@ -9,10 +9,8 @@ Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 """
 
 import logging
-import sys
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)

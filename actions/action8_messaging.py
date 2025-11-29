@@ -15,10 +15,10 @@ In dry_run mode: Messages are created and saved to DB but NOT sent to Ancestry.
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import setup_module
+import logging
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === ERROR HANDLING ===
 from core.error_handling import (
@@ -484,7 +484,7 @@ def load_message_templates() -> dict[str, str]:
             )
             return {}
 
-        with session_manager.get_db_conn_context() as session:
+        with session_manager.db_manager.get_session_context() as session:
             if not session:
                 logger.critical("Could not get database session for template loading")
                 return {}
@@ -901,7 +901,7 @@ def analyze_template_effectiveness(
         return {}
 
     try:
-        with session_manager.get_db_conn_context() as session:
+        with session_manager.db_manager.get_session_context() as session:
             if not session:
                 return {"error": "Could not get database session"}
 
@@ -998,12 +998,12 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
     """
     try:
         # Use public API for performance tracking (max_history=50 for messaging)
-        if hasattr(session_manager, "update_response_time_tracking"):
-            session_manager.update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
-        elif hasattr(session_manager, "reset_response_time_tracking"):
+        if hasattr(session_manager, "_update_response_time_tracking"):
+            session_manager._update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
+        elif hasattr(session_manager, "_reset_response_time_tracking"):
             # Fallback: initialize if needed then update
-            session_manager.reset_response_time_tracking()
-            session_manager.update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
+            session_manager._reset_response_time_tracking()
+            session_manager._update_response_time_tracking(duration, slow_threshold=15.0, max_history=50)
 
     except Exception as exc:  # pragma: no cover - telemetry safety
         logger.debug(f"Failed to update messaging performance tracking: {exc}")
@@ -1557,7 +1557,7 @@ class ProactiveApiManager:
         logger.warning("Attempting re-authentication...")
 
         try:
-            recovery_success = self.session_manager.attempt_session_recovery(reason="auth_recovery")
+            recovery_success = self.session_manager._attempt_session_recovery(reason="auth_recovery")
             if recovery_success:
                 logger.info("Re-authentication successful")
                 self.consecutive_failures = 0
@@ -3509,7 +3509,7 @@ def _perform_final_cleanup(
         Updated skipped_count
     """
     if db_session:
-        session_manager.return_session(db_session)
+        session_manager.db_manager.return_session(db_session)
 
     # Adjust final skipped count if loop was stopped early
     if critical_db_error_occurred and total_candidates > state.processed_in_loop:
@@ -3788,7 +3788,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     # --- Step 2: Get DB Session and Pre-fetch Data ---
     db_session: Optional[Session] = None
     try:
-        db_session = session_manager.get_db_conn()
+        db_session = session_manager.db_manager.get_session()
         if not db_session:
             logger.critical("Failed to obtain database session; aborting messaging run.")
             return False
@@ -3798,7 +3798,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
 
         if messaging_data is None:
             if db_session:
-                session_manager.return_session(db_session)
+                session_manager.db_manager.return_session(db_session)
             return False
 
         state.total_candidates = messaging_data.total_candidates
@@ -4109,7 +4109,7 @@ def _test_performance_tracking() -> None:
                 self._recent_slow_calls: int = 0
                 self._avg_response_time: float = 0.0
 
-            def update_response_time_tracking(
+            def _update_response_time_tracking(
                 self, duration: float, slow_threshold: float = 5.0, max_history: int = 20
             ) -> None:
                 """Mock implementation of public API."""
@@ -4124,7 +4124,7 @@ def _test_performance_tracking() -> None:
                     self._recent_slow_calls = max(0, self._recent_slow_calls - 1)
                 self._recent_slow_calls = min(self._recent_slow_calls, 10)
 
-            def reset_response_time_tracking(self) -> None:
+            def _reset_response_time_tracking(self) -> None:
                 self._response_times = []
                 self._recent_slow_calls = 0
                 self._avg_response_time = 0.0
@@ -4512,7 +4512,7 @@ def _test_database_message_creation() -> bool:
         logger.info("Testing database message creation in dry_run mode (limited to 10 candidates)...")
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -4527,7 +4527,7 @@ def _test_database_message_creation() -> bool:
 
         if not test_candidates:
             logger.warning("⚠️  No test candidates available, skipping test")
-            sm.return_session(db_session)
+            sm.db_manager.return_session(db_session)
             return True
 
         logger.info(f"Processing {len(test_candidates)} test candidates...")
@@ -4562,7 +4562,7 @@ def _test_database_message_creation() -> bool:
         )
         logger.info(f"✅ Messages created: {final_count - initial_count} new entries")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         return True
 
     except Exception as e:
@@ -4599,7 +4599,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         assert app_mode == 'dry_run', f"Expected APP_MODE='dry_run', got '{app_mode}'"
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -4612,7 +4612,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 
         if not test_candidates:
             logger.warning("⚠️  No test candidates available, skipping test")
-            sm.return_session(db_session)
+            sm.db_manager.return_session(db_session)
             return True
 
         logger.info(f"Processing {len(test_candidates)} test candidates in dry_run mode...")
@@ -4650,7 +4650,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
 
         logger.info(f"✅ Dry-run mode: {final_count - initial_count} messages created but not sent")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         return True
 
     except Exception as e:
@@ -4671,7 +4671,7 @@ def _test_message_template_loading_from_db() -> bool:
         logger.info("Testing message template loading from database...")
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -4686,7 +4686,7 @@ def _test_message_template_loading_from_db() -> bool:
             for template in templates[:3]:  # Show first 3
                 logger.info(f"   - {template.template_key if hasattr(template, 'template_key') else 'N/A'}")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         assert template_count > 0, "Should have at least one message template"
         return True
 
@@ -4708,7 +4708,7 @@ def _test_conversation_log_tracking() -> bool:
         logger.info("Testing conversation log tracking...")
 
         # Get database session
-        db_session = sm.get_db_conn()
+        db_session = sm.db_manager.get_session()
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
@@ -4724,7 +4724,7 @@ def _test_conversation_log_tracking() -> bool:
                 direction = log.direction if hasattr(log, 'direction') else 'N/A'
                 logger.info(f"   - Person: {person_id}, Direction: {direction}")
 
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
         return True
 
     except Exception as e:
@@ -4894,7 +4894,7 @@ def _test_status_change_template_exists() -> bool:
         logger.info("Skipping live test (no global session available)")
         return True
 
-    db_session = sm.get_db_conn()
+    db_session = sm.db_manager.get_session()
     if not db_session:
         logger.warning("Failed to get database session - skipping test")
         return True
@@ -4924,7 +4924,7 @@ def _test_status_change_template_exists() -> bool:
         return True
 
     finally:
-        sm.return_session(db_session)
+        sm.db_manager.return_session(db_session)
 
 
 def _test_cancel_on_reply_all_scenarios() -> bool:

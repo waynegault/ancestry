@@ -10,10 +10,13 @@ if __package__ in {None, ""}:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
 
-from standard_imports import setup_module
+import logging
+
+from core.registry_utils import auto_register_module
 from utils import nav_to_page
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 
 def ensure_navigation_ready(
@@ -26,7 +29,7 @@ def ensure_navigation_ready(
 ) -> bool:
     """Shared guard that ensures driver availability and page navigation."""
 
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     if driver is None:
         logger.error(f"Driver not available for {action_label} navigation")
         print("ERROR: Browser session not available. Please rerun login (Action 5).")
@@ -96,7 +99,7 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_navigation_requires_driver() -> bool:
     session_manager = MagicMock()
-    session_manager.driver = None
+    session_manager.browser_manager.driver = None
 
     result = ensure_navigation_ready(
         session_manager,
@@ -112,7 +115,7 @@ def _test_navigation_requires_driver() -> bool:
 
 def _test_navigation_failure_logs_error() -> bool:
     session_manager = MagicMock()
-    session_manager.driver = object()
+    session_manager.browser_manager.driver = object()
 
     module_ref = sys.modules[__name__]
     with patch.object(module_ref, "nav_to_page", return_value=False) as mock_nav:
@@ -131,7 +134,7 @@ def _test_navigation_failure_logs_error() -> bool:
 
 def _test_navigation_success_waits() -> bool:
     session_manager = MagicMock()
-    session_manager.driver = object()
+    session_manager.browser_manager.driver = object()
 
     module_ref = sys.modules[__name__]
     with (
@@ -146,7 +149,7 @@ def _test_navigation_success_waits() -> bool:
             failure_reason="Should not hit",
         )
 
-    mock_nav.assert_called_once_with(session_manager.driver, "https://example.com", "#content", session_manager)
+    mock_nav.assert_called_once_with(session_manager.browser_manager.driver, "https://example.com", "#content", session_manager)
     mock_sleep.assert_called_once_with(2)
     assert result is True, "Successful navigation should return True"
     return True

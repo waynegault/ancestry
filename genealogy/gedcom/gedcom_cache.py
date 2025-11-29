@@ -52,13 +52,9 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 # Unified import system
-from standard_imports import (
-    get_function,
-    is_function_available,
-    setup_module,
-)
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
@@ -735,8 +731,8 @@ def test_gedcom_cache_initialization():
     module_name = _gedcom_cache_module.get_module_name()
     assert module_name == "gedcom_cache", f"Expected 'gedcom_cache', got '{module_name}'"
 
-    if is_function_available("GedcomCache"):
-        # cache_class = get_function("GedcomCache")
+    if "GedcomCache" in globals():
+        # cache_class = globals()["GedcomCache"]
         pass
     return True
 

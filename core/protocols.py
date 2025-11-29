@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import sys
+import threading
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 # Ensure Python 3.9+ compatibility
@@ -58,6 +59,25 @@ class RateLimiterProtocol(Protocol):
     def on_success(self) -> None:
         """Report successful request for rate adaptation."""
         ...
+
+
+class SupportsBrowserConsoleLogs(Protocol):
+    """Protocol for WebDrivers that expose get_log for console inspection."""
+
+    def get_log(self, log_type: str) -> list[dict[str, Any]]: ...
+
+
+class SessionHealthMonitor(TypedDict):
+    is_alive: threading.Event
+    death_detected: threading.Event
+    last_heartbeat: float
+    heartbeat_interval: int
+    death_cascade_halt: threading.Event
+    death_timestamp: float | None
+    parallel_operations: int
+    death_cascade_count: int
+    browser_death_count: NotRequired[int]
+    last_browser_health_check: NotRequired[float]
 
     def on_429_error(self, endpoint: str | None = None) -> None:
         """Report 429 error for rate backoff."""

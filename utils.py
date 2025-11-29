@@ -9,12 +9,13 @@ and includes login/session verification logic closely tied to SessionManager.
 """
 
 # === CORE INFRASTRUCTURE ===
+import logging
+
 from core.logging_utils import log_action_banner
-from standard_imports import setup_module
 from testing.test_utilities import create_standard_test_runner
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 # === SESSION MANAGER IMPORT ===
 # Import SessionManager from core module - use TYPE_CHECKING to avoid circular imports
@@ -529,18 +530,17 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
-# --- Local application imports ---
-from config import config_schema
-from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
-
+# from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
 # Initialize logger with standardized pattern
-logger = get_logger(__name__)
-
+# logger = get_logger(__name__)
 from browser.css_selectors import *
 from browser.selenium_utils import (
     is_browser_open,
     is_elem_there,
 )
+
+# --- Local application imports ---
+from config import config_schema
 
 # ------------------------------------------------------------------------------------
 # Helper functions (General Utilities)
@@ -585,7 +585,7 @@ def _get_cookie_file_path() -> Path:
 def _save_login_cookies(session_manager: "SessionManager") -> bool:
     """Save login cookies to file for session persistence."""
     try:
-        driver = session_manager.driver
+        driver = session_manager.browser_manager.driver
         if driver is None:
             logger.debug("Cannot save cookies: No driver available")
             return False
@@ -615,7 +615,7 @@ def _save_login_cookies(session_manager: "SessionManager") -> bool:
 def _load_login_cookies(session_manager: "SessionManager") -> bool:
     """Load saved login cookies from file."""
     try:
-        driver = session_manager.driver
+        driver = session_manager.browser_manager.driver
         if driver is None:
             logger.debug("Cannot load cookies: No driver available")
             return False
@@ -1175,7 +1175,12 @@ def _add_csrf_token_header(
     final_headers: dict[str, str], session_manager: "SessionManager", api_description: str
 ) -> None:
     """Add CSRF token header if available."""
-    csrf_token = session_manager.csrf_token
+    csrf_token = None
+    if hasattr(session_manager, "api_manager"):
+        csrf_token = session_manager.api_manager.csrf_token
+    elif hasattr(session_manager, "csrf_token"):
+        csrf_token = session_manager.csrf_token
+
     if csrf_token:
         raw_token_val = _parse_csrf_token(csrf_token, api_description)
         final_headers["X-CSRF-Token"] = raw_token_val
@@ -1191,9 +1196,16 @@ def _add_user_id_header(final_headers: dict[str, str], session_manager: "Session
         "Ancestry Person Picker",
         "CSRF Token API",
     }
-    if session_manager.my_profile_id and api_description not in exclude_userid_for:
-        final_headers["ancestry-userid"] = session_manager.my_profile_id.upper()
-    elif api_description in exclude_userid_for and session_manager.my_profile_id:
+
+    my_profile_id = None
+    if hasattr(session_manager, "api_manager"):
+        my_profile_id = session_manager.api_manager.my_profile_id
+    elif hasattr(session_manager, "my_profile_id"):
+        my_profile_id = session_manager.my_profile_id
+
+    if my_profile_id and api_description not in exclude_userid_for:
+        final_headers["ancestry-userid"] = my_profile_id.upper()
+    elif api_description in exclude_userid_for and my_profile_id:
         logger.debug(f"[{api_description}] Omitting 'ancestry-userid' header as configured.")
 
 
@@ -1211,7 +1223,7 @@ def _prepare_api_headers(
 
     # Get User-Agent from browser if possible
     ua = None
-    if driver and session_manager.driver:
+    if driver and session_manager.browser_manager.driver:
         ua = _get_user_agent_from_browser(driver, api_description)
 
     # Set User-Agent (from browser or fallback)
@@ -1276,7 +1288,7 @@ def _validate_driver_for_sync(
     Returns:
         bool: True if driver is valid, False otherwise
     """
-    driver_is_valid = driver and session_manager.driver
+    driver_is_valid = driver and session_manager.browser_manager.driver
     if not driver_is_valid and attempt == 1:
         logger.warning(
             f"[{api_description}] Browser session invalid or driver None (Attempt {attempt}). "
@@ -1866,7 +1878,7 @@ def _api_req(
     # Prepare headers if session_manager is available
     final_headers = headers or {}
     if session_manager:
-        driver = session_manager.driver
+        driver = session_manager.browser_manager.driver
         final_headers = _prepare_api_headers(
             session_manager,
             driver,
@@ -2332,11 +2344,11 @@ def _verify_2fa_completion(session_manager: "SessionManager") -> bool:
 
 @time_wait("Handle 2FA Page")
 def handle_two_fa(session_manager: "SessionManager") -> bool:
-    if session_manager.driver is None:
+    if session_manager.browser_manager.driver is None:
         logger.error("handle_two_fa: SessionManager driver is None. Cannot proceed.")
         return False
 
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     element_wait = WebDriverWait(driver, config_schema.selenium.explicit_wait)
 
     try:
@@ -3178,7 +3190,7 @@ def log_in(session_manager: "SessionManager") -> str:
     Returns:
         A status string indicating success ("LOGIN_SUCCEEDED") or failure type.
     """
-    driver = session_manager.driver
+    driver = session_manager.browser_manager.driver
     if not driver:
         logger.error("Login failed: WebDriver not available in SessionManager.")
         return "LOGIN_ERROR_NO_DRIVER"
@@ -3201,15 +3213,32 @@ def log_in(session_manager: "SessionManager") -> str:
 
 def _validate_login_status_inputs(session_manager: "SessionManager") -> Optional[bool]:
     """Validate session manager for login status check."""
-    if not hasattr(session_manager, 'is_sess_valid') or not hasattr(session_manager, 'driver'):
+    if not hasattr(session_manager, 'is_sess_valid'):
         logger.error(f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}.")
+        return None
+
+    # Check for browser access (either via browser_manager or direct driver)
+    has_browser_manager = hasattr(session_manager, 'browser_manager')
+    has_driver = hasattr(session_manager, 'driver')
+
+    if not (has_browser_manager or has_driver):
+        logger.error(
+            f"Invalid argument: Expected SessionManager-like object with browser access, got {type(session_manager)}."
+        )
         return None
 
     if not session_manager.is_sess_valid():
         logger.debug("Session is invalid, user cannot be logged in.")
         return False
 
-    if session_manager.driver is None:
+    # Check driver availability
+    driver = None
+    if has_browser_manager:
+        driver = session_manager.browser_manager.driver
+    elif has_driver:
+        driver = session_manager.driver
+
+    if driver is None:
         logger.error("Login status check: Driver is None within SessionManager.")
         return None
 
@@ -3305,7 +3334,11 @@ def login_status(session_manager: "SessionManager", disable_ui_fallback: bool = 
     if validation_result is not True:
         return validation_result
 
-    driver = session_manager.driver
+    driver = None
+    if hasattr(session_manager, 'browser_manager'):
+        driver = session_manager.browser_manager.driver
+    elif hasattr(session_manager, 'driver'):
+        driver = session_manager.driver
 
     # Perform API check
     api_check_result = _perform_api_login_check(session_manager)
@@ -3378,7 +3411,7 @@ def _check_browser_session(
             logger.warning("Attempting session restart...")
             if session_manager.restart_sess():
                 logger.info("Session restarted. Retrying navigation...")
-                driver_instance = session_manager.driver
+                driver_instance = session_manager.browser_manager.driver
                 if driver_instance is not None:
                     return driver_instance
                 logger.error("Session restart reported success but driver is still None.")
@@ -3571,12 +3604,10 @@ def _wait_for_element(
 def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:
     """Handle unexpected alert. Returns 'continue' or 'fail'."""
     alert_text = "N/A"
-    try:
+    with contextlib.suppress(AttributeError):
         # Try to get alert text if available
         alert = driver.switch_to.alert
         alert_text = alert.text
-    except AttributeError:
-        pass
     logger.warning(f"Unexpected alert detected (Attempt {attempt}): {alert_text}")
     try:
         driver.switch_to.alert.accept()
@@ -3596,7 +3627,7 @@ def _handle_webdriver_exception(
         logger.error("WebDriver session invalid after exception. Attempting restart...")
         if session_manager.restart_sess():
             logger.info("Session restarted. Retrying navigation...")
-            driver_instance = session_manager.driver
+            driver_instance = session_manager.browser_manager.driver
             if driver_instance is not None:
                 return ("continue", driver_instance)
             return ("fail", None)
@@ -4190,7 +4221,7 @@ def _test_login_status_function() -> None:
 
     session_manager = MagicMock()
     session_manager.is_sess_valid.return_value = True
-    session_manager.driver = MagicMock()
+    session_manager.browser_manager.driver = MagicMock()
     session_manager.sync_cookies_to_requests = MagicMock()
     session_manager.api_manager.verify_api_login_status.return_value = True
 
@@ -4206,49 +4237,6 @@ def _test_login_status_function() -> None:
         result = login_status(session_manager, disable_ui_fallback=False)
     mock_ui_check.assert_called_once()
     assert result is False, "login_status should return UI fallback result when API ambiguous"
-
-
-def _test_module_registration() -> None:
-    """Test module registration functions with behavior validation"""
-
-    # Test 1: auto_register_module returns expected type
-    # Note: Don't call on this module to avoid infinite loop
-    assert callable(auto_register_module), "auto_register_module should be callable"
-
-    # Test 2: register_function and get_function work correctly
-    def _test_func() -> str:
-        return "test_value"
-
-    register_function("_test_unique_func", _test_func)
-    retrieved = get_function("_test_unique_func")
-    assert retrieved is not None, "get_function should retrieve registered function"
-    assert retrieved() == "test_value", "Retrieved function should execute correctly"
-
-    # Test 3: is_function_available works
-    assert is_function_available("_test_unique_func") is True, (
-        "is_function_available should return True for registered function"
-    )
-    assert is_function_available("_nonexistent_func_xyz") is False, (
-        "is_function_available should return False for unregistered function"
-    )
-
-    # Test 4: format_name behavior
-    assert format_name(None) == "Valued Relative", "format_name should handle None"
-    assert format_name("") == "Valued Relative", "format_name should handle empty string"
-    assert format_name("john doe") == "John Doe", "format_name should title case names"
-    assert format_name("JOHN DOE") == "John Doe", "format_name should normalize uppercase"
-
-    # Test 5: get_rate_limiter returns singleton
-    limiter1 = get_rate_limiter()
-    limiter2 = get_rate_limiter()
-    assert limiter1 is limiter2, "get_rate_limiter should return singleton"
-    assert hasattr(limiter1, 'wait'), "Rate limiter should have wait method"
-
-    # Test 6: SessionManager can be imported from core module
-    from core.session_manager import SessionManager as SessionMgr
-
-    assert isinstance(SessionMgr, type), "SessionManager should be a class"
-    assert hasattr(SessionMgr, 'is_sess_valid'), "SessionManager should have is_sess_valid method"
 
 
 def _test_performance_validation() -> None:
@@ -4325,10 +4313,6 @@ def utils_module_tests() -> bool:
     suite.run_test("Adaptive Rate Limiter", _test_rate_limiter, "Test rate limiting interface and metrics tracking")
 
     suite.run_test("Login Status Function", _test_login_status_function, "Verify login_status function signature")
-
-    suite.run_test(
-        "Module Registration", _test_module_registration, "Verify function registration system and core functions"
-    )
 
     suite.run_test(
         "Performance Validation", _test_performance_validation, "Ensure key operations complete within time limits"

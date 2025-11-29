@@ -26,9 +26,9 @@ parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from standard_imports import setup_module
+import logging
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 class SmartFunctionRegistry:
@@ -168,12 +168,22 @@ class SmartFunctionRegistry:
 smart_registry = SmartFunctionRegistry()
 
 
+def get_function(name: str, default: Any = None) -> Any:
+    """Get a function from the global registry."""
+    return smart_registry.get(name, default)
+
+
+def is_function_available(name: str) -> bool:
+    """Check if a function is available in the global registry."""
+    return smart_registry.is_available(name)
+
+
 def auto_register_module(module_globals: dict[str, Any], module_name: Optional[str] = None) -> int:
     """
     One-line function to replace massive auto-registration blocks.
 
     Usage in any module:
-        from core_imports import auto_register_module
+        from core.registry_utils import auto_register_module
         auto_register_module(globals(), __name__)    This single line replaces 50-100+ lines of repetitive registration code.
     """
     if module_name is None:

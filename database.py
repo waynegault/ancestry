@@ -10,19 +10,19 @@ in specific fields (status, direction). Implements a transactional context manag
 """
 
 # === CORE INFRASTRUCTURE ===
-from standard_imports import (
-    setup_module,
-)
+import logging
+
+from core.registry_utils import auto_register_module
 
 # === MODULE SETUP ===
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
+auto_register_module(globals(), __name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import enum
 import gc
-import logging
 import os
 import sys
 import time

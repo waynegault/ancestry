@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-import sys
+import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
-if __package__ in {None, ""}:
-    REPO_ROOT = Path(__file__).resolve().parents[2]
-    if str(REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(REPO_ROOT))
-
-from standard_imports import setup_module
 from testing.test_framework import TestSuite, create_standard_test_runner
 
-logger = setup_module(globals(), __name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)

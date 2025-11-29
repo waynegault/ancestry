@@ -10,10 +10,8 @@ keeps light-weight metadata for operations dashboards.
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass
 from importlib import import_module
-from pathlib import Path
 from threading import RLock
 from typing import Any, Callable, Optional
 
