@@ -83,7 +83,7 @@ from messaging import (
     log_conversation_state_change,
 )
 from messaging.message_types import (
-    MESSAGE_TYPES_ACTION8,
+    MESSAGE_TYPES,
     determine_next_message_type,
 )
 
@@ -1051,7 +1051,7 @@ def _get_simple_messaging_data(
         if is_mock_mode:
             # Create mock data for testing
             logger.debug("Running in mock mode, creating mock MessageTemplate map...")
-            message_type_map = {name: i for i, name in enumerate(MESSAGE_TYPES_ACTION8.keys(), start=1)}
+            message_type_map = {name: i for i, name in enumerate(MESSAGE_TYPES.keys(), start=1)}
             message_type_map["Productive_Reply_Acknowledgement"] = len(message_type_map) + 1
         else:
             # Fetch MessageTemplate key-to-ID mapping
@@ -1181,7 +1181,7 @@ def _validate_system_health(session_manager: Optional[SessionManager]) -> bool:
 
         # Action 8-specific check: Essential message templates availability
         ensure_message_templates_loaded()
-        required_templates = set(MESSAGE_TYPES_ACTION8.keys())
+        required_templates = set(MESSAGE_TYPES.keys())
         missing_templates: list[str] = []
         for template_key in required_templates:
             if template_key not in MESSAGE_TEMPLATES:
@@ -4286,7 +4286,7 @@ def _test_system_health_validation_hardening() -> None:
     mock_session.should_halt_operations.return_value = False
     mock_session.validate_system_health.return_value = True
     mock_session.session_health_monitor = {'death_cascade_count': 0}
-    for k in set(MESSAGE_TYPES_ACTION8.keys()):
+    for k in set(MESSAGE_TYPES.keys()):
         MESSAGE_TEMPLATES.setdefault(k, "test template")
     assert _validate_system_health(mock_session) is True
     # Death cascade

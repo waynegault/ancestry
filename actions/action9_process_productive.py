@@ -1382,7 +1382,7 @@ class PersonProcessor:
         return False
 
     @staticmethod
-    def _calculate_task_priority_and_due_date(person: Person) -> tuple[str, Optional[str], list[str]]:
+    def calculate_task_priority_and_due_date(person: Person) -> tuple[str, Optional[str], list[str]]:
         """
         Calculate task priority and due date based on relationship closeness.
 
@@ -1523,7 +1523,7 @@ class PersonProcessor:
         task_title = f"Ancestry Follow-up: {person.username or 'Unknown'} (#{person.id})"
 
         # Calculate priority and due date based on relationship
-        importance, due_date, categories = self._calculate_task_priority_and_due_date(person)
+        importance, due_date, categories = self.calculate_task_priority_and_due_date(person)
 
         # Build enhanced task body with context
         task_body_parts = self._build_task_body_parts(person, task_desc, task_index, total_tasks)
@@ -1906,7 +1906,7 @@ class PersonProcessor:
             return 5  # Minimal: adequate length
         return 0
 
-    def _score_response_quality(
+    def score_response_quality(
         self,
         response_text: str,
         lookup_results: list[PersonLookupResult],
@@ -1991,7 +1991,7 @@ class PersonProcessor:
                 logger.info(f"{log_prefix}: Generated contextual dialogue response with lookup results.")
 
                 # Priority 1 Todo #8: Score response quality
-                quality_score = self._score_response_quality(
+                quality_score = self.score_response_quality(
                     response_text=custom_reply,
                     lookup_results=lookup_results,
                     person=person,
@@ -3461,7 +3461,7 @@ def _test_enhanced_task_creation() -> None:
     Test enhanced MS To-Do task creation with priority and due dates.
 
     Phase 5.3: Enhanced MS To-Do Task Creation
-    Tests the _calculate_task_priority_and_due_date method.
+    Tests the calculate_task_priority_and_due_date method.
     """
     from unittest.mock import Mock
 
@@ -3553,7 +3553,7 @@ def _test_enhanced_task_creation() -> None:
 
     for case in cases:
         person = _build_person(**case["person_kwargs"])
-        importance, due_date, categories = processor._calculate_task_priority_and_due_date(person)  # pyright: ignore[reportPrivateUsage]
+        importance, due_date, categories = processor.calculate_task_priority_and_due_date(person)
         assert importance == case["expected_importance"], f"Unexpected priority for {person.username}: {importance}"
         for category in case["required_categories"]:
             assert category in categories, f"{category} should appear for {person.username}"
@@ -3679,8 +3679,7 @@ def _test_response_quality_scoring() -> None:
 
     lookup_results = [PersonLookupResult(found=True, name="William Gault", birth_year=1820, source='gedcom')]
 
-    # pyright: ignore[reportPrivateUsage] - testing internal method
-    score1 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
+    score1 = processor.score_response_quality(
         response_text=high_quality_response, lookup_results=lookup_results, person=mock_person
     )
 
@@ -3695,7 +3694,7 @@ def _test_response_quality_scoring() -> None:
     more details.
     """
 
-    score2 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
+    score2 = processor.score_response_quality(
         response_text=medium_quality_response, lookup_results=[], person=mock_person
     )
 
@@ -3707,26 +3706,20 @@ def _test_response_quality_scoring() -> None:
     Thanks for the message. I'll check my records.
     """
 
-    score3 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
-        response_text=low_quality_response, lookup_results=[], person=mock_person
-    )
+    score3 = processor.score_response_quality(response_text=low_quality_response, lookup_results=[], person=mock_person)
 
     assert 0 <= score3 <= 49, f"Low-quality response scored {score3}, expected 0-49"
     logger.info(f"✓ Low-quality response scored {score3:.1f}/100")
 
     # Test Case 4: Edge case - empty response
-    score4 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
-        response_text="", lookup_results=[], person=mock_person
-    )
+    score4 = processor.score_response_quality(response_text="", lookup_results=[], person=mock_person)
 
     assert score4 == 0, f"Empty response scored {score4}, expected 0"
     logger.info(f"✓ Empty response scored {score4:.1f}/100")
 
     # Test Case 5: Edge case - very long response (penalty applied)
     very_long_response = "word " * 600  # 600 words
-    score5 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
-        response_text=very_long_response, lookup_results=[], person=mock_person
-    )
+    score5 = processor.score_response_quality(response_text=very_long_response, lookup_results=[], person=mock_person)
 
     # Should have penalty applied for being too long (>500 words)
     logger.info(f"✓ Very long response scored {score5:.1f}/100 (penalty applied)")
@@ -3747,7 +3740,7 @@ def _test_response_quality_scoring() -> None:
         )
     ]
 
-    score6 = processor._score_response_quality(  # pyright: ignore[reportPrivateUsage]
+    score6 = processor.score_response_quality(
         response_text=unused_lookup_response, lookup_results=rich_lookup_results, person=mock_person
     )
 
@@ -3909,14 +3902,14 @@ def action9_process_productive_module_tests() -> bool:
             _test_enhanced_task_creation,
             "Task priority and due dates calculated correctly based on relationship closeness",
             "Phase 5.3 enhanced task creation with relationship-based priority",
-            "Testing _calculate_task_priority_and_due_date() with various relationship types",
+            "Testing calculate_task_priority_and_due_date() with various relationship types",
         ),
         (
             "Phase 5: Response quality scoring (0-100 scale)",
             _test_response_quality_scoring,
             "Quality scores calculated correctly based on relationship specificity, evidence, actionability, personalization",
             "Phase 5 response quality scoring with 4-component evaluation",
-            "Testing _score_response_quality() with high/medium/low quality responses and edge cases",
+            "Testing score_response_quality() with high/medium/low quality responses and edge cases",
         ),
         (
             "Phase 5: Task priority calculation",

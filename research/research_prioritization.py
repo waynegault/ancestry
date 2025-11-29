@@ -159,6 +159,7 @@ class IntelligentResearchPrioritizer:
             ai_insights: dict[str, Any] = gedcom_analysis.get("ai_insights", {})
             family_patterns: dict[str, Any] = ai_insights.get("family_patterns", {})
             common_surnames: list[str] = family_patterns.get("common_surnames", [])
+            gaps: list[dict[str, Any]] = gedcom_analysis.get("gaps_identified", [])
 
             # Analyze each major surname line
             for _i, surname in enumerate(common_surnames[:5]):  # Top 5 surnames
@@ -166,9 +167,9 @@ class IntelligentResearchPrioritizer:
                     line_id=f"line_{surname.lower()}",
                     line_name=f"{surname} Family Line",
                     surname=surname,
-                    generations_back=self._estimate_generations_back(),
-                    completeness_percentage=self._calculate_line_completeness(),
-                    missing_generations=self._identify_missing_generations(),
+                    generations_back=self._estimate_generations_back(gedcom_analysis, surname),
+                    completeness_percentage=self._calculate_line_completeness(gaps, surname),
+                    missing_generations=self._identify_missing_generations(gaps, surname),
                     research_bottlenecks=self._identify_research_bottlenecks(surname),
                     priority_research_targets=self._identify_priority_targets(surname),
                 )
@@ -215,7 +216,7 @@ class IntelligentResearchPrioritizer:
                     cluster = LocationResearchCluster(
                         cluster_id=f"cluster_{location.replace(' ', '_').lower()}",
                         location=location,
-                        time_period=self._estimate_time_period_for_location(),
+                        time_period=self._estimate_time_period_for_location(items),
                         people_count=len(items),
                         target_people=[
                             str(cast(dict[str, Any], item).get("person_name", ""))
@@ -455,22 +456,71 @@ class IntelligentResearchPrioritizer:
 
     # Helper methods for calculations and analysis
     @staticmethod
-    def _estimate_generations_back() -> int:
-        """Estimate how many generations back this surname line goes."""
-        # Placeholder implementation
+    def _estimate_generations_back(gedcom_analysis: dict[str, Any], surname: str) -> int:
+        """Estimate how many generations back this surname line goes based on GEDCOM data."""
+        # Look for generation depth in analysis statistics
+        statistics = gedcom_analysis.get("statistics", {})
+        if "generation_depth" in statistics:
+            return int(statistics["generation_depth"])
+
+        # Estimate from individuals count - roughly 2 individuals per generation
+        individuals = gedcom_analysis.get("individuals", [])
+        surname_individuals = [i for i in individuals if surname.lower() in str(i.get("surname", "")).lower()]
+        if surname_individuals:
+            return max(2, min(8, len(surname_individuals) // 2))
+
+        # Default estimate based on typical genealogy research depth
         return 4
 
     @staticmethod
-    def _calculate_line_completeness() -> float:
-        """Calculate completeness percentage for a family line."""
-        # Placeholder implementation
-        return 65.0
+    def _calculate_line_completeness(gaps: list[dict[str, Any]], surname: str) -> float:
+        """Calculate completeness percentage for a family line based on identified gaps."""
+        if not gaps:
+            return 100.0  # No gaps means complete
+
+        # Count gaps related to this surname
+        surname_gaps = [
+            g
+            for g in gaps
+            if surname.lower() in str(g.get("person_name", "")).lower()
+            or surname.lower() in str(g.get("description", "")).lower()
+        ]
+
+        # Calculate completeness: fewer gaps = higher completeness
+        # Assume 10 gaps would indicate 0% completeness
+        gap_penalty = min(100, len(surname_gaps) * 10)
+        return max(0.0, 100.0 - gap_penalty)
 
     @staticmethod
-    def _identify_missing_generations() -> list[int]:
-        """Identify which generations are missing for this line."""
-        # Placeholder implementation
-        return [3, 4]
+    def _identify_missing_generations(gaps: list[dict[str, Any]], surname: str) -> list[int]:
+        """Identify which generations are missing for this line based on gap patterns."""
+        missing: set[int] = set()
+
+        # Define keyword-to-generation mappings
+        generation_keywords: dict[int, list[str]] = {
+            2: ["parent", "father", "mother"],
+            3: ["grandparent"],
+            4: ["great"],
+        }
+
+        # Analyze gaps for generation indicators
+        surname_lower = surname.lower()
+        for gap in gaps:
+            description = str(gap.get("description", "")).lower()
+
+            if surname_lower not in description:
+                continue
+
+            # Check each generation's keywords
+            for gen, keywords in generation_keywords.items():
+                if any(kw in description for kw in keywords):
+                    missing.add(gen)
+
+            # Check gap type for missing parents
+            if gap.get("gap_type") == "missing_parents":
+                missing.add(2)
+
+        return sorted(missing) if missing else [3, 4]  # Default to common missing generations
 
     @staticmethod
     def _identify_research_bottlenecks(surname: str) -> list[str]:
@@ -518,9 +568,27 @@ class IntelligentResearchPrioritizer:
         return None
 
     @staticmethod
-    def _estimate_time_period_for_location() -> str:
-        """Estimate time period for location cluster."""
-        return "1800-1900"  # Placeholder
+    def _estimate_time_period_for_location(items: list[dict[str, Any]]) -> str:
+        """Estimate time period for location cluster based on items."""
+        # Try to extract years from items' descriptions
+        years: list[int] = []
+        for item in items:
+            description = str(item.get("description", ""))
+            # Look for 4-digit years
+            import re
+
+            year_matches = re.findall(r'\b(1[6-9]\d{2}|20[0-2]\d)\b', description)
+            years.extend(int(y) for y in year_matches)
+
+        if years:
+            min_year = min(years)
+            max_year = max(years)
+            # Round to decades
+            start = (min_year // 10) * 10
+            end = ((max_year // 10) + 1) * 10
+            return f"{start}-{end}"
+
+        return "1800-1900"  # Default for genealogical research
 
     @staticmethod
     def _identify_available_records_for_location(location: str) -> list[str]:

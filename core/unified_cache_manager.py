@@ -502,7 +502,7 @@ class UnifiedCacheManager:
 # Global cache instance (singleton pattern)
 
 
-class UnifiedCacheBackendAdapter(CacheBackend):  # pyright: ignore[reportUntypedBaseClass]
+class UnifiedCacheBackendAdapter(CacheBackend):
     """Adapter that exposes UnifiedCacheManager via CacheBackend protocol."""
 
     def __init__(self, cache_impl: UnifiedCacheManager) -> None:

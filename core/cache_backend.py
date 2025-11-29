@@ -351,6 +351,26 @@ class CacheFactory:
         return results
 
     @classmethod
+    def reset_for_testing(cls) -> dict[str, CacheBackend]:
+        """Reset instances for testing. Returns original instances for restoration.
+
+        This is a public test helper to enable clean test state without
+        accessing private class variables directly.
+        """
+        original = cls._instances.copy()
+        cls._instances.clear()
+        return original
+
+    @classmethod
+    def restore_from_testing(cls, instances: dict[str, CacheBackend]) -> None:
+        """Restore instances after testing.
+
+        Args:
+            instances: The original instances dict returned by reset_for_testing().
+        """
+        cls._instances = instances
+
+    @classmethod
     def get_all_stats(cls) -> dict[str, CacheStats]:
         """Get statistics from all registered backends.
 
@@ -374,17 +394,8 @@ class CacheFactory:
                 # Fall back to get_stats() if it returns CacheStats
                 if hasattr(backend, "get_stats"):
                     result = backend.get_stats()
-                    if isinstance(result, CacheStats):  # pyright: ignore[reportUnnecessaryIsInstance] - legacy support
+                    if isinstance(result, CacheStats):
                         stats[name] = result
-                    elif isinstance(result, dict):  # pyright: ignore[reportUnnecessaryIsInstance] - legacy support
-                        # Legacy dict format - create minimal CacheStats
-                        stats[name] = CacheStats(
-                            name=name,
-                            kind=result.get("kind", "unknown"),
-                            hits=result.get("hits", 0),
-                            misses=result.get("misses", 0),
-                            entries=result.get("entries", 0),
-                        )
                     else:
                         # Unknown format - create empty stats
                         stats[name] = CacheStats(name=name, kind="unknown")
@@ -547,8 +558,7 @@ def _test_cache_factory_operations() -> bool:
             return True
 
     # Clear any existing registrations for clean test
-    original_instances = CacheFactory._instances.copy()  # pyright: ignore[reportPrivateUsage]
-    CacheFactory._instances.clear()  # pyright: ignore[reportPrivateUsage]
+    original_instances = CacheFactory.reset_for_testing()
 
     try:
         cache = TestCache()
@@ -564,7 +574,7 @@ def _test_cache_factory_operations() -> bool:
         return True
     finally:
         # Restore original instances
-        CacheFactory._instances = original_instances  # pyright: ignore[reportPrivateUsage]
+        CacheFactory.restore_from_testing(original_instances)
 
 
 def module_tests() -> bool:

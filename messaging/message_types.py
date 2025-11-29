@@ -40,9 +40,6 @@ MESSAGE_TYPES: dict[str, str] = {
     "Out_Tree-Initial_Exploratory": "Out_Tree-Initial_Exploratory",
 }
 
-# Backwards compatibility alias
-MESSAGE_TYPES_ACTION8 = MESSAGE_TYPES
-
 
 # Core required template keys for validation
 CORE_REQUIRED_TEMPLATE_KEYS = frozenset(
@@ -196,7 +193,6 @@ def _test_message_types_constant() -> bool:
     assert len(MESSAGE_TYPES) == 12, f"Expected 12 entries, got {len(MESSAGE_TYPES)}"
     assert "In_Tree-Initial" in MESSAGE_TYPES
     assert "Out_Tree-Final_Reminder" in MESSAGE_TYPES
-    assert MESSAGE_TYPES_ACTION8 is MESSAGE_TYPES, "Alias should reference same dict"
     return True
 
 
