@@ -220,6 +220,8 @@ Comprehensive DNA match collection with checkpoint resume capability.
 - Ethnicity comparison with dynamic region columns
 - Relationship probability analysis
 - Badge details and relationship ladders
+- **Tree Data Extraction**: Captures public tree status, tree size, and tree IDs
+- **Filtering**: Configurable filtering by minimum tree size and public status
 
 **Performance** (1 worker):
 
@@ -374,6 +376,35 @@ Children:
 Relationship to Wayne Gault:
    Wayne Gault → Margaret Mary Nicol → James Nicol → Peter Fraser
 ```
+
+#### Action 12: DNA Match Triangulation (`actions/action12_triangulation.py`)
+
+Identifies triangulation opportunities by analyzing shared matches and common ancestors.
+
+**Features**:
+
+- **Hypothesis Generation**: Proposes relationships based on shared matches and tree data
+- **Filtering**: Configurable by minimum cM (default: 20) and confidence level (HIGH, GOOD, etc.)
+- **Export**: Save results to CSV or HTML for offline analysis
+- **Tree Integration**: Uses extracted tree data to identify common ancestors
+
+**Usage**:
+
+1. Select a target DNA match (by UUID or Profile ID)
+2. System analyzes shared matches
+3. Identifies common ancestors in the shared matches' trees
+4. Generates a hypothesis message (e.g., "We both match X, related through Y")
+
+#### Action 13: Shared Match Scraper (`actions/action13_shared_matches.py`)
+
+Collects shared match data for high-value DNA matches to enable triangulation.
+
+**Features**:
+
+- **Targeted Collection**: Fetches shared matches only for matches > 20cM (configurable)
+- **Tree Data**: Captures tree size and public status for shared matches
+- **Enrichment**: Updates existing match records with new shared match connections
+- **Rate Limit Safe**: Uses the central rate limiter and session manager
 
 ### AI Integration
 
