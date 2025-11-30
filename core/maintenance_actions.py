@@ -301,7 +301,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
 def _initialize_ethnicity_columns_from_metadata(db_manager: SessionManager) -> bool:
     """
     Initialize ethnicity columns in dna_match table using saved metadata file.
-    This is browserless - it only adds columns if ethnicity_regions.json exists.
+    This is browserless - it only adds columns if Data/ethnicity_regions.json exists.
     If the file doesn't exist, columns will be added during first Action 6 run.
 
     Args:
@@ -562,7 +562,7 @@ def _display_session_info(session_manager: SessionManager) -> None:
 
 def _handle_logged_in_status(session_manager: SessionManager) -> bool:
     """Handle the case when user is already logged in."""
-    print("\n✓ You are currently logged in to Ancestry.\n")
+    logger.info("You are currently logged in to Ancestry.")
     _display_session_info(session_manager)
     return True
 
