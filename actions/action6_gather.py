@@ -25,6 +25,7 @@ from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
 from caching.cache import cache as disk_cache
+from config.config_manager import ConfigManager
 from performance.health_monitor import get_health_monitor, integrate_with_action6
 from research.relationship_utils import (
     convert_api_path_to_unified_format,
@@ -2659,6 +2660,25 @@ def _get_batch_session(
     return batch_session
 
 
+def _filter_matches_by_config(matches_on_page: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter matches based on configuration criteria."""
+    config = ConfigManager().get_config()
+    if config.action6_min_tree_size is None and not config.action6_public_tree_only:
+        return matches_on_page
+
+    original_count = len(matches_on_page)
+    filtered_matches = [
+        m
+        for m in matches_on_page
+        if (config.action6_min_tree_size is None or (int(m.get("tree_size") or 0) >= config.action6_min_tree_size))
+        and (not config.action6_public_tree_only or m.get("has_public_tree"))
+    ]
+    filtered_count = len(filtered_matches)
+    if original_count != filtered_count:
+        logger.info(f"Filtered {original_count - filtered_count} matches based on tree criteria.")
+    return filtered_matches
+
+
 def _process_page_matches(
     session_manager: SessionManager,
     matches_on_page: list[dict[str, Any]],
@@ -2677,6 +2697,9 @@ def _process_page_matches(
     page_metrics = PageProcessingMetrics()
     lookup_artifacts: Optional[BatchLookupArtifacts] = None
     prefetch_artifacts: Optional[_PrefetchArtifacts] = None
+
+    # Filter matches based on configuration
+    matches_on_page = _filter_matches_by_config(matches_on_page)
 
     try:
         with _timed_phase("initialization", timing_log):
@@ -2746,10 +2769,15 @@ def _process_page_matches(
                 timing_log.get("data_prep_commit", 0.0),
             )
 
+        matches_with_trees = sum(1 for m in matches_on_page if m.get("match_tree_id"))
+        matches_with_public_trees = sum(1 for m in matches_on_page if m.get("has_public_tree"))
+
         page_metrics = PageProcessingMetrics(
             total_matches=num_matches_on_page,
             fetch_candidates=len(lookup_artifacts.fetch_candidates_uuid),
             existing_matches=len(lookup_artifacts.existing_persons_map),
+            matches_with_trees=matches_with_trees,
+            matches_with_public_trees=matches_with_public_trees,
             db_seconds=timing_log.get("db_lookups", 0.0),
             prefetch_seconds=timing_log.get("api_prefetches", 0.0),
             commit_seconds=timing_log.get("data_prep_commit", 0.0),
@@ -3125,6 +3153,55 @@ def _check_relationship_and_side_changes(
     return False
 
 
+def _check_tree_ids_changed(
+    existing_dna_match: DnaMatch,
+    match: dict[str, Any],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> bool:
+    """Check if tree IDs have changed."""
+    if str(match.get("match_tree_id") or "") != str(existing_dna_match.match_tree_id or ""):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Tree ID")
+        return True
+    if str(match.get("match_tree_person_id") or "") != str(existing_dna_match.match_tree_person_id or ""):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Tree Person ID")
+        return True
+    return False
+
+
+def _check_tree_status_changed(
+    existing_dna_match: DnaMatch,
+    match: dict[str, Any],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> bool:
+    """Check if tree status or size has changed."""
+    if bool(match.get("has_public_tree")) != bool(existing_dna_match.has_public_tree):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Public Tree Status")
+        return True
+
+    # Handle tree_size comparison safely (None vs 0 vs int)
+    api_size = match.get("tree_size")
+    db_size = existing_dna_match.tree_size
+    if api_size is not None and (db_size is None or int(api_size) != int(db_size)):
+        logger_instance.debug(f"  DNA change {log_ref_short}: Tree Size")
+        return True
+
+    return False
+
+
+def _check_tree_data_changes(
+    existing_dna_match: DnaMatch,
+    match: dict[str, Any],
+    log_ref_short: str,
+    logger_instance: logging.Logger,
+) -> bool:
+    """Check for changes in tree-related data."""
+    if _check_tree_ids_changed(existing_dna_match, match, log_ref_short, logger_instance):
+        return True
+    return _check_tree_status_changed(existing_dna_match, match, log_ref_short, logger_instance)
+
+
 def _compare_dna_fields(
     existing_dna_match: DnaMatch,
     match: dict[str, Any],
@@ -3158,13 +3235,7 @@ def _compare_dna_fields(
         logger_instance,
     ):
         return True
-
-    api_meiosis = details_part.get("meiosis")
-    if api_meiosis is not None and api_meiosis != existing_dna_match.meiosis:
-        logger_instance.debug(f"  DNA change {log_ref_short}: Meiosis")
-        return True
-
-    return False
+    return _check_tree_data_changes(existing_dna_match, match, log_ref_short, logger_instance)
 
 
 def _check_dna_update_needed(
@@ -3241,6 +3312,16 @@ def _add_dna_details(
     logger_instance: logging.Logger,
 ) -> None:
     """Add DNA details to the base dictionary."""
+    # Add tree data from match list
+    dna_dict_base.update(
+        {
+            "match_tree_id": match.get("match_tree_id"),
+            "match_tree_person_id": match.get("match_tree_person_id"),
+            "has_public_tree": match.get("has_public_tree"),
+            "tree_size": match.get("tree_size"),
+        }
+    )
+
     if prefetched_combined_details:
         details_part = prefetched_combined_details
         dna_dict_base.update(
@@ -4580,6 +4661,10 @@ def _refine_single_match(
             "message_link": None,
             "in_my_tree": is_in_tree,
             "createdDate": match_api_data.get("createdDate"),
+            "match_tree_id": match_api_data.get("treeId"),
+            "match_tree_person_id": match_api_data.get("treePersonId"),
+            "has_public_tree": match_api_data.get("userTreePublic"),
+            "tree_size": match_api_data.get("personCount"),
         }
 
     except (IndexError, KeyError, TypeError, ValueError) as refine_err:
@@ -6120,6 +6205,45 @@ def _test_cm_relationship_fallback() -> bool:
     return True
 
 
+def _test_tree_data_extraction() -> bool:
+    """Verify extraction of tree metadata from match data."""
+    print("🧪 Testing tree data extraction...")
+
+    # Mock match data with tree info
+    match_data = {
+        "match_tree_id": "TREE123",
+        "match_tree_person_id": "PERSON456",
+        "has_public_tree": True,
+        "tree_size": 1500,
+        "uuid": "TEST-UUID",
+        "testGuid": "TEST-UUID",
+        "publicDisplayName": "Test User",
+    }
+
+    logger_instance = logging.getLogger("action6.tests.tree_data")
+
+    result = _prepare_dna_match_operation_data(
+        match=match_data,
+        existing_dna_match=None,
+        prefetched_combined_details=None,
+        match_uuid="TEST-UUID",
+        predicted_relationship="Parent/Child",
+        log_ref_short="TEST",
+        logger_instance=logger_instance,
+    )
+
+    assert result is not None
+    dna_match = result
+
+    assert dna_match["match_tree_id"] == "TREE123"
+    assert dna_match["match_tree_person_id"] == "PERSON456"
+    assert dna_match["has_public_tree"] is True
+    assert dna_match["tree_size"] == 1500
+
+    print("🎉 Tree data extraction tests passed!")
+    return True
+
+
 def action6_gather_module_tests() -> bool:
     """Comprehensive test suite for action6_gather.py"""
 
@@ -6128,6 +6252,15 @@ def action6_gather_module_tests() -> bool:
 
     # Run all tests with suppress_logging
     with suppress_logging():
+        suite.run_test(
+            test_name="Tree data extraction",
+            test_func=_test_tree_data_extraction,
+            test_summary="Verify extraction of tree metadata from match data",
+            functions_tested="_prepare_dna_match_operation_data()",
+            method_description="Mock match data with tree info and verify preservation",
+            expected_outcome="Tree metadata fields are correctly preserved in operation data",
+        )
+
         suite.run_test(
             test_name="Profile cache helper round-trip",
             test_func=_test_cache_profile_helpers,

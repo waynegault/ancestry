@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from genealogy.research_service import ResearchService
@@ -65,7 +66,7 @@ def research_service_tests() -> bool:
 
                 # Setup mock score
                 # Return a high score for John, low for Jane
-                def score_side_effect(**kwargs):
+                def score_side_effect(**kwargs: Any) -> tuple[float, dict[str, float], list[str]]:
                     candidate = kwargs.get("candidate_processed_data", {})
                     if candidate.get("first_name") == "John":
                         return (100.0, {"first_name": 100.0}, ["Match"])

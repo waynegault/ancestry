@@ -20,12 +20,16 @@ class TriangulationService:
         self.db = db_session
         self.research_service = research_service
 
-    def find_triangulation_opportunities(self, target_person_id: str) -> list[dict[str, Any]]:
+    def find_triangulation_opportunities(
+        self, target_person_id: str, min_confidence: str = "HIGH", min_cm: int = 20
+    ) -> list[dict[str, Any]]:
         """
         Find triangulation opportunities for a target person.
 
         Args:
             target_person_id: The UUID or profile_id of the target person.
+            min_confidence: Minimum confidence level (e.g., "HIGH").
+            min_cm: Minimum shared centimorgans.
 
         Returns:
             List of triangulation hypotheses.
@@ -35,7 +39,20 @@ class TriangulationService:
             logger.error(f"Target person not found: {target_person_id}")
             return []
 
-        shared_matches = self._get_shared_matches(target_person)
+        # Map confidence to cM
+        confidence_map = {
+            "EXTREMELY_HIGH": 60,
+            "VERY_HIGH": 45,
+            "HIGH": 30,
+            "GOOD": 20,
+            "MODERATE": 15,
+            "LOW": 6,
+        }
+
+        confidence_threshold = confidence_map.get(min_confidence.upper(), 0)
+        effective_min_cm = max(min_cm, confidence_threshold)
+
+        shared_matches = self._get_shared_matches(target_person, min_cm=effective_min_cm)
         opportunities: list[dict[str, Any]] = []
 
         for shared_match in shared_matches:
@@ -88,7 +105,7 @@ class TriangulationService:
             self.db.query(Person).filter((Person.profile_id == person_id) | (Person.uuid == person_id.upper())).first()
         )
 
-    def _get_shared_matches(self, person: Person) -> list[Person]:
+    def _get_shared_matches(self, person: Person, min_cm: int = 0) -> list[Person]:
         """
         Retrieve shared matches for the person from the database.
         """
@@ -97,6 +114,10 @@ class TriangulationService:
             .options(joinedload(SharedMatch.shared_match_person))
             .where(SharedMatch.person_id == person.id)
         )
+
+        if min_cm > 0:
+            stmt = stmt.where(SharedMatch.shared_cm >= min_cm)
+
         results = self.db.execute(stmt).scalars().all()
 
         return [sm.shared_match_person for sm in results if sm.shared_match_person]

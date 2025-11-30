@@ -13,20 +13,64 @@ Features:
 - Hypothesis generation
 """
 
+import csv
 import logging
 import sys
-from typing import Optional
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from config import config_schema
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
-from database import Person
 from genealogy.research_service import ResearchService
 from genealogy.triangulation import TriangulationService
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
 logger = logging.getLogger(__name__)
+
+
+def _export_results(opportunities: list[dict[str, Any]], format: str) -> None:
+    """Export triangulation results to CSV or HTML."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"triangulation_results_{timestamp}.{format}"
+
+    try:
+        if format == "csv":
+            with Path(filename).open("w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(
+                    ["Shared Match Name", "Shared Match UUID", "Common Ancestor", "Hypothesis", "Confidence"]
+                )
+                for opp in opportunities:
+                    sm = opp["shared_match"]
+                    ancestor = opp["common_ancestor"]
+                    writer.writerow(
+                        [
+                            sm.name,
+                            sm.uuid,
+                            ancestor.get("name", "Unknown"),
+                            opp["hypothesis_message"],
+                            opp.get("confidence_score", 0.0),
+                        ]
+                    )
+        elif format == "html":
+            with Path(filename).open("w", encoding="utf-8") as f:
+                f.write("<html><body><h1>Triangulation Results</h1><table border='1'>")
+                f.write(
+                    "<tr><th>Shared Match</th><th>UUID</th><th>Common Ancestor</th><th>Hypothesis</th><th>Confidence</th></tr>"
+                )
+                for opp in opportunities:
+                    sm = opp["shared_match"]
+                    ancestor = opp["common_ancestor"]
+                    f.write(f"<tr><td>{sm.name}</td><td>{sm.uuid}</td><td>{ancestor.get('name', 'Unknown')}</td>")
+                    f.write(f"<td>{opp['hypothesis_message']}</td><td>{opp.get('confidence_score', 0.0)}</td></tr>")
+                f.write("</table></body></html>")
+
+        print(f"Results exported to {filename}")
+    except Exception as e:
+        logger.error(f"Failed to export results: {e}")
 
 
 def run_triangulation_analysis(session_manager: SessionManager) -> bool:
@@ -48,7 +92,7 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
         # 1. Get Target Person
         print("\n--- Triangulation Analysis ---")
         target_input = input("Enter Target Person UUID or Profile ID (or 'q' to quit): ").strip()
-        if target_input.lower() == 'q':
+        if target_input.lower() == "q":
             return True
 
         # 2. Initialize Services
@@ -67,11 +111,16 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
         else:
             print(f"\nFound {len(opportunities)} opportunities:")
             for i, opp in enumerate(opportunities, 1):
-                shared_match = opp['shared_match']
-                ancestor = opp['common_ancestor']
+                shared_match = opp["shared_match"]
+                ancestor = opp["common_ancestor"]
                 print(f"\n{i}. Shared Match: {shared_match.name} (UUID: {shared_match.uuid})")
                 print(f"   Common Ancestor: {ancestor.get('name')}")
                 print(f"   Hypothesis: {opp['hypothesis_message']}")
+
+            # 5. Export
+            export_choice = input("\nExport results? (csv/html/n): ").strip().lower()
+            if export_choice in {"csv", "html"}:
+                _export_results(opportunities, export_choice)
 
         return True
 

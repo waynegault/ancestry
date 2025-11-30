@@ -27,6 +27,8 @@ class PageProcessingMetrics:
     total_matches: int = 0
     fetch_candidates: int = 0
     existing_matches: int = 0
+    matches_with_trees: int = 0
+    matches_with_public_trees: int = 0
     db_seconds: float = 0.0
     prefetch_seconds: float = 0.0
     commit_seconds: float = 0.0
@@ -42,6 +44,8 @@ class PageProcessingMetrics:
         self.total_matches += other.total_matches
         self.fetch_candidates += other.fetch_candidates
         self.existing_matches += other.existing_matches
+        self.matches_with_trees += other.matches_with_trees
+        self.matches_with_public_trees += other.matches_with_public_trees
         self.db_seconds += other.db_seconds
         self.prefetch_seconds += other.prefetch_seconds
         self.commit_seconds += other.commit_seconds
@@ -180,21 +184,17 @@ def collect_total_processed(state: Mapping[str, Any]) -> int:
     return int(state.get("total_new", 0)) + int(state.get("total_updated", 0)) + int(state.get("total_skipped", 0))
 
 
-def log_timing_breakdown_details(
-    aggregate_metrics: PageProcessingMetrics,
-    pages_with_metrics: int,
-    matches_for_avg: int,
-    total_processed_matches: int,
-) -> None:
-    """Emit detailed timing statistics for the run."""
+def _log_tree_stats(aggregate_metrics: PageProcessingMetrics) -> None:
+    """Log tree coverage statistics."""
+    if aggregate_metrics.matches_with_trees > 0:
+        tree_pct = (aggregate_metrics.matches_with_trees / (aggregate_metrics.total_matches or 1)) * 100
+        public_pct = (aggregate_metrics.matches_with_public_trees / (aggregate_metrics.matches_with_trees or 1)) * 100
+        logger.info(f"Tree Coverage:        {aggregate_metrics.matches_with_trees} matches ({tree_pct:.1f}%)")
+        logger.info(f"Public Trees:         {aggregate_metrics.matches_with_public_trees} ({public_pct:.1f}% of trees)")
 
-    logger.info("Timing Breakdown")
-    logger.info(f"Tracked Pages:        {pages_with_metrics}")
-    logger.info(
-        "Tracked Matches:      %s",
-        aggregate_metrics.total_matches or total_processed_matches,
-    )
 
+def _log_api_stats(aggregate_metrics: PageProcessingMetrics, pages_with_metrics: int) -> None:
+    """Log API prefetch statistics."""
     if aggregate_metrics.total_seconds and pages_with_metrics:
         avg_page_duration = aggregate_metrics.total_seconds / pages_with_metrics
         logger.info(f"Avg Page Duration:    {avg_page_duration:.2f}s")
@@ -213,6 +213,10 @@ def log_timing_breakdown_details(
         ),
         api_per_page,
     )
+
+
+def _log_db_stats(aggregate_metrics: PageProcessingMetrics, matches_for_avg: int) -> None:
+    """Log database operation statistics."""
     logger.info(
         "DB Lookup Time:       %s",
         format_duration_with_avg(
@@ -237,6 +241,39 @@ def log_timing_breakdown_details(
             "match",
         ),
     )
+
+
+def _log_endpoint_breakdown(aggregate_metrics: PageProcessingMetrics) -> None:
+    """Log API endpoint breakdown."""
+    endpoint_lines = detailed_endpoint_lines(
+        aggregate_metrics.prefetch_breakdown,
+        aggregate_metrics.prefetch_call_counts,
+    )
+    if endpoint_lines:
+        logger.info("API Endpoint Averages:")
+        for line in endpoint_lines:
+            logger.info(f"  • {line}")
+
+
+def log_timing_breakdown_details(
+    aggregate_metrics: PageProcessingMetrics,
+    pages_with_metrics: int,
+    matches_for_avg: int,
+    total_processed_matches: int,
+) -> None:
+    """Emit detailed timing statistics for the run."""
+
+    logger.info("Timing Breakdown")
+    logger.info(f"Tracked Pages:        {pages_with_metrics}")
+    logger.info(
+        "Tracked Matches:      %s",
+        aggregate_metrics.total_matches or total_processed_matches,
+    )
+
+    _log_tree_stats(aggregate_metrics)
+    _log_api_stats(aggregate_metrics, pages_with_metrics)
+    _log_db_stats(aggregate_metrics, matches_for_avg)
+
     if aggregate_metrics.idle_seconds > 0.0:
         logger.info(
             "Pacing Delay:        %s",
@@ -255,14 +292,7 @@ def log_timing_breakdown_details(
         throughput = total_processed_matches / aggregate_metrics.total_seconds
         logger.info(f"Avg Throughput:      {throughput:.2f} match/s")
 
-    endpoint_lines = detailed_endpoint_lines(
-        aggregate_metrics.prefetch_breakdown,
-        aggregate_metrics.prefetch_call_counts,
-    )
-    if endpoint_lines:
-        logger.info("API Endpoint Averages:")
-        for line in endpoint_lines:
-            logger.info(f"  • {line}")
+    _log_endpoint_breakdown(aggregate_metrics)
 
 
 def log_timing_breakdown(state: Mapping[str, Any]) -> None:

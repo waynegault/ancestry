@@ -1039,6 +1039,18 @@ class DnaMatch(Base):
     shared_matches_fetched_date: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="Timestamp when shared matches were last fetched."
     )
+    match_tree_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, comment="ID of the match's public family tree."
+    )
+    match_tree_person_id: Mapped[Optional[str]] = mapped_column(
+        String, nullable=True, comment="ID of the match's person record in their tree."
+    )
+    has_public_tree: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="True if the match has a public family tree."
+    )
+    tree_size: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, comment="Number of people in the match's tree."
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

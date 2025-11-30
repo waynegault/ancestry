@@ -10,7 +10,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 # === MODULE SETUP ===
 logger = logging.getLogger(__name__)
@@ -108,10 +108,10 @@ class SafetyGuard:
         return SafetyCheckResult(SafetyStatus.SAFE, "No flags detected", [])
 
     @staticmethod
-    def _find_matches(text: str, patterns: list[re.Pattern]) -> list[str]:
-        matches = []
+    def _find_matches(text: str, patterns: list[re.Pattern[str]]) -> list[str]:
+        matches: list[str] = []
         for pattern in patterns:
-            found = pattern.findall(text)
+            found: list[str] = pattern.findall(text)
             if found:
                 matches.extend(found)
         return list(set(matches))  # Deduplicate

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
@@ -488,25 +489,17 @@ def _upgrade_0002(engine: Engine) -> None:
     """Add shared_matches_fetched columns to dna_matches."""
     with engine.begin() as connection:
         # Check if columns exist first to avoid errors on re-run
-        try:
+        with contextlib.suppress(Exception):
             connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched BOOLEAN DEFAULT 0"))
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched_date DATETIME"))
-        except Exception:
-            pass
 
 
 def _downgrade_0002(engine: Engine) -> None:
     """Remove shared_matches_fetched columns from dna_matches."""
-    with engine.begin() as connection:
-        try:
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched"))
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched_date"))
-        except Exception:
-            # SQLite < 3.35.0 doesn't support DROP COLUMN
-            pass
+    with engine.begin() as connection, contextlib.suppress(Exception):
+        connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched"))
+        connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched_date"))
 
 
 register_migration(
@@ -516,6 +509,43 @@ register_migration(
         upgrade=_upgrade_0002,
         downgrade=_downgrade_0002,
         depends_on=("0001_baseline",),
+    )
+)
+
+
+def _upgrade_0003(engine: Engine) -> None:
+    """Add tree data columns to dna_matches."""
+    with engine.begin() as connection:
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN match_tree_id TEXT"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN match_tree_person_id TEXT"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN has_public_tree BOOLEAN"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN tree_size INTEGER"))
+
+
+def _downgrade_0003(engine: Engine) -> None:
+    """Remove tree data columns from dna_matches."""
+    with engine.begin() as connection:
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN match_tree_id"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN match_tree_person_id"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN has_public_tree"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN tree_size"))
+
+
+register_migration(
+    Migration(
+        version="0003_add_tree_columns",
+        description="Add columns for match tree data (ID, person ID, size, public status)",
+        upgrade=_upgrade_0003,
+        downgrade=_downgrade_0003,
+        depends_on=("0002_shared_matches_fetched",),
     )
 )
 

@@ -62,9 +62,9 @@
 - [x] **Shared Match Scraper**:
   - Update `action6_gather.py` (or create new action) to fetch shared matches for specific DNA matches (e.g., > 20cM).
   - Store shared matches in `SharedMatch` table.
-- [ ] **Data Enrichment**:
+- [x] **Data Enrichment**:
   - Ensure tree data is fetched for shared matches to enable common ancestor identification.
-- [ ] **Reporting**:
+- [x] **Reporting**:
   - Add CSV/HTML export to Action 12 for triangulation results.
-- [ ] **Advanced Filtering**:
+- [x] **Advanced Filtering**:
   - Filter triangulation opportunities by cM range and confidence.

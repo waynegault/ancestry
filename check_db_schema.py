@@ -1,4 +1,3 @@
-import os
 import pathlib
 import sqlite3
 import sys

@@ -848,6 +848,10 @@ class ConfigSchema:
     action6_checkpoint_max_age_hours: int = 24
     action6_checkpoint_file: Path = field(default_factory=lambda: Path("Cache/action6_checkpoint.json"))
 
+    # Action 6 Filtering
+    action6_min_tree_size: Optional[int] = None
+    action6_public_tree_only: bool = False
+
     # API search settings
     name_flexibility: float = 0.8
     date_flexibility: float = 5.0  # years
