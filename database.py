@@ -1033,6 +1033,12 @@ class DnaMatch(Base):
         nullable=False,
         comment="Flag indicating if match is likely maternal (via Ancestry tools).",
     )
+    shared_matches_fetched: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="True if shared matches have been fetched for this match."
+    )
+    shared_matches_fetched_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="Timestamp when shared matches were last fetched."
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

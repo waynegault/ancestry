@@ -327,6 +327,19 @@ class ActionRegistry:
             )
         )
 
+        self.register(
+            ActionMetadata(
+                id="13",
+                name="Shared Match Scraper",
+                description="Fetch shared matches for high-cM matches",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                enable_caching=True,
+                menu_order=13,
+            )
+        )
+
         # Test Actions
         self.register(
             ActionMetadata(
