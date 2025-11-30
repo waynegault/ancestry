@@ -1,5 +1,6 @@
 """Messaging helper utilities shared across inbox and messaging actions."""
 
+from .inbound import InboundOrchestrator
 from .message_types import (
     CORE_REQUIRED_TEMPLATE_KEYS,
     MESSAGE_TRANSITION_TABLE,

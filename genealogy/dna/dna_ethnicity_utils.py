@@ -47,7 +47,7 @@ from core.session_utils import ensure_session_for_tests_sm_only
 from testing.test_utilities import create_standard_test_runner
 
 # === CONSTANTS ===
-ETHNICITY_METADATA_FILE = "ethnicity_regions.json"
+ETHNICITY_METADATA_FILE = "Data/ethnicity_regions.json"
 
 
 @lru_cache(maxsize=1)

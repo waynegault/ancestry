@@ -139,6 +139,39 @@ class PersonStatusEnum(enum.Enum):
 
 # End of PersonStatusEnum
 
+
+class ConversationStatusEnum(enum.Enum):
+    """
+    Enumeration for the operational status of a conversation.
+    Controls the automation lifecycle.
+    """
+
+    ACTIVE = "ACTIVE"  # Automation is handling the conversation
+    PAUSED = "PAUSED"  # Temporarily stopped (e.g., waiting for external event)
+    OPT_OUT = "OPT_OUT"  # User requested to stop (Do Not Contact)
+    HUMAN_REVIEW = "HUMAN_REVIEW"  # Flagged for human intervention (Safety/Complexity)
+    COMPLETED = "COMPLETED"  # Goal achieved
+
+
+class FactStatusEnum(enum.Enum):
+    """Enumeration for the status of a suggested fact."""
+
+    PENDING = "PENDING"  # Waiting for human review
+    APPROVED = "APPROVED"  # Accepted by human
+    REJECTED = "REJECTED"  # Rejected by human
+
+
+class FactTypeEnum(enum.Enum):
+    """Enumeration for the type of genealogical fact."""
+
+    BIRTH = "BIRTH"
+    DEATH = "DEATH"
+    RELATIONSHIP = "RELATIONSHIP"
+    MARRIAGE = "MARRIAGE"
+    LOCATION = "LOCATION"
+    OTHER = "OTHER"
+
+
 # ----------------------------------------------------------------------
 # SQLAlchemy Model Definitions
 # ----------------------------------------------------------------------
@@ -761,6 +794,25 @@ class ConversationState(Base):
         nullable=True,
         comment="Timestamp (UTC) when next action should be taken.",
     )
+    status: Mapped[ConversationStatusEnum] = mapped_column(
+        SQLEnum(ConversationStatusEnum),
+        nullable=False,
+        default=ConversationStatusEnum.ACTIVE,
+        server_default=ConversationStatusEnum.ACTIVE.value,
+        index=True,
+        comment="Operational status of the conversation.",
+    )
+    safety_flag: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        index=True,
+        comment="Flag indicating if the conversation has been flagged for safety reasons.",
+    )
+    last_intent: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="The last classified intent of the user.",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -775,11 +827,105 @@ class ConversationState(Base):
         comment="Timestamp (UTC) when conversation state was last updated.",
     )
 
+    # --- New Fields for Phase 4 (Inbound Engine) ---
+    status: Mapped[ConversationStatusEnum] = mapped_column(
+        SQLEnum(ConversationStatusEnum),
+        nullable=False,
+        default=ConversationStatusEnum.ACTIVE,
+        index=True,
+        comment="Operational status of the conversation (ACTIVE, OPT_OUT, HUMAN_REVIEW).",
+    )
+    safety_flag: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        index=True,
+        comment="True if a safety violation (self-harm, hostility) was detected.",
+    )
+    last_intent: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="The intent classification of the last received message.",
+    )
+
     # --- Relationships ---
     person: Mapped["Person"] = relationship("Person", back_populates="conversation_state")
 
 
 # End of ConversationState class
+
+
+class SuggestedFact(Base):
+    """
+    Stores genealogical facts extracted from conversation for human review.
+    Does NOT automatically update the tree.
+    """
+
+    __tablename__ = "suggested_facts"
+
+    # --- Columns ---
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the suggested fact."
+    )
+    people_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to people table.",
+    )
+    fact_type: Mapped[FactTypeEnum] = mapped_column(
+        SQLEnum(FactTypeEnum),
+        nullable=False,
+        index=True,
+        comment="Type of fact (BIRTH, DEATH, etc.).",
+    )
+    original_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="The original text or value from the conversation.",
+    )
+    new_value: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="The structured value extracted by AI.",
+    )
+    source_message_id: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="ID of the message where this fact was found.",
+    )
+    status: Mapped[FactStatusEnum] = mapped_column(
+        SQLEnum(FactStatusEnum),
+        nullable=False,
+        default=FactStatusEnum.PENDING,
+        index=True,
+        comment="Review status (PENDING, APPROVED, REJECTED).",
+    )
+    confidence_score: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="AI confidence score (0-100).",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when fact was suggested.",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when fact status was last updated.",
+    )
+
+    # --- Relationships ---
+    person: Mapped["Person"] = relationship("Person", back_populates="suggested_facts")
+
+
+# End of SuggestedFact class
 
 
 class DnaMatch(Base):
@@ -998,6 +1144,39 @@ class Person(Base):
         default=True,  # Default to contactable unless known otherwise
         comment="Flag indicating if the user's profile allows messaging.",
     )
+
+    # --- Relationships ---
+    conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
+        "ConversationLog", back_populates="person", cascade="all, delete-orphan"
+    )
+    conversation_metrics: Mapped[Optional["ConversationMetrics"]] = relationship(
+        "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
+    engagement_events: Mapped[list["EngagementTracking"]] = relationship(
+        "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
+    )
+    conversation_state: Mapped[Optional["ConversationState"]] = relationship(
+        "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
+    dna_match: Mapped[Optional["DnaMatch"]] = relationship(
+        "DnaMatch", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
+    family_tree: Mapped[Optional["FamilyTree"]] = relationship(
+        "FamilyTree", back_populates="person", uselist=False, cascade="all, delete-orphan"
+    )
+    suggested_facts: Mapped[list["SuggestedFact"]] = relationship(
+        "SuggestedFact", back_populates="person", cascade="all, delete-orphan"
+    )
+
+    # --- Properties ---
+    @property
+    def display_name(self) -> str:
+        """Returns the best available name for display."""
+        if self.first_name:
+            return self.first_name
+        return self.username
+
+    # End of Person class
     last_logged_in: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -3561,6 +3740,15 @@ def _test_model_attributes() -> None:
     assert hasattr(ConversationLog, "id"), "ConversationLog should have id attribute"
     assert hasattr(ConversationLog, "people_id"), "ConversationLog should have people_id attribute"
 
+    # Test ConversationState model attributes (Phase 4)
+    assert hasattr(ConversationState, "status"), "ConversationState should have status attribute"
+    assert hasattr(ConversationState, "safety_flag"), "ConversationState should have safety_flag attribute"
+
+    # Test SuggestedFact model attributes (Phase 4)
+    assert hasattr(SuggestedFact, "id"), "SuggestedFact should have id attribute"
+    assert hasattr(SuggestedFact, "fact_type"), "SuggestedFact should have fact_type attribute"
+    assert hasattr(SuggestedFact, "status"), "SuggestedFact should have status attribute"
+
 
 def _test_database_utilities() -> None:
     """Test database utility functions."""
@@ -3612,6 +3800,8 @@ def _test_model_relationships() -> None:
     assert hasattr(Person, "dna_match"), "Person should have dna_match relationship"
     assert hasattr(Person, "family_tree"), "Person should have family_tree relationship"
     assert hasattr(Person, "conversation_log_entries"), "Person should have conversation_log_entries relationship"
+    assert hasattr(Person, "suggested_facts"), "Person should have suggested_facts relationship"
+    assert hasattr(SuggestedFact, "person"), "SuggestedFact should have person relationship"
 
 
 def _test_schema_integration() -> None:
