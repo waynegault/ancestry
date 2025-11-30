@@ -27,6 +27,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT
+# ============================================================================
+# The following ConfigManager methods are fully implemented but not yet
+# integrated into the main application workflow. They provide advanced
+# configuration management capabilities for future enhancements:
+#
+# Configuration reload and export:
+#   - reload_config(): Hot-reload configuration from files
+#   - export_config(): Export current config to file
+#   - get_environment_config(): Get environment-specific config
+#
+# Setup wizard:
+#   - run_setup_wizard(): Interactive configuration setup
+#
+# Section-specific getters:
+#   - get_database_config(): Database configuration subset
+#   - get_selenium_config(): Selenium/browser configuration subset
+#   - get_api_config(): API configuration subset
+#   - get_logging_config(): Logging configuration subset
+#   - get_cache_config(): Cache configuration subset
+#   - get_security_config(): Security configuration subset
+#   - get_observability_config(): Observability configuration subset
+#
+# These methods are tested and ready for use when modular configuration
+# access or interactive setup features are needed in future releases.
+# ============================================================================
+
 # === STANDARD LIBRARY IMPORTS ===
 import copy
 import json

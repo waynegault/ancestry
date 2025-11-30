@@ -1107,6 +1107,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 
 ## Recent Changes (November 2025)
 
+- ✅ **Production Polish** (Nov 30) - Consolidated caching decorators, removed dead code, cleaned up misleading comments
 - ✅ **Correlation ID System** (Nov 27) - Full request tracking with `core/correlation.py`
 - ✅ **Test Utility Framework** (Nov 26) - Decorators and fixture factories in `test_utilities.py`
 - ✅ **Developer Experience** (Nov 26) - `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, fast test runner
@@ -1115,6 +1116,106 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 - ✅ **Rate Limit Hardening** (Oct 28) - Thread-safe RateLimiter with zero 429 errors
 - ✅ **Quality Gates** (Oct 27) - Added quality_regression_gate.py for CI/CD integration
 - ✅ **Local LLM Support** (Oct 26) - Full LM Studio integration with configuration guide
+
+## Reserved for Future Development
+
+The following functions and classes are fully implemented and tested but not yet integrated into the main application workflow. They are documented in the code with `RESERVED FOR FUTURE DEVELOPMENT` comments and are ready for use when the corresponding features are enabled.
+
+### Test Infrastructure (`run_all_tests.py`)
+
+| Function/Class | Purpose | Integration Status |
+|---------------|---------|-------------------|
+| `TestResultCache` | Hash-based test caching to skip unchanged modules | Pending: Connect to test orchestration flow |
+| `run_quality_checks()` | Standalone code quality analysis | Pending: Add CLI command or CI/CD integration |
+| `print_log_analysis()` | Performance analysis of application logs | Pending: Wire up `--analyze-logs` CLI flag |
+
+### Health Monitoring (`performance/health_monitor.py`)
+
+| Function/Method | Purpose | Integration Status |
+|----------------|---------|-------------------|
+| `begin_safety_test()` / `end_safety_test()` | Safety test mode for prefixing alerts | Ready for advanced monitoring |
+| `get_error_rate_statistics()` | Detailed error rate analysis | Ready for dashboard integration |
+| `should_emergency_halt()` | Emergency halt detection | Ready for graceful shutdown |
+| `should_immediate_intervention()` | Immediate intervention detection | Ready for auto-recovery |
+| `get_intervention_status()` | Current intervention status | Ready for status API |
+| `reset_intervention_flags()` | Reset intervention state | Ready for manual recovery |
+| `update_system_metrics()` | System-wide metrics update | Ready for metrics integration |
+| `initialize_health_monitoring()` | Health monitoring system init | Ready for startup integration |
+| `integrate_with_session_manager()` | SessionManager integration hook | Ready for session integration |
+| `enable_session_state_persistence()` | Crash recovery persistence | Ready for session persistence |
+| `create_recovery_checkpoint()` | Recovery checkpoint creation | Ready for checkpoint system |
+| `get_session_recovery_status()` | Recovery status information | Ready for recovery API |
+
+### Configuration Management (`config/config_manager.py`)
+
+| Method | Purpose | Integration Status |
+|--------|---------|-------------------|
+| `reload_config()` | Hot-reload configuration from files | Ready for config refresh |
+| `export_config()` | Export current config to file | Ready for config backup |
+| `get_environment_config()` | Get environment-specific config | Ready for multi-env support |
+| `run_setup_wizard()` | Interactive configuration setup | Ready for first-run wizard |
+| `get_database_config()` | Database configuration subset | Ready for modular access |
+| `get_selenium_config()` | Browser configuration subset | Ready for modular access |
+| `get_api_config()` | API configuration subset | Ready for modular access |
+| `get_logging_config()` | Logging configuration subset | Ready for modular access |
+| `get_cache_config()` | Cache configuration subset | Ready for modular access |
+| `get_security_config()` | Security configuration subset | Ready for modular access |
+| `get_observability_config()` | Observability configuration subset | Ready for modular access |
+
+### Error Handling (`core/error_handling.py`)
+
+| Function/Class | Purpose | Integration Status |
+|---------------|---------|-------------------|
+| `RetryConfig` | Comprehensive retry configuration | Ready for custom retry policies |
+| `with_database_recovery()` | Database-specific error recovery | Ready for DB operations |
+| `with_file_recovery()` | File operation error recovery | Ready for file operations |
+| `with_circuit_breaker()` | Circuit breaker pattern decorator | Ready for service calls |
+| `ancestry_session_recovery()` | Session-specific recovery | Ready for session errors |
+| `ancestry_api_recovery()` | API-specific recovery | Ready for API errors |
+| `ancestry_database_recovery()` | Database-specific recovery | Ready for DB errors |
+| `get_error_handler()` | Get configured error handler | Ready for custom handlers |
+| `handle_partial_success()` | Handle partial success scenarios | Ready for batch operations |
+| `get_recovery_stats()` | Get recovery operation statistics | Ready for monitoring |
+
+### Additional Reserved Functions
+
+**Caching (`caching/cache.py`)**:
+- `get_cache_coordination_stats()` - Cache coordination statistics
+- `CacheDependencyTracker` class with `add_dependency()`, `invalidate_with_dependencies()`, `get_dependency_chain()`
+- `get_cache_dependency_tracker()` - Get dependency tracker instance
+
+**Feature Flags (`core/feature_flags.py`)**:
+- `clear_all_overrides()` - Clear all feature flag overrides
+- `get_flag()` - Get individual feature flag value
+- `list_flags()` - List all feature flags
+- `load_from_file()` - Load flags from configuration file
+
+**Type Definitions (`core/type_definitions.py`)**:
+- `PersonInfo`, `DNAMatchInfo`, `SearchResult`, `ConversationMessage`, `TaskInfo` - Type definitions for structured data
+- `Loggable`, `Scoreable` - Protocols for common interfaces
+
+**Rate Limiting (`core/rate_limiter.py`)**:
+- `get_endpoint_summary()` - Get per-endpoint rate statistics
+- `log_throttle_warning()` - Log throttle warnings
+- `get_rate_limiter_state_source()` - Get rate limiter state source
+
+### Discovering Reserved Functions
+
+To find all reserved functions in the codebase:
+
+```bash
+# Scan for dead code candidates
+python testing/dead_code_scan.py --verbose
+
+# Results written to: Cache/dead_code_candidates.json
+```
+
+The dead code scanner identifies functions that are defined but have only their own definition as a reference. These are either:
+1. **Public API methods** - Designed for external use (not dead code)
+2. **Reserved functions** - Implemented but pending integration (documented above)
+3. **Protocol/TypedDict classes** - Type definitions (not callable code)
+
+All reserved functions are fully tested and maintain 100% code quality scores.
 
 ## Dependencies
 

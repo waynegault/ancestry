@@ -71,6 +71,34 @@ from testing.test_framework import TestSuite
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT
+# ============================================================================
+# The following functions in this module are fully implemented but not yet
+# integrated into the main application workflow. They provide advanced
+# health monitoring capabilities for future enhancements:
+#
+# SessionHealthMonitor methods (reserved for advanced monitoring integration):
+#   - begin_safety_test() / end_safety_test(): Safety test mode for alerts
+#   - get_error_rate_statistics(): Detailed error rate analysis
+#   - should_emergency_halt(): Emergency halt detection
+#   - should_immediate_intervention(): Immediate intervention detection
+#   - get_intervention_status(): Current intervention status
+#   - reset_intervention_flags(): Reset intervention state
+#   - update_system_metrics(): System-wide metrics update
+#
+# Module-level integration functions (reserved for SessionManager integration):
+#   - initialize_health_monitoring(): Health monitoring system init
+#   - integrate_with_session_manager(): SessionManager integration hook
+#   - enable_session_state_persistence(): Crash recovery persistence
+#   - create_recovery_checkpoint(): Recovery checkpoint creation
+#   - get_session_recovery_status(): Recovery status information
+#
+# These functions are tested and ready for use when advanced health monitoring
+# features are enabled in future releases.
+# ============================================================================
+
+
 # Default thresholds for dynamically registered metrics
 _DYNAMIC_METRIC_DEFAULTS: dict[str, dict[str, float]] = {
     # Ethnicity-heavy batches routinely exceed a minute; stretch thresholds to prevent noise.

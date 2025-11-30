@@ -277,8 +277,20 @@ class LogAnalysisError(TypedDict):
 # ==============================================
 
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT: Test Result Caching
+# This class provides intelligent test caching to skip unchanged modules.
+# Integration pending: Will be connected to main test orchestration flow.
+# ============================================================================
 class TestResultCache:
-    """Cache test results to skip unchanged modules."""
+    """Cache test results to skip unchanged modules.
+
+    Reserved for Future Development:
+        This class is fully implemented but not yet integrated into the main
+        test orchestration flow. It provides hash-based change detection to
+        skip retesting unchanged modules, which can significantly speed up
+        iterative development workflows.
+    """
 
     CACHE_FILE = Path("Cache/test_results_cache.json")
 
@@ -561,9 +573,19 @@ def run_linter() -> bool:
         return True
 
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT: Standalone Quality Checks
+# This function provides programmatic quality checking outside the test flow.
+# Integration pending: Will be connected to CI/CD pipeline or CLI command.
+# ============================================================================
 def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
     """
     Run Python best practices quality checks.
+
+    Reserved for Future Development:
+        This function is fully implemented but not yet integrated into the
+        CLI or CI/CD pipeline. It provides standalone code quality analysis
+        that can fail the build if quality scores drop below thresholds.
 
     Returns:
         Tuple of (success: bool, quality_scores: list of (filename, score) tuples)
@@ -2007,8 +2029,19 @@ def format_log_analysis(results: LogAnalysisData) -> str:
     return "\n".join(report)
 
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT: Log Analysis CLI
+# This function provides performance analysis of application logs.
+# Integration pending: Will be connected to --analyze-logs CLI flag.
+# ============================================================================
 def print_log_analysis(log_path: str | None = None) -> None:
-    """Analyze and print application log performance metrics."""
+    """Analyze and print application log performance metrics.
+
+    Reserved for Future Development:
+        This function is fully implemented but the --analyze-logs CLI flag
+        is not yet wired up in the argument parser. Provides detailed analysis
+        of API timing, 429 errors, and throughput metrics from log files.
+    """
     results = analyze_application_logs(log_path)
     if "error" in results:
         print(f"\n❌ {results['error']}")

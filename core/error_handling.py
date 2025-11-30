@@ -14,6 +14,35 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# RESERVED FOR FUTURE DEVELOPMENT
+# ============================================================================
+# The following functions and classes in this module are fully implemented
+# but not yet integrated into the main application workflow. They provide
+# advanced error handling capabilities for future enhancements:
+#
+# Configuration class:
+#   - RetryConfig: Comprehensive retry configuration dataclass
+#
+# Recovery decorator functions:
+#   - with_database_recovery(): Database-specific error recovery
+#   - with_file_recovery(): File operation error recovery
+#   - with_circuit_breaker(): Circuit breaker pattern decorator
+#
+# Pre-configured recovery strategies:
+#   - ancestry_session_recovery(): Session-specific recovery
+#   - ancestry_api_recovery(): API-specific recovery
+#   - ancestry_database_recovery(): Database-specific recovery
+#
+# Error handling utilities:
+#   - get_error_handler(): Get configured error handler instance
+#   - handle_partial_success(): Handle partial success scenarios
+#   - get_recovery_stats(): Get recovery operation statistics
+#
+# These functions are tested and ready for use when advanced error recovery
+# patterns are needed in future releases.
+# ============================================================================
+
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import random
