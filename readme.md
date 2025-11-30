@@ -1,1258 +1,451 @@
-- All 117 modules pass tests with 100% success rate (966 tests)
 # Ancestry Genealogical Research Automation
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/waynegault/ancestry)
 
-Comprehensive Python automation system for Ancestry.com genealogical research, featuring intelligent messaging, DNA match analysis, and family tree management.
+Production-grade Python automation system for Ancestry.com genealogical research, featuring intelligent DNA match collection, AI-powered conversation analysis, personalized messaging, and automated task generation.
 
 ## Overview
 
-This project automates genealogical research workflows on Ancestry.com, including:
-- **DNA Match Collection** - Automated gathering with checkpoint resume
-- **Inbox Processing** - AI-powered message classification and analysis
-- **Intelligent Messaging** - Context-aware automated responses
-- **Task Generation** - Convert conversations into actionable research tasks
-- **Family Tree Management** - Record sharing and relationship tracking
-- **Observability** - Real-time Prometheus metrics and Grafana dashboards
+This platform automates complex genealogical research workflows on Ancestry.com with enterprise-grade architecture:
 
-## Key Features
+- **DNA Match Collection** - Automated gathering with checkpoint resume, ethnicity comparison, relationship analysis
+- **AI-Powered Analysis** - Multi-provider AI integration (Google Gemini, DeepSeek, Local LLM) with quality gates
+- **Intelligent Messaging** - Context-aware automated responses with personalization
+- **Task Generation** - Convert productive conversations into actionable research tasks
+- **Family Tree Search** - GEDCOM parsing and API-based person search with unified scoring
+- **Observability** - Prometheus metrics, Grafana dashboards, comprehensive logging with correlation IDs
 
-- **Enterprise-Grade Architecture**: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration
-- **Comprehensive Testing**: 122 test modules with 1000+ tests and 100% standardized test infrastructure
-- **Quality Assurance**: Automated linting (Ruff), type checking (Pyright), test quality gates
-- **Observability**: Prometheus metrics exporter, Grafana dashboards, comprehensive logging
-- **Developer Tools**: Code graph visualization, centralized test utilities with decorators and factories, performance profiling
+### Architecture Highlights
 
-## Recent Improvements (November 2025)
+- **Enterprise Design**: SQLAlchemy ORM, Selenium WebDriver, connection pooling, circuit breakers
+- **Zero-Tolerance Rate Limiting**: Thread-safe token bucket algorithm (0.3 RPS), validated across 800+ pages
+- **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
+- **Comprehensive Testing**: 74+ test modules, 643+ tests, no smoke tests—all validate real behavior
+- **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
-- ✅ **Correlation ID System (Nov 27)** - Created `core/correlation.py` for request tracking: `CorrelationContext` dataclass holds correlation ID, operation name, timing, and metadata. `correlation_context()` context manager tracks operation start/end with timing. `CorrelationFilter` adds correlation_id to log records. Supports nested contexts with parent ID tracking. 7 comprehensive tests.
-- ✅ **Test Utility Framework Expansion (Nov 26)** - Added test decorators (`@with_temp_database`, `@with_mock_session`, `@with_test_config`) and fixture factories (`create_test_match()`) to `test_utilities.py`. Enables isolated testing with minimal setup and consistent test patterns across all 117 modules.
-- ✅ **Developer Experience Quick Wins (Nov 26)** - Added `requirements-dev.txt` (separate test dependencies), `SECURITY.md` (vulnerability reporting), `.editorconfig` (consistent formatting), and `testing/run_tests_fast.py` (fast unit tests in <5s) for better developer onboarding and contribution workflow.
-- ✅ **Startup Health Check System (Nov 26)** - Created `core/health_check.py` with comprehensive health check infrastructure: `HealthStatus` enum (HEALTHY/DEGRADED/UNHEALTHY/UNKNOWN), `HealthCheckResult` and `HealthReport` dataclasses for tracking check results with timing, `HealthCheck` Protocol for consistent interface. Implemented `DatabaseHealthCheck`, `FileSystemHealthCheck`, `CacheHealthCheck`, `ConfigurationHealthCheck`, and `APIHealthCheck`. `HealthCheckRunner` orchestrates all checks with `run_startup_health_checks()` for startup validation and `run_interactive_health_check()` for menu display.
-- ✅ **Unified Configuration Validation Layer (Nov 26)** - Created `config/validator.py` with comprehensive startup validation: `ConfigurationValidator` class validates ALL config sections (environment, database, API, rate limiting, Selenium, AI provider, paths, processing limits) with clear actionable error messages. Added `health` menu action for interactive configuration health check. `ValidationReport` aggregates pass/fail results with severity levels.
-- ✅ **SessionManager Public API Expansion (Nov 26)** - Added public methods for performance tracking (`update_response_time_tracking`, `reset_response_time_tracking`), CSRF caching (`set_cached_csrf_token`, `get_cached_csrf_token`), and session validation (`update_cookie_sync_time`, `clear_last_readiness_check`). Eliminates protected member access patterns in action modules.
-- ✅ **Function Visibility Improvements (Nov 26)** - Made `gedcom_utils.normalize_id()` and `actions.gather.orchestrator.initialize_gather_state()/validate_start_page()` public functions for cross-module use. Fixed E721 type comparison and N817 camelcase import linter errors.
-- ✅ **AI Provider Adapter Framework (Nov 29)** - Added `ai/providers/base.py` plus Gemini and DeepSeek adapters, introduced `ai/prompts.py` for centralized prompt/experiment loading, and refactored `ai_interface.py` to register providers through the adapter registry with structured telemetry payloads.
-- ✅ **Legacy Session Compatibility Removal (Nov 29)** - `core/session_utils.py` now resolves the `SessionManager` exclusively through the DI container, removing the `GLOBAL_SESSION` shim along with the browser/rate-limiter alias properties. Action 6's orchestrator and gather helpers call `session_manager.rate_limiter` directly, module tests enforce the DI-only access pattern, and utilities relying on `_requests_session` now use the canonical API manager hook.
-- ✅ **CacheBackend Protocol (Nov 25)** - Created `core/cache_backend.py` with unified cache interface: `CacheBackend` and `ScopedCacheBackend` protocols, `CacheStats`/`CacheHealth` dataclasses, and `CacheFactory` for centralized backend management. Step 2 of cache stack unification (Track 4).
-- ✅ **Cache Stack Inventory (Nov 25)** - Completed Step 1 of Track 4 (Cache Unification): analyzed 6 cache modules (5,678 lines), identified 28 import sites, documented 3 import cycles, and created consumer mapping. Ready for Step 2: Design `CacheBackend` protocol.
-- ✅ **Message Types Module Extraction (Nov 25)** - Created `messaging/message_types.py` with message type constants (`MESSAGE_TYPES`, `MESSAGE_TRANSITION_TABLE`), state machine logic (`determine_next_message_type()`), and 7 tests. Updated `messaging/__init__.py` to export all 19 helpers.
-- ✅ **Messaging Package Documentation (Nov 25)** - Documented `messaging/message_types.py` in README.md. Assessed template loading - not extracted due to tight DB coupling (by design).
-- ✅ **Messaging Workflow Helpers Package (Nov 25)** - Created `messaging/workflow_helpers.py` with 12 shared helper functions (enum-aware column extraction, conversation state management, engagement timing, tree detection) and 13 tests. Actions 7–9 now import from this module, removing ~200 lines of duplicated code.
-- ✅ **CLI Method Visibility Fix (Nov 25)** - Renamed protected helper methods in `cli/maintenance.py` (`_format_cache_stat_value`, `_render_retention_targets`, etc.) to public methods so tests comply with Pyright access rules without needing `type: ignore` suppressions.
-- ✅ **Test Suite Hardening (Nov 24)** - Converted the final smoke-style tests into behavioral coverage: gedcom_search_utils.py now validates filtering and GEDCOM fallback logic, core/error_handling.py exercises safe_execute context propagation plus circuit breaker transitions, and selenium_utils.py drives safe_click, CDP user-agent overrides, cookie export, and element helper guards. Updated the relationship_utils StubTag/StubIndi doubles to dataclasses to satisfy Ruff B903.
-- ✅ **Action 6 Decomposition Plan (Nov 24)** - Captured the full `coord()` pipeline, helper clustering plan, dependency audit, and Phase 2 next steps in `docs/action6_refactor_plan.md` so the gather refactor proceeds in structured phases.
-- ✅ **Action 6 Orchestrator Delegation (Nov 26)** - `action6_gather.coord()` now just builds a `GatherOrchestratorHooks` bundle and hands execution to `actions.gather.orchestrator.GatherOrchestrator`, shrinking the monolith to hook/prefetch/persistence helpers while the orchestrator module owns checkpoint/resume, retry metadata, and final-summary tests.
-- ✅ **Documentation Quality Improvements** (Nov 17) - Simplified 12 module docstrings, removed ~400 lines of verbose jargon, resolved 11 Pylance errors, updated knowledge graph
-- ✅ **Test Infrastructure Standardization** - All 22 test modules now use centralized `create_standard_test_runner` pattern
-- ✅ **Temp File Helper Consolidation** - Created 3 reusable helpers (`atomic_write_file`, `temp_directory`, `temp_file`) and migrated 4 modules
-- ✅ **AI Quality Telemetry Enhancements** - Prompt telemetry now records provider metadata, scoring inputs, provider-scoped CLI filters, and automatic regression alerts
-- ✅ **Comprehensive Retry Strategy** - New `api_retry`/`selenium_retry` helpers draw settings from `config_schema.retry_policies` and regression tests in Actions 6/7 plus SessionManager ensure decorators stay in lockstep with telemetry tuning
-- ✅ **Session State Machine Guardrails** - `SessionLifecycleState` enum, lifecycle diagnostics, and `guard_action()` enforcement ensure `exec_actn()` resets degraded sessions before work begins, preventing stale driver/API usage
-- ✅ **Interactive Session Guard Consolidation** (Nov 18) - The `require_interactive_session` decorator in `main.py` now wraps Actions 7–9 so `_ensure_interactive_session_ready()` lives in one place and menu guards never drift out of sync.
-- ✅ **Action 6 Checkpoint Regression Test** (Nov 18) - `_test_checkpoint_resume_logic` patches the checkpoint path to a temp file and asserts resume/override/cleanup flows, turning the previous print-only check into a real regression test.
-- ✅ **Main.py Pylance Hardening** (Nov 19) - Added typed loader helpers for GEDCOM/API table rows, the analytics extras setter, and the Windows console focus shim so `main.py` runs without any Pyright suppressions.
-- ✅ **Action 6 Error Handling Regression Tests** (Nov 19) - Converted the timeout, duplicate profile detection, and final summary tests into assertion-backed checks with IntegrityError coverage to guard future regressions.
-- ✅ **Unified Error-Handling Stack** (Nov 19) - Merged the enhanced recovery decorators into `core/error_handling.py`, deleted `core/enhanced_error_recovery.py`, and repointed Action 6/7/8 plus archival scripts to the single source of truth.
-- ✅ **Error Handling Deduplication** (Nov 20) - Retired the legacy `error_handling.py`, moved the telemetry-driven retry policies (api/selenium) into `core/error_handling.py`, and updated all imports/tests to the consolidated helpers.
-- ✅ **Action Orchestrator Context (Nov 20)** - `exec_actn()` now uses `_ActionExecutionContext` plus `_finalize_action_execution()` so setup, analytics, and cleanup are decomposed into reusable helpers instead of a 200-line monolith.
-- ✅ **Action 10 Comparison Pipeline (Nov 20)** - Added `_ComparisonConfig`, `_ComparisonResults`, and helper trio (collect → execute → render) so GEDCOM/API fallback runs through a typed pipeline with a single rendering surface.
-- ✅ **Browser Navigation Guards (Nov 20)** - Actions 7–9 call `_ensure_navigation_ready()` for driver checks + `nav_to_page` retries, giving the messaging workflow one place to tune the shared guard logic.
-- ✅ **Pyright + Ruff Hardening (Nov 18)** - Pyright now runs in `standard` mode with `reportReturnType`, `reportUnusedVariable`, and `reportDuplicateImport` elevated to errors, while Ruff extends into PLR cyclomatic-complexity/argument-count checks with tuned thresholds so CI blocks regressions immediately.
-- ✅ **Import Standardization Audit (Nov 18)** - `standard_imports.setup_module` tracks duplicate invocations, `testing/import_audit.py` enforces `globals(), __name__` usage via automated scanning/tests, and lingering outliers such as `person_lookup_utils.py` now use the canonical pattern.
-- ✅ **CLI Maintenance Module (Nov 21)** - Non-essential menu helpers now live in `cli/maintenance.py`, and `main.py` simply instantiates `MainCLIHelpers` and re-exports the bound methods so the entrypoint focuses on action orchestration.
-- ✅ **Main Menu Test Suite Re-embedded (Nov 21)** - The `main.py` regression suite now lives at the bottom of the entrypoint, so tests stay co-located with the code they cover; run it via the main menu helper or `python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"`.
-- ✅ **Main.py Refactoring (Nov 25)** - Extracted application lifecycle management (startup, shutdown, session pre-authentication) into `core/lifecycle.py`, reducing `main.py` to a focused entry point that delegates to specialized modules.
-- ✅ **Configuration Warning Visibility (Nov 25)** - Removed blanket configuration warning suppression from `main.py` and `core/session_manager.py` so misconfigured `.env` values are properly surfaced to operators instead of being silently swallowed.
-- ✅ **SessionManager Cleanup (Nov 25)** - Removed legacy `sys.stderr` redirection and obsolete warning suppression blocks from `core/session_manager.py`, improving debugging visibility and removing dead code paths.
-- ✅ **Type Safety Hardening (Nov 25)** - Enabled `reportUnknownParameterType` and `reportMissingTypeArgument` as warnings in `pyrightconfig.json`, catching implicit `Any` types in function signatures and generic type arguments.
-- ✅ **Type Safety Hardening Phase 2 (Nov 21)** - Addressed underlying type issues in `utils.py` and `relationship_utils.py` by introducing `GedcomIndividualProtocol` and improving `SessionManager` forward references.
-- ✅ **Integration Test Suite (Nov 25)** - Added `test_integration_workflow.py` and `run_all_tests.py --integration` to validate end-to-end workflows (Actions 6, 7, 9) with mocked session/database components, ensuring critical paths work together before deployment.
-- ✅ **Code Graph Maintenance Script (Nov 25)** - Added `scripts/maintain_code_graph.py` to programmatically remove stale nodes and edges from `docs/code_graph.json`, ensuring the knowledge graph remains accurate as code evolves; run it as `python scripts/maintain_code_graph.py remove_node <node_id>` to delete a node and its edges.
- - ✅ **TOON Prompt Encoding for Clarifications (Nov 23)** - Implemented a minimal TOON encoder in `ai_interface.py` and switched the clarifying-questions prompt to send `extracted_entities` in TOON instead of pretty-printed JSON, while keeping AI responses in strict JSON for existing parsers.
-- 📈 **Code Quality**: Reduced duplication by ~60 lines across key modules
-- 🎯 **Maintainability**: Single source of truth in `test_utilities.py` for test infrastructure
+## Quick Start
 
-### Logging Conventions
+### Prerequisites
 
-- Use `core.logging_utils.log_action_banner()` for action lifecycle logs (`stage="start" | "success" | "failure"`) so operators get consistent emoji-prefixed banners.
-- Actions 6–10 already emit standardized start/final banners including contextual details (pages processed, AI stats, etc.); new actions should follow the same pattern.
-- Shared helpers such as `utils.log_action_status()` delegate to `log_action_banner`, so stand-alone workflows (scripts, utilities) can emit the same structured markers without duplicating formatting logic.
-- Include a compact `details` dict when calling the helper so log greps can filter on keys like `start_page`, `sent`, `errors`, or `reason`.
+- Python 3.13+
+- Chrome browser
+- Git
+- Ancestry.com account with DNA test results
 
-### Main CLI Helpers
-
-- `cli/maintenance.py` now owns the menu utilities (log clearing, standalone test runners, analytics exporters, cache stats, schema migrations, telemetry toggles, dashboards, graceful exits) through the `MainCLIHelpers` class.
-- `main.py` instantiates `MainCLIHelpers` once, re-exporting the bound methods so the menu wiring stays unchanged while the entrypoint itself remains focused on action orchestration.
-- Add new maintenance commands by implementing a method on `MainCLIHelpers`, wiring it into the helper map, and covering it with regression tests in `main.py`'s `main_module_tests()` suite.
-- The helpers deliberately avoid session management; anything needing browser/API coordination must still flow through `exec_actn()` and `SessionManager`.
-
-## Actions
-
-### Action 6: DNA Match Gathering
-Automates DNA match harvesting from Ancestry.com with resilient session management and configurable pagination.
-
-- **Config-driven pagination**: `MATCHES_PER_PAGE` controls the API `itemsPerPage` value (default 30). Change the environment variable if Ancestry throughput rules shift.
-- **Sequential rate limiting**: All API calls funnel through the shared `RateLimiter`; there is no parallel worker pool to guarantee zero 429 responses.
-- **Session health monitoring**: Proactive checks keep the session refreshed before the 40-minute expiry window.
-- **Checkpoint resume**: Automatic state saves allow interrupted runs to resume from the last completed page.
-- **Ethnicity enrichment**: Optional fetches pull DNA ethnicity percentages when available.
-- **Relationship ladder throttling**: Use `MAX_RELATIONSHIP_PROB_FETCHES` to cap expensive relationship probability lookups per page.
-
-**API Endpoint:**
-```
-GET /discoveryui-matches/parents/list/api/matchList/{test_guid}?itemsPerPage={MATCHES_PER_PAGE}&currentPage={page}
-```
-
-**Configuration (.env):**
-```bash
-# Core controls
-REQUESTS_PER_SECOND=0.3
-MATCHES_PER_PAGE=30
-MAX_RELATIONSHIP_PROB_FETCHES=0
-
-# Optional health overrides
-HEALTH_CHECK_INTERVAL_PAGES=5
-SESSION_REFRESH_THRESHOLD_MIN=25
-```
-
-#### Schema Migration Workflow
-
-- `core/schema_migrator.py` registers ordered migrations (starting with `0001_baseline`) and records executions in the `schema_migrations` table so every deployment knows which revisions ran against `Data/ancestry.db`.
-- `DatabaseManager` automatically invokes the migrator after ensuring tables exist, and the `migrate-db` meta action inside the main menu prints the same summary for operators who prefer the CLI.
-- Run the standalone utility when you need to inspect or apply changes without launching the full menu:
-
-```powershell
-# List migrations with their applied/pending state
-python core/schema_migrator.py --list
-
-# Apply any pending migrations (default action when flags are omitted)
-python core/schema_migrator.py --apply
-
-# Show the contents of schema_migrations for auditing
-python core/schema_migrator.py --show-applied
-```
-
-All commands accept `--db-path` (defaults to `Data/ancestry.db`) so you can point at backups before promoting schema changes.
-```bash
-python -m actions.action6_gather
-```
-
-### Action 7: Inbox Processing
-Process and analyze inbox messages with AI classification.
+### Installation
 
 ```bash
-python -m actions.action7_inbox
+# Clone repository
+git clone https://github.com/waynegault/ancestry.git
+cd ancestry
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy environment template
+cp .env.example .env
 ```
 
-### Action 8: Intelligent Messaging
-Send AI-powered messages to DNA matches with context awareness.
+### Configuration
+
+Edit `.env` with your credentials:
+
+```env
+# Required: Ancestry Authentication
+ANCESTRY_USERNAME=your_email@example.com
+ANCESTRY_PASSWORD=your_password
+
+# Required: AI Provider (choose one)
+AI_PROVIDER=gemini  # Options: gemini, deepseek, local_llm, moonshot, grok, inception
+GEMINI_API_KEY=your_gemini_key  # If using Gemini
+DEEPSEEK_API_KEY=your_deepseek_key  # If using DeepSeek
+
+# Optional: Local LLM (LM Studio)
+LOCAL_LLM_BASE_URL=http://localhost:1234/v1
+LOCAL_LLM_MODEL=qwen3-4b-2507
+LOCAL_LLM_API_KEY=lm-studio
+
+# Optional: Advanced Configuration
+REQUESTS_PER_SECOND=0.3  # Rate limiting (CRITICAL - do not change without validation)
+MAX_PAGES=1  # Processing limit for batch operations
+ENABLE_CHECKPOINTING=true  # Auto-resume capability
+```
+
+### First Run
 
 ```bash
-python -m actions.action8_messaging
+# Run main application
+python main.py
+
+# Menu Options:
+# 5 - Check Login Status (validates session)
+# 6 - Gather DNA Matches (start with 1-2 pages for testing)
+# 7 - Process Inbox Messages
+# 10 - Search Family Tree (GEDCOM or API)
 ```
 
-### Action 9: Productive Conversation Management
-Manage ongoing productive conversations with automated follow-ups.
+## Architecture
 
-```bash
-python -m actions.action9_process_productive
+### Core Components
+
+#### SessionManager (`core/session_manager.py`)
+Central orchestrator for all browser, database, and API operations. **THE** critical component—all resource access flows through it.
+
+**Key Methods**:
+- `ensure_session_ready()` - Initializes browser, database, API clients
+- `ensure_api_ready_with_browser_fallback()` - API session with automatic cookie sync
+- `ensure_api_ready_browserless()` - API-only mode without browser overhead
+- `refresh_browser_cookies()` - Proactive session renewal to prevent 403 errors
+- `is_sess_valid()` - Session health check with age validation
+
+**Invariant**: Exactly one SessionManager instance per execution, registered globally via `session_utils.register_session_manager()`
+
+#### RateLimiter (`core/rate_limiter.py`)
+Thread-safe token bucket algorithm prevents 429 rate limit errors.
+
+**Configuration** (`.env`):
+```env
+REQUESTS_PER_SECOND=0.3      # Fill rate (CRITICAL - empirically validated)
+INITIAL_DELAY=1.0            # Starting delay between requests
+MAX_DELAY=15.0               # Maximum delay cap
+BACKOFF_FACTOR=1.5           # Multiplier on 429 errors
+DECREASE_FACTOR=0.95         # Gradual speedup on success
 ```
 
-#### Shared Messaging Helpers (`messaging/workflow_helpers.py`)
+**Features**:
+- Burst capacity: Initial 10 tokens for fast startup
+- Adaptive backoff: 1.5x delay increase on 429 errors
+- Gradual recovery: 0.95x delay decrease on success
+- Thread-safe with `threading.Lock()`
 
-The `messaging/` package centralizes workflow utilities shared across Actions 7–9:
+**Validation**: Run `validate_rate_limiting.py` after any RPS changes—requires 50+ pages showing zero 429 errors.
 
-**Column extraction & enum coercion:**
-- `safe_column_value()`, `build_safe_column_value()` - Enum-aware SQLAlchemy column extraction with automatic type coercion
+#### Database Layer (`database.py`)
+SQLAlchemy 2.0 ORM with soft deletes and connection pooling.
 
-**Conversation state management:**
-- `cancel_pending_messages_on_status_change()` - Cancel pending messages when person status changes
-- `cancel_pending_on_reply()` - Cancel pending messages when reply detected
-- `log_conversation_state_change()` - Audit logging for state transitions
+**Core Models**:
+- `Person` - DNA test takers and family tree members
+  - `uuid` (UPPERCASE storage) - DNA test GUID, nullable for non-testers
+  - `profile_id` - User profile ID, nullable for non-member testers
+  - `administrator_profile_id` - Kit manager for message routing
+- `DnaMatch` - DNA matches with shared cM, ethnicity data
+- `FamilyTree` - Tree assignments and ownership tracking
+- `ConversationLog` - Message history with AI analysis
+- `MessageTemplate` - Personalized message templates
 
-**Engagement timing:**
-- `calculate_days_since_login()` - Days since last login activity
-- `determine_engagement_tier()` - Classify engagement level (hot/warm/cold)
-- `calculate_adaptive_interval()` - Compute follow-up intervals based on engagement
-- `calculate_follow_up_action()` - Determine next workflow action
+**Critical Patterns**:
+- Always use `.upper()` on UUIDs before database operations
+- Call `session.expire_all()` after bulk operations to force refresh
+- Use `deleted_at` for soft deletes—never hard delete
 
-**Tree detection:**
-- `is_tree_creation_recent()` - Check if tree was created recently
-- `has_message_after_tree_creation()` - Verify message timing relative to tree
-- `detect_status_change_to_in_tree()` - Detect IN_TREE status transitions
+#### Error Handling (`core/error_handling.py`)
+Structured exception hierarchy with automatic retry logic.
 
-The module includes 13 `TestSuite` tests.
-
-#### Message Types & State Machine (`messaging/message_types.py`)
-
-The `messaging/message_types.py` module manages message type constants and the state machine for the messaging workflow:
-
-**Constants:**
-- `MESSAGE_TYPES` - Canonical message type enumeration (12 types: Initial_Contact, Follow_Up, Final_Reminder, etc.)
-- `MESSAGE_TYPES_ACTION8` - Alias for backward compatibility
-- `MESSAGE_TRANSITION_TABLE` - State machine defining valid transitions between message types
-- `CORE_REQUIRED_TEMPLATE_KEYS` - Required keys for message template validation
-
-**State Machine Functions:**
-- `determine_next_message_type(last_type, is_in_tree, is_first)` - Returns the next message type based on current state and tree status
-- `is_terminal_message_type(message_type)` - Check if a message type is terminal (no further messages)
-- `get_message_type_category(message_type)` - Categorize message type (In_Tree, Out_Tree, Desist)
-
-The module includes 7 `TestSuite` tests covering all state transitions.
-
-### Action 10: GEDCOM Analysis
-Analyze GEDCOM files and score potential matches.
-
-#### Current display and filtering policy
-- Display: Show only the highest-scoring result. We search GEDCOM first; only if GEDCOM returns no matches do we call the API. Immediately after the top row is printed for the chosen source, the system displays that person's family members and the relationship path to the tree owner. The detailed results tables and the summary line are shown only when logging is set to DEBUG.
-- Name containment (mandatory when provided):
-  - If first_name is provided, candidate must contain it (case-insensitive contains)
-  - If surname is provided, candidate must contain it (case-insensitive contains)
-  - If both are provided, both must be contained
-  - If neither name is provided, a broader OR filter is used on birth_year, birth_place, and alive-state
-- Gender: Removed as a search and scoring criterion and removed from result displays; it is no longer collected as input and does not influence filtering or scoring.
-- Alive-mode policy: When no death criteria are provided, candidates with death information receive a small penalty; missing death info is neutral.
-
-#### API search sources and parsing notes
-
-- Primary family endpoint: /family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships
-  - Response shape: { cssBundleUrl, jsBundleUrl, data }, where data is a JSON STRING that must be json.loads(...) into { userId, treeId, personId, person, urls, res }
-  - The family arrays live under parsed_data.person: fathers[], mothers[], spouses[], children[] (children may be nested arrays per spouse)
-  - res contains UI/localization strings, not family data
-- Relationship ladder endpoint: /family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
-- Design decisions:
-  - Siblings are not displayed in the API path (per requirements); parents, spouses, and children are displayed
-  - Session authentication occurs once via session_utils.get_authenticated_session; no redundant re-login or cookie syncs
-
-```bash
-python -m actions.action10
+**Exception Hierarchy**:
+```
+AncestryException (base)
+├─ RetryableError (automatic retry applies)
+│  ├─ APIRateLimitError (429 errors with retry_after)
+│  ├─ NetworkTimeoutError (transient network issues)
+│  └─ DatabaseConnectionError (DB connection failures)
+└─ FatalError (DO NOT retry)
+   ├─ DataValidationError (invalid data format)
+   └─ ConfigurationError (missing/invalid config)
 ```
 
-## Testing
-
-```bash
-# Run all tests (115 modules)
-python run_all_tests.py
-
-# Run with parallel execution
-python run_all_tests.py --fast
-
-# Run integration tests (end-to-end workflows)
-python run_all_tests.py --integration
-
-# Run with log analysis
-python run_all_tests.py --analyze-logs
-
-# Run specific module tests
-python -m actions.action6_gather
-# Main menu regression tests (embedded within main.py)
-python -c "import main, sys; sys.exit(0 if main.run_comprehensive_tests() else 1)"
-```
-
-### Static Analysis (Lint + Types)
-
-```bash
-# Type checking (matches VS Code Pylance)
-npx pyright
-
-# Linting / style checks
-ruff check
-```
-
-### Centralized Test Utilities
-
-All test modules use centralized helpers from `test_utilities.py` to eliminate duplication and ensure consistent behavior:
-
-**Test Decorators:**
-- `@with_temp_database` - Creates an isolated SQLite database for each test with automatic cleanup
-- `@with_mock_session` - Provides a mock SessionManager with common methods pre-configured
-- `@with_test_config` - Temporarily overrides configuration settings for test isolation
-
-**Test Fixture Factories:**
-- `create_test_person(uuid=..., profile_id=..., name=...)` - Factory for Person model instances with realistic defaults
-- `create_test_match(person_id=..., shared_cm=..., relationship=...)` - Factory for DnaMatch test fixtures
-
-**Temporary File Helpers:**
-- `temp_directory(prefix="test-", cleanup=True)` - Context manager for temporary directories with automatic cleanup
-- `temp_file(suffix="", prefix="test-", mode="w+")` - Context manager for temporary files with automatic cleanup
-- `atomic_write_file(target_path, mode="w")` - Atomic file writes using temp file + rename pattern
-
-**Test Infrastructure:**
-- `create_standard_test_runner(module_test_function)` - Standardized test runner with consistent logging and error handling
-- All 122 test modules use this pattern for uniform output and exit codes
-
-**Usage Example:**
+**Decorators**:
 ```python
-from test_utilities import (
-    with_temp_database, with_mock_session, with_test_config,
-    create_test_person, create_test_match, temp_file
-)
+@retry_on_failure(max_attempts=3, backoff_factor=2.0)
+def fetch_api_data(url):
+    # Automatically retries on RetryableError subclasses
+    pass
 
-# Decorator-based test isolation
-@with_temp_database
-def test_database_operation(session):
-    person = create_test_person(name="Test User")
-    session.add(person)
-    session.commit()
-    # Database is automatically cleaned up after test
+@graceful_degradation(fallback_value=None)
+def get_optional_data():
+    # Returns fallback_value on any exception
+    pass
 
-@with_mock_session
-def test_session_operation(mock_session):
-    mock_session.driver_live = True
-    assert mock_session.is_sess_valid()
-
-# Use temporary file with automatic cleanup
-with temp_file(suffix='.json', mode='w+') as f:
-    json.dump(test_data, f)
-    f.flush()
-    process_file(Path(f.name))
-# File automatically deleted when context exits
+@error_context("API Request")
+def make_request():
+    # Adds context to error logs automatically
+    pass
 ```
 
-## AI Quality Telemetry
-
-`prompt_telemetry.py` now captures provider-level metadata and scoring inputs for every AI extraction event. Each JSONL line in `Logs/prompt_experiments.jsonl` includes `provider`, `provider_model`, sanitized `scoring_inputs`, and the usual quality metrics so you can correlate outcomes with a specific LLM or prompt variant.
-
-- **Provider filters everywhere** – `--provider <name>` works with `--summary`, `--analyze`, `--build-baseline`, and `--check-regression` to scope stats to a single AI vendor.
-- **Automatic regression surfacing** – every event triggers a rolling-median comparison (provider + variant). Drops beyond 7.5 points emit alerts to `Logs/prompt_experiment_alerts.jsonl` with `variant_median_regression` entries.
-- **Scoring transparency** – optional `scoring_inputs` payloads (component weights, rubric scores, etc.) are stored safely (truncated at 800 chars) for later forensic review.
-
-Example workflows:
-
-```powershell
-python prompt_telemetry.py --summary --provider gemini
-python prompt_telemetry.py --analyze --provider deepseek --window 150
-python prompt_telemetry.py --build-baseline --provider gemini --variant control --min-events 12
-python prompt_telemetry.py --check-regression --provider gemini --variant control --window 120
-```
-
-## Pylance Configuration
-
-The project uses **basic** type checking mode with strict exclusions to ensure stable, accurate error reporting.
-
-### Configuration Files
-
-**pyrightconfig.json**: Primary configuration
-- Type checking mode: `basic` (balances error detection with usability)
-- **Includes**: Only `*.py` and `**/*.py` files (explicit Python files only)
-- **Excludes**: `.git/**`, `__pycache__/**`, `.venv/**`, `Cache/**`, `Logs/**`, `Data/**`
-- **Ignore**: `.git` and `**/.git` (prevents analyzing git internals)
-- Silences false positives (unused variables, unreachable code, type inference limitations)
-- Keeps critical errors visible (undefined variables, import errors, etc.)
-
-**.vscode/settings.json**: Workspace settings
-- **CRITICAL**: `.git` is excluded (`"**/.git": true`) to prevent Pylance from analyzing git internals
-- File watching and search exclusions for performance
-- Markdown linting configuration
-
-**Note**: When `pyrightconfig.json` exists, `.vscode/settings.json` Python analysis settings are ignored.
-
-### Reloading Configuration
-
-**You MUST reload VS Code window for changes to take effect:**
-1. Press `Ctrl+Shift+P`
-2. Type "Developer: Reload Window"
-3. Press Enter
-
-**Expected result**: Stable error count showing only real issues (typically 10-20 errors)
-
-### Troubleshooting Pylance
-
-If you see thousands of errors or errors from `.git` files:
-1. Check that `.vscode/settings.json` has `"**/.git": true` (not `false`)
-2. Reload VS Code window (Ctrl+Shift+P → Developer: Reload Window)
-3. If errors persist, restart VS Code completely
-4. Clear Pylance cache: Delete `.vscode/.ropeproject` if it exists and reload
-
-## Development Guidelines
-
-### Code Quality
-- Follow DRY (Don't Repeat Yourself) principles
-- Use type hints for function signatures
-- Add docstrings to all public functions
-- Keep functions under 50 lines when possible
-
-#### Code Quality Metrics (November 2025)
-- **Zero Pylance Errors**: All type annotation issues resolved
-- **F821/E722 Ruff Checks**: Passing (undefined names, bare except)
-- **Type Coverage**: 7 type annotations added to gedcom_intelligence.py
-- **Import Cleanup**: Removed unused imports (contextlib in config_manager.py)
-- **Constant Safety**: Fixed LOG_DIRECTORY redefinition in logging_config.py
-- **Test Quality**: Unused variables properly marked with underscore prefix
-- **Documentation Quality**: 12 modules simplified, ~400 lines of jargon removed (see docs/DOCUMENTATION_AUDIT.md)
-
-**Recent Quality Improvements**:
-- Added `Any` type annotations to all GEDCOM person_record parameters
-- Fixed markdown linting issues (MD007/MD005) in documentation
-- Standardized test variable naming (unused `_functions` variables)
-- Enhanced constant handling to prevent redefinition warnings
-- Replaced verbose corporate jargon with concise professional docstrings (Nov 17, 2025):
-  - **Phase 1** (Nov 15): gedcom_intelligence.py (47→15 lines, 68% reduction), message_personalization.py (43→13 lines, 70% reduction)
-  - **Phase 2** (Nov 17): 10 additional modules simplified:
-    - research_prioritization.py (48→15 lines), universal_scoring.py (47→14 lines)
-    - standard_imports.py (47→17 lines), code_quality_checker.py (45→17 lines)
-    - genealogical_normalization.py (45→13 lines), my_selectors.py (45→6 lines)
-    - prompt_telemetry.py (45→16 lines), ms_graph_utils.py (43→12 lines)
-    - relationship_utils.py (43→5 lines), selenium_utils.py (43→6 lines)
-  - **Total Impact**: ~400 lines of verbose jargon removed, 12 modules improved
-  - See `docs/DOCUMENTATION_AUDIT.md` for complete analysis and best practices
-
-**Type Ignore Guard (Nov 19, 2025)**
-- `code_quality_checker.py` now surfaces any `type: ignore[...]` directives as explicit violations so module tests immediately fail when suppressions creep in.
-- `testing/check_type_ignores.py` provides a fast repository-wide scan that exits non-zero if a directive appears anywhere outside vendor directories.
-
-```powershell
-python testing/check_type_ignores.py
-```
-
-Run the guard locally (or wire it into CI) to maintain the zero-ignore baseline captured in `docs/review_todo.md`.
-
-### Maintenance Scripts
-
-- `testing/check_type_ignores.py`: Fast repository-wide scan for `type: ignore[...]` directives; exits non-zero if any are found outside allowed/vendor locations.
-- `scripts/maintain_code_graph.py`: Maintains `docs/code_graph.json` by removing stale nodes and edges; run as `python scripts/maintain_code_graph.py remove_node <node_id>`.
-- `testing/dead_code_scan.py`: Dead-code scanner for one-off analysis; invoke via `python testing/dead_code_scan.py` to generate a conservative list of candidate unused helpers for manual review.
-
-### Testing
-- Write tests for all new functionality
-- Tests should fail when functionality fails (no fake passes)
-- Use `.env` test data for automated tests
-- Maintain 100% test pass rate
-
-### Performance Profiling
-
-The project provides comprehensive profiling utilities for analyzing long-running actions without manual cProfile setup.
-
-**Profiling Decorators** (`performance_profiling.py`):
-
-1. **@profile_with_cprofile** - Full cProfile profiling with detailed reports:
-   ```python
-   from performance_profiling import profile_with_cprofile
-
-   @profile_with_cprofile(output_file="action6_profile.stats")
-   def coord(session_manager, start=None):
-       # ... action implementation
-       pass
-   ```
-   Generates both `.stats` (machine-readable) and `.txt` (human-readable) files in `Logs/profiles/`.
-
-2. **@time_function** - Lightweight execution timing (no profiling overhead):
-   ```python
-   from performance_profiling import time_function
-
-   @time_function
-   def process_batch(items):
-       # ... processing logic
-       pass
-   ```
-   Logs execution time at INFO level: "⏱️ process_batch completed in 2.34s"
-
-**CLI Profiling** - Enable profiling from command line without code changes:
-
-```bash
-# Enable profiling for entire session
-python main.py --profile
-
-# Specify custom output file
-python main.py --profile --profile-output=custom_profile.stats
-
-# Analyze results
-python -c "from performance_profiling import generate_report_from_stats; print(generate_report_from_stats('Logs/profiles/profile.stats'))"
-```
-
-**Configuration** - Customize profiling behavior:
+**Circuit Breaker** (`core/circuit_breaker.py`):
+Fails fast after 5 consecutive errors instead of wasting 15,000+ attempts.
 
 ```python
-from performance_profiling import configure_profiling
+circuit_breaker = SessionCircuitBreaker(threshold=5)
 
-configure_profiling(
-    enabled=True,
-    output_dir=Path("Logs/profiles"),
-    sort_by="cumulative",  # or "time", "calls", etc.
-    top_n_functions=50     # Show top 50 functions in reports
-)
+if circuit_breaker.is_tripped():
+    logger.critical("🚨 Circuit breaker TRIPPED - aborting")
+    return False
+
+if session_valid:
+    circuit_breaker.record_success()  # Resets failure count
+else:
+    if circuit_breaker.record_failure():  # Returns True if just tripped
+        logger.error("Circuit breaker tripped after 5 failures")
+        abort_remaining_work()
 ```
-**Report Analysis** - Generate custom reports from existing .stats files:
 
+### Action Modules
+
+All actions use the `exec_actn()` wrapper pattern in `main.py`—never manage resources directly.
+
+#### Action 6: DNA Match Gathering (`actions/action6_gather.py`)
+Comprehensive DNA match collection with checkpoint resume capability.
+
+**Features**:
+- Parallel API fetching with ThreadPoolExecutor (default: 1 worker for rate safety)
+- Automatic checkpoint after each page for resume capability
+- Ethnicity comparison with dynamic region columns
+- Relationship probability analysis
+- Badge details and relationship ladders
+
+**Performance** (1 worker):
+- ~40-60s per page (20 matches/page)
+- ~596 matches/hour throughput
+- 14-20% cache hit rate on repeat runs
+
+**Checkpoint System**:
 ```python
-from performance_profiling import generate_report_from_stats
-from pathlib import Path
+# User intent handling:
+# "6" (no page) → Auto-resume from checkpoint if exists
+# "6 1" (explicit page 1) → Fresh start, ignore checkpoint
+# "6 50" (explicit page) → Start from page 50
 
-# Generate report sorted by time
-report = generate_report_from_stats(
-    Path("Logs/profiles/action6_profile.stats"),
-    sort_by="time"
-)
-print(report)
-
-# Or save to file
-output_path = Path("Logs/profiles/custom_report.txt")
-generate_report_from_stats(
-    Path("Logs/profiles/action6_profile.stats"),
-    output_file=output_path
-)
+# Checkpoint data (Cache/action6_checkpoint.json):
+{
+  "version": "1.0",
+  "current_page": 449,
+  "total_pages": 800,
+  "counters": {"total_new": 3245, "total_updated": 4123}
+}
 ```
 
-**Best Practices**:
-- Use `@profile_with_cprofile` for detailed bottleneck analysis (adds ~5-10% overhead)
-- Use `@time_function` for production monitoring (minimal overhead)
-- Profile in isolation (single-threaded, no parallel workers) for accurate results
-- Compare baseline runs before/after optimizations to validate improvements
+**Configuration** (`.env`):
+```env
+ENABLE_CHECKPOINTING=true
+CHECKPOINT_MAX_AGE_HOURS=24
+THREAD_POOL_WORKERS=1  # CRITICAL: >1 requires rate limit validation
+```
 
-### Rate Limiting
-- Never bypass the rate limiter
-- All API calls must go through `session_manager.rate_limiter`
-- Monitor logs for 429 errors
-- Validate changes with 50+ page runs
+#### Action 7: Inbox Processing (`actions/action7_inbox.py`)
+AI-powered message classification and conversation analysis.
 
-### Caching Strategy
+**Classification Types** (using `intent_classification` prompt):
+- PRODUCTIVE - Actionable genealogical information
+- ENTHUSIASTIC - Excited but no specific leads
+- CASUAL_CHAT - Friendly but unfocused
+- DESIST - Uninterested/stop contact
+- OTHER - Unclear intent
 
-The project uses **UnifiedCacheManager** (singleton, thread-safe) to reduce API load by caching responses with configurable TTL per endpoint.
+**Entity Extraction**:
+- Names (people mentioned)
+- Dates (years, date ranges)
+- Places (locations)
+- Relationships (family connections)
 
-**Current Achievement**: ~40-50% cache hit rate on DNA match operations, saving **15-25K API calls per 800-page run**.
+**Processing Flow**:
+1. Scrape inbox HTML for conversations
+2. Extract message metadata (sender, timestamp, content)
+3. AI classification via `call_ai('intent_classification', context)`
+4. Entity extraction for PRODUCTIVE messages
+5. Update `ConversationLog` with analysis results
 
-**Cache-Enabled Endpoints** (in action6_gather.py):
-- `combined_details` - Combined person/family tree data (TTL: 24 hours)
-- `relationship_prob` - Relationship probability scores (TTL: 7 days)
-- `ethnicity_regions` - DNA ethnicity percentages (TTL: 30 days)
-- `badge_details` - Profile badge data (TTL: 7 days)
-- `ladder_details` - Relationship ladder info (TTL: 7 days)
-- `tree_search` - Family tree search results (TTL: 1 hour)
+#### Action 8: Automated Messaging (`actions/action8_messaging.py`)
+Context-aware personalized messaging to DNA matches.
 
-**Configuration (.env)**:
+**Template System** (`messaging/templates/`):
+- Loads templates from JSON at runtime (lazy initialization)
+- Variables: {match_name}, {relationship}, {shared_cm}, {tree_size}, {owner_name}
+- Personalization based on match characteristics
+
+**Message Types**:
+- Initial outreach (no prior conversation)
+- Follow-up messages (existing thread)
+- Record sharing offers
+- Research collaboration
+
+#### Action 9: Task Generation (`actions/action9_process_productive.py`)
+Converts PRODUCTIVE conversations into Microsoft To-Do tasks.
+
+**Task Categories** (from `genealogical_task_templates.py`):
+1. Vital Records (birth, death, marriage certificates)
+2. Census Records (federal, state, special censuses)
+3. DNA Analysis (segment comparison, triangulation)
+4. Military Records (service, pension, draft)
+5. Immigration Records (passenger lists, naturalization)
+6. Land Records (deeds, wills, probate)
+7. Church Records (baptism, confirmation, burial)
+8. Newspaper Research (obituaries, announcements)
+
+**Quality Scoring** (0-100):
+- Entity richness (names, dates, places, relationships) - up to 70 points
+- Task specificity (verbs, years, record types, locations) - up to 30 points
+- Penalties: Missing names (-20), no verbs (-10), filler words (-10)
+- Bonuses: 5+ entities (+5), specific years (+10)
+
+**Thresholds**:
+- 85-100: Excellent extraction
+- 70-84: Good (production ready)
+- 50-69: Acceptable (needs monitoring)
+- <50: Poor (review prompt immediately)
+
+#### Action 10: Family Tree Search (`actions/action10.py`)
+Unified person search using GEDCOM files and Ancestry API with intelligent scoring.
+
+**Search Flow**:
+1. Prompt for search criteria (names, dates, places)
+2. Search local GEDCOM files first (offline, fast)
+3. If zero GEDCOM matches, fall back to Ancestry API
+4. Score and rank results using unified scoring algorithm
+5. Display top match with family members and relationship path
+
+**Scoring System** (`research/universal_scoring.py`):
+- Name matches: Exact (30 points), Contains (15 points)
+- Birth year: Exact (25), ±1 year (20), ±2 years (15), ±5 years (10)
+- Death year: Same scoring as birth
+- Place matches: Contains comparison (15 points each for birth/death)
+- Bonuses: Both names matched (+50), Both birth info (+50), Both death info (+50)
+- Penalties: Alive-mode penalty if candidate has death info but search doesn't
+
+**Configuration**:
+```env
+# API mode selection
+API_SEARCH_BROWSERLESS=false  # Use browser-based auth for API (recommended)
+```
+
+**Display Output**:
+```
+Name: Peter Fraser (1893-1953)
+Birth: 1893 in Fyvie, Aberdeenshire, Scotland
+Death: 1953 in Auckland
+
+Parents:
+   - James Fraser (1860-1920)
+   - Margaret Gordon (1865-1945)
+
+Spouses:
+   - Margaret McKenzie (m. 1915)
+
+Children:
+   - John Fraser (1916-1998)
+   - Mary Fraser (1918-2005)
+
+Relationship to Wayne Gault:
+   Wayne Gault → Margaret Mary Nicol → James Nicol → Peter Fraser
+```
+
+### AI Integration
+
+#### Multi-Provider Architecture (`ai/ai_interface.py`)
+Unified interface with automatic failover across multiple AI providers.
+
+**Supported Providers**:
+- **Google Gemini** (gemini-1.5-flash) - Primary, fast responses
+- **DeepSeek** (deepseek-chat) - Cost-effective fallback
+- **Local LLM** (LM Studio) - Privacy-focused offline option
+- **Moonshot** (Kimi) - Additional failover
+- **Grok** (xAI) - Alternative provider
+- **Inception** (Mercury) - Specialized provider
+
+**Provider Selection**:
+```env
+AI_PROVIDER=gemini
+AI_PROVIDER_FALLBACKS=gemini,deepseek,local_llm,moonshot,grok,inception
+```
+
+**Failover Logic**:
+1. Try primary provider from `AI_PROVIDER`
+2. On failure, iterate through `AI_PROVIDER_FALLBACKS`
+3. Skip providers without credentials/SDKs
+4. Log provider switches for monitoring
+5. Record telemetry for quality tracking
+
+#### Prompt Library (`ai/ai_prompts.json`)
+Versioned prompts with A/B testing support.
+
+**Prompt Structure**:
+```json
+{
+  "intent_classification": {
+    "description": "Classify genealogy message actionability",
+    "prompt": "Rules: 1) Output exactly one label: PRODUCTIVE/ENTHUSIASTIC/...",
+    "variants": {
+      "v2": "Updated classification logic with better context handling..."
+    }
+  }
+}
+```
+
+**Usage**:
+```python
+# Use base prompt
+result = call_ai('intent_classification', {'message': message_text})
+
+# Use variant for A/B testing
+result = call_ai('intent_classification', {'message': message_text}, variant='v2')
+```
+
+#### Quality Monitoring (`ai/prompt_telemetry.py`)
+Comprehensive telemetry system tracks AI performance.
+
+**Metrics Tracked**:
+- `parse_success` - JSON parsing success rate
+- `quality_score` - Extraction quality (0-100)
+- `response_time` - Latency in milliseconds
+- `provider` - Which AI provider was used
+- `prompt_key` - Which prompt was invoked
+
+**Storage**: `Logs/prompt_experiments.jsonl` (one JSON object per line)
+
+**Commands**:
 ```bash
-# Cache settings
-CACHE_ENABLED=true
-CACHE_MAX_SIZE=10000          # LRU eviction at 10K entries
-CACHE_DEFAULT_TTL_SECONDS=86400  # 24 hours default
+# View statistics
+python prompt_telemetry.py --stats
+
+# Generate new baseline (after prompt improvements)
+python prompt_telemetry.py --baseline
+
+# Check for quality regression
+python quality_regression_gate.py
+# Exit 1 if median score drops >5 points from baseline
 ```
 
-**Monitoring & Debugging**:
-
-View cache statistics:
-```python
-from core.unified_cache_manager import get_unified_cache_manager
-cache = get_unified_cache_manager()
-stats = cache.get_stats()
-print(f"Hit rate: {stats['hit_rate']:.1%}")
-print(f"Entries: {stats['total_entries']}")
-print(f"Memory: {stats['estimated_memory_mb']:.1f}MB")
-```
-
-Check per-endpoint hit rates:
-```python
-for service_name, endpoints in cache.get_service_stats().items():
-    for endpoint_name, ep_stats in endpoints.items():
-        hit_rate = ep_stats['hit_rate']
-        print(f"{service_name}/{endpoint_name}: {hit_rate:.1%} hit rate")
-```
-
-Clear cache (if needed for testing):
-```python
-cache.clear()  # Full clear
-cache.invalidate_by_endpoint("combined_details")  # Endpoint-specific
-cache.invalidate_by_key("person_12345")  # Specific entry
-```
-
-#### Cache Registry
-
-- `core/cache_registry.CacheRegistry` now provides a single entry point for every cache subsystem (disk, unified, session, system, GEDCOM, performance, tree stats).
-- Tree statistics cache metrics (row counts, freshness, expiration counts) now surface alongside disk/memory caches, and you can warm or clear them through the registry just like other caches.
-- The new `cache_retention` component reports how many files remain under each `Cache/` target, how old they are, and how many bytes were deleted by the most recent sweep so storage growth is fully visible from the same dashboard.
-- Call `get_cache_registry().summary()` to power dashboards, health checks, or CLI tooling without importing each cache module manually.
-- The main menu's **Cache Statistics** screen and `performance_monitor` pull from the registry so new caches stay visible automatically.
-
-```python
-from core.cache_registry import get_cache_registry
-
-registry = get_cache_registry()
-summary = registry.summary()
-print(summary["disk_cache"].get("hit_rate"))
-registry.clear("performance_cache")  # Targeted clear
-registry.warm("tree_stats_cache")  # Refresh DB-backed cache rows
-registry.clear("cache_retention")  # Force retention sweep on all targets
-```
-
-Monitor in logs:
-```bash
-# Watch cache performance in real-time
-Get-Content Logs/app.log -Wait | Select-String "cache hit|cache miss"
-
-# Review integration test results
-python -m test_action6_cache_integration
-```
-
-#### Cache Retention Service
-
-- `cache_retention.CacheRetentionService` enforces age, size, and file-count limits for `Cache/performance` (GEDCOM pickles), `Cache/session_checkpoints`, and `Cache/session_state` crash-recovery artifacts.
-- Sweeps run automatically every hour, plus immediately after the performance cache initializes and whenever session checkpoints or state snapshots are written—so long-lived runs never leak disk space.
-- Retention metrics surface through the registry (`summary()["cache_retention"]["targets"]`), and operators can trigger on-demand cleanup from the CLI, API, or Cache Statistics screen.
-- The service is extensible: register new `RetentionTarget` definitions if additional cache folders need policies.
-
-Trigger a cleanup programmatically:
-
-```python
-from cache_retention import enforce_retention_now, get_retention_summary
-
-enforce_retention_now()  # Sweep all targets immediately
-print(get_retention_summary())  # Inspect last run + per-target metrics
-```
-
-Each target report includes rows like `Cache/performance → 120 files / 33.5 MB (removed 14 old entries 5.1m ago)`, making it easy to alert on stale data or unexpected growth.
-
-#### Database Utilities
-
-- `core/database_manager.DatabaseManager` now owns the transactional context manager (`db_transn`) and `backup_database()` helper; `database.py` simply re-exports those symbols to keep ORM imports stable.
-- Always import `db_transn` from `core.database_manager` (or via the `database` shim) so transaction logging, retries, and error context stay centralized.
-- Menu Option 3 (Backup Database) and Action 6 bulk inserts now call the shared helpers, so any resilience upgrades land in one place.
-
-```python
-from core.database_manager import DatabaseManager, db_transn, backup_database
-
-db = DatabaseManager()
-session = db.get_session()
-if session:
-  with db_transn(session) as tx:
-    tx.execute("DELETE FROM tree_statistics_cache")
-
-backup_database()  # Creates Data/ancestry_backup.db with validation
-```
-
-### Grafana Dashboards
-
-The project includes comprehensive Grafana dashboards for monitoring:
-
-**Quick Setup:**
-```powershell
-# Run automated setup (requires admin privileges)
-.\docs\grafana\setup_grafana.ps1
-
-# Reset admin password to 'ancestry'
-.\docs\grafana\reset_admin_password.ps1
-
-# Configure data sources
-.\docs\grafana\configure_datasources.ps1
-```
-
-**Available Dashboards:**
-- **Ancestry Overview** (`ancestry-overview`) - System health and performance metrics
-- **System Performance** (`ancestry-performance`) - API response times, rate limiting
-- **Genealogy Insights** (`ancestry-genealogy`) - DNA matches, conversations, research progress
-- **Code Quality** (`ancestry-code-quality`) - Test coverage, code metrics
-
-**Access:** http://localhost:3000 (credentials: admin / ancestry)
-
-**Data Sources:**
-- Prometheus (http://localhost:9090) - Real-time metrics
-- SQLite (Data/ancestry.db) - Genealogy data
-
-### Prometheus Monitoring
-
-- Enable `PROMETHEUS_METRICS_ENABLED=true` in your `.env` file to expose a `/metrics` endpoint on the configured host and port (default `127.0.0.1:9000`).
-- When you need a quick exporter without running the main menu, execute `python observability/metrics_exporter.py --serve`.
-- Detailed setup steps live in the Grafana setup scripts (see above).
-
-### Git Workflow
-- Commit at each phase of implementation
-- Write descriptive commit messages
-- Test before committing
-- Revert if tests fail
-
-## Troubleshooting
-
-### Common Issues
-
-**429 Rate Limit Errors:**
-- Ensure `MAX_CONCURRENCY=1` in `.env` (sequential mode only)
-- Check `REQUESTS_PER_SECOND=0.4` in `.env`
-- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"`
-
-**Import Errors:**
-- Verify Python 3.12+ is installed
-- Run `pip install -r requirements.txt`
-- Check virtual environment activation
-
-**Browser Issues:**
-- Update Chrome to latest version
-- Run `python -c "from core.browser_manager import BrowserManager; BrowserManager()"`
-- Check ChromeDriver compatibility
-
-**Database Errors:**
-- Backup database: `python main.py` → Option 3
-- Check file permissions on `Data/ancestry.db`
-- Verify SQLite installation
-
-### Logs
-
-All logs are written to the file defined by `LOG_FILE` in your `.env` (default: `Logs/app.log`):
+**Quality Regression Gate**:
+Prevents deployment if AI quality degrades—integrate into CI/CD pipeline.
 
 ```bash
-# View recent errors
-TAIL_TARGET="${LOG_FILE:-Logs/app.log}"
-tail -100 "$TAIL_TARGET" | grep ERROR
-
-# Monitor real-time
-tail -f "$TAIL_TARGET"
-
-# Check rate limiter initialization
-grep "Thread-safe RateLimiter" "$TAIL_TARGET" | tail -1
+# In CI/CD pipeline
+python quality_regression_gate.py || exit 1
 ```
 
-## Documentation
-
-### Core Documentation
-- **README.md** (this file) - Project overview, installation, quick start
-- **`docs/DEVELOPER_GUIDE.md`** - Architecture, patterns, testing, debugging guide
-- **`SECURITY.md`** - Vulnerability reporting process
-- **`.github/copilot-instructions.md`** - AI-assisted development guidelines
-- **`docs/review_todo.md`** - Technical debt and quality improvement checklist (Updated Nov 18, 2025)
-- **`docs/MAINTAINER_HANDOFF.md`** - Comprehensive handoff brief for next maintainer (Created Nov 25, 2025)
-
-### Quality & Architecture
-- **`docs/DOCUMENTATION_AUDIT.md`** - Documentation quality analysis and best practices
-- **`docs/code_graph.json`** - Complete codebase structure and relationships (28,627 lines)
-- **`testing/import_audit.py`** - Automated scanner + TestSuite that enforces canonical `setup_module(globals(), __name__)` usage across the repo
-- **`visualize_code_graph.html`** - Interactive D3.js code graph visualization
-
-### Test Examples
-- **`test_examples/README.md`** - Test patterns and best practices
-- **`test_examples/example_*.py`** - Example test implementations
-
-### Grafana Setup
-- **`docs/grafana/setup_grafana.ps1`** - Automated Grafana installation and configuration
-- **`docs/grafana/reset_admin_password.ps1`** - Password reset utility
-- **`docs/grafana/configure_datasources.ps1`** - Data source configuration
-- **`docs/grafana/*.json`** - Dashboard definitions (overview, performance, genealogy, code quality)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with tests
-4. Run `python run_all_tests.py`
-5. Submit pull request
-
-## License
-
-This project is for personal genealogical research use.
-
-## Support
-
-For issues or questions:
-- GitHub Issues: https://github.com/waynegault/ancestry/issues
-- Email: 39455578+waynegault@users.noreply.github.com
-
----
-
-## Appendices
-
-### Appendix A: Chronology of Changes
-
-2025-11-07
-- Track 5 Step 2: Extended APIManager with unified request() method (core/api_manager.py now 1350+ lines)
-  - Added `RequestConfig` dataclass - Unified request configuration with sensible defaults (URL, method, headers, timeout, retry policy, rate limiting)
-  - Added `RequestResult` dataclass - Structured response with helper properties (`is_json`, `json`, `text`, `success`, `error`, `attempts`)
-  - Added `RetryPolicy` enum - Predefined retry policies: `NONE` (0 retries), `API` (3 retries, 1s delay), `RESILIENT` (5 retries, 2s delay)
-  - Added `APIManager.request()` - Unified entry point for all API calls integrating rate limiting, cookie sync, retries with exponential backoff/jitter
-  - Added 4 new tests: RequestConfig dataclass, RequestResult dataclass, request() method signature, RetryPolicy enum (13 tests total)
-  - All 122 test modules pass with 100% success rate
-- Next Step: Track 5 Step 3 - Migrate callers to `session_manager.api_manager.request()`
-
-2025-11-03
-- Action 6 Browser Death Fix (commit 4c3277a): Reverted action6_gather.py and core/session_manager.py to stable commit 793d948 (last known-good version that processed 15,000+ matches flawlessly) and cleanly re-added ethnicity enrichment
-  - Root cause: Massive refactoring after 793d948 introduced complex browser recovery mechanisms (_atomic_browser_replacement, attempt_browser_recovery, death cascade detection) that were failing with "atomic replacement failed" errors causing browser session death
-  - Solution: Surgical revert to proven stable base from 793d948, removed all complex recovery mechanisms, adapted for global session_manager pattern from main.py, cleanly re-integrated ethnicity enrichment without recovery complexity
-  - Changes made:
-    - Reverted action6_gather.py from 2,088 lines (current) to 6,824 lines (793d948 base)
-    - Reverted core/session_manager.py from 3,807 lines (current) to 2,023 lines (793d948 base)
-    - Removed _config_schema_arg parameter from coord() function (now uses global config_schema)
-    - Added ethnicity imports: fetch_ethnicity_comparison, extract_match_ethnicity_percentages, load_ethnicity_metadata
-    - Added helper functions: _get_ethnicity_config(),_build_ethnicity_payload(), _needs_ethnicity_refresh()
-    - Integrated ethnicity enrichment into _prepare_dna_match_operation_data() function
-    - Ethnicity data fetched and added to DNA match records when creating new records or refreshing existing ones
-  - Preserved database.py ethnicity persistence fix from commit 8649380 (CREATE-path raw SQL UPDATE)
-  - Backup files created: action6_gather_current_backup.py, core/session_manager_current_backup.py for reference
-  - Simple, proven approach from 793d948 without elaborate recovery mechanisms that were causing failures
-
-2025-11-02
-- Login Regression Recovery: Reverted to commit 2c8956d (Oct 31, 18:31) after discovering login had been broken since at least Oct 31 due to Ancestry's cookie consent banner blocking form interactions
-- Key Lessons Learned:
-  - Always test at known-good commits before attempting fixes - spent significant time trying to fix login at commits 7c57bd9 and 7c1cd81, only to discover the consent banner problem existed at both
-  - Git history is invaluable for finding working versions - reverting to 2c8956d immediately restored working login with proper 2FA support
-  - Consent banner behavior can be inconsistent/A-B tested by Ancestry - banner dynamically re-injects itself after form interactions (Next button click)
-  - Incremental improvements on working baseline are safer than major refactors on broken code
-- Startup Status Checks: Added non-blocking _check_startup_status() function to display database, Ancestry session cookie, and MS Graph token availability at startup without triggering authentication flows
-  - Added _check_token_cache() helper function to ms_graph_utils.py
-  - Provides user visibility into system readiness without delays
-  - All checks are non-blocking (don't trigger authentication flows)
-- Action 2 Browserless: Made Action 2 (Reset Database) browserless by loading ethnicity columns from saved ethnicity_regions.json metadata file
-  - Execution time reduced from 60+ seconds to ~2 seconds
-  - Fixed transaction handling in ethnicity column creation (use engine.begin() instead of manual commit() calls)
-  - Removed manual commit() calls that caused 'closed transaction' errors
-  - Added initialize_ethnicity_columns_from_metadata() function to dna_ethnicity_utils.py
-  - If no metadata file exists, columns will be added during first Action 6 run
-  - Addresses requirement that ethnicity columns are NOT optional while avoiding cookie consent/login issues
-- All 71 modules pass tests with 100% success rate after improvements
-
-- Action 6 Ethnicity Persistence Fix (commit 8649380): Persist ethnicity columns on CREATE via parameterized raw SQL UPDATE after initial INSERT; resolves NULL ethnicity on first-run creates when ORM model lacks dynamic columns. Verified with a clean reset + Action 6: New 20, Updated 0; 20/20 rows have non-NULL ethnicity values.
-  - Root cause: ORM ignored dynamically added columns during INSERT; UPDATE-path raw SQL already worked
-  - Solution: After inserting core fields and flush, run a single UPDATE by people_id to set all ethnicity columns; keep UPDATE-path raw SQL
-  - Regression guards: Added endpoint-constant tests to api_utils.py and core/api_manager.py; added literal-presence guards to dna_ethnicity_utils.py and core/session_manager.py
-
-2025-10-28
-- Unified presenter: fixed header spacing ("=== Name (years) ==="), ensured empty sections print "None recorded", and normalized relationship header text
-- GEDCOM/API: birth/death years now shown when available; GEDCOM path falls back to parsing years from display name if missing
-- Owner name: now resolved from REFERENCE_PERSON_NAME, then USER_NAME, then stable fallback; eliminates "Unknown" in relationship header
-- API utils: lowered family-relationship fetch log to DEBUG to avoid INFO-level noise
-- API search: fixed urlencode type issue by removing custom quote_via; cleaned unused import
-- Tests: Fast suite passed locally after changes; no new failing tests introduced
-- GEDCOM header years: now also sourced from GedcomData.processed_data_cache when candidate.raw_data lacks years; ensures headers like "=== Name (YYYY-YYYY) ===" render when data exists
-- API header years: Added robust fallback in action11 to derive birth/death years from parsed_suggestion and normalized date strings; fixes missing years like "=== Peter Fraser ===" without (YYYY-YYYY)
-
-- Action 10: API fallback now self-initializes session by auto-attempting browser-based cookie sync when browserless cookies are missing/invalid; no need to run Action 5 first.
-2025-10-29
-- Fully removed action11.py. All API search, display, and post-selection logic is now provided by api_search_core.py and existing shared modules (api_search_utils, relationship_utils, genealogy_presenter, universal_scoring).
-- Updated main.py and action9_process_productive.py to import from api_search_core.
-- Session: ensure_api_ready_with_browser_fallback refactored to reduce returns and collapse nested conditionals; now a single return path with a success flag (fixes PLR0911 and SIM102).
-- Linter cleanup:
-  - Removed useless import aliases (PLC0414) by replacing the shim with a concrete api_search_core implementation.
-  - Collapsed nested ifs in core/session_manager.py (SIM102).
-  - Removed unused function argument warning in API presenter by prefixing with underscore (ARG001) and using parameter naming convention.
-- Documentation: Updated Overview, Developer Instructions, Actions, Testing, and Appendix B to reflect api_search_core ownership of API endpoints and the retirement of action11.py.
-
-- Hardened Action 10 API fallback: now requires real API login verification (profile ID retrieval) rather than accepting .env IDs; if browserless fails, it auto-launches the browser, attempts re-login, syncs cookies, re-verifies, and only then proceeds. This restores prior Action 11 behavior without requiring Action 5 first.
-
-- Cleanup: Removed final references to Action 11 across code; consolidated API search into api_search_core and updated main.py import expectations
-- Linter: Resolved all E702 (multiple statements on one line) in api_search_core; repository E702 count now 0
-- Pylance: Fixed import path in api_search_core (from config import config_schema); removed broken **all** block and restored proper exports
-- Complexity: Reduced action10.analyze_top_match complexity from 15 to under 11 by extracting helpers (_derive_display_fields,_build_family_data_dict,_compute_unified_path_if_possible)
-- Tests: Added in-module tests for api_search_core and genealogy_presenter following the standard pattern; run_all_tests.py --fast now 100% pass (610 tests)
-
-- API Relationship Path: Replaced getladder HTML parsing with relationladderwithlabels JSON API endpoint for clean, reliable relationship path data
-- API Family Data: Replaced Edit Relationships API with New Family View API which includes siblings and complete family structure
-- Complexity Reduction: Refactored get_api_family_details (29→<11),_parse_person_from_newfamilyview (15→<11),_extract_birth_event (<11), _extract_death_event (<11) by extracting helper functions
-- Linter: Fixed global-statement warnings by using unittest.mock.patch instead of modifying globals
-- Logging: Fixed inconsistent logging in api_search_core.py and search_criteria_utils.py by using centralized logger from logging_config
-- Test Infrastructure: Added missing **main** blocks to api_search_core.py, search_criteria_utils.py, and updated core/session_cache.py and core/system_cache.py to use standard test runner pattern
-- Import Order: Fixed E402 errors in action10.py by moving standard library imports before setup_module call
-- Test Quality: Removed 5 redundant smoke tests from gedcom_utils.py (test_individual_detection, test_name_extraction, test_date_parsing, test_event_extraction, test_life_dates_formatting) as they only checked function existence/types; function availability already verified by test_function_availability()
-- Final Results: All 74 modules pass with 100.0/100 quality scores, 643 tests passing at 100% success rate
-
-2025-10-29
-- API Fallback Fix: Updated api_search_core._resolve_base_and_tree to fall back to config.api.tree_id when session_manager.my_tree_id is None (browserless mode); fixes 404 errors in Action 10 API search
-- Main.py Tests: Updated _test_edge_case_handling and _test_import_error_handling to remove assertions for api_search_core module (imported lazily inside run_gedcom_then_api_fallback)
-- Type Hints: Added type annotations to fake_list_api test stub in api_search_core (resolved quality issue)
-- Complexity Reductions:
-  - api_search_core._handle_supplementary_info_phase: 14→<11 by extracting _extract_year_from_candidate and _get_relationship_paths helpers
-  - action10._derive_display_fields: 13→<11 by extracting_extract_years_from_name_if_missing and_supplement_years_from_gedcom helpers
-  - genealogy_presenter.display_family_members: 11→<11 by extracting_deduplicate_members and_filter_valid_members helpers
-- Quality: All 72 modules now pass with 100.0/100 quality scores (610 tests, 100% success rate)
-- Action 10 API Fallback: Changed from browserless-first to browser-required approach; browserless mode with cookie files consistently fails with 404 errors due to missing authentication state that can only be obtained through active browser login (matches original Action 11 behavior)
-- TreesUI List API URL Fix: Corrected API_PATH_TREESUI_LIST from "trees/{tree_id}/persons" to "api/treesui-list/trees/{tree_id}/persons"; updated_build_treesui_url to use correct parameters: name (combined first+last), limit=100, fields=EVENTS,GENDERS,NAMES, isGetFullPersonObject=true (matches expected Ancestry API format)
-- Search Criteria Mapping: Fixed _build_treesui_url to accept both first_name/surname (from get_unified_search_criteria) and first_name_raw/surname_raw (legacy) for compatibility
-- TreesUI Response Parsing: Added _parse_treesui_list_response() function to api_utils.py to convert raw API response (Names, Events, gid fields) into standardized format (FullName, GivenName, Surname, PersonId, etc.) - this parsing function was lost when Action 11 was removed; refactored into helper functions (_extract_gid_parts, _extract_name_parts,_extract_birth_event, _extract_death_event) to reduce complexity from 31 to <11; updated to handle both old format (Events[].t="B"/"D", d={y,m,d}, p={n}) and new format (Events[].t="Birth"/"Death", d="formatted string", nd="YYYY-MM-DD", p="place string") returned by isGetFullPersonObject=true parameter; further refactored_extract_birth_event and _extract_death_event into smaller helpers (_extract_year_from_normalized_date, _extract_date_string_from_dict) to reduce complexity from 12 to <11
-- Action 10 Tests: Added test_api_search_peter_fraser() test to validate API search functionality with real person data (Peter Fraser b. 1893 in Fyvie) - verifies URL building, API call, response parsing, and scoring all work correctly
-- API Search Debug Logging: Added debug logging to _process_and_score_suggestions() to show scoring details for each result and top 3 matches - helps diagnose scoring/ranking issues
-- Code Quality: Fixed 2 PLW0603 global-statement linter warnings in api_search_core.py by replacing global statement with unittest.mock.patch for test mocking
-- New Family View API: Replaced get_api_family_details() to use newfamilyview API (api/treeviewer/tree/newfamilyview/{tree_id}) instead of editrelationships API; new API returns complete family data including siblings in cleaner JSON format with Persons array and Family relationships; added call_newfamilyview_api() to api_utils.py and_parse_person_from_newfamilyview() to api_search_utils.py; siblings now properly extracted by finding parents and getting their children (excluding target person); refactored get_api_family_details() into helper functions (_find_target_person_in_list,_create_persons_lookup, _extract_direct_family,_extract_siblings) to reduce complexity from 29 to <11; refactored_parse_person_from_newfamilyview() into helper functions (_extract_person_id_from_gid, _extract_full_name_from_names,_extract_year_from_event_type) to reduce complexity from 15 to <11
-- Relation Ladder With Labels API: Replaced getladder HTML parsing with relationladderwithlabels API (family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels) for relationship paths; new API returns clean JSON with kinshipPersons array containing name, lifeSpan, and relationship for each person in path; added call_relation_ladder_with_labels_api() to api_utils.py and_format_kinship_persons_path() to api_search_core.py; relationship paths now display proper names and dates instead of "Unknown"
-- genealogy_presenter.py: Added **main** block to run internal tests when module is executed directly (python genealogy_presenter.py)
-- Quality: All 72 modules now pass with 100.0/100 quality scores (611 tests, 100% success rate) - no complexity issues remaining
-
-2025-10-28
-- Main menu: Removed Action 11; Action 10 now runs a side-by-side comparison (GEDCOM vs API)
-- Scoring: Added alive-mode penalty when no death criteria are provided and candidate has death info; no reward for missing death fields
-- Output: Removed the “Scoring Policy” line from results; behavior remains unchanged
-- Display: Always show top 5 results for each (GEDCOM and API) while tuning; summary line updated to “Summary: GEDCOM — showing top N of M total | API — showing top K of L total”
-- Scoring: Increased birth/death year match weights to 25 (exact year); approximate year weights unchanged
-- Scoring: Increased bonuses to 50 for: both names matched, both birth info matched (year+place), both death info matched (year/date + place)
-- Display: Show only the top result. GEDCOM is preferred; API is called only when GEDCOM has no matches. Zero-results message simplified to "No matches found."; API no-results log demoted to DEBUG
-- Display: For the chosen source's top result, show family members and a relationship path to the tree owner immediately after the (debug-only) result table
-
-- Filtering: Name containment is now mandatory when provided (first and/or surname)
-- Policy: Gender removed as a search and scoring criterion and removed from result displays
-- UI: Removed Gender column from GEDCOM and API results; removed Gender input prompt; updated prompts to "Death Year (YYYY):" and "Death Place Contains:" (removed [Optional])
-- Filtering: Enforced mandatory name containment when provided (case-insensitive). If both first and surname are provided, both must match. Fixed case normalization to prevent false non-matches
-
-- Linter: Fixed SIM103 and SIM108 across relevant modules
-- Docs: Updated Overview and Action 10 policy section to reflect these changes
-- Tests: run_all_tests.py passed (72/72 modules)
-
-- Filtering: Enforced mandatory place matching only when non-empty search values are provided; fixed a bug where empty birth/death place keys inadvertently excluded GEDCOM candidates.
-- Action 10: Reduced complexity of _evaluate_filter_criteria using early returns and any/all helpers; module now at 100/100 quality (no complexity warnings).
-- Family Display: De-duplicated family member lists in display_family_members() by name + year tuple; resolves duplicate Children lines from API family data.
-- Behavior: API search remains gated to run only when GEDCOM returns zero matches (now correctly triggered when place criteria are unmet in GEDCOM).
-
-- Logging: Converted DEBUG-only result tables and summary in main.py to logger.debug() (no prints). INFO level now shows only criteria, top match header, family, and relationship path
-- Linter: Resolved 4 SIM102 (collapsible-if) occurrences in api_search_utils.py and gedcom_search_utils.py
-
-- Search Criteria: Summary now prints only provided fields (omits empty Birth/Death fields) for a cleaner UI
-- Spacing: Added a blank line between Children and Relationship sections for readability
-- Relationship: Header standardized to "Relationship to {owner_name}:" (no emoji)
-- API Layout: Top API match header now prints before family details, matching GEDCOM format
-- Family headers: Removed emojis; sections are now "Parents", "Siblings", "Spouses", "Children"
-
-- Consolidation: Action 11 wrappers removed in favor of shared helpers; Action 11 now calls api_search_utils.get_api_family_details and search_criteria_utils.display_family_members directly
-
-- Test Runner: Parallel output synchronized (no out-of-order numbering), duplicate module headings removed, and discovered modules de-duplicated; improved test-count extraction significantly reduces prior "Unknown" counts (one remaining outlier to fix).
-- Search Criteria UX: Added a blank line between the action header and the first input prompt; extracted summary/log helpers to reduce complexity and keep INFO output clean.
-- Relationship Header: Verified fully dynamic header uses tree owner’s name everywhere (no hard-coded fallback); ensured consistent header in both Action 10 and 11 paths.
-
-- Consolidation: Phase 3–4 complete — introduced a unified post-selection presenter (present_post_selection) in search_criteria_utils; Action 10 (GEDCOM) and Action 11 (API) now both call this to render header → family → relationship. Eliminated duplicated display code in action11 and refactored action10’s analyze_top_match to use the presenter. Outputs are now identical across sources and spacing/order is consistent; no hard-coded owner names.
-- Wrapper rename: main wrapper renamed to run_gedcom_then_api_fallback (was run_side_by_side_search_wrapper); logs now reflect the new, accurate purpose
-- API fallback display: removed legacy header print before presenter, fixing duplicate/Unknown headers; presenter now owns header → family → relationship exclusively
-- Family sections: when no data, sections show "   - None recorded" (instead of a bare dash)
-- Linter: removed 4 unused variables (F841) across action11 and relationship_utils; repo diagnostics now clean
-- Complexity: simplified action11._handle_supplementary_info_phase by extracting logic and removing nested branches; quality back to 100/100
-
-- API browserless: Added SessionManager.ensure_api_ready_browserless and switched Action 10 API fallback to use it; prevents unintended browser startup and fixes the minimize-window crash
-- APIManager: Added load_cookies_from_file() to hydrate requests.Session cookies from ancestry_cookies.json for browserless operation
-- Main: Switched imports to api_search_core shim with fallback to action11 for IDE/path resilience during migration
-- Pylance: Removed unreachable checks and driver-coupling in api_search_utils; prefer identifier readiness; resolved unresolved-import warning for api_search_core via guarded import
-- Refactor: Introduced api_search_core shim to re-export Action 11 helpers; prepares full retirement of action11.py name
-- APIManager: Changed verify_api_login_status() to require profile ID retrieval (auth-only); UUID from .env is not treated as proof of login, preventing false positives and later 401s
-- Presenter: Created genealogy_presenter.py with present_post_selection and display_family_members used identically by GEDCOM and API paths
-- Main: Action 10 API fallback now uses browserless readiness; unchanged UX, identical output format across GEDCOM/API
-- Pylance: Fixed unused-arg warning in ensure_api_ready_browserless by consuming action_name for debug; removed unreachable session-manager check in API search; general dead-import cleanup
-- Migration (Phase 2 prep): api_search_core is now the public import point; action11 retains implementation for now; next step reverses the dependency with lazy wrappers
-
-2025-10-24
-- Eliminated module-level SessionManager creation in action11.py; switched to global session usage only
-- Consolidated Action 11 authentication to a single path via session_utils.get_authenticated_session()
-- Removed redundant login/cookie helper functions from action11.py
-- Updated action8_messaging.py to load templates and get session via session_utils.get_session_manager()
-- Updated scripts/test_editrelationships_shape.py to require/use the global session
-- Deferred Action 8 template loading to runtime (lazy initialization); eliminated import-time CRITICALs
-- Added de-duplication for gender inference DEBUG logs in relationship_utils
-- Reduced INFO banner noise in session_utils.get_authenticated_session; cache-hit now DEBUG
-- Enhanced API call logging with durations in api_utils.call_enhanced_api
-- Reworded cookie skip message in core/session_validator for clarity
-- Temporarily disabled startup clear-screen in main.py to expose early errors
-- Tests: run_all_tests.py passed (72/72 modules) after refactor
-
-2025-10-26
-- INFO logging tidy-up: removed "UUID: Not yet set" banner; if MY_UUID exists in .env we log it as "UUID (from .env) — will verify"; otherwise keep at DEBUG only
-- Global session banner shows once on first auth; subsequent get_authenticated_session() calls reuse cache without re-printing banners
-- Cookie sync logging clarified: "initial sync" first time, else "age Xs; threshold Ys"; removed misleading "cache expired, last sync ..." phrasing
-- API Request Cookies logging compressed to count only (no full key dump)
-- Edit Relationships API response logging summarized (type + top keys) instead of full structure dump
-- Cookie-check message clarified: "Skipping essential cookies check (expected): …"
-- Action 11: added success/error summary with duration at completion
-- Action 8: lazy-load templates at runtime; no import-time CRITICALs
-- Relationship logs: de-duplicated repeated gender inference debug lines
-- Tests: run_all_tests.py passed (72/72 modules) in fast mode
-- Re-enabled startup clear-screen in main.py (now that early error review is complete)
-- Restored VISION_INTELLIGENT_DNA_MESSAGING.md to repository root from commit 2aee7d6 (temporary for implementation reference; will consolidate back into readme.md at completion per single-doc rule)
-
-2025-10-27
-- Complexity reduction: session_utils.get_authenticated_session split into `_assert_global_session_exists` and `_pre_auth_logging`; type-safety improvements
-- Complexity reduction: api_search_utils.get_api_family_details decomposed into helpers for structure logging, section extraction, and per-relationship parsing
-- Complexity reduction: action7_inbox extracted `_assess_and_upsert`; reduced analytics method branching
-- Complexity reduction: action9_process_productive extracted `_formatting_fallback` to simplify exception path
-- Documentation: Consolidated vision into readme.md; added Local LLM integration steps; cleaned markdown lint issues
-- Policy: Removed messages.json earlier; VISION_INTELLIGENT_DNA_MESSAGING.md will be removed after verification (single-file docs policy)
-- Complexity reduction: action9_process_productive._build_enrichment_lines refactored into helpers; module now 100/100 quality
-- Documentation: Removed VISION_INTELLIGENT_DNA_MESSAGING.md (content consolidated here per single-doc policy)
-- Phase 7 Local LLM: Executed real tests via test_local_llm.py; configuration test passed; direct connection and genealogical prompt failed due to LM Studio not loading a model (404 model_not_found). Environment steps documented in Appendix B
-
-2025-10-23
-- Switched Action 11 family extraction to the Edit Relationships endpoint and parsed nested data['person'] correctly
-- Suppressed verbose raw path logging in Action 11; kept concise debug metrics
-
-### Appendix B: Technical Specifications
-
-- Monitoring & Analytics (Phase 6)
-  - Each action run writes a JSON line to Logs/analytics.jsonl with fields: ts, action_name, choice, success, duration_sec, mem_used_mb, extras
-  - Merged Actions 10/11 set extras.merged_10_11_branch to 'gedcom' or 'api_fallback' and include candidate counts
-  - Weekly summary generator: from analytics import print_weekly_summary; print_weekly_summary(7)
-  - Non-fatal by design: analytics never blocks action execution
-
-- Action 0 (Delete all rows except test profile)
-  - Set the .env variable TEST_PROFILE_ID to the Profile ID you want to keep (e.g., your mother’s ucdmid)
-  - Safety: If TEST_PROFILE_ID is missing or equals MOCK_PROFILE_ID, the action aborts to prevent unintended deletion
-  - If the configured keeper is not found in the database, the action will abort with instructions to correct TEST_PROFILE_ID
-  - Requires explicit yes/no confirmation in the menu before executing
-
-- Session Architecture
-  - Exactly one SessionManager instance created by main.py
-  - Registered globally via session_utils.register_session_manager()
-  - Consumers must call session_utils.get_authenticated_session(action_name=...) before API usage
-
-- API Endpoints (do not change these - they work!)
-
-  **User Identity Endpoints** (used by session_manager)
-  - Profile ID: `app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid`
-    - Response: `{"data": {"ucdmid": "07bdd45e-0006-0000-0000-000000000000"}, "message": "OK", "status": 200}`
-    - Returns: User's profile ID (ucdmid field)
-
-  - UUID (DNA Test ID): `api/navheaderdata/v1/header/data/dna`
-    - Response: `{"results": {"menuitems": [...]}, "testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", "testComplete": true, ...}`
-    - Returns: User's DNA test UUID (testId field at ROOT level, not inside results dict)
-
-  - Tree List: `api/treesui-list/trees?rights=own`
-    - Response: `{"trees": [{"id": "175946702", "name": "Gault Family", "ownerUserId": "...", ...}], "count": 2}`
-    - Returns: List of user's trees; match TREE_NAME from .env to get tree ID
-
-  - Tree Owner Info: `api/uhome/secure/rest/user/tree-info?tree_id={tree_id}`
-    - Response: `{"id": 175946702, "owner": {"userId": "...", "displayName": "Wayne Gault"}, "mePersonId": 102281560836, ...}`
-    - Returns: Tree owner display name and mePersonId
-
-  **Genealogical Data Endpoints** (used by api_search_core)
-  - Edit Relationships: `/family-tree/person/addedit/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}/editrelationships`
-    - Response: `{ cssBundleUrl, jsBundleUrl, data }` where data is a JSON string; parse with json.loads
-
-  - New Family View (preferred): `api/treeviewer/tree/newfamilyview/{tree_id}`
-    - Returns: Persons array with people and Family relationships structure; includes siblings via parents' children
-    - Used by: api_utils.call_newfamilyview_api and api_search_core._parse_person_from_newfamilyview
-
-  - TreesUI List: `api/treesui-list/trees/{tree_id}/persons`
-    - Purpose: Person suggestions for a tree; used for API search candidates
-    - Typical params: name, limit=100, fields=EVENTS,GENDERS,NAMES, isGetFullPersonObject=true
-
-  - Person Facts (User): `family-tree/person/facts/user/{owner_profile_id}/tree/{tree_id}/person/{person_id}`
-  - GetLadder (legacy): `family-tree/person/tree/{tree_id}/person/{person_id}/getladder`
-
-  **Ethnicity Endpoints** (used by Action 6)
-  - Tree Owner Ethnicity: `dna/origins/secure/tests/{guid}/v2/ethnicity`
-    - Purpose: Retrieves owner’s ethnicity regions and percentages; seeds dynamic columns
-  - Ethnicity Comparison: `discoveryui-matchesservice/api/compare/{owner_guid}/with/{match_guid}/ethnicity`
-    - Purpose: Retrieves match percentages aligned to owner’s regions (use rightSum values)
-  - Ethnicity Region Names: `dna/origins/public/ethnicity/2025/names?locale=en-GB`
-    - Purpose: Map region keys to friendly names for display and column naming
-
-  **Action 6 Prefetch Stack** (sample log case; all paths join onto `https://www.ancestry.com/` from `config_schema.APIConfig.base_url`)
-  - Match profile details: `/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true`
-    - Used by: `action6_gather._fetch_match_details_api` during the `combined_details` prefetch stage
-  - Relationship probability snapshot: `discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}`
-    - Used by: `action6_gather._fetch_batch_relationship_prob` when prioritizing working sets
-  - Ethnicity comparison: `discoveryui-matchesservice/api/compare/{tree_owner_test_guid}/with/{match_test_guid}/ethnicity`
-    - Used by: `dna_ethnicity_utils.fetch_ethnicity_comparison` when the prefetch plan flags `ethnicity`
-  - DNA badge breakdown: `/discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails`
-    - Used by: `action6_gather._fetch_batch_badge_details` for badge-driven triage
-  - Relationship ladder (JSON API): `family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
-    - Used by: `api_utils.call_relationship_ladder_api` inside `action6_gather._fetch_batch_ladder` for `ladder_details`
-    - Helper coverage: `actions.gather.prefetch._merge_badge_and_ladder_data` merges badge metadata with ladder payloads and now has dedicated `TestSuite` regression tests guarding the combined output structure.
-  - Orchestration wrapper: `actions.gather.orchestrator.GatherOrchestrator` now drives the Action 6 coordination loop, leaving `action6_gather.coord()` as a thin compatibility shim that assembles the legacy hooks.
-
-  **Messaging Endpoints** (used by Action 8)
-  - Send New Message: `app-api/express/v2/conversations/message`
-  - Send Existing Conversation: `app-api/express/v2/conversations/{conv_id}`
-  - Profile Details: `/app-api/express/v1/profiles/details`
-
-  Note: Values above are covered by regression guard tests in-module (api_utils, core/api_manager, dna_ethnicity_utils, core/session_manager). If any literal changes, tests fail to prevent accidental drift.
-
-  - Family arrays: `parsed['person']` → fathers[], mothers[], spouses[], children[]
-
-  - Relationship Ladder: `/family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels`
-
-- Display Rules
-  - Parents, spouses, children shown; siblings intentionally omitted in API path
-
-- AI Providers and Local LLM
-  - ai_provider: one of ["moonshot", "deepseek", "gemini", "local_llm", "inception", "grok"]
-  - Active providers: Moonshot (Kimi), DeepSeek, Google Gemini, Local LLM (LM Studio), Inception Mercury, Grok (xAI)
-  - LOCAL_LLM_* when ai_provider=local_llm: LOCAL_LLM_API_KEY, LOCAL_LLM_MODEL, LOCAL_LLM_BASE_URL
-  - INCEPTION_* when ai_provider=inception: INCEPTION_API_KEY, INCEPTION_AI_MODEL, INCEPTION_AI_BASE_URL
-  - XAI_* when ai_provider=grok: XAI_API_KEY, XAI_MODEL (default grok-4-fast-non-reasoning), XAI_API_HOST (default api.x.ai), optional XAI_API_BASE_URL (OpenAI-compatible gateways; must end with /v1 and defaults to `https://{host}/v1`)
-  - AI_PROVIDER_FALLBACKS (optional): comma-separated failover order (default `deepseek,gemini,moonshot,local_llm,grok,inception,tetrate`); providers without credentials/SDKs are skipped automatically.
-  - Quick connectivity check: run `python ai_api_test.py --provider gemini` (script now lives at repo root) to validate credentials before invoking the main workflow
-  - Grok fallback: `ai_api_test.py` now auto-detects when `xai-sdk` is unavailable and tunnels through the OpenAI client. Set `XAI_API_BASE_URL` when pointing at a proxy; otherwise the tester derives `https://{XAI_API_HOST}/v1` automatically.
-  - Default base URL: http://localhost:1234/v1 (LM Studio)
-
-  #### Configuring AI Provider Fallbacks & Adapters
-
-  - All adapters live under `ai/providers/` and must subclass `ProviderAdapter` from `ai/providers/base.py`; register new providers with `_register_provider("name", ProviderClass)` inside `ai_interface.py` to participate in routing.
-  - The `AI_PROVIDER_FALLBACKS` environment variable (parsed into `config_schema.ai_provider_fallbacks`) defines the exact failover order. Example:
-
-  ```env
-  AI_PROVIDER=deepseek
-  AI_PROVIDER_FALLBACKS=deepseek,gemini,moonshot,local_llm,grok,inception,tetrate
-  ```
-
-  - During `_call_ai_model()` each provider is attempted sequentially; adapters signal availability (credentials, SDK imports) and return `ProviderResponse` objects. Providers that raise or return `None` automatically defer to the next entry without leaking partial state.
-  - Use `python ai_api_test.py --provider <name>` to validate credentials before updating fallback chains, then run `python prompt_telemetry.py --baseline` after live runs to capture new success/quality metrics.
-  - Troubleshooting order changes: set `AI_PROVIDER_FALLBACKS=gemini,deepseek` (or similar) temporarily, rerun `python run_all_tests.py` to ensure the TestSuite verifies `_test_configurable_provider_failover`, and monitor `Logs/prompt_experiments.jsonl` for quality regressions.
-
-  ##### Adapter Lifecycle Flow
-
-  1. **Implement adapter** – subclass `ProviderAdapter` in `ai/providers/` and override `is_available()` plus `call()` so dependencies and configuration checks stay isolated from `ai_interface.py`.
-  2. **Register adapter** – append `_register_provider("provider_name", ProviderClass)` near the top of `ai_interface.py`. Registration automatically unlocks failover routing, rate limiting, and telemetry wiring.
-  3. **Provide configuration** – add any required API keys, base URLs, or model names to `config/config_schema.py` + `.env`. Adapters read all credentials from `config_schema.api` to remain test-friendly.
-  4. **Validate + baseline** – run `python ai_api_test.py --provider <name>` for smoke coverage, then update telemetry baselines (see below) so quality gates know about the new routing path.
-
-  ```text
-  action prompt -> _call_ai_model()
-      -> rate limiter guard
-      -> adapter registry (availability checks)
-      -> ProviderAdapter.call()
-      -> ProviderResponse → telemetry (prompt_telemetry.record_extraction_experiment_event)
-  ```
-
-  ##### Provider Failover Troubleshooting Checklist
-
-  - **Confirm config** – run `python ai_api_test.py --provider <name>` with the same env vars as production to verify credentials, base URLs, and models.
-  - **Inspect fallback chain** – run `python prompt_telemetry.py --show-fallback-order` (new helper) to print the active provider order pulled from config/env.
-  - **Simulate failures** – temporarily reorder `AI_PROVIDER_FALLBACKS` (e.g., move `local_llm` first) and invoke `_test_configurable_provider_failover()` via `python -m ai_interface` tests to ensure routing behaves as expected.
-  - **Rebuild baselines** – whenever the fallback order or adapter behavior changes, run `python prompt_telemetry.py --build-baseline --provider <primary>` after at least 8 fresh production events so regression gates track the new provider/model mix.
-  - **Monitor telemetry** – watch `Logs/prompt_experiments.jsonl` plus the Prometheus `ai_quality` metric for spikes; `python prompt_telemetry.py --check-regression --provider <name>` quickly flags drops >15 points.
-
-  ##### AI Interface Self-Check Guardrails
-
-  - Live Test 10 ("Intent Classification") now fails when prompts cannot be loaded or when `_test_genealogical_extraction()` returns zero names/locations/dates. This prevents silent passes when `ai_prompts.json` is empty or malformed.
-  - Typical failure log lines:
-    - `Failed to load 'dna_match_analysis' prompt from JSON, using fallback.`
-    - `DNA match analysis JSON parsing failed: Expecting value: line 1 column 1 (char 0)`
-    - `❌ AI failed to extract expected genealogical entities from test context - investigate prompts or provider`
-  - Recovery steps:
-    1. Validate `ai_prompts.json` (e.g., `python -m json.tool ai_prompts.json`) and restore the prompt payloads if parsing fails.
-    2. Run `python ai_api_test.py --provider <name>` to confirm the active adapter can classify and extract data with the restored prompts.
-    3. Rerun `python -m ai_interface` (or the full `python run_all_tests.py`) with `SKIP_LIVE_API_TESTS` unset so the regression test exercises the real provider path again.
-  - Set `SKIP_LIVE_API_TESTS=true` only when parallel CI requires skipping live calls. Keep it unset locally so the guardrails continue to catch prompt regressions immediately.
-
-  ##### Live AI Test Toggle (`SKIP_LIVE_API_TESTS`)
-
-  - The `.env` file now defines `SKIP_LIVE_API_TESTS=false` by default. Set it to `true` only when CI or local smoke runs must avoid live browser/API calls (e.g., network-restricted agents).
-  - `python run_all_tests.py` always forces `SKIP_LIVE_API_TESTS=true` internally for deterministic CI behavior. To exercise the live tests (Action 7 intent classification / DNA extraction), run the specific module directly after clearing the variable:
-
-    ```powershell
-    set SKIP_LIVE_API_TESTS=
-    python -m ai_interface
-    ```
-
-    or, for PowerShell 7+:
-
-    ```powershell
-    $env:SKIP_LIVE_API_TESTS="false"
-    python -m ai_interface
-    ```
-
-  - Several modules (`ai_interface.py`, `action9_process_productive.py`, `test_integration_workflow.py`, etc.) honor this flag, so keeping it explicit in `.env` makes it obvious which environment you are running (CI-safe vs. live validation).
-
-- LM Studio quick-start checklist (real use)
-  1) Install LM Studio and open it
-  2) Load an instruct model (e.g., qwen3-4b-2507)
-  3) Start the local server (Developer tab) and ensure it shows Running at http://localhost:1234/v1
-  4) In .env set:
-     - AI_PROVIDER=local_llm
-     - LOCAL_LLM_BASE_URL=http://localhost:1234/v1
-     - LOCAL_LLM_API_KEY=lm-studio
-     - LOCAL_LLM_MODEL=qwen3-4b-2507
-  5) Optional: enable JIT loading in LM Studio so the first inference auto-loads the model
-  6) Run: python test_local_llm.py
-
-- Programmatically triggering model load (Python)
-  - LM Studio follows the OpenAI-compatible API; the model is selected by the `model` field in your request.
-  - If JIT loading is enabled, the first request with that model name will load it automatically.
-
-### Appendix C: Test Review Summary (condensed)
-
-- Date: 2025-10-23; Reviewer: Augment Agent
-- Coverage and quality highlights:
-  - 82 modules analyzed; 80 with tests (97.6% coverage)
-  - 1,048 public functions; 1,033 test functions
-  - 100% test pass rate; average quality 100/100
-  - Tests use live sessions (no smoke tests) and are co-located with code
-- Notable improvements:
-  - Reduced complexity in database.py and conversation_analytics.py below thresholds
-  - Reduced returns in core/session_manager.py to ≤6
-  - Fixed deprecated imports and unused args; remaining globals in session_utils.py are intentional for caching
-
-### Appendix D: Test Quality Analysis (condensed)
-
-- Strengths: excellent coverage, genuine assertions, error-path tests, DRY utilities
-- AI components covered: ai_interface, ai_prompt_utils, universal_scoring
-- Utilities covered: logging_config, error_handling, test_framework
-- Modules without tests: `config/__init__.py` and `config/__main__.py` (acceptable)
-- Code quality metrics: now 100/100 across modules; 0 complexity warnings
-
-#### Testing Best Practices
-
-**1. Explicit Assertion Messages**
-All assertions should include descriptive error messages explaining what should happen:
-
-```python
-# Good - explicit message describing expected behavior
-assert isinstance(result, dict), "Should return dict even with None inputs"
-assert len(names) > 0, "Should return non-empty list for valid GEDCOM data"
-assert "José" in message, "Should preserve Unicode characters in output"
-
-# Bad - no context on failure
-assert isinstance(result, dict)
-assert len(names) > 0
+#### Local LLM Setup (LM Studio)
+
+**Quick Start**:
+1. Install LM Studio from https://lmstudio.ai
+2. Download an instruct model (recommended: qwen3-4b-2507)
+3. Start local server (Developer tab) → Running at http://localhost:1234/v1
+4. Configure `.env`:
+```env
+AI_PROVIDER=local_llm
+LOCAL_LLM_BASE_URL=http://localhost:1234/v1
+LOCAL_LLM_API_KEY=lm-studio
+LOCAL_LLM_MODEL=qwen3-4b-2507
 ```
+5. Enable JIT loading in LM Studio for automatic model loading
+6. Test: `python test_local_llm.py`
 
-**2. Edge-Case Coverage**
-Tests should cover:
-- **Null/None inputs**: `None`, empty dicts `{}`, empty lists `[]`
-- **Unicode & special characters**: José María, Müller, Владимир, 李明, O'Brien-Władysław
-- **Malformed data**: Wrong types, missing required fields, invalid structures
-- **Edge numbers**: Zero values, negative numbers, extremely large values
-- **Long inputs**: 500+ character names, 1000+ character text, 50+ records
-- **Missing template keys**: Placeholders with no data provided
-
-Example edge-case test structure:
-```python
-def _test_null_and_none_inputs() -> None:
-    """Test function handles None inputs gracefully."""
-    processor = MyProcessor()
-
-    # Test with None
-    result = processor.process(None)
-    assert result is not None, "Should return fallback for None input"
-
-    # Test with empty dict
-    result = processor.process({})
-    assert isinstance(result, dict), "Should handle empty dict without crashing"
-```
-
-**3. Negative-Path Testing**
-Test what happens when things go wrong:
-- Invalid object types passed to functions expecting specific types
-- Circular references in relational data (e.g., I1→I2→I1 parent loops)
-- Missing required configuration or environment variables
-- API errors, timeouts, and network failures
-- Database connection failures and transaction rollbacks
-
-**4. Performance Validation**
-Include tests for large datasets to catch performance regressions:
-```python
-def _test_large_dataset_performance() -> None:
-    """Test performance with 1000 records."""
-    import time
-
-    start = time.time()
-    result = process_large_batch(create_mock_records(1000))
-    duration = time.time() - start
-
-    assert duration < 5.0, f"Processing 1000 records should complete in <5s, took {duration:.2f}s"
-    assert len(result) == 1000, "Should process all records"
-```
-
-**5. Recent Examples**
-- `gedcom_intelligence.py`: Enhanced from 4 to 10 tests with explicit assertions, Unicode tests, circular relationship detection, and 1000-record performance validation
-- `message_personalization.py`: Enhanced from 11 to 18 tests with None handling, malformed data resilience, Unicode support, and edge-case number handling
-
-### Appendix E: Test Coverage Report (how to regenerate)
-
-- To regenerate full coverage tables in your environment:
-```bash
-python run_all_tests.py --emit-coverage
-```
-- Summary from last run:
-  - Total Modules: 82; With Tests: 80; Without: 2
-  - Total Public Functions: 1,048; Total Test Functions: 1,033
-  - 100% test pass rate; average quality 100/100
-  - Tests use live sessions (no smoke tests) and are co-located with code
-- Notable improvements:
-  - Reduced complexity in database.py and conversation_analytics.py below thresholds
-  - Reduced returns in core/session_manager.py to ≤6
-  - Fixed deprecated imports and unused args; remaining globals in session_utils.py are intentional for caching
-
-  - Example minimal call using requests:
-
+**Programmatic Model Loading**:
 ```python
 import os, requests
+
 base = os.getenv("LOCAL_LLM_BASE_URL", "http://localhost:1234/v1")
 api_key = os.getenv("LOCAL_LLM_API_KEY", "lm-studio")
 model = os.getenv("LOCAL_LLM_MODEL", "qwen3-4b-2507")
@@ -1271,24 +464,863 @@ r = requests.post(
     },
     timeout=60,
 )
-print(r.status_code)
-print(r.json())
+print(r.status_code, r.json())
 ```
 
-  If the model isn’t loaded and JIT is disabled, start it in the LM Studio UI or via the `lms` CLI.
+### Testing Infrastructure
 
-- Conversation State Model (Phase 3)
-  - Fields: ai_summary (text), engagement_score (int 0-100), last_topic (text), pending_questions (text/json), conversation_phase (enum)
-  - Updated via Action 7 analytics pipeline and assess_engagement()
+#### Test Framework (`testing/test_framework.py`)
+Standardized testing pattern used across all 74+ modules.
 
-- Enrichment Policy (Phase 5)
-  - Flag: enable_task_enrichment (bool)
-  - When enabled, Action 9 appends enrichment lines (to-do links, research prompts, record sharing hints)
+**Standard Pattern**:
+```python
+def module_tests() -> bool:
+    """Module-specific test implementation"""
+    suite = TestSuite("Module Name", "module_file.py")
 
-- Logging
-  - Single header/footer, info-level friendly
-  - No raw HTML dumps; log length/count metrics instead
+    # Add tests with descriptive names
+    suite.add_test(
+        lambda: isinstance(result, dict),
+        "Should return dict even with None inputs"
+    )
 
-- Testing
-  - run_all_tests.py is the canonical runner; tests should fail on genuine failures
-  - API-dependent tests assume live authentication through the global session
+    return suite.run_tests()
+
+# Create standard runner
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
+```
+
+**Test Quality Standards**:
+
+1. **Explicit Assertion Messages** - All assertions include descriptive error messages:
+```python
+# Good
+assert isinstance(result, dict), "Should return dict even with None inputs"
+assert len(names) > 0, "Should return non-empty list for valid GEDCOM data"
+
+# Bad
+assert isinstance(result, dict)
+```
+
+2. **Edge-Case Coverage**:
+- Null/None inputs: `None`, empty dicts `{}`, empty lists `[]`
+- Unicode & special characters: José María, Müller, Владимир, 李明, O'Brien
+- Malformed data: Wrong types, missing fields, invalid structures
+- Edge numbers: Zero, negative, extremely large values
+- Long inputs: 500+ character strings, 1000+ character text, 50+ records
+
+3. **Negative-Path Testing**:
+- Invalid object types passed to functions
+- Circular references in relational data
+- Missing configuration or environment variables
+- API errors, timeouts, network failures
+- Database connection failures and rollbacks
+
+4. **Performance Validation**:
+```python
+def _test_large_dataset_performance() -> None:
+    """Test performance with 1000 records."""
+    import time
+
+    start = time.time()
+    result = process_large_batch(create_mock_records(1000))
+    duration = time.time() - start
+
+    assert duration < 5.0, f"Should complete in <5s, took {duration:.2f}s"
+    assert len(result) == 1000, "Should process all records"
+```
+
+#### Test Utilities (`testing/test_utilities.py`)
+Centralized helper functions and decorators for consistent testing.
+
+**Test Decorators**:
+```python
+@with_temp_database
+def test_database_operations():
+    # Isolated database created for this test
+    pass
+
+@with_mock_session
+def test_session_behavior():
+    # Mock session provided automatically
+    pass
+
+@with_test_config({"api": {"requests_per_second": 1.0}})
+def test_with_custom_config():
+    # Test runs with custom configuration
+    pass
+```
+
+**Fixture Factories**:
+```python
+# Create test match data
+match = create_test_match(
+    name="John Smith",
+    shared_cm=150.0,
+    confidence="HIGH"
+)
+
+# Create test person
+person = create_test_person(
+    name="Jane Doe",
+    birth_year=1950,
+    uuid="TEST-UUID-123"
+)
+```
+
+#### Running Tests
+
+```bash
+# Run all 74+ test modules (sequential)
+python run_all_tests.py
+
+# Parallel execution for speed
+python run_all_tests.py --fast
+
+# With performance log analysis
+python run_all_tests.py --analyze-logs
+
+# Fast unit tests only (<5 seconds)
+python testing/run_tests_fast.py
+
+# Single module test
+python -m actions.action6_gather
+
+# Skip live API tests (CI mode)
+SKIP_LIVE_API_TESTS=true python run_all_tests.py
+```
+
+**Expected Results**:
+- All 74+ modules should pass with 100/100 quality scores
+- 643+ tests passing at 100% success rate
+- Zero complexity warnings, zero linting errors, zero type errors
+
+## Configuration Reference
+
+### Environment Variables (`.env`)
+
+#### Required: Ancestry Authentication
+```env
+ANCESTRY_USERNAME=your_email@example.com
+ANCESTRY_PASSWORD=your_password
+TREE_NAME=Gault Family  # Your main tree name
+```
+
+#### Required: AI Provider
+```env
+AI_PROVIDER=gemini  # Options: gemini, deepseek, local_llm, moonshot, grok, inception
+
+# Google Gemini
+GEMINI_API_KEY=your_api_key
+
+# DeepSeek
+DEEPSEEK_API_KEY=your_api_key
+
+# Local LLM (LM Studio)
+LOCAL_LLM_BASE_URL=http://localhost:1234/v1
+LOCAL_LLM_MODEL=qwen3-4b-2507
+LOCAL_LLM_API_KEY=lm-studio
+
+# Provider Failover (optional)
+AI_PROVIDER_FALLBACKS=gemini,deepseek,local_llm,moonshot,grok,inception
+```
+
+#### Optional: Rate Limiting (CRITICAL)
+```env
+REQUESTS_PER_SECOND=0.3  # CRITICAL - empirically validated, do not change
+INITIAL_DELAY=1.0
+MAX_DELAY=15.0
+BACKOFF_FACTOR=1.5
+DECREASE_FACTOR=0.95
+```
+
+**WARNING**: Changing `REQUESTS_PER_SECOND` without validation WILL break production. Run `validate_rate_limiting.py` with 50+ pages showing zero 429 errors before deploying.
+
+#### Optional: Action 6 Configuration
+```env
+MAX_PAGES=1  # Processing limit for DNA match gathering
+THREAD_POOL_WORKERS=1  # CRITICAL: >1 requires rate limit validation
+ENABLE_CHECKPOINTING=true
+CHECKPOINT_MAX_AGE_HOURS=24
+HEALTH_CHECK_INTERVAL_PAGES=5  # Proactive session refresh
+```
+
+#### Optional: Testing & Development
+```env
+SKIP_LIVE_API_TESTS=false  # Set to true for CI/CD
+LOG_LEVEL=INFO  # DEBUG for detailed logging
+TEST_PROFILE_ID=your_test_profile_id  # For Action 0 (delete test)
+```
+
+### Configuration Schema (`config/config_schema.py`)
+
+Type-safe configuration with dataclass validation:
+
+```python
+@dataclass
+class APISettings:
+    max_pages: int = 1  # Processing limit
+    requests_per_second: float = 0.3  # CRITICAL rate limit
+    max_concurrency: int = 1  # Sequential processing only
+```
+
+**ConfigManager** loads from `.env` → validates types → provides `config_schema` global.
+
+## API Reference
+
+### User Identity Endpoints
+
+**Profile ID**:
+```
+GET app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid
+Response: {"data": {"ucdmid": "07bdd45e-0006-0000-0000-000000000000"}}
+```
+
+**DNA Test UUID**:
+```
+GET api/navheaderdata/v1/header/data/dna
+Response: {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", "testComplete": true}
+```
+
+**Tree List**:
+```
+GET api/treesui-list/trees?rights=own
+Response: {"trees": [{"id": "175946702", "name": "Gault Family", ...}]}
+```
+
+**Tree Owner Info**:
+```
+GET api/uhome/secure/rest/user/tree-info?tree_id={tree_id}
+Response: {"id": 175946702, "owner": {"displayName": "Wayne Gault"}, ...}
+```
+
+### Genealogical Data Endpoints
+
+**New Family View** (preferred):
+```
+GET api/treeviewer/tree/newfamilyview/{tree_id}
+Response: {"Persons": [...], "Family": {...}}
+```
+
+**TreesUI List** (person search):
+```
+GET api/treesui-list/trees/{tree_id}/persons?name={name}&limit=100&fields=EVENTS,GENDERS,NAMES&isGetFullPersonObject=true
+Response: {"results": [...]}
+```
+
+**Relationship Ladder**:
+```
+GET family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
+Response: {"kinshipPersons": [...]}
+```
+
+### DNA Endpoints (Action 6)
+
+**Match Details**:
+```
+GET discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true
+```
+
+**Ethnicity Comparison**:
+```
+GET discoveryui-matchesservice/api/compare/{owner_guid}/with/{match_guid}/ethnicity
+```
+
+**Badge Details**:
+```
+GET discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails
+```
+
+### Messaging Endpoints (Action 8)
+
+**Send New Message**:
+```
+POST app-api/express/v2/conversations/message
+```
+
+**Send to Existing Conversation**:
+```
+POST app-api/express/v2/conversations/{conv_id}
+```
+
+**NOTE**: All endpoint literals are covered by regression guard tests in-module (api_utils, core/api_manager, dna_ethnicity_utils, core/session_manager). If any literal changes, tests fail to prevent accidental drift.
+
+## Developer Guide
+
+### Adding New Action Functions
+
+1. Create action function with signature:
+```python
+def new_action(session_manager: SessionManager, *_) -> bool:
+    """
+    New action description.
+
+    Returns:
+        bool: True if action completed successfully
+    """
+    logger.info("Starting new action...")
+    # Implementation here
+    return True
+```
+
+2. Add to `main.py` action handlers:
+```python
+# In MENU_ACTIONS dict (around line 1650)
+MENU_ACTIONS = {
+    # ...
+    "12": {"label": "New Action", "func": new_action},
+}
+```
+
+3. Use `exec_actn()` wrapper (never manage resources directly):
+```python
+# In main() function
+elif choice == "12":
+    exec_actn(new_action, session_manager, "12")
+```
+
+4. Add tests using `TestSuite` pattern:
+```python
+def module_tests() -> bool:
+    suite = TestSuite("New Action Module", "new_action.py")
+
+    suite.add_test(
+        lambda: callable(new_action),
+        "new_action should be callable"
+    )
+
+    return suite.run_tests()
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+```
+
+5. Document in README.md under "Action Modules"
+
+### Code Quality Standards
+
+#### Linting (Ruff)
+```bash
+# Auto-fix before commit
+ruff check --fix .
+
+# Check only (no modifications)
+ruff check .
+```
+
+**Enforced Rules**:
+- E722 - Bare except clauses
+- F821 - Undefined names
+- I001 - Import sorting
+- PLR0904 - Too many public methods
+- PLR6301 - Method could be static
+
+**Disable Per-File**:
+```python
+# ruff: noqa: E722
+```
+
+#### Type Hints (Pyright)
+```bash
+# Check types
+pyright
+```
+
+**Configuration**: `pyrightconfig.json` configures standard checking
+
+**Requirements**:
+- Type hints required for all new functions
+- Use `Optional[Type]` not `Type | None` for Python 3.9 compatibility
+- Nullable types must be explicit
+
+#### Logging Discipline
+```python
+logger.info("User-visible milestones")    # Action starts/completes
+logger.debug("Internal state details")    # Variable values, control flow
+logger.warning("Recoverable issues")      # Retry scenarios, fallbacks
+logger.error("Action failures")           # Explicit errors requiring intervention
+```
+
+### Debugging Workflows
+
+#### Rate Limiting Issues
+```powershell
+# Check for 429 errors (should return 0)
+(Select-String -Path Logs\app.log -Pattern "429 error").Count
+
+# Verify rate limiter initialization
+Select-String -Path Logs\app.log -Pattern "Thread-safe RateLimiter" | Select-Object -Last 1
+
+# Watch real-time API activity
+Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
+```
+
+#### AI Extraction Issues
+```bash
+# Check telemetry statistics
+python prompt_telemetry.py --stats
+
+# Review recent AI responses (last 20)
+Get-Content Logs\prompt_experiments.jsonl -Tail 20
+
+# Test specific prompt in isolation
+python -c "from ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'Test message'}))"
+
+# Regenerate baseline after prompt improvements
+python prompt_telemetry.py --baseline
+```
+
+#### Database Issues
+```bash
+# Check connection pool status
+python -c "from database import engine; print(engine.pool.status())"
+
+# Query database directly
+sqlite3 Data/ancestry.db
+# .tables
+# SELECT COUNT(*) FROM people;
+# SELECT uuid, COUNT(*) FROM people GROUP BY uuid HAVING COUNT(*) > 1;
+# .quit
+
+# Backup before dangerous operations
+python main.py  # Option 3: Backup Database
+```
+
+#### Session Issues
+```bash
+# Check session validity and age
+python -c "from core.session_manager import SessionManager; sm = SessionManager(); print(f'Valid: {sm.is_sess_valid()}, Age: {sm.session_age_seconds()}s')"
+
+# Force session refresh
+python main.py  # Option 5: Check Login Status
+
+# Clear browser cache and cookies
+Remove-Item -Recurse -Force Cache\*
+```
+
+#### Performance Profiling
+```bash
+# Enable DEBUG logging for detailed timing
+# main.py: setup_logging(log_level="DEBUG")
+
+# Monitor memory usage
+python -c "import psutil; p = psutil.Process(); print(f'Memory: {p.memory_info().rss / 1024 / 1024:.1f} MB')"
+
+# Analyze log file for slow operations
+Select-String -Path Logs\app.log -Pattern "Duration:|Elapsed:" | Select-Object -Last 20
+
+# Profile specific action
+python -m cProfile -o profile.stats main.py
+# Then analyze: python -m pstats profile.stats
+```
+
+### Common Pitfalls & Solutions
+
+#### UNIQUE Constraint Violations
+**Root Cause**: UUID stored lowercase, lookup expects uppercase
+
+**Solution**: Always use `.upper()` on UUIDs before DB operations
+```python
+person = session.query(Person).filter(Person.uuid == test_uuid.upper()).first()
+```
+
+#### SQLAlchemy Session Caching
+**Symptom**: Bulk insert followed by immediate lookup returns None
+
+**Solution**: Call `session.expire_all()` after bulk operations
+```python
+session.bulk_insert_mappings(Person, people)
+session.commit()
+session.expire_all()  # Force DB refresh
+```
+
+#### 429 Rate Limit Errors
+**Symptom**: "429 Too Many Requests" with 72-second backoff
+
+**Solution**:
+1. Verify `REQUESTS_PER_SECOND=0.3` in `.env`
+2. Run `validate_rate_limiting.py`
+3. Never increase RPS without 50+ page validation showing zero 429s
+
+#### Session Not Ready Errors
+**Symptom**: "Cannot perform action: Session not ready"
+
+**Solution**: Ensure action uses `exec_actn()` wrapper, which calls `ensure_session_ready()`
+
+**Never**: Call browser/API operations directly without SessionManager initialization
+
+#### Low AI Quality Scores
+**Symptom**: Quality scores consistently <70 in telemetry logs
+
+**Diagnosis**:
+```bash
+python prompt_telemetry.py --stats  # Check median scores
+Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions
+```
+
+**Solution**:
+1. Review/update prompts in `ai_prompts.json`
+2. Add variants for A/B testing
+3. Run `python quality_regression_gate.py` before deployment
+
+#### Session Expiry During Long Operations
+**Symptom**: 403 errors appearing after 40 minutes of action execution
+
+**Prevention**: Action 6 has proactive health monitoring (refreshes at 25-min mark)
+
+**Manual Fix**:
+```python
+session_manager.refresh_browser_cookies()
+sync_cookies_from_browser()
+```
+
+**Configuration**: Adjust `HEALTH_CHECK_INTERVAL_PAGES` in `.env` (default: 5)
+
+## Observability
+
+### Prometheus Metrics
+
+The platform exports comprehensive metrics for monitoring:
+
+**Endpoint**: `http://localhost:9090/metrics` (when metrics server running)
+
+**Available Metrics**:
+- `ancestry_action_duration_seconds` - Action execution time histogram
+- `ancestry_action_success_total` - Successful action counter
+- `ancestry_action_failure_total` - Failed action counter
+- `ancestry_api_calls_total` - API call counter by endpoint
+- `ancestry_api_response_time_seconds` - API response time histogram
+- `ancestry_rate_limit_hits_total` - Rate limit encounters counter
+- `ancestry_ai_quality_score` - AI extraction quality gauge (0-100)
+- `ancestry_session_age_seconds` - Current session age
+
+### Grafana Dashboards
+
+Pre-built dashboards available in `observability/grafana/`:
+
+**Action Performance Dashboard**:
+- Action execution times (p50, p95, p99)
+- Success/failure rates
+- Actions per hour throughput
+
+**API Health Dashboard**:
+- API call rate by endpoint
+- Response time distributions
+- 429 rate limit occurrences
+- Success/error ratio
+
+**AI Quality Dashboard**:
+- Quality score trends over time
+- Parse success rate
+- Provider usage distribution
+- Prompt performance comparison
+
+### Log Correlation
+
+All log messages include correlation IDs for request tracking:
+
+```python
+from core.correlation import correlation_context
+
+with correlation_context("DNA Match Gathering") as ctx:
+    ctx.add_metadata("page", current_page)
+    ctx.add_metadata("worker_id", worker_id)
+
+    # All logs within this context include correlation ID
+    logger.info(f"Processing page {current_page}")
+    # [correlation_id=abc123-def456] Processing page 5
+```
+
+**Log Format**:
+```
+2025-01-15 10:30:45 INFO [correlation_id=abc123-def456] [worker_1] Processing page 5
+```
+
+**Querying Logs by Correlation**:
+```powershell
+# Find all logs for specific request
+Select-String -Path Logs\app.log -Pattern "correlation_id=abc123-def456"
+
+# Count operations per correlation ID
+Select-String -Path Logs\app.log -Pattern "correlation_id=" |
+    Group-Object { ($_ -split "correlation_id=")[1].Split()[0] } |
+    Sort-Object Count -Descending
+```
+
+## Troubleshooting
+
+### Browser Issues
+
+**Symptom**: Chrome fails to start or crashes immediately
+
+**Solutions**:
+1. Update Chrome to latest version
+2. Run diagnostic: `python browser/diagnose_chrome.py`
+3. Clear cache: `Remove-Item -Recurse -Force Cache\*`
+4. Check ChromeDriver version matches Chrome: `python -c "from selenium import webdriver; print(webdriver.__version__)"`
+
+### Authentication Issues
+
+**Symptom**: 401 Unauthorized or 403 Forbidden errors
+
+**Solutions**:
+1. Verify credentials in `.env` are correct
+2. Check if Ancestry changed password requirements
+3. Force session refresh: Run Action 5 (Check Login Status)
+4. Clear cookies and re-authenticate: Delete `Cache/ancestry_cookies.json`
+5. Check for CAPTCHA: Some IPs may trigger CAPTCHA—use browser manually first
+
+### Database Issues
+
+**Symptom**: SQLAlchemy errors, locked database, or integrity errors
+
+**Solutions**:
+1. Check database file permissions: `ls -l Data/ancestry.db`
+2. Verify no other processes have lock: `lsof Data/ancestry.db` (Linux/Mac)
+3. Backup and recreate: Run Action 3 (Backup Database), then delete `Data/ancestry.db`
+4. Check for schema migrations: `python core/schema_migrator.py --check`
+
+### Performance Issues
+
+**Symptom**: Slow execution, high memory usage, or timeouts
+
+**Solutions**:
+1. Enable DEBUG logging: Set `LOG_LEVEL=DEBUG` in `.env`
+2. Profile execution: `python -m cProfile -o profile.stats main.py`
+3. Check memory usage: `python -c "import psutil; p = psutil.Process(); print(p.memory_info())"`
+4. Reduce batch sizes: Lower `MAX_PAGES` in `.env`
+5. Monitor rate limiting: Watch for 429 errors in logs
+
+### AI Provider Issues
+
+**Symptom**: AI calls failing or returning low quality results
+
+**Solutions**:
+1. Test provider: `python ai_api_test.py --provider gemini`
+2. Check API key: Verify not expired or rate limited
+3. Try fallback provider: Set `AI_PROVIDER_FALLBACKS` in `.env`
+4. Review quality: `python prompt_telemetry.py --stats`
+5. Check prompt loading: Ensure `ai_prompts.json` is valid JSON
+
+## Recent Changes (November 2025)
+
+- ✅ **Correlation ID System** (Nov 27) - Full request tracking with `core/correlation.py`
+- ✅ **Test Utility Framework** (Nov 26) - Decorators and fixture factories in `test_utilities.py`
+- ✅ **Developer Experience** (Nov 26) - `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, fast test runner
+- ✅ **Test Standardization** (Nov 25) - All 74+ modules use consistent `TestSuite` pattern
+- ✅ **API Consolidation** (Oct 29) - Removed action11.py, unified into api_search_core.py
+- ✅ **Rate Limit Hardening** (Oct 28) - Thread-safe RateLimiter with zero 429 errors
+- ✅ **Quality Gates** (Oct 27) - Added quality_regression_gate.py for CI/CD integration
+- ✅ **Local LLM Support** (Oct 26) - Full LM Studio integration with configuration guide
+
+## Dependencies
+
+### Core Dependencies
+- **selenium 4.31.0+** - Browser automation (ChromeDriver auto-updates via webdriver-manager)
+- **SQLAlchemy 2.0.40+** - Database ORM with soft deletes, connection pooling
+- **requests 2.32.3+** - HTTP client for API calls (shares rate limiter with Selenium)
+- **beautifulsoup4 4.13.3+** - HTML parsing for inbox scraping
+- **tqdm 4.67.1+** - Progress bars with ETA calculation
+
+### AI Providers
+- **google-generativeai 0.8.4** - Google Gemini AI provider
+- **openai 1.0.0+** - OpenAI-compatible client (Local LLM, Grok fallback)
+- **requests** - HTTP client for DeepSeek, Moonshot, Inception
+
+### Development Dependencies (requirements-dev.txt)
+- **ruff** - Fast Python linter
+- **pyright** - Static type checker
+- **pytest** - Testing framework (optional, using built-in TestSuite)
+- **pytest-cov** - Coverage reporting
+
+## Project Structure
+
+```
+├── actions/              # Action modules (6-11)
+│   ├── action6_gather.py
+│   ├── action7_inbox.py
+│   ├── action8_messaging.py
+│   ├── action9_process_productive.py
+│   ├── action10.py
+│   └── gather/          # Action 6 sub-modules
+│       ├── checkpoint.py
+│       ├── fetch.py
+│       ├── metrics.py
+│       ├── orchestrator.py
+│       └── persistence.py
+├── ai/                  # AI integration
+│   ├── ai_interface.py
+│   ├── ai_prompts.json
+│   ├── prompt_telemetry.py
+│   ├── quality_regression_gate.py
+│   └── providers/       # Provider adapters
+│       ├── base.py
+│       ├── gemini.py
+│       ├── deepseek.py
+│       └── local_llm.py
+├── api/                 # API utilities
+│   ├── api_constants.py
+│   ├── api_search_core.py
+│   ├── api_search_utils.py
+│   └── api_utils.py
+├── browser/             # Browser automation
+│   ├── chromedriver.py
+│   ├── css_selectors.py
+│   ├── selenium_utils.py
+│   └── diagnose_chrome.py
+├── caching/             # Cache management
+│   ├── cache.py
+│   ├── cache_manager.py
+│   └── cache_retention.py
+├── config/              # Configuration
+│   ├── config_schema.py
+│   ├── config_manager.py
+│   └── validator.py
+├── core/                # Core infrastructure
+│   ├── session_manager.py      # Central orchestrator
+│   ├── browser_manager.py
+│   ├── api_manager.py
+│   ├── database_manager.py
+│   ├── error_handling.py       # Exception hierarchy
+│   ├── rate_limiter.py         # Token bucket algorithm
+│   ├── circuit_breaker.py
+│   ├── correlation.py          # Request tracking
+│   ├── logging_config.py
+│   └── metrics_collector.py
+├── genealogy/           # Genealogical utilities
+│   ├── gedcom_search_utils.py
+│   ├── gedcom_utils.py
+│   ├── relationship_utils.py
+│   └── universal_scoring.py
+├── messaging/           # Messaging system
+│   ├── message_personalization.py
+│   └── templates/       # Message templates
+├── observability/       # Monitoring
+│   ├── prometheus_exporter.py
+│   └── grafana/         # Dashboard configs
+├── research/            # Research utilities
+│   ├── dna_ethnicity_utils.py
+│   ├── genealogical_task_templates.py
+│   └── universal_scoring.py
+├── testing/             # Test infrastructure
+│   ├── test_framework.py
+│   ├── test_utilities.py
+│   ├── run_tests_fast.py
+│   └── code_quality_checker.py
+├── Cache/               # Runtime cache
+├── Data/                # Database storage
+│   └── ancestry.db
+├── Logs/                # Application logs
+│   ├── app.log
+│   ├── prompt_experiments.jsonl
+│   └── analytics.jsonl
+├── main.py              # Entry point
+├── database.py          # SQLAlchemy models
+├── utils.py             # Utility functions
+├── requirements.txt     # Production dependencies
+├── requirements-dev.txt # Development dependencies
+├── run_all_tests.py     # Test orchestrator
+├── .env                 # Configuration (not in repo)
+├── .env.example         # Configuration template
+└── README.md            # This file
+```
+
+## Contributing
+
+### Development Workflow
+
+1. **Fork and Clone**:
+```bash
+git clone https://github.com/yourusername/ancestry.git
+cd ancestry
+```
+
+2. **Create Virtual Environment**:
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+3. **Create Feature Branch**:
+```bash
+git checkout -b feature/your-feature-name
+```
+
+4. **Make Changes**:
+- Follow code quality standards (Ruff, Pyright)
+- Add tests using `TestSuite` pattern
+- Update documentation as needed
+
+5. **Run Tests**:
+```bash
+# Full test suite
+python run_all_tests.py
+
+# Fast unit tests
+python testing/run_tests_fast.py
+
+# Specific module
+python -m your_module
+```
+
+6. **Check Code Quality**:
+```bash
+# Linting
+ruff check --fix .
+
+# Type checking
+pyright
+
+# Test quality
+python testing/code_quality_checker.py
+```
+
+7. **Commit and Push**:
+```bash
+git add .
+git commit -m "feat: Add your feature description"
+git push origin feature/your-feature-name
+```
+
+8. **Create Pull Request**:
+- Ensure all tests pass
+- Include clear description of changes
+- Reference any related issues
+
+### Code Review Checklist
+
+- [ ] All tests pass (`python run_all_tests.py`)
+- [ ] Zero linting errors (`ruff check .`)
+- [ ] Zero type errors (`pyright`)
+- [ ] Test coverage for new code (use `TestSuite` pattern)
+- [ ] Documentation updated (README.md, docstrings)
+- [ ] No hardcoded credentials (use `.env`)
+- [ ] Explicit assertion messages in tests
+- [ ] Edge cases covered (None, empty, Unicode, malformed data)
+- [ ] Performance validated for large datasets
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/waynegault/ancestry/issues)
+- **Documentation**: [DeepWiki](https://deepwiki.com/waynegault/ancestry)
+- **Security**: See [SECURITY.md](SECURITY.md) for vulnerability reporting
+
+## Acknowledgments
+
+- Ancestry.com for providing the platform and APIs
+- Google Gemini and DeepSeek for AI capabilities
+- LM Studio for local LLM support
+- Selenium and SQLAlchemy communities for excellent tools
+
+---
+
+**Note**: This is a research automation tool for personal genealogical research. Always respect Ancestry.com's Terms of Service and rate limiting policies. The default rate limit (0.3 RPS) is empirically validated to be safe—do not increase without proper validation.
