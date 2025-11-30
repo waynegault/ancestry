@@ -77,8 +77,7 @@ def register_session_manager(session_manager: SessionManager) -> None:
     """
     Register a SessionManager via the DI container.
 
-    This is the PREFERRED method for registering sessions at startup.
-    Also updates the legacy global state for backward compatibility.
+    This is the standard method for registering sessions at startup.
 
     Args:
         session_manager: The SessionManager instance to register
@@ -98,9 +97,6 @@ def register_session_manager(session_manager: SessionManager) -> None:
 def get_session_manager() -> Optional[SessionManager]:
     """
     Get the SessionManager from the DI container.
-
-    This is the PREFERRED method for accessing the session.
-    Falls back to legacy global state if DI container is not configured.
 
     Returns:
         SessionManager if registered, None otherwise

@@ -23,7 +23,6 @@ if parent_dir not in sys.path:
 import logging
 from contextlib import contextmanager
 from functools import wraps
-from importlib import import_module
 from typing import (
     Any,
     Callable,
@@ -422,112 +421,25 @@ def cached_session_component(component_type: str) -> Callable[[Callable[P, R]], 
     return decorator
 
 
+# Convenience aliases for specific component types - delegate to the generic decorator
 def cached_database_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator specifically for DatabaseManager caching"""
-
-    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(creation_func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            cached_component = _session_cache.get_cached_component("database_manager")
-            if cached_component is not None:
-                logger.debug("Reusing cached database_manager")
-                return cast(R, cached_component)
-
-            logger.debug("Creating new database_manager")
-            start_time = time.time()
-            component = creation_func(*args, **kwargs)
-            creation_time = time.time() - start_time
-
-            if creation_time > 0.1:
-                _session_cache.cache_component("database_manager", component)
-                logger.debug(f"Cached database_manager (creation time: {creation_time:.2f}s)")
-
-            return component
-
-        return wrapper
-
-    return decorator
+    """Decorator for DatabaseManager caching. Alias for cached_session_component('database_manager')."""
+    return cached_session_component("database_manager")
 
 
 def cached_browser_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator specifically for BrowserManager caching"""
-
-    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(creation_func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            cached_component = _session_cache.get_cached_component("browser_manager")
-            if cached_component is not None:
-                logger.debug("Reusing cached browser_manager")
-                return cast(R, cached_component)
-
-            logger.debug("Creating new browser_manager")
-            start_time = time.time()
-            component = creation_func(*args, **kwargs)
-            creation_time = time.time() - start_time
-
-            if creation_time > 0.1:
-                _session_cache.cache_component("browser_manager", component)
-                logger.debug(f"Cached browser_manager (creation time: {creation_time:.2f}s)")
-
-            return component
-
-        return wrapper
-
-    return decorator
+    """Decorator for BrowserManager caching. Alias for cached_session_component('browser_manager')."""
+    return cached_session_component("browser_manager")
 
 
 def cached_api_manager() -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator specifically for APIManager caching"""
-
-    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(creation_func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            cached_component = _session_cache.get_cached_component("api_manager")
-            if cached_component is not None:
-                logger.debug("Reusing cached api_manager")
-                return cast(R, cached_component)
-
-            logger.debug("Creating new api_manager")
-            start_time = time.time()
-            component = creation_func(*args, **kwargs)
-            creation_time = time.time() - start_time
-
-            if creation_time > 0.1:
-                _session_cache.cache_component("api_manager", component)
-                logger.debug(f"Cached api_manager (creation time: {creation_time:.2f}s)")
-
-            return component
-
-        return wrapper
-
-    return decorator
+    """Decorator for APIManager caching. Alias for cached_session_component('api_manager')."""
+    return cached_session_component("api_manager")
 
 
 def cached_session_validator() -> Callable[[Callable[P, R]], Callable[P, R]]:
-    """Decorator specifically for SessionValidator caching"""
-
-    def decorator(creation_func: Callable[P, R]) -> Callable[P, R]:
-        @wraps(creation_func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            cached_component = _session_cache.get_cached_component("session_validator")
-            if cached_component is not None:
-                logger.debug("Reusing cached session_validator")
-                return cast(R, cached_component)
-
-            logger.debug("Creating new session_validator")
-            start_time = time.time()
-            component = creation_func(*args, **kwargs)
-            creation_time = time.time() - start_time
-
-            if creation_time > 0.1:
-                _session_cache.cache_component("session_validator", component)
-                logger.debug(f"Cached session_validator (creation time: {creation_time:.2f}s)")
-
-            return component
-
-        return wrapper
-
-    return decorator
+    """Decorator for SessionValidator caching. Alias for cached_session_component('session_validator')."""
+    return cached_session_component("session_validator")
 
 
 # === SESSION STATE OPTIMIZATION ===

@@ -909,8 +909,6 @@ def _try_pattern_tests_passed(stdout_lines: list[str]) -> str:
 
 def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
     """Pattern 3: Look for Passed/Failed format with ANSI cleanup."""
-    import re
-
     passed_count = None
     failed_count = None
     for line in stdout_lines:
@@ -937,8 +935,6 @@ def _try_pattern_passed_failed_ansi(stdout_lines: list[str]) -> str:
 
 def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
     """Pattern 4: Look for Python unittest format 'Ran X tests in Y.Zs'."""
-    import re
-
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         if "Ran" in clean_line and "tests in" in clean_line:
@@ -956,8 +952,6 @@ def _try_pattern_unittest_ran(stdout_lines: list[str]) -> str:
 
 def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
     """Pattern 5: Look for numbered test patterns like 'Test 1:', 'Test 2:', etc."""
-    import re
-
     test_numbers: set[int] = set()
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
@@ -977,8 +971,6 @@ def _try_pattern_numbered_tests(stdout_lines: list[str]) -> str:
 
 def _try_pattern_number_followed_by_test(stdout_lines: list[str]) -> str:
     """Pattern 6: Look for any number followed by 'test' or 'tests'."""
-    import re
-
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         # Look for patterns like "5 tests", "10 test cases", "3 test functions"
@@ -995,8 +987,6 @@ def _try_pattern_number_followed_by_test(stdout_lines: list[str]) -> str:
 
 def _try_pattern_all_tests_completed(stdout_lines: list[str]) -> str:
     """Pattern 7: Look for test completion messages with counts."""
-    import re
-
     for line in stdout_lines:
         clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
         # Look for patterns like "All X tests passed", "X operations completed"
@@ -1037,8 +1027,6 @@ def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
     Returns:
         Extracted count or None if not found
     """
-    import re
-
     clean_line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
     if keyword not in clean_line:
         return None
@@ -1193,8 +1181,6 @@ def _extract_numeric_test_count(test_count: str) -> int:
         return 0
 
     try:
-        import re
-
         match = re.search(r"(\d+)", test_count)
         if match:
             return int(match.group(1))

@@ -294,7 +294,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         min_fill_rate = getattr(config_schema.api, "rate_limiter_min_rate", 0.1)
         max_fill_rate = getattr(config_schema.api, "rate_limiter_max_rate", 0.5)
 
-        # Legacy support: requests_per_second acts as initial rate
+        # requests_per_second acts as initial rate
         initial_rps = getattr(config_schema.api, "requests_per_second", 0.3) or 0.3
 
         # Ensure initial rate is within bounds

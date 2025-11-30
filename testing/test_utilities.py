@@ -538,7 +538,6 @@ def create_file_extension_validator(extensions: list[str]):
         validate_python_files = create_file_extension_validator(['.py', '.pyx'])
         validate_data_files = create_file_extension_validator(['.json', '.yaml', '.yml'])
     """
-    from pathlib import Path
     from typing import Union
 
     def validator(path: Union[str, Path, None]) -> bool:
@@ -715,8 +714,6 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
         gedcom_data = load_test_gedcom()
         individual = gedcom_data.get_individual("@I1@")
     """
-    from pathlib import Path
-
     try:
         gedcom_module = import_module("gedcom")
     except ImportError:

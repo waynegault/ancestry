@@ -47,7 +47,6 @@ from typing import (
     Callable,
     Optional,
     ParamSpec,
-    TypeGuard,
     TypeVar,
     Union,
     cast,
@@ -55,7 +54,7 @@ from typing import (
 from urllib.parse import urljoin, urlparse, urlunparse  # urljoin re-exported for action7_inbox.py
 
 # === THIRD-PARTY IMPORTS ===
-from requests import Response as RequestsResponse, Session as RequestsSession
+from requests import Response as RequestsResponse
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
 
@@ -64,7 +63,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile
-from core.protocols import RateLimiterProtocol, SessionManagerLike
+from core.protocols import RateLimiterProtocol
 from observability.metrics_registry import metrics
 
 # === TYPE ALIASES ===
@@ -75,12 +74,6 @@ ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse,
 
 
 DriverType = Optional[WebDriver]
-
-
-def _is_session_manager_like(value: Any) -> TypeGuard[SessionManagerLike]:
-    """Return True when value looks like a SessionManager instance."""
-
-    return hasattr(value, "driver")
 
 
 def _wait_until_visible(waiter: "WebDriverWait[Any]", locator: Locator) -> WebElement:
@@ -116,15 +109,6 @@ def _wait_until_not_present(waiter: "WebDriverWait[Any]", locator: Locator) -> b
 
     condition = expected_conditions.presence_of_element_located(locator)
     return bool(waiter.until_not(condition))
-
-
-def _get_requests_session(session_manager: "SessionManager") -> RequestsSession:
-    """Return the underlying requests session exposed by SessionManager."""
-
-    req_session = getattr(session_manager, "requests_session", None)
-    if req_session is None:
-        raise AttributeError("SessionManager is missing a requests session")
-    return cast(RequestsSession, req_session)
 
 
 # Type variables for decorators
@@ -929,40 +913,6 @@ def retry(
 
 
 # === RETRY API HELPER FUNCTIONS ===
-
-
-def _get_retry_config(
-    max_retries: Optional[int],
-    initial_delay: Optional[float],
-    backoff_factor: Optional[float],
-    retry_on_status_codes: Optional[list[int]],
-    policy: Optional["RetryPolicyProfile"] = None,
-) -> dict[str, Any]:
-    """Get retry configuration with defaults from config_schema."""
-    cfg = config_schema
-    policy_attempts = policy.max_attempts if policy else None
-    policy_initial = policy.initial_delay_seconds if policy else None
-    policy_backoff = policy.backoff_factor if policy else None
-    policy_max_delay = policy.max_delay_seconds if policy else None
-    policy_jitter = policy.jitter_seconds if policy else 0.2
-    return {
-        "max_retries": max_retries
-        if max_retries is not None
-        else (policy_attempts if policy_attempts is not None else getattr(cfg, "MAX_RETRIES", 3)),
-        "initial_delay": initial_delay
-        if initial_delay is not None
-        else (policy_initial if policy_initial is not None else getattr(cfg, "INITIAL_DELAY", 0.5)),
-        "backoff_factor": backoff_factor
-        if backoff_factor is not None
-        else (policy_backoff if policy_backoff is not None else getattr(cfg, "BACKOFF_FACTOR", 1.5)),
-        "retry_codes": set(
-            retry_on_status_codes
-            if retry_on_status_codes is not None
-            else getattr(cfg, "RETRY_STATUS_CODES", [429, 500, 502, 503, 504])
-        ),
-        "max_delay": policy_max_delay if policy_max_delay is not None else getattr(cfg, "MAX_DELAY", 60.0),
-        "jitter_seconds": float(policy_jitter),
-    }
 
 
 def _calculate_sleep_time(

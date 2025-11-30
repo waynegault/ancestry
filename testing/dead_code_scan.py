@@ -160,11 +160,16 @@ def _should_skip_name(name: str) -> bool:
     return name.endswith("_tests")
 
 
-def compute_usage_counts(file_texts: dict[Path, str], defs: list[SymbolInfo]) -> list[dict[str, Any]]:
+def compute_usage_counts(
+    file_texts: dict[Path, str], defs: list[SymbolInfo], *, verbose: bool = False
+) -> list[dict[str, Any]]:
     texts: list[str] = list(file_texts.values())
+    total_defs = len(defs)
 
     results: list[dict[str, Any]] = []
-    for info in defs:
+    for i, info in enumerate(defs, 1):
+        if verbose and i % 100 == 0:
+            print(f"  Analyzing symbol {i}/{total_defs}...")
         pattern = re.compile(r"\b" + re.escape(info.name) + r"\b")
         total_refs = 0
         for text in texts:
@@ -188,20 +193,34 @@ def compute_usage_counts(file_texts: dict[Path, str], defs: list[SymbolInfo]) ->
 def main(args: list[str] | None = None) -> int:
     """Generate dead-code report and write to Cache/dead_code_candidates.json."""
     _ = args
-    payload = generate_dead_code_report()
+    payload = generate_dead_code_report(verbose=True)
     out_path = write_dead_code_report(payload)
-    print(f"Dead-code scan complete: {payload['candidate_count']} candidates found.")
-    print(f"Results written to: {out_path}")
+    print(f"✅ Dead-code scan complete: {payload['candidate_count']} candidates found.")
+    print(f"📝 Results written to: {out_path}")
     return 0
 
 
-def generate_dead_code_report(root: Path = ROOT, *, skip_files: set[str] | None = None) -> dict[str, Any]:
+def generate_dead_code_report(
+    root: Path = ROOT, *, skip_files: set[str] | None = None, verbose: bool = False
+) -> dict[str, Any]:
     """Produce the dead-code candidate payload without writing it to disk."""
+    if verbose:
+        print("🔍 Starting dead code scan...")
 
     py_files = list(iter_py_files(root))
+    if verbose:
+        print(f"📁 Found {len(py_files)} Python files to analyze")
+
     file_texts = load_file_texts(py_files)
+    if verbose:
+        print(f"📄 Loaded {len(file_texts)} file texts")
+
     defs = collect_symbol_defs(file_texts, root=root, skip_files=skip_files)
-    candidates = compute_usage_counts(file_texts, defs)
+    if verbose:
+        print(f"🔢 Found {len(defs)} symbol definitions")
+        print("⏳ Computing usage counts (this may take a moment)...")
+
+    candidates = compute_usage_counts(file_texts, defs, verbose=verbose)
     candidates.sort(key=lambda r: (r["file"], r["lineno"]))
 
     return {

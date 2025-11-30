@@ -61,7 +61,6 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
@@ -1650,8 +1649,8 @@ def get_session_recovery_status() -> dict[str, Any]:
             if state_file.exists():
                 state_age = time.time() - state_file.stat().st_mtime
                 crash_recovery_available = state_age < 86400  # Less than 24 hours old
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not check crash recovery state: %s", exc)
 
         return {
             "checkpoints_available": len(checkpoints),

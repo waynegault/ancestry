@@ -835,8 +835,8 @@ class AdvancedPerformanceMonitor:
                 from caching.cache import get_cache_stats
 
                 return get_cache_stats()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not get cache stats: %s", exc)
 
         return {"hit_rate": 75, "total_requests": 0, "cache_size": 0}
 

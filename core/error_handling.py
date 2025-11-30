@@ -575,7 +575,7 @@ class CircuitBreakerOpenError(Exception):
     pass
 
 
-# === LEGACY EXCEPTION CLASSES FOR BACKWARD COMPATIBILITY ===
+# === APPLICATION EXCEPTION HIERARCHY ===
 
 
 class AncestryError(Exception):

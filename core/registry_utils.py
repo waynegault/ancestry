@@ -142,7 +142,7 @@ class SmartFunctionRegistry:
         return registered_count
 
     def register(self, name: str, func: Callable[..., Any]) -> None:
-        """Register a single function (backwards compatibility)."""
+        """Register a single function by name."""
         if name not in self.registry:
             self.registry[name] = func
             self.registration_stats["total_registered"] += 1
@@ -164,7 +164,7 @@ class SmartFunctionRegistry:
         }
 
 
-# Global instance for backwards compatibility
+# Global registry instance
 smart_registry = SmartFunctionRegistry()
 
 
