@@ -93,9 +93,11 @@ python main.py
 ### Core Components
 
 #### SessionManager (`core/session_manager.py`)
+
 Central orchestrator for all browser, database, and API operations. **THE** critical component—all resource access flows through it.
 
 **Key Methods**:
+
 - `ensure_session_ready()` - Initializes browser, database, API clients
 - `ensure_api_ready_with_browser_fallback()` - API session with automatic cookie sync
 - `ensure_api_ready_browserless()` - API-only mode without browser overhead
@@ -105,9 +107,11 @@ Central orchestrator for all browser, database, and API operations. **THE** crit
 **Invariant**: Exactly one SessionManager instance per execution, registered globally via `session_utils.register_session_manager()`
 
 #### RateLimiter (`core/rate_limiter.py`)
+
 Thread-safe token bucket algorithm prevents 429 rate limit errors.
 
 **Configuration** (`.env`):
+
 ```env
 REQUESTS_PER_SECOND=0.3      # Fill rate (CRITICAL - empirically validated)
 INITIAL_DELAY=1.0            # Starting delay between requests
@@ -117,6 +121,7 @@ DECREASE_FACTOR=0.95         # Gradual speedup on success
 ```
 
 **Features**:
+
 - Burst capacity: Initial 10 tokens for fast startup
 - Adaptive backoff: 1.5x delay increase on 429 errors
 - Gradual recovery: 0.95x delay decrease on success
@@ -125,9 +130,11 @@ DECREASE_FACTOR=0.95         # Gradual speedup on success
 **Validation**: Run `validate_rate_limiting.py` after any RPS changes—requires 50+ pages showing zero 429 errors.
 
 #### Database Layer (`database.py`)
+
 SQLAlchemy 2.0 ORM with soft deletes and connection pooling.
 
 **Core Models**:
+
 - `Person` - DNA test takers and family tree members
   - `uuid` (UPPERCASE storage) - DNA test GUID, nullable for non-testers
   - `profile_id` - User profile ID, nullable for non-member testers
@@ -138,15 +145,18 @@ SQLAlchemy 2.0 ORM with soft deletes and connection pooling.
 - `MessageTemplate` - Personalized message templates
 
 **Critical Patterns**:
+
 - Always use `.upper()` on UUIDs before database operations
 - Call `session.expire_all()` after bulk operations to force refresh
 - Use `deleted_at` for soft deletes—never hard delete
 
 #### Error Handling (`core/error_handling.py`)
+
 Structured exception hierarchy with automatic retry logic.
 
 **Exception Hierarchy**:
-```
+
+```text
 AncestryException (base)
 ├─ RetryableError (automatic retry applies)
 │  ├─ APIRateLimitError (429 errors with retry_after)
@@ -158,6 +168,7 @@ AncestryException (base)
 ```
 
 **Decorators**:
+
 ```python
 @retry_on_failure(max_attempts=3, backoff_factor=2.0)
 def fetch_api_data(url):
@@ -198,9 +209,11 @@ else:
 All actions use the `exec_actn()` wrapper pattern in `main.py`—never manage resources directly.
 
 #### Action 6: DNA Match Gathering (`actions/action6_gather.py`)
+
 Comprehensive DNA match collection with checkpoint resume capability.
 
 **Features**:
+
 - Parallel API fetching with ThreadPoolExecutor (default: 1 worker for rate safety)
 - Automatic checkpoint after each page for resume capability
 - Ethnicity comparison with dynamic region columns
@@ -208,11 +221,13 @@ Comprehensive DNA match collection with checkpoint resume capability.
 - Badge details and relationship ladders
 
 **Performance** (1 worker):
+
 - ~40-60s per page (20 matches/page)
 - ~596 matches/hour throughput
 - 14-20% cache hit rate on repeat runs
 
 **Checkpoint System**:
+
 ```python
 # User intent handling:
 # "6" (no page) → Auto-resume from checkpoint if exists
@@ -229,6 +244,7 @@ Comprehensive DNA match collection with checkpoint resume capability.
 ```
 
 **Configuration** (`.env`):
+
 ```env
 ENABLE_CHECKPOINTING=true
 CHECKPOINT_MAX_AGE_HOURS=24
@@ -236,9 +252,11 @@ THREAD_POOL_WORKERS=1  # CRITICAL: >1 requires rate limit validation
 ```
 
 #### Action 7: Inbox Processing (`actions/action7_inbox.py`)
+
 AI-powered message classification and conversation analysis.
 
 **Classification Types** (using `intent_classification` prompt):
+
 - PRODUCTIVE - Actionable genealogical information
 - ENTHUSIASTIC - Excited but no specific leads
 - CASUAL_CHAT - Friendly but unfocused
@@ -246,12 +264,14 @@ AI-powered message classification and conversation analysis.
 - OTHER - Unclear intent
 
 **Entity Extraction**:
+
 - Names (people mentioned)
 - Dates (years, date ranges)
 - Places (locations)
 - Relationships (family connections)
 
 **Processing Flow**:
+
 1. Scrape inbox HTML for conversations
 2. Extract message metadata (sender, timestamp, content)
 3. AI classification via `call_ai('intent_classification', context)`
@@ -259,23 +279,28 @@ AI-powered message classification and conversation analysis.
 5. Update `ConversationLog` with analysis results
 
 #### Action 8: Automated Messaging (`actions/action8_messaging.py`)
+
 Context-aware personalized messaging to DNA matches.
 
 **Template System** (`messaging/templates/`):
+
 - Loads templates from JSON at runtime (lazy initialization)
 - Variables: {match_name}, {relationship}, {shared_cm}, {tree_size}, {owner_name}
 - Personalization based on match characteristics
 
 **Message Types**:
+
 - Initial outreach (no prior conversation)
 - Follow-up messages (existing thread)
 - Record sharing offers
 - Research collaboration
 
 #### Action 9: Task Generation (`actions/action9_process_productive.py`)
+
 Converts PRODUCTIVE conversations into Microsoft To-Do tasks.
 
 **Task Categories** (from `genealogical_task_templates.py`):
+
 1. Vital Records (birth, death, marriage certificates)
 2. Census Records (federal, state, special censuses)
 3. DNA Analysis (segment comparison, triangulation)
@@ -286,21 +311,25 @@ Converts PRODUCTIVE conversations into Microsoft To-Do tasks.
 8. Newspaper Research (obituaries, announcements)
 
 **Quality Scoring** (0-100):
+
 - Entity richness (names, dates, places, relationships) - up to 70 points
 - Task specificity (verbs, years, record types, locations) - up to 30 points
 - Penalties: Missing names (-20), no verbs (-10), filler words (-10)
 - Bonuses: 5+ entities (+5), specific years (+10)
 
 **Thresholds**:
+
 - 85-100: Excellent extraction
 - 70-84: Good (production ready)
 - 50-69: Acceptable (needs monitoring)
 - <50: Poor (review prompt immediately)
 
 #### Action 10: Family Tree Search (`actions/action10.py`)
+
 Unified person search using GEDCOM files and Ancestry API with intelligent scoring.
 
 **Search Flow**:
+
 1. Prompt for search criteria (names, dates, places)
 2. Search local GEDCOM files first (offline, fast)
 3. If zero GEDCOM matches, fall back to Ancestry API
@@ -308,6 +337,7 @@ Unified person search using GEDCOM files and Ancestry API with intelligent scori
 5. Display top match with family members and relationship path
 
 **Scoring System** (`research/universal_scoring.py`):
+
 - Name matches: Exact (30 points), Contains (15 points)
 - Birth year: Exact (25), ±1 year (20), ±2 years (15), ±5 years (10)
 - Death year: Same scoring as birth
@@ -316,13 +346,15 @@ Unified person search using GEDCOM files and Ancestry API with intelligent scori
 - Penalties: Alive-mode penalty if candidate has death info but search doesn't
 
 **Configuration**:
+
 ```env
 # API mode selection
 API_SEARCH_BROWSERLESS=false  # Use browser-based auth for API (recommended)
 ```
 
 **Display Output**:
-```
+
+```text
 Name: Peter Fraser (1893-1953)
 Birth: 1893 in Fyvie, Aberdeenshire, Scotland
 Death: 1953 in Auckland
@@ -345,9 +377,11 @@ Relationship to Wayne Gault:
 ### AI Integration
 
 #### Multi-Provider Architecture (`ai/ai_interface.py`)
+
 Unified interface with automatic failover across multiple AI providers.
 
 **Supported Providers**:
+
 - **Google Gemini** (gemini-1.5-flash) - Primary, fast responses
 - **DeepSeek** (deepseek-chat) - Cost-effective fallback
 - **Local LLM** (LM Studio) - Privacy-focused offline option
@@ -356,12 +390,14 @@ Unified interface with automatic failover across multiple AI providers.
 - **Inception** (Mercury) - Specialized provider
 
 **Provider Selection**:
+
 ```env
 AI_PROVIDER=gemini
 AI_PROVIDER_FALLBACKS=gemini,deepseek,local_llm,moonshot,grok,inception
 ```
 
 **Failover Logic**:
+
 1. Try primary provider from `AI_PROVIDER`
 2. On failure, iterate through `AI_PROVIDER_FALLBACKS`
 3. Skip providers without credentials/SDKs
@@ -369,9 +405,11 @@ AI_PROVIDER_FALLBACKS=gemini,deepseek,local_llm,moonshot,grok,inception
 5. Record telemetry for quality tracking
 
 #### Prompt Library (`ai/ai_prompts.json`)
+
 Versioned prompts with A/B testing support.
 
 **Prompt Structure**:
+
 ```json
 {
   "intent_classification": {
@@ -385,6 +423,7 @@ Versioned prompts with A/B testing support.
 ```
 
 **Usage**:
+
 ```python
 # Use base prompt
 result = call_ai('intent_classification', {'message': message_text})
@@ -394,9 +433,11 @@ result = call_ai('intent_classification', {'message': message_text}, variant='v2
 ```
 
 #### Quality Monitoring (`ai/prompt_telemetry.py`)
+
 Comprehensive telemetry system tracks AI performance.
 
 **Metrics Tracked**:
+
 - `parse_success` - JSON parsing success rate
 - `quality_score` - Extraction quality (0-100)
 - `response_time` - Latency in milliseconds
@@ -406,6 +447,7 @@ Comprehensive telemetry system tracks AI performance.
 **Storage**: `Logs/prompt_experiments.jsonl` (one JSON object per line)
 
 **Commands**:
+
 ```bash
 # View statistics
 python prompt_telemetry.py --stats
@@ -429,20 +471,23 @@ python quality_regression_gate.py || exit 1
 #### Local LLM Setup (LM Studio)
 
 **Quick Start**:
-1. Install LM Studio from https://lmstudio.ai
+
+1. Install LM Studio from <https://lmstudio.ai>
 2. Download an instruct model (recommended: qwen3-4b-2507)
-3. Start local server (Developer tab) → Running at http://localhost:1234/v1
-4. Configure `.env`:
+3. Start local server (Developer tab) → Running at `http://localhost:1234/v1`
+4. Configure `.env` (see example below)
+5. Enable JIT loading in LM Studio for automatic model loading
+6. Test: `python test_local_llm.py`
+
 ```env
 AI_PROVIDER=local_llm
 LOCAL_LLM_BASE_URL=http://localhost:1234/v1
 LOCAL_LLM_API_KEY=lm-studio
 LOCAL_LLM_MODEL=qwen3-4b-2507
 ```
-5. Enable JIT loading in LM Studio for automatic model loading
-6. Test: `python test_local_llm.py`
 
 **Programmatic Model Loading**:
+
 ```python
 import os, requests
 
@@ -470,9 +515,11 @@ print(r.status_code, r.json())
 ### Testing Infrastructure
 
 #### Test Framework (`testing/test_framework.py`)
+
 Standardized testing pattern used across all 74+ modules.
 
 **Standard Pattern**:
+
 ```python
 def module_tests() -> bool:
     """Module-specific test implementation"""
@@ -497,47 +544,53 @@ if __name__ == "__main__":
 **Test Quality Standards**:
 
 1. **Explicit Assertion Messages** - All assertions include descriptive error messages:
-```python
-# Good
-assert isinstance(result, dict), "Should return dict even with None inputs"
-assert len(names) > 0, "Should return non-empty list for valid GEDCOM data"
 
-# Bad
-assert isinstance(result, dict)
-```
+   ```python
+   # Good
+   assert isinstance(result, dict), "Should return dict even with None inputs"
+   assert len(names) > 0, "Should return non-empty list for valid GEDCOM data"
+
+   # Bad
+   assert isinstance(result, dict)
+   ```
 
 2. **Edge-Case Coverage**:
-- Null/None inputs: `None`, empty dicts `{}`, empty lists `[]`
-- Unicode & special characters: José María, Müller, Владимир, 李明, O'Brien
-- Malformed data: Wrong types, missing fields, invalid structures
-- Edge numbers: Zero, negative, extremely large values
-- Long inputs: 500+ character strings, 1000+ character text, 50+ records
+
+   - Null/None inputs: `None`, empty dicts `{}`, empty lists `[]`
+   - Unicode & special characters: José María, Müller, Владимир, 李明, O'Brien
+   - Malformed data: Wrong types, missing fields, invalid structures
+   - Edge numbers: Zero, negative, extremely large values
+   - Long inputs: 500+ character strings, 1000+ character text, 50+ records
 
 3. **Negative-Path Testing**:
-- Invalid object types passed to functions
-- Circular references in relational data
-- Missing configuration or environment variables
-- API errors, timeouts, network failures
-- Database connection failures and rollbacks
+
+   - Invalid object types passed to functions
+   - Circular references in relational data
+   - Missing configuration or environment variables
+   - API errors, timeouts, network failures
+   - Database connection failures and rollbacks
 
 4. **Performance Validation**:
-```python
-def _test_large_dataset_performance() -> None:
-    """Test performance with 1000 records."""
-    import time
 
-    start = time.time()
-    result = process_large_batch(create_mock_records(1000))
-    duration = time.time() - start
+   ```python
+   def _test_large_dataset_performance() -> None:
+       """Test performance with 1000 records."""
+       import time
 
-    assert duration < 5.0, f"Should complete in <5s, took {duration:.2f}s"
-    assert len(result) == 1000, "Should process all records"
-```
+       start = time.time()
+       result = process_large_batch(create_mock_records(1000))
+       duration = time.time() - start
+
+       assert duration < 5.0, f"Should complete in <5s, took {duration:.2f}s"
+       assert len(result) == 1000, "Should process all records"
+   ```
 
 #### Test Utilities (`testing/test_utilities.py`)
+
 Centralized helper functions and decorators for consistent testing.
 
 **Test Decorators**:
+
 ```python
 @with_temp_database
 def test_database_operations():
@@ -556,6 +609,7 @@ def test_with_custom_config():
 ```
 
 **Fixture Factories**:
+
 ```python
 # Create test match data
 match = create_test_match(
@@ -595,6 +649,7 @@ SKIP_LIVE_API_TESTS=true python run_all_tests.py
 ```
 
 **Expected Results**:
+
 - All 74+ modules should pass with 100/100 quality scores
 - 643+ tests passing at 100% success rate
 - Zero complexity warnings, zero linting errors, zero type errors
@@ -604,6 +659,7 @@ SKIP_LIVE_API_TESTS=true python run_all_tests.py
 ### Environment Variables (`.env`)
 
 #### Required: Ancestry Authentication
+
 ```env
 ANCESTRY_USERNAME=your_email@example.com
 ANCESTRY_PASSWORD=your_password
@@ -611,6 +667,7 @@ TREE_NAME=Gault Family  # Your main tree name
 ```
 
 #### Required: AI Provider
+
 ```env
 AI_PROVIDER=gemini  # Options: gemini, deepseek, local_llm, moonshot, grok, inception
 
@@ -630,6 +687,7 @@ AI_PROVIDER_FALLBACKS=gemini,deepseek,local_llm,moonshot,grok,inception
 ```
 
 #### Optional: Rate Limiting (CRITICAL)
+
 ```env
 REQUESTS_PER_SECOND=0.3  # CRITICAL - empirically validated, do not change
 INITIAL_DELAY=1.0
@@ -641,6 +699,7 @@ DECREASE_FACTOR=0.95
 **WARNING**: Changing `REQUESTS_PER_SECOND` without validation WILL break production. Run `validate_rate_limiting.py` with 50+ pages showing zero 429 errors before deploying.
 
 #### Optional: Action 6 Configuration
+
 ```env
 MAX_PAGES=1  # Processing limit for DNA match gathering
 THREAD_POOL_WORKERS=1  # CRITICAL: >1 requires rate limit validation
@@ -650,6 +709,7 @@ HEALTH_CHECK_INTERVAL_PAGES=5  # Proactive session refresh
 ```
 
 #### Optional: Testing & Development
+
 ```env
 SKIP_LIVE_API_TESTS=false  # Set to true for CI/CD
 LOG_LEVEL=INFO  # DEBUG for detailed logging
@@ -675,25 +735,29 @@ class APISettings:
 ### User Identity Endpoints
 
 **Profile ID**:
-```
+
+```text
 GET app-api/cdp-p13n/api/v1/users/me?attributes=ucdmid
 Response: {"data": {"ucdmid": "07bdd45e-0006-0000-0000-000000000000"}}
 ```
 
 **DNA Test UUID**:
-```
+
+```text
 GET api/navheaderdata/v1/header/data/dna
 Response: {"testId": "FB609BA5-5A0D-46EE-BF18-C300D8DE5AB7", "testComplete": true}
 ```
 
 **Tree List**:
-```
+
+```text
 GET api/treesui-list/trees?rights=own
 Response: {"trees": [{"id": "175946702", "name": "Gault Family", ...}]}
 ```
 
 **Tree Owner Info**:
-```
+
+```text
 GET api/uhome/secure/rest/user/tree-info?tree_id={tree_id}
 Response: {"id": 175946702, "owner": {"displayName": "Wayne Gault"}, ...}
 ```
@@ -701,19 +765,22 @@ Response: {"id": 175946702, "owner": {"displayName": "Wayne Gault"}, ...}
 ### Genealogical Data Endpoints
 
 **New Family View** (preferred):
-```
+
+```text
 GET api/treeviewer/tree/newfamilyview/{tree_id}
 Response: {"Persons": [...], "Family": {...}}
 ```
 
 **TreesUI List** (person search):
-```
+
+```text
 GET api/treesui-list/trees/{tree_id}/persons?name={name}&limit=100&fields=EVENTS,GENDERS,NAMES&isGetFullPersonObject=true
 Response: {"results": [...]}
 ```
 
 **Relationship Ladder**:
-```
+
+```text
 GET family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels
 Response: {"kinshipPersons": [...]}
 ```
@@ -721,29 +788,34 @@ Response: {"kinshipPersons": [...]}
 ### DNA Endpoints (Action 6)
 
 **Match Details**:
-```
+
+```text
 GET discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/details?pmparentaldata=true
 ```
 
 **Ethnicity Comparison**:
-```
+
+```text
 GET discoveryui-matchesservice/api/compare/{owner_guid}/with/{match_guid}/ethnicity
 ```
 
 **Badge Details**:
-```
+
+```text
 GET discoveryui-matchesservice/api/samples/{my_uuid}/matches/{match_uuid}/badgedetails
 ```
 
 ### Messaging Endpoints (Action 8)
 
 **Send New Message**:
-```
+
+```text
 POST app-api/express/v2/conversations/message
 ```
 
 **Send to Existing Conversation**:
-```
+
+```text
 POST app-api/express/v2/conversations/{conv_id}
 ```
 
@@ -754,55 +826,60 @@ POST app-api/express/v2/conversations/{conv_id}
 ### Adding New Action Functions
 
 1. Create action function with signature:
-```python
-def new_action(session_manager: SessionManager, *_) -> bool:
-    """
-    New action description.
 
-    Returns:
-        bool: True if action completed successfully
-    """
-    logger.info("Starting new action...")
-    # Implementation here
-    return True
-```
+   ```python
+   def new_action(session_manager: SessionManager, *_) -> bool:
+       """
+       New action description.
+
+       Returns:
+           bool: True if action completed successfully
+       """
+       logger.info("Starting new action...")
+       # Implementation here
+       return True
+   ```
 
 2. Add to `main.py` action handlers:
-```python
-# In MENU_ACTIONS dict (around line 1650)
-MENU_ACTIONS = {
-    # ...
-    "12": {"label": "New Action", "func": new_action},
-}
-```
+
+   ```python
+   # In MENU_ACTIONS dict (around line 1650)
+   MENU_ACTIONS = {
+       # ...
+       "12": {"label": "New Action", "func": new_action},
+   }
+   ```
 
 3. Use `exec_actn()` wrapper (never manage resources directly):
-```python
-# In main() function
-elif choice == "12":
-    exec_actn(new_action, session_manager, "12")
-```
+
+   ```python
+   # In main() function
+   elif choice == "12":
+       exec_actn(new_action, session_manager, "12")
+   ```
 
 4. Add tests using `TestSuite` pattern:
-```python
-def module_tests() -> bool:
-    suite = TestSuite("New Action Module", "new_action.py")
 
-    suite.add_test(
-        lambda: callable(new_action),
-        "new_action should be callable"
-    )
+   ```python
+   def module_tests() -> bool:
+       suite = TestSuite("New Action Module", "new_action.py")
 
-    return suite.run_tests()
+       suite.add_test(
+           lambda: callable(new_action),
+           "new_action should be callable"
+       )
 
-run_comprehensive_tests = create_standard_test_runner(module_tests)
-```
+       return suite.run_tests()
+
+   run_comprehensive_tests = create_standard_test_runner(module_tests)
+   ```
 
 5. Document in README.md under "Action Modules"
 
 ### Code Quality Standards
 
 #### Linting (Ruff)
+
 ```bash
 # Auto-fix before commit
 ruff check --fix .
@@ -812,6 +889,7 @@ ruff check .
 ```
 
 **Enforced Rules**:
+
 - E722 - Bare except clauses
 - F821 - Undefined names
 - I001 - Import sorting
@@ -819,11 +897,13 @@ ruff check .
 - PLR6301 - Method could be static
 
 **Disable Per-File**:
+
 ```python
 # ruff: noqa: E722
 ```
 
 #### Type Hints (Pyright)
+
 ```bash
 # Check types
 pyright
@@ -832,11 +912,13 @@ pyright
 **Configuration**: `pyrightconfig.json` configures standard checking
 
 **Requirements**:
+
 - Type hints required for all new functions
 - Use `Optional[Type]` not `Type | None` for Python 3.9 compatibility
 - Nullable types must be explicit
 
 #### Logging Discipline
+
 ```python
 logger.info("User-visible milestones")    # Action starts/completes
 logger.debug("Internal state details")    # Variable values, control flow
@@ -847,6 +929,7 @@ logger.error("Action failures")           # Explicit errors requiring interventi
 ### Debugging Workflows
 
 #### Rate Limiting Issues
+
 ```powershell
 # Check for 429 errors (should return 0)
 (Select-String -Path Logs\app.log -Pattern "429 error").Count
@@ -859,6 +942,7 @@ Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
 ```
 
 #### AI Extraction Issues
+
 ```bash
 # Check telemetry statistics
 python prompt_telemetry.py --stats
@@ -874,6 +958,7 @@ python prompt_telemetry.py --baseline
 ```
 
 #### Database Issues
+
 ```bash
 # Check connection pool status
 python -c "from database import engine; print(engine.pool.status())"
@@ -890,6 +975,7 @@ python main.py  # Option 3: Backup Database
 ```
 
 #### Session Issues
+
 ```bash
 # Check session validity and age
 python -c "from core.session_manager import SessionManager; sm = SessionManager(); print(f'Valid: {sm.is_sess_valid()}, Age: {sm.session_age_seconds()}s')"
@@ -902,6 +988,7 @@ Remove-Item -Recurse -Force Cache\*
 ```
 
 #### Performance Profiling
+
 ```bash
 # Enable DEBUG logging for detailed timing
 # main.py: setup_logging(log_level="DEBUG")
@@ -920,17 +1007,21 @@ python -m cProfile -o profile.stats main.py
 ### Common Pitfalls & Solutions
 
 #### UNIQUE Constraint Violations
+
 **Root Cause**: UUID stored lowercase, lookup expects uppercase
 
 **Solution**: Always use `.upper()` on UUIDs before DB operations
+
 ```python
 person = session.query(Person).filter(Person.uuid == test_uuid.upper()).first()
 ```
 
 #### SQLAlchemy Session Caching
+
 **Symptom**: Bulk insert followed by immediate lookup returns None
 
 **Solution**: Call `session.expire_all()` after bulk operations
+
 ```python
 session.bulk_insert_mappings(Person, people)
 session.commit()
@@ -938,14 +1029,17 @@ session.expire_all()  # Force DB refresh
 ```
 
 #### 429 Rate Limit Errors
+
 **Symptom**: "429 Too Many Requests" with 72-second backoff
 
 **Solution**:
+
 1. Verify `REQUESTS_PER_SECOND=0.3` in `.env`
 2. Run `validate_rate_limiting.py`
 3. Never increase RPS without 50+ page validation showing zero 429s
 
 #### Session Not Ready Errors
+
 **Symptom**: "Cannot perform action: Session not ready"
 
 **Solution**: Ensure action uses `exec_actn()` wrapper, which calls `ensure_session_ready()`
@@ -953,25 +1047,30 @@ session.expire_all()  # Force DB refresh
 **Never**: Call browser/API operations directly without SessionManager initialization
 
 #### Low AI Quality Scores
+
 **Symptom**: Quality scores consistently <70 in telemetry logs
 
 **Diagnosis**:
+
 ```bash
 python prompt_telemetry.py --stats  # Check median scores
 Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions
 ```
 
 **Solution**:
+
 1. Review/update prompts in `ai_prompts.json`
 2. Add variants for A/B testing
 3. Run `python quality_regression_gate.py` before deployment
 
 #### Session Expiry During Long Operations
+
 **Symptom**: 403 errors appearing after 40 minutes of action execution
 
 **Prevention**: Action 6 has proactive health monitoring (refreshes at 25-min mark)
 
 **Manual Fix**:
+
 ```python
 session_manager.refresh_browser_cookies()
 sync_cookies_from_browser()
@@ -988,6 +1087,7 @@ The platform exports comprehensive metrics for monitoring:
 **Endpoint**: `http://localhost:9090/metrics` (when metrics server running)
 
 **Available Metrics**:
+
 - `ancestry_action_duration_seconds` - Action execution time histogram
 - `ancestry_action_success_total` - Successful action counter
 - `ancestry_action_failure_total` - Failed action counter
@@ -1002,17 +1102,20 @@ The platform exports comprehensive metrics for monitoring:
 Pre-built dashboards available in `observability/grafana/`:
 
 **Action Performance Dashboard**:
+
 - Action execution times (p50, p95, p99)
 - Success/failure rates
 - Actions per hour throughput
 
 **API Health Dashboard**:
+
 - API call rate by endpoint
 - Response time distributions
 - 429 rate limit occurrences
 - Success/error ratio
 
 **AI Quality Dashboard**:
+
 - Quality score trends over time
 - Parse success rate
 - Provider usage distribution
@@ -1035,11 +1138,13 @@ with correlation_context("DNA Match Gathering") as ctx:
 ```
 
 **Log Format**:
-```
+
+```text
 2025-01-15 10:30:45 INFO [correlation_id=abc123-def456] [worker_1] Processing page 5
 ```
 
 **Querying Logs by Correlation**:
+
 ```powershell
 # Find all logs for specific request
 Select-String -Path Logs\app.log -Pattern "correlation_id=abc123-def456"
@@ -1057,6 +1162,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 **Symptom**: Chrome fails to start or crashes immediately
 
 **Solutions**:
+
 1. Update Chrome to latest version
 2. Run diagnostic: `python browser/diagnose_chrome.py`
 3. Clear cache: `Remove-Item -Recurse -Force Cache\*`
@@ -1067,17 +1173,19 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 **Symptom**: 401 Unauthorized or 403 Forbidden errors
 
 **Solutions**:
+
 1. Verify credentials in `.env` are correct
 2. Check if Ancestry changed password requirements
 3. Force session refresh: Run Action 5 (Check Login Status)
 4. Clear cookies and re-authenticate: Delete `Cache/ancestry_cookies.json`
 5. Check for CAPTCHA: Some IPs may trigger CAPTCHA—use browser manually first
 
-### Database Issues
+### Database Issues (Troubleshooting)
 
 **Symptom**: SQLAlchemy errors, locked database, or integrity errors
 
 **Solutions**:
+
 1. Check database file permissions: `ls -l Data/ancestry.db`
 2. Verify no other processes have lock: `lsof Data/ancestry.db` (Linux/Mac)
 3. Backup and recreate: Run Action 3 (Backup Database), then delete `Data/ancestry.db`
@@ -1088,6 +1196,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 **Symptom**: Slow execution, high memory usage, or timeouts
 
 **Solutions**:
+
 1. Enable DEBUG logging: Set `LOG_LEVEL=DEBUG` in `.env`
 2. Profile execution: `python -m cProfile -o profile.stats main.py`
 3. Check memory usage: `python -c "import psutil; p = psutil.Process(); print(p.memory_info())"`
@@ -1099,6 +1208,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 **Symptom**: AI calls failing or returning low quality results
 
 **Solutions**:
+
 1. Test provider: `python ai_api_test.py --provider gemini`
 2. Check API key: Verify not expired or rate limited
 3. Try fallback provider: Set `AI_PROVIDER_FALLBACKS` in `.env`
@@ -1162,7 +1272,7 @@ The following functions and classes are fully implemented and tested but not yet
 | `get_security_config()` | Security configuration subset | Ready for modular access |
 | `get_observability_config()` | Observability configuration subset | Ready for modular access |
 
-### Error Handling (`core/error_handling.py`)
+### Reserved Error Handling (`core/error_handling.py`)
 
 | Function/Class | Purpose | Integration Status |
 |---------------|---------|-------------------|
@@ -1180,21 +1290,25 @@ The following functions and classes are fully implemented and tested but not yet
 ### Additional Reserved Functions
 
 **Caching (`caching/cache.py`)**:
+
 - `get_cache_coordination_stats()` - Cache coordination statistics
 - `CacheDependencyTracker` class with `add_dependency()`, `invalidate_with_dependencies()`, `get_dependency_chain()`
 - `get_cache_dependency_tracker()` - Get dependency tracker instance
 
 **Feature Flags (`core/feature_flags.py`)**:
+
 - `clear_all_overrides()` - Clear all feature flag overrides
 - `get_flag()` - Get individual feature flag value
 - `list_flags()` - List all feature flags
 - `load_from_file()` - Load flags from configuration file
 
 **Type Definitions (`core/type_definitions.py`)**:
+
 - `PersonInfo`, `DNAMatchInfo`, `SearchResult`, `ConversationMessage`, `TaskInfo` - Type definitions for structured data
 - `Loggable`, `Scoreable` - Protocols for common interfaces
 
 **Rate Limiting (`core/rate_limiter.py`)**:
+
 - `get_endpoint_summary()` - Get per-endpoint rate statistics
 - `log_throttle_warning()` - Log throttle warnings
 - `get_rate_limiter_state_source()` - Get rate limiter state source
@@ -1211,6 +1325,7 @@ python testing/dead_code_scan.py --verbose
 ```
 
 The dead code scanner identifies functions that are defined but have only their own definition as a reference. These are either:
+
 1. **Public API methods** - Designed for external use (not dead code)
 2. **Reserved functions** - Implemented but pending integration (documented above)
 3. **Protocol/TypedDict classes** - Type definitions (not callable code)
@@ -1220,6 +1335,7 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 ## Dependencies
 
 ### Core Dependencies
+
 - **selenium 4.31.0+** - Browser automation (ChromeDriver auto-updates via webdriver-manager)
 - **SQLAlchemy 2.0.40+** - Database ORM with soft deletes, connection pooling
 - **requests 2.32.3+** - HTTP client for API calls (shares rate limiter with Selenium)
@@ -1227,11 +1343,13 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 - **tqdm 4.67.1+** - Progress bars with ETA calculation
 
 ### AI Providers
+
 - **google-generativeai 0.8.4** - Google Gemini AI provider
 - **openai 1.0.0+** - OpenAI-compatible client (Local LLM, Grok fallback)
 - **requests** - HTTP client for DeepSeek, Moonshot, Inception
 
 ### Development Dependencies (requirements-dev.txt)
+
 - **ruff** - Fast Python linter
 - **pyright** - Static type checker
 - **pytest** - Testing framework (optional, using built-in TestSuite)
@@ -1239,7 +1357,7 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 
 ## Project Structure
 
-```
+```text
 ├── actions/              # Action modules (6-11)
 │   ├── action6_gather.py
 │   ├── action7_inbox.py
@@ -1334,64 +1452,72 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 ### Development Workflow
 
 1. **Fork and Clone**:
-```bash
-git clone https://github.com/yourusername/ancestry.git
-cd ancestry
-```
+
+   ```bash
+   git clone https://github.com/yourusername/ancestry.git
+   cd ancestry
+   ```
 
 2. **Create Virtual Environment**:
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-```
+
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   pip install -r requirements-dev.txt
+   ```
 
 3. **Create Feature Branch**:
-```bash
-git checkout -b feature/your-feature-name
-```
+
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
 
 4. **Make Changes**:
-- Follow code quality standards (Ruff, Pyright)
-- Add tests using `TestSuite` pattern
-- Update documentation as needed
+
+   - Follow code quality standards (Ruff, Pyright)
+   - Add tests using `TestSuite` pattern
+   - Update documentation as needed
 
 5. **Run Tests**:
-```bash
-# Full test suite
-python run_all_tests.py
 
-# Fast unit tests
-python testing/run_tests_fast.py
+   ```bash
+   # Full test suite
+   python run_all_tests.py
 
-# Specific module
-python -m your_module
-```
+   # Fast unit tests
+   python testing/run_tests_fast.py
+
+   # Specific module
+   python -m your_module
+   ```
 
 6. **Check Code Quality**:
-```bash
-# Linting
-ruff check --fix .
 
-# Type checking
-pyright
+   ```bash
+   # Linting
+   ruff check --fix .
 
-# Test quality
-python testing/code_quality_checker.py
-```
+   # Type checking
+   pyright
+
+   # Test quality
+   python testing/code_quality_checker.py
+   ```
 
 7. **Commit and Push**:
-```bash
-git add .
-git commit -m "feat: Add your feature description"
-git push origin feature/your-feature-name
-```
+
+   ```bash
+   git add .
+   git commit -m "feat: Add your feature description"
+   git push origin feature/your-feature-name
+   ```
 
 8. **Create Pull Request**:
-- Ensure all tests pass
-- Include clear description of changes
-- Reference any related issues
+
+   - Ensure all tests pass
+   - Include clear description of changes
+   - Reference any related issues
 
 ### Code Review Checklist
 
