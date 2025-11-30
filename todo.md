@@ -59,7 +59,7 @@
 
 ## Phase 9: Shared Match Collection & Advanced Analysis
 
-- [ ] **Shared Match Scraper**:
+- [x] **Shared Match Scraper**:
   - Update `action6_gather.py` (or create new action) to fetch shared matches for specific DNA matches (e.g., > 20cM).
   - Store shared matches in `SharedMatch` table.
 - [ ] **Data Enrichment**:

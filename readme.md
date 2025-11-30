@@ -86,6 +86,7 @@ python main.py
 # 6 - Gather DNA Matches (start with 1-2 pages for testing)
 # 7 - Process Inbox Messages
 # 10 - Search Family Tree (GEDCOM or API)
+# 13 - Shared Match Scraper (Fetch shared matches for high-cM matches)
 ```
 
 ## Architecture

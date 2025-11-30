@@ -484,6 +484,42 @@ register_migration(
 )
 
 
+def _upgrade_0002(engine: Engine) -> None:
+    """Add shared_matches_fetched columns to dna_matches."""
+    with engine.begin() as connection:
+        # Check if columns exist first to avoid errors on re-run
+        try:
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched BOOLEAN DEFAULT 0"))
+        except Exception:
+            pass
+        try:
+            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched_date DATETIME"))
+        except Exception:
+            pass
+
+
+def _downgrade_0002(engine: Engine) -> None:
+    """Remove shared_matches_fetched columns from dna_matches."""
+    with engine.begin() as connection:
+        try:
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched"))
+            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched_date"))
+        except Exception:
+            # SQLite < 3.35.0 doesn't support DROP COLUMN
+            pass
+
+
+register_migration(
+    Migration(
+        version="0002_shared_matches_fetched",
+        description="Add tracking columns for shared match fetching",
+        upgrade=_upgrade_0002,
+        downgrade=_downgrade_0002,
+        depends_on=("0001_baseline",),
+    )
+)
+
+
 # === Module Tests ===
 
 

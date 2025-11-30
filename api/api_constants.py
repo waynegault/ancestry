@@ -104,6 +104,9 @@ API_PATH_MATCH_PROBABILITY = (
     "discoveryui-matches/parents/list/api/matchProbabilityData/{my_uuid_upper}/{sample_id_upper}"
 )
 
+# Shared matches between owner and match
+API_PATH_SHARED_MATCHES = "discoveryui-matchesservice/api/compare/{my_uuid}/with/{match_uuid}/sharedmatches"
+
 # ============================================================================
 # DNA ETHNICITY ENDPOINTS
 # ============================================================================
