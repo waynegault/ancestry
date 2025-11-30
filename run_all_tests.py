@@ -273,7 +273,7 @@ class LogAnalysisError(TypedDict):
 
 
 # ==============================================
-# Test Infrastructure Todo #18: Optimize Parallel Test Execution
+# Test Execution Optimization
 # ==============================================
 
 
@@ -349,7 +349,6 @@ def optimize_test_order(modules: list[str]) -> list[str]:
     """
     Optimize test execution order for faster feedback.
 
-    Test Infrastructure Todo #18: Smart test ordering
     Strategy:
     1. Fast tests first (< 1s historical duration)
     2. Recently failed tests next (for quick failure detection)
@@ -1658,7 +1657,7 @@ def _discover_and_prepare_modules(enable_integration: bool) -> tuple[list[str], 
         # In normal mode, EXCLUDE integration tests
         discovered_modules = [m for m in discovered_modules if m not in integration_modules]
 
-    # Test Infrastructure Todo #18: Apply smart test ordering
+    # Apply smart test ordering
     if "--fast" in sys.argv:
         print("🎯 Optimizing test order for faster feedback...")
         discovered_modules = optimize_test_order(discovered_modules)
@@ -1717,7 +1716,7 @@ def _execute_tests(
             print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
             sys.stdout.flush()
 
-            # Test Infrastructure Todo #18: Track test execution start time
+            # Track test execution start time
             start_time = time.time()
 
             # Always collect metrics for quality summary (not just when monitoring enabled)
@@ -1725,7 +1724,7 @@ def _execute_tests(
                 module_name, description, enable_monitoring=True, coverage=config.enable_benchmark
             )
 
-            # Test Infrastructure Todo #18: Update test history for smart ordering
+            # Update test history for smart ordering
             duration = time.time() - start_time
             update_test_history(module_name, duration, success)
 

@@ -64,12 +64,15 @@ from database import (
     ConversationPhaseEnum,
     ConversationState,
     DnaMatch,
+    DraftReply,
     MessageDirectionEnum,
     Person,
     PersonStatusEnum,
     commit_bulk_data,
 )
+from genealogy.research_service import ResearchService
 from messaging import build_safe_column_value
+from messaging.inbound import InboundOrchestrator
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
@@ -159,6 +162,9 @@ class InboxProcessor:
             "start_time": None,
             "end_time": None,
         }
+
+        # Initialize Research Service
+        self.research_service = ResearchService()
 
         # InboxProcessor initialized (removed verbose debug)
 
@@ -1049,40 +1055,7 @@ class InboxProcessor:
 
         # Step 2: Main loop - continues until stop condition met
         while not state["stop_processing"]:
-            try:
-                # Process single batch iteration
-                should_stop, batch_stop_reason = self._process_single_batch_iteration(
-                    session, state, comp_conv_id, comp_ts, my_pid_lower
-                )
-
-                if should_stop:
-                    state["stop_reason"] = batch_stop_reason
-                    state["stop_processing"] = True
-                    break
-
-            # Handle exceptions during batch processing
-            except WebDriverException as wde:
-                state["stop_reason"], _, _ = self._handle_loop_exception(wde, "WebDriverException", session, state)
-                state["stop_processing"] = True
-                break
-
-            except KeyboardInterrupt as ki:
-                state["stop_reason"], _, _ = self._handle_loop_exception(ki, "KeyboardInterrupt", session, state)
-                state["stop_processing"] = True
-                break
-
-            except Exception as e_main:
-                state["error_count_this_loop"] += 1
-                stop_reason, _, _ = self._handle_loop_exception(e_main, "Exception", session, state)
-
-                if state["error_count_this_loop"] > 5:
-                    logger.critical(f"Too many errors ({state['error_count_this_loop']}) in inbox loop. Stopping.")
-                    state["stop_reason"] = stop_reason
-                    state["stop_processing"] = True
-                    break
-
-                logger.warning(f"Recoverable error in inbox loop (Count: {state['error_count_this_loop']}): {e_main}")
-                # Continue loop
+            self._process_loop_step(session, state, comp_conv_id, comp_ts, my_pid_lower)
 
         # --- End Main Loop (while not stop_processing) ---
 
@@ -1100,6 +1073,49 @@ class InboxProcessor:
             state["session_deaths"],
             state["session_recoveries"],
         )
+
+    def _process_loop_step(
+        self,
+        session: DbSession,
+        state: dict[str, Any],
+        comp_conv_id: Optional[str],
+        comp_ts: Optional[datetime],
+        my_pid_lower: str,
+    ) -> None:
+        """Process a single step of the inbox loop, handling exceptions."""
+        try:
+            # Process single batch iteration
+            should_stop, batch_stop_reason = self._process_single_batch_iteration(
+                session, state, comp_conv_id, comp_ts, my_pid_lower
+            )
+
+            if should_stop:
+                state["stop_reason"] = batch_stop_reason
+                state["stop_processing"] = True
+
+        # Handle exceptions during batch processing
+        except WebDriverException as wde:
+            state["stop_reason"], _, _ = self._handle_loop_exception(wde, "WebDriverException", session, state)
+            state["stop_processing"] = True
+
+        except KeyboardInterrupt as ki:
+            state["stop_reason"], _, _ = self._handle_loop_exception(ki, "KeyboardInterrupt", session, state)
+            state["stop_processing"] = True
+
+        except Exception as e_main:
+            self._handle_generic_loop_exception(e_main, session, state)
+
+    def _handle_generic_loop_exception(self, e: Exception, session: DbSession, state: dict[str, Any]) -> None:
+        """Handle generic exceptions in the loop."""
+        state["error_count_this_loop"] += 1
+        stop_reason, _, _ = self._handle_loop_exception(e, "Exception", session, state)
+
+        if state["error_count_this_loop"] > 5:
+            logger.critical(f"Too many errors ({state['error_count_this_loop']}) in inbox loop. Stopping.")
+            state["stop_reason"] = stop_reason
+            state["stop_processing"] = True
+        else:
+            logger.warning(f"Recoverable error in inbox loop (Count: {state['error_count_this_loop']}): {e}")
 
     def _finalize_inbox_loop(self, session: DbSession, state: dict[str, Any]) -> None:
         """Finalize inbox loop by committing any remaining data."""
@@ -1923,6 +1939,37 @@ class InboxProcessor:
             "days_until_due": days_until_due,
         }
 
+    @staticmethod
+    def _save_draft_reply(session: DbSession, profile_id: str, conversation_id: str, content: str) -> None:
+        """
+        Saves a generated reply as a draft for human review.
+        """
+        try:
+            # Resolve person
+            person = (
+                session.query(Person)
+                .filter((Person.profile_id == profile_id) | (Person.uuid == profile_id.upper()))
+                .first()
+            )
+
+            if not person:
+                logger.warning(f"Could not resolve person for draft reply. Profile ID: {profile_id}")
+                return
+
+            draft = DraftReply(
+                people_id=person.id,
+                conversation_id=conversation_id,
+                content=content,
+                status="PENDING",
+            )
+            session.add(draft)
+            session.commit()
+            logger.info(f"Saved draft reply for conversation {conversation_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to save draft reply: {e}")
+            session.rollback()
+
     def _extract_follow_up_requirements(
         self,
         conversation_history: ConversationHistoryInput,
@@ -2583,9 +2630,11 @@ class InboxProcessor:
         latest_ctx_in: Optional[dict[str, Any]],
         api_conv_id: str,
         people_id: int,
+        profile_id: str,
         ctx: ConversationProcessingContext,
         context_messages: list[dict[str, Any]],
         ai_classified_count: int,
+        session: DbSession,
     ) -> int:
         """Process incoming message and return updated AI classification count."""
         if not latest_ctx_in:
@@ -2599,78 +2648,120 @@ class InboxProcessor:
         )
 
         if ctx_ts_in_aware and db_latest_ts_in_compare and ctx_ts_in_aware > db_latest_ts_in_compare:
-            logger.debug(f"Processing new/updated IN message for {api_conv_id} (timestamp: {ctx_ts_in_aware})")
-
-            logger.debug(f"Attempting AI classification for conversation {api_conv_id}")
-            ai_sentiment_result = self._classify_message_with_ai(context_messages, ctx.my_pid_lower, api_conv_id)
-
-            if ai_sentiment_result:
-                ai_classified_count += 1
-                logger.debug(f"AI classification result for {api_conv_id}: {ai_sentiment_result}")
-            else:
-                logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
-
-            # Priority 1 Todo #11: Determine conversation phase based on history
-            conversation_phase = self._determine_conversation_phase(
-                conversation_id=api_conv_id,
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment=ai_sentiment_result,
-                existing_logs=ctx.existing_conv_logs,
-                timestamp=ctx_ts_in_aware,
-            )
-
-            # Priority 1 Todo #5: Extract follow-up requirements for PRODUCTIVE conversations
-            follow_up_data = self._extract_follow_up_requirements(
-                conversation_history=ctx.existing_conv_logs,
-                latest_message=str(latest_ctx_in.get("content", "")),
-                direction=MessageDirectionEnum.IN,
-                conversation_phase=conversation_phase,
-                ai_sentiment=ai_sentiment_result,
-                conversation_id=api_conv_id,
-            )
-
-            upsert_dict_in = self._create_conversation_log_upsert(
+            return self._handle_new_in_message(
+                session,
                 api_conv_id,
-                MessageDirectionEnum.IN,
                 people_id,
-                latest_ctx_in.get("content", ""),
+                profile_id,
+                ctx,
+                context_messages,
+                ai_classified_count,
+                latest_ctx_in,
                 ctx_ts_in_aware,
-                ai_sentiment_result,
-                conversation_phase=conversation_phase,
-                follow_up_due_date=follow_up_data.get("follow_up_due_date"),
-                awaiting_response_from=follow_up_data.get("awaiting_response_from"),
-            )
-            ctx.conv_log_upserts_dicts.append(upsert_dict_in)
-            logger.debug(
-                f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}"
             )
 
-            # Priority 1 Todo #5: Create MS To-Do reminder task if follow-up required
-            if follow_up_data.get("follow_up_required") and follow_up_data.get("reminder_task_title"):
-                self._create_follow_up_reminder_task(
-                    person_id=people_id,
-                    conversation_id=api_conv_id,
-                    task_title=follow_up_data.get("reminder_task_title"),
-                    task_body=follow_up_data.get("reminder_task_body"),
-                    due_date=follow_up_data.get("follow_up_due_date"),
-                    urgency_level=follow_up_data.get("urgency_level", "standard"),
-                )
+        logger.debug(
+            f"IN message for {api_conv_id} is not newer than DB (API: {ctx_ts_in_aware}, DB: {db_latest_ts_in_compare})"
+        )
+        return ai_classified_count
 
-            # Track analytics for received message
-            db_session = self.session_manager.db_manager.get_session()
-            if db_session and self._track_message_analytics(
-                session=db_session,
-                people_id=people_id,
-                direction=MessageDirectionEnum.IN,
-                ai_sentiment=ai_sentiment_result,
-            ):
-                self._register_engagement_assessment(ctx.state)
+    def _handle_new_in_message(
+        self,
+        session: DbSession,
+        api_conv_id: str,
+        people_id: int,
+        profile_id: str,
+        ctx: ConversationProcessingContext,
+        context_messages: list[dict[str, Any]],
+        ai_classified_count: int,
+        latest_ctx_in: dict[str, Any],
+        ctx_ts_in_aware: datetime,
+    ) -> int:
+        """Handle processing of a new incoming message."""
+        logger.debug(f"Processing new/updated IN message for {api_conv_id} (timestamp: {ctx_ts_in_aware})")
 
-            self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
+        # Use InboundOrchestrator for intelligent processing
+        orchestrator = InboundOrchestrator(session, self.research_service, self.session_manager)
+
+        # Format context history
+        formatted_context = self._format_context_for_ai(context_messages, ctx.my_pid_lower or "")
+        message_content = str(latest_ctx_in.get("content", ""))
+
+        # Process message
+        result = orchestrator.process_message(
+            message_content=message_content,
+            sender_id=profile_id,
+            conversation_id=api_conv_id,
+            context_history=formatted_context,
+        )
+
+        ai_sentiment_result = result.get("intent")
+        generated_reply = result.get("generated_reply")
+
+        if generated_reply:
+            self._save_draft_reply(session, profile_id, api_conv_id, generated_reply)
+
+        if ai_sentiment_result:
+            ai_classified_count += 1
+            logger.debug(f"AI classification result for {api_conv_id}: {ai_sentiment_result}")
         else:
-            logger.debug(
-                f"IN message for {api_conv_id} is not newer than DB (API: {ctx_ts_in_aware}, DB: {db_latest_ts_in_compare})"
+            logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
+
+        # Priority 1 Todo #11: Determine conversation phase based on history
+        conversation_phase = self._determine_conversation_phase(
+            conversation_id=api_conv_id,
+            direction=MessageDirectionEnum.IN,
+            ai_sentiment=ai_sentiment_result,
+            existing_logs=ctx.existing_conv_logs,
+            timestamp=ctx_ts_in_aware,
+        )
+
+        # Priority 1 Todo #5: Extract follow-up requirements for PRODUCTIVE conversations
+        follow_up_data = self._extract_follow_up_requirements(
+            conversation_history=ctx.existing_conv_logs,
+            latest_message=message_content,
+            direction=MessageDirectionEnum.IN,
+            conversation_phase=conversation_phase,
+            ai_sentiment=ai_sentiment_result,
+            conversation_id=api_conv_id,
+        )
+
+        upsert_dict_in = self._create_conversation_log_upsert(
+            api_conv_id,
+            MessageDirectionEnum.IN,
+            people_id,
+            message_content,
+            ctx_ts_in_aware,
+            ai_sentiment_result,
+            conversation_phase=conversation_phase,
+            follow_up_due_date=follow_up_data.get("follow_up_due_date"),
+            awaiting_response_from=follow_up_data.get("awaiting_response_from"),
+        )
+        ctx.conv_log_upserts_dicts.append(upsert_dict_in)
+        logger.debug(f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
+
+        # Priority 1 Todo #5: Create MS To-Do reminder task if follow-up required
+        if follow_up_data.get("follow_up_required") and follow_up_data.get("reminder_task_title"):
+            self._create_follow_up_reminder_task(
+                person_id=people_id,
+                conversation_id=api_conv_id,
+                task_title=follow_up_data.get("reminder_task_title"),
+                task_body=follow_up_data.get("reminder_task_body"),
+                due_date=follow_up_data.get("follow_up_due_date"),
+                urgency_level=follow_up_data.get("urgency_level", "standard"),
             )
+
+        # Track analytics for received message
+        db_session = self.session_manager.db_manager.get_session()
+        if db_session and self._track_message_analytics(
+            session=db_session,
+            people_id=people_id,
+            direction=MessageDirectionEnum.IN,
+            ai_sentiment=ai_sentiment_result,
+        ):
+            self._register_engagement_assessment(ctx.state)
+
+        self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
 
         return ai_classified_count
 
@@ -2811,7 +2902,14 @@ class InboxProcessor:
 
         # Process IN and OUT messages
         ai_classified_count = self._process_in_message(
-            latest_ctx_in, api_conv_id, people_id, ctx, context_messages, ai_classified_count
+            latest_ctx_in,
+            api_conv_id,
+            people_id,
+            profile_id_upper,
+            ctx,
+            context_messages,
+            ai_classified_count,
+            session,
         )
 
         self._process_out_message(latest_ctx_out, api_conv_id, people_id, ctx)
@@ -3680,6 +3778,61 @@ def _test_task_importance_calculation() -> None:
     assert importance_patient == "low", f"Expected 'low' for patient override, got '{importance_patient}'"
 
 
+def _test_save_draft_reply() -> None:
+    """Test saving a draft reply."""
+    from core.session_manager import SessionManager
+    from database import DraftReply, Person
+
+    # Setup
+    sm = SessionManager()
+    sm.ensure_db_ready()
+    session = sm.db_manager.get_session()
+    if not session:
+        logger.error("Could not get database session for test")
+        return
+
+    processor = InboxProcessor(sm)
+
+    try:
+        # Create test person
+        test_profile_id = "TEST_DRAFT_USER"
+        # Clean up if exists
+        existing = session.query(Person).filter(Person.profile_id == test_profile_id).first()
+        if existing:
+            session.delete(existing)
+            session.commit()
+
+        person = Person(
+            profile_id=test_profile_id,
+            username="Test Draft User",
+            uuid="TEST_DRAFT_UUID",
+            status=PersonStatusEnum.ACTIVE,
+        )
+        session.add(person)
+        session.commit()
+
+        # Test saving draft
+        conv_id = "TEST_CONV_DRAFT"
+        content = "This is a draft reply."
+        processor._save_draft_reply(session, test_profile_id, conv_id, content)
+
+        # Verify
+        draft = session.query(DraftReply).filter_by(conversation_id=conv_id).first()
+        assert draft is not None
+        assert draft.content == content
+        assert draft.people_id == person.id
+        assert draft.status == "PENDING"
+
+    finally:
+        # Cleanup
+        session.rollback()
+        if "person" in locals() and person.id:
+            session.query(DraftReply).filter(DraftReply.people_id == person.id).delete()
+            session.query(Person).filter(Person.id == person.id).delete()
+            session.commit()
+        sm.db_manager.return_session(session)
+
+
 def _test_conversation_log_follow_up_fields() -> None:
     """Test that conversation log upsert includes follow-up fields."""
     from datetime import timedelta
@@ -3941,6 +4094,14 @@ def action7_inbox_module_tests() -> bool:
             functions_tested="_determine_conversation_phase",
             method_description="Determine phase for DESIST classification",
             expected_outcome="Phase set to CLOSED",
+        )
+        _add_test(
+            "Save draft reply",
+            _test_save_draft_reply,
+            test_summary="Save generated reply as draft",
+            functions_tested="_save_draft_reply",
+            method_description="Save generated reply to draft_replies table",
+            expected_outcome="Draft reply saved with status PENDING",
         )
 
     return suite.finish_suite()

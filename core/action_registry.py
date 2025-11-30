@@ -314,6 +314,19 @@ class ActionRegistry:
             )
         )
 
+        self.register(
+            ActionMetadata(
+                id="12",
+                name="DNA Match Triangulation",
+                description="Analyze shared matches and common ancestors",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                enable_caching=True,
+                menu_order=12,
+            )
+        )
+
         # Test Actions
         self.register(
             ActionMetadata(

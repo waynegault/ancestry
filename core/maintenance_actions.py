@@ -562,7 +562,7 @@ def _display_session_info(session_manager: SessionManager) -> None:
 
 def _handle_logged_in_status(session_manager: SessionManager) -> bool:
     """Handle the case when user is already logged in."""
-    logger.info("You are currently logged in to Ancestry.")
+    print("You are currently logged in to Ancestry.")
     _display_session_info(session_manager)
     return True
 

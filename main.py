@@ -30,6 +30,7 @@ from importlib import import_module
 from typing import Any, Callable, Optional, cast
 
 from actions.action10 import run_gedcom_then_api_fallback
+from actions.action12_triangulation import run_triangulation_analysis
 from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
 from config.config_manager import ConfigManager
 from core.action_registry import (
@@ -300,6 +301,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("8", send_messages_action)
     registry.set_action_function("9", process_productive_messages_action)
     registry.set_action_function("10", run_gedcom_then_api_fallback)
+    registry.set_action_function("12", run_triangulation_analysis)
 
     registry.set_action_function("analytics", _show_analytics_dashboard)
     registry.set_action_function("metrics", _show_metrics_report)

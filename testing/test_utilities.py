@@ -601,7 +601,6 @@ def create_mock_session_manager() -> MagicMock:
     """
     Create a mock SessionManager for testing.
 
-    Test Infrastructure Todo #17: Shared test helpers
     Consolidates the pattern of creating mock session managers across test modules.
 
     Returns:
@@ -675,7 +674,6 @@ def create_test_database() -> Session:
     """
     Create an in-memory test database with schema.
 
-    Test Infrastructure Todo #17: Shared test helpers
     Consolidates the pattern of creating test databases across modules.
 
     Returns:
@@ -701,7 +699,6 @@ def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
     """
     Load a GEDCOM file for testing.
 
-    Test Infrastructure Todo #17: Shared test helpers
     Consolidates the pattern of loading GEDCOM test files.
 
     Args:
@@ -743,7 +740,6 @@ def create_test_person(
     """
     Create a mock Person object for testing.
 
-    Test Infrastructure Todo #17: Shared test helpers
     Consolidates the pattern of creating test Person objects.
 
     Args:
@@ -1087,7 +1083,6 @@ def create_test_match(
     """
     Create a mock DnaMatch object for testing.
 
-    Test Infrastructure Todo #17: Shared test helpers
     Provides a fully-configured mock DNA match for testing.
 
     Args:

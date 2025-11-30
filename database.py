@@ -302,6 +302,54 @@ class ConversationLog(Base):
 # End of ConversationLog class
 
 
+class DraftReply(Base):
+    """
+    Stores generated draft replies for human review before sending.
+    """
+
+    __tablename__ = "draft_replies"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique identifier for the draft.",
+    )
+    people_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to people table.",
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        index=True,
+        comment="Ancestry conversation ID.",
+    )
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="The generated reply content.",
+    )
+    status: Mapped[str] = mapped_column(
+        String,
+        default="PENDING",
+        index=True,
+        comment="Status: PENDING, SENT, DISCARDED.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when draft was created.",
+    )
+
+    # Relationships
+    person: Mapped["Person"] = relationship("Person", back_populates="draft_replies")
+
+
 # ----------------------------------------------------------------------
 # Analytics Models (Phase 6A)
 # ----------------------------------------------------------------------
@@ -1011,6 +1059,60 @@ class DnaMatch(Base):
 # End of DnaMatch class
 
 
+class SharedMatch(Base):
+    """
+    Represents a shared DNA match between the test taker and another match.
+    Stores the relationship between a primary match (person_id) and another match (shared_match_id).
+    """
+
+    __tablename__ = "shared_matches"
+
+    # --- Columns ---
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True, comment="Unique identifier for the shared match record."
+    )
+    person_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to the primary match being analyzed.",
+    )
+    shared_match_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to the shared match (another person in the database).",
+    )
+    shared_cm: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Shared DNA in centimorgans between the primary match and the shared match (if available).",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        comment="Timestamp (UTC) when this shared match link was recorded.",
+    )
+
+    # --- Relationships ---
+    # Link to the primary match
+    person: Mapped["Person"] = relationship("Person", foreign_keys=[person_id], back_populates="shared_matches")
+    # Link to the shared match person
+    shared_match_person: Mapped["Person"] = relationship("Person", foreign_keys=[shared_match_id])
+
+    # --- Table Arguments ---
+    __table_args__ = (
+        # Ensure unique pair to prevent duplicates
+        Index("ix_shared_matches_pair", "person_id", "shared_match_id", unique=True),
+    )
+
+
+# End of SharedMatch class
+
+
 class FamilyTree(Base):
     """
     Stores details related to a DNA match's position within the script user's
@@ -1149,6 +1251,12 @@ class Person(Base):
     conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"
     )
+    shared_matches: Mapped[list["SharedMatch"]] = relationship(
+        "SharedMatch",
+        foreign_keys="SharedMatch.person_id",
+        back_populates="person",
+        cascade="all, delete-orphan",
+    )
     conversation_metrics: Mapped[Optional["ConversationMetrics"]] = relationship(
         "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
     )
@@ -1166,6 +1274,9 @@ class Person(Base):
     )
     suggested_facts: Mapped[list["SuggestedFact"]] = relationship(
         "SuggestedFact", back_populates="person", cascade="all, delete-orphan"
+    )
+    draft_replies: Mapped[list["DraftReply"]] = relationship(
+        "DraftReply", back_populates="person", cascade="all, delete-orphan"
     )
 
     # --- Properties ---

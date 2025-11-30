@@ -1,27 +1,70 @@
-# Project Todo List
+# Project Todo List - Intelligent Conversation Management
 
-## Intelligent Conversation Management (Phases 1-8)
+## Phase 1: Capability Audit & Gap Analysis (Completed)
+- [x] Review actions/action10.py, ai/ai_interface.py, genealogy/research_service.py.
+- [x] Review messaging/inbound.py, messaging/safety.py.
+- [x] Identify missing RAG, Harvester, and Reply Generation logic in InboundOrchestrator.
 
-- [x] **Phase 1: Capability Audit**
-  - Review existing code (Action 10, AI Interface, Relationship Utils) to understand current capabilities and gaps.
-- [x] **Phase 2: Gap Analysis**
-  - Identify missing features for inbound traffic handling: Reply Engine, Conversation State, Harvester, Safety Layer.
-- [x] **Phase 3: Specification**
-  - Define technical specs for Inbound Message Processor, Safety Layer, Genealogical RAG, and Harvester.
-- [x] **Phase 4: Database Schema Updates**
-  - Add `ConversationState` and `SuggestedFact` tables to `database.py`. Ensure SQLAlchemy models are correctly defined.
-- [x] **Phase 5: Safety & Ethics Module**
-  - Implement `SafetyGuard` class in `messaging/safety.py` to detect red flags (self-harm, hostility) and opt-outs.
-- [x] **Phase 6: Refactor Action 10 (Research Service)**
-  - Extract search and pathfinding logic from `actions/action10.py` into a reusable `genealogy/research_service.py`.
-- [x] **Phase 7: Inbound Orchestrator**
-  - Implement `InboundOrchestrator` in `messaging/inbound.py` to coordinate safety checks, intent classification, and RAG.
-- [x] **Phase 8: Testing & Validation**
-  - Create unit and integration tests for the new modules using the `TestSuite` pattern.
+## Phase 2: Database Schema (Completed)
+- [x] ConversationState table exists.
+- [x] SuggestedFact table exists.
+- [x] ConversationMetrics table exists.
 
-## Maintenance & Refactoring
+## Phase 3: Inbound Orchestrator Enhancement (The 'Reply Engine') (Completed)
+- [x] **RAG Integration**:
+  - Update messaging/inbound.py to use extract_genealogical_entities to identify search subjects.
+  - Integrate ResearchService to search for these subjects in the GEDCOM/Tree.
+  - If found, calculate relationship path.
+  - Call generate_genealogical_reply with the found context.
+- [x] **Harvester Implementation**:
+  - In messaging/inbound.py, if extract_genealogical_entities returns new facts, create SuggestedFact records in the DB.
+- [x] **Reply Generation**:
+  - Store the generated reply in ConversationLog (as a draft or sent message).
+  - Return the reply in the process_message result.
 
-- [x] **Database Migration**: Ensure all db files in `/Data` are migrated to the new schema. (Verified `ancestry.db` schema).
-- [x] **Architecture Review**: Review whether we need separate `/core/cache` and `/caching` directories.
-  - *Finding*: `caching/` contains the concrete implementation (`cache.py`), while `core/cache/` contains protocols/interfaces. `core/cache_backend.py` is also heavily used. Recommendation: Consolidate into `caching/` directory, moving interfaces to `caching/interfaces.py` and backend logic to `caching/backend.py`.
-- [x] **File Organization**: Ensure `ethnicity_regions.json` is saved/created/read from `/Data` not root. Move `ethnicity_regions.json` to `/Data`.
+## Phase 4: Metrics & Observability (Completed)
+- [x] **Update Metrics**:
+  - In messaging/inbound.py, update ConversationMetrics (msg counts, engagement score).
+  - Create EngagementTracking events for 'message_received', 'reply_generated', 'fact_extracted'.
+
+## Phase 5: Blue Sky Innovation - Triangulation Hypothesis Generator (Completed)
+- [x] Create genealogy/triangulation.py.
+- [x] Implement logic to find shared matches who might be related through a specific ancestor.
+- [x] Generate hypothesis messages.
+
+## Phase 6: Testing (Completed)
+- [x] Update messaging/test_inbound.py to test RAG, Harvester, and Reply flows.
+- [x] Ensure 100% pass rate.
+- [x] ensure messaging\inbound.py follows the same pattern and format  of tests as the rest of teh codebase
+
+## Phase 7: Future Enhancements
+- [x] **Draft Persistence**:
+  - Add a `draft_reply` column to `conversation_logs` or a dedicated table to store them for human review before sending.
+- [x] **Triangulation Action**:
+  - Create a new Action 12 to run triangulation analysis on DNA matches using the `TriangulationService`.
+
+## Phase 8: Triangulation Implementation
+
+- [x] **Database Schema**:
+  - Add `SharedMatch` table to `database.py`.
+  - Update `Person` model with relationship.
+- [x] **Shared Match Retrieval**:
+  - Implement `_get_shared_matches` in `genealogy/triangulation.py` to query the new table.
+  - (Optional) Create a script/action to populate this table from Ancestry API (out of scope for now, but the table is needed).
+- [x] **Triangulation Logic**:
+  - Update `find_triangulation_opportunities` to use real data.
+- [x] **Test Infrastructure**:
+  - Address "Test Infrastructure Todo #17" (Shared test helpers).
+  - Address "Test Infrastructure Todo #18" (Smart ordering).
+
+## Phase 9: Shared Match Collection & Advanced Analysis
+
+- [ ] **Shared Match Scraper**:
+  - Update `action6_gather.py` (or create new action) to fetch shared matches for specific DNA matches (e.g., > 20cM).
+  - Store shared matches in `SharedMatch` table.
+- [ ] **Data Enrichment**:
+  - Ensure tree data is fetched for shared matches to enable common ancestor identification.
+- [ ] **Reporting**:
+  - Add CSV/HTML export to Action 12 for triangulation results.
+- [ ] **Advanced Filtering**:
+  - Filter triangulation opportunities by cM range and confidence.
