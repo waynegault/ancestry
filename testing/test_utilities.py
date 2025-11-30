@@ -81,30 +81,10 @@ def atomic_write_file(target_path: Path, mode: str = "w", encoding: str = "utf-8
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Try modern approach first (Python 3.12+)
-    try:
-        temp_path = target_path.with_suffix(target_path.suffix + ".tmp")
-        with temp_path.open(mode, encoding=encoding if 'b' not in mode else None) as f:
-            yield f
-        temp_path.replace(target_path)
-    except Exception:
-        # Fallback to tempfile.NamedTemporaryFile for compatibility
-        with tempfile.NamedTemporaryFile(
-            mode=mode,
-            delete=False,
-            dir=str(target_path.parent),
-            encoding=encoding if 'b' not in mode else None,
-            suffix=target_path.suffix,
-        ) as tf:
-            try:
-                yield tf
-                temp_name = tf.name
-            except Exception:
-                # Clean up temp file on error
-                Path(tf.name).unlink(missing_ok=True)
-                raise
-        # Atomic rename
-        Path(temp_name).replace(target_path)
+    temp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+    with temp_path.open(mode, encoding=encoding if 'b' not in mode else None) as f:
+        yield f
+    temp_path.replace(target_path)
 
 
 @contextlib.contextmanager

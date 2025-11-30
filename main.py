@@ -27,10 +27,11 @@ import importlib
 import sys
 import time
 from importlib import import_module
-from typing import Any, Callable, Optional, Protocol, cast
+from typing import Any, Callable, Optional, cast
 
 from actions.action10 import run_gedcom_then_api_fallback
 from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
+from config.config_manager import ConfigManager
 from core.action_registry import (
     ActionMetadata,
     get_action_registry,
@@ -64,28 +65,6 @@ from core.workflow_actions import (
 )
 from testing.test_utilities import create_standard_test_runner
 from ui.menu import render_main_menu
-
-
-class ConfigManagerProtocol(Protocol):
-    """Protocol describing the ConfigManager behavior used here."""
-
-    def get_config(self) -> Any: ...
-
-
-_config_manager_factory: type[ConfigManagerProtocol] | None = None
-_config_manager_error: Exception | None = None
-
-try:
-    _config_module = import_module("config.config_manager")
-except Exception as exc:
-    _config_manager_error = exc
-else:
-    _config_candidate = getattr(_config_module, "ConfigManager", None)
-    if isinstance(_config_candidate, type):
-        _config_manager_factory = cast(type[ConfigManagerProtocol], _config_candidate)
-    else:
-        _config_manager_error = RuntimeError("ConfigManager class missing from config.config_manager")
-
 
 _grafana_checker: GrafanaCheckerProtocol | None = None
 try:
@@ -131,16 +110,10 @@ else:
         _metrics_import_error = RuntimeError("metrics() not found in observability.metrics_registry")
 
 
-def _create_config_manager() -> Optional[ConfigManagerProtocol]:
+def _create_config_manager() -> Optional[ConfigManager]:
     """Instantiate ConfigManager if available."""
-
-    if _config_manager_factory is None:
-        if _config_manager_error is not None:
-            logger.debug("ConfigManager unavailable: %s", _config_manager_error)
-        return None
-
     try:
-        return _config_manager_factory()
+        return ConfigManager()
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Failed to instantiate ConfigManager: %s", exc, exc_info=True)
         return None

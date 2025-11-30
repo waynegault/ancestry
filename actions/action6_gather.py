@@ -197,7 +197,7 @@ if TYPE_CHECKING:
     from config.config_schema import ConfigSchema
 
 from actions.gather.metrics import PageProcessingMetrics
-from actions.gather.orchestrator import GatherOrchestrator, GatherOrchestratorHooks
+from actions.gather.orchestrator import GatherConfiguration, GatherOrchestrator
 from actions.gather.persistence import (
     BatchLookupArtifacts,
     PersistenceHooks,
@@ -724,7 +724,7 @@ def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
         normalized_total = int(total_pages) if total_pages is not None else 0
         return matches, normalized_total
 
-    hooks = GatherOrchestratorHooks(
+    hooks = GatherConfiguration(
         matches_per_page=MATCHES_PER_PAGE,
         relationship_prob_max_per_page=RELATIONSHIP_PROB_MAX_PER_PAGE,
         db_error_page_threshold=DB_ERROR_PAGE_THRESHOLD,
@@ -4240,7 +4240,9 @@ def _handle_303_session_refresh(
             match_list_headers['X-CSRF-Token'] = fresh_csrf_token
             logger.info("✅ Retrying Match list API with refreshed session, cleared cache, and fresh CSRF token.")
             logger.debug(f"🔑 Fresh CSRF token: {fresh_csrf_token[:20]}...")
-            logger.debug(f"🍪 Session cookies synced: {len(session_manager.api_manager.requests_session.cookies)} cookies")
+            logger.debug(
+                f"🍪 Session cookies synced: {len(session_manager.api_manager.requests_session.cookies)} cookies"
+            )
 
             api_response_refresh = _call_api_request(
                 url=match_list_url,
@@ -4455,7 +4457,9 @@ def _fetch_in_tree_from_api(
     ua_in_tree = None
     if session_manager.browser_manager.driver and session_manager.is_sess_valid():
         with contextlib.suppress(Exception):
-            script_result = cast(Any, session_manager.browser_manager.driver).execute_script("return navigator.userAgent;")
+            script_result = cast(Any, session_manager.browser_manager.driver).execute_script(
+                "return navigator.userAgent;"
+            )
             if isinstance(script_result, str):
                 ua_in_tree = script_result
     ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)

@@ -33,6 +33,8 @@ from typing import (
     cast,
 )
 
+from config.config_manager import ConfigManager
+
 logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
@@ -107,39 +109,13 @@ class SessionCacheConfig:
 CACHE_CONFIG = SessionCacheConfig()
 
 
-_config_manager_factory: type[Any] | None = None
-_config_manager_error: Exception | None = None
-
-try:  # pragma: no cover - configuration optional in some tests
-    _config_module = import_module("config.config_manager")
-except Exception as exc:
-    _config_manager_error = exc
-else:
-    _config_candidate = getattr(_config_module, "ConfigManager", None)
-    if isinstance(_config_candidate, type):
-        _config_manager_factory = cast(type[Any], _config_candidate)
-    else:
-        _config_manager_error = RuntimeError("ConfigManager class missing from config.config_manager")
-
-
 def _load_config_schema_snapshot() -> Optional[Any]:
     """Safely instantiate ConfigManager and return its schema."""
-
-    if _config_manager_factory is None:
-        if _config_manager_error is not None:
-            logger.debug("ConfigManager unavailable: %s", _config_manager_error)
-        return None
-
     try:
-        manager = _config_manager_factory()
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("ConfigManager instantiation failed: %s", exc)
-        return None
-
-    try:
+        manager = ConfigManager()
         return manager.get_config()
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("ConfigManager.get_config() failed: %s", exc)
+        logger.debug("ConfigManager instantiation failed: %s", exc)
         return None
 
 

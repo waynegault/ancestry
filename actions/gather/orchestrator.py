@@ -51,8 +51,8 @@ GatherState = dict[str, Any]
 
 
 @dataclass(frozen=True)
-class GatherOrchestratorHooks:
-    """Runtime dependencies retained from the legacy module."""
+class GatherConfiguration:
+    """Configuration and callbacks for the gather orchestrator."""
 
     matches_per_page: int
     relationship_prob_max_per_page: int
@@ -153,7 +153,7 @@ class GatherOrchestrator:
     """Coordinates Action 6 using modularized helpers."""
 
     session_manager: SessionManager
-    hooks: GatherOrchestratorHooks
+    hooks: GatherConfiguration
 
     def coord(self, start: Optional[int] = None) -> bool:
         action_start_time = time.time()
@@ -790,7 +790,7 @@ class GatherOrchestrator:
 # ---------------------------------------------------------------------------
 
 
-def _make_stub_hooks() -> GatherOrchestratorHooks:
+def _make_test_configuration() -> GatherConfiguration:
     class _FakeActionState:
         critical_api_failure_threshold = 10
 
@@ -800,7 +800,7 @@ def _make_stub_hooks() -> GatherOrchestratorHooks:
     def _noop_get_matches(*_args: Any, **_kwargs: Any) -> tuple[list[dict[str, Any]], int]:
         return ([], 1)
 
-    return GatherOrchestratorHooks(
+    return GatherConfiguration(
         matches_per_page=20,
         relationship_prob_max_per_page=5,
         db_error_page_threshold=3,
@@ -930,7 +930,7 @@ def _test_log_final_results_emits_summary() -> bool:
         session_ready = True
         my_uuid = "UUID"
 
-    orchestrator = GatherOrchestrator(cast(SessionManager, FakeSessionManager()), _make_stub_hooks())
+    orchestrator = GatherOrchestrator(cast(SessionManager, FakeSessionManager()), _make_test_configuration())
     state = {
         "total_pages_processed": 5,
         "total_new": 7,
@@ -995,7 +995,7 @@ def _test_orchestrator_coord_invokes_execution() -> bool:
         def return_session(_session: Any) -> None:
             return None
 
-    orchestrator = GatherOrchestrator(cast(SessionManager, FakeSessionManager()), _make_stub_hooks())
+    orchestrator = GatherOrchestrator(cast(SessionManager, FakeSessionManager()), _make_test_configuration())
     fake_state = {"final_success": True}
 
     with (
