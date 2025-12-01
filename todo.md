@@ -27,9 +27,9 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
   - [x] Formal "Conflict Detection" between conversation data and Tree data.
   - [x] Dedicated "Review Queue" UI or CLI for human approval.
   - [x] A/B testing framework for message templates.
-- [ ] **Task 2: Document technical debt**
-  - [ ] Consolidate duplicate logic between `action9` and `action10` (if any).
-  - [ ] Review error handling for edge cases in conversation parsing.
+- [x] **Task 2: Document technical debt**
+  - [x] Consolidate duplicate logic between `action9` and `action10` (if any).
+  - [x] Review error handling for edge cases in conversation parsing.
 - [ ] **Task 3: Note security considerations**
   - [ ] Audit PII handling in logs and AI prompts.
   - [ ] Verify "Opt-out" persistence across system restarts.

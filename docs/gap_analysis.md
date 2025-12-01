@@ -93,3 +93,87 @@ The current system relies on structured data processing and keyword-based search
 1. **Experiment Config**: Create `config/experiments.json` to define active experiments (e.g., `{"intent_classification": {"control": "v1", "challenger": "v2", "split": 0.5}}`).
 2. **Experiment Manager**: Implement `ai/experiment_manager.py` to read the config and randomly select variants in `call_ai`.
 3. **Outcome Tracking**: Enhance `prompt_telemetry.py` to log a `session_id` or `conversation_id` so that later events (like a user reply) can be joined back to the prompt variant that generated the previous message.
+
+---
+
+## 5. Technical Debt
+
+### 1. Logic Duplication
+
+**Findings:**
+- **GEDCOM Loading**: Logic to load and cache GEDCOM data is repeated in `actions/action10.py`, `genealogy/gedcom/gedcom_utils.py`, and `genealogy/gedcom/gedcom_cache.py`. While `gedcom_cache.py` attempts to centralize this, other modules still occasionally bypass it or re-implement loading checks.
+- **Person Search**: `actions/action9_process_productive.py` contains inline logic for searching the database that mirrors functionality in `research/person_lookup_utils.py`.
+- **Data Models**: Pydantic models for genealogical concepts (e.g., `ExtractedPerson`, `ExtractedEvent`) are defined inside `actions/action9_process_productive.py` but represent core domain entities that should be shared.
+
+**Recommendation:**
+- **Centralize GEDCOM Access**: Enforce a single entry point (`GedcomService`) for all GEDCOM operations.
+- **Unified Search Service**: Refactor `action9` to use `research/person_lookup_utils.py` instead of ad-hoc queries.
+- **Shared Domain Models**: Move Pydantic models to a new `core/models/` package to be shared across actions.
+
+### 2. Error Handling
+
+**Findings:**
+- **Bare Except Blocks**: Several modules contain `except:` or `except Exception:` blocks that catch all errors without specific handling or re-raising.
+  - `actions/action6_gather.py`: Multiple instances in the main loop to prevent crashing, but this can mask underlying logic errors.
+  - `actions/action7_inbox.py`: Generic error catching in message parsing loops.
+- **AI Parsing Fragility**: While `ai_interface.py` has retry logic, the downstream consumers (like `action9`) often assume the returned JSON is semantically valid even if it passes syntax checks.
+
+**Recommendation:**
+- **Specific Exceptions**: Replace bare excepts with specific exception handling (`NoSuchElementException`, `TimeoutException`, `JSONDecodeError`).
+- **Validation Layer**: Implement a "Semantic Validator" for AI responses that checks for logical consistency (e.g., death date > birth date) before processing.
+
+### 3. Code Structure ("God Classes")
+
+**Findings:**
+- **`actions/action6_gather.py`**: This file is over 4,000 lines long. It handles UI navigation, API requests, database persistence, and error recovery.
+- **`core/session_manager.py`**: While central, it has grown to handle too many disparate responsibilities (browser, DB, API, config).
+
+**Recommendation:**
+- **Refactor Action 6**: Split into `gather/navigator.py`, `gather/processor.py`, and `gather/persistence.py`.
+- **Decompose SessionManager**: Delegate specific responsibilities to `BrowserService`, `DatabaseService`, and `APIService`, keeping `SessionManager` as a thin coordinator.
+
+
+### Logic Duplication
+
+- **GEDCOM Loading & Caching**:
+  - **Issue**: Logic to load and cache GEDCOM data is triplicated across `actions/action9_process_productive.py`, `actions/action10.py`, and `genealogy/research_service.py`.
+  - **Impact**: Inconsistent caching behavior, increased memory usage, and maintenance overhead.
+  - **Recommendation**: Centralize all GEDCOM operations in `genealogy/research_service.py`. Refactor Action 9 and Action 10 to inject and use this service.
+
+- **Person Search Logic**:
+  - **Issue**: `actions/action9_process_productive.py` imports `filter_and_score_individuals` directly from `actions/action10.py` inside a method, creating tight coupling. `genealogy/research_service.py` implements a similar `search_people` method.
+  - **Impact**: Circular dependency risks and fragmented search logic.
+  - **Recommendation**: Consolidate person search logic into `ResearchService.search_people` and have all actions use this single entry point.
+
+- **Data Models**:
+  - **Issue**: Pydantic models (`ExtractedData`, `VitalRecord`, etc.) are defined inside `actions/action9_process_productive.py` but represent core domain concepts needed by other modules.
+  - **Impact**: Prevents reuse of validation logic and data structures.
+  - **Recommendation**: Move these models to a shared location like `genealogy/models.py` or `core/models.py`.
+
+### Error Handling
+
+- **Bare Except Blocks**:
+  - **Issue**: Generic `except Exception:` blocks found in `actions/action7_inbox.py` (lines 890, 1545), `actions/action9_process_productive.py` (line 2942), and multiple locations in `utils.py`.
+  - **Impact**: Masks specific errors (like `KeyboardInterrupt` or `SystemExit`), makes debugging difficult, and can hide critical failures.
+  - **Recommendation**: Replace with specific exception handling (e.g., `WebDriverException`, `SQLAlchemyError`, `ValidationError`). Log the full traceback when catching generic exceptions is absolutely necessary.
+
+- **AI Parsing Robustness**:
+  - **Issue**: AI response parsing in `action9` relies on `_process_ai_response` without explicit `try...except ValidationError` blocks visible in the main flow.
+  - **Impact**: Malformed JSON from the AI could crash the action or result in generic error logging without actionable details.
+  - **Recommendation**: Wrap Pydantic model validation in explicit try/except blocks to handle `ValidationError` gracefully, potentially triggering a retry with a "correction" prompt.
+
+### Code Structure
+
+- **God Classes**:
+  - **Issue**: Several files are excessively large and handle too many responsibilities:
+    - `actions/action7_inbox.py` (~4100 lines)
+    - `actions/action9_process_productive.py` (~4000 lines)
+    - `actions/action10.py` (~3450 lines)
+    - `utils.py` (~4300 lines)
+  - **Impact**: High cognitive load for developers, difficult to test, and prone to merge conflicts.
+  - **Recommendation**: Refactor these into packages (e.g., `actions/inbox/`, `actions/productive/`) and split logic into smaller, focused modules (e.g., `inbox_api.py`, `inbox_processor.py`, `message_classifier.py`).
+
+- **Hardcoded Configuration**:
+  - **Issue**: Configuration values and magic strings (e.g., `PRODUCTIVE_SENTIMENT`, `EXCLUSION_KEYWORDS`, `FAMILY_INFO_KEYWORDS`) are hardcoded in action files.
+  - **Impact**: Changing business rules requires code changes.
+  - **Recommendation**: Move these values to `config/` or `ai_prompts.json` (for text-based rules) to separate configuration from logic.
