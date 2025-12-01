@@ -22,11 +22,11 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
 
 ### Gap Analysis
 
-- [ ] **Task 1: Identify missing features**
-  - [ ] "True" RAG retrieval pipeline (currently relies on structured lookups).
-  - [ ] Formal "Conflict Detection" between conversation data and Tree data.
-  - [ ] Dedicated "Review Queue" UI or CLI for human approval.
-  - [ ] A/B testing framework for message templates.
+- [x] **Task 1: Identify missing features**
+  - [x] "True" RAG retrieval pipeline (currently relies on structured lookups).
+  - [x] Formal "Conflict Detection" between conversation data and Tree data.
+  - [x] Dedicated "Review Queue" UI or CLI for human approval.
+  - [x] A/B testing framework for message templates.
 - [ ] **Task 2: Document technical debt**
   - [ ] Consolidate duplicate logic between `action9` and `action10` (if any).
   - [ ] Review error handling for edge cases in conversation parsing.
