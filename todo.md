@@ -13,9 +13,9 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
   - [x] Audit `action9_process_productive.py` for data extraction quality.
   - [x] Review `action10.py` for relationship pathfinding performance.
   - [x] Document `ai_prompts.json` versioning and usage.
-- [ ] **Task 2: Map data flows**
-  - [ ] Trace flow from Inbox -> Classification -> Extraction -> Database.
-  - [ ] Map GEDCOM data ingestion -> `action10` analysis -> Context generation.
+- [x] **Task 2: Map data flows**
+  - [x] Trace flow from Inbox -> Classification -> Extraction -> Database.
+  - [x] Map GEDCOM data ingestion -> `action10` analysis -> Context generation.
 - [ ] **Task 3: Catalog tech stack**
   - [ ] Confirm dependencies (Selenium, SQLAlchemy, LLM providers).
   - [ ] Verify rate limiting and session management stability (`core/session_manager.py`).

@@ -18,6 +18,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 ### Documentation
 
 - [Codebase Assessment (Phase 1)](docs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities.
+- [Data Flow Map (Phase 1)](docs/data_flow_map.md) - Visual and textual tracing of critical data paths.
 
 ### Architecture Highlights
 
