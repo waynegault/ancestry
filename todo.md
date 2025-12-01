@@ -16,9 +16,9 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
 - [x] **Task 2: Map data flows**
   - [x] Trace flow from Inbox -> Classification -> Extraction -> Database.
   - [x] Map GEDCOM data ingestion -> `action10` analysis -> Context generation.
-- [ ] **Task 3: Catalog tech stack**
-  - [ ] Confirm dependencies (Selenium, SQLAlchemy, LLM providers).
-  - [ ] Verify rate limiting and session management stability (`core/session_manager.py`).
+- [x] **Task 3: Catalog tech stack**
+  - [x] Confirm dependencies (Selenium, SQLAlchemy, LLM providers).
+  - [x] Verify rate limiting and session management stability (`core/session_manager.py`).
 
 ### Gap Analysis
 
