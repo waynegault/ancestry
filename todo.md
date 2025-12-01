@@ -8,11 +8,11 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
 
 ### Current Capabilities
 
-- [ ] **Task 1: Document existing functionality**
-  - [ ] Audit `action7_inbox.py` for current classification accuracy and limitations.
-  - [ ] Audit `action9_process_productive.py` for data extraction quality.
-  - [ ] Review `action10.py` for relationship pathfinding performance.
-  - [ ] Document `ai_prompts.json` versioning and usage.
+- [x] **Task 1: Document existing functionality**
+  - [x] Audit `action7_inbox.py` for current classification accuracy and limitations.
+  - [x] Audit `action9_process_productive.py` for data extraction quality.
+  - [x] Review `action10.py` for relationship pathfinding performance.
+  - [x] Document `ai_prompts.json` versioning and usage.
 - [ ] **Task 2: Map data flows**
   - [ ] Trace flow from Inbox -> Classification -> Extraction -> Database.
   - [ ] Map GEDCOM data ingestion -> `action10` analysis -> Context generation.

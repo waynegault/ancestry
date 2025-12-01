@@ -15,6 +15,10 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Family Tree Search** - GEDCOM parsing and API-based person search with unified scoring
 - **Observability** - Prometheus metrics, Grafana dashboards, comprehensive logging with correlation IDs
 
+### Documentation
+
+- [Codebase Assessment (Phase 1)](docs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities.
+
 ### Architecture Highlights
 
 - **Enterprise Design**: SQLAlchemy ORM, Selenium WebDriver, connection pooling, circuit breakers
