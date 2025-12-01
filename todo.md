@@ -30,9 +30,9 @@ This plan outlines the roadmap for transforming the current Ancestry automation 
 - [x] **Task 2: Document technical debt**
   - [x] Consolidate duplicate logic between `action9` and `action10` (if any).
   - [x] Review error handling for edge cases in conversation parsing.
-- [ ] **Task 3: Note security considerations**
-  - [ ] Audit PII handling in logs and AI prompts.
-  - [ ] Verify "Opt-out" persistence across system restarts.
+- [x] **Task 3: Note security considerations**
+  - [x] Audit PII handling in logs and AI prompts.
+  - [x] Verify "Opt-out" persistence across system restarts.
 
 ## Phase 2: Technical Specification
 

@@ -143,6 +143,45 @@ The current system relies on structured data processing and keyword-based search
 - **Person Search Logic**:
   - **Issue**: `actions/action9_process_productive.py` imports `filter_and_score_individuals` directly from `actions/action10.py` inside a method, creating tight coupling. `genealogy/research_service.py` implements a similar `search_people` method.
   - **Impact**: Circular dependency risks and fragmented search logic.
+
+---
+
+## 6. Security Considerations
+
+### PII Handling in Logs and Telemetry
+
+**Current State**
+- **`core/logging_config.py`**: Standard logging configuration without automatic PII redaction. Relies on developer discipline to avoid logging sensitive data.
+- **`ai/prompt_telemetry.py`**: The `record_extraction_experiment_event` function captures `scoring_inputs` for quality analysis. This field often contains the raw message text (including names, dates, and personal family details) and writes it to `Logs/prompt_experiments.jsonl` in plain text.
+- **`ai/ai_interface.py`**: Logs metadata (provider, token counts) but correctly avoids logging raw prompt content or responses at the `DEBUG` level.
+
+**Risks**
+- **Data Leakage**: `Logs/prompt_experiments.jsonl` serves as a persistent, unencrypted store of sensitive user conversations and PII.
+- **Compliance**: Storing unredacted PII in log files may violate privacy regulations (GDPR/CCPA) and user trust.
+
+**Recommended Improvements**
+1. **Telemetry Redaction**: Modify `ai/prompt_telemetry.py` to hash or redact `scoring_inputs` before serialization. If raw text is needed for debugging, implement a strict retention policy or encryption.
+2. **Log Filtering**: Implement a `logging.Filter` in `core/logging_config.py` to automatically mask patterns resembling email addresses, phone numbers, and living people's names in `app.log`.
+
+### "Opt-out" Persistence and Enforcement
+
+**Current State**
+- **Persistence**: User opt-outs are persisted in the SQLite database (`people` table) via the `status` column set to `PersonStatusEnum.DESIST`. This state survives application restarts.
+- **Enforcement**: `actions/action8_messaging.py` explicitly handles `DESIST` status.
+  - The candidate query **includes** `DESIST` users.
+  - The processing loop (`_handle_desist_status`) checks if a "User_Requested_Desist" acknowledgment has been sent.
+  - If the ACK is missing, it sends one final confirmation message.
+  - If the ACK exists, it correctly skips further messaging.
+- **`actions/action7_inbox.py`**: Correctly identifies "stop" or "unsubscribe" intent via AI and updates the status to `DESIST`.
+
+**Risks**
+- **Spam Risk**: The logic to send a "final acknowledgment" relies on the successful recording of that message in `ConversationLog`. If the DB write fails but the message sends, or if the check logic has a bug, the system could repeatedly message an opted-out user.
+- **Query Efficiency**: Fetching `DESIST` users in the main messaging query increases the attack surface. A logic error in the loop could lead to unauthorized messaging.
+
+**Recommended Improvements**
+1. **Query Filtering**: Modify the candidate query in `actions/action8_messaging.py` to exclude `DESIST` users *unless* they specifically lack the acknowledgment message (using a subquery or separate cleanup job).
+2. **Hard Stop Flag**: Introduce a `force_stop` or `blocked` flag that overrides the "Acknowledgment" logic for cases requiring immediate, silent cessation.
+3. **Transactional Integrity**: Ensure the "Desist ACK" message sending and the DB recording happen in a strictly atomic transaction to prevent state drift.
   - **Recommendation**: Consolidate person search logic into `ResearchService.search_people` and have all actions use this single entry point.
 
 - **Data Models**:
