@@ -36,14 +36,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
-from caching.cache import cache as disk_cache
 from config.config_manager import ConfigManager
 from core.logging_utils import OptimizedLogger
-from performance.health_monitor import get_health_monitor, integrate_with_action6
-from research.relationship_utils import (
-    convert_api_path_to_unified_format,
-    format_relationship_path_unified,
-)
+from performance.health_monitor import integrate_with_action6
 
 # === MODULE SETUP ===
 raw_logger = logging.getLogger(__name__)
@@ -82,7 +77,6 @@ from core.error_handling import (
     MaxApiFailuresExceededError,
     NetworkTimeoutError,
     RetryableError,
-    api_retry,
 )
 
 # === LOCAL IMPORTS ===
@@ -95,10 +89,7 @@ from actions.gather.api_implementations import (
     _call_api_request,
     _check_combined_details_cache,
     _ensure_action6_session_ready,
-    _get_api_headers,
     _get_cached_profile,
-    _resolve_tree_owner_name,
-    _sync_session_cookies,
     fetch_batch_badge_details as _fetch_batch_badge_details,
     fetch_batch_ladder as _fetch_batch_ladder,
     fetch_combined_details as _fetch_combined_details,
@@ -107,7 +98,6 @@ from actions.gather.api_implementations import (
 )
 from actions.gather.logging import (
     log_api_performance as _log_api_performance,
-    register_api_metrics_callback,
 )
 from actions.gather.metrics import PageProcessingMetrics
 from actions.gather.orchestrator import GatherConfiguration, GatherOrchestrator
@@ -123,11 +113,9 @@ from actions.gather.prefetch import (
     get_prefetched_data_for_match as _get_prefetched_data_for_match,
     perform_api_prefetches as gather_perform_api_prefetches,
 )
-from api.api_constants import API_PATH_PROFILE_DETAILS
 from browser.css_selectors import *  # Import CSS selectors
 from browser.selenium_utils import get_driver_cookies
 from config import config_schema
-from core.api_manager import RequestConfig, RetryPolicy
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
 from database import (
@@ -135,11 +123,6 @@ from database import (
     FamilyTree,
     Person,
     PersonStatusEnum,
-)
-from genealogy.dna.dna_ethnicity_utils import (
-    extract_match_ethnicity_percentages,
-    fetch_ethnicity_comparison,
-    load_ethnicity_metadata,
 )
 from testing.test_framework import (
     TestSuite,

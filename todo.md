@@ -39,7 +39,8 @@
 
 **Objective**: Improve maintainability and reduce complexity (Medium Priority).
 
-- [ ] **Modularize Large Actions**: Split `action6_gather.py` and `action7_inbox.py` into smaller sub-modules.
+- [x] **Modularize action6_gather.py**: Extracted API implementations → `actions/gather/api_implementations.py` and logging → `actions/gather/logging.py`.
+- [ ] **Modularize action7_inbox.py**: Split into smaller sub-modules (pending).
 - [ ] **Refactor Orchestration**: Simplify `_process_single_page` in `actions/gather/orchestrator.py`.
 - [x] **Centralize Menu Logic**: Use data-driven registry for menu actions.
 - [ ] **Security**: Implement PII redaction in logs.
