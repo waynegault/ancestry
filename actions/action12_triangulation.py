@@ -150,9 +150,46 @@ def _export_results(opportunities: list[dict[str, Any]], format: str) -> None:
                     f.write(f"<td>{opp['hypothesis_message']}</td><td>{opp.get('confidence_score', 0.0)}</td></tr>")
                 f.write("</table></body></html>")
 
-        print(f"Results exported to {filename}")
+        msg = f"Results exported to {filename}"
+        print(msg)
+        logger.info(msg)
     except Exception as e:
         logger.error(f"Failed to export results: {e}")
+
+
+def _get_target_person(research_service: ResearchService) -> Optional[str]:
+    """Get target person from user input."""
+    print("\n--- Triangulation Analysis ---")
+    while True:
+        mode = input("Search by name (s) or enter ID (i)? [s/i/q]: ").strip().lower()
+        if mode == "q":
+            return None
+        if mode == "i":
+            return input("Enter Target Person UUID or Profile ID: ").strip()
+        if mode == "s":
+            # Use unified search criteria collection
+            basic_criteria = get_unified_search_criteria()
+            if not basic_criteria:
+                continue
+
+            # Prepare criteria for scoring
+            scoring_criteria = _create_date_objects(basic_criteria)
+            filter_criteria = _build_filter_criteria(scoring_criteria)
+            date_flex, scoring_weights = _get_scoring_config()
+
+            # Perform search
+            matches = research_service.search_people(
+                filter_criteria=filter_criteria,
+                scoring_criteria=scoring_criteria,
+                scoring_weights=scoring_weights,
+                date_flex=date_flex,
+            )
+
+            selected = _select_match_from_results(matches)
+            if selected:
+                return selected
+        else:
+            print("Invalid choice.")
 
 
 def run_triangulation_analysis(session_manager: SessionManager) -> bool:
@@ -177,40 +214,12 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
         triangulation_service = TriangulationService(session, research_service)
 
         # 2. Get Target Person
-        print("\n--- Triangulation Analysis ---")
-        target_input = None
-
-        while not target_input:
-            mode = input("Search by name (s) or enter ID (i)? [s/i/q]: ").strip().lower()
-            if mode == "q":
-                return True
-            elif mode == "i":
-                target_input = input("Enter Target Person UUID or Profile ID: ").strip()
-            elif mode == "s":
-                # Use unified search criteria collection
-                basic_criteria = get_unified_search_criteria()
-                if not basic_criteria:
-                    continue
-
-                # Prepare criteria for scoring
-                scoring_criteria = _create_date_objects(basic_criteria)
-                filter_criteria = _build_filter_criteria(scoring_criteria)
-                date_flex, scoring_weights = _get_scoring_config()
-
-                # Perform search
-                matches = research_service.search_people(
-                    filter_criteria=filter_criteria,
-                    scoring_criteria=scoring_criteria,
-                    scoring_weights=scoring_weights,
-                    date_flex=date_flex,
-                )
-
-                target_input = _select_match_from_results(matches)
-            else:
-                print("Invalid choice.")
+        target_input = _get_target_person(research_service)
 
         if not target_input:
             return True
+
+        logger.info(f"Selected target person for triangulation: {target_input}")
 
         # 3. Run Analysis
         print(f"\nAnalyzing matches for: {target_input}...")
@@ -218,9 +227,11 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
 
         # 4. Display Results
         if not opportunities:
+            logger.info("No triangulation opportunities found.")
             print("No triangulation opportunities found.")
             print("(Note: Ensure shared matches are populated and linked to tree data)")
         else:
+            logger.info(f"Found {len(opportunities)} triangulation opportunities.")
             print(f"\nFound {len(opportunities)} opportunities:")
             for i, opp in enumerate(opportunities, 1):
                 shared_match = opp["shared_match"]

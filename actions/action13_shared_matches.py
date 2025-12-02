@@ -142,6 +142,7 @@ def _fetch_and_store_shared_matches(session_manager: SessionManager, match_id: i
             return False
 
         _store_shared_matches(session_manager, match_id, matches_data)
+        logger.info(f"Successfully fetched {len(matches_data)} shared matches for {match_uuid}")
         return True
 
     except Exception as e:

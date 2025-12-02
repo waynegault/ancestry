@@ -1642,7 +1642,12 @@ class InboxProcessor:
         ai_result = _classify_with_recovery()
         ai_sentiment_result = self._coerce_ai_result_to_string(ai_result)
 
-        return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
+        final_label = self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
+
+        if final_label:
+            logger.info(f"AI Classification for {api_conv_id}: {final_label} (Original: {ai_sentiment_result})")
+
+        return final_label
 
     @staticmethod
     def _coerce_ai_result_to_string(ai_result: Any) -> Optional[str]:
@@ -1784,6 +1789,9 @@ class InboxProcessor:
 
             if phase_result is None and total_exchanges > 0:
                 phase_result = ConversationPhaseEnum.RESPONSE_RECEIVED
+
+            if phase_result:
+                logger.info(f"Conversation Phase for {conversation_id}: {phase_result.name}")
 
             return phase_result
 
