@@ -1,13 +1,13 @@
 # Ancestry Research Automation Platform - AI Agent Instructions
 
 ## Project Overview
-Python-based genealogical research automation for Ancestry.com featuring DNA match collection, AI-powered conversation analysis, personalized messaging, and automated task generation. Built with enterprise-grade architecture: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration (Google Gemini, DeepSeek), and comprehensive quality assurance with 58 test modules.
+Python-based genealogical research automation for Ancestry.com featuring DNA match collection, AI-powered conversation analysis, personalized messaging, and automated task generation. Built with enterprise-grade architecture: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration (Google Gemini, DeepSeek), and comprehensive quality assurance with various test modules.
 
 ## Quick Reference: Critical Commands
 
 ### Testing & Validation
 ```powershell
-# Run all 58 test modules (sequential)
+# Run all test modules (sequential)
 python run_all_tests.py
 
 # Parallel execution for speed

@@ -30,8 +30,8 @@ AnalyticsExtrasSetter = Callable[[dict[str, Any]], None]
 def load_result_row_builders() -> tuple[RowBuilder, RowBuilder]:
     """Load row builder helpers from GEDCOM and API modules with type safety."""
 
-    action10_module = import_module("action10")
-    api_search_module = import_module("api_search_core")
+    action10_module = import_module("actions.action10")
+    api_search_module = import_module("api.api_search_core")
     gedcom_builder = cast(RowBuilder, getattr(action10_module, "_create_table_row"))
     api_builder = cast(RowBuilder, getattr(api_search_module, "_create_table_row_for_candidate"))
     return gedcom_builder, api_builder
@@ -40,8 +40,8 @@ def load_result_row_builders() -> tuple[RowBuilder, RowBuilder]:
 def load_match_analysis_helpers() -> tuple[IDNormalizer, MatchAnalyzer, SupplementaryHandler]:
     """Load helper functions used when rendering match details."""
 
-    action10_module = import_module("action10")
-    api_search_module = import_module("api_search_core")
+    action10_module = import_module("actions.action10")
+    api_search_module = import_module("api.api_search_core")
     normalize_id = cast(IDNormalizer, getattr(action10_module, "normalize_gedcom_id"))
     analyze_top_match = cast(MatchAnalyzer, getattr(action10_module, "analyze_top_match"))
     handle_supplementary = cast(
@@ -111,8 +111,8 @@ def _test_load_result_row_builders_returns_callables() -> bool:
         return ["api"]
 
     module_map = {
-        "action10": _build_fake_module(_create_table_row=gedcom_builder),
-        "api_search_core": _build_fake_module(_create_table_row_for_candidate=api_builder),
+        "actions.action10": _build_fake_module(_create_table_row=gedcom_builder),
+        "api.api_search_core": _build_fake_module(_create_table_row_for_candidate=api_builder),
     }
 
     with _module_patch(f"{__name__}.import_module", module_map):
@@ -134,11 +134,11 @@ def _test_load_match_analysis_helpers_returns_expected_helpers() -> bool:
         return None
 
     module_map = {
-        "action10": _build_fake_module(
+        "actions.action10": _build_fake_module(
             normalize_gedcom_id=normalize,
             analyze_top_match=analyze,
         ),
-        "api_search_core": _build_fake_module(
+        "api.api_search_core": _build_fake_module(
             _handle_supplementary_info_phase=handle,
         ),
     }

@@ -550,6 +550,255 @@ register_migration(
 )
 
 
+# --- Migration 0004: Add conversation_state columns for Phase 4 Inbound Engine ---
+
+
+def _upgrade_0004(engine: Engine) -> None:
+    """Add status, safety_flag, and last_intent columns to conversation_state."""
+    with engine.begin() as connection:
+        # Add status column with default 'ACTIVE'
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("ALTER TABLE conversation_state ADD COLUMN status VARCHAR NOT NULL DEFAULT 'ACTIVE'")
+            )
+        # Add safety_flag column with default False (0)
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE conversation_state ADD COLUMN safety_flag BOOLEAN NOT NULL DEFAULT 0"))
+        # Add last_intent column (nullable)
+        with contextlib.suppress(Exception):
+            connection.execute(text("ALTER TABLE conversation_state ADD COLUMN last_intent VARCHAR"))
+        # Create index on status for efficient filtering
+        with contextlib.suppress(Exception):
+            connection.execute(text("CREATE INDEX ix_conversation_state_status ON conversation_state (status)"))
+        # Create index on safety_flag for efficient filtering
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX ix_conversation_state_safety_flag ON conversation_state (safety_flag)")
+            )
+
+
+def _downgrade_0004(_engine: Engine) -> None:
+    """Remove Phase 4 columns from conversation_state (SQLite doesn't support DROP COLUMN easily)."""
+    # SQLite doesn't support DROP COLUMN in older versions, so we just log a warning
+    logger.warning(
+        "Downgrade 0004: SQLite doesn't easily support DROP COLUMN. "
+        "The columns (status, safety_flag, last_intent) will remain but won't be used."
+    )
+
+
+register_migration(
+    Migration(
+        version="0004_conversation_state_phase4",
+        description="Add status, safety_flag, last_intent columns to conversation_state for Phase 4 Inbound Engine",
+        upgrade=_upgrade_0004,
+        downgrade=_downgrade_0004,
+        depends_on=("0003_add_tree_columns",),
+    )
+)
+
+
+# --- Migration 0005: Create missing tables for Phase 4+ features ---
+
+
+def _upgrade_0005(engine: Engine) -> None:
+    """Create missing tables: draft_replies, suggested_facts, data_conflicts, staged_updates, shared_matches."""
+    with engine.begin() as connection:
+        # Create draft_replies table
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS draft_replies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    people_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    conversation_id VARCHAR NOT NULL,
+                    content TEXT NOT NULL,
+                    status VARCHAR DEFAULT 'PENDING',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_draft_replies_people_id ON draft_replies(people_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_draft_replies_conversation_id ON draft_replies(conversation_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_draft_replies_status ON draft_replies(status)"))
+
+        # Create suggested_facts table
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS suggested_facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    people_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    fact_type VARCHAR NOT NULL,
+                    original_value TEXT,
+                    new_value TEXT NOT NULL,
+                    source_message_id VARCHAR,
+                    status VARCHAR NOT NULL DEFAULT 'PENDING',
+                    confidence_score INTEGER,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_suggested_facts_people_id ON suggested_facts(people_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_suggested_facts_fact_type ON suggested_facts(fact_type)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_suggested_facts_status ON suggested_facts(status)"))
+
+        # Create data_conflicts table
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS data_conflicts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    people_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    field_name VARCHAR(100) NOT NULL,
+                    existing_value TEXT,
+                    new_value TEXT NOT NULL,
+                    source VARCHAR(100) NOT NULL DEFAULT 'conversation',
+                    source_message_id INTEGER REFERENCES conversation_log(id) ON DELETE SET NULL,
+                    confidence_score INTEGER,
+                    status VARCHAR NOT NULL DEFAULT 'OPEN',
+                    resolution_notes TEXT,
+                    resolved_by VARCHAR(100),
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME
+                )
+            """)
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_data_conflicts_people_id ON data_conflicts(people_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_data_conflicts_field_name ON data_conflicts(field_name)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_data_conflicts_status ON data_conflicts(status)"))
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_data_conflicts_status_created ON data_conflicts(status, created_at)"
+                )
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_data_conflicts_person_field ON data_conflicts(people_id, field_name)"
+                )
+            )
+
+        # Create staged_updates table
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS staged_updates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    people_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    field_name VARCHAR(100) NOT NULL,
+                    current_value TEXT,
+                    proposed_value TEXT NOT NULL,
+                    source VARCHAR(100) NOT NULL DEFAULT 'conversation',
+                    source_message_id INTEGER REFERENCES conversation_log(id) ON DELETE SET NULL,
+                    confidence_score INTEGER,
+                    status VARCHAR NOT NULL DEFAULT 'pending',
+                    reviewer_notes TEXT,
+                    reviewed_by VARCHAR(100),
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at DATETIME,
+                    applied_at DATETIME
+                )
+            """)
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_staged_updates_people_id ON staged_updates(people_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_staged_updates_field_name ON staged_updates(field_name)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_staged_updates_status ON staged_updates(status)"))
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_staged_updates_status_created ON staged_updates(status, created_at)"
+                )
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_staged_updates_person_status ON staged_updates(people_id, status)")
+            )
+
+        # Create shared_matches table
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS shared_matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    shared_match_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+                    shared_cm INTEGER,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_shared_matches_person_id ON shared_matches(person_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_shared_matches_shared_match_id ON shared_matches(shared_match_id)")
+            )
+        with contextlib.suppress(Exception):
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_shared_matches_pair ON shared_matches(person_id, shared_match_id)"
+                )
+            )
+
+
+def _downgrade_0005(engine: Engine) -> None:
+    """Drop tables created in migration 0005."""
+    with engine.begin() as connection:
+        with contextlib.suppress(Exception):
+            connection.execute(text("DROP TABLE IF EXISTS shared_matches"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("DROP TABLE IF EXISTS staged_updates"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("DROP TABLE IF EXISTS data_conflicts"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("DROP TABLE IF EXISTS suggested_facts"))
+        with contextlib.suppress(Exception):
+            connection.execute(text("DROP TABLE IF EXISTS draft_replies"))
+
+
+register_migration(
+    Migration(
+        version="0005_create_missing_tables",
+        description="Create draft_replies, suggested_facts, data_conflicts, staged_updates, shared_matches tables",
+        upgrade=_upgrade_0005,
+        downgrade=_downgrade_0005,
+        depends_on=("0004_conversation_state_phase4",),
+    )
+)
+
+
 # === Module Tests ===
 
 

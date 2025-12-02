@@ -17,17 +17,31 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 
 ### Documentation
 
-- [Codebase Assessment (Phase 1)](docs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities.
-- [Data Flow Map (Phase 1)](docs/data_flow_map.md) - Visual and textual tracing of critical data paths.
-- [Tech Stack Catalog (Phase 1)](docs/tech_stack.md) - Comprehensive inventory of dependencies and infrastructure stability.
-- [Gap Analysis (Phase 1)](docs/gap_analysis.md) - Report on missing features: RAG, Conflict Detection, Review Queue, A/B Testing.
+**Project Status & Planning:**
+- [Implementation Roadmap](todo.md) - Current status, remaining tasks, and next actions
+
+**Architecture & Design:**
+- [Codebase Assessment](docs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities
+- [Data Flow Map](docs/data_flow_map.md) - Visual and textual tracing of critical data paths
+- [Tech Stack Catalog](docs/tech_stack.md) - Dependencies and infrastructure stability
+- [Gap Analysis](docs/gap_analysis.md) - Analysis of feature gaps and technical debt
+
+**Technical Specifications:**
+- [Reply Management System](docs/specs/reply_management.md) - Conversation state machine design
+- [Response Engine](docs/specs/response_engine.md) - Context builder and RAG architecture
+- [Data Validation Pipeline](docs/specs/data_validation_pipeline.md) - Fact extraction and conflict detection
+- [Engagement Optimization](docs/specs/engagement_optimization.md) - A/B testing framework
+- [Human-in-the-Loop](docs/specs/human_in_the_loop.md) - Approval queue and safety controls
+
+**Operations:**
+- [Operator Manual](docs/operator_manual.md) - Review queue CLI, approval workflow, emergency controls
 
 ### Architecture Highlights
 
 - **Enterprise Design**: SQLAlchemy ORM, Selenium WebDriver, connection pooling, circuit breakers
 - **Zero-Tolerance Rate Limiting**: Thread-safe token bucket algorithm (0.3 RPS), validated across 800+ pages
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
-- **Comprehensive Testing**: 74+ test modules, 643+ tests, no smoke tests—all validate real behavior
+- **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
 ## Quick Start
@@ -551,11 +565,179 @@ r = requests.post(
 print(r.status_code, r.json())
 ```
 
+### Innovation Features
+
+Advanced research intelligence modules for enhanced genealogical analysis.
+
+#### Triangulation Intelligence (`research/triangulation_intelligence.py`)
+
+Evidence-based hypothesis generation for DNA match relationships.
+
+**Features**:
+
+- **Evidence Scoring**: Weighted scoring of shared DNA, tree overlap, and common ancestors
+- **Cluster Detection**: Identifies match clusters sharing common ancestors
+- **Hypothesis Ranking**: Prioritizes hypotheses by evidence strength
+- **Confidence Levels**: HIGH (>0.8), GOOD (0.6-0.8), MODERATE (0.4-0.6), LOW (<0.4)
+
+**Key Classes**:
+
+- `TriangulationIntelligence` - Main analysis engine
+- `Evidence` - Individual evidence with weight and confidence
+- `MatchCluster` - Group of related matches
+- `TriangulationHypothesis` - Proposed relationship with supporting evidence
+
+**Usage**:
+
+```python
+from research.triangulation_intelligence import TriangulationIntelligence
+
+intelligence = TriangulationIntelligence()
+hypothesis = intelligence.analyze_match(match_uuid, tree_data)
+clusters = intelligence.find_clusters(match_list)
+ranked = intelligence.prioritize_hypotheses(hypotheses)
+```
+
+#### Predictive Gap Detection (`research/predictive_gaps.py`)
+
+Identifies research gaps and brick walls in family trees.
+
+**Gap Types** (10 categories):
+
+- MISSING_PARENTS, MISSING_SPOUSE, MISSING_CHILDREN
+- MISSING_DATES, INCOMPLETE_LOCATION, NO_SOURCES
+- GENERATION_GAP, SURNAME_DISCONTINUITY, MIGRATION_GAP, RECORD_GAP
+
+**Features**:
+
+- **Completeness Scoring**: 0-100 score based on data quality
+- **Priority Classification**: CRITICAL, HIGH, MEDIUM, LOW
+- **Brick Wall Detection**: Identifies persistent research barriers
+- **Actionable Suggestions**: Specific research actions for each gap
+
+**Key Classes**:
+
+- `PredictiveGapDetector` - Main analysis engine
+- `ResearchGap` - Individual gap with priority and suggestions
+- `GapAnalysisReport` - Comprehensive analysis with completeness score
+- `BrickWallCandidate` - Persistent barrier with contributing factors
+
+**Usage**:
+
+```python
+from research.predictive_gaps import PredictiveGapDetector
+
+detector = PredictiveGapDetector()
+report = detector.analyze_person(person_data)
+actions = detector.suggest_research_actions(report)
+brick_walls = detector.identify_brick_walls(tree_data)
+```
+
+#### Sentiment Adaptation (`ai/sentiment_adaptation.py`)
+
+Adapts message tone based on conversation sentiment analysis.
+
+**Sentiment Levels**: VERY_POSITIVE, POSITIVE, NEUTRAL, NEGATIVE, VERY_NEGATIVE
+
+**Message Tones**: WARM, FRIENDLY, PROFESSIONAL, FORMAL, CAUTIOUS
+
+**Features**:
+
+- **Sentiment Analysis**: Detects emotional signals in messages
+- **Conversation Profiling**: Builds recipient profile from history
+- **Tone Recommendation**: Suggests appropriate message tone
+- **Message Adaptation**: Adjusts message style to match recipient preferences
+
+**Key Classes**:
+
+- `SentimentAdapter` - Main adaptation engine
+- `SentimentScore` - Analysis result with positive/negative signals
+- `ConversationProfile` - Recipient profile from conversation history
+- `MessageRecommendation` - Tone suggestion with confidence score
+
+**Usage**:
+
+```python
+from ai.sentiment_adaptation import SentimentAdapter
+
+adapter = SentimentAdapter()
+score = adapter.analyze_message(message_text)
+profile = adapter.analyze_conversation(messages)
+recommendation = adapter.recommend_tone(profile)
+adapted = adapter.adapt_message(original_message, target_tone)
+```
+
+#### Conflict Detection (`research/conflict_detector.py`)
+
+Automated detection and management of data conflicts between extracted values and stored records.
+
+**Conflict Severities**: CRITICAL, HIGH, MEDIUM, LOW
+
+**Conflict Statuses**: OPEN, RESOLVED, REJECTED, AUTO_RESOLVED, ESCALATED
+
+**Features**:
+
+- **Field-Level Comparison**: Compares extracted values against existing records
+- **Similarity Scoring**: Uses SequenceMatcher for fuzzy matching (0.85 threshold)
+- **Batch Detection**: Process multiple person records efficiently
+- **Resolution Workflow**: Track and resolve conflicts with audit trail
+- **Database Integration**: Full SQLAlchemy model with foreign keys
+
+**Key Classes**:
+
+- `ConflictDetector` - Main detection and management engine
+- `ConflictDetectionResult` - Result of conflict analysis for a person
+- `FieldComparison` - Individual field comparison with similarity score
+- `DataConflict` (model) - Database record for conflict tracking
+
+**Comparable Fields**:
+
+| Field | Severity | Notes |
+|-------|----------|-------|
+| relationship | CRITICAL | Fundamental to genealogy |
+| birth_year | HIGH | Key identifying data |
+| death_year | HIGH | Key identifying data |
+| birth_place | HIGH | Geographic identification |
+| gender | HIGH | Core demographic |
+| first_name | MEDIUM | May have variations |
+
+**Usage**:
+
+```python
+from research.conflict_detector import ConflictDetector
+
+detector = ConflictDetector(similarity_threshold=0.85)
+
+# Compare values
+comparison = detector.compare_values("birth_year", "1850", "1852")
+print(f"Conflict: {comparison.is_conflict}, Similarity: {comparison.similarity_score}")
+
+# Detect conflicts for a person
+result = detector.detect_conflicts(person, extracted_data, source="conversation")
+print(f"Found {result.conflicts_found} conflicts, max severity: {result.max_severity}")
+
+# Create database records
+conflicts = ConflictDetector.create_conflict_records(db_session, result)
+
+# Resolve a conflict
+ConflictDetector.resolve_conflict(
+    db_session,
+    conflict_id=123,
+    resolution=ConflictStatusEnum.RESOLVED,
+    apply_new_value=True,
+    resolution_notes="Verified via census record"
+)
+
+# Get summary
+summary = ConflictDetector.get_conflict_summary(db_session)
+print(f"Open conflicts: {summary['total_open']}, by field: {summary['conflicts_by_field']}")
+```
+
 ### Testing Infrastructure
 
 #### Test Framework (`testing/test_framework.py`)
 
-Standardized testing pattern used across all 74+ modules.
+Standardized testing pattern used across all 138 modules.
 
 **Standard Pattern**:
 
@@ -665,10 +847,187 @@ person = create_test_person(
 )
 ```
 
+### Safety & Engagement Components
+
+#### Human-in-the-Loop Review Queue (`core/approval_queue.py`)
+
+Message drafts require human approval before sending, with configurable auto-approve thresholds.
+
+**Key Classes**:
+
+- `ApprovalQueueService` - Manages draft lifecycle and review workflow
+- `QueuedDraft` - Individual draft with metadata, scores, and priority
+- `ReviewDecision` - Operator approval/rejection with reasoning
+
+**Draft Lifecycle**:
+
+```text
+PENDING → APPROVED/REJECTED/AUTO_APPROVED/EXPIRED → SENT
+```
+
+**Auto-Approve Logic**:
+
+```python
+# Drafts auto-approve if ALL conditions met:
+- quality_score >= 85 (configurable)
+- opt_out_score >= 95 (safety requirement)
+- No aggressive sentiment detected
+- Not flagged for manual review
+```
+
+**Priority Levels**:
+
+- `LOW` - Generic messages, can wait
+- `NORMAL` - Standard priority (default)
+- `HIGH` - High-value matches (>100cM)
+- `CRITICAL` - Potential issues, review immediately
+
+**CLI Commands** (see `docs/operator_manual.md`):
+
+```bash
+# View pending drafts
+python main.py  # Option: Q - Review Queue
+
+# Review specific draft
+python -c "from core.approval_queue import ApprovalQueueService; svc = ApprovalQueueService(); svc.review_draft('draft-id', 'approved', 'Looks good')"
+```
+
+#### A/B Testing Framework (`ai/ab_testing.py`)
+
+Experiment with prompt variants to optimize AI quality and engagement.
+
+**Key Classes**:
+
+- `ExperimentManager` - Creates and manages experiments
+- `Experiment` - Single experiment with variants and metrics
+- `ExperimentVariant` - Individual variant configuration
+- `VariantStats` - Statistical analysis per variant
+
+**Experiment Workflow**:
+
+```python
+from ai.ab_testing import ExperimentManager
+
+# Create experiment
+manager = ExperimentManager()
+exp = manager.create_experiment(
+    name="greeting_tone",
+    variants=[
+        {"name": "formal", "config": {"tone": "formal"}},
+        {"name": "friendly", "config": {"tone": "friendly"}}
+    ]
+)
+
+# Get variant assignment (consistent per user)
+variant = manager.get_variant("greeting_tone", user_id="user-123")
+
+# Record result
+manager.record_result("greeting_tone", variant.name, quality_score=85)
+
+# Get winner when sufficient data
+winner = manager.get_winner("greeting_tone")  # Returns variant with best metrics
+```
+
+**Statistical Analysis**:
+
+- Sample size tracking per variant
+- Mean/median quality scores
+- Response rate calculation
+- Confidence intervals for winner selection
+
+#### Opt-Out Detection (`core/opt_out_detection.py`)
+
+Multi-layer safeguard to prevent messaging users who've requested no contact.
+
+**Detection Layers**:
+
+1. **Explicit Patterns** - Direct opt-out language:
+   - "stop contacting me", "do not message", "unsubscribe"
+   - "leave me alone", "remove from list"
+
+2. **Implicit Patterns** - Indirect disinterest:
+   - "not interested", "no thank you", "please don't"
+   - "I'm too busy", "maybe later"
+
+3. **Aggressive Patterns** - Hostile language (HIGH priority):
+   - "harassment", "spam", "reported you"
+   - "legal action", "blocking you"
+
+**Analysis Result**:
+
+```python
+@dataclass
+class OptOutAnalysis:
+    is_opt_out: bool        # Should we stop messaging?
+    confidence: float       # 0.0-1.0 confidence score
+    patterns_found: list    # Which patterns triggered
+    action: OptOutAction    # BLOCK, WAIT_30_DAYS, FLAG_REVIEW, PROCEED
+    reasoning: str          # Human-readable explanation
+```
+
+**Actions**:
+
+- `BLOCK` - Never message this person again
+- `WAIT_30_DAYS` - Cool-off period before retry
+- `FLAG_REVIEW` - Requires human review
+- `PROCEED` - Safe to continue messaging
+
+**Integration**:
+
+```python
+from core.opt_out_detection import OptOutDetector
+
+detector = OptOutDetector()
+analysis = detector.analyze(message_text)
+
+if analysis.is_opt_out:
+    logger.warning(f"Opt-out detected: {analysis.reasoning}")
+    # Block or flag based on analysis.action
+```
+
+#### Dry-Run Validation (`scripts/dry_run_validation.py`)
+
+Test message processing against historical conversations without sending.
+
+**Features**:
+
+- Load real conversations from database
+- Generate drafts using full pipeline
+- Validate opt-out detection
+- Compare expected vs actual outputs
+- Generate validation report
+
+**Usage**:
+
+```bash
+# Validate against 10 historical conversations
+python scripts/dry_run_validation.py --count 10
+
+# Full validation with detailed report
+python scripts/dry_run_validation.py --count 50 --verbose
+
+# Run built-in tests
+python scripts/dry_run_validation.py --test
+```
+
+**Validation Report**:
+
+```text
+Dry-Run Validation Results
+==========================
+Total Processed: 50
+Opt-Outs Detected: 3 (correctly blocked)
+High-Quality Drafts: 42 (84%)
+Flagged for Review: 5
+Errors: 0
+
+Recommendation: Safe to proceed with deployment
+```
+
 #### Running Tests
 
 ```bash
-# Run all 74+ test modules (sequential)
+# Run all 138 test modules (sequential)
 python run_all_tests.py
 
 # Parallel execution for speed
@@ -689,8 +1048,8 @@ SKIP_LIVE_API_TESTS=true python run_all_tests.py
 
 **Expected Results**:
 
-- All 74+ modules should pass with 100/100 quality scores
-- 643+ tests passing at 100% success rate
+- All 132 modules should pass with 100/100 quality scores
+- 1061+ tests passing at 100% success rate
 - Zero complexity warnings, zero linting errors, zero type errors
 
 ## Configuration Reference
@@ -1256,11 +1615,18 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 
 ## Recent Changes (November 2025)
 
+- ✅ **Safety & Engagement Sprint** (Dec 2025) - Human-in-the-loop review queue, A/B testing framework, opt-out detection
+  - `core/approval_queue.py` - Message draft approval with configurable auto-approve thresholds
+  - `ai/ab_testing.py` - Experiment variants with statistical analysis and winner selection
+  - `core/opt_out_detection.py` - Multi-layer opt-out detection with explicit/implicit/aggressive patterns
+  - `scripts/dry_run_validation.py` - Pre-deployment validation against historical conversations
+  - `testing/test_integration_e2e.py` - End-to-end integration tests for full pipeline
+  - `docs/operator_manual.md` - Comprehensive operator guide for review queue operations
 - ✅ **Production Polish** (Nov 30) - Consolidated caching decorators, removed dead code, cleaned up misleading comments
 - ✅ **Correlation ID System** (Nov 27) - Full request tracking with `core/correlation.py`
 - ✅ **Test Utility Framework** (Nov 26) - Decorators and fixture factories in `test_utilities.py`
 - ✅ **Developer Experience** (Nov 26) - `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, fast test runner
-- ✅ **Test Standardization** (Nov 25) - All 74+ modules use consistent `TestSuite` pattern
+- ✅ **Test Standardization** (Nov 25) - All 132 modules use consistent `TestSuite` pattern
 - ✅ **API Consolidation** (Oct 29) - Removed action11.py, unified into api_search_core.py
 - ✅ **Rate Limit Hardening** (Oct 28) - Thread-safe RateLimiter with zero 429 errors
 - ✅ **Quality Gates** (Oct 27) - Added quality_regression_gate.py for CI/CD integration
@@ -1414,6 +1780,7 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   ├── ai_prompts.json
 │   ├── prompt_telemetry.py
 │   ├── quality_regression_gate.py
+│   ├── ab_testing.py           # A/B testing framework
 │   └── providers/       # Provider adapters
 │       ├── base.py
 │       ├── gemini.py
@@ -1447,7 +1814,9 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   ├── circuit_breaker.py
 │   ├── correlation.py          # Request tracking
 │   ├── logging_config.py
-│   └── metrics_collector.py
+│   ├── metrics_collector.py
+│   ├── approval_queue.py       # Human-in-the-loop review
+│   └── opt_out_detection.py    # Multi-layer opt-out safeguards
 ├── genealogy/           # Genealogical utilities
 │   ├── gedcom_search_utils.py
 │   ├── gedcom_utils.py
@@ -1467,7 +1836,12 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   ├── test_framework.py
 │   ├── test_utilities.py
 │   ├── run_tests_fast.py
-│   └── code_quality_checker.py
+│   ├── code_quality_checker.py
+│   └── test_integration_e2e.py  # End-to-end tests
+├── scripts/             # Operational scripts
+│   └── dry_run_validation.py    # Pre-deployment validation
+├── docs/                # Documentation
+│   └── operator_manual.md       # Review queue operations
 ├── Cache/               # Runtime cache
 ├── Data/                # Database storage
 │   └── ancestry.db

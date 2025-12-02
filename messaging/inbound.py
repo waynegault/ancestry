@@ -74,7 +74,11 @@ class InboundOrchestrator:
         # 1. Safety Check
         safety_result = self.safety_guard.check_message(message_content)
         if safety_result.status != SafetyStatus.SAFE:
-            logger.warning(f"Safety check failed for message from {sender_id}: {safety_result.reason}")
+            # Opt-out detection is EXPECTED behavior - log at appropriate level
+            if safety_result.status == SafetyStatus.OPT_OUT:
+                logger.info(f"Opt-out detected for {sender_id}: skipping automated response ({safety_result.reason})")
+            else:
+                logger.warning(f"Safety check flagged message from {sender_id}: {safety_result.reason}")
             self._handle_unsafe_message(person, safety_result)
             return {
                 "status": "unsafe",

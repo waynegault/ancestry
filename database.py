@@ -172,6 +172,17 @@ class FactTypeEnum(enum.Enum):
     OTHER = "OTHER"
 
 
+class ConflictStatusEnum(enum.Enum):
+    """Enumeration for the status of a data conflict."""
+
+    OPEN = "OPEN"  # Conflict detected, awaiting resolution
+    RESOLVED = "RESOLVED"  # Human resolved the conflict
+    REJECTED = "REJECTED"  # Human rejected the new value, keeping original
+    IGNORED = "IGNORED"  # Human chose to ignore the conflict
+    ESCALATED = "ESCALATED"  # Auto-escalated after timeout, needs attention
+    AUTO_RESOLVED = "AUTO_RESOLVED"  # System auto-resolved (e.g., merged identical values)
+
+
 # ----------------------------------------------------------------------
 # SQLAlchemy Model Definitions
 # ----------------------------------------------------------------------
@@ -976,6 +987,240 @@ class SuggestedFact(Base):
 # End of SuggestedFact class
 
 
+class DataConflict(Base):
+    """
+    Tracks data conflicts between extracted values and existing database records.
+
+    When AI extraction finds data that contradicts stored values, a DataConflict
+    is created instead of automatically updating. This supports a review workflow
+    where humans can approve, reject, or investigate discrepancies.
+    """
+
+    __tablename__ = "data_conflicts"
+
+    # --- Columns ---
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique identifier for the conflict.",
+    )
+    people_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to the person record with conflicting data.",
+    )
+    field_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment="Name of the field with conflict (e.g., 'birth_year', 'birth_place').",
+    )
+    existing_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Current value stored in database (JSON-serialized if complex).",
+    )
+    new_value: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Newly extracted value from conversation or import.",
+    )
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="conversation",
+        comment="Source of new data (conversation, gedcom_import, api_sync).",
+    )
+    source_message_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("conversation_log.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Reference to the conversation log entry that caused conflict.",
+    )
+    confidence_score: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="AI confidence in the new value (0-100).",
+    )
+    status: Mapped[ConflictStatusEnum] = mapped_column(
+        SQLEnum(ConflictStatusEnum),
+        nullable=False,
+        default=ConflictStatusEnum.OPEN,
+        index=True,
+        comment="Resolution status (OPEN, RESOLVED, IGNORED, AUTO_RESOLVED).",
+    )
+    resolution_notes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Notes explaining the resolution decision.",
+    )
+    resolved_by: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="User or system that resolved the conflict.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when conflict was detected.",
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when conflict was resolved.",
+    )
+
+    # --- Relationships ---
+    person: Mapped["Person"] = relationship("Person", back_populates="data_conflicts")
+    source_message: Mapped[Optional["ConversationLog"]] = relationship(
+        "ConversationLog",
+        foreign_keys=[source_message_id],
+    )
+
+    # --- Indexes ---
+    __table_args__ = (
+        Index("ix_data_conflicts_status_created", "status", "created_at"),
+        Index("ix_data_conflicts_person_field", "people_id", "field_name"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DataConflict(id={self.id}, person={self.people_id}, "
+            f"field='{self.field_name}', status={self.status.value})>"
+        )
+
+
+# End of DataConflict class
+
+
+class UpdateStatusEnum(enum.Enum):
+    """Status values for staged updates."""
+
+    PENDING = "pending"  # Awaiting review
+    APPROVED = "approved"  # Approved and applied
+    REJECTED = "rejected"  # Rejected by reviewer
+    EXPIRED = "expired"  # Automatically expired after retention period
+
+
+class StagedUpdate(Base):
+    """
+    Staging area for AI-proposed data updates awaiting human approval.
+
+    Instead of directly modifying Person records, extracted data is staged here
+    for review. This provides a controlled workflow where users can approve,
+    reject, or modify proposed changes before they affect the database.
+    """
+
+    __tablename__ = "staged_updates"
+
+    # --- Columns ---
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique identifier for the staged update.",
+    )
+    people_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Foreign key to the person record being updated.",
+    )
+    field_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment="Name of the field to update (e.g., 'birth_year', 'birth_place').",
+    )
+    current_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Current value in database (JSON-serialized if complex).",
+    )
+    proposed_value: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="Proposed new value from AI extraction.",
+    )
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="conversation",
+        comment="Source of the proposed update (conversation, gedcom_import, api_sync).",
+    )
+    source_message_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("conversation_log.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Reference to conversation log entry that proposed this update.",
+    )
+    confidence_score: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="AI confidence in the proposed value (0-100).",
+    )
+    status: Mapped[UpdateStatusEnum] = mapped_column(
+        SQLEnum(UpdateStatusEnum),
+        nullable=False,
+        default=UpdateStatusEnum.PENDING,
+        index=True,
+        comment="Review status (PENDING, APPROVED, REJECTED, EXPIRED).",
+    )
+    reviewer_notes: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Notes from reviewer explaining decision.",
+    )
+    reviewed_by: Mapped[Optional[str]] = mapped_column(
+        String(100),
+        nullable=True,
+        comment="User who reviewed the update.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when update was proposed.",
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when update was reviewed.",
+    )
+    applied_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Timestamp (UTC) when update was applied to Person record.",
+    )
+
+    # --- Relationships ---
+    person: Mapped["Person"] = relationship("Person", back_populates="staged_updates")
+    source_message: Mapped[Optional["ConversationLog"]] = relationship(
+        "ConversationLog",
+        foreign_keys=[source_message_id],
+    )
+
+    # --- Indexes ---
+    __table_args__ = (
+        Index("ix_staged_updates_status_created", "status", "created_at"),
+        Index("ix_staged_updates_person_status", "people_id", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<StagedUpdate(id={self.id}, person={self.people_id}, "
+            f"field='{self.field_name}', status={self.status.value})>"
+        )
+
+
+# End of StagedUpdate class
+
+
 class DnaMatch(Base):
     """
     Stores DNA match-specific details for a Person.
@@ -1292,6 +1537,12 @@ class Person(Base):
     )
     suggested_facts: Mapped[list["SuggestedFact"]] = relationship(
         "SuggestedFact", back_populates="person", cascade="all, delete-orphan"
+    )
+    data_conflicts: Mapped[list["DataConflict"]] = relationship(
+        "DataConflict", back_populates="person", cascade="all, delete-orphan"
+    )
+    staged_updates: Mapped[list["StagedUpdate"]] = relationship(
+        "StagedUpdate", back_populates="person", cascade="all, delete-orphan"
     )
     draft_replies: Mapped[list["DraftReply"]] = relationship(
         "DraftReply", back_populates="person", cascade="all, delete-orphan"

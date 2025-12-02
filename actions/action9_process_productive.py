@@ -58,6 +58,10 @@ from database import (
     PersonStatusEnum,
     commit_bulk_data,
 )
+from genealogy.fact_validator import (
+    extract_facts_from_ai_response,
+)
+from genealogy.tree_query_service import PersonSearchResult, TreeQueryService
 from integrations import ms_graph_utils
 from messaging import build_safe_column_value
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
@@ -163,9 +167,15 @@ class VitalRecord(BaseModel):
 
     person: str
     event_type: str
-    date: str
-    place: str
+    date: str = ""
+    place: str = ""
     certainty: str = "unknown"
+
+    @field_validator("date", "place", mode="before")
+    @classmethod
+    def convert_none_to_empty_string(cls, v: Any) -> str:
+        """Convert None to empty string for optional fields."""
+        return "" if v is None else str(v)
 
 
 class Relationship(BaseModel):
@@ -620,6 +630,8 @@ class PersonProcessor:
         self.ms_state = ms_state
         self.my_pid_lower = session_manager.my_profile_id.lower() if session_manager.my_profile_id else ""
         self._ai_cache: dict[str, tuple[dict[str, Any], list[str]]] = {}
+        # Sprint 3: TreeQueryService for RAG-style tree context retrieval
+        self._tree_query_service: Optional[TreeQueryService] = None
 
     def process_person(self, person: Person) -> tuple[bool, str]:
         """
@@ -748,6 +760,24 @@ class PersonProcessor:
                 return log
         return None
 
+    def _get_tree_query_service(self) -> Optional[TreeQueryService]:
+        """
+        Lazily initialize and return TreeQueryService for RAG-style tree context.
+
+        Sprint 3: RAG Response Generator integration.
+
+        Returns:
+            TreeQueryService instance, or None if GEDCOM not available
+        """
+        if self._tree_query_service is None:
+            try:
+                self._tree_query_service = TreeQueryService()
+                logger.debug("TreeQueryService initialized for person lookup")
+            except Exception as e:
+                logger.warning(f"Failed to initialize TreeQueryService: {e}")
+                return None
+        return self._tree_query_service
+
     @staticmethod
     def _should_bypass_ai_extraction(latest_message: ConversationLog, log_prefix: str) -> bool:
         """Determine if AI extraction can be skipped for low-detail OTHER replies."""
@@ -828,6 +858,31 @@ class PersonProcessor:
 
         entity_counts = {k: len(v) for k, v in extracted_data.items()}
         logger.debug(f"Extracted entities for {person.username}: {json.dumps(entity_counts)}")
+
+        # === FACT EXTRACTION 2.0: Convert AI response to validated ExtractedFact objects ===
+        # Phase 3 Sprint 2: Structured fact extraction with validation pipeline
+        extracted_facts = extract_facts_from_ai_response(extracted_data)
+        if extracted_facts:
+            logger.info(
+                f"Fact Extraction 2.0: Extracted {len(extracted_facts)} facts for {person.username} ({entity_counts})"
+            )
+            # Store facts in extracted_data for downstream processing
+            extracted_data["validated_facts"] = [
+                {
+                    "fact_type": f.fact_type,
+                    "subject_name": f.subject_name,
+                    "original_text": f.original_text,
+                    "structured_value": f.structured_value,
+                    "normalized_value": f.normalized_value,
+                    "confidence": f.confidence,
+                    "location": f.location,
+                    "related_person_name": f.related_person_name,
+                }
+                for f in extracted_facts
+            ]
+        else:
+            logger.debug(f"No structured facts extracted for {person.username}")
+            extracted_data["validated_facts"] = []
 
         # Cache result for this context to avoid repeated AI calls during the run
         self._ai_cache[cache_key] = (
@@ -931,6 +986,85 @@ class PersonProcessor:
             logger.debug(f"Analytics tracking failed for person lookup: {analytics_error}")
 
     @staticmethod
+    def _format_tree_lookup_for_ai(lookup_results: list[PersonLookupResult]) -> str:
+        """
+        Format TreeQueryService lookup results for AI prompt context.
+
+        Sprint 3: RAG Response Generator integration - formats person lookup results
+        for inclusion in genealogical_reply prompt.
+
+        Args:
+            lookup_results: List of PersonLookupResult from _lookup_mentioned_people
+
+        Returns:
+            Formatted string for TREE LOOKUP RESULTS prompt section
+        """
+        if not lookup_results:
+            return "No people mentioned or no tree lookup performed."
+
+        found_count = sum(1 for r in lookup_results if r.found)
+        not_found_count = len(lookup_results) - found_count
+
+        lines = [f"Lookup Summary: {found_count} found in tree, {not_found_count} not found.", ""]
+
+        for result in lookup_results:
+            if result.found:
+                lines.extend(PersonProcessor._format_found_person(result))
+            else:
+                lines.append(f"✗ NOT FOUND: {result.name}")
+                lines.append("")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_found_person(result: PersonLookupResult) -> "list[str]":
+        """Format a found person result for AI prompt context."""
+        lines: list[str] = []
+        name_parts = [result.name]
+        if result.birth_year or result.death_year:
+            years = f"({result.birth_year or '?'}-{result.death_year or '?'})"
+            name_parts.append(years)
+
+        lines.append(f"✓ FOUND: {' '.join(name_parts)}")
+
+        if result.birth_place:
+            lines.append(f"  Birth: {result.birth_place}")
+        if result.death_place:
+            lines.append(f"  Death: {result.death_place}")
+        if result.relationship_path:
+            lines.append(f"  Relationship: {result.relationship_path}")
+
+        lines.append(f"  Source: {result.source or 'Unknown'}")
+        lines.append("")
+        return lines
+
+    @staticmethod
+    def _format_relationship_context_for_ai(lookup_results: list[PersonLookupResult]) -> str:
+        """
+        Extract and format relationship context from lookup results for AI prompt.
+
+        Sprint 3: Provides relationship path explanations for genealogical_reply prompt.
+
+        Args:
+            lookup_results: List of PersonLookupResult from _lookup_mentioned_people
+
+        Returns:
+            Formatted relationship context string
+        """
+        if not lookup_results:
+            return "No relationship information available."
+
+        relationships: list[str] = []
+        for result in lookup_results:
+            if result.found and result.relationship_path:
+                relationships.append(f"- {result.name}: {result.relationship_path}")
+
+        if not relationships:
+            return "Relationship paths not determined for found people."
+
+        return "Relationship paths from my tree:\n" + "\n".join(relationships)
+
+    @staticmethod
     def _load_gedcom_data() -> Optional[Any]:
         """Load GEDCOM data from configured path."""
         from genealogy.gedcom.gedcom_cache import load_gedcom_with_aggressive_caching
@@ -992,7 +1126,120 @@ class PersonProcessor:
 
     def _search_gedcom_for_person(self, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
         """
-        Search for a person in GEDCOM data using Action 10 logic.
+        Search for a person in GEDCOM data using TreeQueryService (Sprint 3 RAG integration).
+
+        Uses TreeQueryService.find_person() for fuzzy matching and relationship context,
+        with fallback to legacy Action 10 logic if TreeQueryService unavailable.
+
+        Args:
+            person_data: Dictionary with person details from AI extraction
+
+        Returns:
+            PersonLookupResult if found, None otherwise
+        """
+        person_name = person_data.get("name", "Unknown")
+
+        # Sprint 3: Try TreeQueryService first for RAG-style retrieval
+        tree_service = self._get_tree_query_service()
+        if tree_service:
+            result = PersonProcessor._search_via_tree_query_service(tree_service, person_data)
+            if result:
+                logger.info(f"TreeQueryService found {person_name} with score {result.match_score}")
+                return result
+            logger.debug(f"TreeQueryService did not find {person_name}, falling back to legacy search")
+
+        # Fallback: Legacy Action 10 search logic
+        return self._search_gedcom_legacy(person_data)
+
+    @staticmethod
+    def _extract_birth_year_from_person_data(person_data: dict[str, Any]) -> Optional[int]:
+        """Extract birth year from person data, checking direct field and vital records."""
+        if "birth_year" in person_data:
+            return person_data.get("birth_year")
+
+        for record in person_data.get("vital_records", []):
+            if record.get("event_type") == "BIRTH" and record.get("year"):
+                return record.get("year")
+
+        return None
+
+    @staticmethod
+    def _convert_search_result_to_lookup(
+        search_result: PersonSearchResult,
+        tree_service: TreeQueryService,
+        person_name: str,
+    ) -> PersonLookupResult:
+        """Convert TreeQueryService search result to PersonLookupResult with relationship."""
+        relationship_text = None
+        if search_result.person_id:
+            rel_result = tree_service.explain_relationship(search_result.person_id)
+            if rel_result.found:
+                relationship_text = rel_result.relationship_description or rel_result.relationship_label
+                logger.debug(f"Relationship context: {relationship_text}")
+
+        confidence_scores = {"high": 90, "medium": 70, "low": 50}
+        match_score = confidence_scores.get(search_result.confidence, 60)
+
+        return PersonLookupResult(
+            name=search_result.name or person_name,
+            birth_year=search_result.birth_year,
+            birth_place=search_result.birth_place,
+            death_year=search_result.death_year,
+            death_place=search_result.death_place,
+            relationship_path=relationship_text,
+            match_score=match_score,
+            found=True,
+            source="TreeQueryService",
+            family_details={
+                "person_id": search_result.person_id,
+                "confidence": search_result.confidence,
+                "alternatives_count": len(search_result.alternatives) if search_result.alternatives else 0,
+            },
+        )
+
+    @staticmethod
+    def _search_via_tree_query_service(
+        tree_service: TreeQueryService, person_data: dict[str, Any]
+    ) -> Optional[PersonLookupResult]:
+        """
+        Search using TreeQueryService.find_person() with relationship context.
+
+        Sprint 3: RAG Response Generator - provides rich tree context for AI responses.
+
+        Args:
+            tree_service: Initialized TreeQueryService instance
+            person_data: Dictionary with person details from AI extraction
+
+        Returns:
+            PersonLookupResult with relationship explanation, or None if not found
+        """
+        try:
+            person_name = person_data.get("name", "")
+            if not person_name:
+                return None
+
+            birth_year = PersonProcessor._extract_birth_year_from_person_data(person_data)
+            location = person_data.get("birth_place") or person_data.get("location")
+
+            search_result = tree_service.find_person(
+                name=person_name,
+                approx_birth_year=birth_year,
+                location=location,
+                max_results=3,
+            )
+
+            if not search_result.found:
+                return None
+
+            return PersonProcessor._convert_search_result_to_lookup(search_result, tree_service, person_name)
+
+        except Exception as e:
+            logger.debug(f"TreeQueryService search error: {e}")
+            return None
+
+    def _search_gedcom_legacy(self, person_data: dict[str, Any]) -> Optional[PersonLookupResult]:
+        """
+        Legacy GEDCOM search using Action 10 logic (fallback).
 
         Args:
             person_data: Dictionary with person details from AI extraction
@@ -1035,7 +1282,7 @@ class PersonProcessor:
             )
 
         except Exception as e:
-            logger.error(f"Error searching GEDCOM for person: {e}", exc_info=True)
+            logger.error(f"Error in legacy GEDCOM search: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -2043,12 +2290,18 @@ class PersonProcessor:
         # Format context
         formatted_context = _format_context_for_ai_extraction(context_logs, self.my_pid_lower)
 
+        # Sprint 3: Format tree lookup results for RAG integration
+        tree_lookup_str = self._format_tree_lookup_for_ai(lookup_results)
+        relationship_str = self._format_relationship_context_for_ai(lookup_results)
+
         # Generate custom reply using standard genealogical reply (fallback)
         custom_reply = generate_genealogical_reply(
             conversation_context=formatted_context,
             user_last_message=user_last_message,
             genealogical_data_str=genealogical_data_str,
             session_manager=self.session_manager,
+            tree_lookup_results=tree_lookup_str,
+            relationship_context=relationship_str,
         )
 
         if custom_reply:

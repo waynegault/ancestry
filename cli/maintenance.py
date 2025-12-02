@@ -45,7 +45,7 @@ class GrafanaCheckerProtocol(Protocol):
     def ensure_grafana_ready(self, *, auto_setup: bool = False, silent: bool = True) -> None: ...
 
 
-class MainCLIHelpers:
+class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
     """Container for log/analytics helper actions used by the main menu."""
 
     _CACHE_KIND_ICONS: ClassVar[dict[str, str]] = {
@@ -250,6 +250,163 @@ class MainCLIHelpers:
 
         print("\nReturning to main menu...")
         input("Press Enter to continue...")
+
+    # ------------------------------------------------------------------
+    # Review Queue CLI (Sprint 4 Integration)
+    # ------------------------------------------------------------------
+
+    def show_review_queue(self) -> None:
+        """Display pending drafts for human review."""
+        try:
+            from core.approval_queue import ApprovalQueueService
+            from core.session_manager import SessionManager
+
+            print("\n" + "=" * 70)
+            print("📋 REVIEW QUEUE - Pending AI-Generated Drafts")
+            print("=" * 70)
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+
+            if not db_session:
+                print("✗ Failed to get database session")
+                return
+
+            service = ApprovalQueueService(db_session)
+
+            # Show queue statistics
+            stats = service.get_queue_stats()
+            print("\n📊 Queue Status:")
+            print(f"   Pending: {stats.pending_count}")
+            print(f"   Auto-approved: {stats.auto_approved_count}")
+            print(f"   Approved today: {stats.approved_today}")
+            print(f"   Rejected today: {stats.rejected_today}")
+            print(f"   Expired: {stats.expired_count}")
+
+            # Get pending drafts
+            pending = service.get_pending_queue(limit=10)
+
+            if not pending:
+                print("\n✅ No pending drafts to review!")
+                return
+
+            print(f"\n📝 Pending Drafts ({len(pending)} shown):")
+            print("-" * 70)
+
+            for i, draft in enumerate(pending, 1):
+                priority_icons = {"critical": "🔴", "high": "🟠", "normal": "🟡", "low": "🟢"}
+                icon = priority_icons.get(draft.priority.value, "⚪")
+                print(f"\n{i}. [{icon} {draft.priority.value.upper()}] ID: {draft.draft_id}")
+                print(f"   To: {draft.person_name} (ID: {draft.person_id})")
+                print(f"   Confidence: {draft.ai_confidence}%")
+                print(f"   Created: {draft.created_at.strftime('%Y-%m-%d %H:%M')}")
+                print(f"   Content preview: {draft.content[:100]}...")
+
+            print("\n" + "-" * 70)
+            print("Commands: approve <id> | reject <id> <reason> | view <id> | back")
+
+        except Exception as exc:
+            self._logger.error("Error showing review queue: %s", exc, exc_info=True)
+            print(f"Error: {exc}")
+
+    def approve_draft(self, draft_id: int, edited_content: Optional[str] = None) -> bool:
+        """Approve a draft for sending."""
+        try:
+            from core.approval_queue import ApprovalQueueService
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            service = ApprovalQueueService(db_session)
+            result = service.approve(draft_id, reviewer="operator", edited_content=edited_content)
+
+            if result.success:
+                print(f"✅ {result.message}")
+                return True
+            print(f"❌ {result.message}")
+            return False
+
+        except Exception as exc:
+            self._logger.error("Error approving draft: %s", exc, exc_info=True)
+            print(f"Error: {exc}")
+            return False
+
+    def reject_draft(self, draft_id: int, reason: str = "") -> bool:
+        """Reject a draft."""
+        try:
+            from core.approval_queue import ApprovalQueueService
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            service = ApprovalQueueService(db_session)
+            result = service.reject(draft_id, reviewer="operator", reason=reason)
+
+            if result.success:
+                print(f"✅ {result.message}")
+                return True
+            print(f"❌ {result.message}")
+            return False
+
+        except Exception as exc:
+            self._logger.error("Error rejecting draft: %s", exc, exc_info=True)
+            print(f"Error: {exc}")
+            return False
+
+    def run_dry_run_validation(self, limit: int = 50) -> None:
+        """Run dry-run validation against historical conversations."""
+        try:
+            from core.session_manager import SessionManager
+            from scripts.dry_run_validation import DryRunProcessor
+
+            print("\n" + "=" * 70)
+            print("🧪 DRY-RUN VALIDATION")
+            print("=" * 70)
+            print(f"\nProcessing up to {limit} historical conversations...")
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+
+            if not db_session:
+                print("✗ Failed to get database session")
+                return
+
+            processor = DryRunProcessor(db_session)
+            summary = processor.run(limit=limit)
+            processor.print_report()
+
+            # Record metrics for quality tracking
+            self._record_validation_metrics(summary)
+
+        except Exception as exc:
+            self._logger.error("Error running dry-run validation: %s", exc, exc_info=True)
+            print(f"Error: {exc}")
+
+    def _record_validation_metrics(self, summary: Any) -> None:
+        """Record validation metrics for quality tracking."""
+        try:
+            from core.metrics_collector import get_metrics_registry
+
+            registry = get_metrics_registry()
+            registry.record_metric("DryRunValidation", "total_conversations", float(summary.total_conversations))
+            registry.record_metric("DryRunValidation", "successful_drafts", float(summary.successful_drafts))
+            registry.record_metric("DryRunValidation", "avg_confidence", summary.avg_confidence)
+            registry.record_metric("DryRunValidation", "opt_outs_detected", float(summary.opt_outs_detected))
+            registry.record_metric("DryRunValidation", "errors_encountered", float(summary.errors_encountered))
+
+            self._logger.info("Validation metrics recorded to MetricRegistry")
+        except Exception as exc:
+            self._logger.debug("Could not record validation metrics: %s", exc)
 
     # ------------------------------------------------------------------
     # Cache statistics helpers

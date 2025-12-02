@@ -95,6 +95,8 @@ _show_metrics_report = _cli_helpers.show_metrics_report
 _run_grafana_setup = _cli_helpers.run_grafana_setup
 _clear_screen = _cli_helpers.clear_screen
 _exit_application = _cli_helpers.exit_application
+_show_review_queue = _cli_helpers.show_review_queue
+_run_dry_run_validation = _cli_helpers.run_dry_run_validation
 
 
 _metrics_factory: Callable[[], Any] | None = None
@@ -311,6 +313,8 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("graph", _open_graph_visualization)
     registry.set_action_function("s", _show_cache_statistics)
     registry.set_action_function("health", _run_config_health_check)
+    registry.set_action_function("review", _show_review_queue)
+    registry.set_action_function("validate", _run_dry_run_validation)
     registry.set_action_function("migrate-db", _run_schema_migrations_action)
     registry.set_action_function("t", _toggle_log_level)
     registry.set_action_function("c", _clear_screen)

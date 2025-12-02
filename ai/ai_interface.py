@@ -140,6 +140,7 @@ from ai.providers.moonshot import MoonshotProvider
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from caching.cache_manager import cached_api_call
 from config.config_manager import ConfigManager
+from config.config_schema import ConfigSchema
 
 if TYPE_CHECKING:
     from typing import TypedDict
@@ -159,7 +160,7 @@ if TYPE_CHECKING:
 # === MODULE CONFIGURATION ===
 # Initialize config
 config_manager = ConfigManager()
-config_schema = config_manager.get_config()
+config_schema: ConfigSchema = config_manager.get_config()
 
 
 _PROVIDER_ADAPTERS: dict[str, ProviderAdapter] = {}
@@ -211,6 +212,7 @@ EXPECTED_INTENT_CATEGORIES = {
     "UNINTERESTED",
     "CONFUSED",
     "PRODUCTIVE",
+    "SOCIAL",  # Added: Non-genealogical positive messages (excitement, rapport-building)
     "OTHER",
     "DESIST",  # Added from the original file's SYSTEM_PROMPT_INTENT
 }
@@ -1165,9 +1167,24 @@ def generate_genealogical_reply(
     user_last_message: str,
     genealogical_data_str: str,
     session_manager: SessionManager,
+    tree_lookup_results: str = "",
+    relationship_context: str = "",
 ) -> str | None:
     """
-    Generates a personalized genealogical reply.
+    Generates a personalized genealogical reply with RAG-style tree context.
+
+    Sprint 3: Enhanced to integrate TreeQueryService results for accurate tree-based answers.
+
+    Args:
+        conversation_context: Formatted conversation history
+        user_last_message: The user's most recent message
+        genealogical_data_str: Structured genealogical data as JSON string
+        session_manager: Session manager for AI calls
+        tree_lookup_results: Results from TreeQueryService.find_person() lookups
+        relationship_context: Relationship path/explanation from TreeQueryService.explain_relationship()
+
+    Returns:
+        Generated reply text, or None if generation fails
     """
     ai_provider = config_schema.ai_provider.lower()
     if not ai_provider:
@@ -1177,39 +1194,23 @@ def generate_genealogical_reply(
         logger.error("generate_genealogical_reply: One or more required inputs are empty.")
         return None
 
-    system_prompt_template = get_fallback_reply_prompt()
-    if USE_JSON_PROMPTS:
-        try:
-            loaded_prompt = get_prompt("genealogical_reply")
-            if loaded_prompt:
-                system_prompt_template = loaded_prompt
-            else:
-                logger.warning("Failed to load 'genealogical_reply' prompt from JSON, using fallback.")
-        except Exception as e:
-            logger.warning(f"Error loading 'genealogical_reply' prompt: {e}, using fallback.")
-
-    # The prompt itself is the system message; user_content can be minimal.
-    # The template includes placeholders for {conversation_context}, {user_message}, {genealogical_data}
-    try:
-        final_system_prompt = system_prompt_template.format(
-            conversation_context=conversation_context,
-            user_message=user_last_message,
-            genealogical_data=genealogical_data_str,
-        )
-    except KeyError as ke:
-        logger.error(f"Prompt formatting error for genealogical_reply. Missing key: {ke}. Using unformatted prompt.")
-        final_system_prompt = system_prompt_template  # Fallback to unformatted if keys missing
-    except Exception as fe:
-        logger.error(f"Unexpected error formatting genealogical_reply prompt: {fe}. Using unformatted prompt.")
-        final_system_prompt = system_prompt_template
+    system_prompt_template = _load_genealogical_reply_template()
+    final_system_prompt = _format_genealogical_reply_prompt(
+        system_prompt_template,
+        conversation_context,
+        user_last_message,
+        genealogical_data_str,
+        tree_lookup_results,
+        relationship_context,
+    )
 
     start_time = time.time()
     reply_text = _call_ai_model(
         provider=ai_provider,
         system_prompt=final_system_prompt,
-        user_content="Please generate a reply based on the system prompt and the information embedded within it.",  # Or ""
+        user_content="Please generate a reply based on the system prompt and the information embedded within it.",
         session_manager=session_manager,
-        max_tokens=800,  # For a detailed reply
+        max_tokens=800,
         temperature=0.7,
     )
     duration = time.time() - start_time
@@ -1219,6 +1220,58 @@ def generate_genealogical_reply(
     else:
         logger.error(f"AI reply generation failed. (Took {duration:.2f}s)")
     return reply_text
+
+
+def _load_genealogical_reply_template() -> str:
+    """Load the genealogical_reply prompt template from JSON or fallback."""
+    system_prompt_template = get_fallback_reply_prompt()
+    if USE_JSON_PROMPTS:
+        try:
+            loaded_prompt = get_prompt("genealogical_reply")
+            if loaded_prompt:
+                return loaded_prompt
+            logger.warning("Failed to load 'genealogical_reply' prompt from JSON, using fallback.")
+        except Exception as e:
+            logger.warning(f"Error loading 'genealogical_reply' prompt: {e}, using fallback.")
+    return system_prompt_template
+
+
+def _format_genealogical_reply_prompt(
+    template: str,
+    conversation_context: str,
+    user_message: str,
+    genealogical_data: str,
+    tree_lookup_results: str,
+    relationship_context: str,
+) -> str:
+    """Format the genealogical reply prompt with provided context."""
+    try:
+        return template.format(
+            conversation_context=conversation_context,
+            user_message=user_message,
+            tree_lookup_results=tree_lookup_results or "No tree lookup performed.",
+            relationship_context=relationship_context or "Relationship not determined.",
+            genealogical_data=genealogical_data,
+        )
+    except KeyError as ke:
+        logger.warning(f"Prompt formatting missing key: {ke}. Trying legacy format.")
+        return _format_legacy_prompt(template, conversation_context, user_message, genealogical_data)
+    except Exception as fe:
+        logger.error(f"Unexpected error formatting genealogical_reply prompt: {fe}. Using unformatted prompt.")
+        return template
+
+
+def _format_legacy_prompt(template: str, context: str, user_msg: str, data: str) -> str:
+    """Format prompt using legacy format without tree lookup fields."""
+    try:
+        return template.format(
+            conversation_context=context,
+            user_message=user_msg,
+            genealogical_data=data,
+        )
+    except Exception:
+        logger.error("Legacy prompt format also failed. Using unformatted prompt.")
+        return template
 
 
 # End of generate_genealogical_reply

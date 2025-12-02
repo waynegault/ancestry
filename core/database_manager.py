@@ -144,9 +144,9 @@ class DatabaseManager:
         self._slow_query_threshold = 1.0  # 1 second threshold for slow queries
         self._max_connection_age = 3600  # 1 hour max connection age
 
-        # Adaptive pool sizing
+        # Adaptive pool sizing - increased base size to prevent QueuePool exhaustion
         self._adaptive_pooling = True
-        self._base_pool_size = 10
+        self._base_pool_size = 20  # Increased from 10 to handle inbox processing load
         self._max_pool_size = 50
         self._current_pool_size = self._base_pool_size
 
@@ -486,9 +486,9 @@ class DatabaseManager:
         pool_size = min(pool_size, self._max_pool_size)  # Cap pool size
         self._current_pool_size = pool_size
 
-        # Enhanced pool configuration
-        max_overflow = max(5, int(pool_size * 0.3))  # Increased overflow capacity
-        pool_timeout = 45  # Increased timeout for better reliability
+        # Enhanced pool configuration - increased overflow for burst handling
+        max_overflow = max(10, int(pool_size * 0.5))  # Increased overflow capacity (50% of pool)
+        pool_timeout = 60  # Increased timeout for better reliability under load
         pool_recycle = self._max_connection_age  # Recycle connections after max age
         pool_pre_ping = True  # Enable connection health checks
 

@@ -132,8 +132,8 @@ class CacheRegistry:
             CacheComponent(
                 name="disk_cache",
                 kind="disk",
-                stats_fn=self._lazy_call("cache", "get_cache_stats"),
-                clear_fn=self._lazy_call("cache", "clear_cache"),
+                stats_fn=self._lazy_call("caching.cache", "get_cache_stats"),
+                clear_fn=self._lazy_call("caching.cache", "clear_cache"),
             )
         )
 
@@ -170,10 +170,10 @@ class CacheRegistry:
             CacheComponent(
                 name="gedcom_cache",
                 kind="gedcom",
-                stats_fn=self._lazy_call("gedcom_cache", "get_gedcom_cache_stats"),
-                clear_fn=self._lazy_call("gedcom_cache", "clear_memory_cache"),
-                warm_fn=self._lazy_call("gedcom_cache", "warm_gedcom_cache"),
-                health_fn=self._lazy_call("gedcom_cache", "get_gedcom_cache_health"),
+                stats_fn=self._lazy_call("genealogy.gedcom.gedcom_cache", "get_gedcom_cache_stats"),
+                clear_fn=self._lazy_call("genealogy.gedcom.gedcom_cache", "clear_memory_cache"),
+                warm_fn=self._lazy_call("genealogy.gedcom.gedcom_cache", "warm_gedcom_cache"),
+                health_fn=self._lazy_call("genealogy.gedcom.gedcom_cache", "get_gedcom_cache_health"),
             )
         )
 
@@ -181,9 +181,9 @@ class CacheRegistry:
             CacheComponent(
                 name="tree_stats_cache",
                 kind="database",
-                stats_fn=self._lazy_call("tree_stats_utils", "get_tree_stats_cache_stats"),
-                clear_fn=self._lazy_call("tree_stats_utils", "clear_tree_stats_cache"),
-                warm_fn=self._lazy_call("tree_stats_utils", "warm_tree_stats_cache"),
+                stats_fn=self._lazy_call("genealogy.tree_stats_utils", "get_tree_stats_cache_stats"),
+                clear_fn=self._lazy_call("genealogy.tree_stats_utils", "clear_tree_stats_cache"),
+                warm_fn=self._lazy_call("genealogy.tree_stats_utils", "warm_tree_stats_cache"),
             )
         )
 
@@ -191,9 +191,9 @@ class CacheRegistry:
             CacheComponent(
                 name="performance_cache",
                 kind="performance",
-                stats_fn=self._lazy_call("performance_cache", "get_performance_cache_stats"),
-                clear_fn=self._lazy_call("performance_cache", "clear_performance_cache"),
-                warm_fn=self._lazy_call("performance_cache", "warm_performance_cache"),
+                stats_fn=self._lazy_call("performance.performance_cache", "get_performance_cache_stats"),
+                clear_fn=self._lazy_call("performance.performance_cache", "clear_performance_cache"),
+                warm_fn=self._lazy_call("performance.performance_cache", "warm_performance_cache"),
             )
         )
 
@@ -201,8 +201,8 @@ class CacheRegistry:
             CacheComponent(
                 name="cache_retention",
                 kind="retention",
-                stats_fn=self._lazy_call("cache_retention", "get_retention_summary"),
-                clear_fn=self._lazy_call("cache_retention", "enforce_retention_now"),
+                stats_fn=self._lazy_call("caching.cache_retention", "get_retention_summary"),
+                clear_fn=self._lazy_call("caching.cache_retention", "enforce_retention_now"),
             )
         )
 

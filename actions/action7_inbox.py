@@ -73,6 +73,7 @@ from database import (
 from genealogy.research_service import ResearchService
 from messaging import build_safe_column_value
 from messaging.inbound import InboundOrchestrator
+from messaging.safety import CriticalAlertCategory, SafetyGuard, SafetyStatus
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
@@ -158,6 +159,8 @@ class InboxProcessor:
             "ai_classifications": 0,
             "engagement_assessments": 0,
             "person_updates": 0,
+            "critical_alerts": 0,  # Phase 2: Track critical alerts
+            "high_value_discoveries": 0,  # Phase 2: Track high-value items
             "errors": 0,
             "start_time": None,
             "end_time": None,
@@ -165,6 +168,9 @@ class InboxProcessor:
 
         # Initialize Research Service
         self.research_service = ResearchService()
+
+        # Phase 2: Initialize SafetyGuard for Critical Alert detection
+        self.safety_guard = SafetyGuard()
 
         # InboxProcessor initialized (removed verbose debug)
 
@@ -1537,21 +1543,93 @@ class InboxProcessor:
             )
 
             if not any(cue in txt for cue in actionable_cues):
-                return (
-                    "ENTHUSIASTIC" if any(k in txt for k in ("thanks", "thank you", "cheers", "take care")) else "OTHER"
-                )
+                # Phase 2: Use SOCIAL instead of ENTHUSIASTIC for non-genealogical positive messages
+                return "SOCIAL" if any(k in txt for k in ("thanks", "thank you", "cheers", "take care")) else "OTHER"
 
             return label
         except Exception:
             return label
 
+    def _check_critical_alerts(
+        self, context_messages: list[dict[str, Any]], my_pid_lower: str, api_conv_id: str
+    ) -> tuple[bool, Optional[str], Optional[CriticalAlertCategory]]:
+        """
+        Phase 2: Check for Critical Alerts BEFORE AI classification.
+
+        Per reply_management.md spec, critical alerts bypass AI classification
+        and immediately transition the conversation to HumanReview state.
+
+        Args:
+            context_messages: List of message dicts with 'author' and 'content' keys
+            my_pid_lower: Lowercase profile ID of the user (to identify other party's messages)
+            api_conv_id: Conversation ID for logging
+
+        Returns:
+            Tuple of (should_skip_ai, override_label, alert_category):
+            - should_skip_ai: True if AI classification should be skipped
+            - override_label: Label to use instead of AI classification ("DESIST" for critical, None otherwise)
+            - alert_category: CriticalAlertCategory if detected, None otherwise
+        """
+        # Extract the LAST USER message (not ours)
+        last_user_message = None
+        for msg in reversed(context_messages):
+            author = str(msg.get("author", "")).lower()
+            if author != my_pid_lower:
+                last_user_message = str(msg.get("content", ""))
+                break
+
+        if not last_user_message:
+            return (False, None, None)
+
+        # Run Critical Alert check
+        alert_result = self.safety_guard.check_critical_alerts(last_user_message)
+
+        if alert_result.status == SafetyStatus.CRITICAL_ALERT:
+            # Log and track the critical alert
+            logger.error(
+                f"🚨 CRITICAL ALERT in conversation {api_conv_id}: "
+                f"Category={alert_result.category}, Reason={alert_result.reason}, "
+                f"Terms={alert_result.flagged_terms}"
+            )
+            self.stats["critical_alerts"] = self.stats.get("critical_alerts", 0) + 1
+
+            # Return DESIST to stop automation for this conversation
+            return (True, "DESIST", alert_result.category)
+
+        if alert_result.status == SafetyStatus.HIGH_VALUE:
+            # Log high-value discovery but DON'T stop automation
+            logger.info(
+                f"📚 HIGH-VALUE discovery in conversation {api_conv_id}: "
+                f"Terms={alert_result.flagged_terms}. Flagging for priority follow-up."
+            )
+            self.stats["high_value_discoveries"] = self.stats.get("high_value_discoveries", 0) + 1
+            # Continue with normal AI classification
+            return (False, None, alert_result.category)
+
+        return (False, None, None)
+
     def _classify_message_with_ai(
         self, context_messages: list[dict[str, Any]], my_pid_lower: Optional[str], api_conv_id: str
     ) -> Optional[str]:
-        """Classify message using AI with recovery and guardrails."""
+        """Classify message using AI with recovery and guardrails.
+
+        Phase 2 Enhancement: Now checks Critical Alerts BEFORE AI classification.
+        """
         if not my_pid_lower:
             logger.warning(f"Cannot classify message for {api_conv_id}: my_pid_lower is None")
             return None
+
+        # Phase 2: Check Critical Alerts FIRST (per reply_management.md spec)
+        should_skip_ai, override_label, _alert_category = self._check_critical_alerts(
+            context_messages, my_pid_lower, api_conv_id
+        )
+        if should_skip_ai and override_label:
+            logger.warning(
+                f"🛑 Skipping AI classification for {api_conv_id} due to Critical Alert. "
+                f"Using override label: {override_label}"
+            )
+            return override_label
+
         formatted_context = self._format_context_for_ai(context_messages, my_pid_lower)
 
         if not self.session_manager.is_sess_valid():
@@ -1562,20 +1640,24 @@ class InboxProcessor:
             return classify_message_intent(context, self.session_manager)
 
         ai_result = _classify_with_recovery()
-
-        ai_sentiment_result: Optional[str] = None
-        if isinstance(ai_result, str):
-            ai_sentiment_result = ai_result
-        elif isinstance(ai_result, (list, tuple)) and ai_result:
-            first_elem = ai_result[0]
-            if isinstance(first_elem, str):
-                ai_sentiment_result = first_elem
-            elif first_elem is not None:
-                ai_sentiment_result = str(first_elem)
-        elif ai_result is not None:
-            ai_sentiment_result = str(ai_result)
+        ai_sentiment_result = self._coerce_ai_result_to_string(ai_result)
 
         return self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
+
+    @staticmethod
+    def _coerce_ai_result_to_string(ai_result: Any) -> Optional[str]:
+        """Coerce AI classification result to string format."""
+        if isinstance(ai_result, str):
+            return ai_result
+        if isinstance(ai_result, (list, tuple)) and ai_result:
+            first_elem = ai_result[0]
+            if isinstance(first_elem, str):
+                return first_elem
+            if first_elem is not None:
+                return str(first_elem)
+        if ai_result is not None:
+            return str(ai_result)
+        return None
 
     @staticmethod
     def _is_closed_status(ai_sentiment: Optional[str]) -> bool:

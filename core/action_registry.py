@@ -321,7 +321,7 @@ class ActionRegistry:
                 description="Analyze shared matches and common ancestors",
                 function=None,
                 category=ActionCategory.DATABASE,
-                browser_requirement=ActionRequirement.FULL_SESSION,
+                browser_requirement=ActionRequirement.NONE,
                 enable_caching=True,
                 menu_order=12,
             )
@@ -443,6 +443,32 @@ class ActionRegistry:
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
                 menu_order=145,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
+                id="review",
+                name="Review Queue (AI Drafts)",
+                description="View and approve/reject pending AI-generated message drafts",
+                function=None,
+                category=ActionCategory.WORKFLOW,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=146,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
+                id="validate",
+                name="Dry-Run Validation",
+                description="Test message pipeline against historical conversations",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=147,
             )
         )
 

@@ -4,6 +4,12 @@ Safety & Ethics Module (The "Kill Switch")
 
 Ensures all automated interactions adhere to strict safety and ethical guidelines.
 Detects red flags (self-harm, hostility) and opt-out requests.
+
+Phase 2 Enhancement (Dec 2025):
+- Added CriticalAlertCategory enum for fine-grained alert classification
+- Enhanced patterns per docs/specs/reply_management.md Section 3.2
+- Added HIGH_VALUE category for notification-only triggers
+- Added check_critical_alerts() method for integration with action7
 """
 
 import logging
@@ -21,6 +27,17 @@ class SafetyStatus(Enum):
     UNSAFE = "UNSAFE"  # Hostile, self-harm, threats
     OPT_OUT = "OPT_OUT"  # User requested to stop
     NEEDS_REVIEW = "NEEDS_REVIEW"  # Ambiguous
+    CRITICAL_ALERT = "CRITICAL_ALERT"  # Phase 2: Requires immediate human review
+    HIGH_VALUE = "HIGH_VALUE"  # Phase 2: Valuable discovery, notify but continue
+
+
+class CriticalAlertCategory(Enum):
+    """Fine-grained categories for critical alerts per reply_management.md spec."""
+
+    THREATS_HOSTILITY = "THREATS_HOSTILITY"  # Stop, cease and desist, legal threats
+    SELF_HARM = "SELF_HARM"  # Suicide, self-harm indicators
+    LEGAL_PRIVACY = "LEGAL_PRIVACY"  # GDPR, attorney, legal action
+    HIGH_VALUE_DISCOVERY = "HIGH_VALUE_DISCOVERY"  # Family Bible, original photos
 
 
 @dataclass
@@ -28,14 +45,22 @@ class SafetyCheckResult:
     status: SafetyStatus
     reason: str
     flagged_terms: list[str] = field(default_factory=list)
+    category: CriticalAlertCategory | None = None  # Phase 2: Alert category
 
 
 class SafetyGuard:
     """
     Guardian class that analyzes messages for safety and ethical compliance.
+
+    Phase 2 Enhancement: Implements Critical Alert Detection per reply_management.md spec.
+    Categories:
+    - THREATS_HOSTILITY: Legal threats, harassment claims, hostile language
+    - SELF_HARM: Suicide, distress indicators requiring immediate human review
+    - LEGAL_PRIVACY: GDPR, attorney mentions, privacy violation claims
+    - HIGH_VALUE_DISCOVERY: Family artifacts that warrant priority notification
     """
 
-    # Regex Patterns
+    # === ORIGINAL PATTERNS (Legacy compatibility) ===
     _OPT_OUT_PATTERNS: ClassVar[list[str]] = [
         r"\bstop\b",
         r"\bunsubscribe\b",
@@ -69,17 +94,154 @@ class SafetyGuard:
         r"\bhate\b",
     ]
 
-    def __init__(self):
+    # === PHASE 2: CRITICAL ALERT PATTERNS (per reply_management.md Section 3.2) ===
+
+    # Category: Threats & Hostility - Stops automation, requires human review
+    _CRITICAL_THREATS_PATTERNS: ClassVar[list[str]] = [
+        r"stop messaging",
+        r"do not contact",
+        r"cease and desist",
+        r"\bharassment\b",
+        r"\bstalking\b",
+        r"\bpolice\b",
+        r"\blawyer\b",
+        r"sue you",
+        r"report you",
+        r"\bkill\b",
+        r"\bmurder\b",
+        r"\bdie\b",
+        r"\bhate\b",
+        r"\bscam\b",
+        r"\bspammer\b",
+        r"\bbot\b",
+    ]
+
+    # Category: Self-Harm / Distress - HIGHEST PRIORITY, immediate human review
+    _CRITICAL_SELF_HARM_PATTERNS: ClassVar[list[str]] = [
+        r"\bsuicide\b",
+        r"kill myself",
+        r"end it all",
+        r"want to die",
+        r"no reason to live",
+        r"hurt myself",
+        r"self.harm",  # Matches self-harm, selfharm
+    ]
+
+    # Category: Legal / Privacy - Stops automation
+    _CRITICAL_LEGAL_PATTERNS: ClassVar[list[str]] = [
+        r"\bgdpr\b",
+        r"privacy violation",
+        r"data protection",
+        r"\battorney\b",
+        r"legal action",
+        r"cease and desist",
+    ]
+
+    # Category: High Value Discovery - Notification only, does NOT stop automation
+    _HIGH_VALUE_PATTERNS: ClassVar[list[str]] = [
+        r"family bible",
+        r"original photo",
+        r"\bdaguerreotype\b",
+        r"tin type",
+        r"\btintype\b",
+        r"marriage certificate",
+        r"death certificate",
+        r"birth certificate",
+        r"\bwill\b",  # Context-sensitive, may need human review
+        r"\bdeed\b",
+        r"\bdiary\b",
+        r"\bjournal\b",
+        r"\bletters\b",
+        r"old photographs",
+        r"family documents",
+    ]
+
+    def __init__(self) -> None:
         self._compile_patterns()
 
-    def _compile_patterns(self):
+    def _compile_patterns(self) -> None:
+        # Legacy patterns
         self.opt_out_regex = [re.compile(p, re.IGNORECASE) for p in self._OPT_OUT_PATTERNS]
         self.danger_regex = [re.compile(p, re.IGNORECASE) for p in self._DANGER_PATTERNS]
         self.hostility_regex = [re.compile(p, re.IGNORECASE) for p in self._HOSTILITY_PATTERNS]
 
+        # Phase 2: Critical Alert patterns
+        self.critical_threats_regex = [re.compile(p, re.IGNORECASE) for p in self._CRITICAL_THREATS_PATTERNS]
+        self.critical_self_harm_regex = [re.compile(p, re.IGNORECASE) for p in self._CRITICAL_SELF_HARM_PATTERNS]
+        self.critical_legal_regex = [re.compile(p, re.IGNORECASE) for p in self._CRITICAL_LEGAL_PATTERNS]
+        self.high_value_regex = [re.compile(p, re.IGNORECASE) for p in self._HIGH_VALUE_PATTERNS]
+
+    def check_critical_alerts(self, message_text: str) -> SafetyCheckResult:
+        """
+        Phase 2: Check for Critical Alerts that require human review.
+
+        This method should be called BEFORE AI classification in action7.
+        If a critical alert is detected, automation should STOP for this conversation.
+
+        Priority order:
+        1. Self-harm (highest) - Immediate human intervention needed
+        2. Threats/Hostility - Stop automation, flag for review
+        3. Legal/Privacy - Stop automation, flag for review
+        4. High Value - Continue automation, but notify user (priority flag)
+
+        Args:
+            message_text: The content of the inbound message.
+
+        Returns:
+            SafetyCheckResult with category for fine-grained handling.
+        """
+        if not message_text:
+            return SafetyCheckResult(SafetyStatus.SAFE, "Empty message", [])
+
+        # 1. SELF-HARM (Highest Priority)
+        flagged_self_harm = self._find_matches(message_text, self.critical_self_harm_regex)
+        if flagged_self_harm:
+            logger.critical(f"🚨 CRITICAL ALERT: Self-harm indicators detected: {flagged_self_harm}")
+            return SafetyCheckResult(
+                status=SafetyStatus.CRITICAL_ALERT,
+                reason="Self-harm/distress indicators detected - REQUIRES IMMEDIATE HUMAN REVIEW",
+                flagged_terms=flagged_self_harm,
+                category=CriticalAlertCategory.SELF_HARM,
+            )
+
+        # 2. THREATS & HOSTILITY
+        flagged_threats = self._find_matches(message_text, self.critical_threats_regex)
+        if flagged_threats:
+            logger.error(f"⚠️ Critical Alert: Threat/hostility detected: {flagged_threats}")
+            return SafetyCheckResult(
+                status=SafetyStatus.CRITICAL_ALERT,
+                reason="Threats or hostile language detected",
+                flagged_terms=flagged_threats,
+                category=CriticalAlertCategory.THREATS_HOSTILITY,
+            )
+
+        # 3. LEGAL / PRIVACY
+        flagged_legal = self._find_matches(message_text, self.critical_legal_regex)
+        if flagged_legal:
+            logger.warning(f"⚠️ Critical Alert: Legal/privacy concern detected: {flagged_legal}")
+            return SafetyCheckResult(
+                status=SafetyStatus.CRITICAL_ALERT,
+                reason="Legal or privacy-related concern detected",
+                flagged_terms=flagged_legal,
+                category=CriticalAlertCategory.LEGAL_PRIVACY,
+            )
+
+        # 4. HIGH VALUE DISCOVERY (Notification only - does NOT stop automation)
+        flagged_high_value = self._find_matches(message_text, self.high_value_regex)
+        if flagged_high_value:
+            logger.info(f"📚 High-value discovery mentioned: {flagged_high_value}")
+            return SafetyCheckResult(
+                status=SafetyStatus.HIGH_VALUE,
+                reason="High-value genealogical artifact mentioned - flag for priority follow-up",
+                flagged_terms=flagged_high_value,
+                category=CriticalAlertCategory.HIGH_VALUE_DISCOVERY,
+            )
+
+        return SafetyCheckResult(SafetyStatus.SAFE, "No critical alerts", [])
+
     def check_message(self, message_text: str) -> SafetyCheckResult:
         """
-        Analyzes a message for safety violations.
+        Analyzes a message for safety violations (legacy method).
 
         Args:
             message_text: The content of the inbound message.
@@ -128,6 +290,7 @@ def safety_module_tests() -> bool:
 
         guard = SafetyGuard()
 
+        # === LEGACY check_message TESTS ===
         def test_safe_message():
             msg = "Hello, I would love to share information about our family."
             result = guard.check_message(msg)
@@ -158,6 +321,57 @@ def safety_module_tests() -> bool:
         suite.run_test("Opt Out", test_opt_out, "Should return OPT_OUT")
         suite.run_test("Danger Detection", test_danger, "Should return UNSAFE")
         suite.run_test("Hostility Detection", test_hostility, "Should return UNSAFE")
+
+        # === PHASE 2: CRITICAL ALERT TESTS ===
+        def test_critical_self_harm():
+            """Self-harm is highest priority critical alert."""
+            msg = "I've been thinking about suicide lately. Life seems pointless."
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.SELF_HARM
+            assert "suicide" in [t.lower() for t in result.flagged_terms]
+
+        def test_critical_threats():
+            """Threats/hostility triggers critical alert."""
+            msg = "Stop messaging me or I will report you to the police and sue you."
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.THREATS_HOSTILITY
+
+        def test_critical_legal():
+            """Legal/privacy triggers critical alert."""
+            msg = "Under GDPR I demand you delete all my data. My attorney will be in contact."
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.LEGAL_PRIVACY
+
+        def test_high_value_discovery():
+            """High value items trigger notification, NOT stop."""
+            msg = "I found my great-grandmother's family bible with all the births recorded!"
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.HIGH_VALUE  # Not CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.HIGH_VALUE_DISCOVERY
+
+        def test_critical_safe_message():
+            """Normal genealogical message passes critical alert check."""
+            msg = "I'd love to share what I know about the Simpson family in Aberdeen."
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.SAFE
+            assert result.category is None
+
+        def test_critical_priority_order():
+            """Self-harm takes priority over threats when both present."""
+            msg = "I want to die. I hate you and will sue you."
+            result = guard.check_critical_alerts(msg)
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.SELF_HARM  # Self-harm > threats
+
+        suite.run_test("Critical: Self-harm", test_critical_self_harm, "Self-harm -> CRITICAL_ALERT")
+        suite.run_test("Critical: Threats", test_critical_threats, "Threats -> CRITICAL_ALERT")
+        suite.run_test("Critical: Legal", test_critical_legal, "Legal -> CRITICAL_ALERT")
+        suite.run_test("Critical: High Value", test_high_value_discovery, "High value -> HIGH_VALUE (not stop)")
+        suite.run_test("Critical: Safe", test_critical_safe_message, "Normal message -> SAFE")
+        suite.run_test("Critical: Priority", test_critical_priority_order, "Self-harm priority over threats")
 
         return suite.finish_suite()
 

@@ -39,6 +39,31 @@ except ImportError:
 
 MESSAGE_PERSONALIZATION_AVAILABLE = _msg_pers_available
 
+# === SENTIMENT ADAPTATION ===
+_sentiment_adapter_available = False
+_SentimentAdapterType = None
+_MessageToneType = None
+_SentimentType = None
+_ToneRecommendationType = None
+
+try:
+    from ai.sentiment_adaptation import (
+        MessageTone,
+        Sentiment,
+        SentimentAdapter,
+        ToneRecommendation,
+    )
+
+    _sentiment_adapter_available = True
+    _SentimentAdapterType = SentimentAdapter
+    _MessageToneType = MessageTone
+    _SentimentType = Sentiment
+    _ToneRecommendationType = ToneRecommendation
+except ImportError:
+    pass
+
+SENTIMENT_ADAPTATION_AVAILABLE = _sentiment_adapter_available
+
 # === STANDARD LIBRARY IMPORTS ===
 import os
 import sys
@@ -575,6 +600,123 @@ def ensure_message_personalizer() -> Optional[_Any]:
 
 # Do not instantiate at import time to avoid global-session errors
 MESSAGE_PERSONALIZER = None
+
+
+# === SENTIMENT ADAPTER STATE ===
+class _SentimentState:
+    adapter: Optional[_Any] = None
+
+
+_SENTIMENT_STATE = _SentimentState()
+
+
+def ensure_sentiment_adapter() -> Optional[_Any]:
+    """Lazily initialize and return the SentimentAdapter."""
+    if _SENTIMENT_STATE.adapter is None and SENTIMENT_ADAPTATION_AVAILABLE and callable(SentimentAdapter):
+        try:
+            _SENTIMENT_STATE.adapter = SentimentAdapter()
+            logger.debug("SentimentAdapter initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize sentiment adapter: {e}")
+            _SENTIMENT_STATE.adapter = None
+    return _SENTIMENT_STATE.adapter
+
+
+def analyze_conversation_sentiment(
+    db_session: Session,
+    person_id: int,
+    limit: int = 10,
+) -> Optional[_Any]:
+    """
+    Analyze conversation history and recommend message tone.
+
+    Args:
+        db_session: Active database session
+        person_id: Person ID to analyze conversation for
+        limit: Maximum number of messages to analyze
+
+    Returns:
+        ToneRecommendation if sentiment analysis available, None otherwise
+    """
+    adapter = ensure_sentiment_adapter()
+    if not adapter:
+        return None
+
+    try:
+        # Get recent conversation messages
+        messages_query = (
+            db_session.query(ConversationLog)
+            .filter(
+                ConversationLog.people_id == person_id,
+                ~ConversationLog.conversation_id.like('template_tracking_%'),
+                ~ConversationLog.script_message_status.like('TEMPLATE_SELECTED:%'),
+            )
+            .order_by(ConversationLog.latest_timestamp.desc())
+            .limit(limit)
+        )
+        conversation_logs = messages_query.all()
+
+        if not conversation_logs:
+            logger.debug(f"No conversation history for person {person_id}")
+            return None
+
+        # Convert to format expected by SentimentAdapter
+        messages: list[dict[str, _Any]] = []
+        for log in reversed(conversation_logs):  # Chronological order
+            messages.append(
+                {
+                    "text": log.content or "",
+                    "person_id": str(person_id),
+                    "person_name": getattr(log, "sender_name", "Unknown"),
+                    "timestamp": str(log.latest_timestamp) if log.latest_timestamp else None,
+                }
+            )
+
+        # Analyze conversation
+        profile = adapter.analyze_conversation(messages)
+        recommendation = adapter.recommend_tone(profile)
+
+        logger.debug(
+            f"Sentiment analysis for person {person_id}: "
+            f"tone={recommendation.recommended_tone.value}, "
+            f"confidence={recommendation.confidence:.2f}"
+        )
+
+        return recommendation
+
+    except Exception as e:
+        logger.warning(f"Sentiment analysis failed for person {person_id}: {e}")
+        return None
+
+
+def adapt_message_with_sentiment(
+    message_text: str,
+    recommendation: _Any,
+) -> str:
+    """
+    Adapt message text based on sentiment recommendation.
+
+    Args:
+        message_text: Original message text
+        recommendation: ToneRecommendation from analyze_conversation_sentiment
+
+    Returns:
+        Adapted message text
+    """
+    adapter = ensure_sentiment_adapter()
+    if not adapter or not recommendation:
+        return message_text
+
+    try:
+        adapted = adapter.adapt_message(message_text, recommendation)
+        logger.debug(
+            f"Adapted message tone to {recommendation.recommended_tone.value} "
+            f"(confidence={recommendation.confidence:.2f})"
+        )
+        return adapted
+    except Exception as e:
+        logger.warning(f"Message adaptation failed: {e}")
+        return message_text
 
 
 # ------------------------------------------------------------------------------
@@ -2390,42 +2532,104 @@ def _prepare_message_format_data(
     return format_data
 
 
-def _format_message_text(message_to_send_key: str, person: Person, format_data: dict[str, Any], log_prefix: str) -> str:
-    """Format message text using enhanced or standard template."""
-    message_template = MESSAGE_TEMPLATES[message_to_send_key]
-    message_text = None
-
-    # Try enhanced personalized message formatting first (lazy-init personalizer)
+def _try_enhanced_template(
+    message_to_send_key: str,
+    person: Person,
+    format_data: dict[str, Any],
+    log_prefix: str,
+) -> Optional[str]:
+    """Try to format message using enhanced personalized template."""
     mpr = ensure_message_personalizer()
-    if mpr and hasattr(person, 'extracted_genealogical_data'):
-        try:
-            enhanced_template_key = f"Enhanced_{message_to_send_key}"
-            if enhanced_template_key in MESSAGE_TEMPLATES:
-                logger.debug(f"Using enhanced template '{enhanced_template_key}' for {log_prefix}")
+    if not mpr or not hasattr(person, 'extracted_genealogical_data'):
+        return None
 
-                extracted_data = getattr(person, 'extracted_genealogical_data', {})
-                person_data = {"username": getattr(person, "username", "Unknown")}
+    enhanced_template_key = f"Enhanced_{message_to_send_key}"
+    if enhanced_template_key not in MESSAGE_TEMPLATES:
+        logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
+        return None
 
-                message_text, _ = mpr.create_personalized_message(
-                    enhanced_template_key, person_data, extracted_data, format_data
-                )
-                logger.debug(f"Successfully created personalized message for {log_prefix}")
-            else:
-                logger.debug(f"Enhanced template '{enhanced_template_key}' not available, using standard template")
-        except Exception as e:
-            logger.warning(f"Enhanced message formatting failed for {log_prefix}: {e}, falling back to standard")
-            message_text = None
+    try:
+        logger.debug(f"Using enhanced template '{enhanced_template_key}' for {log_prefix}")
+        extracted_data = getattr(person, 'extracted_genealogical_data', {})
+        person_data = {"username": getattr(person, "username", "Unknown")}
+
+        message_text, _ = mpr.create_personalized_message(
+            enhanced_template_key, person_data, extracted_data, format_data
+        )
+        logger.debug(f"Successfully created personalized message for {log_prefix}")
+        return message_text
+    except Exception as e:
+        logger.warning(f"Enhanced message formatting failed for {log_prefix}: {e}, falling back to standard")
+        return None
+
+
+def _format_standard_template(
+    message_template: str,
+    format_data: dict[str, Any],
+    message_to_send_key: str,
+    log_prefix: str,
+) -> str:
+    """Format message using standard template."""
+    try:
+        return message_template.format(**format_data)
+    except KeyError as ke:
+        logger.error(f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}")
+        raise StopIteration("error (template_format)") from None
+    except Exception as e:
+        logger.error(f"Unexpected template formatting error for {log_prefix}: {e}", exc_info=True)
+        raise StopIteration("error (template_format)") from None
+
+
+def _apply_sentiment_adaptation(
+    message_text: str,
+    db_session: Session,
+    person: Person,
+    log_prefix: str,
+) -> str:
+    """Apply sentiment-based tone adaptation to message."""
+    if not SENTIMENT_ADAPTATION_AVAILABLE:
+        return message_text
+
+    try:
+        person_id = getattr(person, 'id', None)
+        if not person_id:
+            return message_text
+
+        recommendation = analyze_conversation_sentiment(db_session, person_id)
+        if recommendation:
+            message_text = adapt_message_with_sentiment(message_text, recommendation)
+            logger.debug(f"Applied sentiment adaptation for {log_prefix}")
+    except Exception as e:
+        logger.debug(f"Sentiment adaptation skipped for {log_prefix}: {e}")
+
+    return message_text
+
+
+def _format_message_text(
+    message_to_send_key: str,
+    person: Person,
+    format_data: dict[str, Any],
+    log_prefix: str,
+    db_session: Optional[Session] = None,
+) -> str:
+    """
+    Format message text using enhanced or standard template.
+
+    Optionally applies sentiment-based tone adaptation if conversation
+    history is available.
+    """
+    message_template = MESSAGE_TEMPLATES[message_to_send_key]
+
+    # Try enhanced personalized message formatting first
+    message_text = _try_enhanced_template(message_to_send_key, person, format_data, log_prefix)
 
     # Fallback to standard template formatting
     if not message_text:
-        try:
-            message_text = message_template.format(**format_data)
-        except KeyError as ke:
-            logger.error(f"Template formatting error (Missing key {ke}) for '{message_to_send_key}' {log_prefix}")
-            raise StopIteration("error (template_format)") from None
-        except Exception as e:
-            logger.error(f"Unexpected template formatting error for {log_prefix}: {e}", exc_info=True)
-            raise StopIteration("error (template_format)") from None
+        message_text = _format_standard_template(message_template, format_data, message_to_send_key, log_prefix)
+
+    # Apply sentiment-based tone adaptation if available
+    if db_session is not None:
+        message_text = _apply_sentiment_adaptation(message_text, db_session, person, log_prefix)
 
     return message_text
 
@@ -2719,6 +2923,7 @@ def _process_single_person(
             person,
             _prepare_message_format_data(person, decision.family_tree, decision.dna_match, db_session),
             log_prefix,
+            db_session,  # Enable sentiment-based tone adaptation
         )
 
         # --- Step 4: Apply Mode/Recipient Filtering ---

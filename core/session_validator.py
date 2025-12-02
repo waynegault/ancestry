@@ -417,6 +417,9 @@ class SessionValidator:
             "run_action11": "API-based operation",
             "api_report": "API-based operation",
             "refresh": "Browser refresh verification - deferring to later checks",
+            # Action 13 - shared match scraping uses API calls after navigation
+            "fetch_shared_matches": "Action 13 - cookies validated after API call",
+            "shared_match": "Action 13 - cookies validated after API call",
         }
 
         action_lower = action_name.lower()

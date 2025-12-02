@@ -75,36 +75,66 @@ def _gedcom_helper_stub(*_args: Any, **_kwargs: Any) -> Any:
     return False
 
 
+def _get_event_info_stub(_indi: Any, _tag: str) -> tuple[None, str, str]:
+    """Stub for _get_event_info when gedcom_utils is unavailable."""
+    return None, "N/A", "N/A"
+
+
 try:
-    import gedcom_utils as _loaded_gedcom_utils
+    from genealogy.gedcom.gedcom_utils import (
+        TAG_BIRTH as _TAG_BIRTH,
+        TAG_DEATH as _TAG_DEATH,
+        TAG_SEX as _TAG_SEX,
+        _are_cousins as _loaded_are_cousins,
+        _are_siblings as _loaded_are_siblings,
+        _are_spouses as _loaded_are_spouses,
+        _get_event_info as _loaded_get_event_info,
+        _get_full_name as _loaded_get_full_name,
+        _is_aunt_or_uncle as _loaded_is_aunt_or_uncle,
+        _is_grandchild as _loaded_is_grandchild,
+        _is_grandparent as _loaded_is_grandparent,
+        _is_great_grandchild as _loaded_is_great_grandchild,
+        _is_great_grandparent as _loaded_is_great_grandparent,
+        _is_niece_or_nephew as _loaded_is_niece_or_nephew,
+    )
+
+    GEDCOM_UTILS_AVAILABLE = True
+    _gedcom_utils = True  # Just a flag to indicate availability
 except Exception:  # pragma: no cover - gedcom_utils absent in some test environments
-    _loaded_gedcom_utils = None
+    GEDCOM_UTILS_AVAILABLE = False
+    _gedcom_utils = None
+    _loaded_get_event_info = _get_event_info_stub
+    _loaded_get_full_name = _gedcom_helper_stub
+    _loaded_are_cousins = _gedcom_helper_stub
+    _loaded_are_siblings = _gedcom_helper_stub
+    _loaded_is_aunt_or_uncle = _gedcom_helper_stub
+    _loaded_is_grandchild = _gedcom_helper_stub
+    _loaded_is_grandparent = _gedcom_helper_stub
+    _loaded_is_great_grandchild = _gedcom_helper_stub
+    _loaded_is_great_grandparent = _gedcom_helper_stub
+    _loaded_is_niece_or_nephew = _gedcom_helper_stub
+    _loaded_are_spouses = _gedcom_helper_stub
+    _TAG_BIRTH = "BIRT"
+    _TAG_DEATH = "DEAT"
+    _TAG_SEX = "SEX"
 
-_gedcom_utils: Any | None = _loaded_gedcom_utils
-
-GEDCOM_UTILS_AVAILABLE = _gedcom_utils is not None
-TAG_BIRTH = getattr(_gedcom_utils, "TAG_BIRTH", "BIRT") if GEDCOM_UTILS_AVAILABLE else "BIRT"
-TAG_DEATH = getattr(_gedcom_utils, "TAG_DEATH", "DEAT") if GEDCOM_UTILS_AVAILABLE else "DEAT"
-TAG_SEX = getattr(_gedcom_utils, "TAG_SEX", "SEX") if GEDCOM_UTILS_AVAILABLE else "SEX"
+TAG_BIRTH = _TAG_BIRTH if GEDCOM_UTILS_AVAILABLE else "BIRT"
+TAG_DEATH = _TAG_DEATH if GEDCOM_UTILS_AVAILABLE else "DEAT"
+TAG_SEX = _TAG_SEX if GEDCOM_UTILS_AVAILABLE else "SEX"
 
 
-def _load_gedcom_helper(name: str) -> Any:
-    if not GEDCOM_UTILS_AVAILABLE or _gedcom_utils is None:
-        return _gedcom_helper_stub
-    return getattr(_gedcom_utils, name, _gedcom_helper_stub)
-
-
-_are_cousins = _load_gedcom_helper("_are_cousins")
-_are_siblings = _load_gedcom_helper("_are_siblings")
-_get_event_info = _load_gedcom_helper("_get_event_info")
-_get_full_name = _load_gedcom_helper("_get_full_name")
-_is_aunt_or_uncle = _load_gedcom_helper("_is_aunt_or_uncle")
-_is_grandchild = _load_gedcom_helper("_is_grandchild")
-_is_grandparent = _load_gedcom_helper("_is_grandparent")
-_is_great_grandchild = _load_gedcom_helper("_is_great_grandchild")
-_is_great_grandparent = _load_gedcom_helper("_is_great_grandparent")
-_is_niece_or_nephew = _load_gedcom_helper("_is_niece_or_nephew")
-_are_spouses_orig = _load_gedcom_helper("_are_spouses")
+# Assign loaded helpers directly (already loaded above)
+_are_cousins = _loaded_are_cousins
+_are_siblings = _loaded_are_siblings
+_get_event_info = _loaded_get_event_info
+_get_full_name = _loaded_get_full_name
+_is_aunt_or_uncle = _loaded_is_aunt_or_uncle
+_is_grandchild = _loaded_is_grandchild
+_is_grandparent = _loaded_is_grandparent
+_is_great_grandchild = _loaded_is_great_grandchild
+_is_great_grandparent = _loaded_is_great_grandparent
+_is_niece_or_nephew = _loaded_is_niece_or_nephew
+_are_spouses_orig = _loaded_are_spouses
 
 
 def _are_spouses(person1_id: str, person2_id: str, reader: Any) -> bool:
@@ -977,10 +1007,10 @@ def _extract_person_basic_info(
     indi: Union[GedcomIndividualProtocol, Any],
 ) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
     """Extract basic information from a GEDCOM individual."""
-    name = _get_full_name(indi)
+    name = _get_full_name(cast(Any, indi))
 
-    birth_date_obj, _, _ = _get_event_info(indi, TAG_BIRTH)
-    death_date_obj, _, _ = _get_event_info(indi, TAG_DEATH)
+    birth_date_obj, _, _ = _get_event_info(cast(Any, indi), TAG_BIRTH)
+    death_date_obj, _, _ = _get_event_info(cast(Any, indi), TAG_DEATH)
 
     birth_year = str(birth_date_obj.year) if birth_date_obj else None
     death_year = str(death_date_obj.year) if death_date_obj else None
