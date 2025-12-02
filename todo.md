@@ -190,13 +190,13 @@ The system is now ready for validation against real historical data.
 
 ### 2. README.md Architecture Update
 
-**Status**: Mostly Complete
+**Status**: ✅ FIXED (Jan 2025)
 
 The README is comprehensive but could benefit from:
 
-- [ ] Add "Getting Started" flowchart for new developers
-- [ ] Document the full message lifecycle (Inbox → Classification → Extraction → Review → Send)
-- [ ] Add troubleshooting section for common AI provider issues
+- [x] Add "Getting Started" flowchart for new developers
+- [x] Document the full message lifecycle (Inbox → Classification → Extraction → Review → Send)
+- [x] Add troubleshooting section for common AI provider issues
 
 ### 3. Operator Training Documentation
 

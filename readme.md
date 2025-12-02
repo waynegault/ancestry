@@ -110,6 +110,26 @@ python main.py
 # 13 - Shared Match Scraper (Fetch shared matches for high-cM matches)
 ```
 
+### Getting Started Flowchart
+
+```mermaid
+graph TD
+    A[Start] --> B{Environment Setup}
+    B -->|Install Python 3.13+| C[Clone Repository]
+    C --> D[Create Virtual Env]
+    D --> E[Install Dependencies]
+    E --> F[Configure .env]
+    F --> G{First Run}
+    G -->|Check Login| H[Action 5: Login Status]
+    H -->|Success| I{Choose Workflow}
+    H -->|Fail| J[Troubleshoot Auth]
+    J --> F
+    I -->|Gather Matches| K[Action 6: DNA Gathering]
+    I -->|Process Inbox| L[Action 7: Inbox Processing]
+    I -->|Search Tree| M[Action 10: Tree Search]
+    I -->|Shared Matches| N[Action 13: Shared Matches]
+```
+
 ## Architecture
 
 ### Core Components
@@ -294,13 +314,15 @@ AI-powered message classification and conversation analysis.
 - Places (locations)
 - Relationships (family connections)
 
-**Processing Flow**:
+**Message Lifecycle**:
 
-1. Scrape inbox HTML for conversations
-2. Extract message metadata (sender, timestamp, content)
-3. AI classification via `call_ai('intent_classification', context)`
-4. Entity extraction for PRODUCTIVE messages
-5. Update `ConversationLog` with analysis results
+1. **Ingestion**: Action 7 scrapes inbox, identifying new unread messages.
+2. **Classification**: AI analyzes content to determine intent (PRODUCTIVE, DESIST, etc.).
+3. **Extraction**: If PRODUCTIVE, AI extracts entities (names, dates, places).
+4. **Review**: High-value messages are flagged for human review (Action Review).
+5. **Response Generation**: Action 8 generates a draft response based on context.
+6. **Sending**: Draft is sent automatically or after approval.
+7. **Task Creation**: Action 9 converts actionable details into MS To-Do tasks.
 
 #### Action 8: Automated Messaging (`actions/action8_messaging.py`)
 
@@ -1604,15 +1626,16 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 
 ### AI Provider Issues
 
-**Symptom**: AI calls failing or returning low quality results
+**Symptom**: "AI Provider Error", low quality scores, or API failures
 
 **Solutions**:
 
-1. Test provider: `python ai_api_test.py --provider gemini`
-2. Check API key: Verify not expired or rate limited
-3. Try fallback provider: Set `AI_PROVIDER_FALLBACKS` in `.env`
-4. Review quality: `python prompt_telemetry.py --stats`
-5. Check prompt loading: Ensure `ai_prompts.json` is valid JSON
+1. **Rate Limits**: Check if you've exceeded your provider's quota (especially Gemini free tier).
+2. **API Keys**: Verify `GEMINI_API_KEY` or `DEEPSEEK_API_KEY` in `.env`.
+3. **Model Availability**: Some models (e.g., `gemini-1.5-pro`) may be region-locked.
+4. **Quality**: If scores are low (<70), check `Logs/prompt_experiments.jsonl` and consider adjusting prompts in `ai/ai_prompts.json`.
+5. **Test Provider**: Run `python ai_api_test.py --provider gemini` to verify connectivity.
+6. **Fallback**: Set `AI_PROVIDER_FALLBACKS` in `.env` for redundancy.
 
 ## Recent Changes (November 2025)
 
