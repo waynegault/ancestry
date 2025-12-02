@@ -332,14 +332,18 @@ def _should_close_session(
     action_name: str,
     browser_was_used: bool = False,
 ) -> bool:
-    if action_result is False or action_exception is not None:
-        logger.debug(f"Action '{action_name}' failed or raised exception. Keeping session open.")
-        return False
-    if close_sess_after:
-        logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
-        return True
+    # Always close browser if it was used, regardless of success/failure
     if browser_was_used:
-        logger.debug(f"Closing browser after '{action_name}' completed successfully (browser was used).")
+        if action_result is False or action_exception is not None:
+            logger.debug(f"Closing browser after '{action_name}' failed (browser was used).")
+        else:
+            logger.debug(f"Closing browser after '{action_name}' completed successfully (browser was used).")
+        return True
+    if close_sess_after:
+        if action_result is False or action_exception is not None:
+            logger.debug(f"Action '{action_name}' failed but close_sess_after=True, closing session.")
+        else:
+            logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
         return True
     return False
 
@@ -519,19 +523,22 @@ def _test_determine_metrics_label() -> bool:
 
 
 def _test_should_close_session_logic() -> bool:
-    # Failures and exceptions: never close, regardless of browser usage
-    assert not _should_close_session(False, None, True, "test", False), "Failures must keep the session open"
-    assert not _should_close_session(False, None, True, "test", True), "Failures keep session open even with browser"
-    assert not _should_close_session("ok", ValueError("boom"), True, "test", False), "Exceptions cancel cleanup"
-
-    # Explicit close_sess_after=True: always close on success
-    assert _should_close_session("ok", None, True, "test", False), "close_sess_after=True closes session"
-
-    # Browser was used: close session on success even without explicit close_sess_after
+    # Browser was used: ALWAYS close, regardless of success/failure
+    assert _should_close_session(False, None, False, "test", True), "Browser usage closes even on failure"
+    assert _should_close_session("ok", ValueError("boom"), False, "test", True), (
+        "Browser usage closes even on exception"
+    )
     assert _should_close_session("ok", None, False, "test", True), "Browser usage triggers close on success"
+
+    # Explicit close_sess_after=True: always close
+    assert _should_close_session("ok", None, True, "test", False), "close_sess_after=True closes session"
+    assert _should_close_session(False, None, True, "test", False), "close_sess_after=True closes even on failure"
 
     # No browser, no explicit close: keep session alive
     assert not _should_close_session("ok", None, False, "test", False), "No browser, no close flag keeps session"
+    assert not _should_close_session(False, None, False, "test", False), (
+        "No browser, failure, no close flag keeps session"
+    )
     return True
 
 
