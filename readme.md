@@ -43,6 +43,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
 - **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
 - **Smart Caching**: Test runner skips unchanged modules for rapid feedback loops
+- **Health Monitoring**: Integrated system health tracking with auto-recovery for stale sessions
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
 ## Tech Stack
