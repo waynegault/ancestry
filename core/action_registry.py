@@ -162,16 +162,23 @@ class ActionRegistry:
             logger.warning("Action registry already initialized")
             return
 
-        # Import action functions - these will be registered lazily to avoid circular imports
-        # The actual function references will be set during registration
+        # Register actions by category
+        self._register_database_actions()
+        self._register_workflow_actions()
+        self._register_browser_actions()
+        self._register_test_actions()
+        self._register_meta_actions()
 
-        # Database Actions (Browserless)
+        self._initialized = True
+
+    def _register_database_actions(self) -> None:
+        """Register database-related actions."""
         self.register(
             ActionMetadata(
                 id="0",
                 name="Delete All Except First Person",
                 description="Delete all people except the test profile (database-only operation)",
-                function=None,  # Will be set during registration
+                function=None,
                 category=ActionCategory.DATABASE,
                 browser_requirement=ActionRequirement.NONE,
                 requires_confirmation=True,
@@ -179,7 +186,6 @@ class ActionRegistry:
                 menu_order=0,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="2",
@@ -193,7 +199,6 @@ class ActionRegistry:
                 menu_order=2,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="3",
@@ -205,7 +210,6 @@ class ActionRegistry:
                 menu_order=3,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="4",
@@ -219,8 +223,21 @@ class ActionRegistry:
                 menu_order=4,
             )
         )
+        self.register(
+            ActionMetadata(
+                id="12",
+                name="DNA Match Triangulation",
+                description="Analyze shared matches and common ancestors",
+                function=None,
+                category=ActionCategory.DATABASE,
+                browser_requirement=ActionRequirement.NONE,
+                enable_caching=True,
+                menu_order=12,
+            )
+        )
 
-        # Workflow Actions
+    def _register_workflow_actions(self) -> None:
+        """Register workflow-related actions."""
         self.register(
             ActionMetadata(
                 id="1",
@@ -235,7 +252,8 @@ class ActionRegistry:
             )
         )
 
-        # Browser Actions
+    def _register_browser_actions(self) -> None:
+        """Register browser-requiring actions."""
         self.register(
             ActionMetadata(
                 id="5",
@@ -247,7 +265,6 @@ class ActionRegistry:
                 menu_order=5,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="6",
@@ -256,13 +273,12 @@ class ActionRegistry:
                 function=None,
                 category=ActionCategory.BROWSER,
                 browser_requirement=ActionRequirement.FULL_SESSION,
-                max_args=1,  # Optional start page
+                max_args=1,
                 input_hint="[start page]",
                 inject_config=True,
                 menu_order=6,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="7",
@@ -274,7 +290,6 @@ class ActionRegistry:
                 menu_order=7,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="8",
@@ -286,7 +301,6 @@ class ActionRegistry:
                 menu_order=8,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="9",
@@ -299,7 +313,6 @@ class ActionRegistry:
                 menu_order=9,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="10",
@@ -313,20 +326,6 @@ class ActionRegistry:
                 menu_order=10,
             )
         )
-
-        self.register(
-            ActionMetadata(
-                id="12",
-                name="DNA Match Triangulation",
-                description="Analyze shared matches and common ancestors",
-                function=None,
-                category=ActionCategory.DATABASE,
-                browser_requirement=ActionRequirement.NONE,
-                enable_caching=True,
-                menu_order=12,
-            )
-        )
-
         self.register(
             ActionMetadata(
                 id="13",
@@ -339,7 +338,6 @@ class ActionRegistry:
                 menu_order=13,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="14",
@@ -352,7 +350,8 @@ class ActionRegistry:
             )
         )
 
-        # Test Actions
+    def _register_test_actions(self) -> None:
+        """Register test-related actions."""
         self.register(
             ActionMetadata(
                 id="i",
@@ -365,7 +364,6 @@ class ActionRegistry:
                 menu_order=210,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="j",
@@ -379,7 +377,13 @@ class ActionRegistry:
             )
         )
 
-        # Meta Actions
+    def _register_meta_actions(self) -> None:
+        """Register meta actions (analytics, utilities, etc.)."""
+        self._register_analytics_actions()
+        self._register_utility_actions()
+
+    def _register_analytics_actions(self) -> None:
+        """Register analytics-related meta actions."""
         self.register(
             ActionMetadata(
                 id="a",
@@ -392,7 +396,6 @@ class ActionRegistry:
                 menu_order=100,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="b",
@@ -405,7 +408,18 @@ class ActionRegistry:
                 menu_order=110,
             )
         )
-
+        self.register(
+            ActionMetadata(
+                id="d",
+                name="Show Cache Statistics",
+                description="Display comprehensive cache statistics from all subsystems",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=120,
+            )
+        )
         self.register(
             ActionMetadata(
                 id="l",
@@ -419,32 +433,8 @@ class ActionRegistry:
             )
         )
 
-        self.register(
-            ActionMetadata(
-                id="g",
-                name="Open Code Graph Visualization",
-                description="Launch the interactive repository dependency graph",
-                function=None,
-                category=ActionCategory.UTILITY,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=150,
-            )
-        )
-
-        self.register(
-            ActionMetadata(
-                id="d",
-                name="Show Cache Statistics",
-                description="Display comprehensive cache statistics from all subsystems",
-                function=None,
-                category=ActionCategory.ANALYTICS,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=120,
-            )
-        )
-
+    def _register_utility_actions(self) -> None:
+        """Register utility meta actions."""
         self.register(
             ActionMetadata(
                 id="e",
@@ -457,7 +447,6 @@ class ActionRegistry:
                 menu_order=130,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="f",
@@ -470,7 +459,18 @@ class ActionRegistry:
                 menu_order=140,
             )
         )
-
+        self.register(
+            ActionMetadata(
+                id="g",
+                name="Open Code Graph Visualization",
+                description="Launch the interactive repository dependency graph",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=150,
+            )
+        )
         self.register(
             ActionMetadata(
                 id="h",
@@ -483,33 +483,6 @@ class ActionRegistry:
                 menu_order=200,
             )
         )
-
-        self.register(
-            ActionMetadata(
-                id="t",
-                name="Toggle Console Log Level",
-                description="Toggle between INFO and DEBUG log levels",
-                function=None,
-                category=ActionCategory.UTILITY,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=300,
-            )
-        )
-
-        self.register(
-            ActionMetadata(
-                id="c",
-                name="Clear Screen",
-                description="Clear the console screen",
-                function=None,
-                category=ActionCategory.UTILITY,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=310,
-            )
-        )
-
         self.register(
             ActionMetadata(
                 id="k",
@@ -522,20 +495,18 @@ class ActionRegistry:
                 menu_order=230,
             )
         )
-
         self.register(
             ActionMetadata(
-                id="q",
-                name="Exit",
-                description="Exit the application",
+                id="t",
+                name="Toggle Console Log Level",
+                description="Toggle between INFO and DEBUG log levels",
                 function=None,
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=320,
+                menu_order=300,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="r",
@@ -548,7 +519,6 @@ class ActionRegistry:
                 menu_order=305,
             )
         )
-
         self.register(
             ActionMetadata(
                 id="w",
@@ -561,8 +531,30 @@ class ActionRegistry:
                 menu_order=307,
             )
         )
-
-        self._initialized = True
+        self.register(
+            ActionMetadata(
+                id="c",
+                name="Clear Screen",
+                description="Clear the console screen",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=310,
+            )
+        )
+        self.register(
+            ActionMetadata(
+                id="q",
+                name="Exit",
+                description="Exit the application",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=320,
+            )
+        )
 
 
 # Global registry instance
