@@ -845,6 +845,21 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
     # ------------------------------------------------------------------
 
     @staticmethod
+    def clear_test_cache() -> None:
+        """Clear the run_all_tests result cache to force retesting all modules."""
+        cache_file = Path("Cache/test_results_cache.json")
+        if cache_file.exists():
+            try:
+                cache_file.unlink()
+                print("\n✅ Test result cache cleared successfully.")
+                print("   Next test run will retest all modules.\n")
+            except OSError as e:
+                print(f"\n❌ Failed to clear test cache: {e}\n")
+        else:
+            print("\n📭 No test cache found (already empty).\n")
+        input("Press Enter to continue...")
+
+    @staticmethod
     def clear_screen() -> None:
         os.system("cls" if os.name == "nt" else "clear")
 

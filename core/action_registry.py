@@ -536,6 +536,19 @@ class ActionRegistry:
             )
         )
 
+        self.register(
+            ActionMetadata(
+                id="r",
+                name="Clear Test Cache",
+                description="Remove run_all_tests cache to force retesting all modules",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=305,
+            )
+        )
+
         self._initialized = True
 
 

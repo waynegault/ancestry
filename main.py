@@ -94,6 +94,7 @@ _toggle_log_level = _cli_helpers.toggle_log_level
 _show_metrics_report = _cli_helpers.show_metrics_report
 _run_grafana_setup = _cli_helpers.run_grafana_setup
 _clear_screen = _cli_helpers.clear_screen
+_clear_test_cache = _cli_helpers.clear_test_cache
 _exit_application = _cli_helpers.exit_application
 _show_review_queue = _cli_helpers.show_review_queue
 _run_dry_run_validation = _cli_helpers.run_dry_run_validation
@@ -327,6 +328,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("k", _run_schema_migrations_action)
     registry.set_action_function("t", _toggle_log_level)
     registry.set_action_function("c", _clear_screen)
+    registry.set_action_function("r", _clear_test_cache)
     registry.set_action_function("q", _exit_application)
 
     registry.set_action_function("i", _run_main_tests)
