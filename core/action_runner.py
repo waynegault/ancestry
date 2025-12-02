@@ -330,12 +330,16 @@ def _should_close_session(
     action_exception: BaseException | None,
     close_sess_after: bool,
     action_name: str,
+    browser_was_used: bool = False,
 ) -> bool:
     if action_result is False or action_exception is not None:
         logger.debug(f"Action '{action_name}' failed or raised exception. Keeping session open.")
         return False
     if close_sess_after:
         logger.debug(f"Closing session after '{action_name}' as requested by caller (close_sess_after=True).")
+        return True
+    if browser_was_used:
+        logger.debug(f"Closing browser after '{action_name}' completed successfully (browser was used).")
         return True
     return False
 
@@ -390,11 +394,13 @@ def _finalize_action_execution(
     session_manager: SessionManager,
     close_sess_after: bool,
 ) -> bool:
+    browser_was_used = session_manager.browser_manager.browser_needed
     should_close = _should_close_session(
         context.result,
         context.exception,
         close_sess_after,
         context.action_name,
+        browser_was_used,
     )
 
     print(" ")
@@ -513,10 +519,19 @@ def _test_determine_metrics_label() -> bool:
 
 
 def _test_should_close_session_logic() -> bool:
-    assert not _should_close_session(False, None, True, "test"), "Failures must keep the session open"
-    assert not _should_close_session("ok", ValueError("boom"), True, "test"), "Exceptions cancel cleanup"
-    assert _should_close_session("ok", None, True, "test"), "Successful completion honors close_sess_after"
-    assert not _should_close_session("ok", None, False, "test"), "close_sess_after=False should keep session alive"
+    # Failures and exceptions: never close, regardless of browser usage
+    assert not _should_close_session(False, None, True, "test", False), "Failures must keep the session open"
+    assert not _should_close_session(False, None, True, "test", True), "Failures keep session open even with browser"
+    assert not _should_close_session("ok", ValueError("boom"), True, "test", False), "Exceptions cancel cleanup"
+
+    # Explicit close_sess_after=True: always close on success
+    assert _should_close_session("ok", None, True, "test", False), "close_sess_after=True closes session"
+
+    # Browser was used: close session on success even without explicit close_sess_after
+    assert _should_close_session("ok", None, False, "test", True), "Browser usage triggers close on success"
+
+    # No browser, no explicit close: keep session alive
+    assert not _should_close_session("ok", None, False, "test", False), "No browser, no close flag keeps session"
     return True
 
 
