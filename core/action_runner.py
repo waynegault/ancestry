@@ -378,8 +378,8 @@ def _log_performance_metrics(
 
 def _perform_session_cleanup(session_manager: SessionManager, should_close: bool, action_name: str) -> None:
     if should_close:
-        browser_manager = session_manager.browser_manager
-        if browser_manager.browser_needed and session_manager.browser_manager.driver_live:
+        # Always close browser if driver is live and we're told to close
+        if session_manager.browser_manager.driver_live:
             logger.debug("Closing browser session...")
             session_manager.close_sess(keep_db=True)
             logger.debug("Browser session closed. DB connections kept.")

@@ -875,6 +875,14 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
         os.system("cls" if os.name == "nt" else "clear")
 
     def exit_application(self) -> bool:
+        # Close browser immediately before exiting
+        try:
+            from core.session_utils import close_cached_session
+
+            close_cached_session(keep_db=False)
+        except Exception:
+            pass  # Silently ignore cleanup errors
+
         self.clear_screen()
         print("Exiting.")
         return False
