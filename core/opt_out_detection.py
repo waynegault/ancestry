@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # === DATA CLASSES ===
 
 
-@dataclass
+@dataclass()
 class OptOutIndicator:
     """An indicator that suggests opt-out intent."""
 
@@ -40,7 +40,7 @@ class OptOutIndicator:
     example: str  # Example of matching text
 
 
-@dataclass
+@dataclass()
 class OptOutAnalysis:
     """Result of analyzing a message for opt-out indicators."""
 

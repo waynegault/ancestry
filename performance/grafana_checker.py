@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Paths
 GRAFANA_INSTALL_PATH = Path(r"C:\Program Files\GrafanaLabs\grafana")
 GRAFANA_CLI = GRAFANA_INSTALL_PATH / "bin" / "grafana-cli.exe"
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SETUP_SCRIPT = PROJECT_ROOT / "docs" / "grafana" / "setup_grafana.ps1"
 
 

@@ -82,7 +82,7 @@ class ReviewDecision:
     edited_content: Optional[str] = None
 
 
-@dataclass
+@dataclass()
 class QueueStats:
     """Statistics about the approval queue."""
 

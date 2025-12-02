@@ -49,7 +49,7 @@ from testing.test_framework import TestSuite
 # ==============================================
 
 
-@dataclass
+@dataclass()
 class SessionCacheConfig:
     """Configuration for session caching behavior"""
 
@@ -59,7 +59,7 @@ class SessionCacheConfig:
     track_session_lifecycle: bool = True
 
 
-@dataclass
+@dataclass()
 class SystemCacheConfig:
     """Advanced system-wide cache configuration"""
 

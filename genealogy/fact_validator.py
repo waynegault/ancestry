@@ -56,7 +56,7 @@ class ReviewPriority(Enum):
 # === DATACLASSES ===
 
 
-@dataclass
+@dataclass()
 class ExtractedFact:
     """
     Runtime representation of a fact extracted from conversation.

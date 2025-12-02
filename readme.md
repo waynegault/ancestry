@@ -139,6 +139,19 @@ python main.py
 # 7 - Process Inbox Messages
 # 10 - Search Family Tree (GEDCOM or API)
 # 13 - Shared Match Scraper (Fetch shared matches for high-cM matches)
+# setup-grafana - Install and configure monitoring dashboards
+
+### Monitoring & Observability
+
+The platform includes built-in support for Grafana dashboards to visualize performance, genealogy insights, and code quality.
+
+To set up monitoring:
+1. Run `python main.py`
+2. Type `setup-grafana` at the menu prompt
+3. Follow the automated installer instructions (requires Admin privileges)
+
+This will install Grafana, configure data sources (SQLite, Prometheus), and import standard dashboards.
+
 ```
 
 ### Getting Started Flowchart

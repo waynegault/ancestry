@@ -37,7 +37,7 @@ class EnvironmentType(Enum):
     PRODUCTION = "production"
 
 
-@dataclass
+@dataclass()
 class ValidationRule:
     """Configuration validation rule."""
 
@@ -825,7 +825,7 @@ class AppConfigView:
         return {name: getattr(self, name) for name in self._FIELD_MAP}
 
 
-@dataclass
+@dataclass()
 class ConfigSchema:
     """Main configuration schema that combines all sub-schemas."""
 

@@ -4632,11 +4632,21 @@ def _test_main_function_with_dry_run() -> bool:
         assert app_mode == 'dry_run', f"Expected APP_MODE='dry_run', got '{app_mode}'"
         logger.info(f"✅ APP_MODE confirmed: {app_mode}")
 
-        # Call the main function
-        result = send_messages_to_matches(sm)
-        assert isinstance(result, bool), f"Expected bool return, got {type(result).__name__}"
-        assert result is True, f"Expected send_messages_to_matches() to return True, got {result}"
-        logger.info(f"✅ send_messages_to_matches() returned: {result}")
+        # Temporarily limit max_inbox to prevent timeout on large databases
+        original_max_inbox = getattr(config_schema, 'max_inbox', 0)
+        config_schema.max_inbox = 5
+        logger.info(f"Temporarily set max_inbox=5 for test (was {original_max_inbox})")
+
+        try:
+            # Call the main function
+            result = send_messages_to_matches(sm)
+            assert isinstance(result, bool), f"Expected bool return, got {type(result).__name__}"
+            assert result is True, f"Expected send_messages_to_matches() to return True, got {result}"
+            logger.info(f"✅ send_messages_to_matches() returned: {result}")
+        finally:
+            # Restore original max_inbox
+            config_schema.max_inbox = original_max_inbox
+            logger.info(f"Restored max_inbox to {original_max_inbox}")
 
         return True
 
@@ -5440,7 +5450,9 @@ def _test_enhance_message_with_sources() -> None:
     format_data = {}
 
     # Mock _load_and_validate_gedcom to avoid loading large GEDCOM file during tests
-    with patch('actions.action8_messaging._load_and_validate_gedcom', return_value=None):
+    # Use patch.object to ensure we patch the function in the current module (whether __main__ or imported)
+    current_module = sys.modules[__name__]
+    with patch.object(current_module, '_load_and_validate_gedcom', return_value=None):
         # Should not crash even if GEDCOM not available
         enhance_message_with_sources(person, family_tree, format_data)
         assert 'source_citations' in format_data
@@ -5490,7 +5502,7 @@ def _test_enhance_message_with_research_suggestions() -> None:
 
 def _test_enhance_message_format_data_phase5() -> None:
     """Test complete Phase 5 enhancement."""
-    from unittest.mock import Mock
+    from unittest.mock import Mock, patch
 
     person = Mock()
     person.username = "test_user"
@@ -5504,9 +5516,12 @@ def _test_enhance_message_format_data_phase5() -> None:
 
     format_data = {}
 
-    enhance_message_format_data_phase5(
-        person, family_tree, format_data, enable_sources=True, enable_diagrams=True, enable_suggestions=True
-    )
+    # Mock _load_and_validate_gedcom to avoid loading large GEDCOM file during tests
+    current_module = sys.modules[__name__]
+    with patch.object(current_module, '_load_and_validate_gedcom', return_value=None):
+        enhance_message_format_data_phase5(
+            person, family_tree, format_data, enable_sources=True, enable_diagrams=True, enable_suggestions=True
+        )
 
     assert 'source_citations' in format_data
     assert 'relationship_diagram' in format_data
@@ -5933,6 +5948,5 @@ run_comprehensive_tests = create_standard_test_runner(action8_messaging_tests)
 # ==============================================
 
 if __name__ == "__main__":
-    print("📧 Running Action 8 - Automated Messaging System comprehensive test suite...")
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)

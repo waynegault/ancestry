@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # === DATA CLASSES ===
 
 
-@dataclass
+@dataclass()
 class Variant:
     """A variant in an A/B test."""
 
@@ -100,7 +100,7 @@ class ExperimentSummary:
     confidence: float = 0.0
 
 
-@dataclass
+@dataclass()
 class Experiment:
     """Configuration for an A/B test experiment."""
 

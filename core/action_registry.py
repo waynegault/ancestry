@@ -34,7 +34,7 @@ class ActionRequirement(Enum):
     FULL_SESSION = "session"  # Full browser session needed
 
 
-@dataclass
+@dataclass()
 class ActionMetadata:
     """
     Comprehensive metadata for application actions.
