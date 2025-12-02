@@ -115,7 +115,7 @@ WARNING: AI returned unexpected classification: 'SOCIAL'. Defaulting to OTHER.
 
 ### Session Cookie Recovery
 
-**Status**: ✅ PARTIALLY FIXED (Dec 2025)
+**Status**: ✅ FIXED (Jan 2025)
 
 **Symptoms**:
 ```
@@ -128,13 +128,11 @@ ERROR: Cannot fetch shared matches: session not ready
 **Fix Applied**:
 - [x] Added Action 13 (`fetch_shared_matches`, `shared_match`) to cookie check skip patterns
 - [x] Action 12 already uses `browser_requirement=NONE` (database-only operation)
-
-**Remaining**:
-- [ ] Add graceful degradation: return "session required" instead of crash
-- [ ] Implement cookie refresh flow when essential cookies missing
+- [x] Add graceful degradation: return "session required" instead of crash
+- [x] Implement cookie refresh flow when essential cookies missing
 
 **Files Modified**:
-- `core/session_validator.py` - Added Action 13 to skip patterns
+- `core/session_validator.py` - Added Action 13 to skip patterns; Added auto-refresh logic for missing cookies
 - `core/action_registry.py` - Action 12 already correctly configured
 
 ---

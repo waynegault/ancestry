@@ -1568,7 +1568,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 
 ### Authentication Issues
 
-**Symptom**: 401 Unauthorized or 403 Forbidden errors
+**Symptom**: 401 Unauthorized, 403 Forbidden errors, or "Essential cookies not found"
 
 **Solutions**:
 
@@ -1577,6 +1577,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 3. Force session refresh: Run Action 5 (Check Login Status)
 4. Clear cookies and re-authenticate: Delete `Cache/ancestry_cookies.json`
 5. Check for CAPTCHA: Some IPs may trigger CAPTCHA—use browser manually first
+6. **Automatic Recovery**: The system will attempt to refresh the browser if essential cookies are missing. If this fails repeatedly, try solution #4.
 
 ### Database Issues (Troubleshooting)
 

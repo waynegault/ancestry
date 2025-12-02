@@ -454,9 +454,23 @@ class SessionValidator:
 
         try:
             if not browser_manager.get_cookies(essential_cookies):
-                error_msg = f"Essential cookies not found: {essential_cookies}"
-                logger.warning(error_msg)
-                return False, error_msg
+                # Attempt recovery: Refresh page to see if cookies are set
+                logger.warning(f"Essential cookies missing: {essential_cookies}. Attempting refresh...")
+
+                if hasattr(browser_manager, "driver") and browser_manager.driver:
+                    try:
+                        browser_manager.driver.refresh()
+                        import time
+
+                        time.sleep(5)  # Wait for reload
+                    except Exception as refresh_err:
+                        logger.warning(f"Failed to refresh page: {refresh_err}")
+
+                # Check again
+                if not browser_manager.get_cookies(essential_cookies):
+                    error_msg = f"Essential cookies not found after refresh: {essential_cookies}"
+                    logger.warning(error_msg)
+                    return False, error_msg
 
             logger.debug("Essential cookies check passed.")
             return True, None
