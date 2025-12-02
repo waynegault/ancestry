@@ -10,12 +10,14 @@ import logging
 import sys
 from datetime import datetime, timezone
 from typing import Any, cast
+from urllib.parse import urlencode
 
 from sqlalchemy import and_, select, update
 from sqlalchemy.orm import Session
 
 from api.api_constants import API_PATH_SHARED_MATCHES
 from config import config_schema
+from core.api_manager import RequestConfig
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from database import DnaMatch, Person, SharedMatch, db_transn
@@ -82,10 +84,7 @@ def _process_shared_matches(session_manager: SessionManager) -> None:
                     stmt = (
                         update(DnaMatch)
                         .where(DnaMatch.id == match_id)
-                        .values(
-                            shared_matches_fetched=True,
-                            shared_matches_fetched_date=datetime.now(timezone.utc)
-                        )
+                        .values(shared_matches_fetched=True, shared_matches_fetched_date=datetime.now(timezone.utc))
                     )
                     session.execute(stmt)
                     session.commit()
@@ -112,32 +111,34 @@ def _fetch_and_store_shared_matches(session_manager: SessionManager, match_id: i
     """
     Fetch shared matches from API and store in DB.
     """
-    url = API_PATH_SHARED_MATCHES.format(
-        my_uuid=session_manager.my_uuid,
-        match_uuid=match_uuid
-    )
+    url = API_PATH_SHARED_MATCHES.format(my_uuid=session_manager.my_uuid, match_uuid=match_uuid)
 
     # Fetch page 1 (usually sufficient for top shared matches)
     params = {"page": 1, "count": 100}
+    full_url = f"{url}?{urlencode(params)}"
 
     try:
-        response = session_manager.api_manager.get(url, params=params)
-        if not response or response.status_code != 200:
-            logger.warning(f"Failed to fetch shared matches for {match_uuid}. Status: {response.status_code if response else 'None'}")
+        config = RequestConfig(url=full_url, method="GET", api_description=f"Shared Matches {match_uuid}")
+        result = session_manager.api_manager.request(config)
+
+        if not result.success:
+            logger.warning(f"Failed to fetch shared matches for {match_uuid}. Status: {result.status_code}")
             return False
 
-        data = response.json()
+        data = result.json
 
         matches_data: list[dict[str, Any]] = []
-        if "matchGroups" in data:
+        if data and "matchGroups" in data:
             for group in data["matchGroups"]:
                 matches_data.extend(group.get("matches", []))
-        elif "matches" in data:
+        elif data and "matches" in data:
             matches_data = cast(list[dict[str, Any]], data["matches"])
         elif isinstance(data, list):
             matches_data = cast(list[dict[str, Any]], data)
         else:
-            logger.warning(f"Unexpected JSON structure for shared matches: {data.keys()}")
+            logger.warning(
+                f"Unexpected JSON structure for shared matches: {data.keys() if isinstance(data, dict) else type(data)}"
+            )
             return False
 
         _store_shared_matches(session_manager, match_id, matches_data)
@@ -148,7 +149,9 @@ def _fetch_and_store_shared_matches(session_manager: SessionManager, match_id: i
         return False
 
 
-def _store_shared_matches(session_manager: SessionManager, primary_match_id: int, matches_data: list[dict[str, Any]]) -> None:
+def _store_shared_matches(
+    session_manager: SessionManager, primary_match_id: int, matches_data: list[dict[str, Any]]
+) -> None:
     """
     Store shared matches in DB.
     """
@@ -188,10 +191,7 @@ def _store_shared_matches(session_manager: SessionManager, primary_match_id: int
                 # Check existence
                 exists = session.execute(
                     select(SharedMatch).where(
-                        and_(
-                            SharedMatch.person_id == primary_person_id,
-                            SharedMatch.shared_match_id == shared_match_id
-                        )
+                        and_(SharedMatch.person_id == primary_person_id, SharedMatch.shared_match_id == shared_match_id)
                     )
                 ).first()
 
@@ -203,11 +203,7 @@ def _store_shared_matches(session_manager: SessionManager, primary_match_id: int
                         shared_cm = match_relationship.get("sharedCentimorgans")
 
                     new_shared_matches.append(
-                        SharedMatch(
-                            person_id=primary_person_id,
-                            shared_match_id=shared_match_id,
-                            shared_cm=shared_cm
-                        )
+                        SharedMatch(person_id=primary_person_id, shared_match_id=shared_match_id, shared_cm=shared_cm)
                     )
 
         if new_shared_matches:
@@ -229,10 +225,7 @@ def action13_module_tests() -> bool:
     def test_get_candidates() -> bool:
         # Mock DB session
         mock_session = MagicMock()
-        mock_session.execute.return_value.all.return_value = [
-            (1, "UUID1", "Name1"),
-            (2, "UUID2", "Name2")
-        ]
+        mock_session.execute.return_value.all.return_value = [(1, "UUID1", "Name1"), (2, "UUID2", "Name2")]
 
         candidates = _get_candidates(mock_session)
         return len(candidates) == 2 and candidates[0][1] == "UUID1"
@@ -242,7 +235,7 @@ def action13_module_tests() -> bool:
         test_get_candidates,
         "Should return list of candidates",
         "candidates",
-        "Mock DB session and verify candidate list"
+        "Mock DB session and verify candidate list",
     )
 
     return suite.finish_suite()
@@ -251,5 +244,6 @@ def action13_module_tests() -> bool:
 if __name__ == "__main__":
     # Run tests if executed directly
     from testing.test_utilities import create_standard_test_runner
+
     runner = create_standard_test_runner(action13_module_tests)
     sys.exit(0 if runner() else 1)

@@ -12,6 +12,40 @@ All core development sprints (1-4) are **COMPLETE**. Recent integration work (De
 
 ## 🔴 Critical - Issues Discovered in Testing (Jan 2025)
 
+### Action 13 Crash (API Method Mismatch)
+**Status**: ✅ FIXED
+**Symptoms**: `AttributeError: 'APIManager' object has no attribute 'get'` in `action13_shared_matches.py`.
+**Root Cause**: `APIManager` was refactored to use `request()` but Action 13 still calls legacy `.get()` method.
+**Remedial Actions**:
+- [x] Update `action13_shared_matches.py` to use `session_manager.api_manager.request(method="GET", ...)` instead of `.get()`.
+
+### Action 7 DB Pool Exhaustion & Intent Classification
+**Status**: ✅ FIXED
+**Symptoms**:
+- `TimeoutError: QueuePool limit of size 10 overflow 10 reached` in `action7_inbox.py`.
+- Repeated "SOCIAL" classification for messages, which seems odd/over-aggressive.
+**Root Cause**:
+- DB sessions likely not being closed properly in `action7_inbox.py` loops.
+- Intent classification prompt or logic might need tuning.
+**Remedial Actions**:
+- [x] Audit `action7_inbox.py` for proper DB session management (ensure `session.close()` or context managers are used).
+- [x] Review `ai_prompts.json` for "intent_classification" and adjust if necessary to reduce false positive "SOCIAL" labels.
+- [x] Improve logging in Action 7 to show *why* a message was classified as SOCIAL (Added context logging in `ai_interface.py`).
+
+### Action 12 Target Lookup Failure
+**Status**: ✅ FIXED
+**Symptoms**: "Target person not found: 123" when running Action 12.
+**Root Cause**: Action 12 uses a simplistic/hardcoded lookup that fails to find people.
+**Remedial Actions**:
+- [x] Port the robust "search and score" mechanism from `action10.py` (`run_gedcom_then_api_fallback` logic) to `action12_triangulation.py`.
+- [x] Ensure Action 12 can identify a target person by name/ID similar to Action 10.
+
+### Logging Improvements
+**Status**: 🔴 OPEN
+**Symptoms**: User finds info level logging unclear/unhelpful.
+**Remedial Actions**:
+- [ ] Review and enhance INFO level logging across Actions 7, 12, 13 to be more descriptive and actionable.
+
 ### Database Connection Pool Exhaustion
 
 **Status**: ✅ FIXED (Dec 2025)
@@ -270,3 +304,17 @@ These modules are fully implemented and tested but need UI/CLI integration:
 2. **Manual audit** - Review AI-generated drafts vs actual replies
 3. **Document findings** - Update README with validation results
 4. **Production deployment** - Enable review queue for live messages
+
+## Refactoring & Technical Debt (Q1 2026)
+
+### Complexity Management
+
+- [ ] **Refactor `_process_single_page` Orchestration**: The `actions/gather/orchestrator.py` logic relies on complex state dictionaries and hooks. Refactor into a proper `PageProcessor` class with typed state.
+- [ ] **Simplify `nav_to_page` Logic**: `utils.py` navigation logic is split across multiple helpers. Consolidate and simplify the retry/backoff mechanism.
+- [ ] **Refine Exception Handling**: Replace broad `except Exception` blocks in `action6_gather.py` and `orchestrator.py` with specific exception handling (e.g., `SQLAlchemyError`, `WebDriverException`) to prevent masking root causes.
+
+### Technical Debt Reduction
+
+- [ ] **Modularize Large Actions**: Split `action6_gather.py` (6400+ lines) and `action7_inbox.py` (4200+ lines) into smaller, domain-specific sub-modules (e.g., `actions/action6/database.py`, `actions/action6/api.py`).
+- [ ] **Centralize Menu Logic**: Refactor `main.py` to use a data-driven registry for menu actions instead of manual `set_action_function` calls, reducing metadata duplication.
+- [ ] **Async/Sync Bridging**: Review `DatabaseManager` usage to minimize thread-pool switching overhead and evaluate native async driver support for future scaling.

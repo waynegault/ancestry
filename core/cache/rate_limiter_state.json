@@ -4,10 +4,10 @@
   "capacity": 10.0,
   "min_fill_rate": 0.5,
   "max_fill_rate": 2.0,
-  "timestamp": 1764630195.676642,
-  "total_requests": 423,
-  "avg_wait_time": 0.08703616180361257,
-  "rate_increases": 140,
+  "timestamp": 1764666189.9214292,
+  "total_requests": 421,
+  "avg_wait_time": 0.10995800738682399,
+  "rate_increases": 139,
   "rate_decreases": 0,
   "error_429_count": 0
 }

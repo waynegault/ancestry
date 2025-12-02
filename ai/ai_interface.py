@@ -903,6 +903,10 @@ def classify_message_intent(context_history: str, session_manager: SessionManage
         except Exception as e:
             logger.warning(f"Error loading 'intent_classification' prompt: {e}, using fallback.")
 
+    # Log context for debugging classification issues
+    truncated_context = (context_history[:200] + "...") if len(context_history) > 200 else context_history
+    logger.debug(f"Classifying intent for context: {truncated_context!r}")
+
     start_time = time.time()
     raw_classification = _call_ai_model(
         provider=ai_provider,

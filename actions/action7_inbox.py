@@ -2172,6 +2172,7 @@ class InboxProcessor:
         self,
         person_id: int,
         base_urgency: str = "standard",
+        session: Optional[DbSession] = None,
     ) -> str:
         """
         Calculate MS To-Do task importance from DNA relationship strength and engagement score.
@@ -2196,13 +2197,24 @@ class InboxProcessor:
             if override is not None:
                 return override
 
-            db_session = self.session_manager.db_manager.get_session()
-            person = self._load_person_for_importance(db_session, person_id)
-            if not person:
-                return "normal"
+            # Use passed session or create temporary one
+            should_close = False
+            if session:
+                db_session = session
+            else:
+                db_session = self.session_manager.db_manager.get_session()
+                should_close = True
 
-            cm_shared, engagement = self._extract_importance_metrics(person)
-            return self._derive_importance_from_metrics(cm_shared, engagement, person_id)
+            try:
+                person = self._load_person_for_importance(db_session, person_id)
+                if not person:
+                    return "normal"
+
+                cm_shared, engagement = self._extract_importance_metrics(person)
+                return self._derive_importance_from_metrics(cm_shared, engagement, person_id)
+            finally:
+                if should_close and db_session:
+                    db_session.close()
 
         except Exception as e:
             logger.error(f"Error calculating task importance for person {person_id}: {e}", exc_info=True)
@@ -2216,6 +2228,7 @@ class InboxProcessor:
         task_body: Optional[str],
         due_date: Optional[datetime],
         urgency_level: str = "standard",
+        session: Optional[DbSession] = None,
     ) -> bool:
         """
         Create MS To-Do reminder task for follow-up.
@@ -2261,6 +2274,7 @@ class InboxProcessor:
             importance = self._calculate_task_importance(
                 person_id=person_id,
                 base_urgency=urgency_level,
+                session=session,
             )
 
             due_date_str = due_date.strftime("%Y-%m-%d") if due_date else None
@@ -2831,6 +2845,7 @@ class InboxProcessor:
                 task_body=follow_up_data.get("reminder_task_body"),
                 due_date=follow_up_data.get("follow_up_due_date"),
                 urgency_level=follow_up_data.get("urgency_level", "standard"),
+                session=session,
             )
 
         # Track analytics for received message
