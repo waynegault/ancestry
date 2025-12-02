@@ -2227,8 +2227,24 @@ def main() -> bool:
     if enable_log_analysis:
         print_log_analysis()
 
+    # Clean up any browser session that was opened during tests
+    _cleanup_browser_after_all_tests()
+
     # Exit with status code
     sys.exit(0 if passed_count == len(discovered_modules) else 1)
+
+
+def _cleanup_browser_after_all_tests() -> None:
+    """Close any browser session that was opened during test execution."""
+    try:
+        from core.session_utils import close_cached_session, get_session_manager
+
+        sm = get_session_manager()
+        if sm is not None and hasattr(sm, "browser_manager") and getattr(sm.browser_manager, "driver_live", False):
+            print("\n🧹 Closing browser session after tests...")
+            close_cached_session(keep_db=True)
+    except Exception:
+        pass  # Silently ignore cleanup errors
 
 
 if __name__ == "__main__":

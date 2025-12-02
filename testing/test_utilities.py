@@ -566,6 +566,9 @@ def create_standard_test_runner(module_test_function: Callable[[], bool]) -> Cal
     their module-specific test function. This implements DRY principles by providing
     a single factory for test runner functions instead of 31+ identical implementations.
 
+    Automatically closes any browser session after tests complete to prevent
+    orphaned browser windows.
+
     Args:
         module_test_function: The module-specific test function to call
 
@@ -588,8 +591,23 @@ def create_standard_test_runner(module_test_function: Callable[[], bool]) -> Cal
         except Exception as e:
             print(f"❌ Test execution failed: {e}")
             return False
+        finally:
+            # Clean up any browser session that was opened during tests
+            _cleanup_browser_after_tests()
 
     return run_comprehensive_tests
+
+
+def _cleanup_browser_after_tests() -> None:
+    """Close any browser session that was opened during test execution."""
+    try:
+        from core.session_utils import close_cached_session, get_session_manager
+
+        sm = get_session_manager()
+        if sm is not None and hasattr(sm, "browser_manager") and getattr(sm.browser_manager, "driver_live", False):
+            close_cached_session(keep_db=True)
+    except Exception:
+        pass  # Silently ignore cleanup errors
 
 
 # ==============================================
