@@ -72,6 +72,8 @@ class SafetyGuard:
         r"\bspam\b",
         r"\bharassment\b",
         r"\bleave me alone\b",
+        r"\btake me off\b",
+        r"\bremove from list\b",
     ]
 
     _DANGER_PATTERNS: ClassVar[list[str]] = [

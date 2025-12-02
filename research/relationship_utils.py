@@ -70,158 +70,31 @@ class GedcomIndividualProtocol(Protocol):
     def sub_tag(self, tag: str) -> Optional[GedcomTagProtocol]: ...
 
 
-def _gedcom_helper_stub(*_args: Any, **_kwargs: Any) -> Any:
-    """Fallback helper when gedcom_utils is unavailable."""
-    return False
-
-
-def _get_event_info_stub(_indi: Any, _tag: str) -> tuple[None, str, str]:
-    """Stub for _get_event_info when gedcom_utils is unavailable."""
-    return None, "N/A", "N/A"
-
-
-try:
-    from genealogy.gedcom.gedcom_utils import (
-        TAG_BIRTH as _TAG_BIRTH,
-        TAG_DEATH as _TAG_DEATH,
-        TAG_SEX as _TAG_SEX,
-        _are_cousins as _loaded_are_cousins,
-        _are_siblings as _loaded_are_siblings,
-        _are_spouses as _loaded_are_spouses,
-        _get_event_info as _loaded_get_event_info,
-        _get_full_name as _loaded_get_full_name,
-        _is_aunt_or_uncle as _loaded_is_aunt_or_uncle,
-        _is_grandchild as _loaded_is_grandchild,
-        _is_grandparent as _loaded_is_grandparent,
-        _is_great_grandchild as _loaded_is_great_grandchild,
-        _is_great_grandparent as _loaded_is_great_grandparent,
-        _is_niece_or_nephew as _loaded_is_niece_or_nephew,
-    )
-
-    GEDCOM_UTILS_AVAILABLE = True
-    _gedcom_utils = True  # Just a flag to indicate availability
-except Exception:  # pragma: no cover - gedcom_utils absent in some test environments
-    GEDCOM_UTILS_AVAILABLE = False
-    _gedcom_utils = None
-    _loaded_get_event_info = _get_event_info_stub
-    _loaded_get_full_name = _gedcom_helper_stub
-    _loaded_are_cousins = _gedcom_helper_stub
-    _loaded_are_siblings = _gedcom_helper_stub
-    _loaded_is_aunt_or_uncle = _gedcom_helper_stub
-    _loaded_is_grandchild = _gedcom_helper_stub
-    _loaded_is_grandparent = _gedcom_helper_stub
-    _loaded_is_great_grandchild = _gedcom_helper_stub
-    _loaded_is_great_grandparent = _gedcom_helper_stub
-    _loaded_is_niece_or_nephew = _gedcom_helper_stub
-    _loaded_are_spouses = _gedcom_helper_stub
-    _TAG_BIRTH = "BIRT"
-    _TAG_DEATH = "DEAT"
-    _TAG_SEX = "SEX"
-
-TAG_BIRTH = _TAG_BIRTH if GEDCOM_UTILS_AVAILABLE else "BIRT"
-TAG_DEATH = _TAG_DEATH if GEDCOM_UTILS_AVAILABLE else "DEAT"
-TAG_SEX = _TAG_SEX if GEDCOM_UTILS_AVAILABLE else "SEX"
-
-
-# Assign loaded helpers directly (already loaded above)
-_are_cousins = _loaded_are_cousins
-_are_siblings = _loaded_are_siblings
-_get_event_info = _loaded_get_event_info
-_get_full_name = _loaded_get_full_name
-_is_aunt_or_uncle = _loaded_is_aunt_or_uncle
-_is_grandchild = _loaded_is_grandchild
-_is_grandparent = _loaded_is_grandparent
-_is_great_grandchild = _loaded_is_great_grandchild
-_is_great_grandparent = _loaded_is_great_grandparent
-_is_niece_or_nephew = _loaded_is_niece_or_nephew
-_are_spouses_orig = _loaded_are_spouses
-
-
-def _are_spouses(person1_id: str, person2_id: str, reader: Any) -> bool:
-    """Wrapper to match expected parameter names."""
-    return _are_spouses_orig(person1_id, person2_id, reader)
-
+from genealogy.gedcom.gedcom_utils import (
+    TAG_BIRTH,
+    TAG_DEATH,
+    TAG_SEX,
+    _are_spouses,
+    _get_event_info,
+    _get_full_name,
+)
+from genealogy.relationship_calculations import (
+    _are_cousins,
+    _are_siblings,
+    _find_direct_relationship,
+    _has_direct_relationship,
+    _is_aunt_or_uncle,
+    _is_grandchild,
+    _is_grandparent,
+    _is_great_grandchild,
+    _is_great_grandparent,
+    _is_niece_or_nephew,
+)
 
 # NOTE: _clean_gedcom_slashes, _format_single_word, and format_name were removed
 # to eliminate duplication. format_name is now imported from utils.py which has
 # a more comprehensive implementation with better handling of name particles,
 # Mc/Mac prefixes, hyphenated names, and quoted nicknames.
-
-
-def _find_direct_relationship(
-    id1: str,
-    id2: str,
-    id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
-) -> list[str]:
-    """
-    Find a direct relationship between two individuals.
-
-    Args:
-        id1: ID of the first individual
-        id2: ID of the second individual
-        id_to_parents: Dictionary mapping individual IDs to their parent IDs
-        id_to_children: Dictionary mapping individual IDs to their child IDs
-
-    Returns:
-        A list of IDs representing the path from id1 to id2, or an empty list if no direct relationship
-    """
-    # Check if id2 is a parent of id1
-    if id2 in id_to_parents.get(id1, set()):
-        return [id1, id2]
-
-    # Check if id2 is a child of id1
-    if id2 in id_to_children.get(id1, set()):
-        return [id1, id2]
-
-    # Check if id1 and id2 are siblings (share at least one parent)
-    parents_1 = id_to_parents.get(id1, set())
-    parents_2 = id_to_parents.get(id2, set())
-    common_parents = parents_1.intersection(parents_2)
-    if common_parents:
-        # Use the first common parent
-        common_parent = next(iter(common_parents))
-        return [id1, common_parent, id2]
-
-    # No direct relationship found
-    return []
-
-
-def _has_direct_relationship(
-    id1: str,
-    id2: str,
-    id_to_parents: dict[str, set[str]],
-    id_to_children: dict[str, set[str]],
-) -> bool:
-    """
-    Check if two individuals have a direct relationship (parent-child, siblings, or spouses).
-
-    Args:
-        id1: ID of the first individual
-        id2: ID of the second individual
-        id_to_parents: Dictionary mapping individual IDs to their parent IDs
-        id_to_children: Dictionary mapping individual IDs to their child IDs
-
-    Returns:
-        True if directly related, False otherwise
-    """
-    # Parent-child relationship
-    if id2 in id_to_parents.get(id1, set()) or id1 in id_to_parents.get(id2, set()):
-        return True
-
-    # Sibling relationship (share at least one parent)
-    parents_1 = id_to_parents.get(id1, set())
-    parents_2 = id_to_parents.get(id2, set())
-    if parents_1 and parents_2 and not parents_1.isdisjoint(parents_2):
-        return True
-
-    # Check for grandparent relationship
-    for parent_id in id_to_parents.get(id1, set()):
-        if id2 in id_to_parents.get(parent_id, set()):
-            return True
-
-    # Check for grandchild relationship
-    return any(id2 in id_to_children.get(child_id, set()) for child_id in id_to_children.get(id1, set()))
 
 
 # --- Relationship Path Finding Functions ---

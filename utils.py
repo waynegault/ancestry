@@ -57,6 +57,8 @@ from urllib.parse import urljoin, urlparse, urlunparse  # urljoin re-exported fo
 from requests import Response as RequestsResponse
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions
+from selenium.webdriver.support.wait import WebDriverWait
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
@@ -510,9 +512,6 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.remote.webdriver import WebDriver
-from selenium.webdriver.support import expected_conditions
-from selenium.webdriver.support.wait import WebDriverWait
 
 # from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
 # Initialize logger with standardized pattern
