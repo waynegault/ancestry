@@ -96,11 +96,11 @@ from actions.gather.api_implementations import (
     fetch_ethnicity_for_batch as _fetch_ethnicity_for_batch,
     needs_ethnicity_refresh as _needs_ethnicity_refresh,
 )
-from actions.gather.logging import (
-    log_api_performance as _log_api_performance,
-)
 from actions.gather.metrics import PageProcessingMetrics
 from actions.gather.orchestrator import GatherConfiguration, GatherOrchestrator
+from actions.gather.performance_logging import (
+    log_api_performance as _log_api_performance,
+)
 from actions.gather.persistence import (
     BatchLookupArtifacts,
     PersistenceHooks,

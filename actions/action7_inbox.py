@@ -176,7 +176,12 @@ class InboxProcessor:
 
     # End of __init__
 
-    # --- Private Helper Methods ---
+    # ==========================================================================
+    # SECTION 1: API & HTTP Request Methods
+    # ==========================================================================
+    # Methods for building API URLs, making HTTP requests, and processing
+    # API responses for conversation data retrieval.
+    # ==========================================================================
 
     @staticmethod
     def _validate_session_prerequisites(session_manager: SessionManager) -> None:
@@ -333,6 +338,13 @@ class InboxProcessor:
             return None, None
 
     # End of _get_all_conversations_api
+
+    # ==========================================================================
+    # SECTION 2: Conversation Parsing & Extraction
+    # ==========================================================================
+    # Methods for parsing conversation data, extracting participant info,
+    # validating message timestamps, and formatting context for AI.
+    # ==========================================================================
 
     @staticmethod
     def _validate_conversation_data(conv_data: Mapping[str, Any]) -> Optional[tuple[str, dict[str, Any]]]:
@@ -623,6 +635,13 @@ class InboxProcessor:
 
     # End of _format_context_for_ai
 
+    # ==========================================================================
+    # SECTION 3: Database Operations
+    # ==========================================================================
+    # Methods for person lookup, creation, and updates in the database.
+    # Includes transaction management and bulk commit operations.
+    # ==========================================================================
+
     @staticmethod
     def _lookup_person_in_db(session: DbSession, profile_id: str, log_ref: str) -> tuple[Optional[Person], bool]:
         """Look up person in database by profile ID.
@@ -877,7 +896,12 @@ class InboxProcessor:
 
     # End of _create_comparator
 
-    # --- Main Public Methods ---
+    # ==========================================================================
+    # SECTION 4: Main Processing Loop & Orchestration
+    # ==========================================================================
+    # Core methods for inbox processing: search_inbox entry point,
+    # loop control, batch processing, and session management.
+    # ==========================================================================
 
     @with_enhanced_recovery(max_attempts=3, base_delay=4.0, max_delay=120.0)
     @selenium_retry()
@@ -1550,6 +1574,13 @@ class InboxProcessor:
         except Exception:
             return label
 
+    # ==========================================================================
+    # SECTION 5: AI Classification & Sentiment Analysis
+    # ==========================================================================
+    # Methods for AI-powered message classification, critical alert detection,
+    # and conversation phase determination (PRODUCTIVE/DESIST/OTHER).
+    # ==========================================================================
+
     def _check_critical_alerts(
         self, context_messages: list[dict[str, Any]], my_pid_lower: str, api_conv_id: str
     ) -> tuple[bool, Optional[str], Optional[CriticalAlertCategory]]:
@@ -1663,6 +1694,13 @@ class InboxProcessor:
         if ai_result is not None:
             return str(ai_result)
         return None
+
+    # ==========================================================================
+    # SECTION 6: Conversation Phase Determination
+    # ==========================================================================
+    # Methods for determining the conversation lifecycle phase based on
+    # message history, sentiment, and engagement patterns.
+    # ==========================================================================
 
     @staticmethod
     def _is_closed_status(ai_sentiment: Optional[str]) -> bool:
@@ -1798,6 +1836,13 @@ class InboxProcessor:
         except Exception as e:
             logger.warning(f"Error determining conversation phase for {conversation_id}: {e}")
             return None
+
+    # ==========================================================================
+    # SECTION 7: Follow-Up Management & Task Creation
+    # ==========================================================================
+    # Methods for analyzing follow-up requirements, determining urgency,
+    # creating reminder tasks, and managing draft replies.
+    # ==========================================================================
 
     @staticmethod
     def _default_follow_up_payload() -> dict[str, Any]:
@@ -2347,6 +2392,13 @@ class InboxProcessor:
             "script_message_status": None,
         }
 
+    # ==========================================================================
+    # SECTION 8: Entity Disambiguation & Clarification
+    # ==========================================================================
+    # Methods for detecting and resolving ambiguous entities in messages,
+    # including people, locations, and relationships.
+    # ==========================================================================
+
     def clarify_ambiguous_intent(
         self,
         user_message: str,
@@ -2492,6 +2544,13 @@ class InboxProcessor:
             return "No ambiguity detected"
 
         return "; ".join(ambiguities)
+
+    # ==========================================================================
+    # SECTION 9: Analytics & Metrics Tracking
+    # ==========================================================================
+    # Methods for recording engagement events, updating conversation metrics,
+    # and tracking message analytics for reporting.
+    # ==========================================================================
 
     @staticmethod
     def _record_event_and_metrics(
@@ -2648,6 +2707,13 @@ class InboxProcessor:
 
         return logs_committed, persons_updated
 
+    # ==========================================================================
+    # SECTION 10: Error Handling & Exception Recovery
+    # ==========================================================================
+    # Methods for handling exceptions, saving partial progress,
+    # and recovering from errors during batch processing.
+    # ==========================================================================
+
     @staticmethod
     def _handle_exception_with_save(
         session: DbSession,
@@ -2728,6 +2794,13 @@ class InboxProcessor:
         if db_log:
             return safe_column_value(db_log, "latest_timestamp") or min_aware_dt
         return min_aware_dt
+
+    # ==========================================================================
+    # SECTION 11: Message Processing (Inbound & Outbound)
+    # ==========================================================================
+    # Methods for processing individual messages, both incoming (IN) and
+    # outgoing (OUT), including classification and database updates.
+    # ==========================================================================
 
     def _process_in_message(
         self,
@@ -2931,6 +3004,13 @@ class InboxProcessor:
         if self.max_inbox_limit > 0 and items_processed >= self.max_inbox_limit:
             return True, f"Inbox Limit ({self.max_inbox_limit})"
         return False, None
+
+    # ==========================================================================
+    # SECTION 12: Batch Processing & Conversation Orchestration
+    # ==========================================================================
+    # High-level methods for processing conversation batches, coordinating
+    # individual conversation processing, and managing batch commits.
+    # ==========================================================================
 
     def _process_single_conversation(
         self,
@@ -3201,7 +3281,11 @@ class InboxProcessor:
 
         return False, None
 
-    # --- Public Methods (for testing or external use) ---
+    # ==========================================================================
+    # SECTION 13: Public Test Interface
+    # ==========================================================================
+    # Public methods exposed for testing and external integration.
+    # ==========================================================================
 
     def test_process_single_batch_iteration(
         self,

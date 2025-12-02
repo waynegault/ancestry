@@ -1282,6 +1282,18 @@ LOG_LEVEL=INFO  # DEBUG for detailed logging
 TEST_PROFILE_ID=your_test_profile_id  # For Action 0 (delete test)
 ```
 
+#### Optional: Security & Privacy
+
+```env
+PII_REDACTION_ENABLED=false  # Set to true to redact PII from log files
+# When enabled, redacts:
+#   - Email addresses → [REDACTED_EMAIL]
+#   - Profile IDs → ab*******yz (partial masking)
+#   - UUIDs → 1234****-****-****-****-********9012 (partial masking)
+#   - Phone numbers → [REDACTED_PHONE]
+#   - Display names → [REDACTED_NAME]
+```
+
 ### Configuration Schema (`config/config_schema.py`)
 
 Type-safe configuration with dataclass validation:

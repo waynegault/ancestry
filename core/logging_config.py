@@ -344,6 +344,18 @@ def setup_logging(
     file_handler = logging.FileHandler(log_file_for_handler, mode="a", encoding="utf-8")
     file_handler.setFormatter(file_formatter)
     file_handler.setLevel(numeric_log_level)
+
+    # Add PII redaction filter to file handler (enabled via PII_REDACTION_ENABLED env var)
+    try:
+        from core.pii_redaction import PIIRedactionFilter
+
+        pii_filter = PIIRedactionFilter()  # Reads from env var
+        file_handler.addFilter(pii_filter)
+        if pii_filter.enabled:
+            logger_for_setup.debug("PII redaction enabled for file logging")
+    except ImportError:
+        pass  # PII redaction module not available - continue without it
+
     root_logger.addHandler(file_handler)
 
     # Configure Console Handler

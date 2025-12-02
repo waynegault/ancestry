@@ -10,7 +10,7 @@ from urllib.parse import urljoin
 import requests
 from requests.exceptions import ConnectionError
 
-from actions.gather.logging import log_api_performance
+from actions.gather.performance_logging import log_api_performance
 from api.api_constants import API_PATH_PROFILE_DETAILS
 from caching.cache import cache as disk_cache
 from config import config_schema
