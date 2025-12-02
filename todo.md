@@ -41,6 +41,6 @@
 
 - [x] **Modularize action6_gather.py**: Extracted API implementations → `actions/gather/api_implementations.py` and logging → `actions/gather/performance_logging.py`.
 - [x] **Organize action7_inbox.py**: Added 13 section headers organizing 100+ methods into logical groups (API, Parsing, DB, Processing Loop, AI, Phase, Follow-up, Disambiguation, Analytics, Error Handling, Message Processing, Batch Processing, Public API).
-- [ ] **Refactor Orchestration**: Simplify `_process_single_page` in `actions/gather/orchestrator.py`.
+- [x] **Refactor Orchestration**: `_process_single_page` in `actions/gather/orchestrator.py` already modular with 10 clear helper methods (session health, validation, fetch, fast-skip, batch processing, state update, logging, metrics).
 - [x] **Centralize Menu Logic**: Use data-driven registry for menu actions.
 - [x] **Security**: Implement PII redaction in logs (`PII_REDACTION_ENABLED` env var, see `core/pii_redaction.py`).
