@@ -220,9 +220,9 @@ def get_status_message() -> str:
     return "❌ Grafana Not Installed (run setup)"
 
 
-def ensure_dashboards_imported() -> bool:
+def ensure_dashboards_imported(force: bool = False) -> bool:
     """
-    Check if dashboards are imported and import them if missing
+    Check if dashboards are imported and import them if missing or forced
     Returns True if all dashboards are present or successfully imported
     """
     if not is_grafana_running():
@@ -248,58 +248,61 @@ def ensure_dashboards_imported() -> bool:
 
     imported_count = 0
     for uid, filename in required_dashboards:
-        try:
-            # Check if dashboard exists
-            check_req = urllib.request.Request(f"http://localhost:3000/api/dashboards/uid/{uid}", headers=headers)
-            urllib.request.urlopen(check_req, timeout=2)
-            logger.debug(f"Dashboard {uid} already exists")
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                # Dashboard missing, try to import
-                logger.info(f"Importing dashboard: {filename}")
-                dashboard_path = dashboards_dir / filename
-                if not dashboard_path.exists():
-                    logger.warning(f"Dashboard file not found: {dashboard_path}")
-                    continue
+        should_import = force
+        if not should_import:
+            try:
+                # Check if dashboard exists
+                check_req = urllib.request.Request(f"http://localhost:3000/api/dashboards/uid/{uid}", headers=headers)
+                urllib.request.urlopen(check_req, timeout=2)
+                logger.debug(f"Dashboard {uid} already exists")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    should_import = True
+                else:
+                    logger.debug(f"Error checking dashboard {uid}: {e}")
 
-                try:
-                    with dashboard_path.open(encoding="utf-8") as f:
-                        dashboard_json = json.load(f)
+        if should_import:
+            # Dashboard missing or forced update, try to import
+            logger.info(f"Importing dashboard: {filename}")
+            dashboard_path = dashboards_dir / filename
+            if not dashboard_path.exists():
+                logger.warning(f"Dashboard file not found: {dashboard_path}")
+                continue
 
-                    import_payload = {
-                        "dashboard": dashboard_json,
-                        "overwrite": True,
-                        "inputs": [
-                            {
-                                "name": "DS_PROMETHEUS",
-                                "type": "datasource",
-                                "pluginId": "prometheus",
-                                "value": "Prometheus",
-                            },
-                            {
-                                "name": "DS_SQLITE",
-                                "type": "datasource",
-                                "pluginId": "frser-sqlite-datasource",
-                                "value": "SQLite",
-                            },
-                        ],
-                    }
+            try:
+                with dashboard_path.open(encoding="utf-8") as f:
+                    dashboard_json = json.load(f)
 
-                    import_req = urllib.request.Request(
-                        "http://localhost:3000/api/dashboards/import",
-                        data=json.dumps(import_payload).encode("utf-8"),
-                        headers=headers,
-                        method="POST",
-                    )
-                    urllib.request.urlopen(import_req, timeout=5)
-                    logger.info(f"✓ Successfully imported {filename}")
-                    imported_count += 1
-                except Exception as import_error:
-                    logger.warning(f"Failed to import {filename}: {import_error}")
-            else:
-                logger.debug(f"Error checking dashboard {uid}: {e}")
-        except Exception as check_error:
-            logger.debug(f"Dashboard check error for {uid}: {check_error}")
+                import_payload = {
+                    "dashboard": dashboard_json,
+                    "overwrite": True,
+                    "inputs": [
+                        {
+                            "name": "DS_PROMETHEUS",
+                            "type": "datasource",
+                            "pluginId": "prometheus",
+                            "value": "Prometheus",
+                        },
+                        {
+                            "name": "DS_SQLITE",
+                            "type": "datasource",
+                            "pluginId": "frser-sqlite-datasource",
+                            "value": "SQLite",
+                        },
+                    ],
+                }
+
+                import_req = urllib.request.Request(
+                    "http://localhost:3000/api/dashboards/import",
+                    data=json.dumps(import_payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST",
+                )
+                urllib.request.urlopen(import_req, timeout=5)
+                logger.info(f"✓ Successfully imported {filename}")
+                imported_count += 1
+            except Exception as import_error:
+                logger.warning(f"Failed to import {filename}: {import_error}")
 
     if imported_count > 0:
         logger.info(f"Imported {imported_count} dashboard(s)")

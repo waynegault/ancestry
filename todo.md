@@ -32,7 +32,7 @@
 - [x] **GitHub Actions**
   - Add `quality_regression_gate.py` to CI pipeline.
   - Set up automated test runs on Pull Requests.
-- [ ] **Deployment**
+- [x] **Deployment**
   - Configure automated Grafana dashboard deployment.
 
 ## 4. Refactoring & Technical Debt
