@@ -989,20 +989,28 @@ def _test_toggle_log_level_switches_levels() -> bool:
         )
         stream_handler.setLevel(logging.INFO)
 
-        with mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup:
+        with (
+            mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup,
+            mock.patch("os.system") as mock_system,
+        ):
             helper.toggle_log_level()
             patched_setup.assert_called_once()
             kwargs = patched_setup.call_args.kwargs
             assert kwargs["log_level"] == "DEBUG"
             assert kwargs["allow_env_override"] is False
+            mock_system.assert_called()
 
         stream_handler.setLevel(logging.DEBUG)
-        with mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup:
+        with (
+            mock.patch.object(sys.modules[__name__], "setup_logging") as patched_setup,
+            mock.patch("os.system") as mock_system,
+        ):
             helper.toggle_log_level()
             patched_setup.assert_called_once()
             kwargs = patched_setup.call_args.kwargs
             assert kwargs["log_level"] == "INFO"
             assert kwargs["allow_env_override"] is False
+            mock_system.assert_called()
     finally:
         _teardown_test_logger(logger)
     return True
@@ -1015,6 +1023,7 @@ def _test_toggle_log_level_switches_levels() -> bool:
 
 def module_tests() -> bool:
     suite = TestSuite("cli.maintenance", "cli/maintenance.py")
+    suite.start_suite()
 
     suite.run_test(
         "Format cache stat values",

@@ -21,10 +21,10 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - [Implementation Roadmap](todo.md) - Current status, remaining tasks, and next actions
 
 **Architecture & Design:**
-- [Codebase Assessment](docs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities
-- [Data Flow Map](docs/data_flow_map.md) - Visual and textual tracing of critical data paths
-- [Tech Stack Catalog](docs/tech_stack.md) - Dependencies and infrastructure stability
-- [Gap Analysis](docs/gap_analysis.md) - Analysis of feature gaps and technical debt
+- [Codebase Assessment](docs/specs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities
+- [Data Flow Map](docs/specs/data_flow_map.md) - Visual and textual tracing of critical data paths
+- [Tech Stack Catalog](docs/specs/tech_stack.md) - Dependencies and infrastructure stability
+- [Gap Analysis](docs/specs/gap_analysis.md) - Analysis of feature gaps and technical debt
 
 **Technical Specifications:**
 - [Reply Management System](docs/specs/reply_management.md) - Conversation state machine design
@@ -34,7 +34,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - [Human-in-the-Loop](docs/specs/human_in_the_loop.md) - Approval queue and safety controls
 
 **Operations:**
-- [Operator Manual](docs/operator_manual.md) - Review queue CLI, approval workflow, emergency controls
+- [Operator Manual](docs/specs/operator_manual.md) - Review queue CLI, approval workflow, emergency controls
 
 ### Architecture Highlights
 
@@ -43,6 +43,37 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
 - **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
+
+## Tech Stack
+
+### Core Dependencies
+
+| Component | Technology | Version | Purpose |
+|-----------|------------|---------|---------|
+| **Language** | Python | 3.13+ | Core runtime |
+| **ORM** | SQLAlchemy | 2.0.36+ | Database abstraction, connection pooling |
+| **Browser** | Selenium | 4.27.1+ | Web automation, JavaScript execution |
+| **API Client** | Requests | 2.32.3+ | HTTP client for internal APIs |
+| **Parsing** | BeautifulSoup4 | 4.12.3+ | HTML parsing and extraction |
+| **AI Provider** | Google GenAI | 0.8.3+ | Primary LLM interface (Gemini) |
+| **Testing** | Pytest | 8.3.4+ | Test runner and fixtures |
+
+### Infrastructure
+
+| Component | Implementation | Key Features |
+|-----------|----------------|--------------|
+| **Database** | SQLite | Zero-config, file-based, relational |
+| **Rate Limiter** | Token Bucket | Thread-safe, adaptive backoff (0.3 RPS) |
+| **Session** | Singleton | Centralized resource management |
+| **Logging** | Standard Lib | Rotating file logs, correlation IDs |
+| **Config** | Pydantic/Dataclasses | Type-safe environment validation |
+
+### Development Tools
+
+- **Linting**: Ruff (0.8.2+) - Fast, comprehensive linting
+- **Type Checking**: Pyright (1.1.389+) - Static type analysis
+- **Formatting**: Black (via Ruff) - Code style enforcement
+- **Version Control**: Git - Source code management
 
 ## Quick Start
 
@@ -130,7 +161,105 @@ graph TD
     I -->|Shared Matches| N[Action 13: Shared Matches]
 ```
 
+## Operator Manual
+
+### CLI Command Reference
+
+The system is controlled via a numbered menu in `main.py`.
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| **5** | Check Login | Validates session cookies and API connectivity. Run this first. |
+| **6** | Gather Matches | Scrapes DNA matches. Supports `6 <page>` to start from specific page. |
+| **7** | Process Inbox | Scrapes messages, runs AI classification, extracts facts. |
+| **8** | Send Messages | (Draft Mode) Generates drafts for review. |
+| **9** | Process Tasks | Converts productive conversations into To-Do tasks. |
+| **10** | Tree Search | Search for people in GEDCOM or Ancestry API. |
+| **12** | Triangulation | Analyze shared matches for common ancestors. |
+| **13** | Shared Matches | Fetch shared matches for high-value targets. |
+| **Q** | Review Queue | Open the Human-in-the-Loop review interface. |
+| **V** | Validate | Run dry-run validation on historical data. |
+
+### Review Queue Workflow
+
+For managing AI-generated message drafts:
+
+1. **Access Queue**: Press `Q` in the main menu.
+2. **List Drafts**: `list` - Shows pending drafts with ID, Recipient, and Score.
+3. **Review Draft**: `review <id>` - Shows full context (thread, draft, reasoning).
+4. **Decisions**:
+   - `approve` - Queues for sending.
+   - `reject` - Discards draft.
+   - `edit` - Opens editor to modify content.
+   - `wait` - Defers for later.
+
+### Emergency Controls
+
+If the system behaves unexpectedly:
+
+- **Stop Immediately**: `Ctrl+C` in the terminal. The `SessionManager` handles graceful shutdown.
+- **Force Session Reset**: Delete `ancestry_cookies.pkl` and `ancestry_session.json` in root.
+- **Clear Cache**: Delete `Cache/` directory to force fresh API fetches.
+- **Database Rollback**: Restore from `ancestry.db.bak` (created daily).
+
 ## Architecture
+
+### Data Flow
+
+#### High-Level System Flow
+
+```mermaid
+graph TD
+    User[User] -->|CLI Commands| Main[Main Menu]
+    Main -->|Select Action| Session[SessionManager]
+
+    subgraph "Core Infrastructure"
+        Session -->|Orchestrates| Browser[Browser Manager]
+        Session -->|Orchestrates| API[API Manager]
+        Session -->|Orchestrates| DB[Database Manager]
+        API -->|Rate Limited| Limiter[Rate Limiter]
+    end
+
+    subgraph "External Systems"
+        Browser -->|Selenium| AncestryWeb[Ancestry.com Web]
+        API -->|Requests| AncestryAPI[Ancestry.com API]
+        API -->|GenAI SDK| Gemini[Google Gemini]
+    end
+
+    subgraph "Data Storage"
+        DB -->|SQLAlchemy| SQLite[(SQLite DB)]
+        API -->|Cache| FileCache[File System Cache]
+    end
+```
+
+#### Inbox Processing Flow (Action 7)
+
+```mermaid
+sequenceDiagram
+    participant Main
+    participant A7 as Action 7
+    participant Scraper as Inbox Scraper
+    participant AI as AI Interface
+    participant DB as Database
+
+    Main->>A7: Execute
+    A7->>Scraper: Fetch Conversations
+    Scraper->>DB: Check Existing
+    Scraper-->>A7: New Messages
+
+    loop For Each Message
+        A7->>AI: Classify Intent
+        AI-->>A7: Intent (PRODUCTIVE, etc.)
+
+        alt is PRODUCTIVE
+            A7->>AI: Extract Facts
+            AI-->>A7: Entities (Names, Dates)
+            A7->>DB: Store Conversation & Facts
+        else is DESIST
+            A7->>DB: Flag Opt-Out
+        end
+    end
+```
 
 ### Core Components
 

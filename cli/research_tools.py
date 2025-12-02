@@ -447,7 +447,6 @@ class ResearchToolsCLI:
 
         try:
             from core.session_utils import get_session_manager
-            from database import ConflictStatusEnum, Person
 
             session_manager = get_session_manager()
             if not session_manager:
@@ -470,58 +469,65 @@ class ResearchToolsCLI:
                 print(f"\n🔍 Found {len(conflicts)} open conflicts.")
                 print("=" * 60)
 
-                for i, conflict in enumerate(conflicts, 1):
-                    person = session.query(Person).filter(Person.id == conflict.people_id).first()
-                    person_name = person.display_name if person else f"Person #{conflict.people_id}"
-
-                    print(f"\nConflict {i}/{len(conflicts)}")
-                    print(f"Person:   {person_name}")
-                    print(f"Field:    {conflict.field_name}")
-                    print(f"Existing: {conflict.existing_value}")
-                    print(f"New:      {conflict.new_value}")
-                    print(f"Source:   {conflict.source}")
-                    print("-" * 30)
-
-                    print("Actions:")
-                    print("  [a] Accept New (Update Database)")
-                    print("  [k] Keep Existing (Reject New)")
-                    print("  [i] Ignore (Skip for now)")
-                    print("  [q] Quit")
-
-                    choice = input("Select action: ").strip().lower()
-
-                    if choice == "q":
-                        break
-
-                    if choice == "a":
-                        detector.resolve_conflict(
-                            session,
-                            conflict.id,
-                            ConflictStatusEnum.RESOLVED,
-                            apply_new_value=True,
-                            resolved_by="user_cli",
-                        )
-                        print("✅ Updated database with new value.")
-                    elif choice == "k":
-                        detector.resolve_conflict(
-                            session,
-                            conflict.id,
-                            ConflictStatusEnum.RESOLVED,
-                            apply_new_value=False,
-                            resolution_notes="User rejected new value",
-                            resolved_by="user_cli",
-                        )
-                        print("✅ Kept existing value.")
-                    elif choice == "i":
-                        print("Skipped.")
-                    else:
-                        print("Invalid choice, skipping.")
-
-                    session.commit()
+                self._process_conflicts(session, conflicts, detector)
 
         except Exception as e:
             logger.error(f"Conflict resolution failed: {e}")
             print(f"❌ Error: {e}")
+
+    @staticmethod
+    def _process_conflicts(session: Any, conflicts: list[Any], detector: Any) -> None:
+        """Process a list of conflicts interactively."""
+        from database import ConflictStatusEnum, Person
+
+        for i, conflict in enumerate(conflicts, 1):
+            person = session.query(Person).filter(Person.id == conflict.people_id).first()
+            person_name = person.display_name if person else f"Person #{conflict.people_id}"
+
+            print(f"\nConflict {i}/{len(conflicts)}")
+            print(f"Person:   {person_name}")
+            print(f"Field:    {conflict.field_name}")
+            print(f"Existing: {conflict.existing_value}")
+            print(f"New:      {conflict.new_value}")
+            print(f"Source:   {conflict.source}")
+            print("-" * 30)
+
+            print("Actions:")
+            print("  [a] Accept New (Update Database)")
+            print("  [k] Keep Existing (Reject New)")
+            print("  [i] Ignore (Skip for now)")
+            print("  [q] Quit")
+
+            choice = input("Select action: ").strip().lower()
+
+            if choice == "q":
+                break
+
+            if choice == "a":
+                detector.resolve_conflict(
+                    session,
+                    conflict.id,
+                    ConflictStatusEnum.RESOLVED,
+                    apply_new_value=True,
+                    resolved_by="user_cli",
+                )
+                print("✅ Updated database with new value.")
+            elif choice == "k":
+                detector.resolve_conflict(
+                    session,
+                    conflict.id,
+                    ConflictStatusEnum.RESOLVED,
+                    apply_new_value=False,
+                    resolution_notes="User rejected new value",
+                    resolved_by="user_cli",
+                )
+                print("✅ Kept existing value.")
+            elif choice == "i":
+                print("Skipped.")
+            else:
+                print("Invalid choice, skipping.")
+
+            session.commit()
 
 
 # ------------------------------------------------------------------

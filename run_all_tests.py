@@ -339,6 +339,10 @@ class TestResultCache:
         if not cached_entry.get("success", False):
             return False  # Always re-run failed tests
 
+        # Ensure we have necessary data to report results
+        if "test_count" not in cached_entry:
+            return False
+
         # Check if file has changed
         current_hash = cls.get_module_hash(module_name)
         cached_hash = cached_entry.get("file_hash")
@@ -1705,35 +1709,102 @@ def _execute_tests(
         )
         results = [(m.module_name, config.module_descriptions.get(m.module_name, ""), m.success) for m in all_metrics]
     else:
-        print("🔄 Running tests sequentially...")
-        sys.stdout.flush()
-        results: list[tuple[str, str, bool]] = []
-        all_metrics: list[TestExecutionMetrics] = []
-        total_tests_run = 0
-        passed_count = 0
+        results, all_metrics, total_tests_run, passed_count = _run_tests_sequentially(config)
 
-        for i, (module_name, description) in enumerate(config.modules_with_descriptions, 1):
-            print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
+    return results, all_metrics, total_tests_run, passed_count
+
+
+def _process_cached_module(
+    cached_entry: dict[str, Any],
+    all_metrics: list[TestExecutionMetrics],
+) -> int:
+    """Process a cached module and return test count."""
+    test_count = cached_entry.get("test_count", 0)
+    metrics_data = cached_entry.get("metrics")
+
+    if metrics_data:
+        # Reconstruct QualityMetrics if present
+        qm_data = metrics_data.get("quality_metrics")
+        qm = QualityMetrics(**qm_data) if qm_data else None
+
+        # Create metrics object
+        metrics_args = metrics_data.copy()
+        if "quality_metrics" in metrics_args:
+            del metrics_args["quality_metrics"]
+
+        metrics = TestExecutionMetrics(quality_metrics=qm, **metrics_args)
+        all_metrics.append(metrics)
+
+    return test_count
+
+
+def _run_tests_sequentially(
+    config: TestExecutionConfig,
+) -> tuple[list[tuple[str, str, bool]], list[TestExecutionMetrics], int, int]:
+    """Run tests sequentially with caching support."""
+    print("🔄 Running tests sequentially...")
+    sys.stdout.flush()
+    results: list[tuple[str, str, bool]] = []
+    all_metrics: list[TestExecutionMetrics] = []
+    total_tests_run = 0
+    passed_count = 0
+
+    # Load test result cache
+    test_cache = TestResultCache.load_cache()
+    cache_hits = 0
+
+    for i, (module_name, description) in enumerate(config.modules_with_descriptions, 1):
+        # Check cache
+        if TestResultCache.should_skip_module(module_name, test_cache):
+            cached_entry = test_cache[module_name]
+            print(f"⏩ [{i:2d}/{len(config.discovered_modules)}] Skipping: {module_name} (Unchanged)")
             sys.stdout.flush()
 
-            # Track test execution start time
-            start_time = time.time()
-
-            # Always collect metrics for quality summary (not just when monitoring enabled)
-            success, test_count, metrics = run_module_tests(
-                module_name, description, enable_monitoring=True, coverage=config.enable_benchmark
-            )
-
-            # Update test history for smart ordering
-            duration = time.time() - start_time
-            update_test_history(module_name, duration, success)
+            # Use cached results
+            test_count = _process_cached_module(cached_entry, all_metrics)
 
             total_tests_run += test_count
-            if success:
-                passed_count += 1
-            if metrics:
-                all_metrics.append(metrics)
-            results.append((module_name, description or f"Tests for {module_name}", success))
+            passed_count += 1
+            results.append((module_name, description or f"Tests for {module_name}", True))
+            cache_hits += 1
+            continue
+
+        print(f"\n🧪 [{i:2d}/{len(config.discovered_modules)}] Testing: {module_name}")
+        sys.stdout.flush()
+
+        # Track test execution start time
+        start_time = time.time()
+
+        # Always collect metrics for quality summary (not just when monitoring enabled)
+        success, test_count, metrics = run_module_tests(
+            module_name, description, enable_monitoring=True, coverage=config.enable_benchmark
+        )
+
+        # Update test history for smart ordering
+        duration = time.time() - start_time
+        update_test_history(module_name, duration, success)
+
+        # Update cache if successful
+        if success:
+            test_cache[module_name] = {
+                "file_hash": TestResultCache.get_module_hash(module_name),
+                "success": True,
+                "test_count": test_count,
+                "metrics": asdict(metrics) if metrics else None,
+            }
+
+        total_tests_run += test_count
+        if success:
+            passed_count += 1
+        if metrics:
+            all_metrics.append(metrics)
+        results.append((module_name, description or f"Tests for {module_name}", success))
+
+    # Save cache
+    if cache_hits > 0 or passed_count > 0:
+        TestResultCache.save_cache(test_cache)
+        if cache_hits > 0:
+            print(f"\n⚡ Skipped {cache_hits} unchanged modules using cache")
 
     return results, all_metrics, total_tests_run, passed_count
 

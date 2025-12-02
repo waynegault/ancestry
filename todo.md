@@ -10,153 +10,9 @@ All core development sprints (1-4) are **COMPLETE**. Recent integration work (De
 
 ---
 
-## 🔴 Critical - Issues Discovered in Testing (Jan 2025)
 
-### Action 13 Crash (API Method Mismatch)
-**Status**: ✅ FIXED
-**Symptoms**: `AttributeError: 'APIManager' object has no attribute 'get'` in `action13_shared_matches.py`.
-**Root Cause**: `APIManager` was refactored to use `request()` but Action 13 still calls legacy `.get()` method.
-**Remedial Actions**:
-- [x] Update `action13_shared_matches.py` to use `session_manager.api_manager.request(method="GET", ...)` instead of `.get()`.
 
-### Action 7 DB Pool Exhaustion & Intent Classification
-**Status**: ✅ FIXED
-**Symptoms**:
-- `TimeoutError: QueuePool limit of size 10 overflow 10 reached` in `action7_inbox.py`.
-- Repeated "SOCIAL" classification for messages, which seems odd/over-aggressive.
-**Root Cause**:
-- DB sessions likely not being closed properly in `action7_inbox.py` loops.
-- Intent classification prompt or logic might need tuning.
-**Remedial Actions**:
-- [x] Audit `action7_inbox.py` for proper DB session management (ensure `session.close()` or context managers are used).
-- [x] Review `ai_prompts.json` for "intent_classification" and adjust if necessary to reduce false positive "SOCIAL" labels.
-- [x] Improve logging in Action 7 to show *why* a message was classified as SOCIAL (Added context logging in `ai_interface.py`).
 
-### Action 12 Target Lookup Failure
-**Status**: ✅ FIXED
-**Symptoms**: "Target person not found: 123" when running Action 12.
-**Root Cause**: Action 12 uses a simplistic/hardcoded lookup that fails to find people.
-**Remedial Actions**:
-- [x] Port the robust "search and score" mechanism from `action10.py` (`run_gedcom_then_api_fallback` logic) to `action12_triangulation.py`.
-- [x] Ensure Action 12 can identify a target person by name/ID similar to Action 10.
-
-### Logging Improvements
-**Status**: ✅ FIXED
-**Symptoms**: User finds info level logging unclear/unhelpful.
-**Remedial Actions**:
-- [x] Review and enhance INFO level logging across Actions 7, 12, 13 to be more descriptive and actionable.
-
-### Database Connection Pool Exhaustion
-
-**Status**: ✅ FIXED (Dec 2025)
-
-**Symptoms**:
-```
-TimeoutError: QueuePool limit of size 10 overflow 5 reached, connection timed out, timeout 45.00
-```
-
-**Root Cause**: Connection pool exhausted during high-concurrency inbox processing
-
-**Fix Applied**:
-- [x] Increased base pool size from 10 to 20 in `core/database_manager.py`
-- [x] Increased max_overflow from 30% to 50% of pool size
-- [x] Increased pool_timeout from 45s to 60s
-
-**Files Modified**:
-- `core/database_manager.py` - Pool configuration (lines 149-151, 488-492)
-
----
-
-### Cache Module Import Errors
-
-**Status**: ✅ FIXED (Dec 2025)
-
-**Symptoms**:
-```
-ModuleNotFoundError: No module named 'disk_cache'
-ModuleNotFoundError: No module named 'gedcom_cache'
-ModuleNotFoundError: No module named 'tree_stats_cache'
-ModuleNotFoundError: No module named 'performance_cache'
-ModuleNotFoundError: No module named 'cache_retention'
-```
-
-**Root Cause**: Import paths not using correct module prefix
-
-**Fix Applied**:
-- [x] `disk_cache` → `caching.cache`
-- [x] `gedcom_cache` → `genealogy.gedcom.gedcom_cache`
-- [x] `tree_stats_cache` → `genealogy.tree_stats_utils`
-- [x] `performance_cache` → `performance.performance_cache`
-- [x] `cache_retention` → `caching.cache_retention`
-
-**Files Modified**:
-- `core/cache_registry.py` - All `_lazy_call` paths corrected
-
----
-
-### AI Classification Missing Intent
-
-**Status**: ✅ FIXED (Dec 2025)
-
-**Symptoms**:
-```
-WARNING: AI returned unexpected classification: 'SOCIAL'. Defaulting to OTHER.
-```
-
-**Root Cause**: AI model returns 'SOCIAL' label not defined in validation set
-
-**Fix Applied**:
-- [x] Added 'SOCIAL' to `EXPECTED_INTENT_CATEGORIES` in `ai/ai_interface.py`
-
-**Files Modified**:
-- `ai/ai_interface.py` - Added SOCIAL to valid intent categories (line 215)
-
----
-
-### Session Cookie Recovery
-
-**Status**: ✅ FIXED (Jan 2025)
-
-**Symptoms**:
-```
-ERROR: Essential cookies not found: ['OptanonConsent', 'trees']
-ERROR: Cannot fetch shared matches: session not ready
-```
-
-**Root Cause**: Actions 12, 13 require browser session but cookies expire or aren't available
-
-**Fix Applied**:
-- [x] Added Action 13 (`fetch_shared_matches`, `shared_match`) to cookie check skip patterns
-- [x] Action 12 already uses `browser_requirement=NONE` (database-only operation)
-- [x] Add graceful degradation: return "session required" instead of crash
-- [x] Implement cookie refresh flow when essential cookies missing
-
-**Files Modified**:
-- `core/session_validator.py` - Added Action 13 to skip patterns; Added auto-refresh logic for missing cookies
-- `core/action_registry.py` - Action 12 already correctly configured
-
----
-
-### Safety Check Logging
-
-**Status**: ✅ FIXED (Dec 2025)
-
-**Symptoms**:
-```
-INFO: Safety check failed for message: User requested opt-out
-```
-
-**Analysis**: This is CORRECT behavior - opt-out detection is working
-
-**Fix Applied**:
-- [x] Changed opt-out detection log to INFO level with clearer message
-- [x] Differentiated between opt-out (expected) and other safety flags (warning)
-- [x] New message: "Opt-out detected for {sender_id}: skipping automated response"
-
-**Files Modified**:
-- `messaging/inbound.py` - Improved safety check logging clarity
-
----
 
 ## High Priority - Pre-Production Validation
 
@@ -241,53 +97,17 @@ These modules are fully implemented and tested and have been integrated into the
 
 ---
 
-## Completed Milestones
 
-### Sprint 1: Core Intelligence & Retrieval ✅
-- TreeQueryService with fuzzy matching
-- Context Builder for rich AI prompts
-- GEDCOM data caching and querying
-
-### Sprint 2: Reply Processing & Classification ✅
-- Enhanced intent classification with guardrails
-- Fact Extraction 2.0 with standardized objects
-- Critical alert detection (regex + AI)
-
-### Sprint 3: Response Generation & Validation ✅
-- RAG Response Generator connecting to TreeQueryService
-- Data Validation Pipeline with conflict detection
-- SuggestedFact persistence with review status
-
-### Sprint 4: Engagement & Safeguards ✅
-- Human-in-the-Loop Review Queue
-- A/B Testing Framework
-- Multi-layer Opt-out Detection
-- End-to-end integration tests
-
-### Phase 1: Codebase Assessment ✅
-- Module audits (action7, action9, action10)
-- Data flow mapping
-- Tech stack catalog
-- Gap analysis
-
-### Phase 2: Technical Specification ✅
-- Reply Management System design
-- Automated Response Engine architecture
-- Data Validation Pipeline spec
-- Engagement Optimization framework
-- Human-in-the-Loop safeguards
-
----
 
 ## Quick Reference: Key Documentation
 
 | Document | Purpose |
 |----------|---------|
-| `docs/codebase_assessment.md` | Detailed audit of core modules |
-| `docs/data_flow_map.md` | Visual data flow diagrams |
-| `docs/gap_analysis.md` | Missing features analysis |
-| `docs/operator_manual.md` | Review queue operations guide |
-| `docs/tech_stack.md` | Dependencies and infrastructure |
+| `docs/specs/codebase_assessment.md` | Detailed audit of core modules |
+| `docs/specs/data_flow_map.md` | Visual data flow diagrams |
+| `docs/specs/gap_analysis.md` | Missing features analysis |
+| `docs/specs/operator_manual.md` | Review queue operations guide |
+| `docs/specs/tech_stack.md` | Dependencies and infrastructure |
 | `docs/specs/data_validation_pipeline.md` | Fact validation technical spec |
 | `docs/specs/engagement_optimization.md` | A/B testing schema |
 | `docs/specs/human_in_the_loop.md` | Approval workflow spec |
@@ -316,3 +136,11 @@ These modules are fully implemented and tested and have been integrated into the
 - [ ] **Modularize Large Actions**: Split `action6_gather.py` (6400+ lines) and `action7_inbox.py` (4200+ lines) into smaller, domain-specific sub-modules (e.g., `actions/action6/database.py`, `actions/action6/api.py`).
 - [ ] **Centralize Menu Logic**: Refactor `main.py` to use a data-driven registry for menu actions instead of manual `set_action_function` calls, reducing metadata duplication.
 - [ ] **Async/Sync Bridging**: Review `DatabaseManager` usage to minimize thread-pool switching overhead and evaluate native async driver support for future scaling.
+- [ ] **Centralize GEDCOM Access**: Enforce a single entry point (`GedcomService`) for all GEDCOM operations, removing duplication in `action10.py` and `gedcom_utils.py`.
+- [ ] **Shared Domain Models**: Move Pydantic models from `action9` to `core/models/` to allow reuse across actions.
+
+### Security Enhancements
+
+- [ ] **PII Redaction**: Implement `logging.Filter` to mask emails/phones in `app.log`.
+- [ ] **Telemetry Privacy**: Hash `scoring_inputs` in `prompt_telemetry.py` to prevent PII leakage in `Logs/prompt_experiments.jsonl`.
+- [ ] **Opt-Out Hardening**: Introduce `force_stop` flag for immediate blocking, independent of acknowledgment logic.
