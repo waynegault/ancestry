@@ -52,18 +52,16 @@ if str(_project_root) not in sys.path:
 import logging
 
 from genealogy.relationship_calculations import (
-    _are_cousins,
-    _are_siblings,
-    _find_direct_relationship,
-    _has_direct_relationship,
-    _is_ancestor_at_generation,
-    _is_aunt_or_uncle,
-    _is_descendant_at_generation,
-    _is_grandchild,
-    _is_grandparent,
-    _is_great_grandchild,
-    _is_great_grandparent,
-    _is_niece_or_nephew,
+    are_cousins,
+    are_siblings,
+    find_direct_relationship,
+    has_direct_relationship,
+    is_aunt_or_uncle,
+    is_grandchild,
+    is_grandparent,
+    is_great_grandchild,
+    is_great_grandparent,
+    is_niece_or_nephew,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,7 +239,7 @@ def extract_and_fix_id(raw_id: Any) -> Optional[str]:
     return normalize_id(id_to_normalize)
 
 
-# Helper functions for _get_full_name
+# Helper functions for get_full_name
 
 
 def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[GedcomIndividualType], str]:
@@ -250,7 +248,7 @@ def _validate_individual_type(indi: GedcomIndividualType) -> tuple[Optional[Gedc
         wrapped_value = getattr(indi, "value", None)
         if _is_individual(wrapped_value):
             return cast(GedcomIndividualType, wrapped_value), ""
-        logger.warning(f"_get_full_name called with non-Individual type: {type(indi)}")
+        logger.warning(f"get_full_name called with non-Individual type: {type(indi)}")
         return None, "Unknown (Invalid Type)"
 
     if indi is None:
@@ -346,7 +344,7 @@ def _clean_and_format_name(formatted_name: Optional[str], name_source: str) -> s
     return f"Unknown ({name_source} Error)"
 
 
-def _get_full_name(indi: GedcomIndividualType) -> str:
+def get_full_name(indi: GedcomIndividualType) -> str:
     """Safely gets formatted name, checking for .format method. V3"""
     # Validate individual type
     indi, error_msg = _validate_individual_type(indi)
@@ -373,7 +371,7 @@ def _get_full_name(indi: GedcomIndividualType) -> str:
         return _clean_and_format_name(None, "Unknown")
 
     except Exception as e:
-        logger.error(f"Unexpected error in _get_full_name for @{indi_id_log}@: {e}", exc_info=True)
+        logger.error(f"Unexpected error in get_full_name for @{indi_id_log}@: {e}", exc_info=True)
         return "Unknown (Error)"
 
 
@@ -613,7 +611,7 @@ def _validate_and_normalize_individual(individual: GedcomIndividualType) -> Opti
         wrapped_value = getattr(individual, "value", None)
         if _is_individual(wrapped_value):
             return cast(GedcomIndividualType, wrapped_value)
-        logger.warning(f"_get_event_info invalid input type: {type(individual)}")
+        logger.warning(f"get_event_info invalid input type: {type(individual)}")
         return None
 
     if individual is None:
@@ -709,7 +707,7 @@ def _extract_sources_from_event(event_record: Any) -> list[str]:
     return sources
 
 
-def _get_event_info(
+def get_event_info(
     individual: GedcomIndividualType, event_tag: str
 ) -> tuple[Optional[datetime], str, str]:  # ... implementation ...
     date_obj: Optional[datetime] = None
@@ -789,8 +787,8 @@ def format_life_dates(indi: GedcomIndividualType) -> str:  # ... implementation 
     if not _is_individual(indi):
         logger.warning(f"format_life_dates called with non-Individual type: {type(indi)}")
         return ""
-    _, b_date_str, _ = _get_event_info(indi, TAG_BIRTH)
-    _, d_date_str, _ = _get_event_info(indi, TAG_DEATH)
+    _, b_date_str, _ = get_event_info(indi, TAG_BIRTH)
+    _, d_date_str, _ = get_event_info(indi, TAG_DEATH)
     b_date_str_cleaned = _clean_display_date(b_date_str)
     d_date_str_cleaned = _clean_display_date(d_date_str)
     birth_info = f"b. {b_date_str_cleaned}" if b_date_str_cleaned != "N/A" else ""
@@ -844,11 +842,11 @@ def format_full_life_details(
     if not _is_individual(indi):
         logger.warning(f"format_full_life_details called with non-Individual type: {type(indi)}")
         return "(Error: Invalid data)", ""
-    _, b_date_str, b_place = _get_event_info(indi, TAG_BIRTH)
+    _, b_date_str, b_place = get_event_info(indi, TAG_BIRTH)
     b_date_str_cleaned = _clean_display_date(b_date_str)
     b_place_cleaned = b_place if b_place != "N/A" else "(Place unknown)"
     birth_info = f"Born: {b_date_str_cleaned if b_date_str_cleaned != 'N/A' else '(Date unknown)'} in {b_place_cleaned}"
-    _, d_date_str, d_place = _get_event_info(indi, TAG_DEATH)
+    _, d_date_str, d_place = get_event_info(indi, TAG_DEATH)
     d_date_str_cleaned = _clean_display_date(d_date_str)
     d_place_cleaned = d_place if d_place != "N/A" else "(Place unknown)"
     death_info = ""
@@ -870,7 +868,7 @@ def format_relative_info(relative: Any) -> str:  # ... implementation ...
         return f"  - (Relative Data: ID={norm_id or 'N/A'}, Type={type(relative).__name__})"
     else:
         return f"  - (Invalid Relative Data: Type={type(relative).__name__})"
-    rel_name = _get_full_name(indi_obj)
+    rel_name = get_full_name(indi_obj)
     life_info = format_life_dates(indi_obj)
     return f"  - {rel_name}{life_info}"
 
@@ -1051,10 +1049,10 @@ def fast_bidirectional_bfs(
     # First try to find a direct relationship (parent, child, sibling)
     # This is a quick check before running the full BFS
 
-    # Convert lists to sets for _find_direct_relationship
+    # Convert lists to sets for find_direct_relationship
     id_to_parents_set = {k: set(v) for k, v in id_to_parents.items()}
     id_to_children_set = {k: set(v) for k, v in id_to_children.items()}
-    direct_path = _find_direct_relationship(start_id, end_id, id_to_parents_set, id_to_children_set)
+    direct_path = find_direct_relationship(start_id, end_id, id_to_parents_set, id_to_children_set)
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
         return direct_path
@@ -1188,7 +1186,7 @@ def _select_best_path(
             # Calculate score based on path properties
             direct_relationships = 0
             for i in range(len(path) - 1):
-                if _has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
+                if has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
                     direct_relationships += 1
 
             # Calculate score: prefer paths with more direct relationships and shorter length
@@ -1213,7 +1211,7 @@ def _select_best_path(
     return [start_id, end_id]
 
 
-# Note: _has_direct_relationship and _find_direct_relationship live in relationship_utils.py
+# Note: has_direct_relationship and find_direct_relationship live in relationship_utils.py
 # to eliminate duplication. They are accessed via lazy-loaded helpers defined above.
 
 
@@ -1225,9 +1223,9 @@ def _get_person_name_with_birth_year(indi: Optional[GedcomIndividualType], perso
     if not indi:
         return f"Unknown ({person_id})", ""
 
-    name = _get_full_name(indi)
+    name = get_full_name(indi)
     birth_year_str = ""
-    birth_date_obj, _, _ = _get_event_info(indi, TAG_BIRTH)
+    birth_date_obj, _, _ = get_event_info(indi, TAG_BIRTH)
     if birth_date_obj:
         birth_year_str = f" (b. {birth_date_obj.year})"
 
@@ -1333,36 +1331,36 @@ def _check_relationship_type(
             lambda: _determine_child_relationship(sex_char, name_b, birth_year_b),
         ),
         "sibling": (
-            lambda: _are_siblings(id_a, id_b, id_to_parents),
+            lambda: are_siblings(id_a, id_b, id_to_parents),
             lambda: _determine_sibling_relationship(sex_char, name_b, birth_year_b),
         ),
         "spouse": (
-            lambda: _are_spouses(id_a, id_b, reader),
+            lambda: are_spouses(id_a, id_b, reader),
             lambda: _determine_spouse_relationship(sex_char, name_b, birth_year_b),
         ),
         "aunt_uncle": (
-            lambda: _is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children),
+            lambda: is_aunt_or_uncle(id_a, id_b, id_to_parents, id_to_children),
             lambda: _determine_aunt_uncle_relationship(sex_char, name_b, birth_year_b),
         ),
         "niece_nephew": (
-            lambda: _is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children),
+            lambda: is_niece_or_nephew(id_a, id_b, id_to_parents, id_to_children),
             lambda: _determine_niece_nephew_relationship(sex_char, name_b, birth_year_b),
         ),
-        "cousin": (lambda: _are_cousins(id_a, id_b, id_to_parents), lambda: f"whose cousin is {name_b}{birth_year_b}"),
+        "cousin": (lambda: are_cousins(id_a, id_b, id_to_parents), lambda: f"whose cousin is {name_b}{birth_year_b}"),
         "grandparent": (
-            lambda: _is_grandparent(id_a, id_b, id_to_parents),
+            lambda: is_grandparent(id_a, id_b, id_to_parents),
             lambda: _determine_grandparent_relationship(sex_char, name_b, birth_year_b),
         ),
         "grandchild": (
-            lambda: _is_grandchild(id_a, id_b, id_to_children),
+            lambda: is_grandchild(id_a, id_b, id_to_children),
             lambda: _determine_grandchild_relationship(sex_char, name_b, birth_year_b),
         ),
         "great_grandparent": (
-            lambda: _is_great_grandparent(id_a, id_b, id_to_parents),
+            lambda: is_great_grandparent(id_a, id_b, id_to_parents),
             lambda: _determine_great_grandparent_relationship(sex_char, name_b, birth_year_b),
         ),
         "great_grandchild": (
-            lambda: _is_great_grandchild(id_a, id_b, id_to_children),
+            lambda: is_great_grandchild(id_a, id_b, id_to_children),
             lambda: _determine_great_grandchild_relationship(sex_char, name_b, birth_year_b),
         ),
     }
@@ -1477,7 +1475,7 @@ def _extract_spouse_ids_from_family(fam: Any) -> tuple[Optional[str], Optional[s
     return husb_id, wife_id
 
 
-def _are_spouses(id1: str, id2: str, reader: GedcomReaderType) -> bool:
+def are_spouses(id1: str, id2: str, reader: GedcomReaderType) -> bool:
     """Check if two individuals are spouses."""
     if not reader:
         return False
@@ -2195,7 +2193,7 @@ class GedcomData:
 
     def _build_processed_record(self, norm_id: str, indi: GedcomIndividualType) -> dict[str, Any]:
         """Construct the processed cache entry for an individual."""
-        full_name_disp = _get_full_name(indi)
+        full_name_disp = get_full_name(indi)
         first_name_score, surname_score = self._derive_name_parts(full_name_disp)
 
         name_rec = indi.sub_tag(TAG_NAME) if indi is not None else None
@@ -2252,7 +2250,7 @@ class GedcomData:
 
     @staticmethod
     def _event_cache_details(indi: GedcomIndividualType, tag: str) -> dict[str, Any]:
-        date_obj, date_str, place_raw = _get_event_info(indi, tag)
+        date_obj, date_str, place_raw = get_event_info(indi, tag)
         return {
             "date_obj": date_obj,
             "date_str": date_str,
@@ -2625,7 +2623,7 @@ def _test_get_full_name_prefers_name_format_and_manual_fallback() -> bool:
 
     indi_with_format = cast(GedcomIndividualType, _FakeIndividualRecord(name_obj=_FakeNameObject("Ada /Lovelace/")))
     with _temporary_globals({"format_name": _format_name_without_slashes}):
-        assert _get_full_name(indi_with_format) == "Ada Lovelace"
+        assert get_full_name(indi_with_format) == "Ada Lovelace"
 
     indi_manual = cast(GedcomIndividualType, _FakeIndividualRecord(name_tag=_FakeNameTag("Ada", "Lovelace")))
 
@@ -2633,10 +2631,10 @@ def _test_get_full_name_prefers_name_format_and_manual_fallback() -> bool:
         return value
 
     with _temporary_globals({"format_name": _identity}):
-        assert _get_full_name(indi_manual) == "Ada Lovelace"
+        assert get_full_name(indi_manual) == "Ada Lovelace"
 
     bad_value = cast(GedcomIndividualType, object())
-    assert _get_full_name(bad_value) == "Unknown (Invalid Type)"
+    assert get_full_name(bad_value) == "Unknown (Invalid Type)"
     return True
 
 

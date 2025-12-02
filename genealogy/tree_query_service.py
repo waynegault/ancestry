@@ -415,13 +415,13 @@ class TreeQueryService:
             indi = self._gedcom_data.indi_index[norm_id]
 
             # Get basic info
-            name = gedcom_utils._get_full_name(indi) if hasattr(gedcom_utils, '_get_full_name') else str(indi)
+            name = gedcom_utils.get_full_name(indi) if hasattr(gedcom_utils, 'get_full_name') else str(indi)
 
-            # Use _get_event_info from gedcom_utils
-            birth_date, _, birth_place = gedcom_utils._get_event_info(indi, "BIRT")
+            # Use get_event_info from gedcom_utils
+            birth_date, _, birth_place = gedcom_utils.get_event_info(indi, "BIRT")
             birth_info = {"year": birth_date.year if birth_date else None, "place": birth_place}
 
-            death_date, _, death_place = gedcom_utils._get_event_info(indi, "DEAT")
+            death_date, _, death_place = gedcom_utils.get_event_info(indi, "DEAT")
             death_info = {"year": death_date.year if death_date else None, "place": death_place}
 
             # Get family

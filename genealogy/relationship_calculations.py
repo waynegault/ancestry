@@ -7,7 +7,7 @@ parent/child ID mappings. Decoupled from GEDCOM parsing and other dependencies.
 """
 
 
-def _is_ancestor_at_generation(
+def is_ancestor_at_generation(
     descendant_id: str, ancestor_id: str, generations: int, id_to_parents: dict[str, set[str]]
 ) -> bool:
     """
@@ -44,7 +44,7 @@ def _is_ancestor_at_generation(
     return ancestor_id in current_generation
 
 
-def _is_descendant_at_generation(
+def is_descendant_at_generation(
     ancestor_id: str, descendant_id: str, generations: int, id_to_children: dict[str, set[str]]
 ) -> bool:
     """
@@ -81,34 +81,34 @@ def _is_descendant_at_generation(
     return descendant_id in current_generation
 
 
-def _is_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
+def is_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandparent of id1."""
-    return _is_ancestor_at_generation(id1, id2, 2, id_to_parents)
+    return is_ancestor_at_generation(id1, id2, 2, id_to_parents)
 
 
-def _is_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
+def is_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
     """Check if id2 is a grandchild of id1."""
-    return _is_descendant_at_generation(id1, id2, 2, id_to_children)
+    return is_descendant_at_generation(id1, id2, 2, id_to_children)
 
 
-def _is_great_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
+def is_great_grandparent(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if id2 is a great-grandparent of id1."""
-    return _is_ancestor_at_generation(id1, id2, 3, id_to_parents)
+    return is_ancestor_at_generation(id1, id2, 3, id_to_parents)
 
 
-def _is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
+def is_great_grandchild(id1: str, id2: str, id_to_children: dict[str, set[str]]) -> bool:
     """Check if id2 is a great-grandchild of id1."""
-    return _is_descendant_at_generation(id1, id2, 3, id_to_children)
+    return is_descendant_at_generation(id1, id2, 3, id_to_children)
 
 
-def _are_siblings(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
+def are_siblings(id1: str, id2: str, id_to_parents: dict[str, set[str]]) -> bool:
     """Check if two individuals are siblings (share at least one parent)."""
     parents_1 = id_to_parents.get(id1, set())
     parents_2 = id_to_parents.get(id2, set())
     return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
 
 
-def _is_aunt_or_uncle(
+def is_aunt_or_uncle(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
@@ -134,7 +134,7 @@ def _is_aunt_or_uncle(
     return False
 
 
-def _is_niece_or_nephew(
+def is_niece_or_nephew(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
@@ -142,10 +142,10 @@ def _is_niece_or_nephew(
 ) -> bool:
     """Check if id2 is a niece or nephew of id1."""
     # This is the reverse of aunt/uncle relationship
-    return _is_aunt_or_uncle(id2, id1, id_to_parents, id_to_children)
+    return is_aunt_or_uncle(id2, id1, id_to_parents, id_to_children)
 
 
-def _are_cousins(
+def are_cousins(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
@@ -173,7 +173,7 @@ def _are_cousins(
     return False
 
 
-def _find_direct_relationship(
+def find_direct_relationship(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],
@@ -212,7 +212,7 @@ def _find_direct_relationship(
     return []
 
 
-def _has_direct_relationship(
+def has_direct_relationship(
     id1: str,
     id2: str,
     id_to_parents: dict[str, set[str]],

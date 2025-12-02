@@ -8,18 +8,43 @@ This document consolidates all identified improvements for production readiness.
 
 ## 1. Critical Type/Linting Issues
 
-### 1.1 Unused Imports (Pyright Warnings)
+### 1.1 Unused Imports (Pyright Warnings) ✅ COMPLETED
 
-**File**: `genealogy/gedcom/gedcom_utils.py` (lines 55-56)
-- [ ] Remove unused imports `_is_ancestor_at_generation` and `_is_descendant_at_generation`
-- These are imported from `relationship_calculations` but never used in the file
-- Search confirmed no usages anywhere in codebase
+**File**: `genealogy/gedcom/gedcom_utils.py`
 
-### 1.2 Import Sorting (Ruff I001)
+- [x] Remove unused imports `is_ancestor_at_generation` and `is_descendant_at_generation`
+- These were imported from `relationship_calculations` but never used in the file
 
-The following files have unsorted import blocks that need fixing with `ruff check --fix`:
-- [ ] `genealogy/gedcom/gedcom_utils.py` (lines 52-67, 129-132)
-- [ ] `research/relationship_utils.py` (lines 73-92)
+### 1.2 Import Sorting (Ruff I001) ✅ COMPLETED
+
+- [x] Fixed with `ruff check --fix .`
+
+### 1.3 PLC2701 Private Name Imports ✅ COMPLETED
+
+**Problem**: 13 private functions (underscore prefix) were being imported across modules.
+
+**Solution**: Renamed all 15 affected functions to public names (removed underscore prefix):
+
+In `genealogy/relationship_calculations.py`:
+
+- `_is_ancestor_at_generation` → `is_ancestor_at_generation`
+- `_is_descendant_at_generation` → `is_descendant_at_generation`
+- `_is_grandparent` → `is_grandparent`
+- `_is_grandchild` → `is_grandchild`
+- `_is_great_grandparent` → `is_great_grandparent`
+- `_is_great_grandchild` → `is_great_grandchild`
+- `_are_siblings` → `are_siblings`
+- `_is_aunt_or_uncle` → `is_aunt_or_uncle`
+- `_is_niece_or_nephew` → `is_niece_or_nephew`
+- `_are_cousins` → `are_cousins`
+- `_find_direct_relationship` → `find_direct_relationship`
+- `_has_direct_relationship` → `has_direct_relationship`
+
+In `genealogy/gedcom/gedcom_utils.py`:
+
+- `_are_spouses` → `are_spouses`
+- `_get_event_info` → `get_event_info`
+- `_get_full_name` → `get_full_name`
 
 ---
 
@@ -30,16 +55,20 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 **Pattern**: Multiple files implement nearly identical `_get_utils_module()` and `_get_api_request()` wrapper functions.
 
 **Files affected**:
+
 - `actions/gather/fetch.py` (lines 57-67)
 - `actions/gather/persistence.py` (lines 54-72)
 - `actions/gather/orchestrator.py` (lines 84-87)
 
 **Action**:
+
 - [ ] Create a single shared utility in `core/api_helpers.py`:
-  ```python
-  def get_utils_module() -> Any: ...
-  def call_api_request(**kwargs) -> Any: ...
-  ```
+
+```python
+def get_utils_module() -> Any: ...
+def call_api_request(**kwargs) -> Any: ...
+```
+
 - [ ] Update all action gather modules to import from the new location
 
 ### 2.2 Cookie Synchronization Duplication
@@ -47,10 +76,12 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 **Pattern**: Cookie syncing logic exists in multiple locations.
 
 **Files affected**:
+
 - `core/session_manager.py` (lines 1260-1347): `sync_cookies_from_browser()`, `sync_cookies_to_requests()`
 - `core/api_manager.py` (lines 364-383): `_sync_cookies()`
 
 **Action**:
+
 - [ ] Consolidate into `SessionManager` as single `sync_browser_cookies()` method
 - [ ] Have `APIManager` delegate to SessionManager for cookie operations
 
@@ -59,11 +90,13 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 **Pattern**: `create_standard_test_runner` is imported from two different locations.
 
 **Files using wrong location**:
+
 - `testing/test_context_builder.py` (line 55): imports from wrong location
 - `testing/test_integration_e2e.py` (line 232): inconsistent import
 - Several other modules import from both locations
 
 **Action**:
+
 - [ ] Standardize on single import location: `testing.test_framework`
 - [ ] Audit all test files for import consistency
 
@@ -72,6 +105,7 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 **Pattern**: `ConfigManager()` is instantiated 15+ times across the codebase instead of using a singleton.
 
 **Files affected** (partial list):
+
 - `main.py` (line 122)
 - `integrations/ms_graph_utils.py` (line 39)
 - `genealogy/gedcom/gedcom_utils.py` (line 136)
@@ -80,6 +114,7 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 - And 10+ more
 
 **Action**:
+
 - [ ] Implement singleton pattern in `ConfigManager` class
 - [ ] Or use dependency injection pattern with a single instance created in `main.py`
 - [ ] Update all files to use the singleton/injected instance
@@ -89,6 +124,7 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 **Problem**: 30+ files contain `sys.path.insert()` or `sys.path.append()` calls despite README stating this shouldn't be needed (project has proper package structure via pyproject.toml).
 
 **Files affected** (partial list):
+
 - `ui/__init__.py`, `ui/menu.py`
 - `testing/test_integration_workflow.py`, `testing/dead_code_scan.py`, `testing/check_type_ignores.py`
 - `scripts/migrate_phase4.py`, `scripts/maintain_code_graph.py`, `scripts/dry_run_validation.py`
@@ -99,6 +135,7 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 - `genealogy/*.py` (multiple files)
 
 **Action**:
+
 - [ ] Verify `pyproject.toml` correctly configures the package
 - [ ] Remove all `sys.path.insert()`/`sys.path.append()` calls
 - [ ] Use proper relative imports or install package in editable mode (`pip install -e .`)
@@ -112,6 +149,7 @@ The following files have unsorted import blocks that need fixing with `ruff chec
 The following comments document past code removals and provide no ongoing value:
 
 **High Priority (remove immediately)**:
+
 - [ ] `core/session_manager.py` (lines 970-975): CircuitBreaker removal note
 - [ ] `core/session_manager.py` (lines 1017-1019): Migration complete comment
 - [ ] `actions/gather/orchestrator.py` (line 477): `_calculate_optimized_workers` removal
@@ -134,6 +172,7 @@ The following comments document past code removals and provide no ongoing value:
 ### 3.3 "Removed smoke test" Pattern
 
 Multiple files have comments about removed smoke tests:
+
 - [ ] `performance/performance_orchestrator.py` (lines 804, 842, 933)
 - [ ] `performance/performance_monitor.py` (lines 1332, 1370, 1461)
 - [ ] `genealogy/genealogical_normalization.py` (lines 631, 665, 711)
@@ -142,6 +181,7 @@ Multiple files have comments about removed smoke tests:
 ### 3.4 Phase/Version Comments
 
 These may still provide context but should be reviewed:
+
 - [ ] `core/api_manager.py` (line 979): "PHASE 3.1" reference
 - [ ] `core/api_manager.py` (line 994): "All calling code updated" docstring
 - [ ] `actions/gather/orchestrator.py` (lines 433-436): "REMOVED" historical note
@@ -153,6 +193,7 @@ These may still provide context but should be reviewed:
 ### 4.1 Tests That Only Check `callable()` or `isinstance()` Without Behavioral Validation
 
 **Files with trivial tests**:
+
 - [ ] `observability/metrics_exporter.py` (lines 44-75): All 5 tests only check `callable()` or `isinstance()`
   - `_test_prometheus_available_constant`: Only checks `isinstance(bool)`
   - `_test_metric_recording_functions`: Only checks `callable()` for 4 functions
@@ -169,6 +210,7 @@ These may still provide context but should be reviewed:
 ### 4.2 Tests That Skip and Return True (Fake Passes)
 
 **File**: `actions/action_review.py`
+
 - [ ] Lines 46-66: Tests return `True` when prerequisites aren't met (SKIP_LIVE_API_TESTS or session unavailable)
 - **Fix**: Return a distinct "skipped" status or use `pytest.skip()` pattern instead of fake success
 
@@ -184,6 +226,7 @@ These may still provide context but should be reviewed:
 ### 5.1 Suppressions That Are Necessary (Keep)
 
 These suppressions are required due to Protocol/interface requirements:
+
 - `observability/apm.py` (line 129): PLR6301 - Base class override
 - `core/logging_config.py` (line 157): PLR6301 - stdlib `logging.Filter` interface
 - `core/correlation.py` (line 160): PLR6301 - stdlib `logging.Filter` interface
@@ -234,20 +277,24 @@ These suppressions are required due to Protocol/interface requirements:
 **Pattern**: Multiple retry implementations exist.
 
 **Files**:
+
 - `core/error_handling.py` (lines 869-913): `retry_on_failure` decorator
 - `core/circuit_breaker.py` (lines 93-107): `with_retry`, `retry_with_backoff`
 
 **Action**:
+
 - [ ] Consolidate into single retry implementation in `core/error_handling.py`
 - [ ] Deprecate/remove duplicate in `circuit_breaker.py`
 
 ### 7.2 Logging Configuration Overlap
 
 **Files**:
+
 - `core/logging_config.py`: Primary logging configuration
 - `core/logging_utils.py`: Additional logging utilities
 
 **Action**:
+
 - [ ] Review overlap and either merge or clearly define boundaries
 - [ ] External logger suppression appears in both files
 
@@ -287,22 +334,27 @@ These tasks require manual testing with real historical data and cannot be autom
 
 ## Priority Order for Implementation
 
-### Immediate (CI/CD Blocking)
-1. Fix unused imports in `gedcom_utils.py` (Section 1.1)
-2. Fix import sorting with `ruff check --fix .` (Section 1.2)
+### Immediate (CI/CD Blocking) ✅ COMPLETED
+
+1. ✅ Fix unused imports in `gedcom_utils.py` (Section 1.1)
+2. ✅ Fix import sorting with `ruff check --fix .` (Section 1.2)
+3. ✅ Fix PLC2701 private name imports (Section 1.3)
 
 ### High Priority (Code Quality)
-3. Remove stale "removed" comments (Section 3.1)
-4. Fix fake-pass test pattern in `action_review.py` (Section 4.2)
-5. Remove `sys.path.insert()` calls (Section 2.5)
+
+1. Remove stale "removed" comments (Section 3.1)
+2. Fix fake-pass test pattern in `action_review.py` (Section 4.2)
+3. Remove `sys.path.insert()` calls (Section 2.5)
 
 ### Medium Priority (Maintainability)
-6. Consolidate API helper functions (Section 2.1)
-7. Implement ConfigManager singleton (Section 2.4)
-8. Consolidate cookie sync logic (Section 2.2)
-9. Improve trivial tests with real behavioral assertions (Section 4.1, 4.3)
+
+1. Consolidate API helper functions (Section 2.1)
+2. Implement ConfigManager singleton (Section 2.4)
+3. Consolidate cookie sync logic (Section 2.2)
+4. Improve trivial tests with real behavioral assertions (Section 4.1, 4.3)
 
 ### Low Priority (Nice to Have)
-10. Split large CLI helper class (Section 5.2)
-11. Remove legacy compatibility code after verification (Section 6)
-12. Consolidate retry decorators (Section 7.1)
+
+1. Split large CLI helper class (Section 5.2)
+2. Remove legacy compatibility code after verification (Section 6)
+3. Consolidate retry decorators (Section 7.1)

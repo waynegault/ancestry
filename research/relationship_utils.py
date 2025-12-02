@@ -74,21 +74,21 @@ from genealogy.gedcom.gedcom_utils import (
     TAG_BIRTH,
     TAG_DEATH,
     TAG_SEX,
-    _are_spouses,
-    _get_event_info,
-    _get_full_name,
+    are_spouses,
+    get_event_info,
+    get_full_name,
 )
 from genealogy.relationship_calculations import (
-    _are_cousins,
-    _are_siblings,
-    _find_direct_relationship,
-    _has_direct_relationship,
-    _is_aunt_or_uncle,
-    _is_grandchild,
-    _is_grandparent,
-    _is_great_grandchild,
-    _is_great_grandparent,
-    _is_niece_or_nephew,
+    are_cousins,
+    are_siblings,
+    find_direct_relationship,
+    has_direct_relationship,
+    is_aunt_or_uncle,
+    is_grandchild,
+    is_grandparent,
+    is_great_grandchild,
+    is_great_grandparent,
+    is_niece_or_nephew,
 )
 
 # NOTE: _clean_gedcom_slashes, _format_single_word, and format_name were removed
@@ -271,7 +271,7 @@ def _score_path(path: list[str], id_to_parents: dict[str, set[str]], id_to_child
     """Score a path based on directness of relationships."""
     direct_relationships = 0
     for i in range(len(path) - 1):
-        if _has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
+        if has_direct_relationship(path[i], path[i + 1], id_to_parents, id_to_children):
             direct_relationships += 1
 
     directness_score = direct_relationships / (len(path) - 1) if len(path) > 1 else 0
@@ -520,7 +520,7 @@ def fast_bidirectional_bfs(
     assert id_to_parents is not None and id_to_children is not None, "Validation should have caught None values"
 
     # Try direct relationship first
-    direct_path = _find_direct_relationship(start_id, end_id, id_to_parents, id_to_children)
+    direct_path = find_direct_relationship(start_id, end_id, id_to_parents, id_to_children)
     if direct_path:
         logger.debug(f"[FastBiBFS] Found direct relationship: {direct_path}")
         _relationship_path_cache.put(start_id, end_id, direct_path)
@@ -880,10 +880,10 @@ def _extract_person_basic_info(
     indi: Union[GedcomIndividualProtocol, Any],
 ) -> tuple[str, Optional[str], Optional[str], Optional[str]]:
     """Extract basic information from a GEDCOM individual."""
-    name = _get_full_name(cast(Any, indi))
+    name = get_full_name(cast(Any, indi))
 
-    birth_date_obj, _, _ = _get_event_info(cast(Any, indi), TAG_BIRTH)
-    death_date_obj, _, _ = _get_event_info(cast(Any, indi), TAG_DEATH)
+    birth_date_obj, _, _ = get_event_info(cast(Any, indi), TAG_BIRTH)
+    death_date_obj, _, _ = get_event_info(cast(Any, indi), TAG_DEATH)
 
     birth_year = str(birth_date_obj.year) if birth_date_obj else None
     death_year = str(death_date_obj.year) if death_date_obj else None
@@ -934,30 +934,30 @@ def _determine_gedcom_relationship(
     relationship_checks = [
         (lambda: current_id in id_to_parents.get(prev_id, set()), "father", "mother", "parent"),
         (lambda: current_id in id_to_children.get(prev_id, set()), "son", "daughter", "child"),
-        (lambda: _are_siblings(prev_id, current_id, id_to_parents), "brother", "sister", "sibling"),
-        (lambda: _are_spouses(prev_id, current_id, reader), "husband", "wife", "spouse"),
-        (lambda: _is_grandparent(prev_id, current_id, id_to_parents), "grandfather", "grandmother", "grandparent"),
-        (lambda: _is_grandchild(prev_id, current_id, id_to_children), "grandson", "granddaughter", "grandchild"),
+        (lambda: are_siblings(prev_id, current_id, id_to_parents), "brother", "sister", "sibling"),
+        (lambda: are_spouses(prev_id, current_id, reader), "husband", "wife", "spouse"),
+        (lambda: is_grandparent(prev_id, current_id, id_to_parents), "grandfather", "grandmother", "grandparent"),
+        (lambda: is_grandchild(prev_id, current_id, id_to_children), "grandson", "granddaughter", "grandchild"),
         (
-            lambda: _is_great_grandparent(prev_id, current_id, id_to_parents),
+            lambda: is_great_grandparent(prev_id, current_id, id_to_parents),
             "great-grandfather",
             "great-grandmother",
             "great-grandparent",
         ),
         (
-            lambda: _is_great_grandchild(prev_id, current_id, id_to_children),
+            lambda: is_great_grandchild(prev_id, current_id, id_to_children),
             "great-grandson",
             "great-granddaughter",
             "great-grandchild",
         ),
-        (lambda: _is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children), "uncle", "aunt", "aunt/uncle"),
+        (lambda: is_aunt_or_uncle(prev_id, current_id, id_to_parents, id_to_children), "uncle", "aunt", "aunt/uncle"),
         (
-            lambda: _is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children),
+            lambda: is_niece_or_nephew(prev_id, current_id, id_to_parents, id_to_children),
             "nephew",
             "niece",
             "niece/nephew",
         ),
-        (lambda: _are_cousins(prev_id, current_id, id_to_parents), "cousin", "cousin", "cousin"),
+        (lambda: are_cousins(prev_id, current_id, id_to_parents), "cousin", "cousin", "cousin"),
     ]
 
     for check_func, male_term, female_term, neutral_term in relationship_checks:
@@ -1838,8 +1838,8 @@ def _test_gedcom_path_conversion() -> None:
                 return StubTag(self._sex)
             return None
 
-    original_get_full_name = _get_full_name
-    original_get_event_info = _get_event_info
+    original_get_full_name = get_full_name
+    original_get_event_info = get_event_info
 
     def fake_get_full_name(indi: StubIndi) -> str:
         return indi.name
@@ -1849,8 +1849,8 @@ def _test_gedcom_path_conversion() -> None:
         year_val = getattr(indi, year_attr, None)
         return (SimpleNamespace(year=year_val) if year_val is not None else None, None, None)
 
-    globals()["_get_full_name"] = fake_get_full_name
-    globals()["_get_event_info"] = fake_get_event_info
+    globals()["get_full_name"] = fake_get_full_name
+    globals()["get_event_info"] = fake_get_event_info
 
     try:
         path_ids = ["@C@", "@P@", "@GP@"]
@@ -1868,8 +1868,8 @@ def _test_gedcom_path_conversion() -> None:
         assert unified[1]["relationship"] == "mother", "Parent hop should resolve to mother"
         assert unified[2]["relationship"] == "father", "Ancestor hop should resolve to parent relationship"
     finally:
-        globals()["_get_full_name"] = original_get_full_name
-        globals()["_get_event_info"] = original_get_event_info
+        globals()["get_full_name"] = original_get_full_name
+        globals()["get_event_info"] = original_get_event_info
 
 
 def _test_discovery_api_conversion() -> None:
