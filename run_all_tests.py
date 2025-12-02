@@ -1554,17 +1554,18 @@ def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]
     return suggestions
 
 
-def _setup_test_environment() -> tuple[bool, bool, bool, bool]:
+def _setup_test_environment() -> tuple[bool, bool, bool, bool, bool]:
     """
     Setup test environment and parse command line arguments.
 
     Returns:
-        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration)
+        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis)
     """
     # Parse command line arguments
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
     enable_integration = "--integration" in sys.argv
+    enable_log_analysis = "--analyze-logs" in sys.argv
     enable_monitoring = enable_benchmark or enable_fast_mode
 
     if enable_monitoring and not PSUTIL_AVAILABLE:
@@ -1592,7 +1593,7 @@ def _setup_test_environment() -> tuple[bool, bool, bool, bool]:
         os.environ.pop("SKIP_SLOW_TESTS", None)
         print("🐢 SLOW TESTS: Including slow simulation tests")
 
-    return enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration
+    return enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis
 
 
 def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool, enable_integration: bool) -> None:
@@ -2097,17 +2098,11 @@ def format_log_analysis(results: LogAnalysisData) -> str:
 
 
 # ============================================================================
-# RESERVED FOR FUTURE DEVELOPMENT: Log Analysis CLI
-# This function provides performance analysis of application logs.
-# Integration pending: Will be connected to --analyze-logs CLI flag.
-# ============================================================================
 def print_log_analysis(log_path: str | None = None) -> None:
     """Analyze and print application log performance metrics.
 
-    Reserved for Future Development:
-        This function is fully implemented but the --analyze-logs CLI flag
-        is not yet wired up in the argument parser. Provides detailed analysis
-        of API timing, 429 errors, and throughput metrics from log files.
+    Provides detailed analysis of API timing, 429 errors, and throughput
+    metrics from log files.
     """
     results = analyze_application_logs(log_path)
     if "error" in results:
@@ -2178,7 +2173,7 @@ def main() -> bool:
     _fix_trailing_whitespace()
 
     # Setup environment and parse arguments
-    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration = _setup_test_environment()
+    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = _setup_test_environment()
 
     # Print header
     _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
@@ -2204,12 +2199,7 @@ def main() -> bool:
     )
 
     # Execute tests
-    if enable_benchmark:
-        results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
-    else:
-        start_time = time.time()
-        results, all_metrics, total_tests_run, passed_count = _execute_tests(config)
-        total_duration = time.time() - start_time
+    results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
 
     # Print final results
     _print_basic_summary(total_duration, total_tests_run, passed_count, len(discovered_modules) - passed_count, results)
@@ -2230,6 +2220,10 @@ def main() -> bool:
             enable_benchmark=enable_benchmark,
         )
         _print_performance_metrics(perf_config)
+
+    # Print log analysis if enabled
+    if enable_log_analysis:
+        print_log_analysis()
 
     # Exit with status code
     sys.exit(0 if passed_count == len(discovered_modules) else 1)
