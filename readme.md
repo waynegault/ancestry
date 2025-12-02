@@ -96,15 +96,29 @@ git clone https://github.com/waynegault/ancestry.git
 cd ancestry
 
 # Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
+# Install project in editable mode (IMPORTANT - enables local imports from any directory)
+pip install -e .
+
 # Copy environment template
 cp .env.example .env
 ```
+
+> **Note: Editable Install (`pip install -e .`)**
+>
+> This project uses Python's editable install mode. When you run `pip install -e .`, it adds
+> `__editable__.ancestry-0.1.0.finder.__path_hook__` to `sys.path`, which means:
+> - All local imports (e.g., `from core.session_manager import SessionManager`) work from any directory
+> - No need for manual `sys.path.insert()` hacks in every file
+> - Standalone script execution works correctly (e.g., `python actions/action6_gather.py`)
+> - Changes to source files take effect immediately without reinstalling
+>
+> This is why you can run tests and scripts from anywhere in the project without import errors.
 
 ### Configuration
 

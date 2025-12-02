@@ -134,7 +134,7 @@ def _test_log_api_performance() -> None:
 
 def _test_register_callback() -> None:
     """Test callback registration."""
-    callback_called = []
+    callback_called: list[tuple[str, float, str]] = []
 
     def test_callback(api_name: str, duration: float, status: str) -> None:
         callback_called.append((api_name, duration, status))

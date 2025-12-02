@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
@@ -993,10 +994,12 @@ def fact_validator_tests() -> bool:
         return suite.finish_suite()
 
 
-if __name__ == "__main__":
-    import sys
+# Standard test runner for test discovery
+from testing.test_utilities import create_standard_test_runner
 
-    if fact_validator_tests():
-        sys.exit(0)
-    else:
-        sys.exit(1)
+run_comprehensive_tests = create_standard_test_runner(fact_validator_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

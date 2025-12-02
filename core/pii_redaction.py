@@ -25,7 +25,6 @@ import os
 import re
 import sys
 from re import Pattern
-from typing import Any
 
 # Module logger - uses parent's configuration
 logger = logging.getLogger(__name__)

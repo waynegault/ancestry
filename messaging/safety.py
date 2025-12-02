@@ -14,6 +14,7 @@ Phase 2 Enhancement (Dec 2025):
 
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import ClassVar
@@ -376,11 +377,12 @@ def safety_module_tests() -> bool:
         return suite.finish_suite()
 
 
-if __name__ == "__main__":
-    import sys
+# Standard test runner for test discovery
+from testing.test_utilities import create_standard_test_runner
 
-    # Simple runner if executed directly
-    if safety_module_tests():
-        sys.exit(0)
-    else:
-        sys.exit(1)
+run_comprehensive_tests = create_standard_test_runner(safety_module_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

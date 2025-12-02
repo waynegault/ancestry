@@ -1,3 +1,4 @@
+import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -101,10 +102,12 @@ def research_service_tests() -> bool:
         return suite.finish_suite()
 
 
-if __name__ == "__main__":
-    import sys
+# Standard test runner for test discovery
+from testing.test_utilities import create_standard_test_runner
 
-    if research_service_tests():
-        sys.exit(0)
-    else:
-        sys.exit(1)
+run_comprehensive_tests = create_standard_test_runner(research_service_tests)
+
+
+if __name__ == "__main__":
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
