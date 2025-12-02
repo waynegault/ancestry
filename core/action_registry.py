@@ -549,6 +549,19 @@ class ActionRegistry:
             )
         )
 
+        self.register(
+            ActionMetadata(
+                id="w",
+                name="Clear App Log",
+                description="Clear the application log file (Logs/app.log)",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=307,
+            )
+        )
+
         self._initialized = True
 
 

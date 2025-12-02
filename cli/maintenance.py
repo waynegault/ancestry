@@ -859,6 +859,17 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
             print("\n📭 No test cache found (already empty).\n")
         input("Press Enter to continue...")
 
+    def clear_app_log_menu(self) -> None:
+        """Menu action to clear the application log file."""
+        cleared, log_path = self.clear_log_file()
+        if cleared:
+            print(f"\n✅ Log file cleared: {log_path}\n")
+        elif log_path:
+            print(f"\n❌ Failed to clear log file: {log_path}\n")
+        else:
+            print("\n⚠️  No log file handler found.\n")
+        input("Press Enter to continue...")
+
     @staticmethod
     def clear_screen() -> None:
         os.system("cls" if os.name == "nt" else "clear")
