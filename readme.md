@@ -44,6 +44,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
 - **Smart Caching**: Test runner skips unchanged modules for rapid feedback loops
 - **Health Monitoring**: Integrated system health tracking with auto-recovery for stale sessions
+- **CI/CD Integration**: Automated testing, linting, and quality gates via GitHub Actions
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
 ## Tech Stack

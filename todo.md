@@ -29,7 +29,7 @@
 
 **Objective**: Automate testing and deployment workflows.
 
-- [ ] **GitHub Actions**
+- [x] **GitHub Actions**
   - Add `quality_regression_gate.py` to CI pipeline.
   - Set up automated test runs on Pull Requests.
 - [ ] **Deployment**
