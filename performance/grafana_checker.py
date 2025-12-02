@@ -13,6 +13,7 @@ if str(_project_root) not in sys.path:
 
 import json
 import logging
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -97,13 +98,16 @@ def run_automated_setup(silent: bool = False) -> bool:
     logger.info("Launching Grafana automated setup...")
 
     try:
+        # Determine available PowerShell executable
+        powershell_cmd = "pwsh" if shutil.which("pwsh") else "powershell"
+
         # PowerShell command to run script as administrator
         ps_args = [
-            "powershell.exe",
+            powershell_cmd,
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            f"Start-Process PowerShell -Verb RunAs -ArgumentList "
+            f"Start-Process {powershell_cmd} -Verb RunAs -ArgumentList "
             f"'-ExecutionPolicy Bypass -File \"{SETUP_SCRIPT}\" "
             f"{'-Silent' if silent else ''}' -Wait",
         ]
