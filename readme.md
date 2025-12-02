@@ -42,6 +42,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Zero-Tolerance Rate Limiting**: Thread-safe token bucket algorithm (0.3 RPS), validated across 800+ pages
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
 - **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
+- **Smart Caching**: Test runner skips unchanged modules for rapid feedback loops
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
 ## Tech Stack

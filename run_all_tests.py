@@ -277,19 +277,12 @@ class LogAnalysisError(TypedDict):
 # ==============================================
 
 
-# ============================================================================
-# RESERVED FOR FUTURE DEVELOPMENT: Test Result Caching
-# This class provides intelligent test caching to skip unchanged modules.
-# Integration pending: Will be connected to main test orchestration flow.
-# ============================================================================
 class TestResultCache:
     """Cache test results to skip unchanged modules.
 
-    Reserved for Future Development:
-        This class is fully implemented but not yet integrated into the main
-        test orchestration flow. It provides hash-based change detection to
-        skip retesting unchanged modules, which can significantly speed up
-        iterative development workflows.
+    This class provides hash-based change detection to skip retesting
+    unchanged modules, which can significantly speed up iterative
+    development workflows.
     """
 
     CACHE_FILE = Path("Cache/test_results_cache.json")
@@ -321,9 +314,13 @@ class TestResultCache:
         try:
             import hashlib
 
-            module_path = Path(f"{module_name}.py")
+            module_path = Path(module_name)
             if not module_path.exists():
-                return None
+                # Try appending .py if it doesn't exist
+                module_path = Path(f"{module_name}.py")
+                if not module_path.exists():
+                    return None
+
             content = module_path.read_bytes()
             return hashlib.md5(content).hexdigest()
         except Exception:
