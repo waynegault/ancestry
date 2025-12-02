@@ -216,15 +216,15 @@ The operator manual exists at `docs/operator_manual.md` and covers:
 
 ### 4. Innovation Features Integration
 
-**Status**: Implemented, Not Integrated into Main Workflow
+**Status**: ✅ PARTIALLY INTEGRATED (Jan 2025)
 
 These modules are fully implemented and tested but need UI/CLI integration:
 
 | Feature | Module | Status | Next Step |
 |---------|--------|--------|-----------|
-| Triangulation Intelligence | `research/triangulation_intelligence.py` | ✅ Implemented | Add CLI command or Action 12 integration |
-| Predictive Gap Detection | `research/predictive_gaps.py` | ✅ Implemented | Add CLI command for gap reports |
-| Sentiment Adaptation | `ai/sentiment_adaptation.py` | ✅ Implemented | Integrate with Action 8 messaging |
+| Triangulation Intelligence | `research/triangulation_intelligence.py` | ✅ Integrated | Added CLI command (Action 14) |
+| Predictive Gap Detection | `research/predictive_gaps.py` | ✅ Integrated | Added CLI command (Action 14) |
+| Sentiment Adaptation | `ai/sentiment_adaptation.py` | ✅ Integrated | Added CLI command (Action 14) |
 | Conflict Detection | `research/conflict_detector.py` | ✅ Implemented | Add conflict review workflow |
 
 ### 5. Performance Optimizations

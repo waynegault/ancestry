@@ -340,6 +340,18 @@ class ActionRegistry:
             )
         )
 
+        self.register(
+            ActionMetadata(
+                id="14",
+                name="Research Tools",
+                description="Advanced tools: Triangulation, Gap Detection, Sentiment Analysis",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                menu_order=14,
+            )
+        )
+
         # Test Actions
         self.register(
             ActionMetadata(

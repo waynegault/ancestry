@@ -289,6 +289,14 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
     return _execute_primary_action(metadata, session_manager, config, arg_tokens)
 
 
+def _run_research_tools(_session_manager: SessionManager, *_: Any) -> bool:
+    """Run the interactive research tools menu."""
+    from cli.research_tools import run_interactive_menu
+
+    run_interactive_menu()
+    return True
+
+
 def _assign_action_registry_functions() -> None:
     """Attach callable implementations to action registry metadata."""
 
@@ -306,6 +314,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("10", run_gedcom_then_api_fallback)
     registry.set_action_function("12", run_triangulation_analysis)
     registry.set_action_function("13", fetch_shared_matches)
+    registry.set_action_function("14", _run_research_tools)
 
     registry.set_action_function("analytics", _show_analytics_dashboard)
     registry.set_action_function("metrics", _show_metrics_report)
