@@ -77,6 +77,7 @@ from core.database_manager import DatabaseManager
 from core.session_validator import SessionValidator
 from observability.metrics_exporter import start_metrics_exporter, stop_metrics_exporter
 from observability.metrics_registry import metrics
+from performance.health_monitor import integrate_with_session_manager
 
 
 @lru_cache(maxsize=1)
@@ -242,6 +243,9 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         self._update_session_metrics(force_zero=True)
         self._ensure_metrics_exporter()
+
+        # Integrate health monitoring
+        self.health_monitor = integrate_with_session_manager(self)
 
         init_time = time.time() - start_time
         logger.debug(f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}")
@@ -705,6 +709,11 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         # MINIMAL FIX: Set browser_needed to True for session operations
         self.browser_manager.browser_needed = True
+
+        # Check health monitor
+        if hasattr(self, 'health_monitor') and self.health_monitor.should_emergency_halt():
+            logger.critical("🚨 Emergency halt requested by health monitor - refusing session readiness")
+            return False
 
         # PHASE 5.1: Check cached session state first
         cached_result = self._check_cached_readiness(action_name)

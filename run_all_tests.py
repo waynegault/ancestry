@@ -2173,7 +2173,9 @@ def main() -> bool:
     _fix_trailing_whitespace()
 
     # Setup environment and parse arguments
-    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = _setup_test_environment()
+    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = (
+        _setup_test_environment()
+    )
 
     # Print header
     _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
