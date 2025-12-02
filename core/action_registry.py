@@ -355,34 +355,34 @@ class ActionRegistry:
         # Test Actions
         self.register(
             ActionMetadata(
-                id="test",
+                id="i",
                 name="Run Main.py Internal Tests",
                 description="Run comprehensive tests for main.py functionality",
                 function=None,
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_test_action=True,
-                menu_order=1000,
+                menu_order=210,
             )
         )
 
         self.register(
             ActionMetadata(
-                id="testall",
+                id="j",
                 name="Run All Module Tests",
                 description="Run all module tests across the entire codebase",
                 function=None,
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_test_action=True,
-                menu_order=1010,
+                menu_order=220,
             )
         )
 
         # Meta Actions
         self.register(
             ActionMetadata(
-                id="analytics",
+                id="a",
                 name="View Conversation Analytics Dashboard",
                 description="Display conversation analytics dashboard with insights",
                 function=None,
@@ -395,7 +395,7 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
-                id="metrics",
+                id="b",
                 name="View Prometheus Metrics Report",
                 description="Open the local Prometheus/Grafana metrics view",
                 function=None,
@@ -408,9 +408,35 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
-                id="setup-grafana",
+                id="l",
                 name="Run Automated Grafana Setup",
                 description="Validate Grafana installation and import dashboards",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=240,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
+                id="g",
+                name="Open Code Graph Visualization",
+                description="Launch the interactive repository dependency graph",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=150,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
+                id="d",
+                name="Show Cache Statistics",
+                description="Display comprehensive cache statistics from all subsystems",
                 function=None,
                 category=ActionCategory.ANALYTICS,
                 browser_requirement=ActionRequirement.NONE,
@@ -421,9 +447,9 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
-                id="graph",
-                name="Open Code Graph Visualization",
-                description="Launch the interactive repository dependency graph",
+                id="e",
+                name="Configuration Health Check",
+                description="Validate all configuration settings and show detailed report",
                 function=None,
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
@@ -434,11 +460,11 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
-                id="s",
-                name="Show Cache Statistics",
-                description="Display comprehensive cache statistics from all subsystems",
+                id="f",
+                name="Review Queue (AI Drafts)",
+                description="View and approve/reject pending AI-generated message drafts",
                 function=None,
-                category=ActionCategory.ANALYTICS,
+                category=ActionCategory.WORKFLOW,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
                 menu_order=140,
@@ -447,40 +473,14 @@ class ActionRegistry:
 
         self.register(
             ActionMetadata(
-                id="health",
-                name="Configuration Health Check",
-                description="Validate all configuration settings and show detailed report",
-                function=None,
-                category=ActionCategory.UTILITY,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=145,
-            )
-        )
-
-        self.register(
-            ActionMetadata(
-                id="review",
-                name="Review Queue (AI Drafts)",
-                description="View and approve/reject pending AI-generated message drafts",
-                function=None,
-                category=ActionCategory.WORKFLOW,
-                browser_requirement=ActionRequirement.NONE,
-                is_meta_action=True,
-                menu_order=146,
-            )
-        )
-
-        self.register(
-            ActionMetadata(
-                id="validate",
+                id="h",
                 name="Dry-Run Validation",
                 description="Test message pipeline against historical conversations",
                 function=None,
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=147,
+                menu_order=200,
             )
         )
 
@@ -493,7 +493,7 @@ class ActionRegistry:
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=150,
+                menu_order=300,
             )
         )
 
@@ -506,20 +506,20 @@ class ActionRegistry:
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=160,
+                menu_order=310,
             )
         )
 
         self.register(
             ActionMetadata(
-                id="migrate-db",
+                id="k",
                 name="Apply Schema Migrations",
                 description="Run pending database schema migrations and show status",
                 function=None,
                 category=ActionCategory.DATABASE,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=170,
+                menu_order=230,
             )
         )
 
@@ -532,7 +532,7 @@ class ActionRegistry:
                 category=ActionCategory.UTILITY,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
-                menu_order=170,
+                menu_order=320,
             )
         )
 

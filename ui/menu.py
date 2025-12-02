@@ -65,29 +65,27 @@ def render_main_menu(
 
     _print_action_block(registry.get_menu_actions())
 
-    meta_actions = registry.get_meta_actions()
-    analytics_meta = [action for action in meta_actions if action.category == ActionCategory.ANALYTICS]
-    graph_meta = [action for action in meta_actions if action.id == "graph"]
-    system_meta = [
-        action for action in meta_actions if action.category != ActionCategory.ANALYTICS and action.id != "graph"
-    ]
+    # Collect all other actions (meta + test) and sort by menu_order
+    other_actions = registry.get_meta_actions() + registry.get_test_actions()
+    other_actions.sort(key=lambda x: x.menu_order)
 
-    if analytics_meta:
+    # Group 1: Analytics & Visualization (100-199)
+    group1 = [a for a in other_actions if 100 <= a.menu_order < 200]
+    if group1:
         print("")
-        _print_action_block(analytics_meta)
+        _print_action_block(group1)
 
-    if graph_meta:
+    # Group 2: Testing & Maintenance (200-299)
+    group2 = [a for a in other_actions if 200 <= a.menu_order < 300]
+    if group2:
         print("")
-        _print_action_block(graph_meta)
+        _print_action_block(group2)
 
-    test_actions = registry.get_test_actions()
-    if test_actions:
+    # Group 3: System (300+)
+    group3 = [a for a in other_actions if a.menu_order >= 300]
+    if group3:
         print("")
-        _print_action_block(test_actions)
-
-    if system_meta:
-        print("")
-        _print_action_block(system_meta)
+        _print_action_block(group3)
 
     return input("\nEnter choice: ").strip().lower()
 

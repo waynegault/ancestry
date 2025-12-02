@@ -1,6 +1,6 @@
 # Ancestry Research Platform - Implementation Roadmap
 
-## 1. Pre-Production Validation (High Priority)
+## 1. Pre-Production Validation (Low Priority)
 
 **Objective**: Validate system against real historical data before full production deployment.
 
@@ -35,11 +35,11 @@
 - [ ] **Deployment**
   - Configure automated Grafana dashboard deployment.
 
-## 4. Refactoring & Technical Debt (Q1 2026)
+## 4. Refactoring & Technical Debt
 
-**Objective**: Improve maintainability and reduce complexity.
+**Objective**: Improve maintainability and reduce complexity (Medium Priority).
 
 - [ ] **Modularize Large Actions**: Split `action6_gather.py` and `action7_inbox.py` into smaller sub-modules.
 - [ ] **Refactor Orchestration**: Simplify `_process_single_page` in `actions/gather/orchestrator.py`.
-- [ ] **Centralize Menu Logic**: Use data-driven registry for menu actions.
+- [x] **Centralize Menu Logic**: Use data-driven registry for menu actions.
 - [ ] **Security**: Implement PII redaction in logs.

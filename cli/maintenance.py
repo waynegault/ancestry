@@ -801,7 +801,7 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
             print(f"   1. System Performance & Health: {system_perf_url}")
             print(f"   2. Genealogy Research Insights: {genealogy_url}")
             print(f"   3. Code Quality & Architecture: {code_quality_url}")
-            print("\n💡 If dashboards show 'Not found', run: setup-grafana")
+            print("\n💡 If dashboards show 'Not found', run: l")
             print("\n" + "=" * 70 + "\n")
 
             webbrowser.open(system_perf_url)

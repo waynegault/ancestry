@@ -139,7 +139,7 @@ python main.py
 # 7 - Process Inbox Messages
 # 10 - Search Family Tree (GEDCOM or API)
 # 13 - Shared Match Scraper (Fetch shared matches for high-cM matches)
-# setup-grafana - Install and configure monitoring dashboards
+# l - Install and configure monitoring dashboards (Grafana)
 
 ### Monitoring & Observability
 
@@ -147,7 +147,7 @@ The platform includes built-in support for Grafana dashboards to visualize perfo
 
 To set up monitoring:
 1. Run `python main.py`
-2. Type `setup-grafana` at the menu prompt
+2. Type `l` at the menu prompt
 3. Follow the automated installer instructions (requires Admin privileges)
 
 This will install Grafana, configure data sources (SQLite, Prometheus), and import standard dashboards.
@@ -190,14 +190,14 @@ The system is controlled via a numbered menu in `main.py`.
 | **10** | Tree Search | Search for people in GEDCOM or Ancestry API. |
 | **12** | Triangulation | Analyze shared matches for common ancestors. |
 | **13** | Shared Matches | Fetch shared matches for high-value targets. |
-| **Q** | Review Queue | Open the Human-in-the-Loop review interface. |
-| **V** | Validate | Run dry-run validation on historical data. |
+| **f** | Review Queue | Open the Human-in-the-Loop review interface. |
+| **h** | Validate | Run dry-run validation on historical data. |
 
 ### Review Queue Workflow
 
 For managing AI-generated message drafts:
 
-1. **Access Queue**: Press `Q` in the main menu.
+1. **Access Queue**: Press `f` in the main menu.
 2. **List Drafts**: `list` - Shows pending drafts with ID, Recipient, and Score.
 3. **Review Draft**: `review <id>` - Shows full context (thread, draft, reasoning).
 4. **Decisions**:

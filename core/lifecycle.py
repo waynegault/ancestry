@@ -420,7 +420,7 @@ def _test_check_grafana_status_logs_branches() -> bool:
     pending_checker = SimpleNamespace(check_grafana_status=lambda: not_ready_status)
     with mock.patch.object(logger, "info") as info_log:
         _check_grafana_status(pending_checker)
-    info_log.assert_called_with("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+    info_log.assert_called_with("⚠️  Grafana installed but not fully configured (run 'l' from menu)")
     return True
 
 
@@ -464,9 +464,9 @@ def _check_grafana_status(grafana_checker: Any) -> None:
         if grafana_status["ready"]:
             logger.info("✅ Grafana ready (http://localhost:3000)")
         elif grafana_status["installed"]:
-            logger.info("⚠️  Grafana installed but not fully configured (run 'setup-grafana' from menu)")
+            logger.info("⚠️  Grafana installed but not fully configured (run 'l' from menu)")
         else:
-            logger.info("💡 Grafana not installed (run 'setup-grafana' from menu for automated setup)")
+            logger.info("💡 Grafana not installed (run 'l' from menu for automated setup)")
     except Exception as grafana_error:
         logger.debug(f"Grafana check skipped: {grafana_error}")
 
