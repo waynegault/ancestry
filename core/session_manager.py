@@ -887,9 +887,6 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         return False
 
-    # UNIVERSAL SESSION HEALTH MONITORING METHODS
-    # (Moved to SessionHealthMixin)
-
     def _reset_logged_flags(self) -> None:
         """Reset flags used to prevent repeated logging of IDs."""
         self._profile_id_logged = False
@@ -1256,16 +1253,6 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         return synced_count
 
-    # JS Error Monitoring (Moved to SessionHealthMixin)
-
-    # Session Restart (Moved to SessionHealthMixin)
-
-    # Browser Health (Moved to SessionHealthMixin)
-
-    # System Health Validation (Moved to SessionHealthMixin)
-
-    # Cascade Check (Moved to SessionHealthMixin)
-
     def close_sess(self, keep_db: bool = False):
         """
         Close the session.
@@ -1399,9 +1386,6 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         # Always return False - operation failed, restart attempted
         return False
-
-    # === MISSING API METHODS FROM OLD SESSIONMANAGER ===
-    # (Moved to SessionIdentifierMixin)
 
     def _precache_csrf_token(self) -> None:
         """

@@ -801,9 +801,6 @@ def _test_error_handling_and_resilience() -> None:
         raise AssertionError(f"Optimization should handle errors gracefully: {e}") from e
 
 
-# Removed smoke test: _test_function_availability - only checked callable() and isinstance()
-
-
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -839,7 +836,6 @@ def performance_orchestrator_module_tests() -> bool:
     test_memory_optimization_techniques = _test_memory_optimization_techniques
     test_query_optimization_patterns = _test_query_optimization_patterns
     test_error_handling_and_resilience = _test_error_handling_and_resilience
-    # Removed: test_function_availability = _test_function_availability (smoke test)
 
     # Run all tests
     suite.run_test(
@@ -929,8 +925,6 @@ def performance_orchestrator_module_tests() -> bool:
         "Test error handling with invalid inputs and exceptional conditions",
         "Verify robust error handling prevents optimization failures from affecting system stability",
     )
-
-    # Removed smoke test: Function availability
 
     return suite.finish_suite()
 

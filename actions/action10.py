@@ -186,11 +186,6 @@ def get_cached_gedcom() -> Optional[GedcomData]:
     return _GedcomCacheState.cache
 
 
-# === REMOVED: Mock mode is no longer used - all tests use real GEDCOM data ===
-# Mock mode was removed to ensure tests validate real conditions and fail appropriately
-# when GEDCOM data is not available, following action6 refactoring patterns
-
-
 def _format_search_criteria(search_criteria: dict[str, Any]) -> list[str]:
     """Format search criteria for breakdown display."""
     lines = ["\n📋 SEARCH CRITERIA:"]
@@ -1063,9 +1058,6 @@ def calculate_match_score_cached(
     return cache[cache_key]
 
 
-# === REMOVED: Mock filtering results - all tests use real GEDCOM data ===
-
-
 def _extract_individual_data(indi_data: dict[str, Any]) -> dict[str, Any]:
     """Extract needed values for filtering from individual data."""
     return {
@@ -1680,10 +1672,6 @@ def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
     return gedcom_data
 
 
-# _process_matches function removed - logic inlined into main() to allow getting
-# search criteria before loading GEDCOM data
-
-
 @api_retry(max_attempts=3, backoff_factor=4.0)  # Increased from 2.0 to 4.0 for better error handling
 @circuit_breaker(failure_threshold=10, recovery_timeout=300)  # Increased from 5 to 10 for better tolerance
 @timeout_protection(timeout=1200)  # 20 minutes for GEDCOM analysis
@@ -1894,9 +1882,6 @@ def _register_api_search_tests(
         "Test API search with real person data to validate parsing and scoring.",
         "Search for test person via API and verify results are properly parsed and scored.",
     )
-
-
-# === REMOVED: _get_gedcom_data_or_skip - tests now fail when GEDCOM is not available ===
 
 
 def _create_search_criteria(test_data: dict[str, Any]) -> dict[str, Any]:

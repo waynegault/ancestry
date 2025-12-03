@@ -647,9 +647,6 @@ class EngagementTracking(Base):
 # End of EngagementTracking class
 
 
-# MessageType class removed - consolidated into MessageTemplate
-
-
 class MessageTemplate(Base):
     """
     Consolidated message template storage - replaces both MessageType and MessageTemplate.

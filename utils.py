@@ -966,14 +966,6 @@ def time_wait(wait_description: str) -> Callable[[Callable[P, R]], Callable[P, R
 # End of time_wait
 
 
-# NOTE: CircuitBreaker class was removed from utils.py to eliminate duplication.
-# Use the canonical implementations from core/error_handling.py:
-#   - CircuitBreaker: from core.error_handling import CircuitBreaker, CircuitBreakerConfig
-#   - CircuitBreakerOpenError: from core.error_handling import CircuitBreakerOpenError
-# Or from core/circuit_breaker.py for session-based operations:
-#   - SessionCircuitBreaker: from core.circuit_breaker import SessionCircuitBreaker
-
-
 # ------------------------------
 # PHASE 3.1: Direct AdaptiveRateLimiter usage
 # ------------------------------

@@ -19,17 +19,6 @@ PHASE 1 OPTIMIZATIONS (2025-01-16):
 """
 
 import contextlib
-
-# FINAL OPTIMIZATION 1: Progressive Processing Integration
-# Removed unused _progress_callback function
-# === CORE INFRASTRUCTURE ===
-# FINAL OPTIMIZATION 1: Progressive Processing Import
-# Note: progressive_processing decorator removed - not essential for core functionality
-# from performance.performance_cache import progressive_processing
-# FINAL OPTIMIZATION 2: Memory Optimization Import
-# Note: ObjectPool and lazy_property removed - not essential for core functionality
-# from memory_optimizer import ObjectPool, lazy_property
-# Historical note: prior advanced caching layer removed for clarity
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -474,9 +463,6 @@ def coord(session_manager: SessionManager, start: Optional[int] = None) -> bool:
 # ------------------------------------------------------------------------------
 
 
-# Removed _calculate_optimized_workers - no longer needed for sequential processing
-
-
 def _build_prefetch_config() -> PrefetchConfig:
     """Bridge Action 6 runtime settings to the gather.prefetch config object."""
 
@@ -570,9 +556,6 @@ def _process_single_match_for_bulk(
 # ===================================================================
 # PHASE 2: API PREFETCH ORCHESTRATION (SEQUENTIAL ONLY)
 # ===================================================================
-# ThreadPoolExecutor-based and async orchestrators removed to enforce
-# strictly sequential API access (critical for eliminating 429 errors).
-# Prefetching now funnels through _perform_api_prefetches exclusively.
 
 
 # ===================================================================
@@ -642,12 +625,6 @@ def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_b
 
 
 DB_BATCH_SIZE = _get_configured_batch_size()  # Now respects .env BATCH_SIZE=10
-
-# ===================================================================
-# PHASE 3: ADVANCED OPTIMIZATIONS - SMART MATCH PRIORITIZATION
-# ===================================================================
-# Removed unused functions: _prioritize_matches_by_importance, _process_match_batch
-
 
 # ===================================================================
 # PHASE 3: MEMORY-OPTIMIZED DATA STRUCTURES
@@ -1997,8 +1974,6 @@ def _update_recent_batch_history(duration: float) -> None:
         del _RECENT_BATCH_DURATIONS[:-_MAX_TRACKED_BATCH_SAMPLES]
 
 
-# FINAL OPTIMIZATION 1: Progressive Processing for Large Match Datasets
-# Note: @progressive_processing decorator removed - not essential for core functionality
 def _initialize_page_processing(
     matches_on_page: list[dict[str, Any]], current_page: int, my_uuid: Optional[str]
 ) -> tuple[dict[str, int], int, Optional[Any]]:
@@ -4449,15 +4424,6 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
     }
 
 
-# ============================================================================
-# LEGACY CODE REMOVED - Ladder fetches use the enhanced API with an automatic
-# fallback to the relationladderwithlabels endpoint when needed.
-# ============================================================================
-
-
-# Redundant API functions removed (relationship probability is now extracted from match details)
-
-
 # ------------------------------------------------------------------------------
 # Utility & Helper Functions
 # ------------------------------------------------------------------------------
@@ -4476,8 +4442,6 @@ def _log_page_summary(page: int, page_new: int, page_updated: int, page_skipped:
 
 
 # End of _log_page_summary
-
-# type: moved unused function: _log_coord_summary
 
 
 def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:

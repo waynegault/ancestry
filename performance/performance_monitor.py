@@ -1329,9 +1329,6 @@ def _test_error_handling() -> None:
     assert len(error_profiles) > 0
 
 
-# Removed smoke test: _test_function_availability - only checked callable() and isinstance()
-
-
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -1367,7 +1364,6 @@ def performance_monitor_module_tests() -> bool:
     test_performance_optimization = _test_performance_optimization
     test_global_performance_functions = _test_global_performance_functions
     test_error_handling = _test_error_handling
-    # Removed: test_function_availability = _test_function_availability (smoke test)
 
     # Run all tests
     suite.run_test(
@@ -1457,8 +1453,6 @@ def performance_monitor_module_tests() -> bool:
         "Test error handling with invalid inputs and function exceptions",
         "Verify monitoring continues despite errors",
     )
-
-    # Removed smoke test: Function availability
 
     return suite.finish_suite()
 

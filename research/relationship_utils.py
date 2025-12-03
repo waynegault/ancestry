@@ -91,12 +91,6 @@ from genealogy.relationship_calculations import (
     is_niece_or_nephew,
 )
 
-# NOTE: _clean_gedcom_slashes, _format_single_word, and format_name were removed
-# to eliminate duplication. format_name is now imported from utils.py which has
-# a more comprehensive implementation with better handling of name particles,
-# Mc/Mac prefixes, hyphenated names, and quoted nicknames.
-
-
 # --- Relationship Path Finding Functions ---
 
 # Helper functions for fast_bidirectional_bfs

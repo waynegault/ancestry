@@ -28,8 +28,6 @@ logger = logging.getLogger(__name__)
 import json
 import sys
 from collections.abc import Mapping, Sequence
-
-# from concurrent.futures import ThreadPoolExecutor, as_completed - removed unused
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Literal, Optional, cast
 
@@ -3304,10 +3302,7 @@ class InboxProcessor:
 # --- Enhanced Test Framework Implementation ---
 
 # === SESSION SETUP FOR TESTS ===
-# Migrated to use centralized session_utils.py (reduces 88 lines to 1 import!)
 from core.session_utils import ensure_session_for_tests_sm_only as _ensure_session_for_tests
-
-# Removed smoke test: _test_class_and_methods_available
 
 
 def _test_inbox_processor_initialization() -> None:
