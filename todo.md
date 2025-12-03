@@ -269,31 +269,35 @@ These suppressions are required due to Protocol/interface requirements:
 
 ## 7. Architecture Improvements
 
-### 7.1 Retry Decorator Consolidation
+### 7.1 Retry Decorator Consolidation ✅ VERIFIED - NO DUPLICATION
 
-**Pattern**: Multiple retry implementations exist.
+**Status**: Verified that only ONE retry implementation exists.
 
-**Files**:
+**Verified**:
 
-- `core/error_handling.py` (lines 869-913): `retry_on_failure` decorator
-- `core/circuit_breaker.py` (lines 93-107): `with_retry`, `retry_with_backoff`
+- `core/error_handling.py` (line 1645): `retry_on_failure` decorator - ONLY implementation
+- `core/circuit_breaker.py`: Contains CircuitBreaker pattern but NO retry decorators
 
-**Action**:
+**Action**: No changes needed. The todo entry was based on outdated information.
 
-- [ ] Consolidate into single retry implementation in `core/error_handling.py`
-- [ ] Deprecate/remove duplicate in `circuit_breaker.py`
+### 7.2 Logging Configuration Overlap ✅ VERIFIED - COMPLEMENTARY MODULES
 
-### 7.2 Logging Configuration Overlap
+**Status**: Verified that the two modules serve different, complementary purposes.
 
-**Files**:
+**Analysis**:
 
-- `core/logging_config.py`: Primary logging configuration
-- `core/logging_utils.py`: Additional logging utilities
+- `core/logging_config.py` (811 lines): Main configuration infrastructure
+  - Handler setup (console, file)
+  - Custom formatters
+  - Filters for external libraries (Selenium, urllib3)
+  - Dynamic log level updates
 
-**Action**:
+- `core/logging_utils.py` (637 lines): Utility layer
+  - `get_logger()` function for consistent logger access
+  - Centralized logging state management
+  - Helper functions for logging operations
 
-- [ ] Review overlap and either merge or clearly define boundaries
-- [ ] External logger suppression appears in both files
+**Action**: No changes needed. These are well-organized complementary modules.
 
 ---
 
@@ -347,9 +351,11 @@ These tasks require manual testing with real historical data and cannot be autom
 
 ### Medium Priority (Maintainability) - IN PROGRESS
 
-1. [ ] `sys.path.insert()` calls (Section 2.5) - 50+ files affected, requires careful refactoring
+1. [ ] `sys.path.insert()` calls (Section 2.5) - 92+ files affected, requires careful refactoring
 2. ✅ ConfigManager singleton implemented (Section 2.4) - `get_config_manager()` function added
-3. [ ] Consolidate cookie sync logic (Section 2.2) - SessionManager vs APIManager
+3. [ ] Consolidate cookie sync logic (Section 2.2) - SessionManager vs APIManager (complex refactor)
+4. ✅ Retry decorator consolidation verified (Section 7.1) - Only one implementation exists
+5. ✅ Logging configuration verified (Section 7.2) - Complementary modules, no overlap
 
 ### Low Priority (Nice to Have)
 
