@@ -1320,7 +1320,14 @@ class APISettings:
     max_concurrency: int = 1  # Sequential processing only
 ```
 
-**ConfigManager** loads from `.env` → validates types → provides `config_schema` global.
+**ConfigManager** singleton pattern - use `get_config_manager()` for shared instance:
+
+```python
+from config.config_manager import get_config_manager
+
+config_manager = get_config_manager()  # Returns singleton instance
+config = config_manager.get_config()
+```
 
 ## API Reference
 

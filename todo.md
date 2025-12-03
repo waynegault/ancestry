@@ -88,11 +88,26 @@ In `genealogy/gedcom/gedcom_utils.py`:
 
 **Action**: No changes needed.
 
-### 2.4 ConfigManager Instantiation Pattern
+### 2.4 ConfigManager Singleton Pattern ✅ COMPLETED
 
-**Pattern**: `ConfigManager()` is instantiated 15+ times across the codebase instead of using a singleton.
+**Problem**: `ConfigManager()` was instantiated 15+ times across the codebase instead of using a singleton.
 
-**Files affected** (partial list):
+**Solution Implemented**:
+
+- Added `_ConfigManagerSingleton` container class (avoids global statement warning)
+- Added `get_config_manager()` function that returns the shared instance
+- Function supports `force_new=True` for testing scenarios
+- Backwards compatible - direct `ConfigManager()` instantiation still works
+
+**Usage**:
+
+```python
+from config.config_manager import get_config_manager
+config_manager = get_config_manager()
+config = config_manager.get_config()
+```
+
+**Files affected** (partial list) - can gradually migrate:
 
 - `main.py` (line 122)
 - `integrations/ms_graph_utils.py` (line 39)
@@ -101,11 +116,9 @@ In `genealogy/gedcom/gedcom_utils.py`:
 - `ai/ai_interface.py` (line 162)
 - And 10+ more
 
-**Action**:
+**Future Work** (optional optimization):
 
-- [ ] Implement singleton pattern in `ConfigManager` class
-- [ ] Or use dependency injection pattern with a single instance created in `main.py`
-- [ ] Update all files to use the singleton/injected instance
+- [ ] Gradually migrate files to use `get_config_manager()` instead of direct instantiation
 
 ### 2.5 sys.path.insert() Proliferation
 
@@ -332,10 +345,10 @@ These tasks require manual testing with real historical data and cannot be autom
 4. ✅ Test runner imports reviewed (Section 2.3) - All imports are correct
 5. ✅ Trivial tests reviewed (Section 4.1, 4.3) - Tests are appropriate for their purpose
 
-### Medium Priority (Maintainability) - REMAINING
+### Medium Priority (Maintainability) - IN PROGRESS
 
 1. [ ] `sys.path.insert()` calls (Section 2.5) - 50+ files affected, requires careful refactoring
-2. [ ] Implement ConfigManager singleton (Section 2.4) - 15+ instantiations to consolidate
+2. ✅ ConfigManager singleton implemented (Section 2.4) - `get_config_manager()` function added
 3. [ ] Consolidate cookie sync logic (Section 2.2) - SessionManager vs APIManager
 
 ### Low Priority (Nice to Have)

@@ -110,6 +110,42 @@ class ValidationError(Exception):
     pass
 
 
+class _ConfigManagerSingleton:
+    """Container class for singleton instance to avoid global statement."""
+
+    instance: Optional["ConfigManager"] = None
+
+
+def get_config_manager(
+    config_file: Optional[Union[str, Path]] = None,
+    environment: Optional[str] = None,
+    force_new: bool = False,
+) -> "ConfigManager":
+    """
+    Get the singleton ConfigManager instance.
+
+    This function provides a single shared ConfigManager instance across the entire
+    application, eliminating redundant instantiations and ensuring consistent
+    configuration state.
+
+    Args:
+        config_file: Optional configuration file path (only used on first call)
+        environment: Environment name (only used on first call)
+        force_new: If True, create a new instance (for testing only)
+
+    Returns:
+        The shared ConfigManager instance
+    """
+    if force_new or _ConfigManagerSingleton.instance is None:
+        _ConfigManagerSingleton.instance = ConfigManager(
+            config_file=config_file,
+            environment=environment,
+            auto_load=True,
+        )
+
+    return _ConfigManagerSingleton.instance
+
+
 class ConfigManager:
     """
     Enhanced configuration manager with type-safe schemas and validation.
@@ -121,6 +157,15 @@ class ConfigManager:
     - Configuration validation with detailed error reporting
     - Hot reloading capabilities
     - Credential integration with SecurityManager
+
+    Usage:
+        # Preferred: Use the singleton function
+        from config.config_manager import get_config_manager
+        config_manager = get_config_manager()
+        config = config_manager.get_config()
+
+        # Legacy: Direct instantiation still works but creates new instance
+        config_manager = ConfigManager()
     """
 
     _token_fill_rate_clamp_logged = False
