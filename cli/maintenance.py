@@ -45,32 +45,10 @@ class GrafanaCheckerProtocol(Protocol):
     def ensure_grafana_ready(self, *, auto_setup: bool = False, silent: bool = True) -> None: ...
 
 
-class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
-    """Container for log/analytics helper actions used by the main menu."""
+class LogMaintenanceMixin:
+    """Mixin for log maintenance operations."""
 
-    _CACHE_KIND_ICONS: ClassVar[dict[str, str]] = {
-        "disk": "📁",
-        "memory": "🧠",
-        "session": "🔐",
-        "system": "⚙️",
-        "gedcom": "🌳",
-        "performance": "📊",
-        "database": "🗄️",
-        "retention": "🧹",
-    }
-
-    def __init__(
-        self,
-        *,
-        logger: logging.Logger,
-        grafana_checker: Optional[GrafanaCheckerProtocol] = None,
-    ) -> None:
-        self._logger = logger
-        self._grafana_checker = grafana_checker
-
-    # ------------------------------------------------------------------
-    # Log maintenance helpers
-    # ------------------------------------------------------------------
+    _logger: logging.Logger
 
     def clear_log_file(self) -> tuple[bool, Optional[str]]:
         """Clear the active log file by flushing/closing the handler."""
@@ -98,9 +76,45 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
             self._logger.warning("Error clearing log '%s': %s", log_file_path, error, exc_info=True)
         return cleared, log_file_path
 
-    # ------------------------------------------------------------------
-    # Test runners
-    # ------------------------------------------------------------------
+    def toggle_log_level(self) -> None:
+        """Toggle console log level between DEBUG and INFO."""
+
+        os.system("cls" if os.name == "nt" else "clear")
+        if self._logger and self._logger.handlers:
+            console_handler: Optional[StreamHandler[TextIO]] = None
+            for handler in self._logger.handlers:
+                if isinstance(handler, logging.StreamHandler):
+                    handler_typed = cast(logging.StreamHandler[TextIO], handler)
+                    if handler_typed.stream == sys.stderr:
+                        console_handler = handler_typed
+                        break
+            if console_handler:
+                current_level = console_handler.level
+                new_level = logging.DEBUG if current_level > logging.DEBUG else logging.INFO
+                new_level_name = logging.getLevelName(new_level)
+                setup_logging(log_level=new_level_name, allow_env_override=False)
+                self._logger.info("Console log level toggled to: %s", new_level_name)
+            else:
+                self._logger.warning("Could not find console handler to toggle level.")
+        else:
+            print("WARNING: Logger not ready or has no handlers.", file=sys.stderr)
+
+    def clear_app_log_menu(self) -> None:
+        """Menu action to clear the application log file."""
+        cleared, log_path = self.clear_log_file()
+        if cleared:
+            print(f"\n✅ Log file cleared: {log_path}\n")
+        elif log_path:
+            print(f"\n❌ Failed to clear log file: {log_path}\n")
+        else:
+            print("\n⚠️  No log file handler found.\n")
+        input("Press Enter to continue...")
+
+
+class TestRunnerMixin:
+    """Mixin for test execution operations."""
+
+    _logger: logging.Logger
 
     def run_main_tests(self) -> None:
         """Run the relocated main.py test suite."""
@@ -149,9 +163,27 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
         print("\nReturning to main menu...")
         input("Press Enter to continue...")
 
-    # ------------------------------------------------------------------
-    # Visualization and analytics helpers
-    # ------------------------------------------------------------------
+    @staticmethod
+    def clear_test_cache() -> None:
+        """Clear the run_all_tests result cache to force retesting all modules."""
+        cache_file = Path("Cache/test_results_cache.json")
+        if cache_file.exists():
+            try:
+                cache_file.unlink()
+                print("\n✅ Test result cache cleared successfully.")
+                print("   Next test run will retest all modules.\n")
+            except OSError as e:
+                print(f"\n❌ Failed to clear test cache: {e}\n")
+        else:
+            print("\n📭 No test cache found (already empty).\n")
+        input("Press Enter to continue...")
+
+
+class AnalyticsMixin:
+    """Mixin for visualization and analytics operations."""
+
+    _logger: logging.Logger
+    _grafana_checker: Optional[GrafanaCheckerProtocol]
 
     def open_graph_visualization(self) -> None:
         """Launch the local graph visualization web server."""
@@ -251,9 +283,111 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
         print("\nReturning to main menu...")
         input("Press Enter to continue...")
 
-    # ------------------------------------------------------------------
-    # Review Queue CLI (Sprint 4 Integration)
-    # ------------------------------------------------------------------
+    def show_metrics_report(self) -> None:
+        """Open Grafana dashboards or raw metrics depending on availability."""
+
+        try:
+            from observability.metrics_registry import is_metrics_enabled
+        except Exception as exc:  # pragma: no cover - optional module missing
+            self._logger.error("Unable to import metrics registry: %s", exc)
+            print("\n⚠️  Metrics registry unavailable")
+            return
+
+        try:
+            print("\n" + "=" * 70)
+            print("📊 GRAFANA METRICS DASHBOARD")
+            print("=" * 70)
+
+            if not is_metrics_enabled():
+                print("\n⚠️  Metrics collection is DISABLED")
+                print("\nTo enable metrics:")
+                print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
+                print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
+                print("  3. Restart the application")
+                print("\n" + "=" * 70 + "\n")
+                return
+
+            grafana_base = "http://localhost:3000"
+            try:
+                urllib_request.urlopen(grafana_base, timeout=1)
+                grafana_running = True
+            except Exception:
+                grafana_running = False
+
+            if not grafana_running:
+                print("\n⚠️  Grafana is NOT running on http://localhost:3000")
+                print("\n💡 Setup Instructions:")
+                print("   1. Install Grafana: https://grafana.com/grafana/download")
+                print("   2. Start Grafana service")
+                print("   3. Login at http://localhost:3000 (default: admin/admin)")
+                print("   4. Add Prometheus data source → http://localhost:9000")
+                print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
+                print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
+                print("\n" + "=" * 70 + "\n")
+                webbrowser.open("http://localhost:9000/metrics")
+                return
+
+            print("\n✅ Grafana is running!")
+            print("🔍 Checking dashboards...")
+
+            if self._grafana_checker:
+                try:
+                    self._grafana_checker.ensure_dashboards_imported()
+                except Exception as import_err:  # pragma: no cover - optional dependency
+                    self._logger.debug("Dashboard auto-import check: %s", import_err)
+
+            system_perf_url = f"{grafana_base}/d/ancestry-performance"
+            genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
+            code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
+
+            print("🌐 Opening dashboards:")
+            print(f"   1. System Performance & Health: {system_perf_url}")
+            print(f"   2. Genealogy Research Insights: {genealogy_url}")
+            print(f"   3. Code Quality & Architecture: {code_quality_url}")
+            print("\n💡 If dashboards show 'Not found', run: l")
+            print("\n" + "=" * 70 + "\n")
+
+            webbrowser.open(system_perf_url)
+            time.sleep(0.5)
+            webbrowser.open(genealogy_url)
+            time.sleep(0.5)
+            webbrowser.open(code_quality_url)
+
+        except Exception as exc:  # pragma: no cover - browser/IO issues
+            self._logger.error("Error opening Grafana: %s", exc, exc_info=True)
+            print(f"\n⚠️  Error: {exc}")
+            print("\n" + "=" * 70 + "\n")
+
+    def run_grafana_setup(self) -> None:
+        """Run grafana checker setup flow if helper module is present."""
+
+        if self._grafana_checker:
+            status = self._grafana_checker.check_grafana_status()
+            if status["ready"]:
+                print("\n✅ Grafana is already fully configured and running!")
+                print("   Dashboard URL: http://localhost:3000")
+                print("   Default credentials: admin / ancestry")
+                print("\n📊 Checking dashboards...")
+                self._grafana_checker.ensure_dashboards_imported()
+                print("\n✅ Dashboard check complete!")
+                print("\n📊 Available Dashboards:")
+                print("   • Overview:    http://localhost:3000/d/ancestry-overview")
+                print("   • Performance: http://localhost:3000/d/ancestry-performance")
+                print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
+                print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
+                print("\n💡 If dashboards are empty, configure data sources:")
+                print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
+            else:
+                self._grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
+        else:
+            print("\n⚠️  Grafana checker module not available")
+            print("Ensure grafana_checker.py is in the project root directory\n")
+
+
+class ReviewQueueMixin:
+    """Mixin for review queue operations."""
+
+    _logger: logging.Logger
 
     def show_review_queue(self) -> None:
         """Display pending drafts for human review."""
@@ -408,9 +542,21 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
         except Exception as exc:
             self._logger.debug("Could not record validation metrics: %s", exc)
 
-    # ------------------------------------------------------------------
-    # Cache statistics helpers
-    # ------------------------------------------------------------------
+
+class CacheStatsMixin:
+    """Mixin for cache statistics operations."""
+
+    _logger: logging.Logger
+    _CACHE_KIND_ICONS: ClassVar[dict[str, str]] = {
+        "disk": "📁",
+        "memory": "🧠",
+        "session": "🔐",
+        "system": "⚙️",
+        "gedcom": "🌳",
+        "performance": "📊",
+        "database": "🗄️",
+        "retention": "🧹",
+    }
 
     @staticmethod
     def format_cache_stat_value(value: Any) -> str:
@@ -632,9 +778,11 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
 
         input("\nPress Enter to continue...")
 
-    # ------------------------------------------------------------------
-    # Configuration health check
-    # ------------------------------------------------------------------
+
+class ConfigMaintenanceMixin:
+    """Mixin for configuration and schema operations."""
+
+    _logger: logging.Logger
 
     def run_config_health_check(self) -> None:
         """Run comprehensive configuration health check and display report."""
@@ -652,10 +800,6 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
             print("Error running configuration health check. Check logs for details.")
 
         input("\nPress Enter to continue...")
-
-    # ------------------------------------------------------------------
-    # Database/schema utilities
-    # ------------------------------------------------------------------
 
     def run_schema_migrations_action(self) -> None:
         """Apply pending schema migrations and display status."""
@@ -713,162 +857,9 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
                     self._logger.debug("Failed to close temporary database manager", exc_info=True)
             input("\nPress Enter to continue...")
 
-    # ------------------------------------------------------------------
-    # Logging/metrics toggles
-    # ------------------------------------------------------------------
 
-    def toggle_log_level(self) -> None:
-        """Toggle console log level between DEBUG and INFO."""
-
-        os.system("cls" if os.name == "nt" else "clear")
-        if self._logger and self._logger.handlers:
-            console_handler: Optional[StreamHandler[TextIO]] = None
-            for handler in self._logger.handlers:
-                if isinstance(handler, logging.StreamHandler):
-                    handler_typed = cast(logging.StreamHandler[TextIO], handler)
-                    if handler_typed.stream == sys.stderr:
-                        console_handler = handler_typed
-                        break
-            if console_handler:
-                current_level = console_handler.level
-                new_level = logging.DEBUG if current_level > logging.DEBUG else logging.INFO
-                new_level_name = logging.getLevelName(new_level)
-                setup_logging(log_level=new_level_name, allow_env_override=False)
-                self._logger.info("Console log level toggled to: %s", new_level_name)
-            else:
-                self._logger.warning("Could not find console handler to toggle level.")
-        else:
-            print("WARNING: Logger not ready or has no handlers.", file=sys.stderr)
-
-    def show_metrics_report(self) -> None:
-        """Open Grafana dashboards or raw metrics depending on availability."""
-
-        try:
-            from observability.metrics_registry import is_metrics_enabled
-        except Exception as exc:  # pragma: no cover - optional module missing
-            self._logger.error("Unable to import metrics registry: %s", exc)
-            print("\n⚠️  Metrics registry unavailable")
-            return
-
-        try:
-            print("\n" + "=" * 70)
-            print("📊 GRAFANA METRICS DASHBOARD")
-            print("=" * 70)
-
-            if not is_metrics_enabled():
-                print("\n⚠️  Metrics collection is DISABLED")
-                print("\nTo enable metrics:")
-                print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
-                print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
-                print("  3. Restart the application")
-                print("\n" + "=" * 70 + "\n")
-                return
-
-            grafana_base = "http://localhost:3000"
-            try:
-                urllib_request.urlopen(grafana_base, timeout=1)
-                grafana_running = True
-            except Exception:
-                grafana_running = False
-
-            if not grafana_running:
-                print("\n⚠️  Grafana is NOT running on http://localhost:3000")
-                print("\n💡 Setup Instructions:")
-                print("   1. Install Grafana: https://grafana.com/grafana/download")
-                print("   2. Start Grafana service")
-                print("   3. Login at http://localhost:3000 (default: admin/admin)")
-                print("   4. Add Prometheus data source → http://localhost:9000")
-                print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
-                print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
-                print("\n" + "=" * 70 + "\n")
-                webbrowser.open("http://localhost:9000/metrics")
-                return
-
-            print("\n✅ Grafana is running!")
-            print("🔍 Checking dashboards...")
-
-            if self._grafana_checker:
-                try:
-                    self._grafana_checker.ensure_dashboards_imported()
-                except Exception as import_err:  # pragma: no cover - optional dependency
-                    self._logger.debug("Dashboard auto-import check: %s", import_err)
-
-            system_perf_url = f"{grafana_base}/d/ancestry-performance"
-            genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
-            code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
-
-            print("🌐 Opening dashboards:")
-            print(f"   1. System Performance & Health: {system_perf_url}")
-            print(f"   2. Genealogy Research Insights: {genealogy_url}")
-            print(f"   3. Code Quality & Architecture: {code_quality_url}")
-            print("\n💡 If dashboards show 'Not found', run: l")
-            print("\n" + "=" * 70 + "\n")
-
-            webbrowser.open(system_perf_url)
-            time.sleep(0.5)
-            webbrowser.open(genealogy_url)
-            time.sleep(0.5)
-            webbrowser.open(code_quality_url)
-
-        except Exception as exc:  # pragma: no cover - browser/IO issues
-            self._logger.error("Error opening Grafana: %s", exc, exc_info=True)
-            print(f"\n⚠️  Error: {exc}")
-            print("\n" + "=" * 70 + "\n")
-
-    def run_grafana_setup(self) -> None:
-        """Run grafana checker setup flow if helper module is present."""
-
-        if self._grafana_checker:
-            status = self._grafana_checker.check_grafana_status()
-            if status["ready"]:
-                print("\n✅ Grafana is already fully configured and running!")
-                print("   Dashboard URL: http://localhost:3000")
-                print("   Default credentials: admin / ancestry")
-                print("\n📊 Checking dashboards...")
-                self._grafana_checker.ensure_dashboards_imported()
-                print("\n✅ Dashboard check complete!")
-                print("\n📊 Available Dashboards:")
-                print("   • Overview:    http://localhost:3000/d/ancestry-overview")
-                print("   • Performance: http://localhost:3000/d/ancestry-performance")
-                print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
-                print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
-                print("\n💡 If dashboards are empty, configure data sources:")
-                print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
-            else:
-                self._grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
-        else:
-            print("\n⚠️  Grafana checker module not available")
-            print("Ensure grafana_checker.py is in the project root directory\n")
-
-    # ------------------------------------------------------------------
-    # Miscellaneous helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def clear_test_cache() -> None:
-        """Clear the run_all_tests result cache to force retesting all modules."""
-        cache_file = Path("Cache/test_results_cache.json")
-        if cache_file.exists():
-            try:
-                cache_file.unlink()
-                print("\n✅ Test result cache cleared successfully.")
-                print("   Next test run will retest all modules.\n")
-            except OSError as e:
-                print(f"\n❌ Failed to clear test cache: {e}\n")
-        else:
-            print("\n📭 No test cache found (already empty).\n")
-        input("Press Enter to continue...")
-
-    def clear_app_log_menu(self) -> None:
-        """Menu action to clear the application log file."""
-        cleared, log_path = self.clear_log_file()
-        if cleared:
-            print(f"\n✅ Log file cleared: {log_path}\n")
-        elif log_path:
-            print(f"\n❌ Failed to clear log file: {log_path}\n")
-        else:
-            print("\n⚠️  No log file handler found.\n")
-        input("Press Enter to continue...")
+class SystemMixin:
+    """Mixin for system-level operations."""
 
     @staticmethod
     def clear_screen() -> None:
@@ -886,6 +877,27 @@ class MainCLIHelpers:  # noqa: PLR0904 - CLI helper needs many public methods
         self.clear_screen()
         print("Exiting.")
         return False
+
+
+class MainCLIHelpers(
+    LogMaintenanceMixin,
+    TestRunnerMixin,
+    AnalyticsMixin,
+    ReviewQueueMixin,
+    CacheStatsMixin,
+    ConfigMaintenanceMixin,
+    SystemMixin,
+):
+    """Container for log/analytics helper actions used by the main menu."""
+
+    def __init__(
+        self,
+        *,
+        logger: logging.Logger,
+        grafana_checker: Optional[GrafanaCheckerProtocol] = None,
+    ) -> None:
+        self._logger = logger
+        self._grafana_checker = grafana_checker
 
 
 # ------------------------------------------------------------------

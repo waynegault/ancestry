@@ -144,7 +144,6 @@ class ExtractedFact:
         person1: str,
         relationship: str,
         person2: str,
-        context: str,  # noqa: ARG003 - kept for API compatibility
         original_text: str,
         conversation_id: Optional[str] = None,
     ) -> ExtractedFact:
@@ -786,7 +785,6 @@ def extract_facts_from_ai_response(
                 person1=rel.get("person1", "Unknown"),
                 relationship=rel.get("relationship", "related"),
                 person2=rel.get("person2", "Unknown"),
-                context=rel.get("context", ""),
                 original_text=original_message,
                 conversation_id=conversation_id,
             )
