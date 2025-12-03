@@ -1,123 +1,38 @@
-#!/usr/bin/env python3
-# ruff: noqa: PLR0904
-
 """
-Comprehensive Health Monitoring & Intelligent System Diagnostics Engine
-
-Advanced system health platform providing sophisticated monitoring, predictive
-analytics, and comprehensive diagnostics with intelligent alerting, automated
-health assessment, and professional-grade system monitoring for genealogical
-automation systems and research workflow health management and optimization.
-
-System Health Intelligence:
-• Advanced system health monitoring with intelligent diagnostics and predictive analytics algorithms
-• Sophisticated performance tracking with comprehensive metrics collection and analysis protocols
-• Intelligent health assessment with automated diagnostics and proactive issue identification
-• Advanced system analytics with detailed health insights and optimization recommendations
-• Comprehensive health validation with intelligent system integrity checking and verification
-• Integration with monitoring systems for comprehensive system health intelligence and management
-
-Predictive Analytics:
-• Sophisticated predictive health modeling with machine learning-based performance prediction
-• Advanced health trend analysis with intelligent pattern recognition and anomaly detection
-• Intelligent health forecasting with predictive system failure analysis and prevention protocols
-• Comprehensive health optimization with data-driven performance enhancement and system tuning
-• Advanced health correlation analysis with intelligent root cause identification and resolution
-• Integration with analytics platforms for comprehensive predictive health monitoring and optimization
-
-Automated Diagnostics:
-• Advanced automated diagnostics with intelligent system analysis and issue identification protocols
-• Sophisticated health alerting with intelligent notification systems and escalation procedures
-• Intelligent health recovery with automated remediation protocols and system healing algorithms
-• Comprehensive health reporting with detailed system health analysis and performance insights
-• Advanced health automation with intelligent system maintenance and optimization protocols
-• Integration with automation systems for comprehensive health management and system optimization
-
-Foundation Services:
-Provides the essential health monitoring infrastructure that enables reliable,
-high-performance system operation through intelligent health monitoring, comprehensive
-diagnostics, and professional system health management for genealogical automation workflows.
-
-Technical Implementation:
-Provides real-time health monitoring, session health scoring, early warning detection,
-and predictive analytics for the Ancestry automation system.
+Health monitoring system for the Ancestry application.
+Tracks performance metrics, error rates, and resource usage to prevent session death.
 """
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
-# === STANDARD LIBRARY IMPORTS ===
 import json
-
-# === LOCAL IMPORTS ===
 import logging
-import threading
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional, cast
 
-# === THIRD-PARTY IMPORTS ===
 import psutil
 
+from core.registry_utils import auto_register_module
 from testing.test_framework import TestSuite
+from testing.test_utilities import create_standard_test_runner
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# HEALTH MONITORING SYSTEM
-# ============================================================================
-# The following functions provide advanced health monitoring capabilities
-# integrated into the main application workflow:
-#
-# SessionHealthMonitor methods:
-#   - begin_safety_test() / end_safety_test(): Safety test mode for alerts
-#   - get_error_rate_statistics(): Detailed error rate analysis
-#   - should_emergency_halt(): Emergency halt detection
-#   - should_immediate_intervention(): Immediate intervention detection
-#   - get_intervention_status(): Current intervention status
-#   - reset_intervention_flags(): Reset intervention state
-#   - update_system_metrics(): System-wide metrics update
-#
-# Module-level integration functions:
-#   - initialize_health_monitoring(): Health monitoring system init
-#   - integrate_with_session_manager(): SessionManager integration hook
-#   - enable_session_state_persistence(): Crash recovery persistence
-#   - create_recovery_checkpoint(): Recovery checkpoint creation
-#   - get_session_recovery_status(): Recovery status information
-# ============================================================================
-
-
-# Default thresholds for dynamically registered metrics
-_DYNAMIC_METRIC_DEFAULTS: dict[str, dict[str, float]] = {
-    # Ethnicity-heavy batches routinely exceed a minute; stretch thresholds to prevent noise.
-    "api_batch_processing_last_duration": {"warning": 180.0, "critical": 300.0, "weight": 1.2},
-    "api_combined_details_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.2},
-    "api_relationship_prob_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},
-    "api_ethnicity_last_duration": {"warning": 6.0, "critical": 12.0, "weight": 1.0},
-}
-
-
 class HealthStatus(Enum):
-    """Health status levels for different system components."""
+    """Health status levels."""
 
-    EXCELLENT = "excellent"
-    GOOD = "good"
-    FAIR = "fair"
-    POOR = "poor"
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
     CRITICAL = "critical"
-    ERROR = "error"
+    EMERGENCY = "emergency"
 
 
 class AlertLevel(Enum):
-    """Alert levels for health monitoring."""
+    """Alert severity levels."""
 
     INFO = "info"
     WARNING = "warning"
@@ -127,32 +42,19 @@ class AlertLevel(Enum):
 
 @dataclass
 class HealthMetric:
-    """Individual health metric data structure."""
+    """Single health metric tracking."""
 
     name: str
     value: float
     threshold_warning: float
     threshold_critical: float
-    weight: float = 1.0
     timestamp: float = field(default_factory=time.time)
-
-    @property
-    def status(self) -> HealthStatus:
-        """Get health status based on thresholds."""
-        if self.value >= self.threshold_critical:
-            return HealthStatus.CRITICAL
-        if self.value >= self.threshold_warning:
-            return HealthStatus.POOR
-        if self.value >= self.threshold_warning * 0.8:
-            return HealthStatus.FAIR
-        if self.value >= self.threshold_warning * 0.6:
-            return HealthStatus.GOOD
-        return HealthStatus.EXCELLENT
+    status: HealthStatus = HealthStatus.HEALTHY
 
 
 @dataclass
 class HealthAlert:
-    """Health alert data structure."""
+    """Health alert details."""
 
     level: AlertLevel
     component: str
@@ -161,632 +63,547 @@ class HealthAlert:
     metric_value: float
     threshold: float
     timestamp: float = field(default_factory=time.time)
-    acknowledged: bool = False
 
 
-class SessionHealthMonitor:
-    """
-    Comprehensive session health monitoring with predictive analytics.
-    """
+# ==============================================
+# MIXINS
+# ==============================================
 
-    _action6_callback_registered: bool
 
-    def __init__(self) -> None:
-        self.metrics_history: dict[str, deque[tuple[float, float]]] = {}
-        self.current_metrics: dict[str, HealthMetric] = {}
-        self.alerts: list[HealthAlert] = []
-        self.health_score_history: deque[tuple[float, float]] = deque(maxlen=100)
-        self.session_start_time = time.time()
-        self.last_health_check = time.time()
-        self.monitoring_active = False
-        self.lock = threading.Lock()
-
-        # Performance tracking
-        self.api_response_times: deque[float] = deque(maxlen=50)
-        self.error_counts: dict[str, int] = {}
-        self.page_processing_times: deque[float] = deque(maxlen=20)
-        self.memory_usage_history: deque[float] = deque(maxlen=30)
-
-        # Enhanced error rate monitoring - PERFORMANCE OPTIMIZED
-        self.error_timestamps: deque[float] = deque(maxlen=2000)  # Increased for 20+ hour sessions
-        self.error_rate_warnings_sent: dict[str, float] = {}  # Track when warnings were sent
-        self.last_error_rate_check: float = time.time()
-
-        # Metric alert de-duplication (prevents alert spam on repeated updates)
-        self._last_metric_alert_level: dict[str, AlertLevel] = {}
-        self._last_metric_alert_time: dict[str, float] = {}
-        self._metric_alert_cooldown_seconds: float = 60.0  # Only re-log after 60s unless level escalates
-
-        # Performance optimization for long sessions
-        self._monitoring_interval: float = 30.0  # Base monitoring interval
-        self._adaptive_interval: bool = True  # Enable adaptive monitoring
-        self._last_cleanup_time: float = time.time()
-        self._cleanup_interval: float = 300.0  # Clean up every 5 minutes
-
-        # Automatic intervention flags
-        self._emergency_halt_requested: bool = False
-        self._emergency_halt_reason: str = ""
-        self._emergency_halt_timestamp: float = 0.0
-        self._immediate_intervention_requested: bool = False
-        self._immediate_intervention_reason: str = ""
-        self._immediate_intervention_timestamp: float = 0.0
-        self._enhanced_monitoring_active: bool = False
-        self._enhanced_monitoring_reason: str = ""
-        self._enhanced_monitoring_timestamp: float = 0.0
-
-        # Predictive analytics
-        self.failure_patterns: list[dict[str, Any]] = []
-        self.success_patterns: list[dict[str, Any]] = []
-        # Safety test mode flag to standardize alert prefixes
-        self._safety_test_mode: bool = False
-        # Integration bookkeeping
-        self._action6_callback_registered: bool = False
-
-        # Initialize metrics
-        self._initialize_metrics()
-
-        logger.debug("Session Health Monitor initialized")
+class MetricsManagementMixin:
+    """Mixin for managing health metrics."""
 
     def _initialize_metrics(self) -> None:
-        """Initialize health metrics with workload-appropriate thresholds for 724-page processing."""
-        metrics_config = {
-            "api_response_time": {
-                "warning": 15.0,
-                "critical": 25.0,
-                "weight": 2.0,
-            },  # OPTIMIZATION: Less pessimistic thresholds (was 5.0/10.0)
-            "memory_usage_mb": {"warning": 200.0, "critical": 400.0, "weight": 1.5},
-            "error_rate": {
-                "warning": 10.0,
-                "critical": 25.0,
-                "weight": 3.0,
-            },  # WORKLOAD-APPROPRIATE: Errors per hour for 724-page workload
-            "session_age_minutes": {
-                "warning": 600.0,
-                "critical": 1200.0,
-                "weight": 1.0,
-            },  # WORKLOAD-APPROPRIATE: 10-20 hours for 724 pages
-            "browser_age_minutes": {
-                "warning": 120.0,
-                "critical": 180.0,
-                "weight": 2.5,
-            },  # WORKLOAD-APPROPRIATE: 2-3 hours browser lifetime
-            "pages_since_refresh": {
-                "warning": 50.0,
-                "critical": 75.0,
-                "weight": 2.0,
-            },  # WORKLOAD-APPROPRIATE: More pages before refresh
-            "cpu_usage_percent": {"warning": 70.0, "critical": 90.0, "weight": 1.0},
-            "disk_usage_percent": {"warning": 85.0, "critical": 95.0, "weight": 0.5},
+        """Initialize default metrics."""
+        defaults = {
+            "api_response_time": (2.0, 5.0),  # Warning > 2s, Critical > 5s
+            "error_rate": (10.0, 25.0),  # Warning > 10%, Critical > 25%
+            "memory_usage_mb": (800.0, 1200.0),  # Warning > 800MB, Critical > 1200MB
+            "cpu_usage_percent": (70.0, 90.0),  # Warning > 70%, Critical > 90%
+            "disk_usage_percent": (85.0, 95.0),  # Warning > 85%, Critical > 95%
+            "browser_age_minutes": (60.0, 120.0),  # Warning > 60m, Critical > 120m
+            "session_age_minutes": (240.0, 480.0),  # Warning > 4h, Critical > 8h
+            "pages_since_refresh": (50.0, 100.0),  # Warning > 50, Critical > 100
         }
 
-        for name, config in metrics_config.items():
+        for name, (warn, crit) in defaults.items():
             self.current_metrics[name] = HealthMetric(
-                name=name,
-                value=0.0,
-                threshold_warning=config["warning"],
-                threshold_critical=config["critical"],
-                weight=config["weight"],
+                name=name, value=0.0, threshold_warning=warn, threshold_critical=crit
             )
             self.metrics_history[name] = deque(maxlen=100)
 
-    def begin_safety_test(self) -> None:
-        """Enable safety test mode to uniformly prefix all alerts and notices."""
-        self._safety_test_mode = True
-
-    def end_safety_test(self) -> None:
-        """Disable safety test mode."""
-        self._safety_test_mode = False
-
-    def _safety_prefix(self) -> str:
-        """Return the standard prefix for safety-test logs if enabled."""
-        return "🧪 [SAFETY TEST] " if self._safety_test_mode else ""
-
-    def update_metric(self, name: str, value: float):
-        """Update a specific health metric."""
-        with self.lock:
+    def update_metric(self, name: str, value: float) -> None:
+        """Update a specific metric and check for alerts."""
+        try:
             if name not in self.current_metrics:
-                defaults = _DYNAMIC_METRIC_DEFAULTS.get(name)
-
-                if defaults is None and name.startswith("api_") and name.endswith("_last_duration"):
-                    defaults = {"warning": 8.0, "critical": 15.0, "weight": 1.0}
-
-                if defaults is not None:
-                    self.current_metrics[name] = HealthMetric(
-                        name=name,
-                        value=0.0,
-                        threshold_warning=defaults["warning"],
-                        threshold_critical=defaults["critical"],
-                        weight=defaults.get("weight", 1.0),
-                    )
-                    self.metrics_history[name] = deque(maxlen=100)
-                    logger.debug(f"Registered dynamic health metric: {name}")
-                else:
-                    logger.debug(f"Ignoring update for unrecognized metric without defaults: {name}")
-                    return
+                # Initialize with default thresholds if new
+                self.current_metrics[name] = HealthMetric(
+                    name=name, value=value, threshold_warning=float('inf'), threshold_critical=float('inf')
+                )
+                self.metrics_history[name] = deque(maxlen=100)
 
             metric = self.current_metrics[name]
             metric.value = value
             metric.timestamp = time.time()
-            self.metrics_history[name].append((time.time(), value))
+            self.metrics_history[name].append(value)
 
-            # Check for alerts
-            self._check_metric_alerts(name)
+            # Update status
+            if value >= metric.threshold_critical:
+                metric.status = HealthStatus.CRITICAL
+            elif value >= metric.threshold_warning:
+                metric.status = HealthStatus.DEGRADED
+            else:
+                metric.status = HealthStatus.HEALTHY
 
-    def _check_metric_alerts(self, metric_name: str) -> None:
-        """Check if a metric triggers any alerts, with de-duplication and cooldown."""
-        metric = self.current_metrics[metric_name]
+            self._check_metric_alerts(metric)
 
-        level: Optional[AlertLevel] = None
-        message: str = ""
-        threshold: float = 0.0
+        except Exception as e:
+            logger.debug(f"Error updating metric {name}: {e}")
 
-        if metric.value >= metric.threshold_critical:
-            level = AlertLevel.CRITICAL
-            message = f"{metric_name} is critical: {metric.value:.2f} >= {metric.threshold_critical}"
-            threshold = metric.threshold_critical
-        elif metric.value >= metric.threshold_warning:
-            level = AlertLevel.WARNING
-            message = f"{metric_name} is elevated: {metric.value:.2f} >= {metric.threshold_warning}"
-            threshold = metric.threshold_warning
+    def _check_metric_alerts(self, metric: HealthMetric) -> None:
+        """Check if metric should trigger an alert."""
+        if metric.status == HealthStatus.CRITICAL:
+            self._create_alert(
+                AlertLevel.CRITICAL,
+                "metrics",
+                f"{metric.name} critical: {metric.value:.1f} (limit: {metric.threshold_critical:.1f})",
+                metric.name,
+                metric.value,
+                metric.threshold_critical,
+            )
+        elif metric.status == HealthStatus.DEGRADED:
+            # Only alert on degraded if it's a significant change or periodic reminder
+            self._create_alert(
+                AlertLevel.WARNING,
+                "metrics",
+                f"{metric.name} degraded: {metric.value:.1f} (limit: {metric.threshold_warning:.1f})",
+                metric.name,
+                metric.value,
+                metric.threshold_warning,
+            )
 
-        if level is None:
-            # Reset last level so future crossings log again
-            self._last_metric_alert_level.pop(metric_name, None)
+    def record_api_response_time(self, duration: float) -> None:
+        """Record API response time."""
+        self.api_response_times.append(duration)
+        avg_time = sum(self.api_response_times) / len(self.api_response_times)
+        self.update_metric("api_response_time", avg_time)
+
+    def record_error(self, error_type: str) -> None:
+        """Record an error occurrence."""
+        current_time = time.time()
+        self.error_timestamps.append(current_time)
+        self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
+
+        # Calculate error rate (errors per minute)
+        # Filter timestamps from last minute
+        recent_errors = [t for t in self.error_timestamps if current_time - t <= 60]
+        error_rate = len(recent_errors)
+        self.update_metric("error_rate", float(error_rate))
+
+        # Check for rapid error spikes (e.g. 10 errors in 10 seconds)
+        very_recent = [t for t in self.error_timestamps if current_time - t <= 10]
+        if len(very_recent) >= 10:
+            self._trigger_emergency_intervention(
+                "RAPID_ERROR_SPIKE", len(very_recent), "10 errors in 10 seconds"
+            )
+
+        # Check for sustained error rate
+        self._process_error_window_threshold(current_time)
+
+    def _process_error_window_threshold(self, current_time: float) -> None:
+        """Check for sustained error rates over a 5-minute window."""
+        # Filter timestamps from last 5 minutes
+        five_min_errors = [t for t in self.error_timestamps if current_time - t <= 300]
+        count = len(five_min_errors)
+
+        # Thresholds for 5-minute window
+        if count >= 50:  # ~10 errors/min sustained
+            self._trigger_immediate_intervention(
+                "SUSTAINED_ERROR_RATE", count, "50+ errors in 5 minutes"
+            )
+        elif count >= 20:  # ~4 errors/min sustained
+            self._trigger_enhanced_monitoring(
+                "ELEVATED_ERROR_RATE", count, "20+ errors in 5 minutes"
+            )
+
+        # Check for early warning signs
+        self._check_error_rate_early_warning(count, current_time)
+
+    def _check_error_rate_early_warning(self, five_min_count: int, current_time: float) -> None:
+        """Check for early warning signs of increasing error rates."""
+        # Only check if we haven't warned recently (every 5 mins)
+        last_warning = self.error_rate_warnings_sent.get("early_warning", 0)
+        if current_time - last_warning < 300:
             return
 
-        # Gate logs: only log when escalating level or after cooldown
-        last_level = self._last_metric_alert_level.get(metric_name)
-        last_time = self._last_metric_alert_time.get(metric_name, 0.0)
-        now = time.time()
+        if five_min_count >= 10:  # ~2 errors/min
+            logger.warning(f"⚠️ Early warning: {five_min_count} errors in last 5 minutes")
+            self.error_rate_warnings_sent["early_warning"] = current_time
 
-        should_log = False
-        if last_level is None:
-            should_log = True
-        elif level.value != last_level.value:
-            # Escalation from WARNING->CRITICAL (or vice versa) should log
-            should_log = True
-        elif (now - last_time) >= self._metric_alert_cooldown_seconds:
-            should_log = True
+    def get_error_rate_statistics(self) -> dict[str, Any]:
+        """Get detailed error rate statistics."""
+        current_time = time.time()
+        one_min = len([t for t in self.error_timestamps if current_time - t <= 60])
+        five_min = len([t for t in self.error_timestamps if current_time - t <= 300])
+        fifteen_min = len([t for t in self.error_timestamps if current_time - t <= 900])
+        hour = len([t for t in self.error_timestamps if current_time - t <= 3600])
 
-        if should_log:
-            self._create_alert(level, "session_health", message, metric_name, metric.value, threshold)
-            self._last_metric_alert_level[metric_name] = level
-            self._last_metric_alert_time[metric_name] = now
+        return {
+            "1_min": one_min,
+            "5_min": five_min,
+            "15_min": fifteen_min,
+            "60_min": hour,
+            "total": len(self.error_timestamps),
+            "top_errors": sorted(
+                self.error_counts.items(), key=lambda x: x[1], reverse=True
+            )[:5],
+        }
+
+    def record_page_processing_time(self, processing_time: float) -> None:
+        """Record page processing time."""
+        self.page_processing_times.append(processing_time)
+
+    def update_system_metrics(self) -> None:
+        """Update system-level metrics (CPU, memory, etc.)."""
+        try:
+            # Memory usage
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            self.memory_usage_history.append(memory_mb)
+            self.update_metric("memory_usage_mb", memory_mb)
+
+            # CPU usage
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            self.update_metric("cpu_usage_percent", cpu_percent)
+
+            # Disk usage
+            disk_usage = psutil.disk_usage('/').percent
+            self.update_metric("disk_usage_percent", disk_usage)
+
+        except Exception as e:
+            logger.debug(f"Error updating system metrics: {e}")
+
+    def _update_browser_health_metrics(self, monitor: Any) -> None:
+        """Update browser health metrics from monitor."""
+        if not (hasattr(monitor, 'get') or isinstance(monitor, dict)):
+            return
+
+        monitor_dict = cast(dict[str, Any], monitor)
+
+        # Browser age
+        browser_start_time = monitor_dict.get('browser_start_time', time.time())
+        if browser_start_time:
+            browser_age_minutes = (time.time() - browser_start_time) / 60
+            self.update_metric("browser_age_minutes", browser_age_minutes)
+
+        # Pages since refresh
+        pages_since_refresh = monitor_dict.get('pages_since_refresh', 0)
+        if pages_since_refresh is not None:
+            self.update_metric("pages_since_refresh", pages_since_refresh)
+
+    def _update_session_health_metrics(self, session_monitor: Any) -> None:
+        """Update session health metrics from monitor."""
+        if not (hasattr(session_monitor, 'get') or isinstance(session_monitor, dict)):
+            return
+
+        session_monitor_dict = cast(dict[str, Any], session_monitor)
+        session_start = session_monitor_dict.get('session_start_time', time.time())
+        if session_start:
+            session_age_minutes = (time.time() - session_start) / 60
+            self.update_metric("session_age_minutes", session_age_minutes)
+
+    def update_session_metrics(self, session_manager: Any = None) -> None:
+        """Update session-specific metrics with enhanced error handling."""
+        try:
+            # Session age
+            session_age_minutes = (time.time() - self.session_start_time) / 60
+            self.update_metric("session_age_minutes", session_age_minutes)
+
+            if session_manager:
+                # Handle browser health monitor
+                if hasattr(session_manager, 'browser_health_monitor'):
+                    try:
+                        self._update_browser_health_metrics(session_manager.browser_health_monitor)
+                    except Exception as browser_exc:
+                        logger.debug(f"Browser health monitor update failed: {browser_exc}")
+
+                # Handle session health monitor
+                if hasattr(session_manager, 'session_health_monitor'):
+                    try:
+                        self._update_session_health_metrics(session_manager.session_health_monitor)
+                    except Exception as session_exc:
+                        logger.debug(f"Session health monitor update failed: {session_exc}")
+
+        except Exception as e:
+            logger.debug(f"Error updating session metrics: {e}")
+
+
+class AlertingMixin:
+    """Mixin for managing health alerts."""
+
+    def begin_safety_test(self) -> None:
+        """Mark the beginning of a safety test to prefix alerts."""
+        self._is_safety_testing = True
+
+    def end_safety_test(self) -> None:
+        """Mark the end of a safety test."""
+        self._is_safety_testing = False
+
+    @property
+    def _safety_prefix(self) -> str:
+        """Return prefix for alerts if in safety testing mode."""
+        return "[SAFETY_TEST] " if getattr(self, "_is_safety_testing", False) else ""
 
     def _create_alert(
-        self, level: AlertLevel, component: str, message: str, metric_name: str, metric_value: float, threshold: float
-    ):
+        self,
+        level: AlertLevel,
+        component: str,
+        message: str,
+        metric_name: str,
+        metric_value: float,
+        threshold: float,
+    ) -> None:
         """Create a new health alert."""
+        # Check for duplicate alerts to prevent spam
+        current_time = time.time()
+
+        # Use a composite key for deduplication
+        alert_key = f"{component}:{metric_name}:{level.value}"
+
+        # Don't repeat same alert within 5 minutes
+        last_time = self.last_alert_times.get(alert_key, 0)
+        if current_time - last_time < 300:
+            return
+
+        prefixed_message = f"{self._safety_prefix}{message}"
         alert = HealthAlert(
             level=level,
             component=component,
-            message=message,
+            message=prefixed_message,
             metric_name=metric_name,
             metric_value=metric_value,
             threshold=threshold,
         )
-
         self.alerts.append(alert)
+        self.last_alert_times[alert_key] = current_time
 
-        # Log alert with standardized safety test prefix when in test mode
-        test_prefix = self._safety_prefix()
-
-        if level == AlertLevel.CRITICAL:
-            logger.critical(f"{test_prefix}🚨 CRITICAL ALERT: {message}")
+        # Log based on severity
+        if level == AlertLevel.EMERGENCY:
+            logger.critical(f"🚨 EMERGENCY ALERT: {prefixed_message}")
+        elif level == AlertLevel.CRITICAL:
+            logger.error(f"🔴 CRITICAL ALERT: {prefixed_message}")
         elif level == AlertLevel.WARNING:
-            logger.warning(f"{test_prefix}⚠️ WARNING: {message}")
-        else:
-            logger.info(f"{test_prefix}INFO: {message}")
+            logger.warning(f"⚠️ HEALTH WARNING: {prefixed_message}")
+
+
+class HealthAssessmentMixin:
+    """Mixin for calculating health scores and risks."""
 
     def calculate_health_score(self) -> float:
-        """
-        Calculate overall health score (0-100) based on all metrics.
+        """Calculate overall health score (0-100)."""
+        score = 100.0
+        deductions = 0.0
 
-        Returns:
-            Health score from 0 (critical) to 100 (excellent)
-        """
-        with self.lock:
-            total_score = 100.0
-            total_weight = 0.0
+        for metric in self.current_metrics.values():
+            if metric.status == HealthStatus.CRITICAL:
+                deductions += 20.0
+            elif metric.status == HealthStatus.DEGRADED:
+                deductions += 10.0
 
-            for metric in self.current_metrics.values():
-                # Calculate metric score (0-100)
-                if metric.value <= metric.threshold_warning * 0.5:
-                    metric_score = 100.0  # Excellent
-                elif metric.value <= metric.threshold_warning * 0.8:
-                    metric_score = 80.0  # Good
-                elif metric.value <= metric.threshold_warning:
-                    metric_score = 60.0  # Fair
-                elif metric.value <= metric.threshold_critical:
-                    metric_score = 30.0  # Poor
-                else:
-                    metric_score = 0.0  # Critical
+        # Additional deductions for recent errors
+        recent_errors = self.current_metrics.get("error_rate", HealthMetric("error_rate", 0, 0, 0)).value
+        deductions += min(recent_errors * 2, 40.0)  # Cap error deductions at 40
 
-                # Apply weighted average
-                total_score += metric_score * metric.weight
-                total_weight += metric.weight
+        # Additional deductions for alerts
+        recent_alerts = len([a for a in self.alerts if time.time() - a.timestamp < 3600])
+        deductions += min(recent_alerts * 5, 30.0)
 
-            # Calculate final weighted score
-            final_score = total_score / total_weight if total_weight > 0 else 0.0
-
-            # Store in history
-            self.health_score_history.append((time.time(), final_score))
-
-            return max(0.0, min(100.0, final_score))
+        final_score = max(0.0, score - deductions)
+        self.health_score_history.append(final_score)
+        return final_score
 
     def get_health_status(self) -> HealthStatus:
-        """Get overall health status based on current score."""
+        """Get overall system health status."""
         score = self.calculate_health_score()
-
         if score >= 80:
-            return HealthStatus.EXCELLENT
+            return HealthStatus.HEALTHY
         if score >= 60:
-            return HealthStatus.GOOD
+            return HealthStatus.DEGRADED
         if score >= 40:
-            return HealthStatus.FAIR
-        if score >= 20:
-            return HealthStatus.POOR
-        return HealthStatus.CRITICAL
+            return HealthStatus.CRITICAL
+        return HealthStatus.EMERGENCY
 
     def _calculate_api_response_risk(self) -> float:
-        """Calculate risk from API response time trend."""
-        if len(self.api_response_times) < 3:
+        """Calculate risk from API response times."""
+        if not self.api_response_times:
             return 0.0
 
-        recent_avg = sum(list(self.api_response_times)[-3:]) / 3
-        if recent_avg > 10.0:
+        avg_time = sum(self.api_response_times) / len(self.api_response_times)
+        if avg_time > 5.0:
+            return 0.8
+        if avg_time > 2.0:
             return 0.4
-        if recent_avg > 8.0:
-            return 0.3
-        if recent_avg > 5.0:
-            return 0.2
-        return 0.0
+        return 0.1
 
     def _calculate_error_rate_risk(self) -> float:
-        """Calculate risk from error rate."""
-        total_errors = sum(self.error_counts.values())
-        if total_errors > 15:
-            return 0.4
-        if total_errors > 10:
+        """Calculate risk from error rates."""
+        error_rate = self.current_metrics.get("error_rate", HealthMetric("error_rate", 0, 0, 0)).value
+        if error_rate > 25.0:
+            return 0.9
+        if error_rate > 10.0:
+            return 0.6
+        if error_rate > 5.0:
             return 0.3
-        if total_errors > 5:
-            return 0.2
         return 0.0
 
     def _calculate_memory_trend_risk(self) -> float:
         """Calculate risk from memory usage trend."""
-        if len(self.memory_usage_history) < 3:
+        if len(self.memory_usage_history) < 10:
             return 0.0
 
-        memory_trend = list(self.memory_usage_history)[-1] - list(self.memory_usage_history)[-3]
-        if memory_trend > 100:
-            return 0.2
-        if memory_trend > 50:
-            return 0.1
-        return 0.0
+        # Simple trend analysis
+        recent = list(self.memory_usage_history)[-10:]
+        start = recent[0]
+        end = recent[-1]
+
+        if end > 1200:  # Absolute high memory
+            return 0.8
+
+        if end > start * 1.2:  # 20% increase in last 10 readings
+            return 0.5
+
+        return 0.1
 
     def _calculate_critical_metrics_risk(self) -> float:
-        """Calculate risk from critical metrics."""
-        risk = 0.0
-        for _, metric in self.current_metrics.items():
-            if metric.value >= metric.threshold_critical:
-                risk += 0.15
-            elif metric.value >= metric.threshold_warning:
-                risk += 0.05
-        return risk
+        """Calculate risk from critical metrics status."""
+        critical_count = sum(1 for m in self.current_metrics.values() if m.status == HealthStatus.CRITICAL)
+        if critical_count >= 3:
+            return 1.0
+        if critical_count >= 1:
+            return 0.7
+        return 0.0
 
     def predict_session_death_risk(self) -> float:
-        """
-        Enhanced prediction of session death likelihood in next 10 pages (0.0-1.0).
+        """Predict probability of session death (0.0 - 1.0)."""
+        factors = {
+            "api_response": self._calculate_api_response_risk(),
+            "error_rate": self._calculate_error_rate_risk(),
+            "memory_trend": self._calculate_memory_trend_risk(),
+            "critical_metrics": self._calculate_critical_metrics_risk(),
+        }
 
-        Returns:
-            Risk score from 0.0 (very safe) to 1.0 (imminent failure)
-        """
-        # Base risk from current health score
-        health_score = self.calculate_health_score()
-        health_risk = (100 - health_score) / 100 * 0.5
+        # Weighted average
+        weights = {
+            "api_response": 0.2,
+            "error_rate": 0.4,  # Errors are strongest predictor
+            "memory_trend": 0.2,
+            "critical_metrics": 0.2,
+        }
 
-        # Aggregate all risk factors
-        risk_score = (
-            health_risk
-            + self._calculate_api_response_risk()
-            + self._calculate_error_rate_risk()
-            + self._calculate_memory_trend_risk()
-            + self._calculate_critical_metrics_risk()
-        )
-
+        risk_score = sum(factors[k] * weights[k] for k in factors)
         return min(1.0, risk_score)
 
     def get_recommended_actions(self) -> list[str]:
-        """Get recommended actions based on current health status."""
-        actions: list[str] = []
-        health_score = self.calculate_health_score()
-        risk_score = self.predict_session_death_risk()
+        """Get recommended actions based on health state."""
+        actions = []
+        status = self.get_health_status()
 
-        if risk_score > 0.8:
-            actions.append("🚨 EMERGENCY: Trigger immediate session refresh")
-            actions.append("🔄 Restart browser immediately")
-            actions.append("⚡ Switch to emergency settings (1 worker, batch 1)")
-        elif risk_score > 0.6:
-            actions.append("⚠️ CRITICAL: Reduce concurrency to 1 worker")
-            actions.append("📉 Reduce batch size to 3")
-            actions.append("🔄 Schedule session refresh within 5 pages")
-        elif risk_score > 0.4:
-            actions.append("⚠️ WARNING: Reduce batch size to 5")
-            actions.append("📊 Monitor closely for next 10 pages")
-            actions.append("🔄 Consider session refresh within 15 pages")
-        elif health_score < 60:
-            actions.append("📊 Monitor performance metrics")
-            actions.append("🧹 Consider garbage collection")
-        else:
-            actions.append("✅ System healthy - continue current operations")
+        if status == HealthStatus.EMERGENCY:
+            actions.append("IMMEDIATE_RESTART_REQUIRED")
+            actions.append("STOP_ALL_TRAFFIC")
+        elif status == HealthStatus.CRITICAL:
+            actions.append("SCHEDULE_RESTART")
+            actions.append("REDUCE_CONCURRENCY")
+        elif status == HealthStatus.DEGRADED:
+            actions.append("MONITOR_CLOSELY")
+            actions.append("PAUSE_NON_ESSENTIAL")
+
+        # Specific metric actions
+        if self.current_metrics.get("memory_usage_mb", HealthMetric("", 0, 0, 0)).status == HealthStatus.CRITICAL:
+            actions.append("CLEAR_CACHE")
 
         return actions
 
-    def record_api_response_time(self, response_time: float) -> None:
-        """Record API response time for monitoring."""
-        self.api_response_times.append(response_time)
-
-        # Update metric
-        if len(self.api_response_times) >= 5:
-            avg_response_time = sum(list(self.api_response_times)[-5:]) / 5
-            self.update_metric("api_response_time", avg_response_time)
-
-    def record_error(self, error_type: str) -> None:
-        """Record an error for monitoring with enhanced rate tracking."""
-        current_time = time.time()
-
-        if error_type not in self.error_counts:
-            self.error_counts[error_type] = 0
-        self.error_counts[error_type] += 1
-
-        # Track error timestamp for rate analysis
-        self.error_timestamps.append(current_time)
-
-        # Update error rate metric
-        total_errors = sum(self.error_counts.values())
-        session_duration_hours = (current_time - self.session_start_time) / 3600
-        error_rate = total_errors / max(session_duration_hours, 0.1)  # Errors per hour
-        self.update_metric("error_rate", error_rate)
-
-        # Check for early warning conditions
-        self._check_error_rate_early_warning(current_time)
-
-    def _process_error_window_threshold(
-        self, window_name: str, errors_in_window: int, threshold: int, current_time: float
-    ) -> None:
-        """Process error threshold breach for a specific time window."""
-        warning_key = f"{window_name}_{threshold}"
-
-        # Only send warning once per hour for each threshold
-        last_warning = self.error_rate_warnings_sent.get(warning_key, 0)
-        if current_time - last_warning <= 3600:  # 1 hour
-            return
-
-        self.error_rate_warnings_sent[warning_key] = current_time
-
-        # Create critical alert
-        alert = HealthAlert(
-            level=AlertLevel.CRITICAL,
-            component="error_rate_monitor",
-            message=f"🚨 HIGH ERROR RATE: {errors_in_window} errors in {window_name} (threshold: {threshold})",
-            metric_name="error_rate_early_warning",
-            metric_value=errors_in_window,
-            threshold=threshold,
-            timestamp=current_time,
-        )
-
-        self.alerts.append(alert)
-        prefix = self._safety_prefix()
-        logger.critical(f"{prefix}🚨 CRITICAL ALERT: {alert.message}")
-
-        # WORKLOAD-APPROPRIATE: Cascade failure detection with automatic intervention
-        if window_name == "30-minute" and errors_in_window >= 500:
-            logger.critical(f"{prefix}🚨 CASCADE FAILURE DETECTED - EMERGENCY INTERVENTION REQUIRED")
-            self._trigger_emergency_intervention("CASCADE_FAILURE", errors_in_window, window_name)
-        elif window_name == "15-minute" and errors_in_window >= 200:
-            logger.critical(f"{prefix}🚨 SEVERE ERROR PATTERN DETECTED - Triggering immediate intervention")
-            self._trigger_immediate_intervention("SEVERE_ERROR_PATTERN", errors_in_window, window_name)
-        elif window_name == "5-minute" and errors_in_window >= 75:
-            logger.debug(f"{prefix}⚠️ ELEVATED ERROR RATE - Triggering enhanced monitoring")
-            self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", errors_in_window, window_name)
-
-    def _check_error_rate_early_warning(self, current_time: float) -> None:
-        """
-        PERFORMANCE-OPTIMIZED error rate monitoring for long sessions.
-
-        Uses adaptive monitoring intervals and efficient cleanup to reduce overhead.
-        """
-        # Adaptive monitoring interval based on current error rate
-        monitoring_interval = self._get_adaptive_monitoring_interval(current_time)
-
-        # Only check at adaptive intervals to reduce overhead
-        if current_time - self.last_error_rate_check < monitoring_interval:
-            return
-
-        self.last_error_rate_check = current_time
-
-        # PERFORMANCE: Efficient cleanup with batched operations
-        self._perform_efficient_cleanup(current_time)
-
-        # Check different time windows for early warning - WORKLOAD-APPROPRIATE for 724 pages
-        time_windows = [
-            (1800, 500, "30-minute"),  # 500 errors in 30 minutes (cascade failure)
-            (900, 200, "15-minute"),  # 200 errors in 15 minutes (severe issues)
-            (300, 75, "5-minute"),  # 75 errors in 5 minutes (moderate issues)
-            (60, 15, "1-minute"),  # 15 errors in 1 minute (immediate issues)
-        ]
-
-        for window_seconds, threshold, window_name in time_windows:
-            window_start = current_time - window_seconds
-            errors_in_window = sum(1 for ts in self.error_timestamps if ts >= window_start)
-
-            if errors_in_window >= threshold:
-                self._process_error_window_threshold(window_name, errors_in_window, threshold, current_time)
-
-    def get_error_rate_statistics(self) -> dict[str, Any]:
-        """
-        Get comprehensive error rate statistics for monitoring and analysis.
-
-        Returns:
-            Dict containing error rate statistics and recommendations
-        """
-        current_time = time.time()
-
-        # Calculate error rates for different time windows
-        time_windows = [
-            (60, "1-minute"),
-            (300, "5-minute"),
-            (900, "15-minute"),
-            (1800, "30-minute"),
-            (3600, "1-hour"),
-            (7200, "2-hour"),
-        ]
-
-        error_rates = {}
-        for window_seconds, window_name in time_windows:
-            window_start = current_time - window_seconds
-            errors_in_window = sum(1 for ts in self.error_timestamps if ts >= window_start)
-            error_rates[window_name] = {
-                "count": errors_in_window,
-                "rate_per_minute": errors_in_window / (window_seconds / 60),
-                "window_seconds": window_seconds,
-            }
-
-        # Determine risk level - WORKLOAD-APPROPRIATE for 724-page processing
-        thirty_min_errors = error_rates["30-minute"]["count"]
-        fifteen_min_errors = error_rates["15-minute"]["count"]
-        five_min_errors = error_rates["5-minute"]["count"]
-
-        if thirty_min_errors >= 500:
-            risk_level = "CRITICAL"
-            recommendation = "EMERGENCY_SHUTDOWN"
-        elif fifteen_min_errors >= 200:
-            risk_level = "HIGH"
-            recommendation = "IMMEDIATE_INTERVENTION"
-        elif five_min_errors >= 75:
-            risk_level = "MODERATE"
-            recommendation = "MONITOR_CLOSELY"
-        elif five_min_errors >= 25:
-            risk_level = "ELEVATED"
-            recommendation = "INCREASED_MONITORING"
-        else:
-            risk_level = "LOW"
-            recommendation = "CONTINUE_NORMAL"
+    def get_health_dashboard(self) -> dict[str, Any]:
+        """Get comprehensive health dashboard data."""
+        health_score = self.calculate_health_score()
+        health_status = self.get_health_status()
+        risk_score = self.predict_session_death_risk()
 
         return {
-            "timestamp": current_time,
-            "error_rates": error_rates,
-            "total_session_errors": sum(self.error_counts.values()),
-            "session_duration_minutes": (current_time - self.session_start_time) / 60,
-            "risk_level": risk_level,
-            "recommendation": recommendation,
-            "error_types": dict(self.error_counts),
-            "recent_alerts": [alert for alert in self.alerts if current_time - alert.timestamp < 3600],
+            "timestamp": time.time(),
+            "health_score": health_score,
+            "health_status": health_status.value,
+            "risk_score": risk_score,
+            "risk_level": self._get_risk_level(risk_score),
+            "metrics": {
+                name: {
+                    "value": metric.value,
+                    "status": metric.status.value,
+                    "threshold_warning": metric.threshold_warning,
+                    "threshold_critical": metric.threshold_critical,
+                }
+                for name, metric in self.current_metrics.items()
+            },
+            "recent_alerts": [
+                {
+                    "level": alert.level.value,
+                    "component": alert.component,
+                    "message": alert.message,
+                    "timestamp": alert.timestamp,
+                }
+                for alert in self.alerts[-5:]  # Last 5 alerts
+            ],
+            "recommended_actions": self.get_recommended_actions(),
+            "performance_summary": {
+                "avg_api_response_time": sum(self.api_response_times) / len(self.api_response_times)
+                if self.api_response_times
+                else 0,
+                "total_errors": sum(self.error_counts.values()),
+                "avg_page_processing_time": sum(self.page_processing_times) / len(self.page_processing_times)
+                if self.page_processing_times
+                else 0,
+                "current_memory_mb": self.memory_usage_history[-1] if self.memory_usage_history else 0,
+            },
         }
 
-    def _trigger_emergency_intervention(self, pattern_type: str, error_count: int, window: str) -> None:
-        """Trigger emergency intervention for cascade failures."""
-        try:
-            prefix = self._safety_prefix()
-            logger.critical(f"{prefix}🚨 EMERGENCY INTERVENTION TRIGGERED: {pattern_type}")
-            logger.critical(f"{prefix}   Pattern: {error_count} errors in {window}")
-            logger.critical(f"{prefix}   Action: Setting emergency halt flag")
+    @staticmethod
+    def _get_risk_level(risk_score: float) -> str:
+        """Convert risk score to human-readable level."""
+        if risk_score > 0.8:
+            return "EMERGENCY"
+        if risk_score > 0.6:
+            return "CRITICAL"
+        if risk_score > 0.4:
+            return "WARNING"
+        if risk_score > 0.2:
+            return "CAUTION"
+        return "SAFE"
 
-            # Set emergency halt flag that can be checked by main processing loops
-            self._emergency_halt_requested = True
-            self._emergency_halt_reason = f"{pattern_type}: {error_count} errors in {window}"
-            self._emergency_halt_timestamp = time.time()
+    def log_health_summary(self) -> None:
+        """Log a comprehensive health summary."""
+        dashboard = self.get_health_dashboard()
 
-            # Create critical alert
-            alert = HealthAlert(
-                level=AlertLevel.CRITICAL,
-                component="emergency_intervention",
-                message=f"🚨 EMERGENCY HALT: {pattern_type} - {error_count} errors in {window}",
-                metric_name="emergency_intervention",
-                metric_value=error_count,
-                threshold=500 if window == "30-minute" else 200,
-                timestamp=time.time(),
-            )
-            self.alerts.append(alert)
+        logger.info("📊 HEALTH SUMMARY:")
+        logger.info(f"   Score: {dashboard['health_score']:.1f}/100 ({dashboard['health_status'].upper()})")
+        logger.info(f"   Risk: {dashboard['risk_score']:.2f} ({dashboard['risk_level']})")
+        logger.info(f"   API: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg")
+        logger.info(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB")
+        logger.info(f"   Errors: {dashboard['performance_summary']['total_errors']}")
 
-            logger.critical(
-                f"{self._safety_prefix()}🚨 EMERGENCY INTERVENTION COMPLETE - Processing should halt immediately"
-            )
+        if dashboard['recommended_actions']:
+            logger.info(f"   Actions: {dashboard['recommended_actions'][0]}")
 
-        except Exception as e:
-            logger.error(f"Failed to trigger emergency intervention: {e}")
 
-    def _trigger_immediate_intervention(self, pattern_type: str, error_count: int, window: str) -> None:
-        """Trigger immediate intervention for severe error patterns."""
-        try:
-            prefix = self._safety_prefix()
-            logger.critical(f"{prefix}⚠️ IMMEDIATE INTERVENTION TRIGGERED: {pattern_type}")
-            logger.critical(f"{prefix}   Pattern: {error_count} errors in {window}")
-            logger.critical(f"{prefix}   Action: Setting immediate halt flag and triggering recovery")
+class InterventionMixin:
+    """Mixin for handling system interventions."""
 
-            # Set immediate intervention flag
-            self._immediate_intervention_requested = True
-            self._immediate_intervention_reason = f"{pattern_type}: {error_count} errors in {window}"
-            self._immediate_intervention_timestamp = time.time()
+    def _trigger_emergency_intervention(self, reason: str, value: float, threshold: str) -> None:
+        """Trigger emergency intervention (halt)."""
+        if self._emergency_halt_requested:
+            return
 
-            # Create critical alert
-            alert = HealthAlert(
-                level=AlertLevel.CRITICAL,
-                component="immediate_intervention",
-                message=f"⚠️ IMMEDIATE INTERVENTION: {pattern_type} - {error_count} errors in {window}",
-                metric_name="immediate_intervention",
-                metric_value=error_count,
-                threshold=200 if window == "15-minute" else 75,
-                timestamp=time.time(),
-            )
-            self.alerts.append(alert)
+        logger.critical(f"🚨 EMERGENCY INTERVENTION TRIGGERED: {reason} (Value: {value}, Threshold: {threshold})")
+        self._emergency_halt_requested = True
+        self._emergency_halt_reason = f"{reason}: {value} (Threshold: {threshold})"
+        self._emergency_halt_timestamp = time.time()
 
-            logger.critical(f"{self._safety_prefix()}⚠️ IMMEDIATE INTERVENTION COMPLETE - Consider halting or recovery")
+        # Also create an alert
+        self._create_alert(
+            AlertLevel.EMERGENCY,
+            "intervention",
+            f"Emergency halt: {reason}",
+            "intervention",
+            value,
+            0.0
+        )
 
-        except Exception as e:
-            logger.error(f"Failed to trigger immediate intervention: {e}")
+    def _trigger_immediate_intervention(self, reason: str, value: float, threshold: str) -> None:
+        """Trigger immediate intervention (refresh/restart)."""
+        if self._immediate_intervention_requested:
+            return
 
-    def _trigger_enhanced_monitoring(self, pattern_type: str, error_count: int, window: str) -> None:
-        """Trigger enhanced monitoring for elevated error rates."""
-        try:
-            prefix = self._safety_prefix()
-            logger.debug(f"{prefix}📊 ENHANCED MONITORING TRIGGERED: {pattern_type}")
-            logger.debug(f"{prefix}   Pattern: {error_count} errors in {window}")
-            logger.debug(f"{prefix}   Action: Increasing monitoring frequency")
+        logger.error(f"🔴 IMMEDIATE INTERVENTION REQUESTED: {reason} (Value: {value}, Threshold: {threshold})")
+        self._immediate_intervention_requested = True
+        self._immediate_intervention_reason = f"{reason}: {value} (Threshold: {threshold})"
+        self._immediate_intervention_timestamp = time.time()
 
-            # Set enhanced monitoring flag
-            self._enhanced_monitoring_active = True
-            self._enhanced_monitoring_reason = f"{pattern_type}: {error_count} errors in {window}"
-            self._enhanced_monitoring_timestamp = time.time()
+    def _trigger_enhanced_monitoring(self, reason: str, value: float, threshold: str) -> None:
+        """Trigger enhanced monitoring mode."""
+        if self._enhanced_monitoring_active:
+            return
 
-            # Reduce monitoring interval for enhanced monitoring
-            self.last_error_rate_check = time.time() - 25  # Check again in 5 seconds instead of 30
-
-            # Create warning alert
-            alert = HealthAlert(
-                level=AlertLevel.WARNING,
-                component="enhanced_monitoring",
-                message=f"📊 ENHANCED MONITORING: {pattern_type} - {error_count} errors in {window}",
-                metric_name="enhanced_monitoring",
-                metric_value=error_count,
-                threshold=75,
-                timestamp=time.time(),
-            )
-            self.alerts.append(alert)
-
-            logger.debug(f"{self._safety_prefix()}📊 ENHANCED MONITORING ACTIVE - Increased error rate surveillance")
-
-        except Exception as e:
-            logger.error(f"Failed to trigger enhanced monitoring: {e}")
+        logger.warning(f"⚠️ ENHANCED MONITORING ACTIVATED: {reason} (Value: {value}, Threshold: {threshold})")
+        self._enhanced_monitoring_active = True
+        self._enhanced_monitoring_reason = f"{reason}: {value} (Threshold: {threshold})"
+        self._enhanced_monitoring_timestamp = time.time()
 
     def should_emergency_halt(self) -> bool:
-        """Check if emergency halt has been requested."""
+        """Check if emergency halt is requested."""
         return self._emergency_halt_requested
 
     def should_immediate_intervention(self) -> bool:
-        """Check if immediate intervention has been requested."""
+        """Check if immediate intervention is requested."""
         return self._immediate_intervention_requested
 
     def is_enhanced_monitoring_active(self) -> bool:
@@ -853,6 +670,10 @@ class SessionHealthMonitor:
         except Exception as e:
             logger.debug(f"Error calculating adaptive interval: {e}")
             return self._monitoring_interval
+
+
+class ResourceManagementMixin:
+    """Mixin for managing resources and cleanup."""
 
     def _perform_efficient_cleanup(self, current_time: float) -> None:
         """Perform efficient cleanup of old data to reduce memory usage."""
@@ -948,155 +769,9 @@ class SessionHealthMonitor:
             logger.debug(f"Error getting performance stats: {e}")
             return {"error": str(e)}
 
-    def record_page_processing_time(self, processing_time: float) -> None:
-        """Record page processing time."""
-        self.page_processing_times.append(processing_time)
 
-    def update_system_metrics(self) -> None:
-        """Update system-level metrics (CPU, memory, etc.)."""
-        try:
-            # Memory usage
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            self.memory_usage_history.append(memory_mb)
-            self.update_metric("memory_usage_mb", memory_mb)
-
-            # CPU usage
-            cpu_percent = psutil.cpu_percent(interval=0.1)
-            self.update_metric("cpu_usage_percent", cpu_percent)
-
-            # Disk usage
-            disk_usage = psutil.disk_usage('/').percent
-            self.update_metric("disk_usage_percent", disk_usage)
-
-        except Exception as e:
-            logger.debug(f"Error updating system metrics: {e}")
-
-    def _update_browser_health_metrics(self, monitor: Any) -> None:
-        """Update browser health metrics from monitor."""
-        if not (hasattr(monitor, 'get') or isinstance(monitor, dict)):
-            return
-
-        monitor_dict = cast(dict[str, Any], monitor)
-
-        # Browser age
-        browser_start_time = monitor_dict.get('browser_start_time', time.time())
-        if browser_start_time:
-            browser_age_minutes = (time.time() - browser_start_time) / 60
-            self.update_metric("browser_age_minutes", browser_age_minutes)
-
-        # Pages since refresh
-        pages_since_refresh = monitor_dict.get('pages_since_refresh', 0)
-        if pages_since_refresh is not None:
-            self.update_metric("pages_since_refresh", pages_since_refresh)
-
-    def _update_session_health_metrics(self, session_monitor: Any) -> None:
-        """Update session health metrics from monitor."""
-        if not (hasattr(session_monitor, 'get') or isinstance(session_monitor, dict)):
-            return
-
-        session_monitor_dict = cast(dict[str, Any], session_monitor)
-        session_start = session_monitor_dict.get('session_start_time', time.time())
-        if session_start:
-            session_age_minutes = (time.time() - session_start) / 60
-            self.update_metric("session_age_minutes", session_age_minutes)
-
-    def update_session_metrics(self, session_manager: Any = None) -> None:
-        """Update session-specific metrics with enhanced error handling."""
-        try:
-            # Session age
-            session_age_minutes = (time.time() - self.session_start_time) / 60
-            self.update_metric("session_age_minutes", session_age_minutes)
-
-            if session_manager:
-                # Handle browser health monitor
-                if hasattr(session_manager, 'browser_health_monitor'):
-                    try:
-                        self._update_browser_health_metrics(session_manager.browser_health_monitor)
-                    except Exception as browser_exc:
-                        logger.debug(f"Browser health monitor update failed: {browser_exc}")
-
-                # Handle session health monitor
-                if hasattr(session_manager, 'session_health_monitor'):
-                    try:
-                        self._update_session_health_metrics(session_manager.session_health_monitor)
-                    except Exception as session_exc:
-                        logger.debug(f"Session health monitor update failed: {session_exc}")
-
-        except Exception as e:
-            logger.debug(f"Error updating session metrics: {e}")
-
-    def get_health_dashboard(self) -> dict[str, Any]:
-        """Get comprehensive health dashboard data."""
-        health_score = self.calculate_health_score()
-        health_status = self.get_health_status()
-        risk_score = self.predict_session_death_risk()
-
-        return {
-            "timestamp": time.time(),
-            "health_score": health_score,
-            "health_status": health_status.value,
-            "risk_score": risk_score,
-            "risk_level": self._get_risk_level(risk_score),
-            "metrics": {
-                name: {
-                    "value": metric.value,
-                    "status": metric.status.value,
-                    "threshold_warning": metric.threshold_warning,
-                    "threshold_critical": metric.threshold_critical,
-                }
-                for name, metric in self.current_metrics.items()
-            },
-            "recent_alerts": [
-                {
-                    "level": alert.level.value,
-                    "component": alert.component,
-                    "message": alert.message,
-                    "timestamp": alert.timestamp,
-                }
-                for alert in self.alerts[-5:]  # Last 5 alerts
-            ],
-            "recommended_actions": self.get_recommended_actions(),
-            "performance_summary": {
-                "avg_api_response_time": sum(self.api_response_times) / len(self.api_response_times)
-                if self.api_response_times
-                else 0,
-                "total_errors": sum(self.error_counts.values()),
-                "avg_page_processing_time": sum(self.page_processing_times) / len(self.page_processing_times)
-                if self.page_processing_times
-                else 0,
-                "current_memory_mb": self.memory_usage_history[-1] if self.memory_usage_history else 0,
-            },
-        }
-
-    @staticmethod
-    def _get_risk_level(risk_score: float) -> str:
-        """Convert risk score to human-readable level."""
-        if risk_score > 0.8:
-            return "EMERGENCY"
-        if risk_score > 0.6:
-            return "CRITICAL"
-        if risk_score > 0.4:
-            return "WARNING"
-        if risk_score > 0.2:
-            return "CAUTION"
-        return "SAFE"
-
-    def log_health_summary(self) -> None:
-        """Log a comprehensive health summary."""
-        dashboard = self.get_health_dashboard()
-
-        logger.info("📊 HEALTH SUMMARY:")
-        logger.info(f"   Score: {dashboard['health_score']:.1f}/100 ({dashboard['health_status'].upper()})")
-        logger.info(f"   Risk: {dashboard['risk_score']:.2f} ({dashboard['risk_level']})")
-        logger.info(f"   API: {dashboard['performance_summary']['avg_api_response_time']:.1f}s avg")
-        logger.info(f"   Memory: {dashboard['performance_summary']['current_memory_mb']:.1f}MB")
-        logger.info(f"   Errors: {dashboard['performance_summary']['total_errors']}")
-
-        if dashboard['recommended_actions']:
-            logger.info(f"   Actions: {dashboard['recommended_actions'][0]}")
-
-    # === SESSION STATE PERSISTENCE ===
+class PersistenceMixin:
+    """Mixin for session state persistence."""
 
     def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
         """Create a checkpoint of the current session state for recovery."""
@@ -1448,6 +1123,59 @@ class SessionHealthMonitor:
             return None
 
 
+class SessionHealthMonitor(
+    MetricsManagementMixin,
+    AlertingMixin,
+    HealthAssessmentMixin,
+    InterventionMixin,
+    ResourceManagementMixin,
+    PersistenceMixin
+):
+    """
+    Monitor session health and performance metrics.
+    Tracks error rates, API response times, and resource usage to prevent session death.
+    """
+
+    def __init__(self) -> None:
+        """Initialize health monitor."""
+        self.session_start_time = time.time()
+        self.current_metrics: dict[str, HealthMetric] = {}
+        self.metrics_history: dict[str, deque] = {}
+        self.alerts: list[HealthAlert] = []
+        self.last_alert_times: dict[str, float] = {}
+
+        # Performance tracking
+        self.api_response_times: deque = deque(maxlen=1000)
+        self.error_timestamps: deque = deque(maxlen=1000)
+        self.error_counts: dict[str, int] = {}
+        self.page_processing_times: deque = deque(maxlen=100)
+        self.memory_usage_history: deque = deque(maxlen=100)
+        self.health_score_history: deque = deque(maxlen=100)
+
+        # Intervention flags
+        self._emergency_halt_requested = False
+        self._emergency_halt_reason = ""
+        self._emergency_halt_timestamp = 0.0
+        self._immediate_intervention_requested = False
+        self._immediate_intervention_reason = ""
+        self._immediate_intervention_timestamp = 0.0
+        self._enhanced_monitoring_active = False
+        self._enhanced_monitoring_reason = ""
+        self._enhanced_monitoring_timestamp = 0.0
+
+        # Configuration
+        self._monitoring_interval = 30.0  # Seconds
+        self._adaptive_interval = True
+        self._last_cleanup_time = time.time()
+        self._cleanup_interval = 300.0  # 5 minutes
+
+        # Warning tracking
+        self.error_rate_warnings_sent: dict[str, float] = {}
+
+        # Initialize default metrics
+        self._initialize_metrics()
+
+
 # Global health monitor instance
 class _HealthMonitorSingleton:
     """Singleton container for health monitor instance."""
@@ -1760,8 +1488,8 @@ def _test_risk_prediction() -> bool:
     assert 0.0 <= risk <= 1.0, f"Risk score should be 0-1, got {risk}"
     # Test with bad conditions
     monitor.api_response_times.extend([10.0, 12.0, 15.0, 20.0, 25.0])
-    monitor.error_counts["test_error"] = 15
-    monitor.memory_usage_history.extend([100, 200, 300])
+    monitor.update_metric("error_rate", 15.0)
+    monitor.memory_usage_history.extend([100, 200, 300] * 4)
     risk = monitor.predict_session_death_risk()
     assert risk > 0.3, f"Expected elevated risk with bad conditions, got {risk}"
     return True
@@ -1770,7 +1498,7 @@ def _test_risk_prediction() -> bool:
 def _test_alert_system() -> bool:
     """Test health alert system."""
     monitor = SessionHealthMonitor()
-    monitor.update_metric("api_response_time", 16.0)
+    monitor.update_metric("api_response_time", 3.0)
     warning_alerts = [a for a in monitor.alerts if a.level == AlertLevel.WARNING]
     assert len(warning_alerts) > 0, "Warning alert should have been created"
     monitor.update_metric("api_response_time", 26.0)
