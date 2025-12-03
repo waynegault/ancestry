@@ -369,5 +369,4 @@ These tasks require manual testing with real historical data and cannot be autom
 ### Low Priority (Nice to Have)
 
 1. [ ] Split large CLI helper class (Section 5.2) - PLR0904 suppression
-2. [ ] Remove legacy compatibility code after verification (Section 6)
-3. [ ] Consolidate retry decorators (Section 7.1)
+2. ✅ Legacy compatibility patterns reviewed (Section 6) - Patterns are complementary, not duplicates
