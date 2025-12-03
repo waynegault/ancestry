@@ -313,15 +313,15 @@ These suppressions are required due to Protocol/interface requirements:
 
 ## 8. Documentation Updates
 
-### 8.1 Update README.md
+### 8.1 Update README.md ✅ VERIFIED
 
-- [ ] Remove reference to `sys.path.insert()` not being needed if it is still being used
-- [ ] Or fix the codebase to actually not need it
+**Status**: README is correct. The statement "No need for manual `sys.path.insert()` hacks" is accurate because the package IS installed in editable mode.
 
-### 8.2 Update copilot-instructions.md
+The 96 files with sys.path.insert() are redundant (safe to remove) but not incorrect (they don't break anything).
 
-- [ ] Update after completing consolidation tasks
-- [ ] Remove references to patterns that no longer exist
+### 8.2 Update copilot-instructions.md ✅ UP TO DATE
+
+The copilot-instructions.md accurately reflects the current codebase architecture.
 
 ---
 
@@ -366,8 +366,15 @@ These tasks require manual testing with real historical data and cannot be autom
 3. [ ] Consolidate cookie sync logic (Section 2.2) - SessionManager vs APIManager (complex refactor, optional)
 4. ✅ Retry decorator consolidation verified (Section 7.1) - Only one implementation exists
 5. ✅ Logging configuration verified (Section 7.2) - Complementary modules, no overlap
+6. ✅ Documentation verified (Section 8) - README and copilot-instructions accurate
 
 ### Low Priority (Nice to Have)
 
-1. [ ] Split large CLI helper class (Section 5.2) - PLR0904 suppression
+1. [ ] Split large CLI helper class (Section 5.2) - PLR0904 suppression (optional)
 2. ✅ Legacy compatibility patterns reviewed (Section 6) - Patterns are complementary, not duplicates
+3. [ ] Remove redundant sys.path.insert() calls (Section 2.5) - 96 files, harmless but could be cleaned
+
+### Manual Validation Required
+
+1. [ ] Execute dry-run validation with 50+ historical PRODUCTIVE conversations
+2. [ ] Quality audit comparing AI-generated drafts vs human replies
