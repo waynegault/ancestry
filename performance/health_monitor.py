@@ -73,6 +73,32 @@ class HealthAlert:
 class MetricsManagementMixin:
     """Mixin for managing health metrics."""
 
+    # Type hints for attributes expected from SessionHealthMonitor
+    current_metrics: dict[str, HealthMetric]
+    metrics_history: dict[str, deque[float]]
+    api_response_times: deque[float]
+    error_timestamps: deque[float]
+    error_counts: dict[str, int]
+    page_processing_times: deque[float]
+    memory_usage_history: deque[float]
+    error_rate_warnings_sent: dict[str, float]
+    session_start_time: float
+
+    # Type hints for methods expected from other Mixins
+    def _create_alert(
+        self,
+        level: AlertLevel,
+        component: str,
+        message: str,
+        metric_name: str,
+        metric_value: float,
+        threshold: float,
+    ) -> None: ...
+
+    def _trigger_emergency_intervention(self, reason: str, value: float, threshold: str) -> None: ...
+    def _trigger_immediate_intervention(self, reason: str, value: float, threshold: str) -> None: ...
+    def _trigger_enhanced_monitoring(self, reason: str, value: float, threshold: str) -> None: ...
+
     def _initialize_metrics(self) -> None:
         """Initialize default metrics."""
         defaults = {
@@ -163,9 +189,7 @@ class MetricsManagementMixin:
         # Check for rapid error spikes (e.g. 10 errors in 10 seconds)
         very_recent = [t for t in self.error_timestamps if current_time - t <= 10]
         if len(very_recent) >= 10:
-            self._trigger_emergency_intervention(
-                "RAPID_ERROR_SPIKE", len(very_recent), "10 errors in 10 seconds"
-            )
+            self._trigger_emergency_intervention("RAPID_ERROR_SPIKE", len(very_recent), "10 errors in 10 seconds")
 
         # Check for sustained error rate
         self._process_error_window_threshold(current_time)
@@ -178,13 +202,9 @@ class MetricsManagementMixin:
 
         # Thresholds for 5-minute window
         if count >= 50:  # ~10 errors/min sustained
-            self._trigger_immediate_intervention(
-                "SUSTAINED_ERROR_RATE", count, "50+ errors in 5 minutes"
-            )
+            self._trigger_immediate_intervention("SUSTAINED_ERROR_RATE", count, "50+ errors in 5 minutes")
         elif count >= 20:  # ~4 errors/min sustained
-            self._trigger_enhanced_monitoring(
-                "ELEVATED_ERROR_RATE", count, "20+ errors in 5 minutes"
-            )
+            self._trigger_enhanced_monitoring("ELEVATED_ERROR_RATE", count, "20+ errors in 5 minutes")
 
         # Check for early warning signs
         self._check_error_rate_early_warning(count, current_time)
@@ -214,9 +234,7 @@ class MetricsManagementMixin:
             "15_min": fifteen_min,
             "60_min": hour,
             "total": len(self.error_timestamps),
-            "top_errors": sorted(
-                self.error_counts.items(), key=lambda x: x[1], reverse=True
-            )[:5],
+            "top_errors": sorted(self.error_counts.items(), key=lambda x: x[1], reverse=True)[:5],
         }
 
     def record_page_processing_time(self, processing_time: float) -> None:
@@ -301,6 +319,11 @@ class MetricsManagementMixin:
 class AlertingMixin:
     """Mixin for managing health alerts."""
 
+    # Type hints for attributes expected from SessionHealthMonitor
+    alerts: list[HealthAlert]
+    last_alert_times: dict[str, float]
+    _is_safety_testing: bool
+
     def begin_safety_test(self) -> None:
         """Mark the beginning of a safety test to prefix alerts."""
         self._is_safety_testing = True
@@ -358,6 +381,15 @@ class AlertingMixin:
 
 class HealthAssessmentMixin:
     """Mixin for calculating health scores and risks."""
+
+    # Type hints for attributes expected from SessionHealthMonitor
+    current_metrics: dict[str, HealthMetric]
+    alerts: list[HealthAlert]
+    health_score_history: deque[float]
+    api_response_times: deque[float]
+    memory_usage_history: deque[float]
+    error_counts: dict[str, int]
+    page_processing_times: deque[float]
 
     def calculate_health_score(self) -> float:
         """Calculate overall health score (0-100)."""
@@ -465,7 +497,7 @@ class HealthAssessmentMixin:
 
     def get_recommended_actions(self) -> list[str]:
         """Get recommended actions based on health state."""
-        actions = []
+        actions: list[str] = []
         status = self.get_health_status()
 
         if status == HealthStatus.EMERGENCY:
@@ -512,7 +544,7 @@ class HealthAssessmentMixin:
                     "message": alert.message,
                     "timestamp": alert.timestamp,
                 }
-                for alert in self.alerts[-5:]  # Last 5 alerts
+                for alert in list(self.alerts)[-5:]  # Last 5 alerts
             ],
             "recommended_actions": self.get_recommended_actions(),
             "performance_summary": {
@@ -558,6 +590,30 @@ class HealthAssessmentMixin:
 class InterventionMixin:
     """Mixin for handling system interventions."""
 
+    # Type hints for attributes expected from SessionHealthMonitor
+    _emergency_halt_requested: bool
+    _emergency_halt_reason: Optional[str]
+    _emergency_halt_timestamp: float
+    _immediate_intervention_requested: bool
+    _immediate_intervention_reason: Optional[str]
+    _immediate_intervention_timestamp: float
+    _enhanced_monitoring_active: bool
+    _enhanced_monitoring_reason: Optional[str]
+    _enhanced_monitoring_timestamp: float
+    _monitoring_interval: float
+    error_timestamps: deque[float]
+
+    # Type hints for methods expected from other Mixins
+    def _create_alert(
+        self,
+        level: AlertLevel,
+        component: str,
+        message: str,
+        metric_name: str,
+        metric_value: float,
+        threshold: float,
+    ) -> None: ...
+
     def _trigger_emergency_intervention(self, reason: str, value: float, threshold: str) -> None:
         """Trigger emergency intervention (halt)."""
         if self._emergency_halt_requested:
@@ -570,12 +626,7 @@ class InterventionMixin:
 
         # Also create an alert
         self._create_alert(
-            AlertLevel.EMERGENCY,
-            "intervention",
-            f"Emergency halt: {reason}",
-            "intervention",
-            value,
-            0.0
+            AlertLevel.EMERGENCY, "intervention", f"Emergency halt: {reason}", "intervention", value, 0.0
         )
 
     def _trigger_immediate_intervention(self, reason: str, value: float, threshold: str) -> None:
@@ -675,6 +726,20 @@ class InterventionMixin:
 class ResourceManagementMixin:
     """Mixin for managing resources and cleanup."""
 
+    # Type hints for attributes expected from SessionHealthMonitor
+    current_metrics: dict[str, HealthMetric]
+    metrics_history: dict[str, deque[float]]
+    error_timestamps: deque[float]
+    error_rate_warnings_sent: dict[str, float]
+    alerts: list[HealthAlert]
+    _last_cleanup_time: float
+    _cleanup_interval: float
+    session_start_time: float
+    _adaptive_interval: bool
+
+    # Type hints for methods expected from other Mixins
+    def update_metric(self, name: str, value: float) -> None: ...
+
     def _perform_efficient_cleanup(self, current_time: float) -> None:
         """Perform efficient cleanup of old data to reduce memory usage."""
         try:
@@ -772,6 +837,29 @@ class ResourceManagementMixin:
 
 class PersistenceMixin:
     """Mixin for session state persistence."""
+
+    # Type hints for attributes expected from SessionHealthMonitor
+    current_metrics: dict[str, HealthMetric]
+    metrics_history: dict[str, deque[float]]
+    alerts: list[HealthAlert]
+    health_score_history: deque[float]
+    session_start_time: float
+    api_response_times: deque[float]
+    error_timestamps: deque[float]
+    error_counts: dict[str, int]
+    page_processing_times: deque[float]
+    memory_usage_history: deque[float]
+    _emergency_halt_requested: bool
+    _immediate_intervention_requested: bool
+    _enhanced_monitoring_active: bool
+    _monitoring_interval: float
+    _last_cleanup_time: float
+    _last_checkpoint_time: float
+
+    # Type hints for methods expected from other Mixins
+    def get_health_dashboard(self) -> dict[str, Any]: ...
+    def calculate_health_score(self) -> float: ...
+    def get_performance_stats(self) -> dict[str, Any]: ...
 
     def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
         """Create a checkpoint of the current session state for recovery."""
@@ -1129,7 +1217,7 @@ class SessionHealthMonitor(
     HealthAssessmentMixin,
     InterventionMixin,
     ResourceManagementMixin,
-    PersistenceMixin
+    PersistenceMixin,
 ):
     """
     Monitor session health and performance metrics.
@@ -1140,17 +1228,17 @@ class SessionHealthMonitor(
         """Initialize health monitor."""
         self.session_start_time = time.time()
         self.current_metrics: dict[str, HealthMetric] = {}
-        self.metrics_history: dict[str, deque] = {}
+        self.metrics_history: dict[str, deque[float]] = {}
         self.alerts: list[HealthAlert] = []
         self.last_alert_times: dict[str, float] = {}
 
         # Performance tracking
-        self.api_response_times: deque = deque(maxlen=1000)
-        self.error_timestamps: deque = deque(maxlen=1000)
+        self.api_response_times: deque[float] = deque(maxlen=1000)
+        self.error_timestamps: deque[float] = deque(maxlen=1000)
         self.error_counts: dict[str, int] = {}
-        self.page_processing_times: deque = deque(maxlen=100)
-        self.memory_usage_history: deque = deque(maxlen=100)
-        self.health_score_history: deque = deque(maxlen=100)
+        self.page_processing_times: deque[float] = deque(maxlen=100)
+        self.memory_usage_history: deque[float] = deque(maxlen=100)
+        self.health_score_history: deque[float] = deque(maxlen=100)
 
         # Intervention flags
         self._emergency_halt_requested = False
@@ -1162,6 +1250,9 @@ class SessionHealthMonitor(
         self._enhanced_monitoring_active = False
         self._enhanced_monitoring_reason = ""
         self._enhanced_monitoring_timestamp = 0.0
+
+        # Dynamic flags
+        self._action6_callback_registered: bool = False
 
         # Configuration
         self._monitoring_interval = 30.0  # Seconds
