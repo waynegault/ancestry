@@ -1124,7 +1124,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         return False
 
-    def _sync_cookies_to_requests(self, force: bool = False) -> None:
+    def _sync_cookies_to_requests(self, force: bool = False) -> bool:
         """
         Synchronize cookies from WebDriver to requests session.
         Only syncs once per session unless forced due to auth errors.
@@ -1135,12 +1135,15 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         Args:
             force: When True, bypass cooldown and prior-success guards while
                 still requiring prerequisite browser state.
+
+        Returns:
+            bool: True if sync occurred or was skipped intentionally (success), False on error.
         """
         current_time = time.time()
 
         # Check if sync should be skipped
         if self._should_skip_cookie_sync(current_time, force=force):
-            return
+            return True
 
         try:
             # Set recursion prevention flag
@@ -1149,7 +1152,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             # Get cookies from WebDriver (validated in _should_skip_cookie_sync)
             if not self.browser_manager.driver:
                 logger.error("Driver not available for cookie sync")
-                return
+                return False
 
             driver = cast(Any, self.browser_manager.driver)
             driver_cookies = cast(list[dict[str, Any]], driver.get_cookies())
@@ -1157,7 +1160,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             # Validate cookies were retrieved
             if not driver_cookies:
                 logger.debug("No cookies retrieved from WebDriver")
-                return
+                return False
 
             # Use helper method for robust cookie syncing
             synced_count = self._sync_driver_cookies_to_requests(driver_cookies)
@@ -1165,18 +1168,26 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             self._session_cookies_synced = True
             self._last_cookie_sync_time = current_time  # Track sync time for cooldown
             logger.debug(f"Synced {synced_count} cookies from WebDriver to requests session (once per session)")
+            return True
 
         except Exception as e:
             logger.error(f"Failed to sync cookies to requests session: {e}")
+            return False
         finally:
             # Always clear recursion flag
             if hasattr(self, '_in_sync_cookies'):
                 self._in_sync_cookies = False
 
-    def sync_cookies_to_requests(self, force: bool = False) -> None:
-        """Public wrapper that enforces typing-friendly cookie sync access."""
+    def sync_browser_cookies(self, force: bool = False) -> bool:
+        """
+        Synchronize cookies from WebDriver to requests session.
+        Public wrapper that enforces typing-friendly cookie sync access.
+        """
+        return self._sync_cookies_to_requests(force=force)
 
-        self._sync_cookies_to_requests(force=force)
+    def sync_cookies_to_requests(self, force: bool = False) -> None:
+        """Deprecated alias for sync_browser_cookies."""
+        self.sync_browser_cookies(force=force)
 
     def _force_cookie_resync(self) -> None:
         """Force a cookie resync when authentication errors occur."""
@@ -1222,8 +1233,45 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._precache_csrf_token()
         return True
 
+    @staticmethod
+    def _deduplicate_cookies(
+        driver_cookies: list[dict[str, Any]],
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """
+        Deduplicate cookies by (name, path), preferring more specific domains.
+
+        Args:
+            driver_cookies: List of cookies from browser
+
+        Returns:
+            dict: Deduplicated cookies keyed by (name, path)
+        """
+        unique_cookies: dict[tuple[str, str], dict[str, Any]] = {}
+        for cookie in driver_cookies:
+            name = cookie.get("name")
+            if not name:
+                continue
+            path = cookie.get("path", "/")
+            domain = cookie.get("domain", "")
+            key = (name, path)
+
+            # If we already have this cookie, prefer the one with more specific domain
+            if key in unique_cookies:
+                existing_domain = unique_cookies[key].get("domain", "")
+                # Prefer domain without leading dot (more specific)
+                if domain.startswith(".") and not existing_domain.startswith("."):
+                    continue  # Keep existing (more specific)
+                if not domain.startswith(".") and existing_domain.startswith("."):
+                    unique_cookies[key] = cookie  # Replace with more specific
+                else:
+                    unique_cookies[key] = cookie  # Keep last one
+            else:
+                unique_cookies[key] = cookie
+
+        return unique_cookies
+
     def _sync_driver_cookies_to_requests(self, driver_cookies: list[dict[str, Any]]) -> int:
-        """Sync driver cookies to requests session.
+        """Sync driver cookies to requests session with deduplication.
 
         Args:
             driver_cookies: List of cookies from WebDriver
@@ -1234,7 +1282,10 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self.api_manager._requests_session.cookies.clear()
         synced_count = 0
 
-        for cookie in driver_cookies:
+        # Deduplicate cookies first
+        unique_cookies = self._deduplicate_cookies(driver_cookies)
+
+        for cookie in unique_cookies.values():
             name = cookie.get("name")
             value = cookie.get("value")
             if not isinstance(name, str) or value is None:
@@ -1246,6 +1297,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
                     value,
                     domain=cookie.get("domain"),
                     path=cookie.get("path", "/"),
+                    secure=cookie.get("secure", False),
                 )
                 synced_count += 1
             except Exception:

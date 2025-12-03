@@ -1267,14 +1267,24 @@ def _perform_cookie_sync(
             f"(cache expired, last sync {time_since_last_sync:.1f}s ago)"
         )
 
-    api_manager = getattr(session_manager, "api_manager", None)
-    browser_manager = getattr(session_manager, "browser_manager", None)
-    sync_method = getattr(api_manager, "sync_cookies_from_browser", None)
-    if not browser_manager or not callable(sync_method):
-        logger.warning(f"[{api_description}] Cookie sync requested but browser/API managers are unavailable")
-        return False
+    # Prefer SessionManager.sync_browser_cookies()
+    if hasattr(session_manager, "sync_browser_cookies"):
+        try:
+            session_manager.sync_browser_cookies()
+            sync_success = True
+        except Exception as e:
+            logger.warning(f"[{api_description}] SessionManager cookie sync failed: {e}")
+            sync_success = False
+    else:
+        # Fallback to legacy APIManager method
+        api_manager = getattr(session_manager, "api_manager", None)
+        browser_manager = getattr(session_manager, "browser_manager", None)
+        sync_method = getattr(api_manager, "sync_cookies_from_browser", None)
+        if not browser_manager or not callable(sync_method):
+            logger.warning(f"[{api_description}] Cookie sync requested but browser/API managers are unavailable")
+            return False
 
-    sync_success = sync_method(browser_manager, session_manager=session_manager)
+        sync_success = sync_method(browser_manager, session_manager=session_manager)
 
     if sync_success:
         # Update cache timestamp

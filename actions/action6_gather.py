@@ -367,7 +367,7 @@ def _navigate_and_get_initial_page_data(
     # Refreshing before first API call ensures fresh, valid cookies
     logger.debug("Proactively refreshing browser cookies before first API call...")
     try:
-        session_manager.api_manager.sync_cookies_from_browser(session_manager.browser_manager)
+        session_manager.sync_browser_cookies()
         logger.debug("✅ Cookies refreshed successfully - preventing 303 redirect")
     except Exception as cookie_refresh_err:
         logger.warning(f"Cookie refresh warning (non-fatal): {cookie_refresh_err}")

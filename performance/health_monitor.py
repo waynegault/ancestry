@@ -85,19 +85,11 @@ class MetricsManagementMixin:
     session_start_time: float
 
     # Type hints for methods expected from other Mixins
-    def _create_alert(
-        self,
-        level: AlertLevel,
-        component: str,
-        message: str,
-        metric_name: str,
-        metric_value: float,
-        threshold: float,
-    ) -> None: ...
-
-    def _trigger_emergency_intervention(self, reason: str, value: float, threshold: str) -> None: ...
-    def _trigger_immediate_intervention(self, reason: str, value: float, threshold: str) -> None: ...
-    def _trigger_enhanced_monitoring(self, reason: str, value: float, threshold: str) -> None: ...
+    # Note: We don't define them here to avoid overriding actual implementations in MRO
+    # def _create_alert(...) -> None: ...
+    # def _trigger_emergency_intervention(...) -> None: ...
+    # def _trigger_immediate_intervention(...) -> None: ...
+    # def _trigger_enhanced_monitoring(...) -> None: ...
 
     def _initialize_metrics(self) -> None:
         """Initialize default metrics."""
@@ -738,7 +730,8 @@ class ResourceManagementMixin:
     _adaptive_interval: bool
 
     # Type hints for methods expected from other Mixins
-    def update_metric(self, name: str, value: float) -> None: ...
+    # Note: We don't define them here to avoid overriding actual implementations in MRO
+    # def update_metric(self, name: str, value: float) -> None: ...
 
     def _perform_efficient_cleanup(self, current_time: float) -> None:
         """Perform efficient cleanup of old data to reduce memory usage."""
@@ -857,9 +850,10 @@ class PersistenceMixin:
     _last_checkpoint_time: float
 
     # Type hints for methods expected from other Mixins
-    def get_health_dashboard(self) -> dict[str, Any]: ...
-    def calculate_health_score(self) -> float: ...
-    def get_performance_stats(self) -> dict[str, Any]: ...
+    # Note: We don't define them here to avoid overriding actual implementations in MRO
+    # def get_health_dashboard(self) -> dict[str, Any]: ...
+    # def calculate_health_score(self) -> float: ...
+    # def get_performance_stats(self) -> dict[str, Any]: ...
 
     def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
         """Create a checkpoint of the current session state for recovery."""
@@ -1864,13 +1858,11 @@ def health_monitor_tests() -> bool:
 
 
 # Register functions for external access
-from core.registry_utils import auto_register_module
 
 auto_register_module(globals(), __name__)
 
 
 # Use centralized test runner utility
-from testing.test_utilities import create_standard_test_runner
 
 run_comprehensive_tests = create_standard_test_runner(health_monitor_tests)
 

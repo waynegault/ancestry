@@ -321,111 +321,27 @@ class APIManager:
         logger.warning("❌ Session recovery failed or not available")
         return False
 
-    @staticmethod
-    def _deduplicate_cookies(
-        driver_cookies: list[Any],
-    ) -> dict[tuple[str, str], dict[str, Any]]:
-        """
-        Deduplicate cookies by (name, path), preferring more specific domains.
-
-        Args:
-            driver_cookies: List of cookies from browser
-
-        Returns:
-            dict: Deduplicated cookies keyed by (name, path)
-        """
-        unique_cookies: dict[tuple[str, str], dict[str, Any]] = {}
-        for cookie in driver_cookies:
-            name = cookie["name"]
-            path = cookie.get("path", "/")
-            domain = cookie.get("domain", "")
-            key = (name, path)
-
-            # If we already have this cookie, prefer the one with more specific domain
-            if key in unique_cookies:
-                existing_domain = unique_cookies[key].get("domain", "")
-                # Prefer domain without leading dot (more specific)
-                if domain.startswith(".") and not existing_domain.startswith("."):
-                    continue  # Keep existing (more specific)
-                if not domain.startswith(".") and existing_domain.startswith("."):
-                    unique_cookies[key] = cookie  # Replace with more specific
-                else:
-                    unique_cookies[key] = cookie  # Keep last one
-            else:
-                unique_cookies[key] = cookie
-
-        return unique_cookies
-
-    def _sync_cookies_to_session(
+    def sync_cookies_from_browser(  # noqa: PLR6301
         self,
-        unique_cookies: Mapping[tuple[str, str], dict[str, Any]],
-    ) -> None:
-        """
-        Add deduplicated cookies to requests session.
-
-        Args:
-            unique_cookies: Dictionary of deduplicated cookies
-        """
-        for cookie in unique_cookies.values():
-            cast(Any, self._requests_session.cookies).set(
-                cookie["name"],
-                cookie["value"],
-                domain=cookie.get("domain"),
-                path=cookie.get("path", "/"),
-                secure=cookie.get("secure", False),
-            )
-
-    def sync_cookies_from_browser(
-        self,
-        browser_manager: "BrowserManager",
+        browser_manager: "BrowserManager",  # noqa: ARG002
         session_manager: Optional["SessionManager"] = None,
     ) -> bool:
         """
         Sync cookies from browser to the requests session.
+        Delegates to SessionManager.sync_browser_cookies().
 
         Args:
-            browser_manager: BrowserManager instance to sync cookies from
-            session_manager: Optional SessionManager instance for triggering recovery
+            browser_manager: BrowserManager instance (unused, kept for compatibility)
+            session_manager: Optional SessionManager instance for delegation
 
         Returns:
             bool: True if sync successful, False otherwise
         """
-        # Validate browser session
-        if not browser_manager or not browser_manager.is_session_valid():
-            logger.warning("Cannot sync cookies: Browser session invalid.")
+        if session_manager and hasattr(session_manager, "sync_browser_cookies"):
+            return session_manager.sync_browser_cookies()
 
-            # Attempt recovery and retry if successful
-            if self._attempt_session_recovery(session_manager):
-                return self.sync_cookies_from_browser(browser_manager, session_manager=None)
-            return False
-
-        try:
-            # Get cookies from browser
-            driver = browser_manager.driver
-            if driver is None:
-                logger.error("Cannot sync cookies: Browser driver is not available.")
-                return False
-            driver_cookies = cast(Any, driver).get_cookies()
-            logger.debug(f"Retrieved {len(driver_cookies)} cookies from browser for API sync.")
-
-            # Clear existing cookies to prevent duplicates
-            self._requests_session.cookies.clear()
-
-            # Deduplicate cookies
-            unique_cookies = self._deduplicate_cookies(driver_cookies)
-
-            # Add cookies to session
-            self._sync_cookies_to_session(unique_cookies)
-
-            logger.debug(
-                f"Synced {len(unique_cookies)} unique cookies to API requests session "
-                f"(from {len(driver_cookies)} browser cookies)."
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Error syncing cookies from browser to API: {e}", exc_info=True)
-            return False
+        logger.warning("sync_cookies_from_browser called without valid session_manager. Cannot sync.")
+        return False
 
     def load_cookies_from_file(self, path: Optional[Union[str, Path]] = None) -> bool:
         """Load cookies from a JSON file into the requests session (browserless).

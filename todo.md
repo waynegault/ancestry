@@ -14,8 +14,8 @@ This document tracks the remaining improvements required for production readines
 
 **Action**:
 
-- [ ] Consolidate into `SessionManager` as single `sync_browser_cookies()` method
-- [ ] Have `APIManager` delegate to SessionManager for cookie operations
+- [x] Consolidate into `SessionManager` as single `sync_browser_cookies()` method
+- [x] Have `APIManager` delegate to SessionManager for cookie operations
 
 ### 1.2 ConfigManager Singleton Migration
 
