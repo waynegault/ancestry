@@ -252,18 +252,27 @@ These suppressions are required due to Protocol/interface requirements:
 
 ## 6. Legacy/Backward Compatibility Code
 
-### 6.1 Patterns That May No Longer Be Needed
+### 6.1 Patterns That May No Longer Be Needed ✅ REVIEWED
 
-- [ ] `messaging/safety.py` (lines 64-100): "ORIGINAL PATTERNS (Legacy compatibility)"
-  - Review if legacy patterns are still needed
-  - If newer patterns cover all cases, remove legacy section
+**Status**: Verified that "legacy" patterns serve different purposes than Phase 2 patterns.
+
+**Analysis** - `messaging/safety.py`:
+- `_OPT_OUT_PATTERNS`, `_DANGER_PATTERNS`, `_HOSTILITY_PATTERNS` are used by `check_message()` method
+- `_CRITICAL_*_PATTERNS` are used by `check_critical_alerts()` method
+- These are complementary, not duplicates:
+  - `check_message()`: Simple boolean opt-out/danger detection
+  - `check_critical_alerts()`: Category-based alerts with priority ordering
+
+**Action**: Rename comment from "Legacy compatibility" to "Standard Safety Patterns" for clarity (optional).
+
+**Other Items** (Low Priority):
 
 - [ ] `genealogy/genealogical_normalization.py` (lines 43-44, 359-367): Legacy field promotion
   - `LEGACY_TO_STRUCTURED_MAP` and `_promote_legacy_fields()`
   - **Action**: Verify if AI still returns legacy format; if not, remove
 
 - [ ] `testing/verify_opt_out.py` (lines 65-80): Tests legacy `check_message` method
-  - If deprecated method is removed, update tests
+  - Method is still used, tests are valid
 
 ---
 

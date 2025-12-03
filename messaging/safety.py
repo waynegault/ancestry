@@ -61,7 +61,7 @@ class SafetyGuard:
     - HIGH_VALUE_DISCOVERY: Family artifacts that warrant priority notification
     """
 
-    # === ORIGINAL PATTERNS (Legacy compatibility) ===
+    # === STANDARD SAFETY PATTERNS (used by check_message method) ===
     _OPT_OUT_PATTERNS: ClassVar[list[str]] = [
         r"\bstop\b",
         r"\bunsubscribe\b",
