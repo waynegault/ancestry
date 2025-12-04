@@ -110,6 +110,12 @@ EXPLICIT_OPT_OUT_PATTERNS = [
         category="explicit",
         example="No more messages please",
     ),
+    OptOutIndicator(
+        pattern=r"\bstop\s+messaging\s+me\b",
+        confidence=0.95,
+        category="explicit",
+        example="Please stop messaging me",
+    ),
 ]
 
 # Implicit opt-out phrases (medium confidence)

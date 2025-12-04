@@ -1151,6 +1151,25 @@ def extract_genealogical_entities(context_history: str, session_manager: Session
             )
             return salvaged
         except json.JSONDecodeError as e:
+            # Attempt to repair truncated JSON by appending closing braces
+            try:
+                logger.warning(f"JSON decode error: {e}. Attempting to repair truncated JSON.")
+                repaired_json_str = ai_response_str.strip()
+                # Simple heuristic: count braces and append missing ones
+                open_braces = repaired_json_str.count("{")
+                close_braces = repaired_json_str.count("}")
+                open_brackets = repaired_json_str.count("[")
+                close_brackets = repaired_json_str.count("]")
+
+                repaired_json_str += "}" * (open_braces - close_braces)
+                repaired_json_str += "]" * (open_brackets - close_brackets)
+
+                parsed_json = json.loads(repaired_json_str)
+                logger.info("Successfully repaired truncated JSON.")
+                return parsed_json
+            except Exception as repair_error:
+                logger.error(f"Failed to repair JSON: {repair_error}")
+
             logger.error(f"AI extraction response was not valid JSON: {e}. Response: {ai_response_str[:500]}")
             _record_extraction_telemetry(
                 system_prompt, None, ai_response_str, session_manager, parse_success=False, error=str(e)[:120]
