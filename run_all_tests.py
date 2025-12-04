@@ -1465,7 +1465,9 @@ def run_module_tests(
 
 
 def _monitor_and_collect_results(
-    future_to_module: dict[concurrent.futures.Future[tuple[bool, int, Optional[TestExecutionMetrics]]], tuple[str, str]],
+    future_to_module: dict[
+        concurrent.futures.Future[tuple[bool, int, Optional[TestExecutionMetrics]]], tuple[str, str]
+    ],
 ) -> tuple[list[TestExecutionMetrics], int, int]:
     """Monitor running tests and collect results."""
     all_metrics: list[TestExecutionMetrics] = []
