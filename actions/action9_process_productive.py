@@ -1864,7 +1864,7 @@ class PersonProcessor:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
-                setattr(message, "custom_reply_sent_at", datetime.now(timezone.utc))
+                message.custom_reply_sent_at = datetime.now(timezone.utc)
                 self.db_state.session.add(message)
                 self.db_state.session.flush()
         except Exception as e:
@@ -2559,7 +2559,7 @@ class PersonProcessor:
         if custom_reply and latest_message and message_type_id == self.msg_config.custom_reply_msg_type_id:
             try:
                 if self.db_state.session:
-                    setattr(latest_message, "custom_reply_sent_at", datetime.now(timezone.utc))
+                    latest_message.custom_reply_sent_at = datetime.now(timezone.utc)
                     self.db_state.session.add(latest_message)
                     self.db_state.session.flush()
                     logger.info(f"{log_prefix}: Updated custom_reply_sent_at.")

@@ -11,12 +11,6 @@ Provides a centralized feature flag system for:
 """
 
 # === CORE INFRASTRUCTURE ===
-import sys
-from pathlib import Path
-
-parent_dir = str(Path(__file__).resolve().parent.parent)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
 
 import logging
 
@@ -26,10 +20,12 @@ logger = logging.getLogger(__name__)
 import hashlib
 import json
 import os
+import sys
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
 

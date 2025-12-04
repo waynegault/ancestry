@@ -443,9 +443,9 @@ def configure_dependencies() -> None:
 
     try:
         # Register configuration services
-        from config.config_manager import ConfigManager
+        from config.config_manager import ConfigManager, get_config_manager
 
-        container.register_singleton(ConfigManager, ConfigManager)
+        container.register_factory(ConfigManager, get_config_manager)
 
         logger.info("Configuration services registered in DI container")
 

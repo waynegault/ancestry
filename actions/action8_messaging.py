@@ -3167,7 +3167,7 @@ def _check_message_send_limit(
     if max_messages_to_send_this_run > 0 and current_sent_total >= max_messages_to_send_this_run:
         if progress_bar and not hasattr(progress_bar, "limit_logged"):
             logger.debug(f"Message sending limit ({max_messages_to_send_this_run}) reached. Skipping remaining.")
-            setattr(progress_bar, "limit_logged", True)
+            progress_bar.limit_logged = True
         if progress_bar:
             progress_bar.set_description(
                 f"Limit reached: Sent={sent_count} ACK={acked_count} Skip={skipped_count + 1} Err={error_count}"

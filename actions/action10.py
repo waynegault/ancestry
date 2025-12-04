@@ -370,7 +370,7 @@ def _perform_api_search_fallback(
     api_module = importlib.import_module("api_search_core")
     search_api = cast(
         SearchAPIFunc,
-        getattr(api_module, "search_ancestry_api_for_person"),
+        api_module.search_ancestry_api_for_person,
     )
 
     try:
@@ -2855,7 +2855,7 @@ def _test_perform_api_search_fallback_returns_fallback_matches() -> None:
         return [{"id": "API1"}]
 
     fake_api_module = ModuleType("api_search_core")
-    setattr(fake_api_module, "search_ancestry_api_for_person", fake_search)
+    fake_api_module.search_ancestry_api_for_person = fake_search
 
     with (
         _temporary_module("api_search_core", fake_api_module),

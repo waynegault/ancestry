@@ -40,14 +40,6 @@ STRUCTURED_KEYS = [
     "dna_information",
 ]
 
-# Legacy/flat keys occasionally seen in AI responses
-LEGACY_TO_STRUCTURED_MAP: dict[str, tuple[str, str]] = {
-    "mentioned_names": ("structured_names", "name"),
-    "mentioned_locations": ("locations", "place"),
-    "mentioned_dates": ("vital_records", "date"),
-    # relationships and key_facts cannot be reliably auto-mapped; skip
-}
-
 
 def _dedupe_list_str(items: Any) -> list[str]:
     if not isinstance(items, list):
@@ -356,45 +348,6 @@ def _ensure_extracted_data_container(resp: Any) -> dict[str, Any]:
     return resp_dict
 
 
-def _promote_legacy_fields(extracted: dict[str, Any]) -> None:
-    """
-    Promote simple legacy flat fields to structured containers conservatively.
-    - mentioned_names -> structured_names[{full_name}]
-    - mentioned_locations -> locations[{place}]
-    - mentioned_dates -> vital_records[{date}]
-    """
-    for legacy_key, (struct_key, _value_field) in LEGACY_TO_STRUCTURED_MAP.items():
-        legacy_vals = extracted.get(legacy_key)
-        if not legacy_vals:
-            continue
-        if not isinstance(legacy_vals, list):
-            continue
-        # Prepare the structured container list
-        struct_list = extracted.get(struct_key)
-        if not isinstance(struct_list, list):
-            struct_list = []
-
-        # Cast to list[Any] for appending
-        struct_list_typed = cast(list[Any], struct_list)
-
-        for v in _dedupe_list_str(legacy_vals):
-            if struct_key == "structured_names":
-                struct_list_typed.append({"full_name": v, "nicknames": []})
-            elif struct_key == "locations":
-                struct_list_typed.append({"place": v, "context": "", "time_period": ""})
-            elif struct_key == "vital_records":
-                struct_list_typed.append(
-                    {
-                        "person": "",
-                        "event_type": "",
-                        "date": v,
-                        "place": "",
-                        "certainty": "unknown",
-                    }
-                )
-        extracted[struct_key] = struct_list_typed
-
-
 # Helper functions for normalize_extracted_data
 
 
@@ -521,9 +474,6 @@ def normalize_extracted_data(extracted: Any) -> dict[str, Any]:
 
     # Ensure all structured keys exist
     _ensure_structured_keys(extracted_dict)
-
-    # Promote legacy flat fields conservatively
-    _promote_legacy_fields(extracted_dict)
 
     # Apply genealogical validation and normalization
     _normalize_vital_records(extracted_dict.get("vital_records", []))

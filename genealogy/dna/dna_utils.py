@@ -63,7 +63,7 @@ def _load_utils_module() -> Any:
 def _call_api_request(**kwargs: Any) -> Any:
     """Indirection for utils._api_req without private imports."""
 
-    api_request = getattr(_load_utils_module(), "_api_req")
+    api_request = _load_utils_module()._api_req
     return api_request(**kwargs)
 
 

@@ -294,7 +294,7 @@ class TestResultCache:
         if not cls.CACHE_FILE.exists():
             return {}
         try:
-            with cls.CACHE_FILE.open() as f:
+            with cls.CACHE_FILE.open(encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -304,7 +304,7 @@ class TestResultCache:
         """Save test result cache to disk."""
         try:
             cls.CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with cls.CACHE_FILE.open("w") as f:
+            with cls.CACHE_FILE.open("w", encoding="utf-8") as f:
                 json.dump(cache, f, indent=2)
         except Exception:
             pass  # Silently fail - caching is optional

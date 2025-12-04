@@ -173,7 +173,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         lm_module = import_module("lm_studio_manager")
         manager_factory = cast(
             Callable[[Any], Any],
-            getattr(lm_module, "create_manager_from_config"),
+            lm_module.create_manager_from_config,
         )
         lm_manager = manager_factory(config_schema)
         success, error_msg = lm_manager.ensure_ready()
@@ -194,7 +194,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         ai_module = import_module("ai_interface")
         validate_llm_loaded = cast(
             Callable[[Any, str], tuple[Optional[str], Optional[str]]],
-            getattr(ai_module, "_validate_local_llm_model_loaded"),
+            ai_module._validate_local_llm_model_loaded,
         )
         actual_model_name, error_msg = validate_llm_loaded(client, model_name)
 

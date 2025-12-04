@@ -307,7 +307,7 @@ class ConfigManager:
                     "⚠️ Unsafe speed profile active; retaining max_concurrency=%s. Monitor session stability closely.",
                     max_concurrency_configured,
                 )
-                setattr(type(self), "_unsafe_concurrency_override_logged", True)
+                type(self)._unsafe_concurrency_override_logged = True
             return
 
         logger.warning(
@@ -329,7 +329,7 @@ class ConfigManager:
                 current_rps,
                 safe_rps,
             )
-            setattr(self, "_rps_clamp_logged", True)
+            self._rps_clamp_logged = True
 
         api.requests_per_second = safe_rps
         return safe_rps
@@ -354,7 +354,7 @@ class ConfigManager:
                     target_rps,
                     limit,
                 )
-                setattr(type(self), "_rate_limiter_max_clamp_logged", True)
+                type(self)._rate_limiter_max_clamp_logged = True
 
             api.rate_limiter_max_rate = limit
 

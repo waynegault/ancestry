@@ -10,11 +10,6 @@ from logging import StreamHandler
 from pathlib import Path
 from typing import Any, Optional, TextIO
 
-if __package__ in {None, ""}:
-    project_root = Path(__file__).resolve().parent.parent
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-
 from core.action_registry import ActionCategory, ActionMetadata, ActionRegistry, ActionRequirement
 
 
@@ -183,6 +178,43 @@ def _test_render_main_menu_callable() -> bool:
     return True
 
 
+def _test_render_main_menu_output() -> bool:
+    """Test that render_main_menu produces expected output."""
+    import contextlib
+    import io
+    from unittest.mock import MagicMock, patch
+
+    # Setup mocks
+    logger = MagicMock()
+    config = MagicMock()
+    registry = MagicMock()
+
+    # Mock registry actions
+    action = ActionMetadata(
+        id="1",
+        name="Test Action",
+        description="Description",
+        category=ActionCategory.WORKFLOW,
+        browser_requirement=ActionRequirement.NONE,
+        input_hint=None,
+    )
+    registry.get_menu_actions.return_value = [action]
+    registry.get_meta_actions.return_value = []
+    registry.get_test_actions.return_value = []
+
+    # Capture output and mock input
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output), patch('builtins.input', return_value='1'):
+        result = render_main_menu(logger, config, registry)
+
+    # Verify
+    assert result == '1', "Should return normalized input"
+    captured = output.getvalue()
+    assert "Main Menu" in captured, "Should print title"
+    assert "1. Test Action" in captured, "Should print action"
+    return True
+
+
 def module_tests() -> bool:
     """Run module tests for ui.menu."""
     from testing.test_framework import TestSuite
@@ -223,6 +255,12 @@ def module_tests() -> bool:
         "render_main_menu callable",
         _test_render_main_menu_callable,
         "Ensures render_main_menu is callable.",
+    )
+
+    suite.run_test(
+        "render_main_menu output",
+        _test_render_main_menu_output,
+        "Ensures render_main_menu prints menu and handles input.",
     )
 
     return suite.finish_suite()

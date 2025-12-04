@@ -449,7 +449,7 @@ def _test_reset_db_actn_integration() -> bool:
     assert hasattr(db_manager, "_initialize_engine_and_session"), (
         "DatabaseManager should have _initialize_engine_and_session method"
     )
-    init_method = getattr(db_manager, "_initialize_engine_and_session")
+    init_method = db_manager._initialize_engine_and_session
     assert callable(init_method), "_initialize_engine_and_session should be callable"
 
     # Verify engine and Session attributes exist (may be None before initialization)
@@ -462,7 +462,7 @@ def _test_reset_db_actn_integration() -> bool:
 
     # Verify key methods have proper signatures
     if hasattr(db_manager, "get_session"):
-        get_session_method = getattr(db_manager, "get_session")
+        get_session_method = db_manager.get_session
         sig = inspect.signature(get_session_method)
         # Should be callable with no required arguments
         required_params = [p for p in sig.parameters.values() if p.default == inspect.Parameter.empty]
@@ -536,7 +536,7 @@ def _test_import_error_handling() -> bool:
     assert "config" in module_globals, "config should be imported"
     cfg = module_globals["config"]
     assert hasattr(cfg, "api"), "config should have api attribute"
-    api_attr = getattr(cfg, "api")
+    api_attr = cfg.api
     # API config should have rate limiting settings
     assert hasattr(api_attr, "max_pages") or hasattr(api_attr, "requests_per_second"), (
         "config.api should have rate limiting or pagination settings"

@@ -3,11 +3,6 @@
 import sys
 from pathlib import Path
 
-# Ensure repo root is in path for standalone execution
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
 from ui.menu import render_main_menu
 
 __all__ = [
@@ -19,8 +14,15 @@ __all__ = [
 
 
 def _test_render_main_menu_exists() -> bool:
-    """Test that render_main_menu is importable and callable."""
+    """Test that render_main_menu is importable and has correct signature."""
+    import inspect
+
     assert callable(render_main_menu), "render_main_menu should be callable"
+    sig = inspect.signature(render_main_menu)
+    params = list(sig.parameters.keys())
+    assert "logger" in params, "Should accept logger"
+    assert "config" in params, "Should accept config"
+    assert "registry" in params, "Should accept registry"
     return True
 
 

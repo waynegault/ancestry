@@ -70,7 +70,7 @@ def _get_gedcom_utils_module() -> ModuleType:
 
 
 def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
-    normalizer = getattr(_get_gedcom_utils_module(), "_normalize_id")
+    normalizer = _get_gedcom_utils_module()._normalize_id
     return normalizer(value)
 
 

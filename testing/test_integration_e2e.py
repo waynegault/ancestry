@@ -218,52 +218,6 @@ def test_tree_query_service_integration() -> bool:
     return True
 
 
-def test_full_pipeline_mock() -> bool:
-    """Test the full pipeline with mocked components."""
-    from core.approval_queue import ApprovalStatus, ReviewPriority
-    from core.opt_out_detection import OptOutDetector
-    from genealogy.fact_validator import ExtractedFact
-
-    # Simulate full flow for a productive message
-    test_msg = TEST_MESSAGES[0]
-
-    # Step 1: Opt-out check
-    detector = OptOutDetector()
-    opt_out_result = detector.analyze_message(test_msg.content)
-    if opt_out_result.is_opt_out:
-        return False  # Should not be opt-out
-
-    # Step 2: Simulate fact extraction
-    facts = [
-        ExtractedFact(
-            fact_type="BIRTH",
-            subject_name="Mary Smith",
-            original_text="My great-grandmother was Mary Smith, born 1895",
-            structured_value="1895",
-            normalized_value="1895-01-01",
-            confidence=85,
-        ),
-    ]
-    assert len(facts) > 0, "Should have extracted facts"
-
-    # Step 3: Simulate priority assignment
-    ai_confidence = 85  # Simulated AI confidence
-    if ai_confidence >= 90:
-        priority = ReviewPriority.LOW
-    elif ai_confidence >= 70:
-        priority = ReviewPriority.NORMAL
-    else:
-        priority = ReviewPriority.HIGH
-
-    assert priority == ReviewPriority.NORMAL, "Should be normal priority"
-
-    # Step 4: Simulate queue status
-    status = ApprovalStatus.PENDING
-    assert status.value == "PENDING", "Should be pending"
-
-    return True
-
-
 # === MODULE TESTS ===
 
 
@@ -317,15 +271,6 @@ def module_tests() -> bool:
         test_summary="Fact extraction parses AI responses",
         functions_tested="extract_facts_from_ai_response",
         method_description="Test fact extraction from mock AI response",
-    )
-
-    # Test 6: Full pipeline mock
-    suite.run_test(
-        "Full pipeline (mocked)",
-        test_full_pipeline_mock,
-        test_summary="Complete message processing flow works end-to-end",
-        functions_tested="Full pipeline: opt-out -> extraction -> queue",
-        method_description="Simulate full flow with mock data",
     )
 
     return suite.finish_suite()

@@ -8,26 +8,15 @@ Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercu
 
 from __future__ import annotations
 
-# === PATH SETUP FOR PACKAGE IMPORTS ===
-import sys
-from pathlib import Path
-
-_project_root = Path(__file__).resolve().parent.parent
-if str(_project_root) not in sys.path:
-    sys.path.insert(0, str(_project_root))
-
 import argparse
 import io
 import logging
 import os
 import re
 import subprocess
+import sys
 import textwrap
 import time
-
-# Suppress httpx INFO logging (HTTP Request messages)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("google_genai.models").setLevel(logging.WARNING)
 from collections.abc import Iterable
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
@@ -1305,7 +1294,7 @@ def main(argv: list[str] | None = None) -> int:
     if not provider and _should_prefer_local_llm():
         print("⚙️ Defaulting to local_llm provider for automated test execution.")
         provider = "local_llm"
-        setattr(args, "provider", provider)
+        args.provider = provider
 
     if provider:
         return _run_single_provider(args, parser)

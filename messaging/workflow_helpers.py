@@ -424,7 +424,7 @@ def detect_status_change_to_in_tree(
         return False
 
     try:
-        created_at = getattr(family_tree, "created_at")
+        created_at = family_tree.created_at
     except AttributeError:
         return False
 

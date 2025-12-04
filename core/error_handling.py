@@ -808,7 +808,7 @@ def _safe_update_error_context(error: Exception, payload: Optional[dict[str, Any
         cast(dict[str, Any], existing).update(payload)
         return
 
-    setattr(error, "context", dict(payload))
+    error.context = dict(payload)
 
 
 class AuthenticationError(AppError):
@@ -1628,17 +1628,8 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
 
         raise last_exception
 
-    setattr(wrapper, "__retry_policy__", settings.policy_name)
-    setattr(
-        wrapper,
-        "__retry_settings__",
-        {
-            "max_attempts": settings.max_attempts,
-            "backoff_factor": settings.backoff_factor,
-            "base_delay": settings.base_delay,
-            "max_delay": settings.max_delay,
-        },
-    )
+    wrapper.__retry_policy__ = settings.policy_name
+    wrapper.__retry_settings__ = {"max_attempts": settings.max_attempts, "backoff_factor": settings.backoff_factor, "base_delay": settings.base_delay, "max_delay": settings.max_delay}
     return wrapper
 
 
@@ -1678,7 +1669,7 @@ def api_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R]]:
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         wrapped = base_decorator(func)
-        setattr(wrapped, "__retry_helper__", "api_retry")
+        wrapped.__retry_helper__ = "api_retry"
         return wrapped
 
     return decorator
@@ -1691,7 +1682,7 @@ def selenium_retry(**overrides: Any) -> Callable[[Callable[P, R]], Callable[P, R
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         wrapped = base_decorator(func)
-        setattr(wrapped, "__retry_helper__", "selenium_retry")
+        wrapped.__retry_helper__ = "selenium_retry"
         return wrapped
 
     return decorator

@@ -1003,7 +1003,7 @@ def _build_stubbed_db_manager() -> tuple[DatabaseManager, MagicMock, MagicMock, 
     session_factory = MagicMock(side_effect=_make_session)
 
     def stub_initializer() -> None:
-        setattr(db_manager, "_db_init_attempted", True)
+        db_manager._db_init_attempted = True
         db_manager.engine = engine_mock
         db_manager.Session = session_factory
 

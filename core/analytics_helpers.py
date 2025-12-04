@@ -32,8 +32,8 @@ def load_result_row_builders() -> tuple[RowBuilder, RowBuilder]:
 
     action10_module = import_module("actions.action10")
     api_search_module = import_module("api.api_search_core")
-    gedcom_builder = cast(RowBuilder, getattr(action10_module, "_create_table_row"))
-    api_builder = cast(RowBuilder, getattr(api_search_module, "_create_table_row_for_candidate"))
+    gedcom_builder = cast(RowBuilder, action10_module._create_table_row)
+    api_builder = cast(RowBuilder, api_search_module._create_table_row_for_candidate)
     return gedcom_builder, api_builder
 
 
@@ -42,11 +42,11 @@ def load_match_analysis_helpers() -> tuple[IDNormalizer, MatchAnalyzer, Suppleme
 
     action10_module = import_module("actions.action10")
     api_search_module = import_module("api.api_search_core")
-    normalize_id = cast(IDNormalizer, getattr(action10_module, "normalize_gedcom_id"))
-    analyze_top_match = cast(MatchAnalyzer, getattr(action10_module, "analyze_top_match"))
+    normalize_id = cast(IDNormalizer, action10_module.normalize_gedcom_id)
+    analyze_top_match = cast(MatchAnalyzer, action10_module.analyze_top_match)
     handle_supplementary = cast(
         SupplementaryHandler,
-        getattr(api_search_module, "_handle_supplementary_info_phase"),
+        api_search_module._handle_supplementary_info_phase,
     )
     return normalize_id, analyze_top_match, handle_supplementary
 

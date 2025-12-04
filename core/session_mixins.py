@@ -478,7 +478,7 @@ class SessionIdentifierMixin:
                 or time.time() - getattr(self, '_last_uuid_error_time', 0) > 60
             ):
                 logger.error("get_my_uuid: Session invalid.")
-                setattr(self, '_last_uuid_error_time', time.time())
+                self._last_uuid_error_time = time.time()
             return None
 
         url = urljoin(config_schema.api.base_url, API_PATH_UUID_NAVHEADER)

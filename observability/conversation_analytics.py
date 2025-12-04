@@ -140,59 +140,59 @@ def record_engagement_event(
 
 def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Optional[str]) -> None:
     """Update metrics when a message is sent."""
-    setattr(metrics, 'messages_sent', getattr(metrics, 'messages_sent') + 1)
+    metrics.messages_sent = metrics.messages_sent + 1
     now = datetime.now(timezone.utc)
-    setattr(metrics, 'last_message_sent', now)
-    if getattr(metrics, 'first_message_sent') is None:
-        setattr(metrics, 'first_message_sent', now)
+    metrics.last_message_sent = now
+    if metrics.first_message_sent is None:
+        metrics.first_message_sent = now
 
     # Track initial template
-    if getattr(metrics, 'messages_sent') == 1 and template_used:
-        setattr(metrics, 'initial_template_used', template_used)
+    if metrics.messages_sent == 1 and template_used:
+        metrics.initial_template_used = template_used
 
     # Track all templates used
     if template_used:
-        templates_json = getattr(metrics, 'templates_used')
+        templates_json = metrics.templates_used
         templates: list[str] = json.loads(templates_json) if templates_json else []
         if template_used not in templates:
             templates.append(template_used)
-        setattr(metrics, 'templates_used', json.dumps(templates))
+        metrics.templates_used = json.dumps(templates)
 
 
 def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
     """Update metrics when a message is received."""
-    setattr(metrics, 'messages_received', getattr(metrics, 'messages_received') + 1)
+    metrics.messages_received = metrics.messages_received + 1
     now = datetime.now(timezone.utc)
-    setattr(metrics, 'last_message_received', now)
+    metrics.last_message_received = now
 
     # Track first response
-    if getattr(metrics, 'first_response_received') is not True:
-        setattr(metrics, 'first_response_received', True)
-        setattr(metrics, 'first_response_date', now)
+    if metrics.first_response_received is not True:
+        metrics.first_response_received = True
+        metrics.first_response_date = now
 
         # Calculate time to first response
-        first_sent = getattr(metrics, 'first_message_sent')
+        first_sent = metrics.first_message_sent
         if first_sent is not None:
             # Ensure first_sent is timezone-aware
             if first_sent.tzinfo is None:
                 first_sent = first_sent.replace(tzinfo=timezone.utc)
             time_diff = now - first_sent
-            setattr(metrics, 'time_to_first_response_hours', time_diff.total_seconds() / 3600)
+            metrics.time_to_first_response_hours = time_diff.total_seconds() / 3600
 
 
 def _update_engagement_metrics(metrics: ConversationMetrics, engagement_score: int) -> None:
     """Update engagement score metrics."""
-    setattr(metrics, 'current_engagement_score', engagement_score)
-    current_max = getattr(metrics, 'max_engagement_score')
-    setattr(metrics, 'max_engagement_score', max(engagement_score, current_max))
+    metrics.current_engagement_score = engagement_score
+    current_max = metrics.max_engagement_score
+    metrics.max_engagement_score = max(engagement_score, current_max)
 
     # Update average engagement score (weighted average)
-    current_avg = getattr(metrics, 'avg_engagement_score')
+    current_avg = metrics.avg_engagement_score
     if current_avg is None:
-        setattr(metrics, 'avg_engagement_score', float(engagement_score))
+        metrics.avg_engagement_score = float(engagement_score)
     else:
         new_avg = (current_avg * 0.8) + (engagement_score * 0.2)
-        setattr(metrics, 'avg_engagement_score', new_avg)
+        metrics.avg_engagement_score = new_avg
 
 
 def _update_research_outcomes(
@@ -200,11 +200,11 @@ def _update_research_outcomes(
 ) -> None:
     """Update research outcome metrics."""
     if person_looked_up:
-        setattr(metrics, 'people_looked_up', getattr(metrics, 'people_looked_up') + 1)
+        metrics.people_looked_up = metrics.people_looked_up + 1
     if person_found:
-        setattr(metrics, 'people_found', getattr(metrics, 'people_found') + 1)
+        metrics.people_found = metrics.people_found + 1
     if research_task_created:
-        setattr(metrics, 'research_tasks_created', getattr(metrics, 'research_tasks_created') + 1)
+        metrics.research_tasks_created = metrics.research_tasks_created + 1
 
 
 def update_conversation_metrics(
@@ -288,13 +288,13 @@ def _update_engagement_and_phase(
     if engagement_score is not None:
         _update_engagement_metrics(metrics, engagement_score)
     if conversation_phase:
-        setattr(metrics, 'conversation_phase', conversation_phase)
+        metrics.conversation_phase = conversation_phase
 
 
 def _update_conversation_duration(metrics: ConversationMetrics) -> None:
     """Update conversation duration based on first and last message timestamps."""
-    first_sent = getattr(metrics, 'first_message_sent')
-    last_received = getattr(metrics, 'last_message_received')
+    first_sent = metrics.first_message_sent
+    last_received = metrics.last_message_received
     if first_sent is not None and last_received is not None:
         # Ensure both are timezone-aware
         if first_sent.tzinfo is None:
@@ -302,14 +302,14 @@ def _update_conversation_duration(metrics: ConversationMetrics) -> None:
         if last_received.tzinfo is None:
             last_received = last_received.replace(tzinfo=timezone.utc)
         time_diff = last_received - first_sent
-        setattr(metrics, 'conversation_duration_days', time_diff.total_seconds() / 86400)
+        metrics.conversation_duration_days = time_diff.total_seconds() / 86400
 
 
 def _update_tree_impact(metrics: ConversationMetrics, added_to_tree: bool) -> None:
     """Update tree impact metrics."""
-    if added_to_tree and getattr(metrics, 'added_to_tree') is not True:
-        setattr(metrics, 'added_to_tree', True)
-        setattr(metrics, 'added_to_tree_date', datetime.now(timezone.utc))
+    if added_to_tree and metrics.added_to_tree is not True:
+        metrics.added_to_tree = True
+        metrics.added_to_tree_date = datetime.now(timezone.utc)
 
 
 def get_overall_analytics(session: Session) -> dict[str, Any]:
@@ -496,9 +496,9 @@ def _test_record_engagement_event() -> None:
 
         # Verify event was created
         assert event is not None, "Event should be created"
-        assert getattr(event, 'people_id') == person.id, "Event should have correct people_id"
-        assert getattr(event, 'event_type') == "test_event", "Event should have correct event_type"
-        assert getattr(event, 'engagement_score_delta') == 10, "Event should calculate delta correctly"
+        assert event.people_id == person.id, "Event should have correct people_id"
+        assert event.event_type == "test_event", "Event should have correct event_type"
+        assert event.engagement_score_delta == 10, "Event should calculate delta correctly"
 
         # Clean up
         session.delete(event)
@@ -538,10 +538,10 @@ def _test_update_conversation_metrics_new() -> None:
 
         # Verify metrics were created
         assert metrics is not None, "Metrics should be created"
-        assert getattr(metrics, 'people_id') == person.id, "Metrics should have correct people_id"
-        assert getattr(metrics, 'messages_sent') == 1, "Metrics should have 1 message sent"
-        assert getattr(metrics, 'current_engagement_score') == 50, "Metrics should have correct engagement score"
-        assert getattr(metrics, 'initial_template_used') == "initial_contact", "Metrics should track initial template"
+        assert metrics.people_id == person.id, "Metrics should have correct people_id"
+        assert metrics.messages_sent == 1, "Metrics should have 1 message sent"
+        assert metrics.current_engagement_score == 50, "Metrics should have correct engagement score"
+        assert metrics.initial_template_used == "initial_contact", "Metrics should track initial template"
 
         # Clean up
         session.delete(metrics)
@@ -584,10 +584,10 @@ def _test_update_conversation_metrics_existing() -> None:
         )
 
         # Verify metrics were updated
-        assert getattr(metrics2, 'messages_sent') == 1, "Should still have 1 message sent"
-        assert getattr(metrics2, 'messages_received') == 1, "Should have 1 message received"
-        assert getattr(metrics2, 'current_engagement_score') == 60, "Should have updated engagement score"
-        assert getattr(metrics2, 'first_response_received') is True, "Should mark first response received"
+        assert metrics2.messages_sent == 1, "Should still have 1 message sent"
+        assert metrics2.messages_received == 1, "Should have 1 message received"
+        assert metrics2.current_engagement_score == 60, "Should have updated engagement score"
+        assert metrics2.first_response_received is True, "Should mark first response received"
 
         # Clean up
         session.delete(metrics2)
@@ -649,7 +649,7 @@ def _test_engagement_score_delta_calculation() -> None:
             engagement_score_before=40,
             engagement_score_after=60,
         )
-        assert getattr(event1, 'engagement_score_delta') == 20, "Should calculate positive delta"
+        assert event1.engagement_score_delta == 20, "Should calculate positive delta"
 
         # Test with score decrease
         event2 = record_engagement_event(
@@ -659,11 +659,11 @@ def _test_engagement_score_delta_calculation() -> None:
             engagement_score_before=60,
             engagement_score_after=40,
         )
-        assert getattr(event2, 'engagement_score_delta') == -20, "Should calculate negative delta"
+        assert event2.engagement_score_delta == -20, "Should calculate negative delta"
 
         # Test with no scores
         event3 = record_engagement_event(session=session, people_id=person.id, event_type="test")
-        assert getattr(event3, 'engagement_score_delta') is None, "Should have None delta when no scores"
+        assert event3.engagement_score_delta is None, "Should have None delta when no scores"
 
         # Clean up
         session.delete(event1)
@@ -701,11 +701,11 @@ def _test_template_tracking() -> None:
         )
 
         # Verify templates are tracked
-        templates_json = getattr(metrics, 'templates_used')
+        templates_json = metrics.templates_used
         templates = json.loads(templates_json) if templates_json else []
         assert "template1" in templates, "Should track template1"
         assert "template2" in templates, "Should track template2"
-        assert getattr(metrics, 'initial_template_used') == "template1", "Should track initial template"
+        assert metrics.initial_template_used == "template1", "Should track initial template"
 
         # Clean up
         session.delete(metrics)
@@ -739,9 +739,9 @@ def _test_research_outcomes_tracking() -> None:
         )
 
         # Verify tracking
-        assert getattr(metrics, 'people_looked_up') == 1, "Should track people looked up"
-        assert getattr(metrics, 'people_found') == 1, "Should track people found"
-        assert getattr(metrics, 'research_tasks_created') == 1, "Should track research tasks"
+        assert metrics.people_looked_up == 1, "Should track people looked up"
+        assert metrics.people_found == 1, "Should track people found"
+        assert metrics.research_tasks_created == 1, "Should track research tasks"
 
         # Clean up
         session.delete(metrics)
@@ -773,8 +773,8 @@ def _test_tree_impact_tracking() -> None:
         metrics = update_conversation_metrics(session=session, people_id=person.id, added_to_tree=True)
 
         # Verify tracking
-        assert getattr(metrics, 'added_to_tree') is True, "Should mark added to tree"
-        assert getattr(metrics, 'added_to_tree_date') is not None, "Should record date added"
+        assert metrics.added_to_tree is True, "Should mark added to tree"
+        assert metrics.added_to_tree_date is not None, "Should record date added"
 
         # Clean up
         session.delete(metrics)

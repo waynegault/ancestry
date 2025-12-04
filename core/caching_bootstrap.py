@@ -19,7 +19,7 @@ def _get_caching_state() -> _CachingState:
     state = getattr(_get_caching_state, "_state", None)
     if state is None:
         state = _CachingState()
-        setattr(_get_caching_state, "_state", state)
+        _get_caching_state._state = state
     return state
 
 

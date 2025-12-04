@@ -75,10 +75,16 @@ def verify_opt_out_patterns():
         # Logic: It is caught if legacy returns OPT_OUT or UNSAFE
         # OR if critical returns CRITICAL_ALERT
 
-        if result_legacy.status in {SafetyStatus.OPT_OUT, SafetyStatus.UNSAFE}:
+        legacy_caught = result_legacy.status in {SafetyStatus.OPT_OUT, SafetyStatus.UNSAFE}
+        critical_caught = result_critical.status == SafetyStatus.CRITICAL_ALERT
+
+        if legacy_caught and critical_caught:
             caught = True
-            status_str = result_legacy.status.value
-        elif result_critical.status == SafetyStatus.CRITICAL_ALERT:
+            status_str = "BOTH"
+        elif legacy_caught:
+            caught = True
+            status_str = "LEGACY_ONLY"
+        elif critical_caught:
             caught = True
             cat_val = result_critical.category.value if result_critical.category else "UNKNOWN"
             status_str = f"CRITICAL({cat_val})"
