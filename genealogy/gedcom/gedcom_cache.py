@@ -73,12 +73,12 @@ from caching.cache import (
     invalidate_related_caches,
     warm_cache_with_data,
 )
-from config.config_manager import ConfigManager
+from config.config_manager import get_config_manager
 
 # from logging_config import logger  # Unused logger, rely on get_logger if needed
 
 # Initialize config
-config_manager = ConfigManager()
+config_manager = get_config_manager()
 config_schema = config_manager.get_config()
 
 # --- Test framework imports ---

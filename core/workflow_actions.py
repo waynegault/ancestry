@@ -16,7 +16,6 @@ if __package__ in {None, ""}:
 import logging
 
 from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
-from config.config_manager import ConfigManager
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
 from utils import nav_to_page
@@ -24,7 +23,9 @@ from utils import nav_to_page
 logger = logging.getLogger(__name__)
 
 # Initialize config
-config_manager = ConfigManager()
+from config.config_manager import get_config_manager
+
+config_manager = get_config_manager()
 config = config_manager.get_config()
 
 

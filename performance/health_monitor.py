@@ -11,7 +11,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import psutil
 
@@ -85,11 +85,20 @@ class MetricsManagementMixin:
     session_start_time: float
 
     # Type hints for methods expected from other Mixins
-    # Note: We don't define them here to avoid overriding actual implementations in MRO
-    # def _create_alert(...) -> None: ...
-    # def _trigger_emergency_intervention(...) -> None: ...
-    # def _trigger_immediate_intervention(...) -> None: ...
-    # def _trigger_enhanced_monitoring(...) -> None: ...
+    if TYPE_CHECKING:
+
+        def _create_alert(
+            self,
+            level: AlertLevel,
+            component: str,
+            message: str,
+            metric_name: str,
+            metric_value: float,
+            threshold: float,
+        ) -> None: ...
+        def _trigger_emergency_intervention(self, reason: str, value: float, threshold_desc: str) -> None: ...
+        def _trigger_immediate_intervention(self, reason: str, value: float, threshold_desc: str) -> None: ...
+        def _trigger_enhanced_monitoring(self, reason: str, value: float, threshold_desc: str) -> None: ...
 
     def _initialize_metrics(self) -> None:
         """Initialize default metrics."""
@@ -850,10 +859,11 @@ class PersistenceMixin:
     _last_checkpoint_time: float
 
     # Type hints for methods expected from other Mixins
-    # Note: We don't define them here to avoid overriding actual implementations in MRO
-    # def get_health_dashboard(self) -> dict[str, Any]: ...
-    # def calculate_health_score(self) -> float: ...
-    # def get_performance_stats(self) -> dict[str, Any]: ...
+    if TYPE_CHECKING:
+
+        def get_health_dashboard(self) -> dict[str, Any]: ...
+        def calculate_health_score(self) -> float: ...
+        def get_performance_stats(self) -> dict[str, Any]: ...
 
     def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
         """Create a checkpoint of the current session state for recovery."""

@@ -21,7 +21,6 @@ from sqlalchemy import create_engine, func, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
 
-from config.config_manager import ConfigManager
 from core.action_runner import DatabaseManagerProtocol
 from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
@@ -39,7 +38,9 @@ from utils import log_in, login_status
 logger = logging.getLogger(__name__)
 
 # Initialize config
-config_manager = ConfigManager()
+from config.config_manager import get_config_manager
+
+config_manager = get_config_manager()
 config = config_manager.get_config()
 
 

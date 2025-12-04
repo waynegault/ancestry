@@ -19,15 +19,15 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 try:
-    from config.config_manager import ConfigManager
+    from config.config_manager import ConfigManager, get_config_manager
     from config.config_schema import ConfigSchema
 except ImportError:
     # Fallback for when running inside the package
-    from .config_manager import ConfigManager
+    from .config_manager import ConfigManager, get_config_manager
     from .config_schema import ConfigSchema
 
 # Create the main configuration manager instance
-config_manager = ConfigManager()
+config_manager = get_config_manager()
 
 # Load the configuration
 config_schema = config_manager.get_config()

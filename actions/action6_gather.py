@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Callable, Final, Optional, cast
 
-from config.config_manager import ConfigManager
 from core.logging_utils import OptimizedLogger
 from performance.health_monitor import integrate_with_action6
 
@@ -2200,7 +2199,9 @@ def _get_batch_session(
 
 def _filter_matches_by_config(matches_on_page: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Filter matches based on configuration criteria."""
-    config = ConfigManager().get_config()
+    from config.config_manager import get_config_manager
+
+    config = get_config_manager().get_config()
     if config.action6_min_tree_size is None and not config.action6_public_tree_only:
         return matches_on_page
 

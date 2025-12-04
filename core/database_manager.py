@@ -46,7 +46,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager
+# from config.config_manager import ConfigManager  # Removed unused import
 from core.error_handling import (
     AncestryError,
     DatabaseConnectionError,
@@ -68,7 +68,9 @@ timeout_protection_decorator = cast(DecoratorFactory, timeout_protection)
 
 # === MODULE CONFIGURATION ===
 # Initialize config
-config_manager = ConfigManager()
+from config.config_manager import get_config_manager
+
+config_manager = get_config_manager()
 config_schema = config_manager.get_config()
 
 

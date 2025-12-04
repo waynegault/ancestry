@@ -139,7 +139,6 @@ from ai.providers.moonshot import MoonshotProvider
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from caching.cache_manager import cached_api_call
-from config.config_manager import ConfigManager
 from config.config_schema import ConfigSchema
 
 if TYPE_CHECKING:
@@ -159,7 +158,9 @@ if TYPE_CHECKING:
 
 # === MODULE CONFIGURATION ===
 # Initialize config
-config_manager = ConfigManager()
+from config.config_manager import get_config_manager
+
+config_manager = get_config_manager()
 config_schema: ConfigSchema = config_manager.get_config()
 
 

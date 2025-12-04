@@ -34,9 +34,9 @@ import requests  # For making Graph API calls
 from dotenv import load_dotenv  # To load .env file
 
 # --- Local application imports ---
-from config.config_manager import ConfigManager
+from config.config_manager import get_config_manager
 
-config_manager = ConfigManager()
+config_manager = get_config_manager()
 config = config_manager.get_config()
 
 # --- Test framework imports ---

@@ -60,7 +60,6 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional, cast
 
-from config.config_manager import ConfigManager
 from genealogy.gedcom.gedcom_utils import GedcomData, calculate_match_score
 
 
@@ -78,13 +77,14 @@ def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
 # --- Local module imports ---
 # from logging_config import logger  # Unused here
 # --- Test framework imports ---
+# Initialize config
+from config.config_manager import get_config_manager
 from testing.test_framework import (
     TestSuite,
     suppress_logging,
 )
 
-# Initialize config
-config_manager = ConfigManager()
+config_manager = get_config_manager()
 config_schema = config_manager.get_config()
 from core.error_handling import MissingConfigError
 from research.relationship_utils import (
@@ -95,7 +95,7 @@ from research.relationship_utils import (
 
 # NOTE: Scoring weights are defined in config_schema.common_scoring_weights
 # (config/config_schema.py). Do NOT duplicate weight definitions here.
-# The config system is always available via ConfigManager().get_config().
+# The config system is always available via get_config_manager().get_config().
 
 
 # Global cache for GEDCOM data with enhanced caching
@@ -362,7 +362,7 @@ def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
     """Get scoring weights and date flexibility configuration.
 
     Uses config_schema.common_scoring_weights as the single source of truth.
-    The config system is always available via ConfigManager().get_config().
+    The config system is always available via get_config_manager().get_config().
     """
     # Get scoring weights from config_schema (always available)
     scoring_weights = cast(dict[str, Any], dict(config_schema.common_scoring_weights))

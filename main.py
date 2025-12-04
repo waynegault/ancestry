@@ -33,7 +33,7 @@ from actions.action10 import run_gedcom_then_api_fallback
 from actions.action12_triangulation import run_triangulation_analysis
 from actions.action13_shared_matches import fetch_shared_matches
 from cli.maintenance import GrafanaCheckerProtocol, MainCLIHelpers
-from config.config_manager import ConfigManager
+from config.config_manager import ConfigManager, get_config_manager
 from core.action_registry import (
     ActionMetadata,
     get_action_registry,
@@ -119,7 +119,7 @@ else:
 def _create_config_manager() -> Optional[ConfigManager]:
     """Instantiate ConfigManager if available."""
     try:
-        return ConfigManager()
+        return get_config_manager()
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("Failed to instantiate ConfigManager: %s", exc, exc_info=True)
         return None

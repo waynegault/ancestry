@@ -64,6 +64,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
@@ -1216,7 +1217,12 @@ def _print_failure_details(result: subprocess.CompletedProcess[str], failure_ind
     print("   🚨 Failure Details:")
     if result.stderr:
         error_lines = result.stderr.strip().split("\n")
-        for line in error_lines[-3:]:  # Show last 3 error lines
+        # Print debug lines to help diagnose issues
+        for line in error_lines:
+            if line.startswith("DEBUG:") or "CRITICAL:" in line:
+                print(f"      {line}")
+
+        for line in error_lines[-5:]:  # Show last 5 error lines for better context
             print(f"      {line}")
     if result.stdout and any(indicator in result.stdout for indicator in failure_indicators):
         stdout_lines = result.stdout.strip().split("\n")
@@ -1225,7 +1231,9 @@ def _print_failure_details(result: subprocess.CompletedProcess[str], failure_ind
             print(f"      {line}")
 
 
-def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], dict[str, str]]:
+def _build_test_command(
+    module_name: str, coverage: bool, db_path: Optional[str] = None, cache_path: Optional[str] = None
+) -> tuple[list[str], dict[str, str]]:
     """Build the command and environment for running tests."""
     cmd = [sys.executable]
 
@@ -1234,6 +1242,15 @@ def _build_test_command(module_name: str, coverage: bool) -> tuple[list[str], di
 
     # Force modules to execute their embedded tests instead of interactive CLIs
     env["RUN_MODULE_TESTS"] = "1"
+
+    # Set custom database path if provided (for isolation)
+    if db_path:
+        env["DATABASE_FILE"] = db_path
+
+    # Set custom cache path if provided (for isolation)
+    if cache_path:
+        env["CACHE_DIR"] = cache_path
+        # print(f"DEBUG: Setting CACHE_DIR={cache_path} for {module_name}")
 
     # For modules with internal test suite, set env var to trigger test output
     suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
@@ -1309,18 +1326,26 @@ def _create_error_metrics(module_name: str, error_message: str) -> TestExecution
     )
 
 
-def _run_test_subprocess(module_name: str, coverage: bool) -> tuple[subprocess.CompletedProcess[str], float, str]:
+def _run_test_subprocess(
+    module_name: str, coverage: bool, db_path: Optional[str] = None, cache_path: Optional[str] = None
+) -> tuple[subprocess.CompletedProcess[str], float, str]:
     """Run the test subprocess and return result, duration, and timestamp."""
     start_time = time.time()
     start_datetime = datetime.now().isoformat()
 
-    cmd, env = _build_test_command(module_name, coverage)
+    cmd, env = _build_test_command(module_name, coverage, db_path, cache_path)
 
     # Set timeout for subprocess (120 seconds for modules with many tests)
     # This prevents tests from hanging indefinitely
     # Some modules like action8_messaging (47 tests) and gedcom_utils (17 tests) need more time
     # action8_messaging has 47 tests and needs extra time for comprehensive testing
-    timeout_seconds = 180 if module_name == "action8_messaging.py" else 120
+    # actions.action10 can take ~120s, so we give it more time
+    if module_name == "action8_messaging.py":
+        timeout_seconds = 180
+    elif module_name in {"actions.action10.py", "actions.action10"}:
+        timeout_seconds = 240
+    else:
+        timeout_seconds = 120
 
     try:
         result: subprocess.CompletedProcess[str] = subprocess.run(
@@ -1386,7 +1411,12 @@ def _print_test_result(
 
 
 def run_module_tests(
-    module_name: str, description: str | None = None, enable_monitoring: bool = False, coverage: bool = False
+    module_name: str,
+    description: str | None = None,
+    enable_monitoring: bool = False,
+    coverage: bool = False,
+    db_path: Optional[str] = None,
+    cache_path: Optional[str] = None,
 ) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
     """Run tests for a specific module with optional performance monitoring."""
     # Print description
@@ -1400,7 +1430,7 @@ def run_module_tests(
             monitor.start_monitoring()
 
         # Run the test subprocess
-        result, duration, start_datetime = _run_test_subprocess(module_name, coverage)
+        result, duration, start_datetime = _run_test_subprocess(module_name, coverage, db_path, cache_path)
         end_datetime = datetime.now().isoformat()
 
         # Collect performance and quality metrics
@@ -1434,27 +1464,36 @@ def run_module_tests(
         return False, 0, error_metrics
 
 
-def run_tests_parallel(
-    modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False
+def _monitor_and_collect_results(
+    future_to_module: dict[concurrent.futures.Future[tuple[bool, int, Optional[TestExecutionMetrics]]], tuple[str, str]],
 ) -> tuple[list[TestExecutionMetrics], int, int]:
-    """Run tests in parallel for improved performance."""
+    """Monitor running tests and collect results."""
     all_metrics: list[TestExecutionMetrics] = []
     passed_count = 0
     total_test_count = 0
+    pending_futures = set(future_to_module.keys())
 
-    # Determine optimal number of workers (don't exceed CPU count)
-    cpu_count = (psutil.cpu_count() if PSUTIL_AVAILABLE and psutil else os.cpu_count()) or 1
-    max_workers = min(len(modules_with_descriptions), cpu_count)
+    while pending_futures:
+        # Wait for the next future to complete, with a timeout to print status
+        done, _ = concurrent.futures.wait(
+            pending_futures,
+            timeout=15.0,
+            return_when=concurrent.futures.FIRST_COMPLETED,
+        )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all test jobs
-        future_to_module = {
-            executor.submit(run_module_tests, module, desc, enable_monitoring, coverage): (module, desc)
-            for module, desc in modules_with_descriptions
-        }
+        if not done:
+            # No test finished in the last 15 seconds
+            print(f"\n   ⏳ Still running ({len(pending_futures)} tests):")
+            # Sort by module name for consistent output
+            running_modules = sorted([future_to_module[f][0] for f in pending_futures])
+            for mod in running_modules[:5]:
+                print(f"      • {mod}")
+            if len(running_modules) > 5:
+                print(f"      ... and {len(running_modules) - 5} more")
+            continue
 
-        # Process results as they complete
-        for future in concurrent.futures.as_completed(future_to_module):
+        for future in done:
+            pending_futures.remove(future)
             try:
                 success, test_count, metrics = future.result()
                 if success:
@@ -1468,6 +1507,37 @@ def run_tests_parallel(
                 print(f"   ❌ FAILED | {module} | Error: {e}")
 
     return all_metrics, passed_count, total_test_count
+
+
+def run_tests_parallel(
+    modules_with_descriptions: list[tuple[str, str]], enable_monitoring: bool = False, coverage: bool = False
+) -> tuple[list[TestExecutionMetrics], int, int]:
+    """Run tests in parallel for improved performance."""
+    # Determine optimal number of workers (don't exceed CPU count)
+    cpu_count = (psutil.cpu_count() if PSUTIL_AVAILABLE and psutil else os.cpu_count()) or 1
+    max_workers = min(len(modules_with_descriptions), cpu_count)
+
+    # Create a temporary directory for isolated databases
+    with tempfile.TemporaryDirectory() as temp_dir:
+        print(f"   📂 Created temporary directory for isolated databases: {temp_dir}")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all test jobs
+            future_to_module = {}
+            for module, desc in modules_with_descriptions:
+                # Create a unique database path for this module
+                db_path = str(Path(temp_dir) / f"{module.replace('.', '_')}.db")
+
+                # Create a unique cache path for this module
+                cache_path = str(Path(temp_dir) / f"{module.replace('.', '_')}_cache")
+
+                # Submit the job with the isolated database path
+                future = executor.submit(
+                    run_module_tests, module, desc, enable_monitoring, coverage, db_path, cache_path
+                )
+                future_to_module[future] = (module, desc)
+
+            return _monitor_and_collect_results(future_to_module)
 
 
 def save_performance_metrics(metrics: list[TestExecutionMetrics], suite_performance: TestSuitePerformance):
@@ -1782,14 +1852,19 @@ def _run_tests_sequentially(
         duration = time.time() - start_time
         update_test_history(module_name, duration, success)
 
-        # Update cache if successful
+        # Update cache if successful and quality is 100%
         if success:
-            test_cache[module_name] = {
-                "file_hash": TestResultCache.get_module_hash(module_name),
-                "success": True,
-                "test_count": test_count,
-                "metrics": asdict(metrics) if metrics else None,
-            }
+            should_cache = True
+            if metrics and metrics.quality_metrics and metrics.quality_metrics.quality_score < 100.0:
+                should_cache = False
+
+            if should_cache:
+                test_cache[module_name] = {
+                    "file_hash": TestResultCache.get_module_hash(module_name),
+                    "success": True,
+                    "test_count": test_count,
+                    "metrics": asdict(metrics) if metrics else None,
+                }
 
         total_tests_run += test_count
         if success:
@@ -2169,69 +2244,72 @@ def _print_final_quality_summary(all_metrics: list[TestExecutionMetrics]) -> Non
 
 def main() -> bool:
     """Comprehensive test runner with performance monitoring and optimization."""
-    # Fix trailing whitespace before running tests
-    _fix_trailing_whitespace()
+    try:
+        # Fix trailing whitespace before running tests
+        _fix_trailing_whitespace()
 
-    # Setup environment and parse arguments
-    enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = (
-        _setup_test_environment()
-    )
-
-    # Print header
-    _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
-
-    # Run pre-test checks
-    if not _run_pre_test_checks():
-        sys.exit(1)
-
-    # Discover and prepare modules
-    discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules(
-        enable_integration
-    )
-
-    # Create configuration
-    config = TestExecutionConfig(
-        modules_with_descriptions=modules_with_descriptions,
-        discovered_modules=discovered_modules,
-        module_descriptions=module_descriptions,
-        enable_fast_mode=enable_fast_mode,
-        enable_monitoring=enable_monitoring,
-        enable_benchmark=enable_benchmark,
-        enable_integration=enable_integration,
-    )
-
-    # Execute tests
-    results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
-
-    # Print final results
-    _print_basic_summary(total_duration, total_tests_run, passed_count, len(discovered_modules) - passed_count, results)
-    _print_final_results(
-        results, module_descriptions, discovered_modules, passed_count, len(discovered_modules) - passed_count
-    )
-    _print_final_quality_summary(all_metrics)
-
-    # Print performance metrics if enabled
-    if enable_monitoring:
-        perf_config = PerformanceMetricsConfig(
-            all_metrics=all_metrics,
-            total_duration=total_duration,
-            total_tests_run=total_tests_run,
-            passed_count=passed_count,
-            failed_count=len(discovered_modules) - passed_count,
-            enable_fast_mode=enable_fast_mode,
-            enable_benchmark=enable_benchmark,
+        # Setup environment and parse arguments
+        enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = (
+            _setup_test_environment()
         )
-        _print_performance_metrics(perf_config)
 
-    # Print log analysis if enabled
-    if enable_log_analysis:
-        print_log_analysis()
+        # Print header
+        _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
 
-    # Clean up any browser session that was opened during tests
-    _cleanup_browser_after_all_tests()
+        # Run pre-test checks
+        if not _run_pre_test_checks():
+            return False
 
-    # Exit with status code
-    sys.exit(0 if passed_count == len(discovered_modules) else 1)
+        # Discover and prepare modules
+        discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules(
+            enable_integration
+        )
+
+        # Create configuration
+        config = TestExecutionConfig(
+            modules_with_descriptions=modules_with_descriptions,
+            discovered_modules=discovered_modules,
+            module_descriptions=module_descriptions,
+            enable_fast_mode=enable_fast_mode,
+            enable_monitoring=enable_monitoring,
+            enable_benchmark=enable_benchmark,
+            enable_integration=enable_integration,
+        )
+
+        # Execute tests
+        results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
+
+        # Print final results
+        _print_basic_summary(
+            total_duration, total_tests_run, passed_count, len(discovered_modules) - passed_count, results
+        )
+        _print_final_results(
+            results, module_descriptions, discovered_modules, passed_count, len(discovered_modules) - passed_count
+        )
+        _print_final_quality_summary(all_metrics)
+
+        # Print performance metrics if enabled
+        if enable_monitoring:
+            perf_config = PerformanceMetricsConfig(
+                all_metrics=all_metrics,
+                total_duration=total_duration,
+                total_tests_run=total_tests_run,
+                passed_count=passed_count,
+                failed_count=len(discovered_modules) - passed_count,
+                enable_fast_mode=enable_fast_mode,
+                enable_benchmark=enable_benchmark,
+            )
+            _print_performance_metrics(perf_config)
+
+        # Print log analysis if enabled
+        if enable_log_analysis:
+            print_log_analysis()
+
+        return passed_count == len(discovered_modules)
+
+    finally:
+        # Clean up any browser session that was opened during tests
+        _cleanup_browser_after_all_tests()
 
 
 def _cleanup_browser_after_all_tests() -> None:

@@ -289,9 +289,9 @@ def display_tree_owner(session_manager: SessionManager) -> None:
             # Display tree ID if available
             tree_id = api_manager.my_tree_id
             if tree_id:
-                from config.config_manager import ConfigManager
+                from config.config_manager import get_config_manager
 
-                cfg = ConfigManager().get_config()
+                cfg = get_config_manager().get_config()
                 tree_name = _get_tree_name_from_config(cfg)
                 logger.info(f"Found tree ID '{tree_id}' for tree '{tree_name}'")
     except Exception:

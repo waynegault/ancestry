@@ -33,7 +33,6 @@ auto_register_module(globals(), __name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from urllib.parse import urljoin, urlparse
 

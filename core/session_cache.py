@@ -32,7 +32,7 @@ from typing import (
     cast,
 )
 
-from config.config_manager import ConfigManager
+# from config.config_manager import ConfigManager  # Removed unused import
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,9 @@ CACHE_CONFIG = SessionCacheConfig()
 def _load_config_schema_snapshot() -> Optional[Any]:
     """Safely instantiate ConfigManager and return its schema."""
     try:
-        manager = ConfigManager()
+        from config.config_manager import get_config_manager
+
+        manager = get_config_manager()
         return manager.get_config()
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("ConfigManager instantiation failed: %s", exc)
@@ -220,7 +222,7 @@ class SessionComponentCache(_TypedBaseCacheModule):
 
     def get_cached_component(self, component_type: str) -> Optional[Any]:
         """Get cached component if available and valid"""
-        if not cache:
+        if cache is None:
             return None
 
         try:
@@ -257,7 +259,7 @@ class SessionComponentCache(_TypedBaseCacheModule):
 
     def cache_component(self, component_type: str, component: Any) -> bool:
         """Cache a component for reuse using existing cache infrastructure"""
-        if not cache:
+        if cache is None:
             return False
 
         try:
@@ -454,7 +456,7 @@ class OptimizedSessionState:
     @staticmethod
     def get_cached_session_state(session_id: str) -> Optional[dict[str, Any]]:
         """Get cached session state if valid"""
-        if not cache:
+        if cache is None:
             return None
 
         try:
@@ -476,7 +478,7 @@ class OptimizedSessionState:
     @staticmethod
     def cache_session_state(session_id: str, state: Mapping[str, Any]) -> None:
         """Cache session state using existing infrastructure"""
-        if not cache:
+        if cache is None:
             return
 
         try:
@@ -628,6 +630,13 @@ def _test_cached_session_component_decorator() -> bool:
     # Second call should use cache (function not called again)
     result2 = create_test_component()
     assert result2 is not None, "Second call should return result"
+
+    if result2 != result1:
+        logger.error(f"Cache miss! result1={result1}, result2={result2}, call_count={call_count['count']}")
+        logger.error(f"Cache object: {cache}")
+        if cache:
+            logger.error(f"Cache directory: {cache.directory}")
+
     assert result2 == result1, "Second call should return same result"
     assert call_count["count"] == 1, "Function should still be called only once (cached)"
 

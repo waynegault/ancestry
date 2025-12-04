@@ -75,6 +75,10 @@ P = ParamSpec('P')
 R = TypeVar('R')
 
 # --- Third-party imports ---
+# --- Global Cache Initialization ---
+# Debug block
+import os
+
 from diskcache import Cache
 
 # Import constants used for checking cache misses vs. stored None values
@@ -89,10 +93,13 @@ from testing.test_framework import (
     TestSuite,
 )
 
-# --- Global Cache Initialization ---
-
 # Step 1: Define cache directory from configuration
-if config_schema and getattr(config_schema.cache, "cache_dir", None):
+# Prioritize environment variable for test isolation
+env_cache_dir = os.getenv("CACHE_DIR")
+if env_cache_dir:
+    _cache_dir = Path(env_cache_dir)
+    logger.debug(f"Using CACHE_DIR from environment: {_cache_dir}")
+elif config_schema and getattr(config_schema.cache, "cache_dir", None):
     _cache_dir = Path(str(config_schema.cache.cache_dir))
 else:
     _cache_dir = Path("Cache")

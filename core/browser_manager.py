@@ -34,11 +34,11 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from browser.chromedriver import init_webdvr
 
 # === LOCAL IMPORTS ===
-from config.config_manager import ConfigManager
+from config.config_manager import get_config_manager
 
 # === MODULE CONFIGURATION ===
 # Initialize config
-config_manager = ConfigManager()
+config_manager = get_config_manager()
 config_schema = config_manager.get_config()
 
 # === TYPE ALIASES ===

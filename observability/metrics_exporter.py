@@ -219,6 +219,9 @@ def start_metrics_exporter(host: str, port: int) -> bool:
 
 def stop_metrics_exporter() -> None:
     """Stop the Prometheus metrics exporter if running."""
+    # Stop Prometheus server first to prevent scraping during shutdown
+    _stop_prometheus_server()
+
     with _EXPORTER_LOCK:
         server = _EXPORTER_STATE.server
         if server is None:
@@ -234,9 +237,6 @@ def stop_metrics_exporter() -> None:
             _EXPORTER_STATE.server = None
             _EXPORTER_STATE.address = None
             logger.info("Prometheus metrics exporter stopped")
-
-    # Stop Prometheus server too
-    _stop_prometheus_server()
 
 
 def is_metrics_exporter_running() -> bool:

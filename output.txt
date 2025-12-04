@@ -1,0 +1,258 @@
+
+ANCESTRY PROJECT - COMPREHENSIVE TEST SUITE
+🚀 FAST MODE: Parallel execution enabled
+============================================================
+
+🧹 LINTER: Auto-fixing all fixable linting issues...
+   ✅ All fixable issues resolved
+🧹 LINTER: Enforcing critical blocking rules (E722,F821,F811,F823)...
+🧹 LINTER: Repository diagnostics (non-blocking summary)...
+🎯 Optimizing test order for faster feedback...
+📊 Found 148 test modules (148 with enhanced descriptions)
+
+============================================================
+🧪 RUNNING TESTS
+============================================================
+🚀 Running tests in parallel...
+   📂 Created temporary directory for isolated databases: c:\Temp\UserTEMP\tmph77xn9a5
+   📝 Comprehensive Testing Infrastructure & Quality Assurance Engine
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   📝 Genealogy Presenter
+   📝 CLI utility package metadata and discovery helpers."""
+   📝 Record Sharing Capabilities
+   📝 Genealogical Normalization Helpers.
+   📝 Common types for AI provider adapters."""
+   📝 Relationship Diagram Generation
+   📝 GEDCOM Intelligence Analysis System.
+   📝 Person Lookup Utilities for Phase 2: Person Lookup Integration
+   📝 Performance Profiling Utilities
+   📝 Memory Utilities - Lightweight memory management utilities.
+   📝 Research Suggestion Generation for Genealogical Conversations.
+   📝 Grafana Setup Checker and Automated Installer
+   📝 Repository guard that fails if any `type: ignore` directives are present."""
+   📝 api_constants.py - Centralized API Endpoint Constants
+   📝 Research Guidance AI Prompts
+   📝 Research Prioritization System.
+   📝 Dead-code scanner for the Ancestry project.
+   📝 Maintenance script for docs/code_graph.json."""
+   ✅ PASSED | Duration: 6.93s | 5 tests | Quality: 100.0/100 ✅
+   📝 CSS Selectors for Ancestry Website Automation.
+   ✅ PASSED | Duration: 7.59s | 11 tests | Quality: 100.0/100 ✅
+   📝 Quality Regression Gate for CI/CD Pipeline
+   ✅ PASSED | Duration: 10.08s | 3 tests | Quality: 100.0/100 ✅
+   📝 Triangulation Intelligence Module.
+   ✅ PASSED | Duration: 21.80s | 11 tests | Quality: 100.0/100 ✅
+   📝 Predictive Gap Detection Module.
+   ✅ PASSED | Duration: 21.87s | 15 tests | Quality: 100.0/100 ✅
+   📝 CLI commands for Innovation Features.
+   ✅ PASSED | Duration: 21.99s | 7 tests | Quality: 100.0/100 ✅
+   📝 Sentiment Adaptation Module.
+   ✅ PASSED | Duration: 23.30s | 6 tests | Quality: 100.0/100 ✅
+   📝 A/B Testing Framework for Prompt Experiments
+   ✅ PASSED | Duration: 23.63s | 7 tests | Quality: 100.0/100 ✅
+   📝 Chrome/ChromeDriver Diagnostic Tool
+   ✅ PASSED | Duration: 24.42s | 14 tests | Quality: 100.0/100 ✅
+   📝 Prometheus metrics registry helpers with safe fallbacks when disabled."""
+   ✅ PASSED | Duration: 26.33s | 5 tests | Quality: 100.0/100 ✅
+   📝 Observability utilities and Prometheus integration helpers."""
+   ✅ PASSED | Duration: 26.32s | 10 tests | Quality: 100.0/100 ✅
+   📝 Lightweight Monitoring & Analytics Intelligence Engine
+   ✅ PASSED | Duration: 27.36s | 6 tests | Quality: 100.0/100 ✅
+   📝 Application Performance Monitoring (APM) Module.
+   ✅ PASSED | Duration: 27.52s | 6 tests | Quality: 100.0/100 ✅
+   📝 Configuration Package - Modular Configuration System
+   ✅ PASSED | Duration: 26.49s | 3 tests | Quality: 100.0/100 ✅
+   📝 Streamlined Function Registration Utilities
+   ✅ PASSED | Duration: 26.19s | 4 tests | Quality: 100.0/100 ✅
+   📝 Unified Configuration Validation Layer.
+   ✅ PASSED | Duration: 28.42s | 6 tests | Quality: 100.0/100 ✅
+   📝 Configuration Schema Definitions.
+   ✅ PASSED | Duration: 27.81s | 4 tests | Quality: 100.0/100 ✅
+   📝 Enhanced database schema migration runner with rollback, dry-run, and dependencies."""
+   ✅ PASSED | Duration: 29.24s | 2 tests | Quality: 100.0/100 ✅
+   📝 core/cache/interface.py - Unified Cache Protocol and Types
+   ✅ PASSED | Duration: 28.58s | 5 tests | Quality: 100.0/100 ✅
+   📝 Metrics Integration Helpers
+   ✅ PASSED | Duration: 29.05s | 11 tests | Quality: 100.0/100 ✅
+   📝 common_params.py - Common Parameter Grouping Dataclasses
+   ✅ PASSED | Duration: 24.06s | 10 tests | Quality: 100.0/100 ✅
+   📝 Moonshot (Kimi) provider adapter using the OpenAI-compatible endpoint."""
+   ✅ PASSED | Duration: 22.09s | 6 tests | Quality: 100.0/100 ✅
+   📝 Shared guard that ensures driver availability and page navigation."""
+   ✅ PASSED | Duration: 26.26s | 2 tests | Quality: 100.0/100 ✅
+   📝 Database Manager - Handles all database-related operations.
+   ✅ PASSED | Duration: 19.73s | 9 tests | Quality: 100.0/100 ✅
+   📝 Metrics Collection and Aggregation System
+   ✅ PASSED | Duration: 20.18s | 8 tests | Quality: 100.0/100 ✅
+   📝 core/lifecycle.py - Application Lifecycle Management
+   ✅ PASSED | Duration: 15.34s | 3 tests | Quality: 100.0/100 ✅
+   📝 core/cache_backend.py - Unified Cache Backend Protocol
+   ✅ PASSED | Duration: 19.42s | 6 tests | Quality: 100.0/100 ✅
+   📝 dna_utils.py - Universal DNA Match Utilities
+   ✅ PASSED | Duration: 22.96s | 6 tests | Quality: 100.0/100 ✅
+   📝 Check essential processing limits and log warnings."""
+   ✅ PASSED | Duration: 18.80s | 5 tests | Quality: 100.0/100 ✅
+   📝 Session Validator - Handles session validation and readiness checks.
+   ✅ PASSED | Duration: 21.04s | 7 tests | Quality: 100.0/100 ✅
+   📝 DNA-GEDCOM Cross-Reference Intelligence & Advanced Genealogical Integration Engine
+   ✅ PASSED | Duration: 21.02s | 5 tests | Quality: 100.0/100 ✅
+   📝 Type protocols and type aliases for the Ancestry Research Automation Platform.
+   ✅ PASSED | Duration: 21.29s | 10 tests | Quality: 100.0/100 ✅
+   📝 dna_ethnicity_utils.py - DNA Ethnicity Region Utilities
+   ✅ PASSED | Duration: 23.11s | 3 tests | Quality: 100.0/100 ✅
+   📝 Central registry that coordinates all cache subsystems.
+   ✅ PASSED | Duration: 21.79s | 6 tests | Quality: 100.0/100 ✅
+   📝 Centralized caching initialization helpers."""
+   ✅ PASSED | Duration: 21.01s | 10 tests | Quality: 100.0/100 ✅
+   📝 Dependency Injection Framework.
+   ✅ PASSED | Duration: 21.73s | 18 tests | Quality: 100.0/100 ✅
+   📝 Runtime Feature Toggle Framework.
+   ✅ PASSED | Duration: 22.76s | 7 tests | Quality: 100.0/100 ✅
+   📝 Centralized prompt loading helpers used by AI actions."""
+   ✅ PASSED | Duration: 21.14s | 5 tests | Quality: 100.0/100 ✅
+   📝 connection_resilience.py - Connection Resilience & Sleep Prevention Framework
+   ✅ PASSED | Duration: 22.14s | 10 tests | Quality: 100.0/100 ✅
+   📝 Validation Factory - Reusable Validation Builder Patterns
+   ✅ PASSED | Duration: 19.36s | 6 tests | Quality: 100.0/100 ✅
+   📝 Local LLM (LM Studio) provider adapter."""
+   ✅ PASSED | Duration: 22.48s | 7 tests | Quality: 100.0/100 ✅
+   📝 Load row builder helpers from GEDCOM and API modules with type safety."""
+   ✅ PASSED | Duration: 22.05s | 8 tests | Quality: 100.0/100 ✅
+   📝 session_utils.py - Global Session Management with Dependency Injection
+   ✅ PASSED | Duration: 18.71s | 4 tests | Quality: 100.0/100 ✅
+   📝 core.cancellation - Cooperative cancellation signaling for long-running actions.
+   ✅ PASSED | Duration: 19.44s | 8 tests | Quality: 100.0/100 ✅
+   📝 DeepSeek provider adapter built on the OpenAI-compatible SDK."""
+   ✅ PASSED | Duration: 18.91s | 6 tests | Quality: 100.0/100 ✅
+   📝 Centralized Logging Configuration & Intelligent Log Management Engine
+   ✅ PASSED | Duration: 18.63s | 7 tests | Quality: 100.0/100 ✅
+   📝 Fact Validation Pipeline
+   ✅ PASSED | Duration: 18.09s | 16 tests | Quality: 100.0/100 ✅
+   📝 Standardized Error Handling Framework.
+   ✅ PASSED | Duration: 17.60s | 5 tests | Quality: 100.0/100 ✅
+   📝 Menu rendering helpers for the CLI interface."""   ✅ PASSED | Duration: 19.28s | 10 tests | Quality: 100.0/100 ✅
+   📝 API Manager - Handles API interactions and user identifiers.
+
+   ✅ PASSED | Duration: 17.00s | 5 tests | Quality: 100.0/100 ✅
+   📝 Performance Intelligence & Advanced System Optimization Engine
+   ✅ PASSED | Duration: 33.98s | 4 tests | Quality: 100.0/100 ✅
+   📝 Centralized Logging Utilities.
+   ✅ PASSED | Duration: 16.16s | 19 tests | Quality: 100.0/100 ✅
+   📝 Unified search criteria collection for genealogical research actions.
+   ✅ PASSED | Duration: 17.66s | 3 tests | Quality: 100.0/100 ✅
+   📝 Helper utilities backing the interactive CLI actions in main.py.
+   ✅ PASSED | Duration: 17.97s | 3 tests | Quality: 100.0/100 ✅
+   📝 tree_stats_utils.py - Tree Statistics and Ethnicity Analysis
+   ✅ PASSED | Duration: 17.54s | 2 tests | Quality: 100.0/100 ✅
+   📝 Return True when live API integration tests are disabled via environment."""
+   ✅ PASSED | Duration: 17.38s | 8 tests | Quality: 100.0/100 ✅
+   📝 Action execution helpers extracted from main.py."""
+   ✅ PASSED | Duration: 16.34s | 6 tests | Quality: 100.0/100 ✅
+   📝 Correlation ID System for Request Tracking
+   ✅ PASSED | Duration: 16.59s | 5 tests | Quality: 100.0/100 ✅
+   📝 Core Progress Indicators Module
+   ✅ PASSED | Duration: 18.12s | 6 tests | Quality: 100.0/100 ✅
+   📝 UI helpers for the Ancestry automation toolkit."""
+   ✅ PASSED | Duration: 18.95s | 9 tests | Quality: 100.0/100 ✅
+   📝 GEDCOM Cache Intelligence & Advanced Genealogical Data Optimization Engine
+   ✅ PASSED | Duration: 14.68s | 9 tests | Quality: 100.0/100 ✅
+   📝 Delete records from a table based on filter condition."""
+   ✅ PASSED | Duration: 12.37s | 6 tests | Quality: 100.0/100 ✅
+   📝 Core Package - Modular Session Management Architecture.
+   ✅ PASSED | Duration: 13.30s | 3 tests | Quality: 100.0/100 ✅
+   📝 AI Prompt Management - Dynamic Prompt Configuration
+   ✅ PASSED | Duration: 13.47s | 10 tests | Quality: 100.0/100 ✅
+   📝 Retention policies for the on-disk Cache/ hierarchy."""
+   ✅ PASSED | Duration: 13.09s | 6 tests | Quality: 100.0/100 ✅
+   📝 Aggregated telemetry for a processed page."""
+   ✅ PASSED | Duration: 13.09s | 13 tests | Quality: 100.0/100 ✅
+   📝 Represents a lightweight plan for fetching a page of matches."""
+   ✅ PASSED | Duration: 15.92s | 6 tests | Quality: 100.0/100 ✅
+   📝 Workflow action wrappers for Actions 6-9 and core workflow.
+   ✅ PASSED | Duration: 27.59s | 4 tests | Quality: 100.0/100 ✅
+   📝 Lightweight configuration for Action 6 prefetch orchestration."""
+   ✅ PASSED | Duration: 15.08s | 9 tests | Quality: 100.0/100 ✅
+   📝 Description of how checkpoint resume should operate."""
+   ✅ PASSED | Duration: 15.22s | 8 tests | Quality: 100.0/100 ✅
+   📝 Lightweight record describing a persistence batch outcome."""
+   ✅ PASSED | Duration: 14.65s | 8 tests | Quality: 100.0/100 ✅
+   📝 Prompt Experiment Telemetry (Phase 9).
+   ✅ PASSED | Duration: 13.46s | 7 tests | Quality: 100.0/100 ✅
+   📝 Health monitoring system for the Ancestry application.
+   ✅ PASSED | Duration: 15.09s | 3 tests | Quality: 100.0/100 ✅
+   📝 Human-in-the-Loop Approval Queue System
+   ✅ PASSED | Duration: 21.55s | 4 tests | Quality: 100.0/100 ✅
+   📝 core/action_registry.py - Centralized Action Metadata Registry
+   ✅ PASSED | Duration: 16.56s | 11 tests | Quality: 100.0/100 ✅
+   📝 Configuration and callbacks for the gather orchestrator."""
+   ✅ PASSED | Duration: 14.04s | 13 tests | Quality: 100.0/100 ✅
+   📝 Opt-Out Detection and Safeguards
+   ✅ PASSED | Duration: 14.75s | 7 tests | Quality: 100.0/100 ✅
+   📝 Integration Tests: End-to-End Message Processing Flow
+   ✅ PASSED | Duration: 17.26s | 6 tests | Quality: 100.0/100 ✅
+   📝 Startup Health Checks and Runtime Monitoring.
+   ✅ PASSED | Duration: 15.69s | 2 tests | Quality: 100.0/100 ✅
+   📝 Centralized Testing Utilities & DRY Implementation Engine
+   ✅ PASSED | Duration: 16.77s | 4 tests | Quality: 100.0/100 ✅
+   📝 API Intelligence & Request Orchestration Engine
+   ✅ PASSED | Duration: 17.19s | 8 tests | Quality: 100.0/100 ✅
+   📝 Selenium/WebDriver Utilities for Browser Automation.
+   ✅ PASSED | Duration: 15.25s | 4 tests | Quality: 100.0/100 ✅
+   📝 - SQLAlchemy Models, Database Utilities, and Schema Management
+   ✅ PASSED | Duration: 14.21s | 6 tests | Quality: 100.0/100 ✅
+   📝 ChromeDriver Management & Browser Automation Engine
+   ✅ PASSED | Duration: 16.41s | 3 tests | Quality: 100.0/100 ✅
+   📝 Universal Scoring Module.
+   ✅ PASSED | Duration: 16.44s | 2 tests | Quality: 100.0/100 ✅
+   📝 Conversation Analytics & Engagement Metrics Tracking
+   ✅ PASSED | Duration: 18.39s | 5 tests | Quality: 100.0/100 ✅
+   📝 Conflict Detection Module.
+   ✅ PASSED | Duration: 15.52s | 4 tests | Quality: 100.0/100 ✅
+   📝 Dry-Run Validation Script
+   ✅ PASSED | Duration: 16.58s | 4 tests | Quality: 100.0/100 ✅
+   📝 Review Queue Action Module.
+   ✅ PASSED | Duration: 19.52s | 5 tests | Quality: 100.0/100 ✅
+   📝 Gemini provider adapter powered by google-genai."""
+   ✅ PASSED | Duration: 16.60s | 14 tests | Quality: 100.0/100 ✅
+   📝 Centralized Cache Management - Unified cache coordination for the application.
+   ✅ PASSED | Duration: 16.17s | 8 tests | Quality: 100.0/100 ✅
+   📝 Run tests for the TriangulationService module."""
+   ✅ PASSED | Duration: 20.28s | 4 tests | Quality: 100.0/100 ✅
+   📝 API Search Utilities - Ancestry API Search and Retrieval
+   ✅ PASSED | Duration: 19.65s | 5 tests | Quality: 100.0/100 ✅
+   📝 GEDCOM Search Intelligence & Advanced Genealogical Discovery Engine
+   ✅ PASSED | Duration: 16.11s | 6 tests | Quality: 100.0/100 ✅
+   📝 Relationship Utilities for Genealogical Data.
+   ✅ PASSED | Duration: 18.47s | 16 tests | Quality: 100.0/100 ✅
+   📝 Advanced Caching & Memory Optimization
+   ✅ PASSED | Duration: 18.54s | 6 tests | Quality: 100.0/100 ✅
+   📝 Standardized Circuit Breaker Pattern Implementation for Core Orchestration.
+   ✅ PASSED | Duration: 16.08s | 19 tests | Quality: 100.0/100 ✅
+   📝 GEDCOM Processing & Genealogical Data Intelligence Engine
+   ✅ PASSED | Duration: 17.65s | 6 tests | Quality: 100.0/100 ✅
+   📝 API Search Core Intelligence & Advanced Genealogical Discovery Engine
+   ✅ PASSED | Duration: 16.51s | 18 tests | Quality: 100.0/100 ✅
+   📝 action6_gather.py - Gather DNA Matches from Ancestry
+   ✅ PASSED | Duration: 17.13s | 10 tests | Quality: 100.0/100 ✅
+   📝 Action 13: Shared Match Scraper
+   ✅ PASSED | Duration: 13.23s | 4 tests | Quality: 100.0/100 ✅
+   📝 High-Performance Disk Caching & Intelligent Data Management Engine
+   ✅ PASSED | Duration: 14.67s | 5 tests | Quality: 100.0/100 ✅
+   📝 Action 12: DNA Match Triangulation Analysis
+   ✅ PASSED | Duration: 17.36s | 13 tests | Quality: 100.0/100 ✅
+   📝 Interactive AI provider connectivity tester.
+   ✅ PASSED | Duration: 15.78s | 10 tests | Quality: 100.0/100 ✅
+   📝 Run tests for the ResearchService module."""
+   ✅ PASSED | Duration: 18.47s | 15 tests | Quality: 100.0/100 ✅
+   📝 - Core Session Management, API Requests, General Utilities
+   ✅ PASSED | Duration: 16.48s | 8 tests | Quality: 100.0/100 ✅
+   📝 Run comprehensive tests for TriangulationService."""
+   ✅ PASSED | Duration: 17.12s | 8 tests | Quality: 100.0/100 ✅
+   📝 Enhanced Configuration Manager.
+   ✅ PASSED | Duration: 19.04s | Unknown | Quality: 100.0/100 ✅
+   📝 Microsoft Graph Integration - Office 365 Task Management.
+   ✅ PASSED | Duration: 17.29s | 1 tests | Quality: 100.0/100 ✅
+   📝 Message type constants and state machine for messaging workflow.
+   ❌ FAILED | Duration: 19.65s | 21 tests | Quality: 100.0/100 ✅
+   🚨 Failure Details:
+      DEBUG: caching/cache.py loading. CACHE_DIR env var: c:\Temp\UserTEMP\tmph77xn9a5\caching\cache_manager_py_cache
