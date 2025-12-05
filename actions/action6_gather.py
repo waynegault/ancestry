@@ -98,23 +98,23 @@ from actions.gather.prefetch import (
 from browser.css_selectors import *  # Import CSS selectors
 from browser.selenium_utils import get_driver_cookies
 from config import config_schema
-from core.session_manager import SessionManager
-from core.unified_cache_manager import get_unified_cache
-from database import (
+from core.database import (
     DnaMatch,
     FamilyTree,
     Person,
     PersonStatusEnum,
+)
+from core.session_manager import SessionManager
+from core.unified_cache_manager import get_unified_cache
+from core.utils import (
+    format_name,  # Name formatting utility
+    nav_to_page,  # Navigation helper
 )
 from testing.test_framework import (
     TestSuite,
     suppress_logging,
 )
 from testing.test_utilities import create_standard_test_runner
-from utils import (
-    format_name,  # Name formatting utility
-    nav_to_page,  # Navigation helper
-)
 
 # --- Constants ---
 # Default values before attempting config overrides
@@ -4820,7 +4820,7 @@ def _test_database_transaction_rollback() -> bool:
 
     print("   • Test 3: Database transaction rollback scenario simulation")
     try:
-        with patch('database.logger'):
+        with patch('core.database.logger'):
             try:
                 raise sqlite3.IntegrityError("UNIQUE constraint failed: people.uuid")
             except sqlite3.IntegrityError as e:

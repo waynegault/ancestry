@@ -13,7 +13,7 @@ if __package__ in {None, ""}:
 import logging
 
 from core.registry_utils import auto_register_module
-from utils import nav_to_page
+from core.utils import nav_to_page
 
 logger = logging.getLogger(__name__)
 auto_register_module(globals(), __name__)
@@ -149,7 +149,9 @@ def _test_navigation_success_waits() -> bool:
             failure_reason="Should not hit",
         )
 
-    mock_nav.assert_called_once_with(session_manager.browser_manager.driver, "https://example.com", "#content", session_manager)
+    mock_nav.assert_called_once_with(
+        session_manager.browser_manager.driver, "https://example.com", "#content", session_manager
+    )
     mock_sleep.assert_called_once_with(2)
     assert result is True, "Successful navigation should return True"
     return True

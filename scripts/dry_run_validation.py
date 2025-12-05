@@ -104,7 +104,7 @@ class DryRunProcessor:
         Returns:
             List of conversation data dictionaries
         """
-        from database import ConversationLog, Person
+        from core.database import ConversationLog, Person
 
         try:
             query = (

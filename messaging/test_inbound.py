@@ -2,7 +2,7 @@ import unittest
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from database import (
+from core.database import (
     ConversationMetrics,
     ConversationState,
     ConversationStatusEnum,

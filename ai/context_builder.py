@@ -173,7 +173,7 @@ class ContextBuilder:
 
         try:
             # Get Person from database
-            from database import Person
+            from core.database import Person
 
             person = self._session.query(Person).filter(Person.uuid == match_uuid.upper()).first()
 
@@ -251,7 +251,7 @@ class ContextBuilder:
         }
 
         try:
-            from database import ConversationLog, MessageDirectionEnum
+            from core.database import ConversationLog, MessageDirectionEnum
 
             # Get recent conversations for this person
             logs = (
@@ -297,7 +297,7 @@ class ContextBuilder:
         }
 
         try:
-            from database import FactStatusEnum, FactTypeEnum, SuggestedFact
+            from core.database import FactStatusEnum, FactTypeEnum, SuggestedFact
 
             # Get approved facts for this person
             suggested_facts = (

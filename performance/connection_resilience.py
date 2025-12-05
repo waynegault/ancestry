@@ -23,7 +23,7 @@ import functools
 import time
 from typing import Any, Callable, Optional, ParamSpec, TypeVar
 
-from utils import prevent_system_sleep, restore_system_sleep
+from core.utils import prevent_system_sleep, restore_system_sleep
 
 P = ParamSpec("P")
 R = TypeVar("R")

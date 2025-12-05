@@ -102,10 +102,10 @@ PYDANTIC_AVAILABLE = _pydantic_available
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.common_params import ApiIdentifiers
+from core.database import Person
 from core.logging_config import setup_logging
 from core.session_manager import SessionManager
-from database import Person
-from utils import format_name
+from core.utils import format_name
 
 
 class EventInfo(TypedDict):
@@ -119,7 +119,7 @@ class EventInfo(TypedDict):
 @lru_cache(maxsize=1)
 def _get_utils_module() -> ModuleType:
     """Lazy-load the utils module to avoid circular imports."""
-    return importlib.import_module("utils")
+    return importlib.import_module("core.utils")
 
 
 def _get_utils_attr(attr: str) -> Any:

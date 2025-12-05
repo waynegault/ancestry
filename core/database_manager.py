@@ -613,7 +613,7 @@ class DatabaseManager:
             else:
                 # Import Base locally to avoid circular import issues
                 try:
-                    from database import Base
+                    from core.database import Base
 
                     Base.metadata.create_all(self.engine)
                     logger.debug("DB tables created successfully.")

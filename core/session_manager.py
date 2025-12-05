@@ -80,7 +80,7 @@ from performance.health_monitor import integrate_with_session_manager
 def _load_utils_module() -> Any:
     """Lazily import the utils module to avoid circular dependencies."""
 
-    return importlib.import_module("utils")
+    return importlib.import_module("core.utils")
 
 
 # === MODULE CONSTANTS ===
@@ -776,7 +776,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         logger.debug("Verifying session status (using login_status)...")
         try:
             # Import login_status locally to avoid circular imports
-            from utils import login_status
+            from core.utils import login_status
 
             login_ok = login_status(self, disable_ui_fallback=False)
             if login_ok is True:
@@ -852,7 +852,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
             logger.debug("Browser recovery successful, validating authentication state...")
 
-            from utils import log_in, login_status
+            from core.utils import log_in, login_status
 
             login_ok = login_status(self, disable_ui_fallback=False)
             if login_ok is not True:

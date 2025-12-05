@@ -100,7 +100,7 @@ from sqlalchemy import (
 
 # === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
-from database import PersonStatusEnum
+from core.database import PersonStatusEnum
 from messaging import (
     build_safe_column_value,
     cancel_pending_messages_on_status_change,
@@ -128,17 +128,9 @@ from api.api_utils import call_send_message_api
 from caching.cache import cache_result
 from config import config_schema
 from core.common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
-from core.error_handling import (
-    APIRateLimitError,
-    AuthenticationExpiredError,
-    BrowserSessionError,
-    MaxApiFailuresExceededError,
-    with_enhanced_recovery,
-)
-from core.session_manager import SessionManager
 
 # === DATABASE ===
-from database import (
+from core.database import (
     ConversationLog,
     DnaMatch,
     FamilyTree,
@@ -147,6 +139,14 @@ from database import (
     Person,
     commit_bulk_data,
 )
+from core.error_handling import (
+    APIRateLimitError,
+    AuthenticationExpiredError,
+    BrowserSessionError,
+    MaxApiFailuresExceededError,
+    with_enhanced_recovery,
+)
+from core.session_manager import SessionManager
 from performance.connection_resilience import with_connection_resilience
 
 # === TREE STATISTICS ===
@@ -182,9 +182,9 @@ calculate_ethnicity_commonality: EthnicityCommonalityFunc = cast(
 )
 
 # === MONITORING & TESTING ===
+from core.utils import format_name
 from performance.performance_monitor import start_advanced_monitoring, stop_advanced_monitoring
 from testing.test_framework import TestSuite, suppress_logging
-from utils import format_name
 
 # === MESSAGE INTERVALS ===
 MESSAGE_INTERVALS = {
@@ -4657,7 +4657,7 @@ def _test_main_function_with_dry_run() -> bool:
 
 def _fetch_test_candidates(db_session: Session, limit: int = 10) -> list[Person]:
     """Fetch limited test candidates from database."""
-    from database import Person, PersonStatusEnum
+    from core.database import Person, PersonStatusEnum
 
     return (
         db_session.query(Person)
@@ -4732,7 +4732,7 @@ def _test_database_message_creation() -> bool:
             raise RuntimeError("Failed to get database session")
 
         # Count existing conversation logs
-        from database import ConversationLog
+        from core.database import ConversationLog
 
         initial_count = db_session.query(ConversationLog).count()
         logger.info(f"Initial ConversationLog count: {initial_count}")
@@ -4787,7 +4787,7 @@ def _test_database_message_creation() -> bool:
 
 def _log_created_messages(db_session: Session, initial_count: int, final_count: int) -> None:
     """Log details of newly created messages."""
-    from database import ConversationLog
+    from core.database import ConversationLog
 
     new_logs = (
         db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(final_count - initial_count).all()
@@ -4818,7 +4818,7 @@ def _test_dry_run_mode_no_actual_send() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import ConversationLog
+        from core.database import ConversationLog
 
         initial_count = db_session.query(ConversationLog).count()
 
@@ -4890,7 +4890,7 @@ def _test_message_template_loading_from_db() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import MessageTemplate
+        from core.database import MessageTemplate
 
         templates = db_session.query(MessageTemplate).all()
         template_count = len(templates)
@@ -4927,7 +4927,7 @@ def _test_conversation_log_tracking() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import ConversationLog
+        from core.database import ConversationLog
 
         logs = db_session.query(ConversationLog).order_by(ConversationLog.id.desc()).limit(10).all()
 
@@ -5005,7 +5005,7 @@ def _test_status_change_detection_all_scenarios() -> bool:
     """Test status change detection with all scenarios (consolidated)."""
     from unittest.mock import Mock
 
-    from database import ConversationLog, FamilyTree, Person
+    from core.database import ConversationLog, FamilyTree, Person
 
     # Test cases: (in_tree, tree_age_days, has_message_after, expected_result, description)
     test_cases = [
@@ -5058,7 +5058,7 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
     """Test message cancellation on status change (consolidated)."""
     from unittest.mock import Mock
 
-    from database import ConversationState, Person
+    from core.database import ConversationState, Person
 
     # Test cases: (has_state, expected_result, expected_action, description)
     test_cases = [
@@ -5096,8 +5096,8 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
 
 def _test_status_change_template_exists() -> bool:
     """Test that In_Tree-Status_Change_Update template exists in database."""
+    from core.database import MessageTemplate
     from core.session_utils import get_session_manager
-    from database import MessageTemplate
 
     # Skip test if no global session available (like other live tests)
     try:

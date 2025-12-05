@@ -18,6 +18,7 @@ from core.api_manager import RequestConfig, RetryPolicy
 from core.error_handling import api_retry
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
+from core.utils import format_name
 from genealogy.dna.dna_ethnicity_utils import (
     extract_match_ethnicity_percentages,
     fetch_ethnicity_comparison,
@@ -27,7 +28,6 @@ from research.relationship_utils import (
     convert_api_path_to_unified_format,
     format_relationship_path_unified,
 )
-from utils import format_name
 
 logger = logging.getLogger(__name__)
 

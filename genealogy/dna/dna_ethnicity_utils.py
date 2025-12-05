@@ -54,7 +54,7 @@ ETHNICITY_METADATA_FILE = "Data/ethnicity_regions.json"
 def _load_utils_module() -> Any:
     """Lazily import the utils module to avoid circular dependencies."""
 
-    return importlib.import_module("utils")
+    return importlib.import_module("core.utils")
 
 
 @cache

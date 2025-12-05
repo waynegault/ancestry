@@ -321,7 +321,7 @@ class SessionHealthMixin:
         if url and self.browser_manager.driver:
             logger.info(f"Navigating to: {url}")
             try:
-                from utils import nav_to_page
+                from core.utils import nav_to_page
 
                 nav_success = nav_to_page(
                     self.browser_manager.driver,

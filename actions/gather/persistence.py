@@ -19,9 +19,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as SqlAlchemySession, joinedload
 
+from core.database import DnaMatch, FamilyTree, Person, PersonStatusEnum
 from core.database_manager import db_transn
 from core.session_manager import SessionManager
-from database import DnaMatch, FamilyTree, Person, PersonStatusEnum
 from testing.test_framework import TestSuite, create_standard_test_runner
 
 logger = logging.getLogger(__name__)

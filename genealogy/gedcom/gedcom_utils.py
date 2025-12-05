@@ -126,8 +126,8 @@ DATEPARSER_AVAILABLE = _dateparser_available
 # === LOCAL IMPORTS ===
 from config.config_manager import get_config_manager
 from core.common_params import GraphContext
+from core.utils import format_name
 from testing.test_framework import TestSuite, create_standard_test_runner
-from utils import format_name
 
 # === MODULE CONFIGURATION ===
 config_manager = get_config_manager()

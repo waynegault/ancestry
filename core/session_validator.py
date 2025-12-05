@@ -222,7 +222,7 @@ class SessionValidator:
         """
         try:
             # Import login_status here to avoid circular imports
-            from utils import login_status, nav_to_page
+            from core.utils import login_status, nav_to_page
 
             logger.debug(f"Checking login status (attempt {attempt})...")
             # Use the session manager parameter directly
@@ -321,7 +321,7 @@ class SessionValidator:
         """
         try:
             # Import log_in function here to avoid circular imports
-            from utils import log_in
+            from core.utils import log_in
 
             logger.debug("Attempting relogin...")
             # Use the session manager parameter directly
@@ -366,7 +366,7 @@ class SessionValidator:
                 logger.warning("Not on Ancestry domain. Navigating to base URL...")
 
                 # Import nav_to_page here to avoid circular imports
-                from utils import nav_to_page
+                from core.utils import nav_to_page
 
                 nav_success = nav_to_page(
                     browser_manager.driver,

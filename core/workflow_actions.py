@@ -18,7 +18,7 @@ import logging
 from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
-from utils import nav_to_page
+from core.utils import nav_to_page
 
 logger = logging.getLogger(__name__)
 

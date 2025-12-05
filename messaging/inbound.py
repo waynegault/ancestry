@@ -10,8 +10,7 @@ from ai.ai_interface import (
     extract_genealogical_entities,
     generate_genealogical_reply,
 )
-from core.session_manager import SessionManager
-from database import (
+from core.database import (
     ConversationMetrics,
     ConversationState,
     ConversationStatusEnum,
@@ -21,6 +20,7 @@ from database import (
     Person,
     SuggestedFact,
 )
+from core.session_manager import SessionManager
 from genealogy.research_service import ResearchService
 from messaging.safety import SafetyCheckResult, SafetyGuard, SafetyStatus
 

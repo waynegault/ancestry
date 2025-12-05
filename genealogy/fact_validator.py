@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from sqlalchemy.orm import Session as DbSession
 
 if TYPE_CHECKING:
-    from database import Person
+    from core.database import Person
 
 # === MODULE SETUP ===
 logger = logging.getLogger(__name__)
@@ -357,7 +357,7 @@ class FactValidator:
             return []
 
         try:
-            from database import FactStatusEnum, FactTypeEnum, SuggestedFact
+            from core.database import FactStatusEnum, FactTypeEnum, SuggestedFact
 
             # Map string to enum
             try:
@@ -588,7 +588,7 @@ class FactValidator:
             return None
 
         try:
-            from database import FactStatusEnum, FactTypeEnum, SuggestedFact
+            from core.database import FactStatusEnum, FactTypeEnum, SuggestedFact
 
             # Map fact type to enum
             try:

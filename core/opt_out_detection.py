@@ -274,7 +274,7 @@ class OptOutDetector:
             )
 
         try:
-            from database import Person, PersonStatusEnum
+            from core.database import Person, PersonStatusEnum
 
             person = self.db_session.query(Person).filter(Person.id == person_id).first()
             if not person:
@@ -321,7 +321,7 @@ class OptOutDetector:
             return False
 
         try:
-            from database import ConversationLog
+            from core.database import ConversationLog
 
             # Get recent inbound messages
             messages = (
@@ -387,7 +387,7 @@ class OptOutDetector:
             return False
 
         try:
-            from database import Person, PersonStatusEnum
+            from core.database import Person, PersonStatusEnum
 
             person = self.db_session.query(Person).filter(Person.id == person_id).first()
             if not person:

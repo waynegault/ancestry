@@ -42,8 +42,8 @@ from core.error_handling import (
 )
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
+from core.utils import log_final_summary, log_starting_position
 from testing.test_framework import TestSuite, create_standard_test_runner
-from utils import log_final_summary, log_starting_position
 
 logger = logging.getLogger(__name__)
 

@@ -46,7 +46,7 @@ from browser.selenium_utils import get_driver_cookies
 from caching.cache import cache as global_cache
 from config import config_schema
 from core.session_manager import SessionManager
-from utils import nav_to_page
+from core.utils import nav_to_page
 
 # ============================================================================
 # NAVIGATION FUNCTIONS
@@ -57,7 +57,7 @@ from utils import nav_to_page
 def _load_utils_module() -> Any:
     """Lazy import of utils to avoid circular dependencies."""
 
-    return importlib.import_module("utils")
+    return importlib.import_module("core.utils")
 
 
 def _call_api_request(**kwargs: Any) -> Any:

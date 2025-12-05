@@ -46,6 +46,17 @@ from caching.cache_manager import (
 )
 from config import config_schema
 from core.common_params import ConversationProcessingContext
+from core.database import (
+    ConversationLog,
+    ConversationPhaseEnum,
+    ConversationState,
+    DnaMatch,
+    DraftReply,
+    MessageDirectionEnum,
+    Person,
+    PersonStatusEnum,
+    commit_bulk_data,
+)
 from core.error_handling import (
     MaxApiFailuresExceededError,
     api_retry as _api_retry,
@@ -57,17 +68,6 @@ from core.error_handling import (
 # === ACTION 7 IMPORTS ===
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
-from database import (
-    ConversationLog,
-    ConversationPhaseEnum,
-    ConversationState,
-    DnaMatch,
-    DraftReply,
-    MessageDirectionEnum,
-    Person,
-    PersonStatusEnum,
-    commit_bulk_data,
-)
 from genealogy.research_service import ResearchService
 from messaging import build_safe_column_value
 from messaging.inbound import InboundOrchestrator
@@ -88,11 +88,11 @@ from core.error_handling import (
     graceful_degradation as _graceful_degradation,
     timeout_protection as _timeout_protection,
 )
-from performance.connection_resilience import with_connection_resilience as _with_connection_resilience
-from utils import (
+from core.utils import (
     format_name,
     urljoin,
 )
+from performance.connection_resilience import with_connection_resilience as _with_connection_resilience
 
 DecoratorCallable = Callable[[Callable[..., Any]], Callable[..., Any]]
 DecoratorFactory = Callable[..., DecoratorCallable]
@@ -1786,7 +1786,7 @@ class InboxProcessor:
             ConversationPhaseEnum value or None if unable to determine
         """
         try:
-            from database import ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
+            from core.database import ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
 
             # Convert dict values to list for processing
             conv_logs = [log for log in existing_logs.values() if log.conversation_id == conversation_id]
@@ -3740,7 +3740,7 @@ def _test_conversation_phase_response_received() -> None:
     """Test RESPONSE_RECEIVED phase determination."""
     from unittest.mock import MagicMock
 
-    from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
+    from core.database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
 
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
@@ -3767,7 +3767,7 @@ def _test_conversation_phase_information_shared() -> None:
     """Test INFORMATION_SHARED phase determination."""
     from unittest.mock import MagicMock
 
-    from database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
+    from core.database import ConversationLog, MessageDirectionEnum as DBMessageDirectionEnum
 
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
@@ -3801,7 +3801,7 @@ def _test_follow_up_extraction_productive() -> None:
     """Test follow-up extraction for PRODUCTIVE conversations."""
     from unittest.mock import MagicMock
 
-    from database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
+    from core.database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
 
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
@@ -3832,7 +3832,7 @@ def _test_follow_up_extraction_with_dict_history() -> None:
     """Ensure dict-based histories are normalized before follow-up analysis."""
     from unittest.mock import MagicMock
 
-    from database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
+    from core.database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
 
     processor = InboxProcessor(session_manager=MagicMock())
     base_time = datetime.now(timezone.utc)
@@ -3872,7 +3872,7 @@ def _test_follow_up_skips_desist() -> None:
     """Test that follow-up extraction skips DESIST conversations."""
     from unittest.mock import MagicMock
 
-    from database import ConversationPhaseEnum
+    from core.database import ConversationPhaseEnum
 
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
@@ -3916,7 +3916,7 @@ def _test_task_importance_calculation() -> None:
     """Test task importance calculation from DNA + engagement data (Priority 0 Todo #14)."""
     from unittest.mock import MagicMock
 
-    from database import Person
+    from core.database import Person
 
     sm = MagicMock()
     mock_db_session = MagicMock()
@@ -3964,8 +3964,8 @@ def _test_task_importance_calculation() -> None:
 
 def _test_save_draft_reply() -> None:
     """Test saving a draft reply."""
+    from core.database import DraftReply, Person
     from core.session_manager import SessionManager
-    from database import DraftReply, Person
 
     # Setup
     sm = SessionManager()

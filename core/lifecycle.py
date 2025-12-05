@@ -369,7 +369,7 @@ def _enable_system_sleep_prevention() -> Any:
     """Enable system sleep prevention and return the resulting state object."""
     sleep_state: Any = None
     try:
-        from utils import prevent_system_sleep
+        from core.utils import prevent_system_sleep
 
         sleep_state = prevent_system_sleep()
     except Exception as sleep_err:

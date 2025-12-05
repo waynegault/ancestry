@@ -143,7 +143,7 @@ class ApprovalQueueService:
             Draft ID if queued, None if auto-approved or failed
         """
         try:
-            from database import DraftReply, Person
+            from core.database import DraftReply, Person
 
             # Check if person exists and is contactable
             person = self.db_session.query(Person).filter(Person.id == person_id).first()
@@ -216,7 +216,7 @@ class ApprovalQueueService:
     def _is_first_message(self, person: Any) -> bool:
         """Check if this would be the first message to a person."""
         try:
-            from database import ConversationLog
+            from core.database import ConversationLog
 
             outbound_count = (
                 self.db_session.query(func.count(ConversationLog.id))
@@ -238,7 +238,7 @@ class ApprovalQueueService:
     ) -> Optional[int]:
         """Create an auto-approved draft."""
         try:
-            from database import DraftReply
+            from core.database import DraftReply
 
             draft = DraftReply(
                 people_id=person_id,
@@ -269,7 +269,7 @@ class ApprovalQueueService:
             List of QueuedDraft objects
         """
         try:
-            from database import DraftReply, Person
+            from core.database import DraftReply, Person
 
             query = (
                 self.db_session.query(DraftReply, Person)
@@ -319,7 +319,7 @@ class ApprovalQueueService:
             ReviewDecision with result
         """
         try:
-            from database import DraftReply
+            from core.database import DraftReply
 
             draft = self.db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
             if not draft:
@@ -377,7 +377,7 @@ class ApprovalQueueService:
             ReviewDecision with result
         """
         try:
-            from database import DraftReply
+            from core.database import DraftReply
 
             draft = self.db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
             if not draft:
@@ -420,7 +420,7 @@ class ApprovalQueueService:
     def get_queue_stats(self) -> QueueStats:
         """Get statistics about the approval queue."""
         try:
-            from database import DraftReply
+            from core.database import DraftReply
 
             stats = QueueStats()
 
@@ -477,7 +477,7 @@ class ApprovalQueueService:
     def expire_old_drafts(self, hours: int = 72) -> int:
         """Expire drafts older than specified hours."""
         try:
-            from database import DraftReply
+            from core.database import DraftReply
 
             cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             count = (

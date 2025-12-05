@@ -1090,6 +1090,79 @@ def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: d
     return salvaged
 
 
+def _attempt_json_repair(ai_response_str: str) -> dict[str, Any] | None:
+    """Attempt to repair truncated JSON by appending missing brackets/braces."""
+    try:
+        logger.warning("Attempting to repair truncated JSON.")
+        repaired_json_str = ai_response_str.strip()
+        open_braces = repaired_json_str.count("{")
+        close_braces = repaired_json_str.count("}")
+        open_brackets = repaired_json_str.count("[")
+        close_brackets = repaired_json_str.count("]")
+
+        repaired_json_str += "}" * (open_braces - close_braces)
+        repaired_json_str += "]" * (open_brackets - close_brackets)
+
+        parsed_json = json.loads(repaired_json_str)
+        logger.info("Successfully repaired truncated JSON.")
+        return parsed_json
+    except Exception as repair_error:
+        logger.error(f"Failed to repair JSON: {repair_error}")
+        return None
+
+
+def _process_extraction_response(
+    ai_response_str: str,
+    system_prompt: str,
+    session_manager: SessionManager,
+    duration: float,
+    default_empty_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Process and validate AI extraction response."""
+    try:
+        cleaned_response_str = _clean_json_response(ai_response_str)
+        parsed_json = json.loads(cleaned_response_str)
+
+        if (
+            isinstance(parsed_json, dict)
+            and "extracted_data" in parsed_json
+            and isinstance(parsed_json["extracted_data"], dict)
+            and "suggested_tasks" in parsed_json
+            and isinstance(parsed_json["suggested_tasks"], list)
+        ):
+            logger.info(f"AI extraction successful. (Took {duration:.2f}s)")
+            _record_extraction_telemetry(
+                system_prompt, parsed_json, cleaned_response_str, session_manager, parse_success=True
+            )
+            return parsed_json
+
+        logger.warning(
+            f"AI extraction response valid JSON but uses flat structure. Attempting transform. Response: {cleaned_response_str[:500]}"
+        )
+        salvaged = _salvage_flat_structure(parsed_json, default_empty_result)
+        _record_extraction_telemetry(
+            system_prompt,
+            salvaged,
+            cleaned_response_str,
+            session_manager,
+            parse_success=False,
+            error="structure_salvaged",
+        )
+        return salvaged
+
+    except json.JSONDecodeError as e:
+        logger.warning(f"JSON decode error: {e}")
+        repaired_json = _attempt_json_repair(ai_response_str)
+        if repaired_json:
+            return repaired_json
+
+        logger.error(f"AI extraction invalid JSON: {e}. Response: {ai_response_str[:500]}")
+        _record_extraction_telemetry(
+            system_prompt, None, ai_response_str, session_manager, parse_success=False, error=str(e)[:120]
+        )
+        return default_empty_result
+
+
 def extract_genealogical_entities(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Extracts genealogical entities and suggests follow-up tasks.
@@ -1122,65 +1195,15 @@ def extract_genealogical_entities(context_history: str, session_manager: Session
     duration = time.time() - start_time
 
     if ai_response_str:
-        try:
-            cleaned_response_str = _clean_json_response(ai_response_str)
-            parsed_json = json.loads(cleaned_response_str)
-            if (
-                isinstance(parsed_json, dict)
-                and "extracted_data" in parsed_json
-                and isinstance(parsed_json["extracted_data"], dict)
-                and "suggested_tasks" in parsed_json
-                and isinstance(parsed_json["suggested_tasks"], list)
-            ):
-                logger.info(f"AI extraction successful. (Took {duration:.2f}s)")
-                _record_extraction_telemetry(
-                    system_prompt, parsed_json, cleaned_response_str, session_manager, parse_success=True
-                )
-                return parsed_json
-            logger.warning(
-                f"AI extraction response is valid JSON but uses flat structure instead of nested. Attempting to transform. Response: {cleaned_response_str[:500]}"
-            )
-            salvaged = _salvage_flat_structure(parsed_json, default_empty_result)
-            _record_extraction_telemetry(
-                system_prompt,
-                salvaged,
-                cleaned_response_str,
-                session_manager,
-                parse_success=False,
-                error="structure_salvaged",
-            )
-            return salvaged
-        except json.JSONDecodeError as e:
-            # Attempt to repair truncated JSON by appending closing braces
-            try:
-                logger.warning(f"JSON decode error: {e}. Attempting to repair truncated JSON.")
-                repaired_json_str = ai_response_str.strip()
-                # Simple heuristic: count braces and append missing ones
-                open_braces = repaired_json_str.count("{")
-                close_braces = repaired_json_str.count("}")
-                open_brackets = repaired_json_str.count("[")
-                close_brackets = repaired_json_str.count("]")
-
-                repaired_json_str += "}" * (open_braces - close_braces)
-                repaired_json_str += "]" * (open_brackets - close_brackets)
-
-                parsed_json = json.loads(repaired_json_str)
-                logger.info("Successfully repaired truncated JSON.")
-                return parsed_json
-            except Exception as repair_error:
-                logger.error(f"Failed to repair JSON: {repair_error}")
-
-            logger.error(f"AI extraction response was not valid JSON: {e}. Response: {ai_response_str[:500]}")
-            _record_extraction_telemetry(
-                system_prompt, None, ai_response_str, session_manager, parse_success=False, error=str(e)[:120]
-            )
-            return default_empty_result
-    else:
-        logger.error(f"AI extraction failed or returned empty. (Took {duration:.2f}s)")
-        _record_extraction_telemetry(
-            system_prompt, None, None, session_manager, parse_success=False, error="empty_response"
+        return _process_extraction_response(
+            ai_response_str, system_prompt, session_manager, duration, default_empty_result
         )
-        return default_empty_result
+
+    logger.error(f"AI extraction failed or returned empty. (Took {duration:.2f}s)")
+    _record_extraction_telemetry(
+        system_prompt, None, None, session_manager, parse_success=False, error="empty_response"
+    )
+    return default_empty_result
 
 
 # End of extract_genealogical_entities

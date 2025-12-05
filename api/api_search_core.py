@@ -219,7 +219,7 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
         Cached results list or None if not found/expired
     """
     try:
-        from database import ApiSearchCache
+        from core.database import ApiSearchCache
 
         # Query for unexpired cache entry
         cache_entry = (
@@ -294,7 +294,7 @@ def _store_search_results_in_cache(
         db_session: SQLAlchemy database session
     """
     try:
-        from database import ApiSearchCache
+        from core.database import ApiSearchCache
 
         # Check if entry already exists (shouldn't, but be safe)
         existing = db_session.query(ApiSearchCache).filter(ApiSearchCache.search_criteria_hash == cache_key).first()
@@ -366,7 +366,7 @@ def clear_api_search_cache(db_session: Any) -> int:
         Number of entries deleted
     """
     try:
-        from database import ApiSearchCache
+        from core.database import ApiSearchCache
 
         count = db_session.query(ApiSearchCache).delete()
         db_session.commit()
@@ -396,7 +396,7 @@ def cleanup_expired_api_search_cache(db_session: Any) -> int:
         Number of expired entries deleted
     """
     try:
-        from database import ApiSearchCache
+        from core.database import ApiSearchCache
 
         count = (
             db_session.query(ApiSearchCache).filter(ApiSearchCache.expires_at <= datetime.now(timezone.utc)).delete()

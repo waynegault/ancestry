@@ -34,7 +34,7 @@ from sqlalchemy import String as SQLString, cast
 from sqlalchemy.orm import Session
 
 # Import analytics models from database.py (they're defined there to avoid circular imports)
-from database import ConversationMetrics, EngagementTracking
+from core.database import ConversationMetrics, EngagementTracking
 
 
 class _DatabaseManagerProtocol(Protocol):
@@ -140,7 +140,7 @@ def record_engagement_event(
 
 def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Optional[str]) -> None:
     """Update metrics when a message is sent."""
-    metrics.messages_sent = metrics.messages_sent + 1
+    metrics.messages_sent += 1
     now = datetime.now(timezone.utc)
     metrics.last_message_sent = now
     if metrics.first_message_sent is None:
@@ -161,7 +161,7 @@ def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Op
 
 def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
     """Update metrics when a message is received."""
-    metrics.messages_received = metrics.messages_received + 1
+    metrics.messages_received += 1
     now = datetime.now(timezone.utc)
     metrics.last_message_received = now
 
@@ -200,11 +200,11 @@ def _update_research_outcomes(
 ) -> None:
     """Update research outcome metrics."""
     if person_looked_up:
-        metrics.people_looked_up = metrics.people_looked_up + 1
+        metrics.people_looked_up += 1
     if person_found:
-        metrics.people_found = metrics.people_found + 1
+        metrics.people_found += 1
     if research_task_created:
-        metrics.research_tasks_created = metrics.research_tasks_created + 1
+        metrics.research_tasks_created += 1
 
 
 def update_conversation_metrics(
@@ -473,7 +473,7 @@ def _test_record_engagement_event() -> None:
 
     try:
         # Ensure a valid person exists
-        from database import Person
+        from core.database import Person
 
         person = session.query(Person).first()
         if not person:
@@ -509,7 +509,7 @@ def _test_record_engagement_event() -> None:
 
 def _test_update_conversation_metrics_new() -> None:
     """Test updating conversation metrics for new conversation."""
-    from database import Person
+    from core.database import Person
 
     session = _create_database_session()
 
@@ -552,7 +552,7 @@ def _test_update_conversation_metrics_new() -> None:
 
 def _test_update_conversation_metrics_existing() -> None:
     """Test updating existing conversation metrics."""
-    from database import Person
+    from core.database import Person
 
     session = _create_database_session()
 
@@ -633,7 +633,7 @@ def _test_engagement_score_delta_calculation() -> None:
 
     try:
         # Ensure a valid person exists
-        from database import Person
+        from core.database import Person
 
         person = session.query(Person).first()
         if not person:
@@ -676,7 +676,7 @@ def _test_engagement_score_delta_calculation() -> None:
 
 def _test_template_tracking() -> None:
     """Test template usage tracking."""
-    from database import Person
+    from core.database import Person
 
     session = _create_database_session()
 
@@ -716,7 +716,7 @@ def _test_template_tracking() -> None:
 
 def _test_research_outcomes_tracking() -> None:
     """Test research outcomes tracking."""
-    from database import Person
+    from core.database import Person
 
     session = _create_database_session()
 
@@ -752,7 +752,7 @@ def _test_research_outcomes_tracking() -> None:
 
 def _test_tree_impact_tracking() -> None:
     """Test tree impact tracking."""
-    from database import Person
+    from core.database import Person
 
     session = _create_database_session()
 

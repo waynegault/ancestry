@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 try:
     import json
 
-    from database import DnaMatch, Person, TreeStatisticsCache
+    from core.database import DnaMatch, Person, TreeStatisticsCache
 
     logger.debug("Successfully imported database models for tree statistics.")
 except ImportError as e:

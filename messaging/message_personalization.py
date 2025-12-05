@@ -57,8 +57,8 @@ class MessagePersonalizer:
     def _load_message_templates() -> dict[str, str]:
         """Load message templates from database MessageTemplate table."""
         try:
+            from core.database import MessageTemplate
             from core.session_utils import get_session_manager
-            from database import MessageTemplate
 
             session_manager = get_session_manager()
             if not session_manager:

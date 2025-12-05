@@ -374,7 +374,7 @@ def main() -> None:
     finally:
         # Restore system sleep settings
         if sleep_state is not None:
-            from utils import restore_system_sleep
+            from core.utils import restore_system_sleep
 
             restore_system_sleep(sleep_state)
             logger.info("🔓 System sleep prevention deactivated")

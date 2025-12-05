@@ -478,7 +478,7 @@ class ResearchToolsCLI:
     @staticmethod
     def _process_conflicts(session: Any, conflicts: list[Any], detector: Any) -> None:
         """Process a list of conflicts interactively."""
-        from database import ConflictStatusEnum, Person
+        from core.database import ConflictStatusEnum, Person
 
         for i, conflict in enumerate(conflicts, 1):
             person = session.query(Person).filter(Person.id == conflict.people_id).first()

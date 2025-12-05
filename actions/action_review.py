@@ -27,7 +27,7 @@ if __package__ in {None, ""}:
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-from database import (
+from core.database import (
     ConflictStatusEnum,
     DataConflict,
     Person,

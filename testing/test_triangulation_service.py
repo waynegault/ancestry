@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database import Base, Person, SharedMatch
+from core.database import Base, Person, SharedMatch
 from genealogy.research_service import ResearchService
 from genealogy.triangulation import TriangulationService
 from testing.test_framework import TestSuite

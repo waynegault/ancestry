@@ -705,7 +705,7 @@ def create_test_database() -> Session:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
-    from database import Base
+    from core.database import Base
 
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
@@ -774,7 +774,7 @@ def create_test_person(
         person = create_test_person(cm_dna=100, engagement_score=75)
         assert person.dna_match.cm_dna == 100
     """
-    from database import Person
+    from core.database import Person
 
     person = MagicMock(spec=Person)
     person.id = person_id
@@ -783,7 +783,7 @@ def create_test_person(
     person.current_engagement_score = engagement_score
 
     if cm_dna is not None:
-        from database import DnaMatch
+        from core.database import DnaMatch
 
         person.dna_match = MagicMock(spec=DnaMatch)
         person.dna_match.cm_dna = cm_dna
@@ -1122,7 +1122,7 @@ def create_test_match(
         assert match.cm_dna == 250
         assert match.predicted_relationship == "2nd Cousin"
     """
-    from database import DnaMatch
+    from core.database import DnaMatch
 
     match = MagicMock(spec=DnaMatch)
     match.id = match_id
@@ -1161,7 +1161,7 @@ def create_test_conversation(
         conv = create_test_conversation(classification="PRODUCTIVE")
         assert conv.classification == "PRODUCTIVE"
     """
-    from database import ConversationLog
+    from core.database import ConversationLog
 
     conv = MagicMock(spec=ConversationLog)
     conv.id = conversation_id
@@ -1294,7 +1294,7 @@ def _test_create_test_database() -> None:
     session = create_test_database()
     assert session is not None
     # Test that we can query
-    from database import Person
+    from core.database import Person
 
     result = session.query(Person).count()
     assert result == 0  # Empty database
@@ -1382,7 +1382,7 @@ def _test_with_temp_database_decorator() -> None:
 
     @with_temp_database
     def inner_test(db_session: Session) -> bool:
-        from database import Person
+        from core.database import Person
 
         # Verify session works
         count = db_session.query(Person).count()

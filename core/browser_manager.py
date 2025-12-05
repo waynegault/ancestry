@@ -48,7 +48,7 @@ DriverType = Optional[WebDriver]
 @lru_cache(maxsize=1)
 def _get_utils_module() -> ModuleType:
     """Lazy-load utils to access optional helpers without private imports."""
-    return importlib.import_module("utils")
+    return importlib.import_module("core.utils")
 
 
 def _load_login_cookies_if_available(session_like: Any) -> bool:

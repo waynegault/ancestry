@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session
 from api.api_constants import API_PATH_SHARED_MATCHES
 from config import config_schema
 from core.api_manager import RequestConfig
+from core.database import DnaMatch, Person, SharedMatch, db_transn
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
-from database import DnaMatch, Person, SharedMatch, db_transn
 
 logger = logging.getLogger(__name__)
 

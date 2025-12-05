@@ -22,9 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as SASession
 
 from core.action_runner import DatabaseManagerProtocol
-from core.database_manager import backup_database, db_transn
-from core.session_manager import SessionManager
-from database import (
+from core.database import (
     Base,
     ConversationLog,
     DnaMatch,
@@ -32,8 +30,10 @@ from database import (
     MessageTemplate,
     Person,
 )
+from core.database_manager import backup_database, db_transn
+from core.session_manager import SessionManager
+from core.utils import log_in, login_status
 from testing.test_framework import TestSuite, create_standard_test_runner
-from utils import log_in, login_status
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +269,7 @@ def _seed_message_templates(recreation_session: Any) -> bool:
     logger.debug("Seeding message_templates table from database defaults...")
     try:
         # Import inside function to avoid circular imports at module import time
-        database_module = import_module("database")
+        database_module = import_module("core.database")
 
         get_default_templates = getattr(database_module, "_get_default_message_templates", None)
         if get_default_templates is None:

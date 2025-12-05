@@ -4,7 +4,7 @@ from typing import Any, Optional, cast
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from database import Person, SharedMatch
+from core.database import Person, SharedMatch
 from genealogy.research_service import ResearchService
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from unittest.mock import MagicMock
 
-from database import Person
+from core.database import Person
 from genealogy.triangulation import TriangulationService
 from testing.test_framework import TestSuite, suppress_logging
 from testing.test_utilities import create_standard_test_runner

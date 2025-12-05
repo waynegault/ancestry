@@ -40,6 +40,15 @@ from ai.ai_interface import (
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from core.database import (
+    ConversationLog,
+    ConversationState,
+    MessageDirectionEnum,
+    MessageTemplate,
+    Person,
+    PersonStatusEnum,
+    commit_bulk_data,
+)
 from core.error_handling import (
     api_retry,
     circuit_breaker,
@@ -49,15 +58,7 @@ from core.error_handling import (
 )
 from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
-from database import (
-    ConversationLog,
-    ConversationState,
-    MessageDirectionEnum,
-    MessageTemplate,
-    Person,
-    PersonStatusEnum,
-    commit_bulk_data,
-)
+from core.utils import format_name
 from genealogy.fact_validator import (
     extract_facts_from_ai_response,
 )
@@ -72,7 +73,6 @@ from research.person_lookup_utils import (
     create_result_from_gedcom,
 )
 from testing.test_utilities import create_standard_test_runner
-from utils import format_name
 
 # === CONSTANTS ===
 PRODUCTIVE_SENTIMENT = "PRODUCTIVE"  # Sentiment string set by Action 7
@@ -1898,7 +1898,7 @@ class PersonProcessor:
 
     def _get_conversation_state_data(self, person: Person) -> tuple[str, int, str, str]:
         """Get conversation state data for a person."""
-        from database import ConversationState
+        from core.database import ConversationState
 
         conv_state = None
         if self.db_state.session:
@@ -2866,7 +2866,7 @@ def _query_candidates(db_state: DatabaseState, msg_config: MessageConfig, limit:
     )
 
     # Main query with Phase 4 adaptive follow-up scheduling
-    from database import ConversationState
+    from core.database import ConversationState
 
     candidates_query = (
         db_state.session.query(Person)
@@ -3718,7 +3718,7 @@ def _test_enhanced_task_creation() -> None:
     """
     from unittest.mock import Mock
 
-    from database import Person
+    from core.database import Person
 
     # Create mock dependencies for PersonProcessor
     mock_session_manager = Mock()
@@ -3842,7 +3842,7 @@ def _test_database_session_availability() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import Person
+        from core.database import Person
 
         person_count = db_session.query(Person).count()
         logger.info(f"✅ Database session available with {person_count} persons in database")
@@ -3872,7 +3872,7 @@ def _test_message_templates_available() -> bool:
         if not db_session:
             raise RuntimeError("Failed to get database session")
 
-        from database import MessageTemplate
+        from core.database import MessageTemplate
 
         templates = db_session.query(MessageTemplate).all()
         template_count = len(templates)

@@ -55,11 +55,11 @@ BS4_AVAILABLE = True
 # --- Test framework imports ---
 # Import specific functions from gedcom_utils
 from core.common_params import GraphContext
+from core.utils import format_name
 from testing.test_framework import (
     TestSuite,
     suppress_logging,
 )
-from utils import format_name
 
 
 class GedcomTagProtocol(Protocol):
