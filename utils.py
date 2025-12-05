@@ -8,15 +8,6 @@ provides general utilities (decorators, formatting, rate limiting),
 and includes login/session verification logic closely tied to SessionManager.
 """
 
-# === CORE INFRASTRUCTURE ===
-import logging
-
-from core.logging_utils import log_action_banner
-from testing.test_utilities import create_standard_test_runner
-
-# === MODULE SETUP ===
-logger = logging.getLogger(__name__)
-
 # === SESSION MANAGER IMPORT ===
 # Import SessionManager from core module - use TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING
@@ -26,7 +17,6 @@ if TYPE_CHECKING:
 else:
     # Runtime import to avoid circular dependency issues
     SessionManager = None
-
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
@@ -34,6 +24,7 @@ import base64  # For make_ube
 import binascii  # For make_ube
 import contextlib
 import json
+import logging
 import random  # Used by RateLimiter jitter calculations
 import re
 import time
@@ -62,11 +53,42 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 # === LOCAL IMPORTS ===
 # (Note: Some imports done locally to avoid circular dependencies)
+from core.logging_utils import log_action_banner
+from testing.test_utilities import create_standard_test_runner
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile
 from core.protocols import RateLimiterProtocol
 from observability.metrics_registry import metrics
+
+# === REFACTORED IMPORTS ===
+from core.selenium_utils import (
+    wait_until_visible as _wait_until_visible_impl,
+    wait_until_clickable as _wait_until_clickable_impl,
+    wait_until_present as _wait_until_present_impl,
+    wait_until_not_visible as _wait_until_not_visible_impl,
+    wait_until_not_present as _wait_until_not_present_impl,
+)
+from observability.utils import (
+    sanitize_metric_segment as _sanitize_metric_segment_impl,
+    derive_metrics_endpoint as _derive_metrics_endpoint_impl,
+    metrics_status_family as _metrics_status_family_impl,
+    resolve_request_duration as _resolve_request_duration_impl,
+    record_api_metrics as _record_api_metrics_impl,
+)
+from core.logging_utils import (
+    log_action_configuration as _log_action_configuration_impl,
+    log_starting_position as _log_starting_position_impl,
+    log_cumulative_counts as _log_cumulative_counts_impl,
+    log_batch_indicator as _log_batch_indicator_impl,
+    log_page_complete as _log_page_complete_impl,
+    log_final_summary as _log_final_summary_impl,
+    log_action_status as _log_action_status_impl,
+)
+from core.progress_indicators import create_progress_indicator
+
+# === MODULE SETUP ===
+logger = logging.getLogger(__name__)
 
 # === TYPE ALIASES ===
 # Define type aliases
@@ -78,39 +100,12 @@ ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse,
 DriverType = Optional[WebDriver]
 
 
-def _wait_until_visible(waiter: "WebDriverWait[Any]", locator: Locator) -> WebElement:
-    """Return first element matching locator once it becomes visible."""
-
-    condition = expected_conditions.visibility_of_element_located(locator)
-    return waiter.until(condition)
-
-
-def _wait_until_clickable(waiter: "WebDriverWait[Any]", locator: Locator) -> WebElement:
-    """Return the element once it becomes clickable."""
-
-    condition = expected_conditions.element_to_be_clickable(locator)
-    return waiter.until(condition)
-
-
-def _wait_until_present(waiter: "WebDriverWait[Any]", locator: Locator) -> WebElement:
-    """Return first element matching locator once present in DOM."""
-
-    condition = expected_conditions.presence_of_element_located(locator)
-    return waiter.until(condition)
-
-
-def _wait_until_not_visible(waiter: "WebDriverWait[Any]", locator: Locator) -> bool:
-    """Wait until the element matching locator is no longer visible."""
-
-    condition = expected_conditions.visibility_of_element_located(locator)
-    return bool(waiter.until_not(condition))
-
-
-def _wait_until_not_present(waiter: "WebDriverWait[Any]", locator: Locator) -> bool:
-    """Wait until the element matching locator is no longer present in the DOM."""
-
-    condition = expected_conditions.presence_of_element_located(locator)
-    return bool(waiter.until_not(condition))
+# === SELENIUM HELPERS (Delegated) ===
+_wait_until_visible = _wait_until_visible_impl
+_wait_until_clickable = _wait_until_clickable_impl
+_wait_until_present = _wait_until_present_impl
+_wait_until_not_visible = _wait_until_not_visible_impl
+_wait_until_not_present = _wait_until_not_present_impl
 
 
 # Type variables for decorators
@@ -119,189 +114,22 @@ R = TypeVar('R')
 SessionManagerType = Optional["SessionManager"]  # Use string literal for forward reference
 
 
-# === OBSERVABILITY HELPERS ===
-_UUID_PATH_SEGMENT_PATTERN = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-)
+_sanitize_metric_segment = _sanitize_metric_segment_impl
+_derive_metrics_endpoint = _derive_metrics_endpoint_impl
+_metrics_status_family = _metrics_status_family_impl
+_resolve_request_duration = _resolve_request_duration_impl
+_record_api_metrics = _record_api_metrics_impl
 
 
-def _sanitize_metric_segment(segment: str) -> str:
-    """Reduce high-cardinality path segments for metrics labeling."""
-
-    if not segment:
-        return ""
-
-    if segment.isdigit():
-        return "{id}"
-
-    if _UUID_PATH_SEGMENT_PATTERN.match(segment):
-        return "{" + "uuid" + "}"
-
-    if any(char.isdigit() for char in segment):
-        return "{var}"
-
-    return segment
+log_action_configuration = _log_action_configuration_impl
+log_starting_position = _log_starting_position_impl
+log_cumulative_counts = _log_cumulative_counts_impl
+log_batch_indicator = _log_batch_indicator_impl
 
 
-def _derive_metrics_endpoint(url: str) -> str:
-    """Generate a normalized endpoint label from a URL."""
-
-    if not url:
-        return "unknown"
-
-    parsed = urlparse(url)
-    host = parsed.netloc.split(":", 1)[0] or "unknown"
-    path_parts = [_sanitize_metric_segment(part) for part in parsed.path.strip("/").split("/") if part]
-    path_label = "/".join(path_parts) if path_parts else "root"
-    return f"{host}/{path_label}"
-
-
-def _metrics_status_family(status: Optional[int]) -> str:
-    """Convert HTTP status code to status family string."""
-
-    if status is None or status < 100:
-        return "error"
-    return f"{status // 100}xx"
-
-
-def _resolve_request_duration(
-    response: RequestsResponseTypeOptional,
-    fallback_duration: float,
-) -> float:
-    """Prefer requests' elapsed timing when available."""
-
-    if response is not None:
-        elapsed = getattr(response, "elapsed", None)
-        if elapsed is not None:
-            with contextlib.suppress(Exception):
-                elapsed_seconds = float(elapsed.total_seconds())
-                if elapsed_seconds > 0:
-                    return elapsed_seconds
-    return max(fallback_duration, 0.0)
-
-
-def _record_api_metrics(
-    endpoint: str,
-    method: str,
-    result: str,
-    status_family: str,
-    duration: float,
-) -> None:
-    """Emit API metrics via Prometheus registry helpers."""
-
-    try:
-        metrics_bundle = metrics()
-        metrics_bundle.api_requests.inc(endpoint, method, result)
-        metrics_bundle.api_latency.observe(endpoint, status_family, max(duration, 0.0))
-    except Exception:
-        logger.debug("Failed to record API metrics", exc_info=True)
-
-
-# === STANDARDIZED LOGGING HELPERS ===
-# These functions provide consistent logging format across Actions 6-9
-
-
-def log_action_configuration(config_dict: dict[str, Any], section_title: str = "Config") -> None:
+def create_standard_progress_bar(total: int, desc: str = "Processing", unit: str = " item") -> Any:
     """
-    Log action configuration in standardized format.
-
-    Args:
-        config_dict: Dictionary of configuration key-value pairs
-        section_title: Title prefix for the log entry (default: "Config")
-
-    Example:
-        log_action_configuration({
-            "APP_MODE": "dry_run",
-            "START_PAGE": 1,
-            "MAX_PAGES": 2,
-            "BATCH_SIZE": 10,
-            "RATE_LIMIT_DELAY": 2.50
-        })
-        # Output: Configuration: APP_MODE=dry_run, START_PAGE=1, MAX_PAGES=2, BATCH_SIZE=10, RATE_LIMIT_DELAY=2.50s
-    """
-    formatted_parts: list[str] = []
-    for key, value in config_dict.items():
-        value_str = ("Yes" if value else "No") if isinstance(value, bool) else value
-        formatted_parts.append(f"{key}={value_str}")
-
-    summary = " | ".join(formatted_parts)
-    logger.info(f"{section_title}: {summary}")
-
-
-def log_starting_position(description: str, details: Optional[dict[str, Any]] = None) -> None:
-    """
-    Log starting position summary.
-
-    Args:
-        description: Main description of what will be processed
-        details: Optional dictionary of additional details
-
-    Example:
-        log_starting_position(
-            "Starting from page 1, will process up to 2 pages",
-            {"Estimated matches": "~40 (20 per page)"}
-        )
-    """
-    if not details:
-        logger.info(description)
-        return
-
-    detail_parts = [f"{key}: {value}" for key, value in details.items()]
-    logger.info(f"{description}\n " + "\n".join(detail_parts))
-
-
-def log_cumulative_counts(counts: dict[str, int], prefix: str = "Cumulative") -> None:
-    """
-    Log cumulative counts in standardized format.
-
-    Args:
-        counts: Dictionary of counter names and values
-        prefix: Prefix for the log line (default: "Cumulative")
-
-    Example:
-        log_cumulative_counts({"Pages": 1, "Batches": 2, "New": 15, "Updated": 5, "Skipped": 0, "Errors": 0})
-        # Output: Cumulative: Pages=1, Batches=2, New=15, Updated=5, Skipped=0, Errors=0
-    """
-    count_str = ", ".join([f"{k}={v}" for k, v in counts.items()])
-    logger.info(f"{prefix}: {count_str}")
-
-
-def log_batch_indicator(
-    batch_num: int,
-    total_batches: int,
-    item_range: Optional[tuple[int, int]] = None,
-    page_num: Optional[int] = None,
-    total_pages: Optional[int] = None,
-) -> None:
-    """
-    Log batch/page indicator before processing.
-
-    Args:
-        batch_num: Current batch number
-        total_batches: Total number of batches
-        item_range: Optional tuple of (start_item, end_item) for this batch
-        page_num: Optional current page number
-        total_pages: Optional total number of pages
-
-    Example:
-        log_batch_indicator(1, 2, (1, 10), 1, 2)
-        # Output:
-        # (blank line)
-        # Processing page 1 of 2 pages
-        # Batch 1/2 (items 1-10)
-    """
-    logger.info("")  # Blank line before
-    if page_num and total_pages:
-        logger.info(f"Processing page {page_num} of {total_pages} pages")
-    if item_range:
-        logger.info(f"Batch {batch_num}/{total_batches} (items {item_range[0]}-{item_range[1]})")
-    else:
-        logger.info(f"Batch {batch_num}/{total_batches}")
-
-
-def create_standard_progress_bar(total: int, desc: str = "Processing", unit: str = " item"):
-    """
-    Create standardized progress bar using tqdm.
+    Create standardized progress bar using core.progress_indicators.
 
     Args:
         total: Total number of items to process
@@ -309,120 +137,25 @@ def create_standard_progress_bar(total: int, desc: str = "Processing", unit: str
         unit: Unit name for items
 
     Returns:
-        tqdm progress bar instance
-
-    Example:
-        with create_standard_progress_bar(20, "Processing", " match") as pbar:
-            for item in items:
-                # Process item
-                pbar.update(1)
+        tqdm-compatible progress bar instance
     """
-    from tqdm import tqdm
-
-    return tqdm(
-        total=total,
-        desc=desc,
-        unit=unit,
-        bar_format="{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-    )
+    # Create progress indicator but access the underlying tqdm bar for compatibility
+    # with existing code that expects a tqdm object
+    indicator = create_progress_indicator(desc, total=total, unit=unit)
+    indicator.start()
+    return indicator.progress_bar
 
 
-def log_page_complete(page_num: int, page_counts: dict[str, int], cumulative_counts: dict[str, int]) -> None:
-    """
-    Log page completion summary.
+# === STANDARDIZED LOGGING HELPERS (Delegated) ===
+log_action_configuration = _log_action_configuration_impl
+log_starting_position = _log_starting_position_impl
+log_cumulative_counts = _log_cumulative_counts_impl
+log_batch_indicator = _log_batch_indicator_impl
+log_page_complete = _log_page_complete_impl
+log_final_summary = _log_final_summary_impl
+log_action_status = _log_action_status_impl
 
-    Args:
-        page_num: Page number that was completed
-        page_counts: Dictionary of counts for this page only
-        cumulative_counts: Dictionary of cumulative counts across all pages
-
-    Example:
-        log_page_complete(1, {"Batches": 2, "New": 15, "Updated": 5},
-                         {"Pages": 1, "Batches": 2, "New": 15, "Updated": 5, "Skipped": 0, "Errors": 0})
-        # Output:
-        # Page 1 complete: Batches=2, New=15, Updated=5
-        # Cumulative: Pages=1, Batches=2, New=15, Updated=5, Skipped=0, Errors=0
-    """
-    page_str = ", ".join([f"{k}={v}" for k, v in page_counts.items()])
-    logger.info(f"Page {page_num} complete: {page_str}")
-    log_cumulative_counts(cumulative_counts)
-
-
-def log_final_summary(summary_dict: dict[str, Any], run_time_seconds: float) -> None:
-    """
-    Log final summary with separators and aligned labels.
-
-    Args:
-        summary_dict: Dictionary of summary items (label: value)
-        run_time_seconds: Total run time in seconds
-
-    Example:
-        log_final_summary({
-            "Pages Scanned": 2,
-            "Batches Processed": 4,
-            "New Matches": 30,
-            "Updated Matches": 10,
-            "Skipped Matches": 0,
-            "Errors": 0
-        }, 90.45)
-        # Output:
-        # (blank line)
-        # ================================================================================
-        # FINAL SUMMARY
-        # ================================================================================
-        # Pages Scanned:       2
-        # Batches Processed:   4
-        # New Matches:         30
-        # Updated Matches:     10
-        # Skipped Matches:     0
-        # Errors:              0
-        # Total Run Time:      0 hr 1 min 30.45 sec
-        # ================================================================================
-        # (blank line)
-    """
-    print("")
-    logger.info("-" * 45)
-    logger.info("Final Summary")
-    logger.info("-" * 45)
-
-    # Log all summary items with aligned labels
-    max_label_len = max(len(str(k)) for k in summary_dict)
-    for label, value in summary_dict.items():
-        logger.info(f"{str(label) + ':':<{max_label_len + 1}} {value}")
-
-    # Log run time
-    hours = int(run_time_seconds // 3600)
-    minutes = int((run_time_seconds % 3600) // 60)
-    seconds = run_time_seconds % 60
-    logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
-
-
-def log_action_status(action_name: str, success: bool, error_msg: Optional[str] = None) -> None:
-    """
-    Log final action status with checkmark or X.
-
-    Args:
-        action_name: Name of the action (e.g., "Match gathering")
-        success: True if action completed successfully
-        error_msg: Optional error message if success=False
-    Example:
-        log_action_status("Match gathering", True)
-        # Output: standardized success banner
-
-        log_action_status("Match gathering", False, "Session expired")
-        # Output: standardized failure banner with reason
-    """
-    stage = "success" if success else "failure"
-    details = {"error": error_msg} if (error_msg and not success) else None
-    log_action_banner(
-        action_name=action_name,
-        action_number=None,
-        stage=stage,
-        logger_instance=logger,
-        details=details,
-    )
-
-    # === API REQUEST CONFIGURATION ===
+# === API REQUEST CONFIGURATION ===
 
 
 @dataclass

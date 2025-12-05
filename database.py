@@ -109,7 +109,6 @@ class ConversationPhaseEnum(enum.Enum):
     """
     Enumeration for conversation lifecycle phases.
 
-    Priority 1 Todo #11: Track conversation phases to improve follow-up timing and strategy.
     Phases represent the maturity and engagement level of genealogical collaboration.
     """
 
@@ -250,7 +249,7 @@ class ConversationLog(Base):
         nullable=True,
         index=True,
         default=None,
-        comment="Priority 1 Todo #11: Conversation lifecycle phase (INITIAL_OUTREACH → RESPONSE_RECEIVED → INFORMATION_SHARED → COLLABORATION_ACTIVE → STALLED → CLOSED). Used to determine follow-up strategy and timing.",
+        comment="Conversation lifecycle phase (INITIAL_OUTREACH → RESPONSE_RECEIVED → INFORMATION_SHARED → COLLABORATION_ACTIVE → STALLED → CLOSED). Used to determine follow-up strategy and timing.",
     )
     message_template_id: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -274,12 +273,12 @@ class ConversationLog(Base):
         DateTime(timezone=True),
         nullable=True,
         index=True,
-        comment="Priority 1 Todo #5: Timestamp (UTC) when follow-up is due. Calculated based on urgency (7/14/30 days) for PRODUCTIVE conversations with pending questions/promises.",
+        comment="Timestamp (UTC) when follow-up is due. Calculated based on urgency (7/14/30 days) for PRODUCTIVE conversations with pending questions/promises.",
     )
     awaiting_response_from: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
-        comment="Priority 1 Todo #5: Who needs to respond next ('me' or 'them'). Used to track conversation responsibility and trigger appropriate reminders.",
+        comment="Who needs to respond next ('me' or 'them'). Used to track conversation responsibility and trigger appropriate reminders.",
     )
 
     # --- Relationships ---

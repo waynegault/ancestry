@@ -82,23 +82,7 @@ grafana_checker: GrafanaCheckerProtocol | None = _grafana_checker
 _cli_helpers = MainCLIHelpers(logger=logger, grafana_checker=grafana_checker)
 
 # Re-export helper functions to maintain existing references
-clear_log_file = _cli_helpers.clear_log_file
-_run_main_tests = _cli_helpers.run_main_tests
-_run_all_tests = _cli_helpers.run_all_tests
-_open_graph_visualization = _cli_helpers.open_graph_visualization
-_show_analytics_dashboard = _cli_helpers.show_analytics_dashboard
-_show_cache_statistics = _cli_helpers.show_cache_statistics
-_run_config_health_check = _cli_helpers.run_config_health_check
-_run_schema_migrations_action = _cli_helpers.run_schema_migrations_action
-_toggle_log_level = _cli_helpers.toggle_log_level
-_show_metrics_report = _cli_helpers.show_metrics_report
-_run_grafana_setup = _cli_helpers.run_grafana_setup
-_clear_screen = _cli_helpers.clear_screen
-_clear_test_cache = _cli_helpers.clear_test_cache
-_clear_app_log = _cli_helpers.clear_app_log_menu
-_exit_application = _cli_helpers.exit_application
-_show_review_queue = _cli_helpers.show_review_queue
-_run_dry_run_validation = _cli_helpers.run_dry_run_validation
+# (Aliases removed for consolidation - using _cli_helpers directly)
 
 
 _metrics_factory: Callable[[], Any] | None = None
@@ -318,23 +302,24 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("13", fetch_shared_matches)
     registry.set_action_function("14", _run_research_tools)
 
-    registry.set_action_function("a", _show_analytics_dashboard)
-    registry.set_action_function("b", _show_metrics_report)
-    registry.set_action_function("l", _run_grafana_setup)
-    registry.set_action_function("g", _open_graph_visualization)
-    registry.set_action_function("d", _show_cache_statistics)
-    registry.set_action_function("e", _run_config_health_check)
-    registry.set_action_function("f", _show_review_queue)
-    registry.set_action_function("h", _run_dry_run_validation)
-    registry.set_action_function("k", _run_schema_migrations_action)
-    registry.set_action_function("t", _toggle_log_level)
-    registry.set_action_function("c", _clear_screen)
-    registry.set_action_function("r", _clear_test_cache)
-    registry.set_action_function("w", _clear_app_log)
-    registry.set_action_function("q", _exit_application)
+    # Use _cli_helpers directly
+    registry.set_action_function("a", _cli_helpers.show_analytics_dashboard)
+    registry.set_action_function("b", _cli_helpers.show_metrics_report)
+    registry.set_action_function("l", _cli_helpers.run_grafana_setup)
+    registry.set_action_function("g", _cli_helpers.open_graph_visualization)
+    registry.set_action_function("d", _cli_helpers.show_cache_statistics)
+    registry.set_action_function("e", _cli_helpers.run_config_health_check)
+    registry.set_action_function("f", _cli_helpers.show_review_queue)
+    registry.set_action_function("h", _cli_helpers.run_dry_run_validation)
+    registry.set_action_function("k", _cli_helpers.run_schema_migrations_action)
+    registry.set_action_function("t", _cli_helpers.toggle_log_level)
+    registry.set_action_function("c", _cli_helpers.clear_screen)
+    registry.set_action_function("r", _cli_helpers.clear_test_cache)
+    registry.set_action_function("w", _cli_helpers.clear_app_log_menu)
+    registry.set_action_function("q", _cli_helpers.exit_application)
 
-    registry.set_action_function("i", _run_main_tests)
-    registry.set_action_function("j", _run_all_tests)
+    registry.set_action_function("i", _cli_helpers.run_main_tests)
+    registry.set_action_function("j", _cli_helpers.run_all_tests)
 
 
 _assign_action_registry_functions()
@@ -414,7 +399,7 @@ def main() -> None:
 
 def _test_clear_log_file_function() -> bool:
     """Validate log file clearing behavior returns structured tuple."""
-    result = clear_log_file()
+    result = _cli_helpers.clear_log_file()
     assert isinstance(result, tuple), "clear_log_file should return a tuple"
     assert len(result) == 2, "clear_log_file should return a 2-element tuple"
     success, message = result

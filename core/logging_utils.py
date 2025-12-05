@@ -498,6 +498,142 @@ def _test_action_banner_logging() -> bool:
 # =============================================================================
 
 
+# =============================================================================
+# STANDARDIZED LOGGING HELPERS (Moved from utils.py)
+# =============================================================================
+
+
+def log_action_configuration(config_dict: Mapping[str, Any], section_title: str = "Config") -> None:
+    """
+    Log action configuration in standardized format.
+
+    Args:
+        config_dict: Dictionary of configuration key-value pairs
+        section_title: Title prefix for the log entry (default: "Config")
+    """
+    formatted_parts: list[str] = []
+    for key, value in config_dict.items():
+        value_str = ("Yes" if value else "No") if isinstance(value, bool) else value
+        formatted_parts.append(f"{key}={value_str}")
+
+    summary = " | ".join(formatted_parts)
+    get_app_logger().info(f"{section_title}: {summary}")
+
+
+def log_starting_position(description: str, details: Optional[Mapping[str, Any]] = None) -> None:
+    """
+    Log starting position summary.
+
+    Args:
+        description: Main description of what will be processed
+        details: Optional dictionary of additional details
+    """
+    logger = get_app_logger()
+    if not details:
+        logger.info(description)
+        return
+
+    detail_parts = [f"{key}: {value}" for key, value in details.items()]
+    logger.info(f"{description}\n " + "\n".join(detail_parts))
+
+
+def log_cumulative_counts(counts: Mapping[str, int], prefix: str = "Cumulative") -> None:
+    """
+    Log cumulative counts in standardized format.
+
+    Args:
+        counts: Dictionary of counter names and values
+        prefix: Prefix for the log line (default: "Cumulative")
+    """
+    count_str = ", ".join([f"{k}={v}" for k, v in counts.items()])
+    get_app_logger().info(f"{prefix}: {count_str}")
+
+
+def log_batch_indicator(
+    batch_num: int,
+    total_batches: int,
+    item_range: Optional[tuple[int, int]] = None,
+    page_num: Optional[int] = None,
+    total_pages: Optional[int] = None,
+) -> None:
+    """
+    Log batch/page indicator before processing.
+
+    Args:
+        batch_num: Current batch number
+        total_batches: Total number of batches
+        item_range: Optional tuple of (start_item, end_item) for this batch
+        page_num: Optional current page number
+        total_pages: Optional total number of pages
+    """
+    logger = get_app_logger()
+    logger.info("")  # Blank line before
+    if page_num and total_pages:
+        logger.info(f"Processing page {page_num} of {total_pages} pages")
+    if item_range:
+        logger.info(f"Batch {batch_num}/{total_batches} (items {item_range[0]}-{item_range[1]})")
+    else:
+        logger.info(f"Batch {batch_num}/{total_batches}")
+
+
+def log_page_complete(page_num: int, page_counts: Mapping[str, int], cumulative_counts: Mapping[str, int]) -> None:
+    """
+    Log page completion summary.
+
+    Args:
+        page_num: Page number that was completed
+        page_counts: Dictionary of counts for this page only
+        cumulative_counts: Dictionary of cumulative counts across all pages
+    """
+    page_str = ", ".join([f"{k}={v}" for k, v in page_counts.items()])
+    get_app_logger().info(f"Page {page_num} complete: {page_str}")
+    log_cumulative_counts(cumulative_counts)
+
+
+def log_final_summary(summary_dict: Mapping[str, Any], run_time_seconds: float) -> None:
+    """
+    Log final summary with separators and aligned labels.
+
+    Args:
+        summary_dict: Dictionary of summary items to log
+        run_time_seconds: Total execution time in seconds
+    """
+    logger = get_app_logger()
+    logger.info("=" * 50)
+    logger.info("FINAL SUMMARY")
+    logger.info("=" * 50)
+
+    # Find max key length for alignment
+    max_key_len = max((len(k) for k in summary_dict), default=0)
+
+    for key, value in summary_dict.items():
+        logger.info(f"{key:<{max_key_len}} : {value}")
+
+    logger.info("-" * 50)
+    logger.info(f"{'Total Time':<{max_key_len}} : {run_time_seconds:.2f}s")
+    logger.info("=" * 50)
+
+
+def log_action_status(action_name: str, success: bool, error_msg: Optional[str] = None) -> None:
+    """
+    Log final action status with checkmark or X.
+
+    Args:
+        action_name: Name of the action (e.g., "Match gathering")
+        success: True if action completed successfully
+        error_msg: Optional error message if success=False
+    """
+    stage = "success" if success else "failure"
+    details = {"error": error_msg} if (error_msg and not success) else None
+    log_action_banner(
+        action_name=action_name,
+        action_number=None,
+        stage=stage,
+        logger_instance=get_app_logger(),
+        details=details,
+    )
+
+
 def logging_utils_module_tests() -> bool:
     """
     Comprehensive test suite for core/logging_utils.py.
