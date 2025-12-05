@@ -513,7 +513,7 @@ class PerformanceMonitor:
         maxsize: int = 0,
     ) -> None:
         """
-        Track cache performance metrics (Priority 1 Todo #9).
+        Track cache performance metrics.
 
         Args:
             cache_name: Name of the cache (e.g., 'relationship_path_cache')

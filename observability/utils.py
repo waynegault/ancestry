@@ -8,9 +8,9 @@ extracted from utils.py.
 """
 
 # === STANDARD LIBRARY IMPORTS ===
+import re
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
-import re
 
 # === THIRD-PARTY IMPORTS ===
 from requests import Response as RequestsResponse

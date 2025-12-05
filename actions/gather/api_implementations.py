@@ -951,3 +951,104 @@ def fetch_batch_ladder(
         ladder_payload["relationship_path_unified"] = unified_path
 
     return ladder_payload
+
+
+# =============================================================================
+# TESTS
+# =============================================================================
+
+
+def _test_normalize_relationship_phrase() -> bool:
+    """Test relationship phrase normalization."""
+    # Test prefix removal
+    assert _normalize_relationship_phrase("You are the Great Grandfather") == "Great Grandfather"
+    assert _normalize_relationship_phrase("This person is your 2nd Cousin") == "2nd Cousin"
+
+    # Test suffix removal
+    assert _normalize_relationship_phrase("Son of the tree owner") == "Son"
+    assert _normalize_relationship_phrase("Daughter of your tree") == "Daughter"
+
+    # Test combined
+    assert _normalize_relationship_phrase("You are the Uncle of the user") == "Uncle"
+
+    # Test basic cleanup
+    assert _normalize_relationship_phrase("  Father.  ") == "Father"
+    assert not _normalize_relationship_phrase(None)
+
+    return True
+
+
+def _test_extract_relationship_from_narrative() -> bool:
+    """Test relationship extraction from narrative text."""
+    # Standard format
+    narrative1 = "Relationship\nJohn Doe is your Father"
+    # Note: Current implementation does not strip "your " if no possession marker is present
+    assert _extract_relationship_from_narrative(narrative1) == "your Father"
+
+    # With possession
+    narrative2 = "Relationship\nJane Doe is Mary's Mother"
+    assert _extract_relationship_from_narrative(narrative2) == "Mother"
+
+    # Null/Empty cases
+    assert _extract_relationship_from_narrative(None) is None
+    assert _extract_relationship_from_narrative("Too short") is None
+
+    return True
+
+
+def _test_normalize_kinship_entries() -> bool:
+    """Test normalization of kinship API entries."""
+    raw = [
+        {"name": "John", "relationship": "Father", "lifeSpan": "1900-1980"},
+        {"name": "Jane", "relationship": "Grandmother", "lifespan": "1880-1950", "gender": "Female"},
+    ]
+
+    normalized = _normalize_kinship_entries(raw)
+
+    assert len(normalized) == 2
+    assert normalized[0]["name"] == "John"
+    assert normalized[0]["relationship"] == "Father"
+    assert normalized[0]["lifespan"] == "1900-1980"
+
+    assert normalized[1]["name"] == "Jane"
+    assert normalized[1]["lifespan"] == "1880-1950"
+    assert normalized[1]["gender"] == "Female"
+
+    return True
+
+
+def module_tests() -> bool:
+    """Run module tests for api_implementations."""
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("api_implementations", "actions/gather/api_implementations.py")
+
+    suite.run_test(
+        "Normalize Relationship Phrase",
+        _test_normalize_relationship_phrase,
+        "Validates removal of verbose prefixes/suffixes from relationship strings",
+    )
+
+    suite.run_test(
+        "Extract Relationship Narrative",
+        _test_extract_relationship_from_narrative,
+        "Validates parsing of relationship labels from narrative text blocks",
+    )
+
+    suite.run_test(
+        "Normalize Kinship Entries",
+        _test_normalize_kinship_entries,
+        "Validates structural normalization of API response list",
+    )
+
+    return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    import sys
+
+    from testing.test_framework import create_standard_test_runner
+
+    run_comprehensive_tests = create_standard_test_runner(module_tests)
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

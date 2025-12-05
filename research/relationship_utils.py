@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+# === ERROR HANDLING ===
 # Debug log de-duplication for gender inference
 _gender_log_once: set[str] = set()
 

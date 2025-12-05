@@ -10,6 +10,7 @@ import io
 import sys
 import unittest
 from contextlib import redirect_stdout
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from core.action_registry import ActionCategory, ActionMetadata, ActionRegistry, ActionRequirement
@@ -46,7 +47,7 @@ class TerminalTestAgent(unittest.TestCase):
         self.mock_config.logging.log_level = "INFO"
 
     @patch("builtins.input", side_effect=["1"])
-    def test_menu_selection(self, _mock_input):
+    def test_menu_selection(self, _mock_input: list[str] | None = None) -> None:
         """Test selecting an item from the menu."""
         f = io.StringIO()
         with redirect_stdout(f):
@@ -59,7 +60,7 @@ class TerminalTestAgent(unittest.TestCase):
         self.assertEqual(choice, "1")
 
     @patch("builtins.input", side_effect=["99"])
-    def test_invalid_selection(self, _mock_input):
+    def test_invalid_selection(self, _mock_input: Any) -> None:
         """Test selecting an invalid item (just returns the string)."""
         f = io.StringIO()
         with redirect_stdout(f):
@@ -68,7 +69,7 @@ class TerminalTestAgent(unittest.TestCase):
         self.assertEqual(choice, "99")
 
     @patch("builtins.input", side_effect=["q"])
-    def test_quit_selection(self, _mock_input):
+    def test_quit_selection(self, _mock_input: Any) -> None:
         """Test selecting quit."""
         f = io.StringIO()
         with redirect_stdout(f):

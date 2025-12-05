@@ -7,8 +7,6 @@ This module provides a new, modular SessionManager that orchestrates
 the specialized managers (DatabaseManager, BrowserManager, APIManager, etc.)
 to provide a clean, maintainable architecture.
 
-PHASE 5.1 OPTIMIZATION: Enhanced with intelligent session caching for dramatic
-performance improvement. Reduces initialization from 34.59s to <12s target.
 """
 
 # === CORE INFRASTRUCTURE ===
@@ -17,8 +15,6 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-# === PHASE 5.1: SESSION PERFORMANCE OPTIMIZATION ===
 # === STANDARD LIBRARY IMPORTS ===
 import threading
 import time

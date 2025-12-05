@@ -12,10 +12,6 @@ Handles pagination, rate limiting, caching (via utils/cache.py decorators used
 within helpers), error handling, and sequential API fetches coordinated through
 SessionManager.
 
-PHASE 1 OPTIMIZATIONS (2025-01-16):
-- Enhanced logging with ETA calculations and memory monitoring
-- Improved error recovery with exponential backoff and partial success handling
-- Optimized batch processing with adaptive sizing based on performance metrics
 """
 
 import contextlib
@@ -31,8 +27,6 @@ from performance.health_monitor import integrate_with_action6
 # === MODULE SETUP ===
 raw_logger = logging.getLogger(__name__)
 logger = OptimizedLogger(raw_logger)
-
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
 import math

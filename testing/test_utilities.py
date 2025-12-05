@@ -262,7 +262,7 @@ TEST_FUNCTIONS = {
 }
 
 
-def get_test_function(name: str) -> Callable[[], None]:
+def get_test_function(name: str) -> Callable[..., Any]:
     """
     Get a test function by name from the registry.
 

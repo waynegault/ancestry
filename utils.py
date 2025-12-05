@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 else:
     # Runtime import to avoid circular dependency issues
     SessionManager = None
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
-
 # === STANDARD LIBRARY IMPORTS ===
 import base64  # For make_ube
 import binascii  # For make_ube
@@ -51,41 +49,42 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
-# === LOCAL IMPORTS ===
-# (Note: Some imports done locally to avoid circular dependencies)
-from core.logging_utils import log_action_banner
-from testing.test_utilities import create_standard_test_runner
 from browser.selenium_utils import DriverProtocol, WebElementProtocol
 from core.common_params import NavigationConfig, RetryContext
 from core.error_handling import RetryPolicyProfile
+
+# === LOCAL IMPORTS ===
+# (Note: Some imports done locally to avoid circular dependencies)
+from core.logging_utils import (
+    log_action_banner,
+    log_action_configuration as _log_action_configuration_impl,
+    log_action_status as _log_action_status_impl,
+    log_batch_indicator as _log_batch_indicator_impl,
+    log_cumulative_counts as _log_cumulative_counts_impl,
+    log_final_summary as _log_final_summary_impl,
+    log_page_complete as _log_page_complete_impl,
+    log_starting_position as _log_starting_position_impl,
+)
+from core.progress_indicators import create_progress_indicator
 from core.protocols import RateLimiterProtocol
-from observability.metrics_registry import metrics
 
 # === REFACTORED IMPORTS ===
 from core.selenium_utils import (
-    wait_until_visible as _wait_until_visible_impl,
     wait_until_clickable as _wait_until_clickable_impl,
-    wait_until_present as _wait_until_present_impl,
-    wait_until_not_visible as _wait_until_not_visible_impl,
     wait_until_not_present as _wait_until_not_present_impl,
+    wait_until_not_visible as _wait_until_not_visible_impl,
+    wait_until_present as _wait_until_present_impl,
+    wait_until_visible as _wait_until_visible_impl,
 )
+from observability.metrics_registry import metrics
 from observability.utils import (
-    sanitize_metric_segment as _sanitize_metric_segment_impl,
     derive_metrics_endpoint as _derive_metrics_endpoint_impl,
     metrics_status_family as _metrics_status_family_impl,
-    resolve_request_duration as _resolve_request_duration_impl,
     record_api_metrics as _record_api_metrics_impl,
+    resolve_request_duration as _resolve_request_duration_impl,
+    sanitize_metric_segment as _sanitize_metric_segment_impl,
 )
-from core.logging_utils import (
-    log_action_configuration as _log_action_configuration_impl,
-    log_starting_position as _log_starting_position_impl,
-    log_cumulative_counts as _log_cumulative_counts_impl,
-    log_batch_indicator as _log_batch_indicator_impl,
-    log_page_complete as _log_page_complete_impl,
-    log_final_summary as _log_final_summary_impl,
-    log_action_status as _log_action_status_impl,
-)
-from core.progress_indicators import create_progress_indicator
+from testing.test_utilities import create_standard_test_runner
 
 # === MODULE SETUP ===
 logger = logging.getLogger(__name__)
@@ -1142,7 +1141,7 @@ def _calculate_retry_sleep_time(
 
 def _prepare_api_request(config: ApiRequestConfig) -> dict[str, Any]:
     """Prepare arguments for requests.Session.request."""
-    request_params = {
+    request_params: dict[str, Any] = {
         "method": config.method,
         "url": config.url,
         "headers": config.headers,

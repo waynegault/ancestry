@@ -239,3 +239,93 @@ def has_direct_relationship(
     parents_1 = id_to_parents.get(id1, set())
     parents_2 = id_to_parents.get(id2, set())
     return bool(parents_1 and parents_2 and not parents_1.isdisjoint(parents_2))
+
+
+# =============================================================================
+# TESTS
+# =============================================================================
+
+
+def _test_relationship_calculations() -> bool:
+    """Test relationship calculation functions."""
+    # Setup a simple 3-generation family tree
+    # G1: GP1, GP2
+    # G2: P1 (child of GP1, GP2), P2 (child of GP1, GP2), P3 (spouse of P2), P4 (unrelated)
+    # G3: C1 (child of P1), C2 (child of P2, P3), C3 (child of P2, P3)
+
+    id_to_parents = {
+        "P1": {"GP1", "GP2"},
+        "P2": {"GP1", "GP2"},
+        "C1": {"P1"},
+        "C2": {"P2", "P3"},
+        "C3": {"P2", "P3"},
+    }
+
+    id_to_children = {
+        "GP1": {"P1", "P2"},
+        "GP2": {"P1", "P2"},
+        "P1": {"C1"},
+        "P2": {"C2", "C3"},
+        "P3": {"C2", "C3"},
+    }
+
+    # Test Ancestors
+    assert is_ancestor_at_generation("C1", "P1", 1, id_to_parents) is True, "P1 should be parent of C1"
+    assert is_ancestor_at_generation("C1", "GP1", 2, id_to_parents) is True, "GP1 should be grandparent of C1"
+    assert is_ancestor_at_generation("C1", "P2", 1, id_to_parents) is False, "P2 should NOT be parent of C1"
+
+    # Test Descendants
+    assert is_descendant_at_generation("P1", "C1", 1, id_to_children) is True, "C1 should be child of P1"
+    assert is_descendant_at_generation("GP1", "C1", 2, id_to_children) is True, "C1 should be grandchild of GP1"
+
+    # Test Grandparents/Grandchildren
+    assert is_grandparent("C2", "GP1", id_to_parents) is True, "GP1 is grandparent of C2"
+    assert is_grandchild("GP1", "C2", id_to_children) is True, "C2 is grandchild of GP1"
+
+    # Test Siblings
+    assert are_siblings("P1", "P2", id_to_parents) is True, "P1 and P2 should be siblings"
+    assert are_siblings("C2", "C3", id_to_parents) is True, "C2 and C3 should be siblings"
+    assert are_siblings("C1", "C2", id_to_parents) is False, "C1 and C2 should NOT be siblings"
+
+    # Test Cousins (C1 and C2 are children of siblings P1 and P2)
+    assert are_cousins("C1", "C2", id_to_parents) is True, "C1 and C2 should be cousins"
+    assert are_cousins("C2", "C3", id_to_parents) is False, "C2 and C3 are siblings, not cousins"
+
+    # Test Aunt/Uncle
+    assert is_aunt_or_uncle("C1", "P2", id_to_parents, id_to_children) is True, "P2 is aunt/uncle of C1"
+    assert is_aunt_or_uncle("C2", "P1", id_to_parents, id_to_children) is True, "P1 is aunt/uncle of C2"
+    assert is_aunt_or_uncle("C1", "P4", id_to_parents, id_to_children) is False, "P4 is unrelated"
+
+    # Test Direct Relationship
+    assert has_direct_relationship("P1", "C1", id_to_parents, id_to_children) is True, "Parent/Child is direct"
+    assert has_direct_relationship("P1", "P2", id_to_parents, id_to_children) is True, "Siblings is direct"
+    assert has_direct_relationship("GP1", "C1", id_to_parents, id_to_children) is False, (
+        "Grandparent is NOT direct (by this def)"
+    )
+
+    return True
+
+
+def module_tests() -> bool:
+    """Run module tests for relationship_calculations."""
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("relationship_calculations", "genealogy/relationship_calculations.py")
+
+    suite.run_test(
+        "Relationship Logic",
+        _test_relationship_calculations,
+        "Validates core relationship logic (ancestor, descendant, sibling, cousin, etc.)",
+    )
+
+    return suite.finish_suite()
+
+
+if __name__ == "__main__":
+    import sys
+
+    from testing.test_framework import create_standard_test_runner
+
+    run_comprehensive_tests = create_standard_test_runner(module_tests)
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)

@@ -1,7 +1,7 @@
 """
 Relationship Diagram Generation
 
-Phase 5.4: Relationship Diagram Generation
+Relationship Diagram Generation
 Creates ASCII/text-based relationship diagrams showing the path between two people.
 
 This module generates visual representations of genealogical relationships
@@ -29,7 +29,6 @@ def generate_relationship_diagram(
     """
     Generate a text-based relationship diagram showing the path between two people.
 
-    Phase 5.4: Relationship Diagram Generation
     Creates ASCII diagrams for genealogical relationships.
 
     Args:
@@ -134,7 +133,6 @@ def format_relationship_for_message(
     """
     Format a relationship path for inclusion in a message.
 
-    Phase 5.4: Relationship Diagram Generation
     Formats relationship information for messages with optional diagram.
 
     Args:

@@ -18,7 +18,6 @@ from core.registry_utils import auto_register_module
 logger = logging.getLogger(__name__)
 auto_register_module(globals(), __name__)
 
-# === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 import contextlib
 import enum
@@ -1646,7 +1645,7 @@ class Person(Base):
 
 
 # ----------------------------------------------------------------------
-# API Search Cache Table (Priority 1 Todo #10)
+# API Search Cache Table
 # ----------------------------------------------------------------------
 class ApiSearchCache(Base):
     """
@@ -1656,7 +1655,6 @@ class ApiSearchCache(Base):
     for the same search parameters. Tracks cache hit statistics for performance
     monitoring.
 
-    Priority 1 Todo #10: API Search Deduplication
     """
 
     __tablename__ = "api_search_cache"
