@@ -7,7 +7,6 @@ import logging
 import sys
 from collections.abc import Iterable
 from logging import StreamHandler
-from pathlib import Path
 from typing import Any, Optional, TextIO
 
 from core.action_registry import ActionCategory, ActionMetadata, ActionRegistry, ActionRequirement

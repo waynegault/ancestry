@@ -70,22 +70,34 @@ class MatchContext:
         Convert to a formatted string suitable for inclusion in an AI prompt.
         """
         lines = ["=== DNA MATCH CONTEXT ==="]
+        lines.extend(self._format_identity())
+        lines.extend(self._format_genetics())
+        lines.extend(self._format_genealogy())
+        lines.extend(self._format_history())
+        lines.extend(self._format_facts())
+        lines.append("\n=== END CONTEXT ===")
+        return "\n".join(lines)
 
-        # Identity section
+    def _format_identity(self) -> list[str]:
+        lines = []
         if self.identity:
             lines.append("\n## Identity")
             lines.append(f"Name: {self.identity.get('name', 'Unknown')}")
             if self.identity.get('managed_by'):
                 lines.append(f"Managed by: {self.identity.get('managed_by')}")
+        return lines
 
-        # Genetics section
+    def _format_genetics(self) -> list[str]:
+        lines = []
         if self.genetics:
             lines.append("\n## Genetic Connection")
             lines.append(f"Shared DNA: {self.genetics.get('shared_cm', 'Unknown')} cM")
             lines.append(f"Segments: {self.genetics.get('segments', 'Unknown')}")
             lines.append(f"Predicted Relationship: {self.genetics.get('prediction', 'Unknown')}")
+        return lines
 
-        # Genealogy section
+    def _format_genealogy(self) -> list[str]:
+        lines = []
         if self.genealogy:
             lines.append("\n## Genealogical Connection")
             if self.genealogy.get('known_common_ancestors'):
@@ -97,8 +109,10 @@ class MatchContext:
                     lines.append(f"  - {name} ({birth}-{death})")
             if self.genealogy.get('relationship_description'):
                 lines.append(f"Relationship: {self.genealogy['relationship_description']}")
+        return lines
 
-        # History section
+    def _format_history(self) -> list[str]:
+        lines = []
         if self.history:
             lines.append("\n## Conversation History")
             lines.append(f"Last Interaction: {self.history.get('last_interaction_date', 'Never')}")
@@ -110,16 +124,16 @@ class MatchContext:
                     role = msg.get('role', 'unknown')
                     content = msg.get('content', '')[:200]
                     lines.append(f"  [{role}]: {content}")
+        return lines
 
-        # Facts section
+    def _format_facts(self) -> list[str]:
+        lines = []
         if self.extracted_facts:
             lines.append("\n## Extracted Facts")
             for key, values in self.extracted_facts.items():
                 if values:
                     lines.append(f"{key}: {', '.join(str(v) for v in values[:5])}")
-
-        lines.append("\n=== END CONTEXT ===")
-        return "\n".join(lines)
+        return lines
 
 
 class ContextBuilder:
@@ -359,3 +373,52 @@ class ContextBuilder:
                 logger.debug(f"Error getting genealogy from TreeQueryService: {e}")
 
         return genealogy
+
+
+# -----------------------------------------------------------------------------
+# Standard Test Runner
+# -----------------------------------------------------------------------------
+from testing.test_utilities import create_standard_test_runner
+
+
+def _test_module_integrity() -> bool:
+    "Test that module can be imported and definitions are valid."
+    return True
+
+
+def _test_to_prompt_string() -> bool:
+    """Test to_prompt_string formatting."""
+    context = MatchContext(
+        identity={"name": "John Doe", "managed_by": "Self"},
+        genetics={"shared_cm": 100, "segments": 5, "prediction": "3rd Cousin"},
+        history={"last_interaction_date": "2023-01-01"},
+    )
+    prompt = context.to_prompt_string()
+
+    assert "=== DNA MATCH CONTEXT ===" in prompt
+    assert "Name: John Doe" in prompt
+    assert "Shared DNA: 100 cM" in prompt
+    assert "Last Interaction: 2023-01-01" in prompt
+    return True
+
+
+run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
+# Add the new test to the runner manually if the utility supports it,
+# or just run it as part of a suite.
+# Since create_standard_test_runner takes a single function or list, let's just make a simple suite wrapper
+# or simpler: just stick to the pattern.
+# Actually create_standard_test_runner usually takes a single entry point.
+# Let's define a combined test function.
+
+
+def _run_local_tests() -> bool:
+    return _test_module_integrity() and _test_to_prompt_string()
+
+
+run_comprehensive_tests = create_standard_test_runner(_run_local_tests)
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(0 if run_comprehensive_tests() else 1)

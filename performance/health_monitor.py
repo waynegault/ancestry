@@ -1799,14 +1799,38 @@ def health_monitor_tests() -> bool:
 
     # Define all tests in a data structure to reduce complexity
     tests = [
-        ("Health Monitor Initialization", _test_health_monitor_initialization, True, "direct", "Test initialization"),
-        ("Metric Updates", _test_metric_updates, True, "direct", "Test metric updates"),
-        ("Health Score Calculation", _test_health_score_calculation, True, "direct", "Test health scoring"),
-        ("Risk Prediction", _test_risk_prediction, True, "direct", "Test risk prediction"),
-        ("Alert System", _test_alert_system, True, "direct", "Test alert system"),
-        ("Performance Tracking", _test_performance_tracking, True, "direct", "Test performance tracking"),
-        ("Dashboard Generation", _test_dashboard_generation, True, "direct", "Test dashboard generation"),
-        ("Integration Helpers", _test_integration_helpers, True, "direct", "Test integration helpers"),
+        (
+            "Health Monitor Initialization",
+            _test_health_monitor_initialization,
+            "Monitor initializes correctly",
+            "direct",
+            "Test initialization",
+        ),
+        ("Metric Updates", _test_metric_updates, "Metrics update correctly", "direct", "Test metric updates"),
+        (
+            "Health Score Calculation",
+            _test_health_score_calculation,
+            "Score reflects metrics",
+            "direct",
+            "Test health scoring",
+        ),
+        ("Risk Prediction", _test_risk_prediction, "Risk score calculation works", "direct", "Test risk prediction"),
+        ("Alert System", _test_alert_system, "Alerts triggered correctly", "direct", "Test alert system"),
+        (
+            "Performance Tracking",
+            _test_performance_tracking,
+            "Performance tracked",
+            "direct",
+            "Test performance tracking",
+        ),
+        (
+            "Dashboard Generation",
+            _test_dashboard_generation,
+            "Dashboard generated",
+            "direct",
+            "Test dashboard generation",
+        ),
+        ("Integration Helpers", _test_integration_helpers, "Helpers work", "direct", "Test integration helpers"),
         ("Global Instance", _test_global_instance, "Test global instance", "direct", "Test global instance"),
         (
             "Memory Pressure Monitoring",

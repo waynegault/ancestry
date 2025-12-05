@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ProgressStats:
     """Statistics for progress tracking"""
+
     start_time: datetime = field(default_factory=datetime.now)
     items_processed: int = 0
     total_items: Optional[int] = None
@@ -130,9 +131,9 @@ class ProgressIndicator:
                 'unit': self.unit,
                 'dynamic_ncols': True,
                 'leave': self.leave,
-                'bar_format': "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}"
+                'bar_format': "{percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}",
             }
-            self.progress_bar = tqdm(**tqdm_kwargs)
+            self.progress_bar = tqdm(**cast(dict[str, Any], tqdm_kwargs))
         self.stats.start_time = datetime.now()
         if self.log_start:
             logger.debug(f"Started progress tracking: {self.description}")
@@ -144,7 +145,7 @@ class ProgressIndicator:
         warnings: int = 0,
         api_calls: int = 0,
         cache_hits: int = 0,
-        custom_status: Optional[str] = None
+        custom_status: Optional[str] = None,
     ) -> None:
         """Update progress with optional statistics"""
         with self._lock:
@@ -268,10 +269,7 @@ class ProgressIndicator:
 
 
 def create_progress_indicator(
-    description: str,
-    total: Optional[int] = None,
-    unit: str = "items",
-    **kwargs: Any
+    description: str, total: Optional[int] = None, unit: str = "items", **kwargs: Any
 ) -> ProgressIndicator:
     """Factory function to create progress indicators"""
     from core.common_params import ProgressIndicatorConfig
@@ -288,18 +286,12 @@ def create_progress_indicator(
         leave=kwargs.pop('leave', True),
     )
 
-    return ProgressIndicator(
-        description=description,
-        total=total,
-        config=config
-    )
+    return ProgressIndicator(description=description, total=total, config=config)
 
 
 # Decorator for automatic progress tracking
 def with_progress(
-    description: str,
-    unit: str = "items",
-    extract_total: Optional[Callable[..., Optional[int]]] = None
+    description: str, unit: str = "items", extract_total: Optional[Callable[..., Optional[int]]] = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to automatically add progress tracking to functions.
@@ -309,6 +301,7 @@ def with_progress(
         unit: Unit of measurement
         extract_total: Function to extract total from function arguments
     """
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Extract total if function provided
@@ -325,12 +318,14 @@ def with_progress(
                 return func(*args, **kwargs)
 
         return wrapper
+
     return decorator
 
 
 # ==============================================
 # Comprehensive Test Suite
 # ==============================================
+
 
 def _test_progress_stats_initialization() -> bool:
     """Test ProgressStats initialization."""
@@ -393,6 +388,7 @@ def _test_progress_indicator_creation() -> bool:
 
 def _test_progress_decorator_creation() -> bool:
     """Test creating a progress decorator."""
+
     @with_progress("Test Operation", unit="items")
     def sample_operation() -> str:
         return "success"
@@ -409,10 +405,7 @@ def core_progress_indicators_module_tests() -> bool:
     from testing.test_framework import TestSuite, suppress_logging
 
     with suppress_logging():
-        suite = TestSuite(
-            "Progress Indicators & Real-Time Feedback System",
-            "core/progress_indicators.py"
-        )
+        suite = TestSuite("Progress Indicators & Real-Time Feedback System", "core/progress_indicators.py")
         suite.start_suite()
 
         suite.run_test(

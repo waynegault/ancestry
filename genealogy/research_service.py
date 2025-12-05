@@ -290,3 +290,21 @@ class ResearchService:
             "death_place": indi_data.get("death_place_disp"),
             "raw_data": indi_data,  # Store the raw data for detailed analysis
         }
+
+
+# -----------------------------------------------------------------------------
+# Standard Test Runner
+# -----------------------------------------------------------------------------
+from testing.test_utilities import create_standard_test_runner
+
+
+def _test_module_integrity() -> bool:
+    "Test that module can be imported and definitions are valid."
+    return True
+
+
+run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(0 if run_comprehensive_tests() else 1)

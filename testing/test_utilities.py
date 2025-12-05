@@ -1482,7 +1482,13 @@ def test_utilities_module_tests() -> bool:
     suite = TestSuite("Test Utilities", "test_utilities.py")
 
     tests = [
-        ("Basic utility functions", _test_basic_functions, True, "direct", "Test core utility functions"),
+        (
+            "Basic utility functions",
+            _test_basic_functions,
+            "Test basic utilities",
+            "direct",
+            "Test core utility functions",
+        ),
         ("Factory functions", _test_factory_functions, "Test function factories", "direct", "Test function factories"),
         ("Function registry", _test_function_registry, "Test function registry", "direct", "Test function registry"),
         ("Test runner factory", _test_runner_factory, "Test runner creation", "direct", "Test runner creation"),

@@ -311,7 +311,7 @@ class UnifiedCacheManager:
         with self._lock:
             if endpoint is not None:
                 # Return stats for specific endpoint across all services
-                stats = {
+                stats: dict[str, Any] = {
                     "endpoint": endpoint,
                     "total_hits": 0,
                     "total_misses": 0,

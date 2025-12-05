@@ -1,7 +1,6 @@
 """UI helpers for the Ancestry automation toolkit."""
 
 import sys
-from pathlib import Path
 
 from ui.menu import render_main_menu
 

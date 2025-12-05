@@ -1456,7 +1456,7 @@ def _check_nephew_niece_pattern(path_data: list[dict[str, Any]]) -> Optional[str
     return None
 
 
-def _determine_relationship_type_from_path(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _determine_relationship_type_from_path(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Determine relationship type by checking various patterns."""
     if len(path_data) < 3:
         return None
@@ -1527,8 +1527,11 @@ def _format_path_step(
     return line, seen_names
 
 
+from collections.abc import Mapping, Sequence
+
+
 def format_relationship_path_unified(
-    path_data: list[dict[str, Optional[str]]],  # Value type changed to Optional[str]
+    path_data: Sequence[Mapping[str, Optional[str]]],  # Value type changed to Optional[str]
     target_name: str,
     owner_name: str,
     relationship_type: Optional[str] = None,
@@ -1909,7 +1912,7 @@ def _test_unified_path_formatting() -> None:
         {"name": "Owner", "birth_year": "1985", "death_year": None, "relationship": "son", "gender": "M"},
     ]
 
-    narrative = format_relationship_path_unified(mock_path, "Target", "Owner", "grandfather")
+    narrative = format_relationship_path_unified(list(mock_path), "Target", "Owner", "grandfather")
     assert "Relationship between Target" in narrative, "Header should mention target"
     assert "Owner" in narrative, "Owner name should be referenced"
     assert "Target is Owner's grandfather" in narrative, "Provided relationship type should be used"

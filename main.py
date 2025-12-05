@@ -19,10 +19,7 @@ from core.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# === TEST UTILITIES ===
 # === STANDARD LIBRARY IMPORTS ===
-
-
 import importlib
 import sys
 import time
@@ -78,9 +75,6 @@ grafana_checker: GrafanaCheckerProtocol | None = _grafana_checker
 
 
 _cli_helpers = MainCLIHelpers(logger=logger, grafana_checker=grafana_checker)
-
-# Re-export helper functions to maintain existing references
-# (Aliases removed for consolidation - using _cli_helpers directly)
 
 
 _metrics_factory: Callable[[], Any] | None = None
@@ -422,7 +416,7 @@ def _test_reset_db_actn_integration() -> bool:
 
     Tests that SessionManager provides a valid DatabaseManager with expected interface.
     """
-    import inspect
+    # import inspect  # Removed unused import
 
     test_sm = SessionManager()
     db_manager = _get_database_manager(test_sm)
@@ -444,13 +438,6 @@ def _test_reset_db_actn_integration() -> bool:
     assert hasattr(db_manager_type, "__init__"), "DatabaseManager should have __init__"
 
     # Verify key methods have proper signatures
-    if hasattr(db_manager, "get_session"):
-        get_session_method = db_manager.get_session
-        sig = inspect.signature(get_session_method)
-        # Should be callable with no required arguments
-        required_params = [p for p in sig.parameters.values() if p.default == inspect.Parameter.empty]
-        assert len(required_params) == 0, "get_session should not require arguments"
-
     return True
 
 

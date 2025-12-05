@@ -679,7 +679,7 @@ def get_gedcom_cache_info() -> dict[str, Any]:
     Returns:
         Dictionary with cache information
     """
-    info = {
+    info: dict[str, Any] = {
         "memory_cache_entries": len(_MEMORY_CACHE),
         "memory_cache_max_age": _CACHE_MAX_AGE,
         "disk_cache_stats": get_cache_stats(),
