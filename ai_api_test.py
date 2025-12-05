@@ -1100,6 +1100,7 @@ def _provider_base_url(provider: str) -> str:
 
 def _prompt_for_provider() -> str | None:
     print("Available providers:\n")
+    print("  0. Run all benchmarks (1-6)")
     provider_list = list(PROVIDERS)
     for idx, provider in enumerate(provider_list, start=1):
         display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
@@ -1112,6 +1113,8 @@ def _prompt_for_provider() -> str | None:
         choice = input("\nEnter the number of the provider you want to test (or 'q' to quit): ").strip()
         if choice.lower() == 'q':
             return None
+        if choice == '0':
+            return "__benchmark__"
         if not choice.isdigit():
             print("Please enter a number from the list above or 'q' to quit.")
             continue
@@ -1246,6 +1249,78 @@ def _render_test_output(args: argparse.Namespace, result: TestResult, duration: 
         print(f"  {msg}")
 
 
+def _run_all_benchmarks(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Run benchmarks for all cloud providers (1-6) and display a results table."""
+    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
+    max_tokens: int = getattr(args, "max_tokens", 2048)
+
+    results: list[dict[str, Any]] = []
+    print(f"\nRunning benchmarks for providers 1-6 with prompt: \"{prompt}\"")
+    print("-" * 60)
+
+    # Only benchmark the cloud providers (1-6)
+    for provider in CLOUD_PROVIDERS:
+        display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
+
+        # Check env
+        if _provider_missing_env(provider):
+            results.append(
+                {"provider": display_name, "status": "SKIP", "time": 0.0, "verdict": "Missing Env", "raw_result": None}
+            )
+            print(f"Skipping {display_name}: Missing environment variables")
+            continue
+
+        print(f"Testing {display_name}...", end="", flush=True)
+        tester = _require_provider_tester(provider, parser)
+
+        # Run test
+        test_result, duration = _execute_provider_test(tester, prompt, max_tokens)
+
+        # Check correctness
+        verdict = "FAIL"
+        if test_result.api_status:
+            is_correct, verdict_msg = _check_answer_correctness(test_result.full_output or "")
+            if is_correct:
+                verdict = "CORRECT"
+            elif "INCORRECT" in verdict_msg:
+                verdict = "INCORRECT"
+            else:
+                verdict = "UNCLEAR"
+        else:
+            verdict = "ERROR"
+
+        print(f" Done ({duration:.2f}s) - {verdict}")
+
+        results.append(
+            {
+                "provider": display_name,
+                "status": "PASS" if test_result.api_status else "FAIL",
+                "time": duration,
+                "verdict": verdict,
+                "raw_result": test_result,
+            }
+        )
+
+    # Find fastest correct
+    correct_results = [r for r in results if r["verdict"] == "CORRECT"]
+    fastest = min(correct_results, key=lambda x: x["time"]) if correct_results else None
+
+    # Print Table
+    print("\n" + "=" * 85)
+    print(f"{'PROVIDER':<25} | {'STATUS':<6} | {'TIME (s)':<8} | {'RESULT':<15} | {'NOTES':<20}")
+    print("-" * 85)
+
+    for r in results:
+        note = ""
+        if fastest and r == fastest:
+            note = "🏆 FASTEST CORRECT"
+        elif r["status"] == "SKIP":
+            note = "Missing Keys"
+
+        print(f"{r['provider']:<25} | {r['status']:<6} | {r['time']:<8.2f} | {r['verdict']:<15} | {note:<20}")
+    print("=" * 85 + "\n")
+
+
 def _run_single_provider(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     provider: str = getattr(args, "provider", "")
     prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
@@ -1269,6 +1344,10 @@ def _interactive_provider_loop(args: argparse.Namespace, parser: argparse.Argume
         provider = _prompt_for_provider()
         if provider is None:
             break
+
+        if provider == "__benchmark__":
+            _run_all_benchmarks(args, parser)
+            continue
 
         tester = _require_provider_tester(provider, parser)
         if not _ensure_provider_env_ready(provider, interactive=True):
