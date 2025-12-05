@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 
-def verify_opt_out_patterns():
+def verify_opt_out_patterns() -> bool:
     guard = SafetyGuard()
 
     # List of phrases that MUST be caught as either OPT_OUT, UNSAFE, or CRITICAL_ALERT
@@ -128,4 +128,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

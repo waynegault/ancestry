@@ -8,6 +8,8 @@ Provides research-related utilities including:
 - research_prioritization: Research task prioritization
 """
 
+from typing import Any
+
 _SUBMODULES = frozenset(
     [
         "relationship_diagram",
@@ -19,7 +21,7 @@ _SUBMODULES = frozenset(
 )
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Lazy import submodules on attribute access."""
     if name in _SUBMODULES:
         import importlib
@@ -28,7 +30,7 @@ def __getattr__(name: str):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def __dir__():
+def __dir__() -> list[str]:
     """List available submodules."""
     return list(_SUBMODULES)
 
@@ -48,4 +50,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

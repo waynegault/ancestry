@@ -20,7 +20,7 @@ from ui.menu import render_main_menu
 class TerminalTestAgent(unittest.TestCase):
     """Agent to test the terminal menu interface."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         """Set up test environment."""
         self.registry = ActionRegistry()
         # Register some dummy actions for testing
@@ -78,7 +78,7 @@ class TerminalTestAgent(unittest.TestCase):
         self.assertEqual(choice, "q")
 
 
-def run_agent():
+def run_agent() -> bool:
     """Run the terminal test agent."""
     print("🤖 Terminal Test Agent starting...")
     suite = unittest.TestLoader().loadTestsFromTestCase(TerminalTestAgent)
@@ -105,4 +105,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

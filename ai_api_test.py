@@ -1249,58 +1249,56 @@ def _render_test_output(args: argparse.Namespace, result: TestResult, duration: 
         print(f"  {msg}")
 
 
-def _run_all_benchmarks(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """Run benchmarks for all cloud providers (1-6) and display a results table."""
-    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
-    max_tokens: int = getattr(args, "max_tokens", 2048)
-
-    results: list[dict[str, Any]] = []
+def _print_benchmark_header(prompt: str) -> None:
     print(f"\nRunning benchmarks for providers 1-6 with prompt: \"{prompt}\"")
     print("-" * 60)
 
-    # Only benchmark the cloud providers (1-6)
-    for provider in CLOUD_PROVIDERS:
-        display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
 
-        # Check env
-        if _provider_missing_env(provider):
-            results.append(
-                {"provider": display_name, "status": "SKIP", "time": 0.0, "verdict": "Missing Env", "raw_result": None}
-            )
-            print(f"Skipping {display_name}: Missing environment variables")
-            continue
+def _run_single_benchmark(
+    provider: str, display_name: str, prompt: str, max_tokens: int, parser: argparse.ArgumentParser
+) -> dict[str, Any]:
+    # Check env
+    if _provider_missing_env(provider):
+        print(f"Skipping {display_name}: Missing environment variables")
+        return {
+            "provider": display_name,
+            "status": "SKIP",
+            "time": 0.0,
+            "verdict": "Missing Env",
+            "raw_result": None,
+        }
 
-        print(f"Testing {display_name}...", end="", flush=True)
-        tester = _require_provider_tester(provider, parser)
+    print(f"Testing {display_name}...", end="", flush=True)
+    tester = _require_provider_tester(provider, parser)
 
-        # Run test
-        test_result, duration = _execute_provider_test(tester, prompt, max_tokens)
+    # Run test
+    test_result, duration = _execute_provider_test(tester, prompt, max_tokens)
 
-        # Check correctness
-        verdict = "FAIL"
-        if test_result.api_status:
-            is_correct, verdict_msg = _check_answer_correctness(test_result.full_output or "")
-            if is_correct:
-                verdict = "CORRECT"
-            elif "INCORRECT" in verdict_msg:
-                verdict = "INCORRECT"
-            else:
-                verdict = "UNCLEAR"
+    # Check correctness
+    verdict = "FAIL"
+    if test_result.api_status:
+        is_correct, verdict_msg = _check_answer_correctness(test_result.full_output or "")
+        if is_correct:
+            verdict = "CORRECT"
+        elif "INCORRECT" in verdict_msg:
+            verdict = "INCORRECT"
         else:
-            verdict = "ERROR"
+            verdict = "UNCLEAR"
+    else:
+        verdict = "ERROR"
 
-        print(f" Done ({duration:.2f}s) - {verdict}")
+    print(f" Done ({duration:.2f}s) - {verdict}")
 
-        results.append(
-            {
-                "provider": display_name,
-                "status": "PASS" if test_result.api_status else "FAIL",
-                "time": duration,
-                "verdict": verdict,
-                "raw_result": test_result,
-            }
-        )
+    return {
+        "provider": display_name,
+        "status": "PASS" if test_result.api_status else "FAIL",
+        "time": duration,
+        "verdict": verdict,
+        "raw_result": test_result,
+    }
 
+
+def _print_benchmark_table(results: list[dict[str, Any]]) -> None:
     # Find fastest correct
     correct_results = [r for r in results if r["verdict"] == "CORRECT"]
     fastest = min(correct_results, key=lambda x: x["time"]) if correct_results else None
@@ -1319,6 +1317,24 @@ def _run_all_benchmarks(args: argparse.Namespace, parser: argparse.ArgumentParse
 
         print(f"{r['provider']:<25} | {r['status']:<6} | {r['time']:<8.2f} | {r['verdict']:<15} | {note:<20}")
     print("=" * 85 + "\n")
+
+
+def _run_all_benchmarks(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Run benchmarks for all cloud providers (1-6) and display a results table."""
+    prompt: str = getattr(args, "prompt", DEFAULT_PROMPT)
+    max_tokens: int = getattr(args, "max_tokens", 2048)
+
+    _print_benchmark_header(prompt)
+
+    results: list[dict[str, Any]] = []
+
+    # Only benchmark the cloud providers (1-6)
+    for provider in CLOUD_PROVIDERS:
+        display_name = PROVIDER_DISPLAY_NAMES.get(provider, provider.capitalize())
+        result = _run_single_benchmark(provider, display_name, prompt, max_tokens, parser)
+        results.append(result)
+
+    _print_benchmark_table(results)
 
 
 def _run_single_provider(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:

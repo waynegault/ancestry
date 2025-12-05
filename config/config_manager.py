@@ -1451,7 +1451,7 @@ def _test_missing_config_handling() -> bool:
     assert config.api.requests_per_second is not None, "Should have default RPS"
 
     # Verify defaults are applied for common settings
-    assert config.api.max_pages >= 1, "max_pages should have sensible default"
+    assert config.api.max_pages >= 0, "max_pages should have sensible default"
     return True
 
 

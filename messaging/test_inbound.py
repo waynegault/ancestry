@@ -1,3 +1,18 @@
+"""Test suite for InboundOrchestrator validation.
+
+Validates the complete inbound messaging flow including SMS processing,
+message categorization, database interactions, and response orchestration.
+Includes tests for spam filtering, opt-out processing, and error handling.
+"""
+
+import sys
+from pathlib import Path
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import unittest
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -13,7 +28,7 @@ from messaging.safety import SafetyCheckResult, SafetyStatus
 
 
 class TestInboundOrchestrator(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.mock_db = MagicMock()
         self.mock_research_service = MagicMock()
         self.mock_session_manager = MagicMock()
@@ -35,13 +50,13 @@ class TestInboundOrchestrator(unittest.TestCase):
 
         self.orchestrator = InboundOrchestrator(self.mock_db, self.mock_research_service, self.mock_session_manager)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.patcher_safety.stop()
         self.patcher_classify.stop()
         self.patcher_extract.stop()
         self.patcher_generate.stop()
 
-    def _setup_db_mocks(self, person_found: bool = True, state_found: bool = True):
+    def _setup_db_mocks(self, person_found: bool = True, state_found: bool = True) -> tuple[Any, Any]:
         mock_person = MagicMock()
         mock_person.id = 123
         mock_person.profile_id = 'sender1'
@@ -160,16 +175,50 @@ class TestInboundOrchestrator(unittest.TestCase):
 # -----------------------------------------------------------------------------
 # Standard Test Runner
 # -----------------------------------------------------------------------------
+from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
 
-def _test_module_integrity() -> bool:
-    "Test that module can be imported and definitions are valid."
-    return True
+def run_tests() -> bool:
+    """Run tests using the standardized TestSuite format."""
+    suite = TestSuite("Inbound Orchestrator Tests", "messaging/test_inbound.py")
+    suite.start_suite()
+
+    # Load the unittest suite
+    loader = unittest.TestLoader()
+    unittest_suite = loader.loadTestsFromTestCase(TestInboundOrchestrator)
+
+    # Bridge unittest to TestSuite
+    # We iterate through the tests in the unittest suite and run them via our TestSuite
+    for test in unittest_suite:
+        # Each 'test' is an instance of TestInboundOrchestrator with a specific test method
+        test_method_name = test._testMethodName
+
+        # Create a closure to capture the current test instance
+        from typing import Callable
+
+        def make_run_adapter(current_test: unittest.TestCase) -> Callable[[], None]:
+            def run_adapter() -> None:
+                # Create a fresh instance for each test run
+                result = unittest.TestResult()
+                current_test.run(result)
+
+                if not result.wasSuccessful():
+                    if result.errors:
+                        raise Exception(result.errors[0][1])
+                    if result.failures:
+                        raise AssertionError(result.failures[0][1])
+
+            return run_adapter
+
+        suite.run_test(test_method_name, make_run_adapter(test), f"Run {test_method_name} from unittest suite")
+
+    return suite.finish_suite()
 
 
-run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
+run_comprehensive_tests = create_standard_test_runner(run_tests)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

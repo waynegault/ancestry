@@ -1531,9 +1531,6 @@ def _format_path_step(
     return line, seen_names
 
 
-from collections.abc import Mapping, Sequence
-
-
 def format_relationship_path_unified(
     path_data: Sequence[Mapping[str, Optional[str]]],  # Value type changed to Optional[str]
     target_name: str,
