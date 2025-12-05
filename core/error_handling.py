@@ -808,7 +808,7 @@ def _safe_update_error_context(error: Exception, payload: Optional[dict[str, Any
         cast(dict[str, Any], existing).update(payload)
         return
 
-    error.context = dict(payload)
+    setattr(error, "context", dict(payload))
 
 
 class AuthenticationError(AppError):
@@ -1628,8 +1628,17 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
 
         raise last_exception
 
-    wrapper.__retry_policy__ = settings.policy_name
-    wrapper.__retry_settings__ = {"max_attempts": settings.max_attempts, "backoff_factor": settings.backoff_factor, "base_delay": settings.base_delay, "max_delay": settings.max_delay}
+    setattr(wrapper, "__retry_policy__", settings.policy_name)
+    setattr(
+        wrapper,
+        "__retry_settings__",
+        {
+            "max_attempts": settings.max_attempts,
+            "backoff_factor": settings.backoff_factor,
+            "base_delay": settings.base_delay,
+            "max_delay": settings.max_delay,
+        },
+    )
     return wrapper
 
 

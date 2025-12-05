@@ -17,7 +17,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 # 1. Set Environment to dry_run BEFORE importing other modules
 os.environ["APP_MODE"] = "dry_run"
@@ -28,13 +27,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Import Action Entry Points
-from actions.action10 import run_gedcom_then_api_fallback as action10_main
-from actions.action12_triangulation import run_triangulation_analysis as action12_run
 from actions.action13_shared_matches import fetch_shared_matches as action13_run
 from config import config_schema
-from config.config_manager import ConfigManager
 from core import workflow_actions  # Import module to allow patching
-from core.logging_utils import get_logger
 from core.session_manager import SessionManager
 
 # Setup Logging

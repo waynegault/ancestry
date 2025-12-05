@@ -79,7 +79,7 @@ class MatchContext:
         return "\n".join(lines)
 
     def _format_identity(self) -> list[str]:
-        lines = []
+        lines: list[str] = []
         if self.identity:
             lines.append("\n## Identity")
             lines.append(f"Name: {self.identity.get('name', 'Unknown')}")
@@ -88,7 +88,7 @@ class MatchContext:
         return lines
 
     def _format_genetics(self) -> list[str]:
-        lines = []
+        lines: list[str] = []
         if self.genetics:
             lines.append("\n## Genetic Connection")
             lines.append(f"Shared DNA: {self.genetics.get('shared_cm', 'Unknown')} cM")
@@ -97,7 +97,7 @@ class MatchContext:
         return lines
 
     def _format_genealogy(self) -> list[str]:
-        lines = []
+        lines: list[str] = []
         if self.genealogy:
             lines.append("\n## Genealogical Connection")
             if self.genealogy.get('known_common_ancestors'):
@@ -112,7 +112,7 @@ class MatchContext:
         return lines
 
     def _format_history(self) -> list[str]:
-        lines = []
+        lines: list[str] = []
         if self.history:
             lines.append("\n## Conversation History")
             lines.append(f"Last Interaction: {self.history.get('last_interaction_date', 'Never')}")
@@ -127,7 +127,7 @@ class MatchContext:
         return lines
 
     def _format_facts(self) -> list[str]:
-        lines = []
+        lines: list[str] = []
         if self.extracted_facts:
             lines.append("\n## Extracted Facts")
             for key, values in self.extracted_facts.items():

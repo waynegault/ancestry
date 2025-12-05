@@ -4028,7 +4028,7 @@ def _test_database_model_definitions() -> None:
         instance_created = False
         try:
             # Provide required fields for models that need them
-            instance = model_class(username="test_user") if model_class == Person else model_class()
+            instance = model_class(username="test_user") if model_class is Person else model_class()
             instance_created = instance is not None
             _ = type(instance).__name__  # ensure attribute access is not useless
         except Exception as e:

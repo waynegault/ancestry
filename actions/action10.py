@@ -2855,7 +2855,7 @@ def _test_perform_api_search_fallback_returns_fallback_matches() -> None:
         return [{"id": "API1"}]
 
     fake_api_module = ModuleType("api_search_core")
-    fake_api_module.search_ancestry_api_for_person = fake_search
+    setattr(fake_api_module, "search_ancestry_api_for_person", fake_search)
 
     with (
         _temporary_module("api_search_core", fake_api_module),

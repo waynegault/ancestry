@@ -2380,7 +2380,7 @@ def test_pydantic_compatibility() -> bool:
         from actions.action9_process_productive import AIResponse
 
         # Test creating the model
-        ai_response = AIResponse(**test_data)
+        ai_response = AIResponse(**cast(dict[str, Any], test_data))
         logger.info("✅ AIResponse model created successfully")
         logger.info(f"✅ extracted_data type: {type(ai_response.extracted_data)}")
         logger.info(f"✅ suggested_tasks type: {type(ai_response.suggested_tasks)}")

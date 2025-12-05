@@ -968,9 +968,9 @@ def get_cache_stats() -> dict[str, Any]:
         }
 
         # Calculate hit rate
-        total_requests = stats["hits"] + stats["misses"]
+        total_requests = int(cast(Any, stats["hits"])) + int(cast(Any, stats["misses"]))
         if total_requests > 0:
-            stats["hit_rate"] = (stats["hits"] / total_requests) * 100
+            stats["hit_rate"] = (int(cast(Any, stats["hits"])) / total_requests) * 100
         else:
             stats["hit_rate"] = 0.0
 
@@ -985,8 +985,12 @@ def get_cache_stats() -> dict[str, Any]:
             current_entries = stats["entries"]  # Use the entries field
 
             stats["max_entries"] = max_entries
-            stats["entries_utilization"] = (current_entries / max_entries * 100) if max_entries > 0 else 0.0
-            stats["size_compliant"] = current_entries <= max_entries
+            stats["entries_utilization"] = (
+                (int(cast(Any, current_entries)) / int(cast(Any, max_entries)) * 100)
+                if int(cast(Any, max_entries)) > 0
+                else 0.0
+            )
+            stats["size_compliant"] = int(cast(Any, current_entries)) <= int(cast(Any, max_entries))
         else:
             stats["max_entries"] = "Unknown"
             stats["entries_utilization"] = 0.0

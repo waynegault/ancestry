@@ -3805,10 +3805,13 @@ def _test_enhanced_task_creation() -> None:
     ]
 
     for case in cases:
-        person = _build_person(**case["person_kwargs"])
+        person_kwargs = cast(dict[str, Any], case["person_kwargs"])
+        person = _build_person(**person_kwargs)
         importance, due_date, categories = processor.calculate_task_priority_and_due_date(person)
         assert importance == case["expected_importance"], f"Unexpected priority for {person.username}: {importance}"
-        for category in case["required_categories"]:
+
+        required_categories = cast(list[str], case["required_categories"])
+        for category in required_categories:
             assert category in categories, f"{category} should appear for {person.username}"
         if case["due_date_required"]:
             assert due_date is not None, f"Due date required for {person.username}"

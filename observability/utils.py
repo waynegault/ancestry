@@ -9,7 +9,7 @@ extracted from utils.py.
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Optional, Union
+from typing import Optional
 from urllib.parse import urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -109,4 +109,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

@@ -38,6 +38,7 @@ import html
 import re
 import time
 from collections import OrderedDict, deque
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Optional, Protocol, Union, cast
@@ -1193,7 +1194,10 @@ def _extract_years_from_lifespan(lifespan: str) -> tuple[Optional[str], Optional
 
 
 def _determine_gender_for_person(
-    person_data: dict[str, Any], name: str, relationship_data: Optional[list[dict[str, Any]]] = None, index: int = 0
+    person_data: Mapping[str, Any],
+    name: str,
+    relationship_data: Optional[Sequence[Mapping[str, Any]]] = None,
+    index: int = 0,
 ) -> Optional[str]:
     """Determine gender for a person using all available information."""
     # Check explicit gender field
@@ -1360,7 +1364,7 @@ def _clean_name_format(name: str) -> str:
     return re.sub(r'Name\("([^"]+)"\)', r"\1", name_clean)
 
 
-def _check_uncle_aunt_pattern_sibling(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _check_uncle_aunt_pattern_sibling(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Check for Uncle/Aunt pattern: Target's sibling is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1376,7 +1380,7 @@ def _check_uncle_aunt_pattern_sibling(path_data: list[dict[str, Any]]) -> Option
     return None
 
 
-def _check_uncle_aunt_pattern_parent(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _check_uncle_aunt_pattern_parent(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Check for Uncle/Aunt pattern: Through parent."""
     if len(path_data) < 3:
         return None
@@ -1396,7 +1400,7 @@ def _check_uncle_aunt_pattern_parent(path_data: list[dict[str, Any]]) -> Optiona
     return None
 
 
-def _check_grandparent_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _check_grandparent_pattern(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Check for Grandparent pattern: Target's child is parent of owner."""
     if len(path_data) < 3:
         return None
@@ -1420,7 +1424,7 @@ def _check_grandparent_pattern(path_data: list[dict[str, Any]]) -> Optional[str]
     return None
 
 
-def _check_cousin_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _check_cousin_pattern(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Check for Cousin pattern: Target's parent's sibling's child is owner."""
     if len(path_data) < 4:
         return None
@@ -1435,7 +1439,7 @@ def _check_cousin_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _check_nephew_niece_pattern(path_data: list[dict[str, Any]]) -> Optional[str]:
+def _check_nephew_niece_pattern(path_data: Sequence[Mapping[str, Any]]) -> Optional[str]:
     """Check for Nephew/Niece pattern: Target's parent's child is owner."""
     if len(path_data) < 3:
         return None
@@ -1493,8 +1497,8 @@ def _convert_you_are_relationship(relationship: str, current_name: str, next_nam
 
 
 def _format_path_step(
-    current_person: dict[str, Any],
-    next_person: dict[str, Any],
+    current_person: Mapping[str, Any],
+    next_person: Mapping[str, Any],
     seen_names: set[str],
 ) -> tuple[str, set[str]]:
     """Format a single step in the relationship path using possessive format."""

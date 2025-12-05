@@ -158,6 +158,8 @@ class ConfigManager:
     - Hot reloading capabilities
     - Credential integration with SecurityManager
 
+    _rate_limiter_max_clamp_logged: bool = False
+
     Usage:
         # Preferred: Use the singleton function
         from config.config_manager import get_config_manager
@@ -354,7 +356,7 @@ class ConfigManager:
                     target_rps,
                     limit,
                 )
-                type(self)._rate_limiter_max_clamp_logged = True
+                setattr(type(self), "_rate_limiter_max_clamp_logged", True)
 
             api.rate_limiter_max_rate = limit
 
@@ -467,7 +469,7 @@ class ConfigManager:
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration values with auto-detection."""
         # PHASE 2 ENHANCEMENT: Auto-detect optimal settings (simplified for now)
-        base_config = {
+        base_config: dict[str, Any] = {
             "environment": self.environment,
             "debug_mode": self.environment == "development",
             "app_name": "Ancestry Automation",
