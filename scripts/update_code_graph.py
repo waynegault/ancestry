@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 # Add repo root to path to allow imports if needed, though this script uses safe parsing
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,8 +51,8 @@ class CodeGraphUpdater:
     def __init__(self, root_dir: Path, graph_path: Path):
         self.root_dir = root_dir
         self.graph_path = graph_path
-        self.current_nodes: Dict[str, Dict[str, Any]] = {}
-        self.scanned_nodes: Dict[str, Dict[str, Any]] = {}
+        self.current_nodes: dict[str, dict[str, Any]] = {}
+        self.scanned_nodes: dict[str, dict[str, Any]] = {}
 
     def load_current_graph(self):
         """Loads existing graph to preserve metadata."""
@@ -61,7 +61,7 @@ class CodeGraphUpdater:
             self.current_nodes = {}
             return
 
-        with self.graph_path.open("r", encoding="utf-8") as f:
+        with self.graph_path.open(encoding="utf-8") as f:
             data = json.load(f)
             # Store nodes by ID for easy lookup
             for node in data.get("nodes", []):
@@ -86,7 +86,7 @@ class CodeGraphUpdater:
         file_id = f"file:{rel_path}"
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with file_path.open(encoding="utf-8") as f:
                 content = f.read()
             tree = ast.parse(content)
         except Exception as e:
@@ -113,89 +113,15 @@ class CodeGraphUpdater:
         self._visit_nodes(tree, rel_path)
 
     def _visit_nodes(self, tree: ast.AST, rel_path: str):
-        """Visits ClassDef and FunctionDef nodes."""
-
-        # Helper to get full name including parent classes
-        def get_full_name(node, parent_name=None):
-            if parent_name:
-                return f"{parent_name}.{node.name}"
-            # For top level functions/classes in a file, usually we refer to them as module.name
-            # But the existing graph schema seems to use file path or just module path.
-            # Looking at existing nodes: "class:main._CachingState", "function:main.initialize_aggressive_caching"
-            # So it uses dotted module path.
-            module_path = rel_path.replace("/", ".").replace(".py", "")
-            return f"{module_path}.{node.name}"
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                node_id = f"class:{get_full_name(node)}"
-                doc = ast.get_docstring(node)
-                self.scanned_nodes[node_id] = {
-                    "id": node_id,
-                    "type": "class",
-                    "name": node.name,
-                    "path": rel_path,
-                    "summary": doc.split('\n')[0] if doc else f"Class {node.name}.",
-                    "mechanism": "Class definition.",
-                    "quality": "new",
-                    "concerns": [],
-                    "opportunities": [],
-                    "tests": None,
-                    "notes": "",
-                }
-
-                # Scan methods
-                for child in node.body:
-                    if isinstance(child, ast.FunctionDef) and not child.name.startswith("__"):  # Skip dunder methods
-                        # existing schema uses method:ClassName.method_name for methods?
-                        # Let's check existing: "method:BrowserManager.start_browser"
-                        # Ah, existing graph uses "method:BrowserManager.start_browser" without module prefix sometimes?
-                        # Let's check more closely: "method:BrowserManager.start_browser" path is "core/browser_manager.py"
-                        # But ID doesn't have module prefix. Let's try to infer from existing if possible, or stick to a convention.
-                        # Wait, "function:main.initialize_aggressive_caching" HAS module prefix.
-                        # "method:BrowserManager.start_browser" DOES NOT have module prefix in ID? "BrowserManager" is the class.
-                        # Let's verify if there are duplicate class names in different files.
-                        # It is safer to include module prefix if possible, but let's try to match existing style if it's unique.
-                        # Existing ID: "method:BrowserManager.start_browser"
-                        # The class ID is "class:core.browser_manager.BrowserManager".
-                        # It seems inconsistent.
-                        # I will use "method:{ClassName}.{method_name}" as the ID format, which seems to match the "method:BrowserManager.start_browser" example.
-
-                        method_id = f"method:{node.name}.{child.name}"
-                        child_doc = ast.get_docstring(child)
-                        self.scanned_nodes[method_id] = {
-                            "id": method_id,
-                            "type": "method",
-                            "name": f"{node.name}.{child.name}",
-                            "path": rel_path,
-                            "summary": child_doc.split('\n')[0] if child_doc else f"Method {child.name}.",
-                            "mechanism": "Method.",
-                            "quality": "new",
-                            "concerns": [],
-                            "opportunities": [],
-                            "tests": None,
-                            "notes": "",
-                        }
-
-            elif isinstance(node, ast.FunctionDef):
-                # Only process top-level functions here (already processed class methods inside ClassDef block but ast.walk visits all)
-                # We need to know if it's top-level.
-                # Doing a manual traversal is better than ast.walk for parent tracking, but for quick implementation:
-                # We can skip if it's inside a class.
-                # Actually, implementing a NodeVisitor is cleaner.
-                pass
-
-    def _visit_nodes_recursive(self, rel_path: str):
-        """Uses a proper NodeVisitor to handle hierarchy."""
-
+        """Visits nodes using GraphVisitor."""
         module_name = rel_path.replace("/", ".").replace(".py", "")
 
         class GraphVisitor(ast.NodeVisitor):
-            def __init__(self, scanner):
+            def __init__(self, scanner: "CodeGraphUpdater"):
                 self.scanner = scanner
                 self.current_class = None
 
-            def visit_ClassDef(self, node):
+            def visit_ClassDef(self, node: ast.ClassDef):
                 node_id = f"class:{module_name}.{node.name}"
                 doc = ast.get_docstring(node)
                 self.scanner.scanned_nodes[node_id] = {
@@ -217,12 +143,10 @@ class CodeGraphUpdater:
                 self.generic_visit(node)
                 self.current_class = prev_class
 
-            def visit_FunctionDef(self, node):
+            def visit_FunctionDef(self, node: ast.FunctionDef):
                 if self.current_class:
                     # Method
                     if node.name.startswith("__") and node.name != "__init__":
-                        # Skip dunders except init, or maybe skip all? User said "thoroughly review".
-                        # Existing graph seems to skip most dunders.
                         return
 
                     node_id = f"method:{self.current_class}.{node.name}"
@@ -248,55 +172,17 @@ class CodeGraphUpdater:
                     "tests": None,
                     "notes": "",
                 }
-                # No need to visit children of functions usually (inner functions are rarely documented in graph)
 
-        with open(self.root_dir / rel_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        try:
-            tree = ast.parse(content)
-            GraphVisitor(self).visit(tree)
-        except Exception:
-            pass
+        GraphVisitor(self).visit(tree)
 
     def update_graph(self):
         self.load_current_graph()
 
         # Override simple scan with visitor scan
-        print(f"Parsing files from {self.root_dir}...")
-        for root, dirs, files in os.walk(self.root_dir):
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
-            for file in files:
-                if not file.endswith(".py") or file in SKIP_FILES:
-                    continue
-                file_path = Path(root) / file
-                rel_path = file_path.relative_to(self.root_dir).as_posix()
-
-                # Add file node first
-                file_id = f"file:{rel_path}"
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        doc = ast.get_docstring(ast.parse(f.read()))
-                except Exception:
-                    doc = ""
-
-                self.scanned_nodes[file_id] = {
-                    "id": file_id,
-                    "type": "file",
-                    "name": file_path.name,  # Use filename as name
-                    "path": rel_path,
-                    "summary": doc.split('\n')[0] if doc else "Python source file.",
-                    "mechanism": "Module.",
-                    "quality": "new",
-                    "concerns": [],
-                    "opportunities": [],
-                    "tests": None,
-                    "notes": "",
-                }
-
-                self._visit_nodes_recursive(rel_path)
+        self.scan_codebase()
 
         # Merge
-        final_nodes = []
+        final_nodes: list[dict[str, Any]] = []
         updated_count = 0
         new_count = 0
         removed_count = 0
@@ -358,7 +244,7 @@ class CodeGraphUpdater:
 
         # Recover metadata and links from original file if possible
         if self.graph_path.exists():
-            with self.graph_path.open("r", encoding="utf-8") as f:
+            with self.graph_path.open(encoding="utf-8") as f:
                 orig_data = json.load(f)
                 if "metadata" in orig_data:
                     output_data["metadata"] = orig_data["metadata"]
@@ -371,7 +257,9 @@ class CodeGraphUpdater:
                     # Filter links where both nodes still exist
                     valid_ids = set(self.scanned_nodes.keys())
                     valid_links = [
-                        l for l in orig_data["links"] if l.get("source") in valid_ids and l.get("target") in valid_ids
+                        link
+                        for link in orig_data["links"]
+                        if link.get("source") in valid_ids and link.get("target") in valid_ids
                     ]
                     output_data["links"] = valid_links
                     print(f"Preserved {len(valid_links)} valid links.")
