@@ -1267,7 +1267,16 @@ def _handle_retryable_status(
     if status == 429:  # Too Many Requests
         rate_limiter = _get_rate_limiter_from_session(session_manager)
         if rate_limiter:
-            rate_limiter.on_429_error(api_description)
+            retry_after: Optional[float] = None
+            if response and hasattr(response, 'headers'):
+                retry_header = response.headers.get("Retry-After")
+                if retry_header:
+                    try:
+                        retry_after = float(retry_header)
+                    except (ValueError, TypeError):
+                        pass
+
+            rate_limiter.on_429_error(api_description, retry_after=retry_after)
 
     retry_type = "🚨 429 EXPONENTIAL BACKOFF" if status == 429 else "Retry"
     logger.warning(

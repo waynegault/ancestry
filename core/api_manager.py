@@ -516,11 +516,21 @@ class APIManager:
         """
         # Handle rate limiting
         if response.status_code == 429:
+            retry_after: Optional[float] = None
+            retry_header = response.headers.get("Retry-After")
+            if retry_header:
+                try:
+                    retry_after = float(retry_header)
+                except (ValueError, TypeError):
+                    pass  # Ignore invalid header
+
             if rate_limiter is not None:
-                rate_limiter.on_429_error(endpoint_label)
+                rate_limiter.on_429_error(endpoint_label, retry_after=retry_after)
+
             if attempt < max_attempts:
+                wait_msg = f" (wait {retry_after}s)" if retry_after else ""
                 logger.warning(
-                    f"[{config.api_description}] 429 Rate Limited - will retry (attempt {attempt}/{max_attempts})"
+                    f"[{config.api_description}] 429 Rate Limited{wait_msg} - will retry (attempt {attempt}/{max_attempts})"
                 )
                 return (True, None)
             return (False, "Rate limited (429)")

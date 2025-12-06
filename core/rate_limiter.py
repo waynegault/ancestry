@@ -830,12 +830,13 @@ class AdaptiveRateLimiter:
 
         return self._endpoint_summary
 
-    def on_429_error(self, endpoint: Optional[str] = None) -> None:
+    def on_429_error(self, endpoint: Optional[str] = None, retry_after: Optional[float] = None) -> None:
         """
         Handle 429 rate limit error by decreasing fill_rate.
 
         Decreases rate by 12% to gently back off from rate limit.
         Resets success counter to prevent premature speedup.
+        Optionally enforces a specific retry_after delay.
 
         This aggressive slowdown helps find the safe rate quickly
         without oscillation.
@@ -843,7 +844,7 @@ class AdaptiveRateLimiter:
         Example:
             >>> limiter = AdaptiveRateLimiter(initial_fill_rate=1.0)
             >>> limiter.on_429_error()  # rate → 0.88 req/s
-            >>> limiter.on_429_error()  # rate → 0.77 req/s
+            >>> limiter.on_429_error(retry_after=5.0)  # Enforce 5s wait
         """
         with self._lock:
             old_rate = self.fill_rate
@@ -864,22 +865,31 @@ class AdaptiveRateLimiter:
             effective_delay = 1.0 / self.fill_rate if self.fill_rate > 0 else float('inf')
             old_delay = 1.0 / old_rate if old_rate > 0 else float('inf')
 
+            retry_msg = f" | Retry-After: {retry_after:.1f}s" if retry_after else ""
             logger.warning(
                 f"⚠️ 429 Rate Limit: Decreased rate from {old_rate:.3f} to "
                 f"{self.fill_rate:.3f} req/s (-{slowdown_pct:.1f}%) | "
                 f"Effective delay: {old_delay:.2f}s → {effective_delay:.2f}s | "
-                f"Total 429s: {self._metrics['error_429_count']}"
+                f"Total 429s: {self._metrics['error_429_count']}{retry_msg}"
             )
 
+            # Apply penalty delay if provided or configured
             if endpoint:
-                profile = self._endpoint_profiles.get(endpoint)
-                if profile and profile.cooldown_after_429 > 0.0:
-                    cooldown_until = time.monotonic() + profile.cooldown_after_429
+                cooldown = 0.0
+                if retry_after is not None:
+                    cooldown = retry_after
+                else:
+                    profile = self._endpoint_profiles.get(endpoint)
+                    if profile and profile.cooldown_after_429 > 0.0:
+                        cooldown = profile.cooldown_after_429
+
+                if cooldown > 0.0:
+                    cooldown_until = time.monotonic() + cooldown
                     self._endpoint_penalty_until[endpoint] = cooldown_until
                     logger.warning(
                         "Endpoint '%s' entering cooldown for %.1fs after 429",
                         endpoint,
-                        profile.cooldown_after_429,
+                        cooldown,
                     )
 
     def on_success(self) -> None:
