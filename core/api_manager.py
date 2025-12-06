@@ -656,6 +656,7 @@ class APIManager:
         config: RequestConfig,
         browser_manager: Optional["BrowserManager"] = None,
         rate_limiter: Optional["AdaptiveRateLimiter"] = None,
+        session_manager: Optional["SessionManager"] = None,
     ) -> RequestResult:
         """
         Unified API request method with rate limiting, retries, and cookie sync.
@@ -670,6 +671,7 @@ class APIManager:
             config: RequestConfig with all request parameters
             browser_manager: Optional BrowserManager for cookie sync
             rate_limiter: Optional AdaptiveRateLimiter for rate limiting
+            session_manager: Optional SessionManager for cookie sync delegation
 
         Returns:
             RequestResult with response data, status, and metadata
@@ -694,7 +696,7 @@ class APIManager:
 
         # Sync cookies from browser if requested and available
         if config.sync_cookies and browser_manager is not None:
-            self.sync_cookies_from_browser(browser_manager)
+            self.sync_cookies_from_browser(browser_manager, session_manager=session_manager)
 
         # Retry loop
         while attempt < max_attempts:

@@ -20,20 +20,35 @@ def _format_menu_line(action: ActionMetadata) -> str:
 def _determine_log_level_name(logger: Optional[logging.Logger], config: Any) -> str:
     level_name = "UNKNOWN"
 
-    if logger and logger.handlers:
-        console_handler: Optional[StreamHandler[TextIO]] = None
-        for handler in logger.handlers:
+    # Check root logger first as that's where handlers usually are
+    root_logger = logging.getLogger()
+    target_loggers = [root_logger]
+    if logger:
+        target_loggers.insert(0, logger)
+
+    console_handler: Optional[StreamHandler[TextIO]] = None
+
+    for target in target_loggers:
+        if not target.handlers:
+            continue
+
+        for handler in target.handlers:
             if isinstance(handler, StreamHandler):
+                # Robust console handler detection matching cli/maintenance.py
                 stream = getattr(handler, "stream", None)
-                if stream is sys.stderr:
+                is_stderr = stream == sys.stderr
+                is_stdout = stream == sys.stdout
+                is_console = is_stderr or is_stdout or getattr(stream, "name", "") in ("<stderr>", "<stdout>")
+
+                if is_console:
                     console_handler = handler
                     break
-        if console_handler is not None:
-            level_name = logging.getLevelName(int(console_handler.level))
-        else:
-            level = logger.getEffectiveLevel()
-            level_names = {v: k for k, v in logging.getLevelNamesMapping().items()}
-            level_name = level_names.get(level, str(level))
+
+        if console_handler:
+            break
+
+    if console_handler is not None:
+        level_name = logging.getLevelName(int(console_handler.level))
     elif hasattr(config, "logging") and hasattr(config.logging, "log_level"):
         level_name = str(config.logging.log_level).upper()
 
@@ -120,9 +135,17 @@ def _test_format_menu_line_with_hint() -> bool:
 def _test_determine_log_level_unknown_fallback() -> bool:
     """Test _determine_log_level_name returns UNKNOWN when no logger."""
     from types import SimpleNamespace
+    from unittest.mock import patch, MagicMock
 
     config = SimpleNamespace()
-    result = _determine_log_level_name(None, config)
+
+    # Mock logging.getLogger to return a logger with no handlers
+    mock_root = MagicMock()
+    mock_root.handlers = []
+
+    with patch("logging.getLogger", return_value=mock_root):
+        result = _determine_log_level_name(None, config)
+
     assert result == "UNKNOWN", f"Expected 'UNKNOWN', got '{result}'"
     return True
 
@@ -130,9 +153,17 @@ def _test_determine_log_level_unknown_fallback() -> bool:
 def _test_determine_log_level_from_config() -> bool:
     """Test _determine_log_level_name extracts from config."""
     from types import SimpleNamespace
+    from unittest.mock import patch, MagicMock
 
     config = SimpleNamespace(logging=SimpleNamespace(log_level="debug"))
-    result = _determine_log_level_name(None, config)
+
+    # Mock logging.getLogger to return a logger with no handlers
+    mock_root = MagicMock()
+    mock_root.handlers = []
+
+    with patch("logging.getLogger", return_value=mock_root):
+        result = _determine_log_level_name(None, config)
+
     assert result == "DEBUG", f"Expected 'DEBUG', got '{result}'"
     return True
 

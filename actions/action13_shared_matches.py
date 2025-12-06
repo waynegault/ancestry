@@ -119,7 +119,7 @@ def _fetch_and_store_shared_matches(session_manager: SessionManager, match_id: i
 
     try:
         config = RequestConfig(url=full_url, method="GET", api_description=f"Shared Matches {match_uuid}")
-        result = session_manager.api_manager.request(config)
+        result = session_manager.api_manager.request(config, session_manager=session_manager)
 
         if not result.success:
             logger.warning(f"Failed to fetch shared matches for {match_uuid}. Status: {result.status_code}")

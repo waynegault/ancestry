@@ -150,7 +150,28 @@ def main():
         with (
             patch.object(SessionManager, "start_sess", return_value=True),
             patch.object(SessionManager, "ensure_session_ready", return_value=True),
-            patch("core.workflow_actions.gather_dna_matches", return_value=True),
+            patch.object(SessionManager, "is_sess_valid", return_value=True),
+            patch.object(SessionManager, "_check_session_health", return_value=True),
+            patch.object(SessionManager, "validate_system_health", return_value=True),
+            # patch("core.workflow_actions.gather_dna_matches", return_value=True),  # Unmocked to test Action 6 logic
+            patch(
+                "actions.action6_gather._call_match_list_api",
+                return_value={
+                    "matchList": [{"sampleId": "mock_uuid", "publicDisplayName": "Mock Match"}],
+                    "totalPages": 1,
+                },
+            ),
+            patch("actions.action6_gather._fetch_in_tree_status", return_value=set()),
+            patch("actions.action6_gather._get_cached_or_fresh_csrf_token", return_value="mock_csrf_token"),
+            patch("actions.action6_gather.nav_to_page", return_value=True),  # Patch local nav import
+            patch(
+                "actions.gather.api_implementations.fetch_combined_details",
+                return_value={"tester_profile_id": "mock_pid"},
+            ),
+            patch(
+                "actions.gather.api_implementations.fetch_batch_badge_details",
+                return_value={"their_cfpid": "mock_cfpid"},
+            ),
             patch("core.workflow_actions.srch_inbox_actn", return_value=True),
             patch("core.workflow_actions.process_productive_messages_action", return_value=True),
             patch("core.workflow_actions.nav_to_page", return_value=True),  # Patch navigation
@@ -170,6 +191,7 @@ def main():
             # Mock driver in case it's accessed
             sm.browser_manager = MagicMock()
             sm.browser_manager.driver = MagicMock()
+            sm.browser_manager.driver.current_url = "https://www.ancestry.com/discoveryui-matches/list/"
 
             print("\n--- Running in MOCKED context ---")
 

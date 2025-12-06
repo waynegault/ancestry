@@ -56,8 +56,15 @@ class LogMaintenanceMixin:
         cleared = False
         log_file_handler: Optional[logging.FileHandler] = None
         log_file_path: Optional[str] = None
+
+        # Check instance logger first
+        handlers = self._logger.handlers
+        # Fallback to root logger if no handlers found on instance logger
+        if not handlers:
+            handlers = logging.getLogger().handlers
+
         try:
-            for handler in self._logger.handlers:
+            for handler in handlers:
                 if isinstance(handler, logging.FileHandler):
                     log_file_handler = handler
                     log_file_path = handler.baseFilename
@@ -80,22 +87,47 @@ class LogMaintenanceMixin:
         """Toggle console log level between DEBUG and INFO."""
 
         os.system("cls" if os.name == "nt" else "clear")
-        if self._logger and self._logger.handlers:
+
+        # Check instance logger first, then fallback to root logger
+        target_logger = self._logger
+        handlers = target_logger.handlers
+        if not handlers:
+            target_logger = logging.getLogger()
+            handlers = target_logger.handlers
+
+        if handlers:
             console_handler: Optional[StreamHandler[TextIO]] = None
-            for handler in self._logger.handlers:
+            for handler in handlers:
                 if isinstance(handler, logging.StreamHandler):
                     handler_typed = cast(logging.StreamHandler[TextIO], handler)
-                    if handler_typed.stream == sys.stderr:
+                    # Check if it's a console handler (stderr or stdout)
+                    # We relax the check to include any stream handler that isn't a file handler
+                    # effectively, but checking stream name or type is safer.
+                    # Also check if stream is wrapped (e.g. by colorama)
+                    stream = handler_typed.stream
+                    is_stderr = stream == sys.stderr
+                    is_stdout = stream == sys.stdout
+                    # Some environments wrap stderr, so we check if it looks like a console stream
+                    is_console = is_stderr or is_stdout or getattr(stream, "name", "") in ("<stderr>", "<stdout>")
+
+                    if is_console:
                         console_handler = handler_typed
                         break
+
             if console_handler:
                 current_level = console_handler.level
-                new_level = logging.DEBUG if current_level > logging.DEBUG else logging.INFO
+                # If level is NOTSET (0), it inherits. We assume effective level if possible,
+                # but handler.level is what we set.
+                # If it's 0, we treat it as INFO for toggling purposes (toggle to DEBUG)
+                effective_level = current_level if current_level != logging.NOTSET else logging.INFO
+
+                new_level = logging.DEBUG if effective_level > logging.DEBUG else logging.INFO
                 new_level_name = logging.getLevelName(new_level)
+
                 setup_logging(log_level=new_level_name, allow_env_override=False)
                 self._logger.info("Console log level toggled to: %s", new_level_name)
             else:
-                self._logger.warning("Could not find console handler to toggle level.")
+                self._logger.warning("Could not find console handler to toggle level. Handlers found: %s", handlers)
         else:
             print("WARNING: Logger not ready or has no handlers.", file=sys.stderr)
 

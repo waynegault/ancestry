@@ -78,9 +78,15 @@ def _call_api_request(
         config,
         browser_manager=session_manager.browser_manager,
         rate_limiter=session_manager.rate_limiter,
+        session_manager=session_manager,
     )
 
     if result.success:
+        # Fix for Action 6 regression:
+        # If JSON parsing failed (returning string data) but we didn't request text,
+        # return the response object so the caller can handle 303s/errors.
+        if isinstance(result.data, str) and not force_text_response:
+            return result.response
         return result.data
 
     # If failed, return response object if available (legacy behavior expected by some callers)

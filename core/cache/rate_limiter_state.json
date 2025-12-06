@@ -1,13 +1,13 @@
 {
-  "fill_rate": 2.0,
+  "fill_rate": 1.6537500000000003,
   "success_threshold": 3,
   "capacity": 10.0,
   "min_fill_rate": 0.5,
   "max_fill_rate": 2.0,
-  "timestamp": 1764666189.9214292,
-  "total_requests": 421,
-  "avg_wait_time": 0.10995800738682399,
-  "rate_increases": 139,
+  "timestamp": 1765020248.5852466,
+  "total_requests": 11,
+  "avg_wait_time": 0.0,
+  "rate_increases": 2,
   "rate_decreases": 0,
   "error_429_count": 0
 }

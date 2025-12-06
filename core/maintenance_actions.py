@@ -34,6 +34,8 @@ from core.database_manager import backup_database, db_transn
 from core.session_manager import SessionManager
 from core.utils import log_in, login_status
 from testing.test_framework import TestSuite, create_standard_test_runner
+from actions.gather.checkpoint import clear_checkpoint
+from caching.cache import clear_cache
 
 logger = logging.getLogger(__name__)
 
@@ -405,6 +407,22 @@ def reset_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:
             reset_successful, recreation_session = _perform_database_reset_steps(temp_manager)
 
             if reset_successful:
+                # Clear Action 6 checkpoint to ensure fresh start
+                try:
+                    clear_checkpoint()
+                    logger.info("✅ Action 6 checkpoint cleared.")
+                except Exception as e:
+                    logger.warning(f"Failed to clear Action 6 checkpoint: {e}")
+
+                # Clear general cache
+                try:
+                    if clear_cache():
+                        logger.info("✅ General cache cleared.")
+                    else:
+                        logger.warning("General cache clear returned False.")
+                except Exception as e:
+                    logger.warning(f"Failed to clear general cache: {e}")
+
                 logger.info("✅ Database reset completed successfully.")
 
         except Exception as recreate_err:

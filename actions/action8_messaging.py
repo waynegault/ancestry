@@ -561,6 +561,16 @@ def ensure_message_templates_loaded() -> None:
     """Load message templates on first use; avoid import-time CRITICALs."""
     if MESSAGE_TEMPLATES:
         return
+
+    # Check for mock/dry-run mode
+    is_mock_mode = "--mock" in sys.argv or "--test" in sys.argv or os.environ.get("APP_MODE") == "dry_run"
+
+    if is_mock_mode:
+        logger.debug("Loading mock message templates for testing/dry-run")
+        mock_templates = {key: f"Mock template for {key}" for key in MESSAGE_TYPES}
+        MESSAGE_TEMPLATES.update(mock_templates)
+        return
+
     templates = load_message_templates()
     if isinstance(templates, dict) and templates:
         MESSAGE_TEMPLATES.clear()
@@ -1188,7 +1198,7 @@ def _get_simple_messaging_data(
         logger.debug("Fetching MessageTemplate key-to-ID mapping...")
 
         # Check if we're running in a test/mock environment
-        is_mock_mode = "--mock" in sys.argv or "--test" in sys.argv
+        is_mock_mode = "--mock" in sys.argv or "--test" in sys.argv or os.environ.get("APP_MODE") == "dry_run"
 
         if is_mock_mode:
             # Create mock data for testing

@@ -192,12 +192,12 @@ def run_tests() -> bool:
     # We iterate through the tests in the unittest suite and run them via our TestSuite
     for test in unittest_suite:
         # Each 'test' is an instance of TestInboundOrchestrator with a specific test method
-        test_method_name = test._testMethodName
+        test_method_name = str(test).split(' ')[0]  # Extract method name from string representation
 
         # Create a closure to capture the current test instance
-        from typing import Callable
+        from typing import Callable, Union
 
-        def make_run_adapter(current_test: unittest.TestCase) -> Callable[[], None]:
+        def make_run_adapter(current_test: Union[unittest.TestCase, unittest.TestSuite]) -> Callable[[], None]:
             def run_adapter() -> None:
                 # Create a fresh instance for each test run
                 result = unittest.TestResult()
