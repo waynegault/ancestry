@@ -2879,6 +2879,8 @@ class InboxProcessor:
         if ai_sentiment_result:
             ai_classified_count += 1
             logger.debug(f"AI classification result for {api_conv_id}: {ai_sentiment_result}")
+        elif result.get("status") == "unsafe":
+            logger.info(f"Skipped AI classification for ConvID {api_conv_id} due to safety/opt-out.")
         else:
             logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
 

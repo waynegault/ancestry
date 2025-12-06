@@ -574,14 +574,21 @@ def cached_api_call(endpoint: str, ttl: int = 300) -> Callable[[Callable[P, R]],
             service = parts[0] if len(parts) > 0 else "unknown"
             method = parts[1] if len(parts) > 1 else endpoint
 
+            # Combine args and kwargs for cache key
+            cache_params = kwargs.copy()
+            for i, arg in enumerate(args):
+                # Use string representation for args to ensure they can be used in cache key
+                # This handles objects like SessionManager by using their str() or repr()
+                cache_params[f"arg_{i}"] = str(arg)
+
             # Try to get cached result
-            cached_result = _cache_coordinator.api_cache.get_cached_api_response(service, method, kwargs)
+            cached_result = _cache_coordinator.api_cache.get_cached_api_response(service, method, cache_params)
             if cached_result is not None:
                 return cached_result
 
             # Call function and cache result
             result = func(*args, **kwargs)
-            _cache_coordinator.api_cache.cache_api_response(service, method, kwargs, result, ttl)
+            _cache_coordinator.api_cache.cache_api_response(service, method, cache_params, result, ttl)
             return result
 
         return cast(Callable[P, R], wrapper)
