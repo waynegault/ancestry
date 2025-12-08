@@ -1,0 +1,84 @@
+# Database and State Files
+/session_state.json
+
+# Environment and Configuration
+.env
+.env.*
+.env-*
+credentials.enc
+blackbox_mcp_settings.json
+
+# Python Environment
+/venv/
+/.venv/
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Development Tools
+/.vscode/
+.DS_Store
+Thumbs.db
+
+# Git Files (exclude *.git files from analysis)
+*.git
+*.git/**
+**/*.git
+**/*.git/**
+
+
+# External MCP Servers (not part of this project)
+/supermemory-mcp/
+
+# Data and Cache Directories
+/Cache/
+/cache/
+/archive/
+*.db
+
+# Log Files
+/Logs/
+ai/Logs/
+*.log
+
+# Temporary and Development Files
+*.tmp
+*.temp
+*~
+*.bak
+*.backup*
+*_temp.py
+*_debug.py
+
+# Legacy and Deprecated Files
+/__init__.py
+/backup_before_migration
+/.pytest_cache
+ai_prompts.bak.*
+.codacy/logs/codacy-cli.log
+Logs/api_utils.log
+Logs/test.log
+Logs/api_utils.log
+.codacy/logs/codacy-cli.log
+Logs/api_utils.log
+IMPLEMENTATION_PLAN.md
+/ai_prompts.bak.*
+Data/ancestry.db-shm
+Data/ancestry.db-wal
+Data/ancestry_backup.db
+Data/ancestry.db
+Data/ms_graph_cache.bin
+ancestry_cookies.json
+Data/quality_baseline.json
+Data/ancestry_cookies.json
+Data/Gault Family.ged
+Data/quality_baseline.json
+/TestCacheDir_Manager/

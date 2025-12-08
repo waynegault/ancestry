@@ -1,0 +1,51 @@
+0 HEAD
+1 SOUR Ancestry Test Data
+2 VERS 1.0
+2 NAME Minimal Test GEDCOM
+1 DEST ANY
+1 DATE 1 JAN 2025
+1 SUBM @SUBM1@
+1 FILE minimal_test.ged
+1 GEDC
+2 VERS 5.5.1
+2 FORM LINEAGE-LINKED
+1 CHAR UTF-8
+0 @SUBM1@ SUBM
+1 NAME Test Submitter
+0 @I1@ INDI
+1 NAME Fraser /Gault/
+1 SEX M
+1 BIRT
+2 DATE 1941
+2 PLAC Banff, Banffshire, Scotland
+1 FAMS @F1@
+0 @I2@ INDI
+1 NAME Margaret /Gault/
+1 SEX F
+1 BIRT
+2 DATE 1945
+2 PLAC Scotland
+1 FAMS @F1@
+0 @I3@ INDI
+1 NAME Wayne /Gault/
+1 SEX M
+1 BIRT
+2 DATE 1970
+2 PLAC Scotland
+1 FAMC @F1@
+0 @I4@ INDI
+1 NAME Test /Child/
+1 SEX F
+1 BIRT
+2 DATE 1972
+2 PLAC Scotland
+1 FAMC @F1@
+0 @F1@ FAM
+1 HUSB @I1@
+1 WIFE @I2@
+1 MARR
+2 DATE 1969
+2 PLAC Scotland
+1 CHIL @I3@
+1 CHIL @I4@
+0 TRLR

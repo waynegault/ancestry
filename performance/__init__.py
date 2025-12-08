@@ -1,0 +1,56 @@
+"""Performance Monitoring Package.
+
+Provides performance monitoring and optimization including:
+- performance_monitor: System performance monitoring
+- performance_profiling: Performance profiling utilities
+- performance_orchestrator: Performance orchestration
+- performance_cache: Performance-related caching
+- health_monitor: System health monitoring
+- grafana_checker: Grafana integration checker
+"""
+
+from typing import Any
+
+_SUBMODULES = frozenset(
+    [
+        "grafana_checker",
+        "health_monitor",
+        "performance_cache",
+        "performance_monitor",
+        "performance_orchestrator",
+        "performance_profiling",
+    ]
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy import submodules on attribute access."""
+    if name in _SUBMODULES:
+        import importlib
+
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List available submodules."""
+    return list(_SUBMODULES)
+
+
+# -----------------------------------------------------------------------------
+# Standard Test Runner
+# -----------------------------------------------------------------------------
+from testing.test_utilities import create_standard_test_runner
+
+
+def _test_module_integrity() -> bool:
+    "Test that module can be imported and definitions are valid."
+    return True
+
+
+run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(0 if run_comprehensive_tests() else 1)

@@ -1,0 +1,58 @@
+line-length = 120
+target-version = "py39"
+
+[lint]
+preview = true
+# Enhanced rule set for Python best practices
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-use-pathlib
+    "PL",   # pylint
+    "RUF",  # ruff-specific rules
+]
+
+# Project-wide intentional patterns:
+# - E402: imports after module setup (setup_module) by design
+# - F401: unused imports (re-exports in utils.py and other modules)
+# - F403/F405: controlled star imports for CSS selectors/constants
+# - B009/B010: setattr/getattr with constants (SQLAlchemy ORM pattern)
+# - PLR0913: many arguments in config classes by design
+# - PLR0915: many statements in main functions by design
+# - PLR2004: magic value comparisons (intentional for readability)
+# - PLC0415: imports outside top-level (architectural decision)
+# - UP006: non-PEP585 annotations (Python 3.9 compatibility)
+# - UP007: Union syntax (Python 3.9 compatibility)
+ignore = [
+    "E501", "E402", "F401", "F403", "F405",
+    "B009", "B010",  # setattr/getattr with constants (SQLAlchemy ORM workaround)
+    "PLR0913", "PLR0915", "PLR0912", "PLR2004", "PLC0415",
+    "PLR0917",  # certain helper functions require many arguments
+    "N806",  # variable names in functions (for compatibility)
+    "UP006", # non-PEP585 annotations (Python 3.9 compatibility)
+    "UP007", # Union syntax (for Python 3.9 compatibility)
+    "UP045", # Optional[X] annotations for Python 3.9 compatibility
+]
+
+[lint.isort]
+combine-as-imports = true
+force-single-line = false
+known-first-party = ["core", "config"]
+known-third-party = [
+  "selenium", "requests", "sqlalchemy", "bs4", "cloudscraper", "dotenv", "tabulate", "tqdm"
+]
+
+[format]
+quote-style = "preserve"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false

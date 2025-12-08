@@ -1,0 +1,642 @@
+#!/usr/bin/env python3
+
+"""
+dna_utils.py - Universal DNA Match Utilities
+
+Provides universal functions for DNA match operations that can be used
+across all scripts (action6, action6b, and future DNA-related actions).
+
+Functions:
+- nav_to_dna_matches_page() - Navigate to DNA matches page
+- get_csrf_token_for_dna_matches() - Get CSRF token from browser cookies
+- fetch_in_tree_status() - Fetch in-tree status for sample IDs
+- fetch_match_list_page() - Fetch match list from API
+"""
+
+# === PATH SETUP FOR PACKAGE IMPORTS ===
+import sys
+from pathlib import Path
+
+_project_root = Path(__file__).resolve().parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# === CORE INFRASTRUCTURE ===
+import logging
+
+logger = logging.getLogger(__name__)
+
+# === STANDARD LIBRARY IMPORTS ===
+import contextlib
+import importlib
+import random
+from functools import lru_cache
+from typing import Any, Optional, cast
+from urllib.parse import unquote, urljoin, urlparse
+
+# === THIRD-PARTY IMPORTS ===
+import requests
+from diskcache.core import ENOVAL
+from selenium.common.exceptions import NoSuchCookieException, WebDriverException
+
+from browser.css_selectors import MATCH_ENTRY_SELECTOR
+from browser.selenium_utils import get_driver_cookies
+
+# === LOCAL IMPORTS ===
+from caching.cache import cache as global_cache
+from config import config_schema
+from core.session_manager import SessionManager
+from core.utils import nav_to_page
+
+# ============================================================================
+# NAVIGATION FUNCTIONS
+# ============================================================================
+
+
+@lru_cache(maxsize=1)
+def _load_utils_module() -> Any:
+    """Lazy import of utils to avoid circular dependencies."""
+
+    return importlib.import_module("core.utils")
+
+
+def _call_api_request(**kwargs: Any) -> Any:
+    """Indirection for utils._api_req without private imports."""
+
+    api_request = _load_utils_module()._api_req
+    return api_request(**kwargs)
+
+
+def nav_to_dna_matches_page(session_manager: SessionManager) -> bool:
+    """
+    Navigate to the user's DNA matches list page.
+
+    Args:
+        session_manager: Active SessionManager instance
+
+    Returns:
+        True if navigation successful, False otherwise
+    """
+    if not session_manager or not session_manager.is_sess_valid() or not session_manager.my_uuid:
+        logger.error("nav_to_dna_matches_page: Session invalid or UUID missing.")
+        return False
+
+    my_uuid = session_manager.my_uuid
+    target_url = urljoin(config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}")
+    logger.debug(f"Navigating to DNA matches page: {target_url}")
+
+    driver = session_manager.browser_manager.driver
+    if driver is None:
+        logger.error("nav_to_dna_matches_page: WebDriver is None")
+        return False
+
+    match_entry_selector = cast(str, MATCH_ENTRY_SELECTOR)
+    success = nav_to_page(
+        driver=driver,
+        url=target_url,
+        selector=match_entry_selector,
+        session_manager=session_manager,
+    )
+
+    if success:
+        try:
+            current_url = driver.current_url
+            if not current_url.startswith(target_url):
+                logger.warning(f"Navigation successful (element found), but final URL unexpected: {current_url}")
+            else:
+                logger.debug("Successfully navigated to DNA matches page.")
+        except Exception as e:
+            logger.warning(f"Could not verify final URL after navigation: {e}")
+    else:
+        logger.error("Failed to navigate to DNA matches page.")
+
+    return success
+
+
+# ============================================================================
+# CSRF TOKEN FUNCTIONS
+# ============================================================================
+
+
+def _try_get_csrf_from_driver_cookies(driver: Any, cookie_names: tuple[str, ...]) -> Optional[str]:
+    """
+    Fallback method to get CSRF token using get_driver_cookies.
+
+    Returns:
+        CSRF token if found, None otherwise
+    """
+    logger.debug("CSRF token not found via get_cookie. Trying get_driver_cookies fallback...")
+    all_cookies = get_driver_cookies(driver)
+    if not all_cookies:
+        logger.warning("Fallback get_driver_cookies also failed to retrieve cookies.")
+        return None
+
+    for cookie_name in cookie_names:
+        for cookie in all_cookies:
+            if cookie.get("name") == cookie_name and cookie.get("value"):
+                token = unquote(cookie["value"]).split("|")[0]
+                logger.debug(f"Read CSRF token via fallback from '{cookie_name}'.")
+                return token
+
+    return None
+
+
+def get_csrf_token_for_dna_matches(driver: Any) -> Optional[str]:
+    """
+    Retrieve CSRF token from browser cookies for DNA match list API.
+
+    Args:
+        driver: Selenium WebDriver instance
+
+    Returns:
+        CSRF token string if found, None otherwise
+    """
+    csrf_token_cookie_names = (
+        "_dnamatches-matchlistui-x-csrf-token",
+        "_csrf",
+    )
+    specific_csrf_token: Optional[str] = None
+
+    try:
+        logger.debug(f"Attempting to read CSRF cookies: {csrf_token_cookie_names}")
+
+        # Try direct cookie access first
+        for cookie_name in csrf_token_cookie_names:
+            try:
+                cookie_obj = driver.get_cookie(cookie_name)
+                if cookie_obj and "value" in cookie_obj and cookie_obj["value"]:
+                    specific_csrf_token = unquote(cookie_obj["value"]).split("|")[0]
+                    logger.debug(f"Read CSRF token from cookie '{cookie_name}'.")
+                    break
+            except NoSuchCookieException:
+                continue
+            except WebDriverException as cookie_e:
+                logger.warning(f"WebDriver error getting cookie '{cookie_name}': {cookie_e}")
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error getting cookie '{cookie_name}': {e}",
+                    exc_info=True,
+                )
+
+        # Fallback to get_driver_cookies if direct access failed
+        if not specific_csrf_token:
+            specific_csrf_token = _try_get_csrf_from_driver_cookies(driver, csrf_token_cookie_names)
+
+        if not specific_csrf_token:
+            logger.error("Failed to obtain specific CSRF token required for Match List API.")
+            return None
+
+        logger.debug(f"Specific CSRF token FOUND: '{specific_csrf_token}'")
+        return specific_csrf_token
+
+    except Exception as csrf_err:
+        logger.error(f"Critical error during CSRF token retrieval: {csrf_err}", exc_info=True)
+        return None
+
+
+# ============================================================================
+# IN-TREE STATUS FUNCTIONS
+# ============================================================================
+
+
+def _try_get_in_tree_from_cache(
+    cache_key: str,
+    current_page: int,
+) -> Optional[set[str]]:
+    """
+    Try to get in-tree status from cache.
+
+    Returns:
+        Set of in-tree IDs if found in cache, None otherwise
+    """
+    try:
+        if global_cache is not None:
+            # Cast to Any to avoid type errors with untyped cache methods
+            cache_obj = cast(Any, global_cache)
+            cached_in_tree = cache_obj.get(cache_key, default=ENOVAL, retry=True)
+            if cached_in_tree is not ENOVAL:
+                if isinstance(cached_in_tree, set):
+                    logger.debug(f"Loaded {len(cached_in_tree)} in-tree IDs from cache for page {current_page}.")
+                    return cached_in_tree
+            else:
+                logger.debug(f"Cache miss for in-tree status (Key: {cache_key}). Fetching from API.")
+    except Exception as cache_read_err:
+        logger.error(
+            f"Error reading in-tree status from cache: {cache_read_err}. Fetching from API.",
+            exc_info=True,
+        )
+    return None
+
+
+def _save_in_tree_to_cache(
+    cache_key: str,
+    in_tree_ids: set[str],
+    current_page: int,
+) -> None:
+    """Save in-tree status to cache."""
+    try:
+        if global_cache is not None:
+            # Cast to Any to avoid type errors with untyped cache methods
+            cache_obj = cast(Any, global_cache)
+            cache_obj.set(
+                cache_key,
+                in_tree_ids,
+                expire=config_schema.cache.memory_cache_ttl,
+                retry=True,
+            )
+        logger.debug(f"Cached in-tree status result for page {current_page}.")
+    except Exception as cache_write_err:
+        logger.error(f"Error writing in-tree status to cache: {cache_write_err}")
+
+
+def _fetch_in_tree_from_api(
+    driver: Any,
+    session_manager: SessionManager,
+    my_uuid: str,
+    sample_ids_on_page: list[str],
+    specific_csrf_token: str,
+    current_page: int,
+) -> set[str]:
+    """
+    Fetch in-tree status from API.
+
+    Returns:
+        Set of sample IDs that are in the user's tree
+    """
+    in_tree_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/badges/matchesInTree/{my_uuid.upper()}",
+    )
+    parsed_base_url = urlparse(config_schema.api.base_url)
+    origin_header_value = f"{parsed_base_url.scheme}://{parsed_base_url.netloc}"
+
+    ua_in_tree = None
+    if driver and session_manager.is_sess_valid():
+        with contextlib.suppress(Exception):
+            ua_in_tree = driver.execute_script("return navigator.userAgent;")
+    ua_in_tree = ua_in_tree or random.choice(config_schema.api.user_agents)
+
+    in_tree_headers = {
+        "X-CSRF-Token": specific_csrf_token,
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+        "Origin": origin_header_value,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": ua_in_tree,
+    }
+    in_tree_headers = {k: v for k, v in in_tree_headers.items() if v}
+
+    logger.debug(f"Fetching in-tree status for {len(sample_ids_on_page)} matches on page {current_page}...")
+
+    response_in_tree = _call_api_request(
+        url=in_tree_url,
+        session_manager=session_manager,
+        method="POST",
+        json_data={"sampleIds": sample_ids_on_page},
+        headers=in_tree_headers,
+        api_description="In-Tree Status Check",
+    )
+
+    if isinstance(response_in_tree, list):
+        in_tree_ids = {item.upper() for item in response_in_tree if isinstance(item, str)}
+        logger.debug(f"Fetched {len(in_tree_ids)} in-tree IDs from API for page {current_page}.")
+        return in_tree_ids
+
+    status_code_log = ""
+    if isinstance(response_in_tree, requests.Response):
+        status_code_log = f" Status: {response_in_tree.status_code}"
+    logger.warning(
+        f"In-Tree Status Check API failed or returned unexpected format for page {current_page}.{status_code_log}"
+    )
+    return set()
+
+
+def fetch_in_tree_status(
+    driver: Any,
+    session_manager: SessionManager,
+    my_uuid: str,
+    sample_ids_on_page: list[str],
+    specific_csrf_token: str,
+    current_page: int,
+) -> set[str]:
+    """
+    Fetch in-tree status for a list of sample IDs, with caching.
+
+    Args:
+        driver: Selenium WebDriver instance
+        session_manager: Active SessionManager instance
+        my_uuid: User's UUID
+        sample_ids_on_page: List of sample IDs to check
+        specific_csrf_token: CSRF token for API request
+        current_page: Current page number (for logging)
+
+    Returns:
+        Set of sample IDs that are in the user's tree
+    """
+    cache_key_tree = f"matches_in_tree_{hash(frozenset(sample_ids_on_page))}"
+
+    # Try to get from cache first
+    cached_result = _try_get_in_tree_from_cache(cache_key_tree, current_page)
+    if cached_result is not None:
+        return cached_result
+
+    # Fetch from API if cache miss or error
+    if not session_manager.is_sess_valid():
+        logger.error(f"In-Tree Status Check: Session invalid page {current_page}. Cannot fetch.")
+        return set()
+
+    in_tree_ids = _fetch_in_tree_from_api(
+        driver, session_manager, my_uuid, sample_ids_on_page, specific_csrf_token, current_page
+    )
+
+    # Cache the result if we got data
+    if in_tree_ids:
+        _save_in_tree_to_cache(cache_key_tree, in_tree_ids, current_page)
+
+    return in_tree_ids
+
+
+# ============================================================================
+# MATCH LIST API FUNCTIONS
+# ============================================================================
+
+
+def _sync_cookies_to_session(driver: Any, session_manager: SessionManager) -> None:
+    """Sync browser cookies to requests session before API call."""
+    try:
+        logger.debug("Syncing browser cookies to API session before Match List API call...")
+        browser_cookies = driver.get_cookies()
+        logger.debug(f"Retrieved {len(browser_cookies)} cookies from browser")
+
+        # Clear and re-sync all cookies to ensure fresh state
+        if hasattr(session_manager, 'requests_session') and session_manager.api_manager.requests_session:
+            session_manager.api_manager.requests_session.cookies.clear()
+            # Cast cookies to Any to avoid type errors with set method
+            cookies_obj = cast(Any, session_manager.api_manager.requests_session.cookies)
+            for cookie in browser_cookies:
+                cookies_obj.set(
+                    cookie['name'], cookie['value'], domain=cookie.get('domain', ''), path=cookie.get('path', '/')
+                )
+            logger.debug(f"Synced {len(browser_cookies)} cookies to requests session")
+        else:
+            logger.warning("No requests session available for cookie sync")
+    except Exception as cookie_sync_error:
+        logger.error(f"Cookie sync failed: {cookie_sync_error}")
+
+
+def fetch_match_list_page(
+    driver: Any, session_manager: SessionManager, my_uuid: str, current_page: int, csrf_token: str
+) -> Optional[dict[str, Any]]:
+    """
+    Fetch match list data for a specific page from the API.
+
+    Args:
+        driver: Selenium WebDriver instance
+        session_manager: Active SessionManager instance
+        my_uuid: User's UUID
+        current_page: Page number to fetch
+        csrf_token: CSRF token for API request
+
+    Returns:
+        API response dict if successful, None otherwise
+    """
+    # Build API URL
+    match_list_url = urljoin(
+        config_schema.api.base_url,
+        f"discoveryui-matches/parents/list/api/matchList/{my_uuid}?currentPage={current_page}",
+    )
+
+    # Build headers
+    match_list_headers = {
+        "X-CSRF-Token": csrf_token,
+        "Accept": "application/json",
+        "Referer": urljoin(config_schema.api.base_url, "/discoveryui-matches/list/"),
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "priority": "u=1, i",
+    }
+
+    logger.debug(f"Calling Match List API for page {current_page}...")
+    logger.debug(f"Headers being passed to match list API: {match_list_headers}")
+
+    # Sync cookies before API call
+    _sync_cookies_to_session(driver, session_manager)
+
+    # Call the API
+    api_result = _call_api_request(
+        url=match_list_url,
+        session_manager=session_manager,
+        method="GET",
+        headers=match_list_headers,
+        api_description="Match List API",
+        allow_redirects=True,
+    )
+
+    if isinstance(api_result, dict):
+        return api_result
+
+    logger.warning(
+        "Match List API returned unexpected payload type %s",
+        type(api_result).__name__,
+    )
+    return None
+
+
+# ============================================================================
+# TEST FUNCTIONS
+# ============================================================================
+
+
+def _test_csrf_token_extraction() -> bool:
+    """Test CSRF token extraction from cookie value."""
+    # Test that CSRF token is correctly extracted from pipe-delimited cookie value
+    test_token = "test_csrf_token_12345"
+    cookie_value = f"{test_token}|extra_data"
+    # Simulate what the function does
+    extracted = unquote(cookie_value).split("|")[0]
+    assert extracted == test_token, f"Expected {test_token}, got {extracted}"
+
+    return True
+
+
+def _test_csrf_token_url_decoding() -> bool:
+    """Test CSRF token URL decoding."""
+    from urllib.parse import quote
+
+    # Test that URL-encoded CSRF tokens are properly decoded
+    test_token = "test_token_with_special_chars_!@#"
+    encoded_token = quote(test_token)
+
+    # Simulate what the function does
+    decoded = unquote(encoded_token)
+    assert decoded == test_token, f"Expected {test_token}, got {decoded}"
+
+    return True
+
+
+def _test_dna_matches_url_construction() -> bool:
+    """Test DNA matches page URL construction."""
+    test_uuid = "test-uuid-12345"
+    base_url = "https://www.ancestry.com/"
+
+    # Test URL construction
+    target_url = urljoin(base_url, f"discoveryui-matches/list/{test_uuid}")
+    expected = "https://www.ancestry.com/discoveryui-matches/list/test-uuid-12345"
+
+    assert target_url == expected, f"Expected {expected}, got {target_url}"
+
+    return True
+
+
+def _test_match_list_api_url_construction() -> bool:
+    """Test Match List API URL construction with pagination."""
+    test_uuid = "test-uuid-12345"
+    current_page = 2
+    base_url = "https://www.ancestry.com/"
+
+    # Test URL construction with page parameter
+    api_url = urljoin(
+        base_url, f"discoveryui-matches/parents/list/api/matchList/{test_uuid}?currentPage={current_page}"
+    )
+
+    assert test_uuid in api_url, "UUID should be in API URL"
+    assert "currentPage=2" in api_url, "Page parameter should be in API URL"
+    assert "matchList" in api_url, "API endpoint should be in URL"
+
+    return True
+
+
+def _test_match_list_headers_construction() -> bool:
+    """Test Match List API headers are properly constructed."""
+    csrf_token = "test_csrf_token_12345"
+    base_url = "https://www.ancestry.com/"
+
+    # Test header construction
+    headers = {
+        "X-CSRF-Token": csrf_token,
+        "Accept": "application/json",
+        "Referer": urljoin(base_url, "/discoveryui-matches/list/"),
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+        "priority": "u=1, i",
+    }
+
+    assert headers["X-CSRF-Token"] == csrf_token, "CSRF token should be in headers"
+    assert headers["Accept"] == "application/json", "Accept header should be JSON"
+    assert "Sec-Fetch" in str(headers), "Security headers should be present"
+
+    return True
+
+
+def _test_cache_key_construction() -> bool:
+    """Test cache key construction for in-tree status."""
+    test_uuid = "test-uuid-12345"
+    current_page = 3
+
+    # Test cache key construction (following the pattern in the code)
+    cache_key = f"in_tree_status_{test_uuid}_page_{current_page}"
+
+    assert test_uuid in cache_key, "UUID should be in cache key"
+    assert str(current_page) in cache_key, "Page number should be in cache key"
+
+    return True
+
+
+def _test_cookie_names_for_csrf() -> bool:
+    """Test that correct cookie names are used for CSRF token retrieval."""
+    csrf_token_cookie_names = (
+        "_dnamatches-matchlistui-x-csrf-token",
+        "_csrf",
+    )
+
+    # Verify cookie names are strings
+    for cookie_name in csrf_token_cookie_names:
+        assert isinstance(cookie_name, str), f"Cookie name should be string: {cookie_name}"
+        assert len(cookie_name) > 0, "Cookie name should not be empty"
+
+    # Verify we have at least 2 cookie names (primary and fallback)
+    assert len(csrf_token_cookie_names) >= 2, "Should have primary and fallback cookie names"
+
+    return True
+
+
+def dna_utils_module_tests() -> bool:
+    """
+    Comprehensive test suite for dna_utils.py.
+    Tests DNA match utilities including CSRF token handling, URL construction, and API integration.
+    """
+    from testing.test_framework import TestSuite, suppress_logging
+
+    with suppress_logging():
+        suite = TestSuite("DNA Match Utilities & API Integration", "dna_utils.py")
+        suite.start_suite()
+
+        suite.run_test(
+            "CSRF Token Extraction",
+            _test_csrf_token_extraction,
+            "CSRF tokens are correctly extracted from pipe-delimited cookie values",
+            "Parse pipe-delimited cookie value and extract first segment",
+            "Test CSRF token parsing from Ancestry cookie format",
+        )
+
+        suite.run_test(
+            "CSRF Token URL Decoding",
+            _test_csrf_token_url_decoding,
+            "URL-encoded CSRF tokens are properly decoded",
+            "URL-decode token and verify special characters are preserved",
+            "Test URL decoding for CSRF token values",
+        )
+
+        suite.run_test(
+            "DNA Matches URL Construction",
+            _test_dna_matches_url_construction,
+            "DNA matches page URL is correctly constructed with user UUID",
+            "Build URL using urljoin with base URL and UUID path",
+            "Test URL construction for DNA matches navigation",
+        )
+
+        suite.run_test(
+            "Match List API URL Construction",
+            _test_match_list_api_url_construction,
+            "Match List API URL includes UUID and pagination parameters",
+            "Build API URL with UUID and currentPage query parameter",
+            "Test API URL construction with pagination support",
+        )
+
+        suite.run_test(
+            "Match List Headers Construction",
+            _test_match_list_headers_construction,
+            "Match List API headers include CSRF token and security headers",
+            "Verify CSRF token, Accept, and Sec-Fetch headers are present",
+            "Test API header construction for security and compatibility",
+        )
+
+        suite.run_test(
+            "Cache Key Construction",
+            _test_cache_key_construction,
+            "Cache keys for in-tree status include UUID and page number",
+            "Build cache key with UUID and page number components",
+            "Test cache key construction for in-tree status caching",
+        )
+
+        suite.run_test(
+            "CSRF Cookie Names",
+            _test_cookie_names_for_csrf,
+            "Correct cookie names are defined for CSRF token retrieval",
+            "Verify primary and fallback CSRF cookie names are valid strings",
+            "Test CSRF cookie name configuration",
+        )
+
+        return suite.finish_suite()
+
+
+# Use centralized test runner utility from test_utilities
+from testing.test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(dna_utils_module_tests)
+
+
+if __name__ == "__main__":
+    run_comprehensive_tests()

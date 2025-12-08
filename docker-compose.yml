@@ -1,0 +1,110 @@
+# Docker Compose for Ancestry Research Automation Platform
+#
+# This provides a reproducible development environment with all dependencies.
+#
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose exec app bash  # Shell into the app container
+#   docker-compose down           # Stop all services
+#   docker-compose logs -f        # View logs
+#
+# For development with code mounting:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+version: '3.8'
+
+services:
+  # Main application container
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ancestry-app
+    volumes:
+      # Mount source code for development
+      - .:/app
+      # Persist data between container restarts
+      - ./Data:/app/Data
+      - ./Logs:/app/Logs
+      - ./Cache:/app/Cache
+    environment:
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      # Application settings from .env
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./Data/ancestry.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SKIP_LIVE_API_TESTS=${SKIP_LIVE_API_TESTS:-true}
+    env_file:
+      - .env
+    ports:
+      # Prometheus metrics (if enabled)
+      - "9090:9090"
+    networks:
+      - ancestry-network
+    depends_on:
+      - chrome
+    stdin_open: true
+    tty: true
+
+  # Selenium Chrome for browser automation
+  chrome:
+    image: selenium/standalone-chrome:latest
+    container_name: ancestry-chrome
+    shm_size: 2gb
+    ports:
+      - "4444:4444"  # Selenium WebDriver
+      - "7900:7900"  # noVNC for debugging
+    environment:
+      - SE_NODE_MAX_SESSIONS=2
+      - SE_NODE_SESSION_TIMEOUT=300
+      - SE_VNC_NO_PASSWORD=1
+    networks:
+      - ancestry-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ancestry-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - ancestry-network
+    profiles:
+      - monitoring
+
+  # Optional: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ancestry-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./observability/prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - ancestry-network
+    profiles:
+      - monitoring
+
+networks:
+  ancestry-network:
+    driver: bridge
+
+volumes:
+  grafana-data:
+  prometheus-data:

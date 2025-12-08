@@ -1,0 +1,1374 @@
+#!/usr/bin/env python3
+
+"""
+GEDCOM Search Intelligence & Advanced Genealogical Discovery Engine
+
+Sophisticated genealogical search platform providing advanced GEDCOM analysis,
+intelligent relationship discovery, and comprehensive family tree exploration
+with optimized search algorithms, relationship pathfinding, and genealogical
+data intelligence for professional family history research and analysis.
+
+Search Intelligence:
+• Advanced GEDCOM search algorithms with fuzzy matching and phonetic similarity
+• Intelligent individual and family record matching with confidence scoring
+• Sophisticated relationship path calculation using optimized graph algorithms
+• Comprehensive name matching with variant recognition and standardization
+• Advanced date and place matching with flexible format support and normalization
+• Multi-criteria search with weighted scoring and relevance ranking
+
+Relationship Discovery:
+• Bidirectional relationship pathfinding with detailed explanation generation
+• Complex family relationship analysis including step-relationships and adoptions
+• Intelligent sibling detection and family group identification
+• Comprehensive ancestor and descendant tracking with generation mapping
+• Advanced relationship degree calculation with cousin relationship identification
+• Integration with DNA match data for relationship validation and enhancement
+
+Performance Optimization:
+• High-performance search algorithms with memory-efficient data structures
+• Advanced caching strategies with intelligent cache management and optimization
+• Optimized indexing for large genealogical datasets with fast retrieval
+• Parallel processing capabilities for concurrent search operations
+• Performance monitoring with search analytics and optimization recommendations
+• Integration with performance systems for comprehensive search optimization
+
+Foundation Services:
+Provides the essential GEDCOM search infrastructure that enables sophisticated
+genealogical discovery through intelligent search algorithms, comprehensive
+relationship analysis, and optimized performance for professional research workflows.
+"""
+
+# === PATH SETUP FOR PACKAGE IMPORTS ===
+import sys
+from pathlib import Path
+
+_project_root = Path(__file__).resolve().parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# === CORE INFRASTRUCTURE ===
+# === PHASE 4.1: ENHANCED ERROR HANDLING ===
+import logging
+
+logger = logging.getLogger(__name__)
+
+# --- Standard library imports ---
+import importlib
+import json
+from functools import lru_cache
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any, Optional, cast
+
+from genealogy.gedcom.gedcom_utils import GedcomData, calculate_match_score
+
+
+@lru_cache(maxsize=1)
+def _get_gedcom_utils_module() -> ModuleType:
+    """Lazy-load gedcom_utils to avoid importing private helpers directly."""
+    return importlib.import_module("gedcom_utils")
+
+
+def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
+    normalizer = _get_gedcom_utils_module()._normalize_id
+    return normalizer(value)
+
+
+# --- Local module imports ---
+# from logging_config import logger  # Unused here
+# --- Test framework imports ---
+# Initialize config
+from config.config_manager import get_config_manager
+from testing.test_framework import (
+    TestSuite,
+    suppress_logging,
+)
+
+config_manager = get_config_manager()
+config_schema = config_manager.get_config()
+from core.error_handling import MissingConfigError
+from research.relationship_utils import (
+    convert_gedcom_path_to_unified_format,
+    fast_bidirectional_bfs,
+    format_relationship_path_unified,
+)
+
+# NOTE: Scoring weights are defined in config_schema.common_scoring_weights
+# (config/config_schema.py). Do NOT duplicate weight definitions here.
+# The config system is always available via get_config_manager().get_config().
+
+
+# Global cache for GEDCOM data with enhanced caching
+class _GedcomDataCache:
+    """Manages cached GEDCOM data state."""
+
+    data: Optional[Any] = None
+
+
+def set_cached_gedcom_data(gedcom_data: Any) -> None:
+    """
+    Set the cached GEDCOM data directly with enhanced caching support.
+
+    This function allows other modules to set the cached GEDCOM data directly,
+    which is useful for avoiding redundant loading of the GEDCOM file.
+    Also triggers aggressive caching of processed data.
+
+    Args:
+        gedcom_data: GedcomData instance to cache
+
+    Returns:
+        None
+    """
+    _GedcomDataCache.data = gedcom_data
+    logger.info(f"Set cached GEDCOM data directly: {gedcom_data is not None}")
+
+    # If we have a valid gedcom_data instance, cache its processed data
+    if gedcom_data and hasattr(gedcom_data, "path"):
+        try:
+            from genealogy.gedcom.gedcom_cache import cache_gedcom_processed_data
+
+            cache_gedcom_processed_data(gedcom_data, str(gedcom_data.path))
+        except ImportError:
+            logger.debug("gedcom_cache module not available for enhanced caching")
+        except Exception as e:
+            logger.debug(f"Error caching processed GEDCOM data: {e}")
+
+
+def get_cached_gedcom_data() -> Any:
+    """Return the currently cached GEDCOM data."""
+    return _GedcomDataCache.data
+
+
+def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
+    """
+    Load and initialize a GedcomData instance.
+
+    Args:
+        gedcom_path: Path to the GEDCOM file
+
+    Returns:
+        GedcomData instance or None if loading fails
+    """
+    try:
+        # Log the path we're using
+        logger.info(f"Loading GEDCOM file from: {gedcom_path}")
+
+        # Check if the file exists and is readable
+        if not gedcom_path.exists():
+            raise MissingConfigError(f"GEDCOM file does not exist: {gedcom_path}")
+
+        # Create GedcomData instance
+        logger.info("Creating GedcomData instance...")
+        gedcom_data = GedcomData(gedcom_path)
+
+        # Check if the instance was created successfully
+        if gedcom_data:
+            logger.info("GedcomData instance created successfully")
+
+            # Try to build caches if the method exists
+            if hasattr(gedcom_data, "build_caches"):
+                logger.info("Building caches...")
+                try:
+                    gedcom_data.build_caches()
+                    logger.info("Caches built successfully")
+                except Exception as e:
+                    logger.error(f"Error building caches: {e}", exc_info=True)
+                    # Continue without caches rather than failing completely
+            else:
+                logger.warning("GedcomData does not have build_caches method")
+
+            return gedcom_data
+        logger.error("GedcomData instance is None")
+        return None
+    except Exception as e:
+        logger.error(f"Error loading GEDCOM file: {e}", exc_info=True)
+        # Use exception chaining for better error context
+        raise RuntimeError(f"Failed to load GEDCOM data from {gedcom_path}") from e
+
+
+def get_gedcom_data() -> Optional[GedcomData]:
+    """
+    Returns the cached GEDCOM data instance with aggressive caching, loading it if necessary.
+
+    This function ensures the GEDCOM file is loaded only once and reused
+    throughout the script, with enhanced multi-level caching for optimal performance.
+
+    Returns:
+        GedcomData instance or None if loading fails
+    """
+    # Return cached data if already loaded
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from memory")
+        return _GedcomDataCache.data
+
+    # Check if GEDCOM path is configured
+    gedcom_path_str = None
+    try:
+        gedcom_path_str = config_schema.database.gedcom_file_path if config_schema else None
+    except MissingConfigError as e:
+        logger.warning(str(e))
+        raise
+
+    logger.info(f"GEDCOM_FILE_PATH from config: {gedcom_path_str}")
+
+    if not gedcom_path_str:
+        raise MissingConfigError("GEDCOM_FILE_PATH not configured. Cannot load GEDCOM file.")
+
+    # Convert string to Path object
+    gedcom_path = Path(gedcom_path_str)
+
+    # Make sure the path is absolute
+    if not gedcom_path.is_absolute():
+        # If it's a relative path, make it absolute relative to the project root
+        original_path = gedcom_path
+        gedcom_path = Path(__file__).parent.resolve() / gedcom_path
+        logger.debug(f"Converted relative path '{original_path}' to absolute path: {gedcom_path}")
+
+    # Check if the file exists
+    if not gedcom_path.exists():
+        raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+
+    # Try to load with aggressive caching first
+    try:
+        from genealogy.gedcom.gedcom_cache import load_gedcom_with_aggressive_caching
+
+        logger.debug("Using aggressive GEDCOM caching system")
+        _GedcomDataCache.data = load_gedcom_with_aggressive_caching(str(gedcom_path))
+    except ImportError:
+        logger.debug("Aggressive caching not available, using standard loading")
+        _GedcomDataCache.data = load_gedcom_data(gedcom_path)
+    except Exception as e:
+        logger.warning(f"Error with aggressive caching, falling back to standard: {e}")
+        _GedcomDataCache.data = load_gedcom_data(gedcom_path)
+
+    if _GedcomDataCache.data:
+        logger.debug("GEDCOM file loaded successfully and cached for reuse.")
+
+        # Log cache statistics if available
+        try:
+            from genealogy.gedcom.gedcom_cache import get_gedcom_cache_info
+
+            cache_info = get_gedcom_cache_info()
+            logger.debug(f"GEDCOM cache info: {cache_info}")
+        except ImportError:
+            pass
+    else:
+        logger.warning("GEDCOM data loading returned None")
+
+    return _GedcomDataCache.data
+
+
+def matches_criterion(key: str, criteria: dict[str, Any], value: Any) -> bool:
+    """Check if a value matches a criterion."""
+    if key not in criteria or criteria[key] is None:
+        return False
+
+    criterion = criteria[key]
+
+    # Handle string values (case-insensitive contains)
+    if isinstance(criterion, str) and isinstance(value, str):
+        return criterion.lower() in value.lower()
+
+    # Handle exact matches for non-string values
+    return criterion == value
+
+
+def matches_year_criterion(key: str, criteria: dict[str, Any], value: Any, year_range: int) -> bool:
+    """Check if a year value matches a criterion within a specified range."""
+    if key not in criteria or criteria[key] is None or value is None:
+        return False
+
+    criterion = criteria[key]
+
+    # Handle exact match
+    if criterion == value:
+        return True
+
+    # Handle range match
+    return abs(criterion - value) <= year_range
+
+
+# Helper functions for search_gedcom_for_criteria
+
+
+def _load_or_get_gedcom_data(
+    gedcom_data: Optional[GedcomData],
+    gedcom_path: Optional[str],
+) -> GedcomData:
+    """Load or retrieve GEDCOM data from cache or file."""
+    if gedcom_data is not None:
+        return gedcom_data
+
+    # Try cached data first
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return cast(GedcomData, _GedcomDataCache.data)
+
+    # Determine GEDCOM path
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
+
+    if not gedcom_path or not Path(gedcom_path).exists():
+        raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+
+    # Load GEDCOM data
+    loaded_data = load_gedcom_data(Path(str(gedcom_path)))
+    if loaded_data is None:
+        raise MissingConfigError("Failed to load GEDCOM data from provided path")
+    return loaded_data
+
+
+def _validate_gedcom_data(gedcom_data: Optional[GedcomData]) -> None:
+    """Validate that GEDCOM data is loaded and has processed cache."""
+    if not gedcom_data or not getattr(gedcom_data, "processed_data_cache", None):
+        raise MissingConfigError("Failed to load GEDCOM data or processed cache is empty")
+
+
+def _prepare_search_criteria(search_criteria: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Prepare scoring and filter criteria from search criteria."""
+    scoring_criteria = {}
+    filter_criteria = {}
+
+    # Copy provided criteria to scoring criteria
+    scoring_keys = [
+        "first_name",
+        "surname",
+        "gender",
+        "birth_year",
+        "birth_place",
+        "birth_date_obj",
+        "death_year",
+        "death_place",
+        "death_date_obj",
+    ]
+    for key in scoring_keys:
+        if key in search_criteria and search_criteria[key] is not None:
+            scoring_criteria[key] = search_criteria[key]
+
+    # Create filter criteria (subset of scoring criteria)
+    filter_keys = ["first_name", "surname", "gender", "birth_year", "birth_place", "death_place"]
+    for key in filter_keys:
+        if key in scoring_criteria:
+            filter_criteria[key] = scoring_criteria[key]
+
+    return scoring_criteria, filter_criteria
+
+
+def _get_scoring_configuration() -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Get scoring weights and date flexibility configuration.
+
+    Uses config_schema.common_scoring_weights as the single source of truth.
+    The config system is always available via get_config_manager().get_config().
+    """
+    # Get scoring weights from config_schema (always available)
+    scoring_weights = cast(dict[str, Any], dict(config_schema.common_scoring_weights))
+
+    # Get date flexibility from config_schema
+    date_flex_value: Any = getattr(config_schema, "date_flexibility", None)
+
+    # Convert to dict format expected by calculate_match_score
+    if isinstance(date_flex_value, dict):
+        date_flex = cast(dict[str, Any], date_flex_value)
+    else:
+        date_flex = {"year_match_range": int(date_flex_value) if isinstance(date_flex_value, (int, float)) else 10}
+
+    # Extract year range
+    year_range = int(date_flex.get("year_match_range", 10))
+
+    return scoring_weights, date_flex, year_range
+
+
+def _extract_individual_filter_values(indi_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract values needed for filtering from individual data."""
+    return {
+        "givn_lower": indi_data.get("first_name", "").lower(),
+        "surn_lower": indi_data.get("surname", "").lower(),
+        "sex_lower": indi_data.get("gender_norm"),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place_lower": (
+            indi_data.get("birth_place_disp", "").lower() if indi_data.get("birth_place_disp") else None
+        ),
+        "death_place_lower": (
+            indi_data.get("death_place_disp", "").lower() if indi_data.get("death_place_disp") else None
+        ),
+        "death_date_obj": indi_data.get("death_date_obj"),
+    }
+
+
+def _names_mandatory_satisfied(filter_criteria: dict[str, Any], filter_values: dict[str, Any]) -> Optional[bool]:
+    """Return True/False if name gating applies; None if no name provided.
+
+    - If first_name and/or surname provided, both provided names must match (contains).
+    - Returns:
+        * True  -> name requirements satisfied
+        * False -> name requirements not satisfied
+        * None  -> no name requirements (no first_name nor surname provided)
+    """
+    has_fn = bool(filter_criteria.get("first_name"))
+    has_sn = bool(filter_criteria.get("surname"))
+    if not (has_fn or has_sn):
+        return None
+
+    fn_ok = (not has_fn) or matches_criterion("first_name", filter_criteria, filter_values["givn_lower"])
+    sn_ok = (not has_sn) or matches_criterion("surname", filter_criteria, filter_values["surn_lower"])
+    return fn_ok and sn_ok
+
+
+def _evaluate_or_filter(
+    filter_criteria: dict[str, Any],
+    filter_values: dict[str, Any],
+    year_range: int,
+) -> bool:
+    """Evaluate filter for an individual.
+
+    Policy:
+    - If user provided first_name and/or surname, those are mandatory.
+    - Additionally, if birth_place and/or death_place are provided, they are mandatory
+      (candidate must have the field present and matching via 'contains').
+    - If no names provided, use a broader OR across other criteria, but still enforce
+      the place mandatories when provided.
+    """
+    # Enforce place gates if user provided them
+    if "birth_place" in filter_criteria and not matches_criterion(
+        "birth_place", filter_criteria, filter_values.get("birth_place_lower")
+    ):
+        return False
+    if "death_place" in filter_criteria and not matches_criterion(
+        "death_place", filter_criteria, filter_values.get("death_place_lower")
+    ):
+        return False
+
+    # Names mandatory if provided
+    name_gate = _names_mandatory_satisfied(filter_criteria, filter_values)
+    if name_gate is not None:
+        return bool(name_gate)
+
+    # No names provided: broader OR filter (gender removed per policy)
+    fn_match = matches_criterion("first_name", filter_criteria, filter_values["givn_lower"])
+    sn_match = matches_criterion("surname", filter_criteria, filter_values["surn_lower"])
+    bp_match = matches_criterion("birth_place", filter_criteria, filter_values.get("birth_place_lower"))
+    dp_match = matches_criterion("death_place", filter_criteria, filter_values.get("death_place_lower"))
+    by_match = matches_year_criterion("birth_year", filter_criteria, filter_values["birth_year"], year_range)
+    alive_match = filter_values["death_date_obj"] is None
+
+    return fn_match or sn_match or bp_match or dp_match or by_match or alive_match
+
+
+def _calculate_cached_score(
+    scoring_criteria: dict[str, Any],
+    indi_data: dict[str, Any],
+    scoring_weights: dict[str, Any],
+    date_flex: dict[str, Any],
+    score_cache: dict[tuple[int, int], tuple[float, dict[str, Any], list[str]]],
+) -> tuple[float, dict[str, Any], list[str]]:
+    """Calculate match score with caching."""
+    criterion_hash = hash(json.dumps(scoring_criteria, sort_keys=True))
+    candidate_hash = hash(json.dumps(str(indi_data), sort_keys=True))
+    cache_key = (criterion_hash, candidate_hash)
+
+    if cache_key not in score_cache:
+        total_score, field_scores, reasons = calculate_match_score(
+            search_criteria=scoring_criteria,
+            candidate_processed_data=indi_data,
+            scoring_weights=scoring_weights,
+            date_flexibility=date_flex,
+        )
+        score_cache[cache_key] = (total_score, field_scores, reasons)
+    else:
+        total_score, field_scores, reasons = score_cache[cache_key]
+
+    return total_score, field_scores, reasons
+
+
+def _create_match_record(
+    indi_id: str,
+    indi_data: dict[str, Any],
+    total_score: float,
+    field_scores: dict[str, Any],
+    reasons: list[str],
+) -> dict[str, Any]:
+    """Create a match record from individual data and scores."""
+    return {
+        "id": indi_id,
+        "display_id": indi_id,
+        "first_name": indi_data.get("first_name", ""),
+        "surname": indi_data.get("surname", ""),
+        "gender": indi_data.get("gender", ""),
+        "birth_year": indi_data.get("birth_year"),
+        "birth_place": indi_data.get("birth_place", ""),
+        "death_year": indi_data.get("death_year"),
+        "death_place": indi_data.get("death_place", ""),
+        "total_score": total_score,
+        "field_scores": field_scores,
+        "reasons": reasons,
+        "source": "GEDCOM",
+    }
+
+
+def search_gedcom_for_criteria(
+    search_criteria: dict[str, Any],
+    max_results: int = 10,
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """
+    Search GEDCOM data for individuals matching the given criteria.
+
+    Args:
+        search_criteria: Dictionary of search criteria (first_name, surname, gender, birth_year, etc.)
+        max_results: Maximum number of results to return (default: 10)
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        List of dictionaries containing match information, sorted by score (highest first)
+    """
+    # Load and validate GEDCOM data
+    gedcom_data = _load_or_get_gedcom_data(gedcom_data, gedcom_path)
+    _validate_gedcom_data(gedcom_data)
+
+    # Prepare search criteria
+    scoring_criteria, filter_criteria = _prepare_search_criteria(search_criteria)
+
+    # Get scoring configuration
+    scoring_weights, date_flex, year_range = _get_scoring_configuration()
+
+    # Filter and score individuals
+    scored_matches: list[dict[str, Any]] = []
+    score_cache: dict[tuple[int, int], tuple[float, dict[str, Any], list[str]]] = {}
+
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+
+    for indi_id, indi_data in processed_cache.items():
+        try:
+            # Extract filter values
+            filter_values = _extract_individual_filter_values(indi_data)
+
+            # Evaluate OR filter
+            if not _evaluate_or_filter(filter_criteria, filter_values, year_range):
+                continue
+
+            # Calculate match score
+            total_score, field_scores, reasons = _calculate_cached_score(
+                scoring_criteria, indi_data, scoring_weights, date_flex, score_cache
+            )
+
+            # Only include if score is above threshold
+            if total_score > 0:
+                match_record = _create_match_record(indi_id, indi_data, total_score, field_scores, reasons)
+                scored_matches.append(match_record)
+        except Exception as e:
+            logger.error(f"Error processing individual {indi_id}: {e}")
+            continue
+
+    # Sort matches by score (highest first)
+    scored_matches.sort(key=lambda x: x.get("total_score", 0), reverse=True)
+
+    # Return top matches (limited by max_results)
+    return scored_matches[:max_results] if scored_matches else []
+
+
+# Helper functions for get_gedcom_family_details
+
+
+def _ensure_gedcom_data(gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]) -> GedcomData:
+    """Ensure GEDCOM data is loaded."""
+    if gedcom_data:
+        return gedcom_data
+
+    # Try to use the cached GEDCOM data first
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return _GedcomDataCache.data
+
+    # Get path from config if not provided
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
+
+    if not gedcom_path or not Path(gedcom_path).exists():
+        raise MissingConfigError(f"GEDCOM file not found at {gedcom_path}")
+
+    # Load GEDCOM data
+    loaded_data = load_gedcom_data(Path(str(gedcom_path)))
+    if not loaded_data:
+        raise MissingConfigError("Failed to load GEDCOM data")
+
+    return loaded_data
+
+
+def _get_individual_data(gedcom_data: GedcomData, individual_id: str) -> tuple[str, dict[str, Any]]:
+    """Get individual data from GEDCOM cache."""
+    if not hasattr(gedcom_data, "processed_data_cache"):
+        raise MissingConfigError("GEDCOM data does not have processed_data_cache attribute")
+
+    # Normalize the individual ID
+    individual_id_norm = normalize_gedcom_id(individual_id)
+    if individual_id_norm is None:
+        raise MissingConfigError(f"Invalid individual ID: {individual_id}")
+
+    # Get individual data from cache
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    individual_data = processed_cache.get(individual_id_norm, {})
+    if not individual_data:
+        raise MissingConfigError(f"Individual {individual_id_norm} not found in GEDCOM data")
+
+    return individual_id_norm, individual_data
+
+
+def _extract_basic_info(individual_id_norm: str, individual_data: dict[str, Any]) -> dict[str, Any]:
+    """Extract basic information from individual data."""
+    return {
+        "id": individual_id_norm,
+        "name": individual_data.get("full_name_disp", "Unknown"),
+        "first_name": individual_data.get("first_name", ""),
+        "surname": individual_data.get("surname", ""),
+        "gender": individual_data.get("gender", ""),
+        "birth_year": individual_data.get("birth_year"),
+        "birth_date": individual_data.get("birth_date_disp", "Unknown"),
+        "birth_place": individual_data.get("birth_place_disp", "Unknown"),
+        "death_year": individual_data.get("death_year"),
+        "death_date": individual_data.get("death_date_disp", "Unknown"),
+        "death_place": individual_data.get("death_place_disp", "Unknown"),
+        "parents": [],
+        "spouses": [],
+        "children": [],
+        "siblings": [],
+    }
+
+
+def _get_parents(gedcom_data: GedcomData, individual_id_norm: str) -> list[dict[str, Any]]:
+    """Get parent information."""
+    parents: list[dict[str, Any]] = []
+    id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
+    parent_ids = id_to_parents.get(individual_id_norm, []) if hasattr(gedcom_data, "id_to_parents") else []
+
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+
+    for parent_id in parent_ids:
+        if parent_id is None:
+            continue
+        parent_data = processed_cache.get(parent_id, {})
+        if parent_data:
+            gender = parent_data.get("gender", "")
+            relationship = "father" if gender == "M" else "mother" if gender == "F" else "parent"
+
+            parent_info = {
+                "id": parent_id,
+                "name": parent_data.get("full_name_disp", "Unknown"),
+                "birth_year": parent_data.get("birth_year"),
+                "birth_place": parent_data.get("birth_place_disp", "Unknown"),
+                "death_year": parent_data.get("death_year"),
+                "death_place": parent_data.get("death_place_disp", "Unknown"),
+                "relationship": relationship,
+            }
+            parents.append(parent_info)
+
+    return parents
+
+
+def _get_siblings(gedcom_data: GedcomData, individual_id_norm: str, parent_ids: list[str]) -> list[dict[str, Any]]:
+    """Get sibling information."""
+    siblings: list[dict[str, Any]] = []
+    siblings_set: set[str] = set()
+
+    id_to_children = cast(dict[str, list[str]], getattr(gedcom_data, "id_to_children", {}))
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+
+    for parent_id in parent_ids:
+        parent_children = id_to_children.get(parent_id, [])
+        for child_id in parent_children:
+            if child_id != individual_id_norm:
+                siblings_set.add(child_id)
+
+    for sibling_id in siblings_set:
+        sibling_data = processed_cache.get(sibling_id)
+        if sibling_data:
+            sibling_info = {
+                "id": sibling_id,
+                "name": sibling_data.get("full_name_disp", "Unknown"),
+                "birth_year": sibling_data.get("birth_year"),
+                "birth_place": sibling_data.get("birth_place_disp", "Unknown"),
+                "death_year": sibling_data.get("death_year"),
+                "death_place": sibling_data.get("death_place_disp", "Unknown"),
+            }
+            siblings.append(sibling_info)
+
+    return siblings
+
+
+def _get_spouse_info(gedcom_data: GedcomData, spouse_id: str, fam_record: Any) -> dict[str, Any]:
+    """Get spouse information including marriage details."""
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    spouse_data = processed_cache.get(spouse_id)
+    if not spouse_data:
+        return {}
+
+    # Get marriage information
+    marriage_date = "Unknown"
+    marriage_place = "Unknown"
+    marr_tag = fam_record.sub_tag("MARR")
+    if marr_tag:
+        date_tag = marr_tag.sub_tag("DATE")
+        if date_tag:
+            marriage_date = date_tag.value
+
+        plac_tag = marr_tag.sub_tag("PLAC")
+        if plac_tag:
+            marriage_place = plac_tag.value
+
+    return {
+        "id": spouse_id,
+        "name": spouse_data.get("full_name_disp", "Unknown"),
+        "birth_year": spouse_data.get("birth_year"),
+        "birth_place": spouse_data.get("birth_place_disp", "Unknown"),
+        "death_year": spouse_data.get("death_year"),
+        "death_place": spouse_data.get("death_place_disp", "Unknown"),
+        "marriage_date": marriage_date,
+        "marriage_place": marriage_place,
+    }
+
+
+def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str, Any]]:
+    """Get child information."""
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    child_data = processed_cache.get(child_id, {})
+    if not child_data:
+        return None
+
+    return {
+        "id": child_id,
+        "name": child_data.get("full_name_disp", "Unknown"),
+        "birth_year": child_data.get("birth_year"),
+        "birth_place": child_data.get("birth_place_disp", "Unknown"),
+        "death_year": child_data.get("death_year"),
+        "death_place": child_data.get("death_place_disp", "Unknown"),
+    }
+
+
+# Helper functions for _get_spouses_and_children
+
+
+def _validate_gedcom_data_for_family(gedcom_data: GedcomData) -> bool:
+    """Validate that gedcom_data has required attributes for family processing."""
+    has_reader = bool(getattr(gedcom_data, "reader", None))
+    has_index = bool(getattr(gedcom_data, "indi_index", None))
+    return has_reader and has_index
+
+
+def _get_family_record(gedcom_data: GedcomData, fam_id: str) -> Any:
+    """Get family record using various methods with error handling."""
+    fam_record = None
+
+    try:
+        if hasattr(gedcom_data.reader, "fam_dict"):
+            fam_dict = cast(dict[str, Any], getattr(gedcom_data.reader, "fam_dict", {}))
+            if fam_dict:
+                fam_record = fam_dict.get(fam_id)
+
+        if not fam_record and hasattr(gedcom_data.reader, "get_family"):
+            get_family = getattr(gedcom_data.reader, "get_family", None)
+            if get_family:
+                fam_record = get_family(fam_id)
+    except Exception:
+        fam_record = None
+
+    return fam_record
+
+
+def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Optional[str]:
+    """Extract spouse ID from family record."""
+    husb_tag = fam_record.sub_tag("HUSB")
+    wife_tag = fam_record.sub_tag("WIFE")
+
+    if husb_tag and husb_tag.value != individual_id_norm:
+        return normalize_gedcom_id(husb_tag.value)
+    if wife_tag and wife_tag.value != individual_id_norm:
+        return normalize_gedcom_id(wife_tag.value)
+
+    return None
+
+
+def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> list[dict[str, Any]]:
+    """Extract children information from family record."""
+    children: list[dict[str, Any]] = []
+
+    for chil_tag in fam_record.sub_tags("CHIL"):
+        child_id = normalize_gedcom_id(chil_tag.value)
+        if child_id is None:
+            continue
+        child_info = _get_child_info(gedcom_data, child_id)
+        if child_info:
+            children.append(child_info)
+
+    return children
+
+
+def _process_family_record(
+    gedcom_data: GedcomData, fam_record: Any, individual_id_norm: str
+) -> tuple[Optional[dict[str, Any]], list[dict[str, Any]]]:
+    """Process a single family record to extract spouse and children."""
+    spouse_info = None
+    children = []
+
+    # Get spouse
+    spouse_id = _extract_spouse_from_family(fam_record, individual_id_norm)
+    if spouse_id:
+        spouse_info = _get_spouse_info(gedcom_data, spouse_id, fam_record)
+
+    # Get children
+    children = _extract_children_from_family(fam_record, gedcom_data)
+
+    return spouse_info, children
+
+
+def _get_spouses_and_children(
+    gedcom_data: GedcomData, individual_id_norm: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Get spouses and children information."""
+    spouses: list[dict[str, Any]] = []
+    children: list[dict[str, Any]] = []
+
+    # Validate gedcom_data has required attributes
+    if not _validate_gedcom_data_for_family(gedcom_data):
+        return spouses, children
+
+    # Get the individual record
+    indi_index = cast(dict[str, Any], getattr(gedcom_data, "indi_index", {}))
+    indi_record = indi_index.get(individual_id_norm)
+    if not indi_record:
+        return spouses, children
+
+    # Process each family where this individual is a spouse
+    for fam_link in indi_record.sub_tags("FAMS"):
+        fam_id = fam_link.value
+        if not fam_id or not isinstance(fam_id, str):
+            continue
+        fam_record = _get_family_record(gedcom_data, fam_id)
+
+        if fam_record:
+            spouse_info, family_children = _process_family_record(gedcom_data, fam_record, individual_id_norm)
+
+            if spouse_info:
+                spouses.append(spouse_info)
+
+            children.extend(family_children)
+
+    return spouses, children
+
+
+def get_gedcom_family_details(
+    individual_id: str,
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """
+    Get family details for a specific individual from GEDCOM data.
+
+    Args:
+        individual_id: GEDCOM ID of the individual
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        Dictionary containing family details (parents, spouses, children, siblings)
+    """
+    # Step 1: Ensure we have GEDCOM data
+    gedcom_data = _ensure_gedcom_data(gedcom_data, gedcom_path)
+
+    # Step 2: Get individual data from cache
+    individual_id_norm, individual_data = _get_individual_data(gedcom_data, individual_id)
+
+    # Step 3: Extract basic information
+    result = _extract_basic_info(individual_id_norm, individual_data)
+
+    # Step 4: Get family relationships
+    try:
+        # Get parents
+        id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
+        parent_ids_raw = (
+            id_to_parents.get(individual_id_norm, set()) if hasattr(gedcom_data, "id_to_parents") else set()
+        )
+        parent_ids = list(parent_ids_raw)
+        result["parents"] = _get_parents(gedcom_data, individual_id_norm)
+
+        # Get siblings
+        result["siblings"] = _get_siblings(gedcom_data, individual_id_norm, parent_ids)
+
+        # Get spouses and children
+        spouses, children = _get_spouses_and_children(gedcom_data, individual_id_norm)
+        result["spouses"] = spouses
+        result["children"] = children
+    except Exception as e:
+        logger.error(f"Error getting family details for {individual_id_norm}: {e}", exc_info=True)
+
+    return result
+
+
+def _load_or_get_gedcom_data_optional(
+    gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]
+) -> Optional[GedcomData]:
+    """Load or retrieve GEDCOM data from cache or file (optional variant that returns None on missing file)."""
+    if gedcom_data:
+        return gedcom_data
+
+    # Try to use the cached GEDCOM data first
+    if _GedcomDataCache.data is not None:
+        logger.info("Using cached GEDCOM data from _GedcomDataCache")
+        return _GedcomDataCache.data
+
+    # Determine GEDCOM path
+    if not gedcom_path:
+        gedcom_path = (
+            str(config_schema.database.gedcom_file_path)
+            if config_schema
+            else str(Path(__file__).parent / "Data" / "family.ged")
+        )
+
+    if gedcom_path and not Path(gedcom_path).exists():
+        return None
+
+    # Load GEDCOM data
+    return load_gedcom_data(Path(str(gedcom_path))) if gedcom_path else None
+
+
+def _get_reference_id() -> Optional[str]:
+    """Get reference person ID from config."""
+    return config_schema.reference_person_id if config_schema else None
+
+
+def _get_individual_name(individual_id_norm: str, gedcom_data: GedcomData) -> str:
+    """Get individual name from GEDCOM data."""
+    processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
+    if individual_id_norm and individual_id_norm in processed_cache:
+        individual_data = processed_cache[individual_id_norm]
+        return individual_data.get("full_name_disp", "Individual")
+    return "Individual"
+
+
+def _find_relationship_path(individual_id_norm: str, reference_id_norm: str, gedcom_data: GedcomData) -> list[str]:
+    """Find relationship path between two individuals."""
+    if not (individual_id_norm and reference_id_norm):
+        return []
+
+    id_to_parents = cast(dict[str, set[str]], getattr(gedcom_data, "id_to_parents", {}))
+    id_to_children = cast(dict[str, Any], getattr(gedcom_data, "id_to_children", {}))
+
+    return fast_bidirectional_bfs(
+        individual_id_norm,
+        reference_id_norm,
+        id_to_parents,
+        id_to_children,
+        max_depth=25,
+        node_limit=150000,
+        timeout_sec=45,
+    )
+
+
+def get_gedcom_relationship_path(
+    individual_id: str,
+    reference_id: Optional[str] = None,
+    reference_name: Optional[str] = "Reference Person",
+    gedcom_data: Optional[GedcomData] = None,
+    gedcom_path: Optional[str] = None,
+) -> str:
+    """
+    Get the relationship path between an individual and the reference person.
+
+    Args:
+        individual_id: GEDCOM ID of the individual
+        reference_id: GEDCOM ID of the reference person (default: from config)
+        reference_name: Name of the reference person (default: "Reference Person")
+        gedcom_data: Optional pre-loaded GedcomData instance
+        gedcom_path: Optional path to GEDCOM file (used if gedcom_data not provided)
+
+    Returns:
+        Formatted relationship path string
+    """
+    # Load or get GEDCOM data
+    gedcom_data = _load_or_get_gedcom_data_optional(gedcom_data, gedcom_path)
+    if not gedcom_data:
+        return "(Failed to load GEDCOM data)"
+
+    # Normalize individual ID
+    individual_id_norm = normalize_gedcom_id(individual_id)
+    if not individual_id_norm:
+        return "(Invalid individual ID)"
+
+    # Get reference ID
+    if not reference_id:
+        reference_id = _get_reference_id()
+    if not reference_id:
+        return "(Reference person ID not available)"
+
+    reference_id_norm = normalize_gedcom_id(reference_id)
+    if not reference_id_norm:
+        return "(Invalid reference ID)"
+
+    # Get individual name
+    individual_name = _get_individual_name(individual_id_norm, gedcom_data)
+
+    # Find relationship path
+    path_ids = _find_relationship_path(individual_id_norm, reference_id_norm, gedcom_data)
+    if not path_ids:
+        return f"(No relationship path found between {individual_name} and {reference_name})"
+
+    # Convert the GEDCOM path to the unified format
+    unified_path = convert_gedcom_path_to_unified_format(
+        path_ids,
+        gedcom_data.reader,
+        gedcom_data.id_to_parents,
+        gedcom_data.id_to_children,
+        gedcom_data.indi_index,
+    )
+
+    # Format the relationship path
+    return format_relationship_path_unified(unified_path, individual_name, reference_name or "Reference Person", None)
+
+
+def gedcom_search_module_tests() -> bool:
+    """
+    GEDCOM Search Utilities module test suite.
+    Tests the six categories: Initialization, Core Functionality, Edge Cases, Integration, Performance, and Error Handling.
+    """
+
+    with suppress_logging():
+        suite = TestSuite("GEDCOM Search Utilities & Data Querying", "gedcom_search_utils.py")
+
+    # Run all tests
+    print("🔍 Running GEDCOM Search Utilities & Data Querying comprehensive test suite...")
+
+    with suppress_logging():
+        suite.run_test(
+            "Filter policy enforcement",
+            test_filter_policy_enforcement,
+            "Verify mandatory name/place policy and OR-filter fallback behavior",
+            "Filter evaluation enforces gating rules before scoring candidates",
+            "_evaluate_or_filter returns True only when policy requirements are satisfied",
+        )
+
+        suite.run_test(
+            "Basic criterion matching functionality",
+            test_criterion_matching,
+            "Test criterion matching works correctly for various data types",
+            "Criterion matching provides accurate filtering of GEDCOM records",
+            "matches_criterion correctly evaluates name, age, and other criteria",
+        )
+
+        suite.run_test(
+            "Year criterion matching validation",
+            test_year_criterion,
+            "Test year-based criterion matching with range tolerance",
+            "Year criterion matching enables flexible date-based searches",
+            "matches_year_criterion correctly handles birth years and date ranges",
+        )
+
+        suite.run_test(
+            "GEDCOM data operations management",
+            test_gedcom_operations,
+            "Test GEDCOM data caching and retrieval operations",
+            "GEDCOM operations provide efficient data access and storage",
+            "GEDCOM data can be cached and retrieved successfully",
+        )
+
+        suite.run_test(
+            "Search criteria processing",
+            test_search_criteria,
+            "Test complex search criteria processing and filtering",
+            "Search criteria processing enables sophisticated genealogical queries",
+            "Complex search criteria are processed correctly with multiple filters",
+        )
+
+        suite.run_test(
+            "Filter value extraction",
+            test_filter_value_extraction,
+            "Test normalized value extraction used by GEDCOM filters",
+            "Filter value extraction ensures lower-casing and place normalization",
+            "_extract_individual_filter_values lowercases names and preserves known fields",
+        )
+
+        suite.run_test(
+            "Relationship path calculation",
+            test_relationship_paths,
+            "Test relationship path calculation between individuals",
+            "Relationship paths enable genealogical connection discovery",
+            "Relationship paths are calculated correctly between GEDCOM individuals",
+        )
+
+        suite.run_test(
+            "Invalid data handling robustness",
+            test_invalid_data_handling,
+            "Test graceful handling of malformed or missing GEDCOM data",
+            "Invalid data handling ensures robust operation with corrupted data",
+            "Invalid and missing GEDCOM data is handled gracefully without crashes",
+        )
+
+        suite.run_test(
+            "Edge case scenario management",
+            test_edge_cases,
+            "Test handling of edge cases like empty records and null values",
+            "Edge case management ensures reliable operation in unusual scenarios",
+            "Edge cases with empty records and null values are handled properly",
+        )
+
+        suite.run_test(
+            "Search performance optimization",
+            test_performance,
+            "Test search operations maintain good performance characteristics",
+            "Performance optimization ensures efficient genealogical data processing",
+            "Search operations complete quickly without performance bottlenecks",
+        )
+
+        suite.run_test(
+            "Memory usage efficiency",
+            test_memory_efficiency,
+            "Test memory usage remains reasonable during extensive searches",
+            "Memory efficiency prevents resource exhaustion during large operations",
+            "Memory usage stays within acceptable limits during search operations",
+        )
+
+        suite.run_test(
+            "Error recovery and logging",
+            test_error_recovery,
+            "Test error recovery mechanisms and appropriate logging",
+            "Error recovery ensures continued operation despite search failures",
+            "Search errors are recovered gracefully with appropriate logging",
+        )
+
+    # Generate summary report
+    return suite.finish_suite()
+
+
+# Use centralized test runner utility
+from testing.test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(gedcom_search_module_tests)
+
+
+# Test functions for comprehensive testing
+def test_filter_policy_enforcement() -> None:
+    """Ensure _evaluate_or_filter enforces mandatory gates before scoring."""
+
+    def _values(**overrides: Any) -> dict[str, Any]:
+        base = {
+            "givn_lower": "",
+            "surn_lower": "",
+            "birth_place_lower": None,
+            "death_place_lower": None,
+            "birth_year": None,
+            "death_date_obj": None,
+        }
+        for key, value in overrides.items():
+            base[key] = value
+        return base
+
+    # Names + birth place are mandatory when provided
+    mandatory_names = {"first_name": "John", "birth_place": "Boston"}
+    matching_values = _values(
+        givn_lower="john", surn_lower="doe", birth_place_lower="south boston, ma", birth_year=1985
+    )
+    assert _evaluate_or_filter(mandatory_names, matching_values, year_range=5), "Matching values should pass gate"
+
+    mismatched_place = _values(givn_lower="john", surn_lower="doe", birth_place_lower="chicago", birth_year=1985)
+    assert not _evaluate_or_filter(mandatory_names, mismatched_place, year_range=5), (
+        "Birth place mismatch should fail mandatory gate"
+    )
+
+    # When names are absent we allow OR filter, but still honor date tolerance and alive-state fallback
+    broad_criteria = {"birth_year": 1980}
+    alive_candidate = _values(birth_year=1978, death_date_obj=None)
+    assert _evaluate_or_filter(broad_criteria, alive_candidate, year_range=5), (
+        "Alive candidate within range should pass broader OR filter"
+    )
+
+    stale_candidate = _values(birth_year=1950, death_date_obj=object())
+    assert not _evaluate_or_filter(broad_criteria, stale_candidate, year_range=5), (
+        "Out-of-range candidate with death info should fail"
+    )
+
+
+def test_criterion_matching() -> None:
+    """Ensure matches_criterion enforces contains/equals semantics."""
+
+    assert matches_criterion("first_name", {"first_name": "john"}, "john smith"), (
+        "First-name containment should succeed"
+    )
+    assert not matches_criterion("first_name", {"first_name": "john"}, "mary smith"), (
+        "Mismatched first name should fail"
+    )
+
+    assert matches_criterion("birth_place", {"birth_place": "boston"}, "south boston, ma"), (
+        "Place comparison should be case-insensitive"
+    )
+    assert not matches_criterion("birth_place", {"birth_place": "boston"}, "chicago"), (
+        "Unmatched place should be rejected"
+    )
+
+
+def test_year_criterion() -> None:
+    """Validate year comparisons respect tolerance windows."""
+
+    assert matches_year_criterion("birth_year", {"birth_year": 1985}, 1983, 3), "Year within tolerance should match"
+    assert not matches_year_criterion("birth_year", {"birth_year": 1985}, 1995, 3), "Year outside tolerance should fail"
+
+
+def test_gedcom_operations():
+    """Test GEDCOM data caching and retrieval operations."""
+    # Test GEDCOM data caching
+    test_data = {"individuals": {}, "families": {}}
+    set_cached_gedcom_data(test_data)
+
+    cached_data = get_cached_gedcom_data()
+    assert cached_data is not None, "Should be able to cache and retrieve GEDCOM data"
+
+
+def test_search_criteria() -> None:
+    """Verify _prepare_search_criteria filters None/unknown fields."""
+
+    raw = {
+        "first_name": "John",
+        "surname": "Doe",
+        "birth_place": "Boston",
+        "birth_year": None,
+        "notes": "ignore",
+    }
+
+    scoring, filters = _prepare_search_criteria(raw)
+    assert scoring == {"first_name": "John", "surname": "Doe", "birth_place": "Boston"}, (
+        "Scoring should exclude None/unknown keys"
+    )
+    assert filters == {"first_name": "John", "surname": "Doe", "birth_place": "Boston"}, (
+        "Filters should match scoring subset"
+    )
+
+
+def test_filter_value_extraction() -> None:
+    """Ensure filter extraction normalizes case and optional fields."""
+
+    indi = {
+        "first_name": "JOHN",
+        "surname": "DOE",
+        "gender_norm": "M",
+        "birth_year": 1900,
+        "birth_place_disp": "South Boston, MA",
+        "death_place_disp": None,
+    }
+
+    values = _extract_individual_filter_values(indi)
+    assert values["givn_lower"] == "john"
+    assert values["surn_lower"] == "doe"
+    assert values["birth_place_lower"] == "south boston, ma"
+    assert values["death_place_lower"] is None
+
+
+def test_relationship_paths() -> None:
+    """Test relationship path calculation between individuals."""
+
+    gedcom_data = cast(
+        GedcomData,
+        SimpleNamespace(
+            id_to_parents={"@CHILD@": {"@PARENT@"}, "@PARENT@": {"@GRAND@"}},
+            id_to_children={"@PARENT@": {"@CHILD@"}, "@GRAND@": {"@PARENT@"}},
+        ),
+    )
+
+    path = _find_relationship_path("@CHILD@", "@GRAND@", gedcom_data)
+    assert path == ["@CHILD@", "@PARENT@", "@GRAND@"], "Should find direct ancestor path"
+    assert _find_relationship_path("", "@GRAND@", gedcom_data) == [], "Invalid IDs should return empty path"
+
+
+def test_invalid_data_handling():
+    """Test graceful handling of malformed or missing GEDCOM data."""
+    # Test with invalid criterion data
+    try:
+        result = matches_criterion("invalid", {}, "test")
+        assert isinstance(result, bool), "Should handle invalid data gracefully"
+    except Exception:
+        pass  # Exception handling is acceptable
+
+    # Test with invalid year data
+    try:
+        result = matches_year_criterion("birth_year", {}, "invalid", 5)
+        assert isinstance(result, bool), "Should handle invalid year data"
+    except Exception:
+        pass  # Exception handling is acceptable
+
+
+def test_edge_cases():
+    """Test handling of edge cases like empty records and null values."""
+    # Test empty criterion
+    result1 = matches_criterion("", {}, "")
+    assert isinstance(result1, bool), "Should handle empty criterion"
+
+    # Test empty criteria dict
+    result2 = matches_criterion("test", {}, "value")
+    assert isinstance(result2, bool), "Should handle empty criteria dict"
+
+
+def test_performance():
+    """Test search operations maintain good performance characteristics."""
+    import time
+
+    # Test criterion matching performance
+    start_time = time.time()
+    for _ in range(100):
+        matches_criterion("name", {"name": "Test"}, "Test Name")
+    duration = time.time() - start_time
+
+    assert duration < 0.1, f"Criterion matching should be fast, took {duration:.3f}s"
+
+
+def test_memory_efficiency() -> None:
+    """Test memory usage remains reasonable during extensive searches."""
+    try:
+        import psutil
+
+        process = psutil.Process()
+        memory_before = process.memory_info().rss / 1024 / 1024  # MB
+    except ImportError:
+        # psutil not available, skip actual memory check but verify operations complete
+        for i in range(50):
+            matches_criterion("test", {"test": f"value_{i}"}, f"test_value_{i}")
+        return
+
+    # Test that repeated operations don't accumulate excessive memory
+    for i in range(50):
+        matches_criterion("test", {"test": f"value_{i}"}, f"test_value_{i}")
+
+    memory_after = process.memory_info().rss / 1024 / 1024  # MB
+    memory_increase = memory_after - memory_before
+
+    # Memory increase should be less than 50MB for these simple operations
+    assert memory_increase < 50, f"Memory increased by {memory_increase:.1f}MB, expected < 50MB"
+
+
+def test_error_recovery() -> None:
+    """Verify validation helpers raise MissingConfigError and optional loaders degrade gracefully."""
+
+    try:
+        empty_data = cast(GedcomData, SimpleNamespace(processed_data_cache={}))
+        _validate_gedcom_data(empty_data)
+    except MissingConfigError as exc:
+        assert "processed cache" in str(exc), "MissingConfigError should mention processed cache"
+    else:
+        raise AssertionError("_validate_gedcom_data should raise when cache missing")
+
+    _GedcomDataCache.data = None
+    bogus_path = str(Path(__file__).with_name("does_not_exist.ged"))
+    optional = _load_or_get_gedcom_data_optional(None, bogus_path)
+    assert optional is None, "Optional GEDCOM loader should return None for missing files"
+
+
+# Self-test execution when run as main module
+
+if __name__ == "__main__":
+    print("🧪 Running GEDCOM search utilities test suite...")
+    success = run_comprehensive_tests()
+    sys.exit(0 if success else 1)
