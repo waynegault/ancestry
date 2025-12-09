@@ -426,8 +426,8 @@ class ReviewQueueMixin:
         """Display pending drafts for human review."""
         try:
             from core.approval_queue import ApprovalQueueService
-            from core.session_manager import SessionManager
             from core.database import SuggestedFact
+            from core.session_manager import SessionManager
 
             print("\n" + "=" * 70)
             print("📋 REVIEW QUEUE - Pending AI-Generated Drafts")
@@ -462,40 +462,52 @@ class ReviewQueueMixin:
             )
 
             while True:
-                command = input("review> ").strip()
-                if not command:
-                    continue
-                if command.lower() in {"back", "exit", "q"}:
+                result = self._handle_review_command(input("review> ").strip())
+                if result == "exit":
                     break
-                if command.lower() == "refresh":
+                if result == "refresh":
                     self.show_review_queue()
                     return
-
-                tokens = command.split()
-                if tokens[0] == "approve" and len(tokens) >= 2:
-                    self.approve_draft(int(tokens[1]))
-                    continue
-                if tokens[0] == "reject" and len(tokens) >= 2:
-                    reason = " ".join(tokens[2:]) if len(tokens) > 2 else ""
-                    self.reject_draft(int(tokens[1]), reason)
-                    continue
-                if tokens[0] == "fact" and len(tokens) >= 3:
-                    action = tokens[1]
-                    fact_id = int(tokens[2])
-                    if action == "approve":
-                        self.approve_suggested_fact(fact_id)
-                    elif action == "reject":
-                        reason = " ".join(tokens[3:]) if len(tokens) > 3 else ""
-                        self.reject_suggested_fact(fact_id, reason)
-                    else:
-                        print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
-                    continue
-
-                print("Unrecognized command. Type 'back' to exit or 'refresh' to reload queue.")
 
         except Exception as exc:
             self._logger.error("Error showing review queue: %s", exc, exc_info=True)
             print(f"Error: {exc}")
+
+    def _handle_review_command(self, command: str) -> str:
+        """Handle a single review queue command; returns action keyword."""
+        if not command:
+            return "continue"
+
+        lowered = command.lower()
+        if lowered in {"back", "exit", "q"}:
+            return "exit"
+        if lowered == "refresh":
+            return "refresh"
+
+        tokens = command.split()
+        if tokens[0] == "approve" and len(tokens) >= 2:
+            self.approve_draft(int(tokens[1]))
+            return "continue"
+
+        if tokens[0] == "reject" and len(tokens) >= 2:
+            reason = " ".join(tokens[2:]) if len(tokens) > 2 else ""
+            self.reject_draft(int(tokens[1]), reason)
+            return "continue"
+
+        if tokens[0] == "fact" and len(tokens) >= 3:
+            action = tokens[1]
+            fact_id = int(tokens[2])
+            if action == "approve":
+                self.approve_suggested_fact(fact_id)
+            elif action == "reject":
+                reason = " ".join(tokens[3:]) if len(tokens) > 3 else ""
+                self.reject_suggested_fact(fact_id, reason)
+            else:
+                print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
+            return "continue"
+
+        print("Unrecognized command. Type 'back' to exit or 'refresh' to reload queue.")
+        return "continue"
 
     def _render_contextual_draft_log_preview(self, limit: int = 5) -> None:
         """Show recent contextual draft log entries (draft-only stub)."""
@@ -530,6 +542,7 @@ class ReviewQueueMixin:
 
     def _get_pending_suggested_facts(self, db_session: Any, limit: int = 10) -> list[dict[str, Any]]:
         from sqlalchemy import asc
+
         from core.database import FactStatusEnum, Person, SuggestedFact
 
         query = (
@@ -587,6 +600,7 @@ class ReviewQueueMixin:
 
     def _render_review_metrics(self, db_session: Any, draft_stats: Any, pending_facts: list[dict[str, Any]]) -> None:
         from sqlalchemy import func, or_
+
         from core.database import (
             ConversationLog,
             ConversationState,
@@ -650,6 +664,7 @@ class ReviewQueueMixin:
         """Approve a SuggestedFact (mark APPROVED)."""
         try:
             from datetime import datetime, timezone
+
             from core.database import FactStatusEnum, SuggestedFact
             from core.session_manager import SessionManager
 
@@ -681,6 +696,7 @@ class ReviewQueueMixin:
         """Reject a SuggestedFact (mark REJECTED)."""
         try:
             from datetime import datetime, timezone
+
             from core.database import FactStatusEnum, SuggestedFact
             from core.session_manager import SessionManager
 
