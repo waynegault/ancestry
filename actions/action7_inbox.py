@@ -4111,7 +4111,14 @@ def _test_conversation_phase_closed() -> None:
 
 def action7_inbox_module_tests() -> bool:
     """Comprehensive test suite for action7_inbox.py using the unified TestSuite."""
+    from unittest.mock import patch
+
     from testing.test_framework import TestSuite, suppress_logging
+
+    # Patch ResearchService to prevent GEDCOM loading during tests
+    # Note: No need to stop() as this runs in a subprocess that will exit
+    target = "__main__.ResearchService" if __name__ == "__main__" else "actions.action7_inbox.ResearchService"
+    patch(target).start()
 
     suite = TestSuite("Action 7 - Inbox Processor", "action7_inbox.py")
     suite.start_suite()
