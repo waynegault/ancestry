@@ -21,9 +21,9 @@
 
 ## Phase 4 – Review & HITL Controls
 
-- [ ] Implement lightweight review CLI to list/approve/reject pending `SuggestedFact` items (and reply drafts if queued).
-- [ ] Add persistence for message approvals (minimal schema if not present) or stub queue logging for now.
-- [ ] Expose metrics: counts of critical alerts, opt-outs, validated facts, approvals, sends.
+- [x] Implement lightweight review CLI to list/approve/reject pending `SuggestedFact` items (and reply drafts if queued).
+- [x] Add persistence for message approvals (minimal schema if not present) or stub queue logging for now.
+- [x] Expose metrics: counts of critical alerts, opt-outs, validated facts, approvals, sends.
 
 ## Phase 5 – Research Guidance & Insights
 

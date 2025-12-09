@@ -427,6 +427,7 @@ class ReviewQueueMixin:
         try:
             from core.approval_queue import ApprovalQueueService
             from core.session_manager import SessionManager
+            from core.database import SuggestedFact
 
             print("\n" + "=" * 70)
             print("📋 REVIEW QUEUE - Pending AI-Generated Drafts")
@@ -441,38 +442,56 @@ class ReviewQueueMixin:
 
             service = ApprovalQueueService(db_session)
 
-            # Show queue statistics
-            stats = service.get_queue_stats()
-            print("\n📊 Queue Status:")
-            print(f"   Pending: {stats.pending_count}")
-            print(f"   Auto-approved: {stats.auto_approved_count}")
-            print(f"   Approved today: {stats.approved_today}")
-            print(f"   Rejected today: {stats.rejected_today}")
-            print(f"   Expired: {stats.expired_count}")
+            draft_stats = service.get_queue_stats()
+            pending_drafts = service.get_pending_queue(limit=10)
+            pending_facts = self._get_pending_suggested_facts(db_session, limit=10)
 
-            # Get pending drafts
-            pending = service.get_pending_queue(limit=10)
+            self._render_review_metrics(db_session, draft_stats, pending_facts)
+            self._render_pending_drafts(pending_drafts)
+            self._render_pending_facts(pending_facts, SuggestedFact)
+            self._render_contextual_draft_log_preview()
 
-            if not pending:
-                print("\n✅ No pending drafts to review!")
-                self._render_contextual_draft_log_preview()
+            if not pending_drafts and not pending_facts:
+                print("\n✅ Nothing pending in review queues.")
                 return
 
-            print(f"\n📝 Pending Drafts ({len(pending)} shown):")
-            print("-" * 70)
-
-            for i, draft in enumerate(pending, 1):
-                priority_icons = {"critical": "🔴", "high": "🟠", "normal": "🟡", "low": "🟢"}
-                icon = priority_icons.get(draft.priority.value, "⚪")
-                print(f"\n{i}. [{icon} {draft.priority.value.upper()}] ID: {draft.draft_id}")
-                print(f"   To: {draft.person_name} (ID: {draft.person_id})")
-                print(f"   Confidence: {draft.ai_confidence}%")
-                print(f"   Created: {draft.created_at.strftime('%Y-%m-%d %H:%M')}")
-                print(f"   Content preview: {draft.content[:100]}...")
-
             print("\n" + "-" * 70)
-            print("Commands: approve <id> | reject <id> <reason> | view <id> | back")
-            self._render_contextual_draft_log_preview()
+            print(
+                "Commands: approve <draft_id> | reject <draft_id> <reason> | "
+                "fact approve <id> | fact reject <id> <reason> | refresh | back"
+            )
+
+            while True:
+                command = input("review> ").strip()
+                if not command:
+                    continue
+                if command.lower() in {"back", "exit", "q"}:
+                    break
+                if command.lower() == "refresh":
+                    self.show_review_queue()
+                    return
+
+                tokens = command.split()
+                if tokens[0] == "approve" and len(tokens) >= 2:
+                    self.approve_draft(int(tokens[1]))
+                    continue
+                if tokens[0] == "reject" and len(tokens) >= 2:
+                    reason = " ".join(tokens[2:]) if len(tokens) > 2 else ""
+                    self.reject_draft(int(tokens[1]), reason)
+                    continue
+                if tokens[0] == "fact" and len(tokens) >= 3:
+                    action = tokens[1]
+                    fact_id = int(tokens[2])
+                    if action == "approve":
+                        self.approve_suggested_fact(fact_id)
+                    elif action == "reject":
+                        reason = " ".join(tokens[3:]) if len(tokens) > 3 else ""
+                        self.reject_suggested_fact(fact_id, reason)
+                    else:
+                        print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
+                    continue
+
+                print("Unrecognized command. Type 'back' to exit or 'refresh' to reload queue.")
 
         except Exception as exc:
             self._logger.error("Error showing review queue: %s", exc, exc_info=True)
@@ -508,6 +527,189 @@ class ReviewQueueMixin:
                 print(f" - {ts} | person {pid} | conf {conf} | {reason} | {preview}...")
         except Exception as exc:  # pragma: no cover - defensive only
             self._logger.debug("Could not render contextual draft log preview: %s", exc)
+
+    def _get_pending_suggested_facts(self, db_session: Any, limit: int = 10) -> list[dict[str, Any]]:
+        from sqlalchemy import asc
+        from core.database import FactStatusEnum, Person, SuggestedFact
+
+        query = (
+            db_session.query(SuggestedFact, Person)
+            .join(Person, SuggestedFact.people_id == Person.id)
+            .filter(SuggestedFact.status == FactStatusEnum.PENDING)
+            .order_by(asc(SuggestedFact.created_at))
+            .limit(limit)
+        )
+
+        pending: list[dict[str, Any]] = []
+        for fact, person in query.all():
+            pending.append(
+                {
+                    "id": fact.id,
+                    "person_id": person.id,
+                    "person_name": getattr(person, "display_name", None) or getattr(person, "username", "?"),
+                    "fact_type": getattr(fact.fact_type, "name", str(fact.fact_type)),
+                    "new_value": fact.new_value,
+                    "confidence": fact.confidence_score,
+                    "created_at": fact.created_at,
+                    "status": fact.status,
+                }
+            )
+        return pending
+
+    def _render_pending_drafts(self, pending_drafts: list[Any]) -> None:
+        if not pending_drafts:
+            print("\n📝 Pending Drafts: none")
+            return
+
+        print(f"\n📝 Pending Drafts ({len(pending_drafts)} shown):")
+        print("-" * 70)
+        for i, draft in enumerate(pending_drafts, 1):
+            priority_icons = {"critical": "🔴", "high": "🟠", "normal": "🟡", "low": "🟢"}
+            icon = priority_icons.get(getattr(draft.priority, "value", ""), "⚪")
+            print(f"\n{i}. [{icon} {draft.priority.value.upper()}] ID: {draft.draft_id}")
+            print(f"   To: {draft.person_name} (ID: {draft.person_id})")
+            print(f"   Confidence: {draft.ai_confidence}%")
+            print(f"   Created: {draft.created_at.strftime('%Y-%m-%d %H:%M')}")
+            print(f"   Content preview: {draft.content[:100]}...")
+
+    def _render_pending_facts(self, pending_facts: list[dict[str, Any]], suggested_fact_cls: Any) -> None:
+        if not pending_facts:
+            print("\n🧾 Pending Suggested Facts: none")
+            return
+
+        print(f"\n🧾 Pending Suggested Facts ({len(pending_facts)} shown):")
+        print("-" * 70)
+        for i, fact in enumerate(pending_facts, 1):
+            print(f"\n{i}. ID: {fact['id']} | Person: {fact['person_name']} (ID: {fact['person_id']})")
+            print(f"   Type: {fact['fact_type']} | Confidence: {fact.get('confidence', '?')}")
+            print(f"   Created: {fact['created_at'].strftime('%Y-%m-%d %H:%M')}")
+            print(f"   Value: {fact['new_value'][:120]}...")
+
+    def _render_review_metrics(self, db_session: Any, draft_stats: Any, pending_facts: list[dict[str, Any]]) -> None:
+        from sqlalchemy import func, or_
+        from core.database import (
+            ConversationLog,
+            ConversationState,
+            ConversationStatusEnum,
+            DraftReply,
+            FactStatusEnum,
+            Person,
+            PersonStatusEnum,
+            SuggestedFact,
+        )
+
+        critical_alerts = (
+            db_session.query(func.count(ConversationState.id))
+            .filter(or_(ConversationState.status == ConversationStatusEnum.HUMAN_REVIEW, ConversationState.safety_flag))
+            .scalar()
+            or 0
+        )
+        opt_outs = (
+            db_session.query(func.count(Person.id)).filter(Person.status == PersonStatusEnum.DESIST).scalar() or 0
+        )
+        facts_pending = (
+            db_session.query(func.count(SuggestedFact.id))
+            .filter(SuggestedFact.status == FactStatusEnum.PENDING)
+            .scalar()
+            or 0
+        )
+        facts_approved = (
+            db_session.query(func.count(SuggestedFact.id))
+            .filter(SuggestedFact.status == FactStatusEnum.APPROVED)
+            .scalar()
+            or 0
+        )
+        facts_rejected = (
+            db_session.query(func.count(SuggestedFact.id))
+            .filter(SuggestedFact.status == FactStatusEnum.REJECTED)
+            .scalar()
+            or 0
+        )
+        approvals = (
+            db_session.query(func.count(DraftReply.id))
+            .filter(DraftReply.status.in_(["APPROVED", "AUTO_APPROVED", "SENT"]))
+            .scalar()
+            or 0
+        )
+        sends = (
+            db_session.query(func.count(ConversationLog.id)).filter(ConversationLog.direction == "OUT").scalar() or 0
+        )
+
+        print("\n📊 Review Metrics:")
+        print(f"   Critical alerts / Human review: {critical_alerts}")
+        print(f"   Opt-outs detected: {opt_outs}")
+        print(f"   Suggested facts: pending {facts_pending}, approved {facts_approved}, rejected {facts_rejected}")
+        print(
+            f"   Drafts: pending {draft_stats.pending_count}, auto-approved {draft_stats.auto_approved_count}, "
+            f"approved today {draft_stats.approved_today}, rejected today {draft_stats.rejected_today}, expired {draft_stats.expired_count}"
+        )
+        print(f"   Draft approvals (all time): {approvals}")
+        print(f"   Outbound sends (all time): {sends}")
+
+    def approve_suggested_fact(self, fact_id: int) -> bool:
+        """Approve a SuggestedFact (mark APPROVED)."""
+        try:
+            from datetime import datetime, timezone
+            from core.database import FactStatusEnum, SuggestedFact
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            fact = db_session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+            if not fact:
+                print(f"❌ SuggestedFact {fact_id} not found")
+                return False
+            if fact.status != FactStatusEnum.PENDING:
+                print(f"⚠️  SuggestedFact {fact_id} is already {fact.status.name}")
+                return False
+
+            fact.status = FactStatusEnum.APPROVED
+            fact.updated_at = datetime.now(timezone.utc)
+            db_session.commit()
+            print(f"✅ SuggestedFact {fact_id} approved")
+            return True
+        except Exception as exc:  # pragma: no cover - defensive only
+            self._logger.error("Error approving SuggestedFact: %s", exc, exc_info=True)
+            print(f"Error approving fact: {exc}")
+            return False
+
+    def reject_suggested_fact(self, fact_id: int, reason: str = "") -> bool:
+        """Reject a SuggestedFact (mark REJECTED)."""
+        try:
+            from datetime import datetime, timezone
+            from core.database import FactStatusEnum, SuggestedFact
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            fact = db_session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+            if not fact:
+                print(f"❌ SuggestedFact {fact_id} not found")
+                return False
+            if fact.status != FactStatusEnum.PENDING:
+                print(f"⚠️  SuggestedFact {fact_id} is already {fact.status.name}")
+                return False
+
+            fact.status = FactStatusEnum.REJECTED
+            fact.updated_at = datetime.now(timezone.utc)
+            db_session.commit()
+            if reason:
+                print(f"❌ SuggestedFact {fact_id} rejected: {reason}")
+            else:
+                print(f"❌ SuggestedFact {fact_id} rejected")
+            return True
+        except Exception as exc:  # pragma: no cover - defensive only
+            self._logger.error("Error rejecting SuggestedFact: %s", exc, exc_info=True)
+            print(f"Error rejecting fact: {exc}")
+            return False
 
     def approve_draft(self, draft_id: int, edited_content: Optional[str] = None) -> bool:
         """Approve a draft for sending."""
