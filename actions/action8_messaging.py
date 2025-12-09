@@ -65,6 +65,7 @@ except ImportError:
 SENTIMENT_ADAPTATION_AVAILABLE = _sentiment_adapter_available
 
 # === STANDARD LIBRARY IMPORTS ===
+import json
 import os
 import sys
 import time
@@ -2787,14 +2788,36 @@ def _build_contextual_reply_draft(
             logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
             return None
 
-        logger.info(f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)")
-        return {
+        draft_payload = {
             "draft_text": draft_text,
             "context_json": context.to_json(),
+            "confidence": None,
+            "reason": "contextual_reply_draft",
         }
+        _persist_contextual_draft(draft_payload, person, log_prefix)
+        logger.info(f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)")
+        return draft_payload
     except Exception as exc:  # pragma: no cover - defensive guard
         logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
         return None
+
+
+def _persist_contextual_draft(draft_payload: dict[str, Any], person: Person, log_prefix: str) -> None:
+    """Append contextual draft metadata to a jsonl log for review queues."""
+    try:
+        draft_path = os.path.join("Logs", "contextual_drafts.jsonl")
+        os.makedirs(os.path.dirname(draft_path), exist_ok=True)
+        record = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "person_id": safe_column_value(person, "id", None),
+            "person_uuid": safe_column_value(person, "uuid", None),
+            "log_prefix": log_prefix,
+            **draft_payload,
+        }
+        with open(draft_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.debug(f"{log_prefix}: Failed to persist contextual draft: {exc}")
 
 
 def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
