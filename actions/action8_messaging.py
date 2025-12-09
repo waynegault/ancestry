@@ -103,13 +103,13 @@ from sqlalchemy import (
 from core.database import PersonStatusEnum
 from messaging import (
     build_safe_column_value,
+    determine_next_message_type,
+)
+from messaging.message_types import MESSAGE_TYPES
+from messaging.workflow_helpers import (
     cancel_pending_messages_on_status_change,
     cancel_pending_on_reply,
     log_conversation_state_change,
-)
-from messaging.message_types import (
-    MESSAGE_TYPES,
-    determine_next_message_type,
 )
 
 # Map columns needing enum coercion for shared helper
@@ -371,6 +371,15 @@ def determine_next_action(person: Person, log_prefix: str = "") -> tuple[str, da
     Logic:
         1. Check if status changed (out-of-tree → in-tree)
         2. Check if in active dialogue (awaiting reply)
+            app_mode = getattr(config_schema, 'app_mode', 'production')
+            if counters.desist_acks > 0:
+                logger.warning(f"DESIST acknowledgments sent this run: {counters.desist_acks} (mode={app_mode})")
+            if (
+                app_mode == 'production'
+                and getattr(config_schema, 'auto_approve_enabled', False)
+                and not getattr(config_schema, 'allow_production_auto_approve', False)
+            ):
+                logger.warning("Auto-approval was enabled without allow flag; verify no drafts bypassed review.")
         3. Check if research needed (pending questions)
         4. Calculate adaptive follow-up timing based on engagement
         5. Return appropriate action and datetime
@@ -480,20 +489,10 @@ def detect_status_change_to_in_tree(person: Person) -> bool:
             return False
 
         # All conditions met: recent tree addition, no messages sent yet
-        days_since_creation = (datetime.now(timezone.utc) - created_at).days
-        logger.info(
-            f"✨ Status change detected: {person.username} (ID {person.id}) recently added to tree "
-            f"({days_since_creation} days ago)"
-        )
+        logger.debug(f"Person {person.username} (ID {person.id}): Recent tree creation detected ({created_at})")
         return True
-
-    except Exception as e:
-        logger.error(f"Error detecting status change for {person.username} (ID {person.id}): {e}")
+    except Exception:
         return False
-
-
-# === MESSAGE TYPES ===
-# Now imported from messaging.message_types
 
 
 @cache_result("message_templates")
@@ -2236,6 +2235,68 @@ def _check_reply_received(
         raise StopIteration("skipped (custom_reply_sent)")
 
 
+def _normalize_out_timestamp(latest_out_log: Optional[ConversationLog]) -> Optional[datetime]:
+    """Return the last outbound script timestamp as UTC, if available."""
+    if not latest_out_log:
+        return None
+
+    out_timestamp = safe_column_value(latest_out_log, "latest_timestamp", None)
+    if not out_timestamp:
+        return None
+
+    normalized_timestamp = _ensure_timezone_aware(out_timestamp)
+    if not normalized_timestamp:
+        return None
+
+    if normalized_timestamp.tzinfo != timezone.utc:
+        normalized_timestamp = normalized_timestamp.astimezone(timezone.utc)
+    return normalized_timestamp
+
+
+def _enforce_base_intervals(time_since_last: timedelta, extra_backoff_seconds: int, log_prefix: str) -> None:
+    """Apply minimum and per-recipient backoff checks."""
+    if time_since_last < MIN_MESSAGE_INTERVAL:
+        logger.debug(
+            f"Skipping {log_prefix}: Minimum interval not met ({time_since_last.days} days < {MIN_MESSAGE_INTERVAL.days} days)."
+        )
+        raise StopIteration("skipped (min_interval)")
+
+    if extra_backoff_seconds > 0 and time_since_last < timedelta(seconds=extra_backoff_seconds):
+        logger.debug(
+            f"Skipping {log_prefix}: Per-recipient backoff not met ({time_since_last} < {timedelta(seconds=extra_backoff_seconds)})."
+        )
+        raise StopIteration("skipped (recipient_backoff)")
+
+
+def _get_engagement_score(person: Person) -> int:
+    """Safely extract engagement score from conversation state."""
+    if person.conversation_state:
+        return getattr(person.conversation_state, "engagement_score", 0)
+    return 0
+
+
+def _enforce_adaptive_interval_requirement(
+    time_since_last: timedelta,
+    total_required_interval: timedelta,
+    log_prefix: str,
+    engagement_score: int,
+    adaptive_interval: timedelta,
+) -> None:
+    """Ensure adaptive interval requirement is satisfied."""
+    if time_since_last < total_required_interval:
+        logger.debug(
+            f"Skipping {log_prefix}: Adaptive interval not met "
+            f"({time_since_last.days} days < {total_required_interval.days} days). "
+            f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
+        )
+        raise StopIteration("skipped (adaptive_interval)")
+
+    logger.debug(
+        f"{log_prefix}: Interval met ({time_since_last.days} days ≥ {total_required_interval.days} days). "
+        f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
+    )
+
+
 def _check_message_interval(latest_out_log: Optional[ConversationLog], person: Person, log_prefix: str) -> None:
     """
     Check if adaptive message interval has passed since last script message.
@@ -2245,57 +2306,26 @@ def _check_message_interval(latest_out_log: Optional[ConversationLog], person: P
 
     Total interval = MIN_MESSAGE_INTERVAL + adaptive_interval
     """
-    if not latest_out_log:
-        return
-
-    out_timestamp = safe_column_value(latest_out_log, "latest_timestamp", None)
-    if not out_timestamp:
-        return
-
     try:
-        out_timestamp = _ensure_timezone_aware(out_timestamp)
+        out_timestamp = _normalize_out_timestamp(latest_out_log)
         if not out_timestamp:
             return
-        if out_timestamp.tzinfo != timezone.utc:
-            out_timestamp = out_timestamp.astimezone(timezone.utc)
 
-        now_utc = datetime.now(timezone.utc)
-        time_since_last = now_utc - out_timestamp
+        time_since_last = datetime.now(timezone.utc) - out_timestamp
+        extra_backoff_seconds = getattr(config_schema, "per_recipient_backoff_seconds", 0)
 
-        # Check minimum interval first (always required)
-        if time_since_last < MIN_MESSAGE_INTERVAL:
-            logger.debug(
-                f"Skipping {log_prefix}: Minimum interval not met ({time_since_last.days} days < {MIN_MESSAGE_INTERVAL.days} days)."
-            )
-            raise StopIteration("skipped (min_interval)")
+        _enforce_base_intervals(time_since_last, extra_backoff_seconds, log_prefix)
 
-        # Get engagement score from conversation_state
-        engagement_score = 0
-        if person.conversation_state:
-            engagement_score = getattr(person.conversation_state, 'engagement_score', 0)
-
-        # Get last_logged_in from person
-        last_logged_in = getattr(person, 'last_logged_in', None)
-
-        # Calculate adaptive interval
+        engagement_score = _get_engagement_score(person)
         adaptive_interval = calculate_adaptive_interval(
-            engagement_score=engagement_score, last_logged_in=last_logged_in, log_prefix=log_prefix
+            engagement_score=engagement_score,
+            last_logged_in=getattr(person, "last_logged_in", None),
+            log_prefix=log_prefix,
         )
 
-        # Total required interval = MIN + adaptive
         total_required_interval = MIN_MESSAGE_INTERVAL + adaptive_interval
-
-        if time_since_last < total_required_interval:
-            logger.debug(
-                f"Skipping {log_prefix}: Adaptive interval not met "
-                f"({time_since_last.days} days < {total_required_interval.days} days). "
-                f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
-            )
-            raise StopIteration("skipped (adaptive_interval)")
-
-        logger.debug(
-            f"{log_prefix}: Interval met ({time_since_last.days} days ≥ {total_required_interval.days} days). "
-            f"Engagement: {engagement_score}, Adaptive: +{adaptive_interval.days} days"
+        _enforce_adaptive_interval_requirement(
+            time_since_last, total_required_interval, log_prefix, engagement_score, adaptive_interval
         )
 
     except StopIteration:
@@ -2848,6 +2878,18 @@ def _handle_person_status(
     """Handle person status and determine message to send."""
     person_status = safe_column_value(person, "status", None)
 
+    # Honor conversation-level state machine hard stops
+    try:
+        conv_state_obj = getattr(person, "conversation_state", None)
+        conv_state_name = getattr(conv_state_obj, "state", None)
+        if conv_state_name and str(conv_state_name).upper() in {"HUMAN_REVIEW", "DESIST"}:
+            logger.debug(f"{log_prefix}: Conversation state '{conv_state_name}' blocks automation; skipping.")
+            raise StopIteration("skipped (conversation_state_block)")
+    except StopIteration:
+        raise
+    except Exception:
+        pass
+
     if person_status == PersonStatusEnum.DESIST:
         message_to_send_key, _ = _handle_desist_status(log_prefix, latest_out_log, message_type_map)
         return _PersonStatusDecision(message_to_send_key, "Unknown", None, None)
@@ -3098,6 +3140,9 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
     else:
         logger.info(f"Found {total_candidates} messaging candidates.")
         max_messages_to_send_this_run = config_schema.max_inbox
+        hard_cap = getattr(config_schema, 'max_send_per_run', 0)
+        if hard_cap:
+            max_messages_to_send_this_run = min(max_messages_to_send_this_run, hard_cap)
         if max_messages_to_send_this_run > 0:
             logger.info(f"Sending or acknowledging up to {max_messages_to_send_this_run} messages this run.\n")
 
@@ -3337,6 +3382,11 @@ def _update_counters_and_collect_data(
         counters.acked = _handle_acked_status(
             counters.acked, log_dict, person_update_tuple, batch_data.db_logs_to_add_dicts, batch_data.person_updates
         )
+        try:
+            if safe_column_value(person, "status", None) == PersonStatusEnum.DESIST:
+                counters.desist_acks += 1
+        except Exception:
+            pass
     else:
         counters.skipped, counters.errors, overall_success = _handle_error_or_skip_status(
             status, counters, log_dict, batch_data, error_categorizer, person, overall_success
@@ -3602,10 +3652,21 @@ def _log_final_summary(
         logger.info(f"Candidates Considered:              {total_candidates}")
         logger.info(f"Candidates Processed in Loop:       {state.processed_in_loop}")
         logger.info(f"Template Messages Sent/Simulated:   {counters.sent}")
-        logger.info(f"Desist ACKs Sent/Simulated:         {counters.acked}")
+        logger.info(f"Acknowledgments Sent/Simulated:     {counters.acked}")
+        logger.info(f"Desist ACKs Sent/Simulated:         {counters.desist_acks}")
         logger.info(f"Skipped (Rules/Filter/Limit/Error): {counters.skipped}")
         logger.info(f"Errors during processing/sending:   {counters.errors}")
         logger.info(f"Overall Action Success:             {overall_success}")
+
+        app_mode = getattr(config_schema, 'app_mode', 'production')
+        if counters.desist_acks > 0:
+            logger.warning(f"DESIST acknowledgments sent this run: {counters.desist_acks} (mode={app_mode})")
+        if (
+            app_mode == 'production'
+            and getattr(config_schema, 'auto_approve_enabled', False)
+            and not getattr(config_schema, 'allow_production_auto_approve', False)
+        ):
+            logger.warning("Auto-approval was enabled without allow flag; verify no drafts bypassed review.")
 
         error_summary = error_categorizer.get_error_summary()
         if error_summary['total_technical_errors'] > 0 or error_summary['total_business_skips'] > 0:
@@ -3951,38 +4012,42 @@ def _handle_main_processing_exception(outer_err: BaseException, resource_manager
     return overall_success
 
 
-# Updated decorator stack with enhanced error recovery
-@with_connection_resilience("Action 8: Messaging", max_recovery_attempts=3)
-@with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
-@circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
-@graceful_degradation(fallback_value=False)
-@error_context("action8_messaging")
-def send_messages_to_matches(session_manager: SessionManager) -> bool:
-    """
-    Main function for Action 8.
-    Fetches eligible candidates, determines the appropriate message to send (if any)
-    based on rules and history, sends/simulates the message, and updates the database.
-    Uses the unified commit_bulk_data function.
-
-    Args:
-        session_manager: The active SessionManager instance.
-
-    Returns:
-        True if the process completed without critical database errors, False otherwise.
-        Note: Individual message send failures are logged but do not cause the
-              entire action to return False unless they lead to a DB commit failure.
-    """
-    # --- Step 1: Initialization and System Health Check ---
-    logger.debug("--- Messaging run started: send standard messages ---")
-    start_time = time.time()
-    start_advanced_monitoring()
-
-    # Log configuration
-    app_mode = getattr(config_schema, 'app_mode', 'production')
-    initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
+def _calculate_max_messages_limit() -> int:
+    """Calculate the capped max messages for this run."""
     max_messages = config_schema.max_inbox
-    batch_size = max(1, config_schema.batch_size)
+    hard_cap = getattr(config_schema, "max_send_per_run", 0)
+    if hard_cap and max_messages:
+        return min(max_messages, hard_cap)
+    if hard_cap and not max_messages:
+        return hard_cap
+    return max_messages
 
+
+def _passes_messaging_guardrails(app_mode: str) -> bool:
+    """Evaluate guardrail flags that can halt the run."""
+    if getattr(config_schema, "emergency_stop_enabled", False):
+        logger.critical("Emergency stop is enabled; aborting messaging run.")
+        return False
+
+    if app_mode == "production" and not getattr(config_schema, "dry_run_verified", False):
+        logger.critical("Dry-run not verified (DRY_RUN_VERIFIED=false); aborting production messaging run.")
+        return False
+
+    if (
+        app_mode == "production"
+        and getattr(config_schema, "auto_approve_enabled", False)
+        and not getattr(config_schema, "allow_production_auto_approve", False)
+    ):
+        logger.critical(
+            "Auto-approval is enabled in production without ALLOW_PRODUCTION_AUTO_APPROVE=true; aborting run."
+        )
+        return False
+
+    return True
+
+
+def _log_messaging_run_configuration(app_mode: str, max_messages: int, batch_size: int, initial_delay: float) -> None:
+    """Log configuration and banner for messaging run."""
     logger.info(
         "Configuration: APP_MODE=%s, MAX_MESSAGES=%s, BATCH_SIZE=%s, MIN_INTERVAL=%s, RATE_LIMIT_DELAY=%.2fs",
         app_mode,
@@ -4005,65 +4070,163 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
         },
     )
 
-    # Validate prerequisites
+
+def _prepare_messaging_run(session_manager: SessionManager) -> Optional[tuple[str, int, int]]:
+    """Build core configuration and enforce guardrails."""
+    app_mode = getattr(config_schema, "app_mode", "production")
+    initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
+    max_messages = _calculate_max_messages_limit()
+
+    if not _passes_messaging_guardrails(app_mode):
+        return None
+
+    batch_size = max(1, config_schema.batch_size)
+    _log_messaging_run_configuration(app_mode, max_messages, batch_size, initial_delay)
+    return app_mode, batch_size, max_messages
+
+
+def _prepare_db_session_and_data(session_manager: SessionManager) -> tuple[Optional[Session], Optional[Any]]:
+    """Fetch DB session and messaging data, handling failure cases."""
+    db_session = session_manager.db_manager.get_session()
+    if not db_session:
+        logger.critical("Failed to obtain database session; aborting messaging run.")
+        return None, None
+
+    messaging_data = _fetch_messaging_data(db_session, session_manager)
+    if messaging_data is None:
+        session_manager.db_manager.return_session(db_session)
+        return None, None
+
+    return db_session, messaging_data
+
+
+def _run_candidate_processing(
+    db_session: Session,
+    session_manager: SessionManager,
+    messaging_data: '_MessagingData',
+    state: _Action8RunState,
+    resources: _ResourceBundle,
+    batch_size: int,
+    max_messages: int,
+) -> None:
+    """Process all candidates and perform final commit."""
+    state.total_candidates = messaging_data.total_candidates
+
+    if state.total_candidates > 0:
+        processing_result = _execute_main_processing_loop(
+            db_session,
+            session_manager,
+            messaging_data.message_type_map,
+            messaging_data.candidate_persons,
+            state.total_candidates,
+            batch_size,
+            max_messages,
+            resources.resource_manager,
+            resources.error_categorizer,
+        )
+        _apply_processing_result(state, resources, processing_result)
+
+    state.overall_success, state.batch_num = _perform_final_commit(
+        db_session,
+        state.critical_db_error_occurred,
+        resources.db_logs_to_add_dicts,
+        resources.person_updates,
+        state.batch_num,
+        session_manager,
+        state.sent_count,
+        state.acked_count,
+        state.skipped_count,
+        state.error_count,
+    )
+
+
+def _finalize_monitoring(state: _Action8RunState, resources: _ResourceBundle) -> bool:
+    """Handle final resource cleanup, performance summary, and banner logging."""
+    logger.debug("🔧 Step 7: Starting final resource cleanup...")
+    try:
+        _perform_resource_cleanup(resources.resource_manager)
+        logger.debug("🔧 Step 7: Final resource cleanup completed successfully")
+    except Exception as cleanup_err:
+        logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}", exc_info=True)
+
+    logger.debug("📊 Step 8: Starting performance monitoring summary...")
+    try:
+        _log_performance_summary()
+        logger.debug("📊 Step 8: Performance monitoring summary completed successfully")
+    except Exception as perf_err:
+        logger.warning(f"Performance summary error (non-critical): {perf_err}", exc_info=True)
+
+    logger.debug(f"✅ Step 9: Returning overall_success={state.overall_success}")
+    log_action_banner(
+        action_name="Send Messages",
+        action_number=8,
+        stage="success" if state.overall_success else "failure",
+        logger_instance=logger,
+        details={
+            "sent": state.sent_count,
+            "acked": state.acked_count,
+            "skipped": state.skipped_count,
+            "errors": state.error_count,
+            "candidates": state.total_candidates,
+        },
+    )
+    return state.overall_success
+
+
+# Updated decorator stack with enhanced error recovery
+@with_connection_resilience("Action 8: Messaging", max_recovery_attempts=3)
+@with_enhanced_recovery(max_attempts=3, base_delay=2.0, max_delay=60.0)
+@circuit_breaker(failure_threshold=10, recovery_timeout=60)  # Aligned with ANCESTRY_API_CONFIG
+@graceful_degradation(fallback_value=False)
+@error_context("action8_messaging")
+def send_messages_to_matches(session_manager: SessionManager) -> bool:
+    """
+    Main function for Action 8.
+    Fetches eligible candidates, determines the appropriate message to send (if any)
+    based on rules and history, sends/simulates the message, and updates the database.
+    Uses the unified commit_bulk_data function.
+
+    Args:
+        session_manager: The active SessionManager instance.
+
+    Returns:
+        True if the process completed without critical database errors, False otherwise.
+        Note: Individual message send failures are logged but do not cause the
+              entire action to return False unless they lead to a DB commit failure.
+    """
+    logger.debug("--- Messaging run started: send standard messages ---")
+    start_time = time.time()
+    start_advanced_monitoring()
+
+    prepared_run = _prepare_messaging_run(session_manager)
+    if not prepared_run:
+        return False
+
+    _, batch_size, max_messages = prepared_run
+
     prerequisites_valid, _ = _validate_action8_prerequisites(session_manager)
     if not prerequisites_valid:
         return False
 
-    # Initialize counters and configuration
     state = _initialize_action8_counters_and_config()
-
-    # Initialize resource management
     resources = _initialize_resource_management()
 
-    # --- Step 2: Get DB Session and Pre-fetch Data ---
     db_session: Optional[Session] = None
     try:
-        db_session = session_manager.db_manager.get_session()
-        if not db_session:
-            logger.critical("Failed to obtain database session; aborting messaging run.")
+        db_session, messaging_data = _prepare_db_session_and_data(session_manager)
+        if not db_session or not messaging_data:
             return False
 
-        # Fetch messaging data
-        messaging_data = _fetch_messaging_data(db_session, session_manager)
-
-        if messaging_data is None:
-            if db_session:
-                session_manager.db_manager.return_session(db_session)
-            return False
-
-        state.total_candidates = messaging_data.total_candidates
-
-        # --- Step 3: Main Processing Loop ---
-        if state.total_candidates > 0:
-            processing_result = _execute_main_processing_loop(
-                db_session,
-                session_manager,
-                messaging_data.message_type_map,
-                messaging_data.candidate_persons,
-                state.total_candidates,
-                batch_size,
-                max_messages,
-                resources.resource_manager,
-                resources.error_categorizer,
-            )
-            _apply_processing_result(state, resources, processing_result)
-
-        # --- Step 4: Final Commit ---
-        state.overall_success, state.batch_num = _perform_final_commit(
+        _run_candidate_processing(
             db_session,
-            state.critical_db_error_occurred,
-            resources.db_logs_to_add_dicts,
-            resources.person_updates,
-            state.batch_num,
             session_manager,
-            state.sent_count,
-            state.acked_count,
-            state.skipped_count,
-            state.error_count,
+            messaging_data,
+            state,
+            resources,
+            batch_size,
+            max_messages,
         )
 
-    # --- Step 5: Handle Outer Exceptions (Action 6 Pattern) ---
     except (
         MaxApiFailuresExceededError,
         BrowserSessionError,
@@ -4075,7 +4238,6 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     ) as outer_err:
         state.overall_success = _handle_main_processing_exception(outer_err, resources.resource_manager)
 
-    # --- Step 6: Final Cleanup and Summary ---
     finally:
         from core.common_params import BatchCounters, ProcessingState
 
@@ -4098,38 +4260,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
             start_time,
         )
 
-    # Step 7: Final resource cleanup
-    logger.debug("🔧 Step 7: Starting final resource cleanup...")
-    try:
-        _perform_resource_cleanup(resources.resource_manager)
-        logger.debug("🔧 Step 7: Final resource cleanup completed successfully")
-    except Exception as cleanup_err:
-        logger.warning(f"Final resource cleanup error (non-critical): {cleanup_err}", exc_info=True)
-
-    # Step 8: Stop performance monitoring and log summary
-    logger.debug("📊 Step 8: Starting performance monitoring summary...")
-    try:
-        _log_performance_summary()
-        logger.debug("📊 Step 8: Performance monitoring summary completed successfully")
-    except Exception as perf_err:
-        logger.warning(f"Performance summary error (non-critical): {perf_err}", exc_info=True)
-
-    # Step 9: Return overall success status
-    logger.debug(f"✅ Step 9: Returning overall_success={state.overall_success}")
-    log_action_banner(
-        action_name="Send Messages",
-        action_number=8,
-        stage="success" if state.overall_success else "failure",
-        logger_instance=logger,
-        details={
-            "sent": state.sent_count,
-            "acked": state.acked_count,
-            "skipped": state.skipped_count,
-            "errors": state.error_count,
-            "candidates": state.total_candidates,
-        },
-    )
-    return state.overall_success
+    return _finalize_monitoring(state, resources)
 
 
 # End of send_messages_to_matches

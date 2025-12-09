@@ -880,6 +880,12 @@ class ConfigSchema:
     # Messaging settings
     message_truncation_length: int = 1000
     app_mode: str = "development"
+    auto_approve_enabled: bool = False
+    allow_production_auto_approve: bool = False  # Explicit opt-in if auto-approval is permitted in production
+    emergency_stop_enabled: bool = False  # Forces messaging to halt immediately when true
+    max_send_per_run: int = 50  # Hard per-run cap for messaging sends (0 = unlimited, not recommended)
+    dry_run_verified: bool = False  # Must be set true after a successful dry-run before production sends
+    per_recipient_backoff_seconds: int = 0  # Extra per-recipient throttle layered on top of MIN_MESSAGE_INTERVAL
     custom_response_enabled: bool = True
     enable_task_dedup: bool = False  # Guard flag for Phase 4.3 de-dup rollout (testing mode only initially)
     enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout

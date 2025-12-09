@@ -804,6 +804,13 @@ class ConfigManager:
         if app_name_value:
             config["app_name"] = app_name_value
 
+        ConfigManager._load_bool_env_var(config, "AUTO_APPROVE_ENABLED", "auto_approve_enabled")
+        ConfigManager._load_bool_env_var(config, "ALLOW_PRODUCTION_AUTO_APPROVE", "allow_production_auto_approve")
+        ConfigManager._load_bool_env_var(config, "EMERGENCY_STOP", "emergency_stop_enabled")
+        ConfigManager._load_int_env_var(config, "MAX_SEND_PER_RUN", "max_send_per_run")
+        ConfigManager._load_bool_env_var(config, "DRY_RUN_VERIFIED", "dry_run_verified")
+        ConfigManager._load_int_env_var(config, "PER_RECIPIENT_BACKOFF_SECONDS", "per_recipient_backoff_seconds")
+
     @staticmethod
     def _load_reference_person_config_from_env(config: dict[str, Any]) -> None:
         """Load reference person configuration from environment variables."""

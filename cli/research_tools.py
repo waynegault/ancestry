@@ -939,6 +939,14 @@ def _handle_relationship_diagram(_cli: ResearchToolsCLI) -> None:
         path_ids, gedcom_data.reader, gedcom_data.id_to_parents, gedcom_data.id_to_children, gedcom_data.indi_index
     )
 
+    sanitized_path: list[dict[str, str]] = [
+        {
+            "name": (step.get("name") or "Unknown"),
+            "relationship": (step.get("relationship") or ""),
+        }
+        for step in unified_path
+    ]
+
     # Generate diagram
     print("\nSelect Diagram Style:")
     print("1. Vertical (Standard)")
@@ -949,7 +957,7 @@ def _handle_relationship_diagram(_cli: ResearchToolsCLI) -> None:
     style_map = {"1": "vertical", "2": "horizontal", "3": "compact"}
     style = style_map.get(style_choice, "vertical")
 
-    diagram = generate_relationship_diagram(p1_name, p2_name, unified_path, style)  # type: ignore
+    diagram = generate_relationship_diagram(p1_name, p2_name, sanitized_path, style)
 
     print("\n" + diagram)
 

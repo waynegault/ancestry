@@ -112,10 +112,26 @@ class ApprovalQueueService:
     AUTO_APPROVE_THRESHOLD = 90
     HIGH_PRIORITY_THRESHOLD = 70
 
-    def __init__(self, db_session: DbSession) -> None:
+    def __init__(self, db_session: DbSession, auto_approve_enabled: Optional[bool] = None) -> None:
         """Initialize the approval queue service."""
         self.db_session = db_session
-        self._auto_approve_enabled = True
+        self._auto_approve_enabled = self._resolve_auto_approve_flag(auto_approve_enabled)
+        if not self._auto_approve_enabled:
+            logger.info("Auto-approval disabled (auto_approve_enabled=False)")
+
+    @staticmethod
+    def _resolve_auto_approve_flag(override: Optional[bool]) -> bool:
+        """Resolve auto-approve toggle from override or configuration."""
+        if override is not None:
+            return override
+
+        try:
+            from config import config_schema
+
+            return getattr(config_schema, "auto_approve_enabled", False)
+        except Exception:
+            # Default to safest option if configuration not available
+            return False
 
     def queue_for_review(
         self,

@@ -107,6 +107,7 @@ class BatchCounters:
     total: int = 0
     sent: int = 0
     acked: int = 0
+    desist_acks: int = 0
 
 
 @dataclass
