@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import io
+import json
 import logging
 import os
 import subprocess
@@ -454,6 +455,7 @@ class ReviewQueueMixin:
 
             if not pending:
                 print("\n✅ No pending drafts to review!")
+                self._render_contextual_draft_log_preview()
                 return
 
             print(f"\n📝 Pending Drafts ({len(pending)} shown):")
@@ -470,10 +472,42 @@ class ReviewQueueMixin:
 
             print("\n" + "-" * 70)
             print("Commands: approve <id> | reject <id> <reason> | view <id> | back")
+            self._render_contextual_draft_log_preview()
 
         except Exception as exc:
             self._logger.error("Error showing review queue: %s", exc, exc_info=True)
             print(f"Error: {exc}")
+
+    def _render_contextual_draft_log_preview(self, limit: int = 5) -> None:
+        """Show recent contextual draft log entries (draft-only stub)."""
+        try:
+            draft_path = Path("Logs/contextual_drafts.jsonl")
+            if not draft_path.exists():
+                return
+
+            entries: list[dict[str, Any]] = []
+            with draft_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        record = json.loads(line)
+                        entries.append(record)
+                    except json.JSONDecodeError:
+                        continue
+
+            if not entries:
+                return
+
+            entries = entries[-limit:]
+            print(f"\nContextual Draft Log (last {len(entries)}):")
+            for item in entries:
+                ts = item.get("timestamp", "?")
+                pid = item.get("person_id", "?")
+                conf = item.get("confidence", "?")
+                reason = item.get("quality_reason", item.get("reason", ""))
+                preview = (item.get("draft_text", "") or "")[:80]
+                print(f" - {ts} | person {pid} | conf {conf} | {reason} | {preview}...")
+        except Exception as exc:  # pragma: no cover - defensive only
+            self._logger.debug("Could not render contextual draft log preview: %s", exc)
 
     def approve_draft(self, draft_id: int, edited_content: Optional[str] = None) -> bool:
         """Approve a draft for sending."""

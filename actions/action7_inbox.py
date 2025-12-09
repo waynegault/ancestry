@@ -51,6 +51,7 @@ from core.database import (
     ConversationLog,
     ConversationPhaseEnum,
     ConversationState,
+    ConversationStatusEnum,
     DnaMatch,
     DraftReply,
     MessageDirectionEnum,
@@ -72,7 +73,7 @@ from core.session_manager import SessionManager
 from genealogy.research_service import ResearchService
 from messaging import build_safe_column_value
 from messaging.inbound import InboundOrchestrator
-from messaging.safety import CriticalAlertCategory, SafetyGuard, SafetyStatus
+from messaging.safety import CriticalAlertCategory, SafetyCheckResult, SafetyGuard, SafetyStatus
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
@@ -2651,6 +2652,76 @@ class InboxProcessor:
 
         session.commit()
 
+    def _sync_conversation_state_status(
+        self,
+        session: DbSession,
+        people_id: int,
+        ai_intent: Optional[str],
+        safety_result: Optional[SafetyCheckResult],
+    ) -> None:
+        """Propagate safety/intent signals into conversation_state status flags."""
+        state: Optional[ConversationState] = (
+            session.query(ConversationState).filter(ConversationState.people_id == people_id).one_or_none()
+        )
+
+        if not state:
+            state = ConversationState(people_id=people_id)
+            session.add(state)
+
+        status = state.status or ConversationStatusEnum.ACTIVE
+        safety_flag = bool(state.safety_flag)
+
+        status, safety_flag = self._apply_safety_status(state, status, safety_flag, safety_result)
+        status = self._apply_intent_status(state, status, ai_intent)
+
+        state.status = status
+        state.safety_flag = safety_flag
+        session.commit()
+
+    @staticmethod
+    def _apply_safety_status(
+        state: ConversationState,
+        status: ConversationStatusEnum,
+        safety_flag: bool,
+        safety_result: Optional[SafetyCheckResult],
+    ) -> tuple[ConversationStatusEnum, bool]:
+        if not (safety_result and isinstance(safety_result, SafetyCheckResult)):
+            return status, safety_flag
+
+        if safety_result.status == SafetyStatus.OPT_OUT:
+            return ConversationStatusEnum.OPT_OUT, True
+
+        if safety_result.status in {SafetyStatus.UNSAFE, SafetyStatus.NEEDS_REVIEW, SafetyStatus.CRITICAL_ALERT}:
+            status = ConversationStatusEnum.HUMAN_REVIEW
+            safety_flag = True
+
+        if safety_result.reason:
+            prefix = f"SAFETY FLAG: {safety_result.reason}"
+            if not state.ai_summary or prefix not in state.ai_summary:
+                state.ai_summary = f"{prefix}\n{state.ai_summary or ''}".strip()
+
+        return status, safety_flag
+
+    @staticmethod
+    def _apply_intent_status(
+        state: ConversationState, status: ConversationStatusEnum, ai_intent: Optional[str]
+    ) -> ConversationStatusEnum:
+        if not ai_intent:
+            return status
+
+        state.last_intent = ai_intent
+
+        if ai_intent in {"DESIST", "UNINTERESTED"}:
+            return ConversationStatusEnum.OPT_OUT
+
+        if ai_intent == "PRODUCTIVE" and status not in {
+            ConversationStatusEnum.OPT_OUT,
+            ConversationStatusEnum.HUMAN_REVIEW,
+        }:
+            return ConversationStatusEnum.ACTIVE
+
+        return status
+
     def _assess_and_upsert(
         self,
         session: DbSession,
@@ -2706,13 +2777,24 @@ class InboxProcessor:
 
     @staticmethod
     def _update_person_status_from_ai(
-        ai_sentiment: Optional[str], people_id: int, person_updates: dict[int, PersonStatusEnum]
+        ai_sentiment: Optional[str],
+        safety_result: Optional[SafetyCheckResult],
+        people_id: int,
+        person_updates: dict[int, PersonStatusEnum],
     ) -> None:
-        """Update person status based on AI classification."""
-        if ai_sentiment == "UNINTERESTED":
+        """Update person status based on AI classification and safety signals."""
+        if safety_result and isinstance(safety_result, SafetyCheckResult):
+            if safety_result.status == SafetyStatus.OPT_OUT:
+                person_updates[people_id] = PersonStatusEnum.DESIST
+                return
+            if safety_result.status in {SafetyStatus.UNSAFE, SafetyStatus.CRITICAL_ALERT, SafetyStatus.NEEDS_REVIEW}:
+                person_updates[people_id] = PersonStatusEnum.DESIST
+                return
+
+        if ai_sentiment in {"UNINTERESTED", "DESIST"}:
             person_updates[people_id] = PersonStatusEnum.DESIST
         elif ai_sentiment == "PRODUCTIVE":
-            pass  # Keep as ACTIVE for Action 9
+            person_updates.pop(people_id, None)  # Keep as ACTIVE
 
     @staticmethod
     def _commit_batch_updates(
@@ -2902,8 +2984,67 @@ class InboxProcessor:
             context_history=formatted_context,
         )
 
+        ai_classified_count, ai_sentiment_result, safety_result = self._process_inbound_result_side_effects(
+            session=session,
+            profile_id=profile_id,
+            api_conv_id=api_conv_id,
+            result=result,
+            ai_classified_count=ai_classified_count,
+        )
+
+        # Priority 1 Todo #11: Determine conversation phase based on history
+        conversation_phase = self._determine_conversation_phase(
+            conversation_id=api_conv_id,
+            direction=MessageDirectionEnum.IN,
+            ai_sentiment=ai_sentiment_result,
+            existing_logs=ctx.existing_conv_logs,
+            timestamp=ctx_ts_in_aware,
+        )
+
+        if ai_sentiment_result or (safety_result and safety_result.status != SafetyStatus.SAFE):
+            self._sync_conversation_state_status(
+                session=session,
+                people_id=people_id,
+                ai_intent=ai_sentiment_result,
+                safety_result=safety_result,
+            )
+
+        _ = self._stage_inbound_follow_up(
+            ctx=ctx,
+            api_conv_id=api_conv_id,
+            people_id=people_id,
+            message_content=message_content,
+            ctx_ts_in_aware=ctx_ts_in_aware,
+            ai_sentiment_result=ai_sentiment_result,
+            conversation_phase=conversation_phase,
+            session=session,
+        )
+
+        # Track analytics for received message
+        if self._track_message_analytics(
+            session=session,
+            people_id=people_id,
+            direction=MessageDirectionEnum.IN,
+            ai_sentiment=ai_sentiment_result,
+            current_message_content=message_content,
+        ):
+            self._register_engagement_assessment(ctx.state)
+
+        self._update_person_status_from_ai(ai_sentiment_result, safety_result, people_id, ctx.person_updates)
+
+        return ai_classified_count
+
+    def _process_inbound_result_side_effects(
+        self,
+        session: DbSession,
+        profile_id: str,
+        api_conv_id: str,
+        result: dict[str, Any],
+        ai_classified_count: int,
+    ) -> tuple[int, Optional[str], Optional[SafetyCheckResult]]:
         ai_sentiment_result = result.get("intent")
         generated_reply = result.get("generated_reply")
+        safety_result: Optional[SafetyCheckResult] = result.get("safety_result")
 
         if generated_reply:
             self._save_draft_reply(session, profile_id, api_conv_id, generated_reply)
@@ -2916,16 +3057,19 @@ class InboxProcessor:
         else:
             logger.warning(f"AI classification failed for ConvID {api_conv_id}.")
 
-        # Priority 1 Todo #11: Determine conversation phase based on history
-        conversation_phase = self._determine_conversation_phase(
-            conversation_id=api_conv_id,
-            direction=MessageDirectionEnum.IN,
-            ai_sentiment=ai_sentiment_result,
-            existing_logs=ctx.existing_conv_logs,
-            timestamp=ctx_ts_in_aware,
-        )
+        return ai_classified_count, ai_sentiment_result, safety_result
 
-        # Priority 1 Todo #5: Extract follow-up requirements for PRODUCTIVE conversations
+    def _stage_inbound_follow_up(
+        self,
+        ctx: ConversationProcessingContext,
+        api_conv_id: str,
+        people_id: int,
+        message_content: str,
+        ctx_ts_in_aware: datetime,
+        ai_sentiment_result: Optional[str],
+        conversation_phase: Optional[Any],
+        session: DbSession,
+    ) -> dict[str, Any]:
         follow_up_data = self._extract_follow_up_requirements(
             conversation_history=ctx.existing_conv_logs,
             latest_message=message_content,
@@ -2949,7 +3093,6 @@ class InboxProcessor:
         ctx.conv_log_upserts_dicts.append(upsert_dict_in)
         logger.debug(f"Created IN message log entry for conversation {api_conv_id} with phase: {conversation_phase}")
 
-        # Priority 1 Todo #5: Create MS To-Do reminder task if follow-up required
         if follow_up_data.get("follow_up_required") and follow_up_data.get("reminder_task_title"):
             self._create_follow_up_reminder_task(
                 person_id=people_id,
@@ -2961,19 +3104,7 @@ class InboxProcessor:
                 session=session,
             )
 
-        # Track analytics for received message
-        if self._track_message_analytics(
-            session=session,
-            people_id=people_id,
-            direction=MessageDirectionEnum.IN,
-            ai_sentiment=ai_sentiment_result,
-            current_message_content=message_content,
-        ):
-            self._register_engagement_assessment(ctx.state)
-
-        self._update_person_status_from_ai(ai_sentiment_result, people_id, ctx.person_updates)
-
-        return ai_classified_count
+        return follow_up_data
 
     def _process_out_message(
         self,

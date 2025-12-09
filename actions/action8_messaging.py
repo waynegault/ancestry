@@ -72,6 +72,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, TypeVar, cast
 
 T = TypeVar("T")
@@ -2174,14 +2175,13 @@ def _check_halt_signal(session_manager: SessionManager) -> None:
         )
 
 
-def _initialize_person_processing(person: Person) -> tuple[str, int]:
-    """Initialize person processing variables and return log prefix and identifiers."""
+def _initialize_person_processing(person: Person) -> str:
+    """Initialize person processing variables and return log prefix."""
     username = safe_column_value(person, "username", "Unknown")
     person_id = safe_column_value(person, "id", 0)
     status = safe_column_value(person, "status", None)
     status_name = getattr(status, "name", "Unknown") if status is not None else "Unknown"
-    log_prefix = f"{username} #{person_id} (Status: {status_name})"
-    return log_prefix, person_id
+    return f"{username} #{person_id} (Status: {status_name})"
 
 
 def _check_person_eligibility(person: Person, log_prefix: str) -> None:
@@ -2745,20 +2745,110 @@ def _format_message_text(
     return message_text
 
 
+def _load_existing_contextual_draft(person_uuid: str) -> Optional[dict[str, Any]]:
+    """Load the most recent contextual draft for a person from the log."""
+    draft_path = Path("Logs") / "contextual_drafts.jsonl"
+    if not draft_path.exists():
+        return None
+
+    latest_entry: Optional[dict[str, Any]] = None
+    try:
+        with draft_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if record.get("person_uuid") != person_uuid:
+                    continue
+
+                latest_entry = record
+    except Exception:
+        return None
+
+    return latest_entry
+
+
+def _score_draft_quality(draft_text: str, context_json: Optional[str]) -> tuple[int, str]:
+    """Heuristic quality score for contextual drafts (0-100)."""
+    text = (draft_text or "").strip()
+    if not text:
+        return 0, "empty draft"
+
+    length = len(text)
+    score = 50
+    reason_bits: list[str] = []
+
+    if length >= 400:
+        score += 20
+        reason_bits.append("rich content")
+    elif length >= 250:
+        score += 12
+        reason_bits.append("detailed")
+    elif length >= 150:
+        score += 6
+        reason_bits.append("moderate length")
+    else:
+        score -= 5
+        reason_bits.append("short")
+
+    if "?" in text:
+        score += 3
+        reason_bits.append("contains question")
+
+    if context_json:
+        score += 5
+        reason_bits.append("context attached")
+
+    score = max(30, min(95, score))
+    reason = ", ".join(reason_bits) if reason_bits else "baseline"
+    return score, reason
+
+
+def _queue_contextual_draft_for_review(
+    db_session: Session,
+    person: Person,
+    conversation_id: Optional[str],
+    draft_payload: dict[str, Any],
+    log_prefix: str,
+) -> None:
+    """Queue contextual draft for review using ApprovalQueueService (stub if disabled)."""
+    if getattr(config_schema, "contextual_reply_auto_send", False):
+        return
+
+    try:
+        from core.approval_queue import ApprovalQueueService
+
+        service = ApprovalQueueService(db_session)
+        draft_id = service.queue_for_review(
+            person_id=safe_column_value(person, "id", 0) or 0,
+            conversation_id=conversation_id or "",
+            content=draft_payload.get("draft_text", ""),
+            ai_confidence=int(draft_payload.get("confidence") or 0),
+            _ai_reasoning=draft_payload.get("quality_reason"),
+            _context_summary=draft_payload.get("context_json"),
+        )
+        if draft_id:
+            logger.info(f"{log_prefix}: Contextual draft queued for review (Draft ID: {draft_id})")
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.debug(f"{log_prefix}: Review queue enqueue skipped: {exc}")
+
+
 def _build_contextual_reply_draft(
     db_session: Optional[Session],
     session_manager: SessionManager,
     person: Person,
     latest_in_log: Optional[ConversationLog],
     log_prefix: str,
-) -> Optional[dict[str, str]]:
+    conversation_id: Optional[str],
+) -> Optional[dict[str, Any]]:
     """Generate a context-rich reply draft using ContextBuilder and AI.
 
     Returns a dictionary with draft text and serialized context when enabled.
     Controlled via config: enable_contextual_reply_drafts (bool, default False)
     and contextual_reply_auto_send (bool, default False).
     """
-
     if not getattr(config_schema, "enable_contextual_reply_drafts", False):
         return None
 
@@ -2771,42 +2861,67 @@ def _build_contextual_reply_draft(
         logger.debug(f"{log_prefix}: Skipping contextual draft (no UUID)")
         return None
 
-    last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
+    payload: Optional[dict[str, Any]] = None
+    existing_draft = _load_existing_contextual_draft(match_uuid)
+    if existing_draft:
+        if not existing_draft.get("confidence"):
+            confidence, quality_reason = _score_draft_quality(
+                existing_draft.get("draft_text", ""), existing_draft.get("context_json")
+            )
+            existing_draft["confidence"] = confidence
+            existing_draft["quality_reason"] = quality_reason
+        logger.debug(f"{log_prefix}: Reusing contextual draft from log for UUID {match_uuid}")
+        payload = existing_draft
+    else:
+        last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
 
-    try:
-        builder = ContextBuilder(db_session=db_session)
-        context = builder.build_context(match_uuid)
+        try:
+            builder = ContextBuilder(db_session=db_session)
+            context = builder.build_context(match_uuid)
 
-        draft_text = generate_genealogical_reply(
-            conversation_context=context.to_prompt_string(),
-            user_last_message=last_message,
-            genealogical_data_str=context.to_json(),
-            session_manager=session_manager,
-        )
+            draft_text = generate_genealogical_reply(
+                conversation_context=context.to_prompt_string(),
+                user_last_message=last_message,
+                genealogical_data_str=context.to_json(),
+                session_manager=session_manager,
+            )
 
-        if not draft_text:
-            logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
-            return None
+            if not draft_text:
+                logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
+            else:
+                confidence, quality_reason = _score_draft_quality(draft_text, context.to_json())
 
-        draft_payload = {
-            "draft_text": draft_text,
-            "context_json": context.to_json(),
-            "confidence": None,
-            "reason": "contextual_reply_draft",
-        }
-        _persist_contextual_draft(draft_payload, person, log_prefix)
-        logger.info(f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)")
-        return draft_payload
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
-        return None
+                draft_payload = {
+                    "draft_text": draft_text,
+                    "context_json": context.to_json(),
+                    "confidence": confidence,
+                    "quality_reason": quality_reason,
+                    "reason": "contextual_reply_draft",
+                    "conversation_id": conversation_id,
+                }
+                _persist_contextual_draft(draft_payload, person, log_prefix)
+                _queue_contextual_draft_for_review(
+                    db_session=db_session,
+                    person=person,
+                    conversation_id=conversation_id,
+                    draft_payload=draft_payload,
+                    log_prefix=log_prefix,
+                )
+                logger.info(
+                    f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)"
+                )
+                payload = draft_payload
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
+
+    return payload
 
 
 def _persist_contextual_draft(draft_payload: dict[str, Any], person: Person, log_prefix: str) -> None:
     """Append contextual draft metadata to a jsonl log for review queues."""
     try:
-        draft_path = os.path.join("Logs", "contextual_drafts.jsonl")
-        os.makedirs(os.path.dirname(draft_path), exist_ok=True)
+        draft_path = Path("Logs") / "contextual_drafts.jsonl"
+        draft_path.parent.mkdir(exist_ok=True, parents=True)
         record = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "person_id": safe_column_value(person, "id", None),
@@ -2814,7 +2929,7 @@ def _persist_contextual_draft(draft_payload: dict[str, Any], person: Person, log
             "log_prefix": log_prefix,
             **draft_payload,
         }
-        with open(draft_path, "a", encoding="utf-8") as handle:
+        with draft_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record) + "\n")
     except Exception as exc:  # pragma: no cover - defensive logging only
         logger.debug(f"{log_prefix}: Failed to persist contextual draft: {exc}")
@@ -3056,6 +3171,30 @@ def _handle_person_status(
     raise StopIteration("error (unexpected_status)")
 
 
+def _finalize_successful_message(
+    message_key: str,
+    send_result: Any,
+    msg_flags: "MessageFlags",
+    person: Person,
+    log_prefix: str,
+    msg_ctx: "MessageContext",
+    conv_state: "ConversationState",
+    message_type_map: dict[str, int],
+) -> tuple[Optional[ConversationLog], Optional[tuple[int, PersonStatusEnum]], str]:
+    """Finalize successful send and prepare DB/log updates."""
+    _update_conv_state(conv_state, send_result)
+    msg_flags.message_status = send_result.status
+    new_log_entry = _prepare_conversation_log_entry(msg_ctx, conv_state, msg_flags, message_type_map)
+    status_string, person_update = _determine_final_status(
+        message_key,
+        send_result.status,
+        msg_flags.send_message_flag,
+        safe_column_value(person, "id", 0),
+        log_prefix,
+    )
+    return new_log_entry, person_update, status_string
+
+
 def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
@@ -3089,7 +3228,7 @@ def _process_single_person(
     _check_halt_signal(session_manager)
 
     # --- Step 1: Initialization and Logging ---
-    log_prefix, person_id = _initialize_person_processing(person)
+    log_prefix = _initialize_person_processing(person)
     try:  # Main processing block for this person
         # --- Step 1: Check Person Status for Eligibility ---
         _check_person_eligibility(person, log_prefix)
@@ -3113,7 +3252,14 @@ def _process_single_person(
         if not message_key or message_key not in MESSAGE_TEMPLATES:
             logger.error(f"Logic Error: Invalid/missing message key '{message_key}' for {log_prefix}.")
             raise StopIteration("error (template_key)")
-        contextual_draft = _build_contextual_reply_draft(db_session, session_manager, person, latest_in_log, log_prefix)
+        contextual_draft = _build_contextual_reply_draft(
+            db_session,
+            session_manager,
+            person,
+            latest_in_log,
+            log_prefix,
+            _get_existing_conversation_id(latest_out_log, latest_in_log),
+        )
 
         if contextual_draft:
             message_text = contextual_draft["draft_text"]
@@ -3149,17 +3295,16 @@ def _process_single_person(
 
         # --- Step 6: Prepare Database Updates based on outcome ---
         if _message_was_successful(send_result.status):
-            _update_conv_state(conv_state, send_result)
-            msg_flags.message_status = send_result.status
-            new_log_entry = _prepare_conversation_log_entry(msg_ctx, conv_state, msg_flags, message_type_map)
-            status_string, person_update = _determine_final_status(
+            return _finalize_successful_message(
                 message_key,
-                send_result.status,
-                msg_flags.send_message_flag,
-                person_id,
+                send_result,
+                msg_flags,
+                person,
                 log_prefix,
+                msg_ctx,
+                conv_state,
+                message_type_map,
             )
-            return new_log_entry, person_update, status_string
 
         logger.warning(
             f"Message send failed for {log_prefix} with status '{send_result.status}'. No DB changes staged."
@@ -3237,35 +3382,25 @@ def _initialize_resource_management() -> _ResourceBundle:
 
 def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, Optional[str]]:
     """Validate prerequisites for Action 8 execution."""
-    # System health check
     if not _validate_system_health(session_manager):
         logger.critical("🚨 System health check failed - aborting messaging run.")
         return False, None
 
-    # Get profile ID
     profile_id = None
     if hasattr(session_manager, "my_profile_id"):
         profile_id = safe_column_value(session_manager, "my_profile_id", None)
 
     if not profile_id:
-        profile_id = "TEST_PROFILE_ID_FOR_DEBUGGING"
-        logger.warning("Using test profile ID for debugging message progression logic")
-
-    # Check message templates
-    ensure_message_templates_loaded()
-    if not MESSAGE_TEMPLATES:
-        logger.error("Message templates not loaded.")
+        logger.error("Profile ID unavailable; aborting messaging run.")
         return False, None
 
-    # Login check is already performed by _validate_system_health() above
-    # which calls session_manager.validate_system_health("Action 8")
     return True, profile_id
 
 
 @dataclass(slots=True)
 class _MessagingData:
     message_type_map: dict[str, int]
-    candidate_persons: list[Any]
+    candidate_persons: list[Person]
     total_candidates: int
 
 
@@ -3287,7 +3422,7 @@ def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) 
     else:
         logger.info(f"Found {total_candidates} messaging candidates.")
         max_messages_to_send_this_run = config_schema.max_inbox
-        hard_cap = getattr(config_schema, 'max_send_per_run', 0)
+        hard_cap = getattr(config_schema, "max_send_per_run", 0)
         if hard_cap:
             max_messages_to_send_this_run = min(max_messages_to_send_this_run, hard_cap)
         if max_messages_to_send_this_run > 0:
