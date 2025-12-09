@@ -485,29 +485,38 @@ class ReviewQueueMixin:
             return "refresh"
 
         tokens = command.split()
-        if tokens[0] == "approve" and len(tokens) >= 2:
-            self.approve_draft(int(tokens[1]))
-            return "continue"
+        handlers = {
+            "approve": lambda t: self.approve_draft(int(t[1])) if len(t) >= 2 else None,
+            "reject": lambda t: self.reject_draft(int(t[1]), " ".join(t[2:]) if len(t) > 2 else "")
+            if len(t) >= 2
+            else None,
+            "fact": self._handle_fact_command,
+        }
 
-        if tokens[0] == "reject" and len(tokens) >= 2:
-            reason = " ".join(tokens[2:]) if len(tokens) > 2 else ""
-            self.reject_draft(int(tokens[1]), reason)
-            return "continue"
-
-        if tokens[0] == "fact" and len(tokens) >= 3:
-            action = tokens[1]
-            fact_id = int(tokens[2])
-            if action == "approve":
-                self.approve_suggested_fact(fact_id)
-            elif action == "reject":
-                reason = " ".join(tokens[3:]) if len(tokens) > 3 else ""
-                self.reject_suggested_fact(fact_id, reason)
-            else:
-                print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
+        handler = handlers.get(tokens[0])
+        if handler is not None:
+            handler(tokens)
             return "continue"
 
         print("Unrecognized command. Type 'back' to exit or 'refresh' to reload queue.")
         return "continue"
+
+    def _handle_fact_command(self, tokens: list[str]) -> None:
+        if len(tokens) < 3:
+            print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
+            return
+
+        action, fact_id = tokens[1], int(tokens[2])
+        if action == "approve":
+            self.approve_suggested_fact(fact_id)
+            return
+
+        if action == "reject":
+            reason = " ".join(tokens[3:]) if len(tokens) > 3 else ""
+            self.reject_suggested_fact(fact_id, reason)
+            return
+
+        print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
 
     def _render_contextual_draft_log_preview(self, limit: int = 5) -> None:
         """Show recent contextual draft log entries (draft-only stub)."""
