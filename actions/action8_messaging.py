@@ -98,9 +98,13 @@ from sqlalchemy import (
     inspect as sa_inspect,
 )  # Minimal imports
 
+from ai.ai_interface import generate_genealogical_reply
+from ai.context_builder import ContextBuilder
+
 # === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
 from core.database import PersonStatusEnum
+from core.opt_out_detection import OptOutDetector
 from messaging import (
     build_safe_column_value,
     determine_next_message_type,
@@ -2169,14 +2173,14 @@ def _check_halt_signal(session_manager: SessionManager) -> None:
         )
 
 
-def _initialize_person_processing(person: Person) -> tuple[str, int, str, str]:
+def _initialize_person_processing(person: Person) -> tuple[str, int]:
     """Initialize person processing variables and return log prefix and identifiers."""
     username = safe_column_value(person, "username", "Unknown")
     person_id = safe_column_value(person, "id", 0)
     status = safe_column_value(person, "status", None)
     status_name = getattr(status, "name", "Unknown") if status is not None else "Unknown"
     log_prefix = f"{username} #{person_id} (Status: {status_name})"
-    return log_prefix, person_id, username, status_name
+    return log_prefix, person_id
 
 
 def _check_person_eligibility(person: Person, log_prefix: str) -> None:
@@ -2184,6 +2188,69 @@ def _check_person_eligibility(person: Person, log_prefix: str) -> None:
     if person.status in {PersonStatusEnum.ARCHIVE, PersonStatusEnum.BLOCKED, PersonStatusEnum.DEAD}:
         logger.debug(f"Skipping {log_prefix}: Status is '{person.status.name}'.")
         raise StopIteration("skipped (status)")
+
+
+def _should_skip_for_opt_out(
+    db_session: Optional[Session],
+    person: Person,
+    latest_in_log: Optional[ConversationLog],
+    log_prefix: str,
+) -> Optional[str]:
+    """Return skip reason when opt-out signals are detected."""
+    if not getattr(config_schema, "enable_opt_out_guard", True):
+        return None
+
+    if db_session is None:
+        logger.debug(f"{log_prefix}: Opt-out guard bypassed (no DB session)")
+        return None
+
+    try:
+        detector = OptOutDetector(db_session)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"{log_prefix}: Opt-out guard unavailable: {exc}")
+        return None
+
+    person_id = safe_column_value(person, "id", None)
+    status_reason = _opt_out_status_reason(detector, person_id, log_prefix)
+    if status_reason:
+        return status_reason
+
+    return _opt_out_inbound_reason(detector, latest_in_log, log_prefix)
+
+
+def _opt_out_status_reason(detector: OptOutDetector, person_id: Optional[int], log_prefix: str) -> Optional[str]:
+    if not person_id:
+        return None
+    try:
+        can_send, reason = detector.validate_can_send(person_id)
+        if not can_send:
+            logger.info(f"{log_prefix}: Opt-out guard blocked send: {reason}")
+            return f"skipped (opt_out_status: {reason})"
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"{log_prefix}: Opt-out status check failed: {exc}")
+    return None
+
+
+def _opt_out_inbound_reason(
+    detector: OptOutDetector,
+    latest_in_log: Optional[ConversationLog],
+    log_prefix: str,
+) -> Optional[str]:
+    inbound_text = safe_column_value(latest_in_log, "latest_message_content", "") or ""
+    if not inbound_text:
+        return None
+
+    try:
+        analysis = detector.analyze_message(inbound_text)
+        if analysis.is_opt_out:
+            logger.info(
+                f"{log_prefix}: Opt-out indicator detected in latest inbound "
+                f"(suggested_action={analysis.suggested_action}, confidence={analysis.confidence:.2f})"
+            )
+            return "skipped (opt_out_detected)"
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(f"{log_prefix}: Opt-out text analysis failed: {exc}")
+    return None
 
 
 def _handle_desist_status(
@@ -2677,6 +2744,59 @@ def _format_message_text(
     return message_text
 
 
+def _build_contextual_reply_draft(
+    db_session: Optional[Session],
+    session_manager: SessionManager,
+    person: Person,
+    latest_in_log: Optional[ConversationLog],
+    log_prefix: str,
+) -> Optional[dict[str, str]]:
+    """Generate a context-rich reply draft using ContextBuilder and AI.
+
+    Returns a dictionary with draft text and serialized context when enabled.
+    Controlled via config: enable_contextual_reply_drafts (bool, default False)
+    and contextual_reply_auto_send (bool, default False).
+    """
+
+    if not getattr(config_schema, "enable_contextual_reply_drafts", False):
+        return None
+
+    if db_session is None:
+        logger.debug(f"{log_prefix}: Skipping contextual draft (no DB session)")
+        return None
+
+    match_uuid = safe_column_value(person, "uuid", None)
+    if not match_uuid:
+        logger.debug(f"{log_prefix}: Skipping contextual draft (no UUID)")
+        return None
+
+    last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
+
+    try:
+        builder = ContextBuilder(db_session=db_session)
+        context = builder.build_context(match_uuid)
+
+        draft_text = generate_genealogical_reply(
+            conversation_context=context.to_prompt_string(),
+            user_last_message=last_message,
+            genealogical_data_str=context.to_json(),
+            session_manager=session_manager,
+        )
+
+        if not draft_text:
+            logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
+            return None
+
+        logger.info(f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)")
+        return {
+            "draft_text": draft_text,
+            "context_json": context.to_json(),
+        }
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
+        return None
+
+
 def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
     """Check if message should be filtered based on app mode and testing profile."""
     app_mode = getattr(config_schema, 'app_mode', 'production')
@@ -2946,16 +3066,14 @@ def _process_single_person(
     _check_halt_signal(session_manager)
 
     # --- Step 1: Initialization and Logging ---
-    log_prefix, person_id, _, _ = _initialize_person_processing(person)
-    status_string: str = "error"
-
-    # Initialize variables early to prevent UnboundLocalError in exception handlers
-    new_log_entry: Optional[ConversationLog] = None  # Prepared log object
-    person_update: Optional[tuple[int, PersonStatusEnum]] = None  # Staged status update
-
+    log_prefix, person_id = _initialize_person_processing(person)
     try:  # Main processing block for this person
         # --- Step 1: Check Person Status for Eligibility ---
         _check_person_eligibility(person, log_prefix)
+
+        opt_out_skip_reason = _should_skip_for_opt_out(db_session, person, latest_in_log, log_prefix)
+        if opt_out_skip_reason:
+            raise StopIteration(opt_out_skip_reason)
 
         # --- Step 2: Determine Action based on Status (DESIST vs ACTIVE) ---
         decision = _handle_person_status(
@@ -2972,24 +3090,34 @@ def _process_single_person(
         if not message_key or message_key not in MESSAGE_TEMPLATES:
             logger.error(f"Logic Error: Invalid/missing message key '{message_key}' for {log_prefix}.")
             raise StopIteration("error (template_key)")
+        contextual_draft = _build_contextual_reply_draft(db_session, session_manager, person, latest_in_log, log_prefix)
 
-        message_text = _format_message_text(
-            message_key,
-            person,
-            _prepare_message_format_data(person, decision.family_tree, decision.dna_match, db_session),
-            log_prefix,
-            db_session,  # Enable sentiment-based tone adaptation
-        )
+        if contextual_draft:
+            message_text = contextual_draft["draft_text"]
+        else:
+            message_text = _format_message_text(
+                message_key,
+                person,
+                _prepare_message_format_data(person, decision.family_tree, decision.dna_match, db_session),
+                log_prefix,
+                db_session,  # Enable sentiment-based tone adaptation
+            )
 
         # --- Step 4: Apply Mode/Recipient Filtering ---
         msg_flags = _create_message_flags(person, log_prefix)
+
+        # Draft-only mode: do not send contextual drafts unless explicitly enabled
+        if contextual_draft and not getattr(config_schema, "contextual_reply_auto_send", False):
+            msg_flags.send_message_flag = False
+            msg_flags.skip_log_reason = "skipped (contextual_draft_only)"
+            msg_flags.message_status = msg_flags.skip_log_reason
 
         # --- Step 5: Send/Simulate Message ---
         msg_ctx, conv_state = _build_message_context(
             person,
             message_text,
             message_key,
-            decision.template_reason,
+            "Contextual draft" if contextual_draft else decision.template_reason,
             log_prefix,
             latest_out_log,
             latest_in_log,
@@ -3008,16 +3136,12 @@ def _process_single_person(
                 person_id,
                 log_prefix,
             )
-        else:
-            logger.warning(
-                f"Message send failed for {log_prefix} with status '{send_result.status}'. No DB changes staged."
-            )
-            new_log_entry = None
-            person_update = None
-            status_string = "error"
+            return new_log_entry, person_update, status_string
 
-        # Step 7: Return prepared updates and status
-        return new_log_entry, person_update, status_string
+        logger.warning(
+            f"Message send failed for {log_prefix} with status '{send_result.status}'. No DB changes staged."
+        )
+        return None, None, "error"
 
     # --- Step 8: Handle clean exits via StopIteration ---
     except StopIteration as si:

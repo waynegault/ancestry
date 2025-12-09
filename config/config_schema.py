@@ -880,6 +880,9 @@ class ConfigSchema:
     # Messaging settings
     message_truncation_length: int = 1000
     app_mode: str = "development"
+    enable_opt_out_guard: bool = True
+    enable_contextual_reply_drafts: bool = False
+    contextual_reply_auto_send: bool = False
     auto_approve_enabled: bool = False
     allow_production_auto_approve: bool = False  # Explicit opt-in if auto-approval is permitted in production
     emergency_stop_enabled: bool = False  # Forces messaging to halt immediately when true

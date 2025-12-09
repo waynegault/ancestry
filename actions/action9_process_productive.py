@@ -42,12 +42,17 @@ from ai.ai_interface import (
 # === LOCAL IMPORTS ===
 from config import config_schema
 from core.database import (
+    ConflictStatusEnum,
     ConversationLog,
     ConversationState,
+    DataConflict,
+    FactStatusEnum,
+    FactTypeEnum,
     MessageDirectionEnum,
     MessageTemplate,
     Person,
     PersonStatusEnum,
+    SuggestedFact,
     commit_bulk_data,
 )
 from core.error_handling import (
@@ -61,6 +66,9 @@ from core.logging_utils import log_action_banner
 from core.session_manager import SessionManager
 from core.utils import format_name
 from genealogy.fact_validator import (
+    ConflictType,
+    ExtractedFact,
+    FactValidator,
     extract_facts_from_ai_response,
 )
 from genealogy.tree_query_service import PersonSearchResult, TreeQueryService
@@ -686,6 +694,9 @@ class PersonProcessor:
                     else:
                         extracted_data, suggested_tasks = ai_results
 
+                        # Validate and stage extracted facts for review
+                        self._validate_and_record_facts(person, extracted_data, latest_message, log_prefix)
+
                         # Phase 2: Look up mentioned people
                         lookup_results = self._lookup_mentioned_people(extracted_data, person)
 
@@ -898,9 +909,12 @@ class PersonProcessor:
                 }
                 for f in extracted_facts
             ]
+            # Keep raw objects for validation pipeline
+            extracted_data["_fact_objects"] = extracted_facts
         else:
             logger.debug(f"No structured facts extracted for {person.username}")
             extracted_data["validated_facts"] = []
+            extracted_data["_fact_objects"] = []
 
         # Cache result for this context to avoid repeated AI calls during the run
         self._ai_cache[cache_key] = (
@@ -909,6 +923,147 @@ class PersonProcessor:
         )
 
         return extracted_data, suggested_tasks
+
+    @staticmethod
+    def _map_field_name_for_conflict(fact_type: str) -> str:
+        """Map fact types to database field names for DataConflict records."""
+
+        mapping = {
+            "BIRTH": "birth_year",
+            "DEATH": "death_year",
+            "MARRIAGE": "marriage_date",
+            "RELATIONSHIP": "relationship",
+            "LOCATION": "location",
+        }
+        return mapping.get(fact_type, fact_type.lower())
+
+    @staticmethod
+    def _resolve_fact_type_enum(fact_type: str) -> FactTypeEnum:
+        """Return FactTypeEnum value, defaulting to OTHER on unknown types."""
+        try:
+            return FactTypeEnum(fact_type)
+        except Exception:
+            return FactTypeEnum.OTHER
+
+    @staticmethod
+    def _structured_value_for_fact(fact: ExtractedFact) -> str:
+        """Choose normalized or structured value with an empty-string fallback."""
+        return fact.normalized_value or fact.structured_value or ""
+
+    def _stage_suggested_fact(
+        self,
+        person: Person,
+        fact: ExtractedFact,
+        fact_type_enum: FactTypeEnum,
+        structured_value: str,
+        message_id: Optional[int],
+        validation_result: Any,
+    ) -> FactStatusEnum:
+        """Create and stage a SuggestedFact, returning the status used."""
+        status = FactStatusEnum.APPROVED if validation_result.auto_approved else FactStatusEnum.PENDING
+
+        session = cast(DbSession, self.db_state.session)
+
+        suggested = SuggestedFact(
+            people_id=person.id,
+            fact_type=fact_type_enum,
+            original_value=fact.original_text,
+            new_value=structured_value,
+            source_message_id=message_id,
+            status=status,
+            confidence_score=fact.confidence,
+        )
+        session.add(suggested)
+        return status
+
+    def _stage_conflict_if_needed(
+        self,
+        person: Person,
+        fact: ExtractedFact,
+        structured_value: str,
+        message_id: Optional[int],
+        validation_result: Any,
+    ) -> int:
+        """Stage a DataConflict when validation detects conflicts, returning increment count."""
+        if validation_result.conflict_type not in {ConflictType.MINOR_CONFLICT, ConflictType.MAJOR_CONFLICT}:
+            return 0
+
+        existing_value = validation_result.conflicting_fact.value if validation_result.conflicting_fact else None
+        session = cast(DbSession, self.db_state.session)
+
+        conflict = DataConflict(
+            people_id=person.id,
+            field_name=self._map_field_name_for_conflict(fact.fact_type),
+            existing_value=existing_value,
+            new_value=structured_value,
+            source="conversation",
+            source_message_id=message_id,
+            confidence_score=fact.confidence,
+            status=ConflictStatusEnum.OPEN,
+        )
+        session.add(conflict)
+        return 1
+
+    def _validate_and_record_facts(
+        self,
+        person: Person,
+        extracted_data: dict[str, Any],
+        latest_message: ConversationLog,
+        log_prefix: str,
+    ) -> tuple[int, int, int]:
+        """Validate extracted facts and stage SuggestedFact/DataConflict records."""
+
+        if self.db_state.session is None:
+            logger.debug(f"{log_prefix}: Skipping fact validation (no DB session)")
+            return 0, 0, 0
+
+        raw_fact_objects = extracted_data.get("_fact_objects") or []
+        fact_objects: list[ExtractedFact] = [fact for fact in raw_fact_objects if isinstance(fact, ExtractedFact)]
+        if not fact_objects:
+            return 0, 0, 0
+
+        validator = FactValidator(db_session=self.db_state.session)
+        approved = pending = conflicts = 0
+        message_id = safe_column_value(latest_message, "id", None)
+
+        for fact in fact_objects:
+            try:
+                result = validator.validate_fact(fact, person)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.debug(f"{log_prefix}: Fact validation error for {fact.fact_type}: {exc}")
+                continue
+
+            fact_type_enum = self._resolve_fact_type_enum(fact.fact_type)
+            structured_value = self._structured_value_for_fact(fact)
+
+            status = self._stage_suggested_fact(
+                person,
+                fact,
+                fact_type_enum,
+                structured_value,
+                message_id,
+                result,
+            )
+
+            if status is FactStatusEnum.APPROVED:
+                approved += 1
+            else:
+                pending += 1
+
+            conflicts += self._stage_conflict_if_needed(
+                person,
+                fact,
+                structured_value,
+                message_id,
+                result,
+            )
+
+        if approved or pending or conflicts:
+            logger.info(
+                f"{log_prefix}: Fact validation staged {approved} approved, {pending} pending, {conflicts} conflicts"
+            )
+
+        return approved, pending, conflicts
 
     def _lookup_mentioned_people(self, extracted_data: dict[str, Any], person: Person) -> list[PersonLookupResult]:
         """
@@ -4197,6 +4352,66 @@ def _test_retry_helper_alignment_action9() -> None:
     assert helper_name == "api_retry", f"process_productive_messages should use api_retry helper, found: {helper_name}"
 
 
+def _test_fact_validation_integration() -> None:
+    """Validate that extracted facts are staged as SuggestedFact/DataConflict with correct counts."""
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.added: list[Any] = []
+
+        def add(self, obj: Any) -> None:  # pragma: no cover - simple container
+            self.added.append(obj)
+
+    fake_session = _FakeSession()
+
+    # Minimal stubs
+    session_manager = cast(SessionManager, type("SM", (), {"rate_limiter": None, "my_profile_id": ""})())
+    db_state = DatabaseState(session=cast(DbSession, fake_session))
+    msg_config = MessageConfig()
+    ms_state = MSGraphState()
+    processor = PersonProcessor(session_manager, db_state, msg_config, ms_state)
+
+    person = cast(
+        Person,
+        type(
+            "P",
+            (),
+            {
+                "id": 1,
+                "username": "Tester",
+                "display_name": "Tester",
+                "birth_year": 1920,
+                "status": PersonStatusEnum.ACTIVE,
+            },
+        )(),
+    )
+    latest_message = cast(ConversationLog, type("LM", (), {"id": 123})())
+
+    fact = ExtractedFact(
+        fact_type="BIRTH",
+        subject_name="Tester",
+        original_text="Born 1931",
+        structured_value="1931",
+        normalized_value="1931-01-01",
+        confidence=70,
+    )
+
+    extracted_data = {"_fact_objects": [fact]}
+
+    approved, pending, conflicts = processor._validate_and_record_facts(
+        person,
+        extracted_data,
+        latest_message,
+        log_prefix="Test",
+    )
+
+    assert approved == 0
+    assert pending == 1
+    assert conflicts == 1
+    # One SuggestedFact + one DataConflict should be staged
+    assert len(fake_session.added) == 2
+
+
 # ==============================================
 # MAIN TEST SUITE
 # ==============================================
@@ -4233,6 +4448,13 @@ def action9_process_productive_module_tests() -> bool:
             "AI processing functions handle response data correctly and generate summaries",
             "AI response processing and summary generation functions",
             "Testing AI response parsing, data extraction, and summary generation functionality",
+        ),
+        (
+            "Fact validation integration",
+            _test_fact_validation_integration,
+            "Extracted facts are staged as SuggestedFact/DataConflict with correct counts",
+            "Validation pipeline integration",
+            "Ensuring fact validation produces expected review artifacts",
         ),
         (
             "ALL functions with edge case inputs",

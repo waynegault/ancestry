@@ -2,10 +2,10 @@
   "metadata": {
     "schemaVersion": "1.1",
     "generatedAt": "2025-11-21T17:53:43.442530Z",
-    "lastUpdated": "2025-12-05T15:57:43.817185+00:00",
+    "lastUpdated": "2025-12-09T00:00:00+00:00",
     "description": "Code structure knowledge graph for Ancestry research automation platform. Documents classes, functions, modules, and their relationships (defines, calls, uses, instantiates).",
     "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
-    "recentUpdates": "2025-12-05: Automated scan. 0 new, 6252 updated, 0 removed.",
+    "recentUpdates": "2025-12-09: Documentation refresh (mission_execution_spec, todo plan, README alignment in progress).",
     "documentation": {
       "primary": "README.md - Comprehensive project documentation with Reserved for Future Development section",
       "codebase": "visualize_code_graph.html - Interactive code visualization",

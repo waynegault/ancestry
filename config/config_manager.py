@@ -810,6 +810,9 @@ class ConfigManager:
         ConfigManager._load_int_env_var(config, "MAX_SEND_PER_RUN", "max_send_per_run")
         ConfigManager._load_bool_env_var(config, "DRY_RUN_VERIFIED", "dry_run_verified")
         ConfigManager._load_int_env_var(config, "PER_RECIPIENT_BACKOFF_SECONDS", "per_recipient_backoff_seconds")
+        ConfigManager._load_bool_env_var(config, "ENABLE_OPT_OUT_GUARD", "enable_opt_out_guard")
+        ConfigManager._load_bool_env_var(config, "ENABLE_CONTEXTUAL_REPLY_DRAFTS", "enable_contextual_reply_drafts")
+        ConfigManager._load_bool_env_var(config, "CONTEXTUAL_REPLY_AUTO_SEND", "contextual_reply_auto_send")
 
     @staticmethod
     def _load_reference_person_config_from_env(config: dict[str, Any]) -> None:

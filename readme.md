@@ -88,6 +88,13 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Automated Deployment**: One-click Grafana dashboard provisioning and updates
 - **Type-Safe Configuration**: Dataclass-based config with validation, environment variable management
 
+### Current State vs Mission
+
+- **Working today:** Action 6 DNA match gathering (with checkpoints), Action 7 inbox ingestion + intent classification with SafetyGuard critical-alert gating, Action 9 entity extraction with fact validation staging (SuggestedFact/DataConflict) and MS To-Do task creation, Action 10 GEDCOM/API lookups + TreeQueryService, Action 12 shared matches, Action 13 triangulation.
+- **Partial/Not yet:** Reply lifecycle not fully wired across Actions 7/8/9; ContextBuilder and response-generation prompts not yet integrated into messaging; fact validation only wired in Action 9 (not yet gating outbound messaging or other actions); approval/review queue and SystemControl/MessageApproval tables not implemented; person-level automation/opt-out checks not enforced in send path; ethnicity-based research suggestions not surfaced in replies.
+- **Safety stance:** Critical alerts block classification in Action 7; DESIST detection present, but outbound safety/opt-out enforcement still needs integration before bulk messaging.
+- **Roadmap:** See `docs/specs/mission_execution_spec.md` and `todo.md` for the plan to complete reply management, validation, HITL controls, and metrics.
+
 ## Technology Stack
 
 ### Core Dependencies
