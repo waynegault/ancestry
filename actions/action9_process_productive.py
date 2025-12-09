@@ -2238,7 +2238,7 @@ class PersonProcessor:
     ) -> str:
         """Generate and append research suggestions to the tree lookup string."""
         try:
-            common_ancestors = []
+            common_ancestors: list[dict[str, Any]] = []
             for res in lookup_results:
                 if res.found:
                     common_ancestors.append(

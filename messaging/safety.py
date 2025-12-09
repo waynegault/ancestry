@@ -64,7 +64,7 @@ class SafetyGuard:
     """
 
     # === STANDARD SAFETY PATTERNS (used by check_message method) ===
-    _OPT_OUT_PATTERNS: ClassVar[list[str]] = []  # Loaded from Data/opt_out_phrases.json
+    _OPT_OUT_PATTERNS: list[str] = field(default_factory=list)  # Loaded from Data/opt_out_phrases.json
 
     _DANGER_PATTERNS: ClassVar[list[str]] = [
         r"\bsuicide\b",

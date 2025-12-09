@@ -60,7 +60,7 @@ class RateLimiterProtocol(Protocol):
         """Report successful request for rate adaptation."""
         ...
 
-    def on_429_error(self, endpoint: str | None = None) -> None:
+    def on_429_error(self, endpoint: str | None = None, retry_after: float | None = None) -> None:
         """Report 429 errors so the limiter can back off."""
         ...
 

@@ -854,6 +854,7 @@ class ConfigSchema:
     # Application settings
     app_name: str = "Ancestry Automation"
     app_version: str = "1.0.0"
+    gedcom_path: Path = field(default_factory=lambda: Path("Data/family_tree.ged"))
 
     # Workflow settings
     include_action6_in_workflow: bool = True

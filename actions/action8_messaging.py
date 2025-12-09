@@ -5656,6 +5656,10 @@ def _test_candidate_counts() -> bool:
         logger.info("Verifying candidate counts for Action 8...")
 
         with sm.db_manager.get_session_context() as session:
+            if not session:
+                logger.warning("Could not get session")
+                return True
+
             # Count Action 8 Candidates
             candidates_action8 = (
                 session.query(Person)

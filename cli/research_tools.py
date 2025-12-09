@@ -803,6 +803,10 @@ def _handle_ethnicity_analysis(cli: ResearchToolsCLI) -> None:
     # Query DB
     db_manager = DatabaseManager()
     session = db_manager.get_session()
+    if not session:
+        print("❌ Could not obtain database session")
+        return
+
     try:
         # Count matches
         # We need to use raw SQL or text() because the column is dynamic
@@ -831,7 +835,7 @@ def _handle_ethnicity_analysis(cli: ResearchToolsCLI) -> None:
 
 def _search_and_select_by_name(gedcom_data: GedcomData, search_term: str) -> tuple[Optional[str], str]:
     """Search for a person by name and allow user selection."""
-    found = []
+    found: list[tuple[str, str]] = []
     for pid, indi in gedcom_data.indi_index.items():
         full_name = get_full_name(indi)
         if search_term.lower() in full_name.lower():
@@ -945,14 +949,14 @@ def _handle_relationship_diagram(_cli: ResearchToolsCLI) -> None:
     style_map = {"1": "vertical", "2": "horizontal", "3": "compact"}
     style = style_map.get(style_choice, "vertical")
 
-    diagram = generate_relationship_diagram(p1_name, p2_name, unified_path, style)
+    diagram = generate_relationship_diagram(p1_name, p2_name, unified_path, style)  # type: ignore
 
     print("\n" + diagram)
 
 
 def _sample_gedcom_individuals(gedcom_data: GedcomData, limit: int = 100) -> list[dict[str, str]]:
     """Sample individuals from GEDCOM data for analysis."""
-    individuals_data = []
+    individuals_data: list[dict[str, str]] = []
 
     for i, (pid, indi) in enumerate(gedcom_data.indi_index.items()):
         if i >= limit:
@@ -960,7 +964,7 @@ def _sample_gedcom_individuals(gedcom_data: GedcomData, limit: int = 100) -> lis
 
         name = get_full_name(indi)
         surname = ""
-        if hasattr(indi, 'name') and hasattr(indi.name, 'surname'):
+        if indi and hasattr(indi, 'name') and hasattr(indi.name, 'surname'):
             surname = indi.name.surname
 
         individuals_data.append({"id": pid, "name": name, "surname": surname})

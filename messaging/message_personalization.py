@@ -719,7 +719,9 @@ class MessagePersonalizer:
         if structured_names:
             first_name_data = structured_names[0]
             if isinstance(first_name_data, dict):
-                person_name = str(first_name_data.get("full_name", "your ancestor"))
+                # Help type checker infer dict type
+                fn_dict: dict[str, Any] = first_name_data
+                person_name = str(fn_dict.get("full_name", "your ancestor"))
             else:
                 person_name = str(first_name_data)
 
