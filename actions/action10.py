@@ -3134,6 +3134,12 @@ def action10_module_tests() -> bool:
     """Comprehensive test suite for action10.py"""
     import os
 
+    # When invoked via run_all_tests.py (RUN_MODULE_TESTS=1), force fast mode to
+    # avoid long GEDCOM-based tests that can stall parallel runners.
+    if os.getenv("RUN_MODULE_TESTS", "0") == "1" and os.getenv("SKIP_SLOW_TESTS") is None:
+        os.environ["SKIP_SLOW_TESTS"] = "true"
+        logger.info("⏭️  RUN_MODULE_TESTS=1 detected - skipping slow Action10 tests")
+
     original_gedcom, suite = _setup_test_environment()
 
     # --- TESTS ---
@@ -3439,7 +3445,15 @@ if __name__ == "__main__":
     # Check command line arguments for what to run
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--performance":
+    # Shortcut for test runner integrations (run_all_tests.py sets RUN_MODULE_TESTS=1)
+    if os.getenv("RUN_MODULE_TESTS", "0") == "1":
+        try:
+            success = action10_module_tests()
+        except Exception:
+            print("\n[ERROR] Unhandled exception during Action 10 tests:", file=sys.stderr)
+            traceback.print_exc()
+            success = False
+    elif len(sys.argv) > 1 and sys.argv[1] == "--performance":
         print("🚀 Running Action 10 performance validation...")
         try:
             success = run_performance_validation()

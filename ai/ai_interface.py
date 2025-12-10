@@ -1271,6 +1271,26 @@ def generate_genealogical_reply(
     return reply_text
 
 
+def _extract_variant_text(variant_entry: Any) -> Optional[str]:
+    """Normalize prompt variant payload into a string, if possible."""
+
+    if isinstance(variant_entry, dict):
+        variant_entry = cast(dict[str, Any], variant_entry)
+        prompt_text = variant_entry.get("prompt") or variant_entry.get("text")
+        return cast(Optional[str], prompt_text)
+
+    if isinstance(variant_entry, str):
+        return variant_entry
+
+    return None
+
+
+def _get_prompt_variants(prompts_data: dict[str, Any], prompt_key: str) -> dict[str, Any]:
+    prompts_dict = cast(dict[str, Any], prompts_data.get("prompts", {}) or {})
+    prompt_entry = cast(dict[str, Any], prompts_dict.get(prompt_key, {}) or {})
+    return cast(dict[str, Any], prompt_entry.get("variants", {}) or {})
+
+
 def _load_prompt_variant_text(prompt_key: str, prompt_variant: Optional[str]) -> Optional[str]:
     """Return prompt variant text when available in ai_prompts.json."""
 
@@ -1281,20 +1301,11 @@ def _load_prompt_variant_text(prompt_key: str, prompt_variant: Optional[str]) ->
         from ai_prompt_utils import load_prompts
 
         prompts_data = cast(dict[str, Any], load_prompts() or {})
-        prompts_dict = cast(dict[str, Any], prompts_data.get("prompts", {}) or {})
-        prompt_entry = cast(dict[str, Any], prompts_dict.get(prompt_key, {}) or {})
-        variants = cast(dict[str, Any], prompt_entry.get("variants", {}) or {})
-        variant_entry = variants.get(prompt_variant)
-
-        if isinstance(variant_entry, dict):
-            variant_entry = cast(dict[str, Any], variant_entry)
-            return cast(Optional[str], variant_entry.get("prompt") or variant_entry.get("text"))
-        if isinstance(variant_entry, str):
-            return variant_entry
+        variants = _get_prompt_variants(prompts_data, prompt_key)
+        return _extract_variant_text(variants.get(prompt_variant))
     except Exception as exc:  # pragma: no cover - telemetry-only helper
         logger.debug(f"Prompt variant lookup failed for {prompt_key}:{prompt_variant}: {exc}")
-
-    return None
+        return None
 
 
 def _load_genealogical_reply_template(
