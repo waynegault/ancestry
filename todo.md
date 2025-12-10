@@ -27,8 +27,8 @@
 
 ## Phase 5 – Research Guidance & Insights
 
-- [ ] Surface ethnicity/cluster-based research suggestions into reply drafts where data exists.
-- [ ] Correlate engagement metrics with prompt variants and content (A/B hooks already in `ai/ab_testing.py`).
+- [x] Surface ethnicity/cluster-based research suggestions into reply drafts where data exists.
+- [x] Correlate engagement metrics with prompt variants and content (A/B hooks already in `ai/ab_testing.py`).
 
 ## Phase 6 – Testing & Validation
 
