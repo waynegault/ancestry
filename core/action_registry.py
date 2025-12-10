@@ -449,6 +449,30 @@ class ActionRegistry:
         )
         self.register(
             ActionMetadata(
+                id="m",
+                name="Run Config Setup Wizard",
+                description="Interactive ConfigManager setup for first-run environments",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=132,
+            )
+        )
+        self.register(
+            ActionMetadata(
+                id="n",
+                name="Reload Configuration",
+                description="Hot-reload configuration from files and environment",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=134,
+            )
+        )
+        self.register(
+            ActionMetadata(
                 id="f",
                 name="Review Queue (AI Drafts)",
                 description="View and approve/reject pending AI-generated message drafts",

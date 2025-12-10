@@ -1099,6 +1099,40 @@ class ConfigMaintenanceMixin:
 
         input("\nPress Enter to continue...")
 
+    def reload_configuration(self) -> None:
+        """Hot-reload configuration using ConfigManager."""
+        try:
+            from config.config_manager import get_config_manager
+
+            manager = get_config_manager()
+            if manager is None:
+                print("\n✗ ConfigManager not available\n")
+                return
+
+            manager.reload_config()
+            print("\n✅ Configuration reloaded from configured sources.\n")
+        except Exception as exc:
+            self._logger.error("Error reloading configuration: %s", exc, exc_info=True)
+            print(f"Error reloading configuration: {exc}")
+        input("Press Enter to continue...")
+
+    def run_config_setup_wizard(self) -> None:
+        """Interactive configuration setup wizard (first-run helper)."""
+        try:
+            from config.config_manager import get_config_manager
+
+            manager = get_config_manager(force_new=True)
+            if manager is None:
+                print("\n✗ ConfigManager not available\n")
+                return
+
+            manager.run_setup_wizard()
+            print("\n✅ Setup wizard completed. You may need to restart for changes to take effect.\n")
+        except Exception as exc:
+            self._logger.error("Error running setup wizard: %s", exc, exc_info=True)
+            print(f"Error running setup wizard: {exc}")
+        input("Press Enter to continue...")
+
     def run_schema_migrations_action(self) -> None:
         """Apply pending schema migrations and display status."""
 

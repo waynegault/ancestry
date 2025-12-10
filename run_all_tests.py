@@ -1664,18 +1664,31 @@ def analyze_performance_trends(metrics: list[TestExecutionMetrics]) -> list[str]
     return suggestions
 
 
-def _setup_test_environment() -> tuple[bool, bool, bool, bool, bool]:
+@dataclass
+class TestEnvironment:
+    """Command-line environment toggles for test execution."""
+
+    enable_fast_mode: bool
+    enable_benchmark: bool
+    enable_monitoring: bool
+    enable_integration: bool
+    enable_log_analysis: bool
+    enable_quality_checks: bool
+
+
+def _setup_test_environment() -> TestEnvironment:
     """
     Setup test environment and parse command line arguments.
 
     Returns:
-        Tuple of (enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis)
+        TestEnvironment dataclass with toggle values
     """
     # Parse command line arguments
     enable_fast_mode = "--fast" in sys.argv
     enable_benchmark = "--benchmark" in sys.argv
     enable_integration = "--integration" in sys.argv
     enable_log_analysis = "--analyze-logs" in sys.argv
+    enable_quality_checks = "--quality" in sys.argv or "--quality-checks" in sys.argv
     enable_monitoring = enable_benchmark or enable_fast_mode
 
     if enable_monitoring and not PSUTIL_AVAILABLE:
@@ -1703,7 +1716,14 @@ def _setup_test_environment() -> tuple[bool, bool, bool, bool, bool]:
         os.environ.pop("SKIP_SLOW_TESTS", None)
         print("🐢 SLOW TESTS: Including slow simulation tests")
 
-    return enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis
+    return TestEnvironment(
+        enable_fast_mode=enable_fast_mode,
+        enable_benchmark=enable_benchmark,
+        enable_monitoring=enable_monitoring,
+        enable_integration=enable_integration,
+        enable_log_analysis=enable_log_analysis,
+        enable_quality_checks=enable_quality_checks,
+    )
 
 
 def _print_test_header(enable_fast_mode: bool, enable_benchmark: bool, enable_integration: bool) -> None:
@@ -2289,12 +2309,10 @@ def main() -> bool:
         _fix_trailing_whitespace()
 
         # Setup environment and parse arguments
-        enable_fast_mode, enable_benchmark, enable_monitoring, enable_integration, enable_log_analysis = (
-            _setup_test_environment()
-        )
+        env = _setup_test_environment()
 
         # Print header
-        _print_test_header(enable_fast_mode, enable_benchmark, enable_integration)
+        _print_test_header(env.enable_fast_mode, env.enable_benchmark, env.enable_integration)
 
         # Run pre-test checks
         if not _run_pre_test_checks():
@@ -2302,22 +2320,21 @@ def main() -> bool:
 
         # Discover and prepare modules
         discovered_modules, module_descriptions, modules_with_descriptions = _discover_and_prepare_modules(
-            enable_integration
-        )
-
-        # Create configuration
-        config = TestExecutionConfig(
-            modules_with_descriptions=modules_with_descriptions,
-            discovered_modules=discovered_modules,
-            module_descriptions=module_descriptions,
-            enable_fast_mode=enable_fast_mode,
-            enable_monitoring=enable_monitoring,
-            enable_benchmark=enable_benchmark,
-            enable_integration=enable_integration,
+            env.enable_integration
         )
 
         # Execute tests
-        results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(config)
+        results, all_metrics, total_tests_run, passed_count, total_duration = _execute_tests_with_timing(
+            TestExecutionConfig(
+                modules_with_descriptions=modules_with_descriptions,
+                discovered_modules=discovered_modules,
+                module_descriptions=module_descriptions,
+                enable_fast_mode=env.enable_fast_mode,
+                enable_monitoring=env.enable_monitoring,
+                enable_benchmark=env.enable_benchmark,
+                enable_integration=env.enable_integration,
+            )
+        )
 
         # Print final results
         _print_basic_summary(
@@ -2329,23 +2346,35 @@ def main() -> bool:
         _print_final_quality_summary(all_metrics)
 
         # Print performance metrics if enabled
-        if enable_monitoring:
-            perf_config = PerformanceMetricsConfig(
-                all_metrics=all_metrics,
-                total_duration=total_duration,
-                total_tests_run=total_tests_run,
-                passed_count=passed_count,
-                failed_count=len(discovered_modules) - passed_count,
-                enable_fast_mode=enable_fast_mode,
-                enable_benchmark=enable_benchmark,
+        if env.enable_monitoring:
+            _print_performance_metrics(
+                PerformanceMetricsConfig(
+                    all_metrics=all_metrics,
+                    total_duration=total_duration,
+                    total_tests_run=total_tests_run,
+                    passed_count=passed_count,
+                    failed_count=len(discovered_modules) - passed_count,
+                    enable_fast_mode=env.enable_fast_mode,
+                    enable_benchmark=env.enable_benchmark,
+                )
             )
-            _print_performance_metrics(perf_config)
 
         # Print log analysis if enabled
-        if enable_log_analysis:
+        if env.enable_log_analysis:
             print_log_analysis()
 
-        return passed_count == len(discovered_modules)
+        quality_ok = True
+        quality_scores: list[tuple[str, float]] = []
+        if env.enable_quality_checks:
+            print("\n🧪 Running standalone code quality checks (--quality)...")
+            quality_ok, quality_scores = run_quality_checks()
+            if quality_scores:
+                for fname, score in quality_scores:
+                    print(f"   • {fname}: {score:.1f}/100")
+            if not quality_ok:
+                print("❌ Quality checks failed (average score below threshold).")
+
+        return passed_count == len(discovered_modules) and quality_ok
 
     finally:
         # Clean up any browser session that was opened during tests

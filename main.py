@@ -61,6 +61,10 @@ from core.workflow_actions import (
     send_messages_action,
     srch_inbox_actn,
 )
+from performance.health_monitor import (
+    initialize_health_monitoring,
+    integrate_with_session_manager,
+)
 from testing.test_utilities import create_standard_test_runner
 from ui.menu import render_main_menu
 
@@ -247,25 +251,35 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
     action_id, arg_tokens = _parse_menu_choice(choice)
     metadata = _get_action_metadata(action_id)
 
+    # Health monitor integration: update metrics and honor halt requests
+    monitor = integrate_with_session_manager(session_manager)
+    if monitor.should_emergency_halt():
+        reason = monitor.get_intervention_status().get("emergency_halt", {}).get("reason", "Health halt")
+        print(f"\n🚨 Health monitor requested halt: {reason}\n")
+        return False
+    if monitor.should_immediate_intervention():
+        reason = monitor.get_intervention_status().get("immediate_intervention", {}).get("reason", "Intervention")
+        print(f"\n⚠️  Immediate intervention recommended: {reason}\n")
+    result = True
+
     if metadata is None:
         print("Invalid choice.\n")
-        return True
-
-    if metadata.is_meta_action:
+    elif metadata.is_meta_action:
         if arg_tokens:
             print("This option does not accept arguments.\n")
-            return True
-        result = _execute_meta_action(metadata)
-        return True if result is None else bool(result)
-
-    if metadata.is_test_action:
+        else:
+            meta_result = _execute_meta_action(metadata)
+            result = True if meta_result is None else bool(meta_result)
+    elif metadata.is_test_action:
         if arg_tokens:
             print("This option does not accept arguments.\n")
-            return True
-        _execute_test_action(metadata)
-        return True
+        else:
+            _execute_test_action(metadata)
+            result = True
+    else:
+        result = _execute_primary_action(metadata, session_manager, config, arg_tokens)
 
-    return _execute_primary_action(metadata, session_manager, config, arg_tokens)
+    return result
 
 
 def _assign_action_registry_functions() -> None:
@@ -294,6 +308,8 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("g", _cli_helpers.open_graph_visualization)
     registry.set_action_function("d", _cli_helpers.show_cache_statistics)
     registry.set_action_function("e", _cli_helpers.run_config_health_check)
+    registry.set_action_function("m", _cli_helpers.run_config_setup_wizard)
+    registry.set_action_function("n", _cli_helpers.reload_configuration)
     registry.set_action_function("f", _cli_helpers.show_review_queue)
     registry.set_action_function("h", _cli_helpers.run_dry_run_validation)
     registry.set_action_function("k", _cli_helpers.run_schema_migrations_action)
@@ -324,11 +340,20 @@ from core.lifecycle import (
 
 def main() -> None:
     session_manager = None
+    sleep_state = None
     set_windows_console_focus()
+
+    monitor = initialize_health_monitoring()
 
     try:
         # Initialize application (handles sleep prevention and diagnostics)
         session_manager, sleep_state = initialize_application(config, grafana_checker)
+
+        # Sync monitor with session manager before any pre-auth flows
+        monitor = integrate_with_session_manager(session_manager)
+        if monitor.should_emergency_halt():
+            logger.critical("Health monitor requested emergency halt before startup tasks")
+            return
 
         # Pre-authenticate services
         pre_authenticate_session()
