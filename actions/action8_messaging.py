@@ -67,6 +67,7 @@ SENTIMENT_ADAPTATION_AVAILABLE = _sentiment_adapter_available
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -100,8 +101,9 @@ from sqlalchemy import (
     inspect as sa_inspect,
 )  # Minimal imports
 
+from ai.ab_testing import get_experiment_manager, get_prompt_variant
 from ai.ai_interface import generate_genealogical_reply
-from ai.context_builder import ContextBuilder
+from ai.context_builder import ContextBuilder, MatchContext
 
 # === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
@@ -2745,6 +2747,127 @@ def _format_message_text(
     return message_text
 
 
+def _select_contextual_prompt_variant(person_id: Optional[int]) -> tuple[str, Optional[str], Optional[str]]:
+    """Pick prompt key/variant for contextual replies using A/B config."""
+
+    experiment_id = os.getenv("CONTEXTUAL_REPLY_EXPERIMENT_ID", "contextual_reply_ab_test")
+    if not experiment_id:
+        return "genealogical_reply", None, None
+
+    try:
+        prompt_key, experiment_variant, prompt_variant = get_prompt_variant(
+            experiment_id=experiment_id,
+            subject_id=str(person_id or "anonymous"),
+            fallback_prompt_key="genealogical_reply",
+        )
+        return prompt_key, prompt_variant, experiment_variant
+    except Exception as exc:  # pragma: no cover - best-effort routing
+        logger.debug(f"Contextual prompt variant selection failed: {exc}")
+        return "genealogical_reply", None, None
+
+
+def _extract_years_from_context(date_strings: list[Any]) -> list[str]:
+    """Pull four-digit years from extracted fact strings."""
+
+    years: list[str] = []
+    for item in date_strings or []:
+        match = re.search(r"(\d{4})", str(item))
+        if match:
+            years.append(match.group(1))
+    return years
+
+
+def _build_research_suggestions_for_context(
+    db_session: Session,
+    person: Person,
+    context: MatchContext,
+    log_prefix: str,
+) -> tuple[str, dict[str, Any]]:
+    """Generate research suggestions (collections + ethnicity clusters) for drafts."""
+
+    suggestion_text = ""
+    metadata: dict[str, Any] = {}
+
+    try:
+        from research.research_suggestions import generate_research_suggestions
+
+        locations = [loc for loc in context.extracted_facts.get("mentioned_locations", []) if loc]
+        time_periods = _extract_years_from_context(context.extracted_facts.get("mentioned_dates", []))
+        common_ancestors = context.genealogy.get("known_common_ancestors", []) or []
+        relationship_context = context.genealogy.get("relationship_description")
+
+        research = generate_research_suggestions(
+            common_ancestors=common_ancestors,
+            locations=locations if locations else [""],
+            time_periods=time_periods if time_periods else [""],
+            relationship_context=relationship_context,
+        )
+        suggestion_text = research.get("formatted_message", "") or ""
+        metadata["research_collections"] = research.get("collections", [])
+        metadata["research_record_types"] = research.get("record_types", [])
+    except Exception as exc:  # pragma: no cover - suggestion enrichment is best-effort
+        logger.debug(f"{log_prefix}: research suggestions unavailable: {exc}")
+
+    try:
+        owner_profile_id = _get_owner_profile_id()
+        person_id = safe_column_value(person, "id", None)
+        if owner_profile_id and person_id:
+            ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, int(person_id))
+            shared_regions = ethnicity.get("shared_regions", []) or []
+            if shared_regions:
+                region_phrase = _format_ethnicity_text(shared_regions)
+                cluster_line = (
+                    f"DNA ethnicity cluster: {region_phrase}. "
+                    f"Consider records in {shared_regions[0]} and nearby regions."
+                )
+                suggestion_text = f"{suggestion_text}\n\n{cluster_line}" if suggestion_text else cluster_line
+                metadata.update(
+                    {
+                        "ethnicity_shared_regions": shared_regions,
+                        "ethnicity_similarity": ethnicity.get("similarity_score"),
+                        "ethnicity_top_region": ethnicity.get("top_shared_region"),
+                    }
+                )
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.debug(f"{log_prefix}: ethnicity enrichment skipped: {exc}")
+
+    return suggestion_text.strip(), metadata
+
+
+def _inject_research_suggestions(draft_text: str, suggestions: str) -> str:
+    """Append formatted research suggestions to a draft if provided."""
+
+    if not suggestions.strip():
+        return draft_text
+
+    return f"{draft_text}\n\n---\nResearch Suggestions:\n{suggestions.strip()}"
+
+
+def _record_contextual_experiment_result(
+    experiment_id: str,
+    experiment_variant: Optional[str],
+    quality_score: int,
+    response_time_ms: float,
+    person_id: Optional[int],
+    metadata: dict[str, Any],
+) -> None:
+    """Send contextual reply metrics to the A/B experiment store."""
+
+    try:
+        manager = get_experiment_manager()
+        manager.record_result(
+            experiment_id=experiment_id,
+            variant_name=experiment_variant or "control",
+            quality_score=float(quality_score),
+            response_time_ms=float(response_time_ms),
+            success=True,
+            person_id=person_id,
+            metadata=metadata,
+        )
+    except Exception as exc:  # pragma: no cover - telemetry best effort
+        logger.debug(f"Experiment result logging skipped: {exc}")
+
+
 def _load_existing_contextual_draft(person_uuid: str) -> Optional[dict[str, Any]]:
     """Load the most recent contextual draft for a person from the log."""
     draft_path = Path("Logs") / "contextual_drafts.jsonl"
@@ -2835,6 +2958,111 @@ def _queue_contextual_draft_for_review(
         logger.debug(f"{log_prefix}: Review queue enqueue skipped: {exc}")
 
 
+def _generate_draft_text_with_timing(
+    context: "MatchContext",
+    last_message: str,
+    context_json: str,
+    session_manager: SessionManager,
+    prompt_selection: tuple[str, Optional[str], Optional[str]],
+) -> tuple[Optional[str], float]:
+    start_time = time.time()
+    draft_text = generate_genealogical_reply(
+        conversation_context=context.to_prompt_string(),
+        user_last_message=last_message,
+        genealogical_data_str=context_json,
+        session_manager=session_manager,
+        prompt_key=prompt_selection[0],
+        prompt_variant=prompt_selection[1],
+    )
+    generation_ms = (time.time() - start_time) * 1000.0
+    return draft_text, generation_ms
+
+
+def _generate_contextual_draft_payload(
+    db_session: Session,
+    session_manager: SessionManager,
+    person: Person,
+    latest_in_log: Optional[ConversationLog],
+    log_prefix: str,
+    conversation_id: Optional[str],
+    prompt_selection: tuple[str, Optional[str], Optional[str]],
+    engagement_score: Any,
+    match_uuid: str,
+) -> Optional[dict[str, Any]]:
+    try:
+        last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
+        context = ContextBuilder(db_session=db_session).build_context(match_uuid)
+        research_data = _build_research_suggestions_for_context(db_session, person, context, log_prefix)
+        context_json = context.to_json()
+        prompt_key, prompt_variant, experiment_variant = prompt_selection
+        draft_text, generation_ms = _generate_draft_text_with_timing(
+            context,
+            last_message,
+            context_json,
+            session_manager,
+            prompt_selection,
+        )
+
+        if not draft_text:
+            logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
+            return None
+
+        if research_data[0]:
+            draft_text = _inject_research_suggestions(draft_text, research_data[0])
+
+        confidence_score, quality_reason = _score_draft_quality(draft_text, context_json)
+        experiment_metadata = {
+            "prompt_key": prompt_key,
+            "prompt_variant": prompt_variant,
+            "experiment_variant": experiment_variant,
+            "has_research_suggestions": bool(research_data[0]),
+            "engagement_score": engagement_score,
+            "context_version": getattr(context, "context_version", None),
+        }
+        experiment_metadata.update(research_data[1])
+
+        draft_payload = {
+            "draft_text": draft_text,
+            "context_json": context_json,
+            "confidence": confidence_score,
+            "quality_reason": quality_reason,
+            "reason": "contextual_reply_draft",
+            "conversation_id": conversation_id,
+            "research_suggestions": research_data[0],
+            "research_metadata": research_data[1],
+            "prompt_key": prompt_key,
+            "prompt_variant": prompt_variant,
+            "experiment_variant": experiment_variant,
+            "generation_ms": round(generation_ms, 2),
+        }
+        _persist_contextual_draft(draft_payload, person, log_prefix)
+        _queue_contextual_draft_for_review(
+            db_session=db_session,
+            person=person,
+            conversation_id=conversation_id,
+            draft_payload=draft_payload,
+            log_prefix=log_prefix,
+        )
+        logger.info(f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)")
+
+        experiment_id = os.getenv("CONTEXTUAL_REPLY_EXPERIMENT_ID", "contextual_reply_ab_test")
+        effective_variant = experiment_variant or "control"
+        if experiment_id:
+            _record_contextual_experiment_result(
+                experiment_id=experiment_id,
+                experiment_variant=effective_variant,
+                quality_score=confidence_score,
+                response_time_ms=float(generation_ms),
+                person_id=safe_column_value(person, "id", None),
+                metadata=experiment_metadata,
+            )
+
+        return draft_payload
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
+        return None
+
+
 def _build_contextual_reply_draft(
     db_session: Optional[Session],
     session_manager: SessionManager,
@@ -2861,58 +3089,28 @@ def _build_contextual_reply_draft(
         logger.debug(f"{log_prefix}: Skipping contextual draft (no UUID)")
         return None
 
-    payload: Optional[dict[str, Any]] = None
-    existing_draft = _load_existing_contextual_draft(match_uuid)
-    if existing_draft:
-        if not existing_draft.get("confidence"):
-            confidence, quality_reason = _score_draft_quality(
-                existing_draft.get("draft_text", ""), existing_draft.get("context_json")
-            )
-            existing_draft["confidence"] = confidence
-            existing_draft["quality_reason"] = quality_reason
+    prompt_selection = _select_contextual_prompt_variant(safe_column_value(person, "id", None))
+    engagement_score = getattr(person, "current_engagement_score", None)
+
+    payload: Optional[dict[str, Any]] = _load_existing_contextual_draft(match_uuid)
+    if payload:
+        if not payload.get("confidence"):
+            confidence_reason = _score_draft_quality(payload.get("draft_text", ""), payload.get("context_json"))
+            payload["confidence"] = confidence_reason[0]
+            payload["quality_reason"] = confidence_reason[1]
         logger.debug(f"{log_prefix}: Reusing contextual draft from log for UUID {match_uuid}")
-        payload = existing_draft
     else:
-        last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
-
-        try:
-            builder = ContextBuilder(db_session=db_session)
-            context = builder.build_context(match_uuid)
-
-            draft_text = generate_genealogical_reply(
-                conversation_context=context.to_prompt_string(),
-                user_last_message=last_message,
-                genealogical_data_str=context.to_json(),
-                session_manager=session_manager,
-            )
-
-            if not draft_text:
-                logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
-            else:
-                confidence, quality_reason = _score_draft_quality(draft_text, context.to_json())
-
-                draft_payload = {
-                    "draft_text": draft_text,
-                    "context_json": context.to_json(),
-                    "confidence": confidence,
-                    "quality_reason": quality_reason,
-                    "reason": "contextual_reply_draft",
-                    "conversation_id": conversation_id,
-                }
-                _persist_contextual_draft(draft_payload, person, log_prefix)
-                _queue_contextual_draft_for_review(
-                    db_session=db_session,
-                    person=person,
-                    conversation_id=conversation_id,
-                    draft_payload=draft_payload,
-                    log_prefix=log_prefix,
-                )
-                logger.info(
-                    f"{log_prefix}: Contextual reply draft generated (draft-only mode unless auto-send enabled)"
-                )
-                payload = draft_payload
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.debug(f"{log_prefix}: Contextual draft generation failed: {exc}")
+        payload = _generate_contextual_draft_payload(
+            db_session,
+            session_manager,
+            person,
+            latest_in_log,
+            log_prefix,
+            conversation_id,
+            prompt_selection,
+            engagement_score,
+            match_uuid,
+        )
 
     return payload
 

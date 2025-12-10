@@ -54,7 +54,7 @@ import json
 # import logging - removed unused
 import time
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Callable, TypedDict, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, cast
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -1216,6 +1216,8 @@ def generate_genealogical_reply(
     session_manager: SessionManager,
     tree_lookup_results: str = "",
     relationship_context: str = "",
+    prompt_key: str = "genealogical_reply",
+    prompt_variant: Optional[str] = None,
 ) -> str | None:
     """
     Generates a personalized genealogical reply with RAG-style tree context.
@@ -1241,7 +1243,7 @@ def generate_genealogical_reply(
         logger.error("generate_genealogical_reply: One or more required inputs are empty.")
         return None
 
-    system_prompt_template = _load_genealogical_reply_template()
+    system_prompt_template = _load_genealogical_reply_template(prompt_key=prompt_key, prompt_variant=prompt_variant)
     final_system_prompt = _format_genealogical_reply_prompt(
         system_prompt_template,
         conversation_context,
@@ -1269,17 +1271,49 @@ def generate_genealogical_reply(
     return reply_text
 
 
-def _load_genealogical_reply_template() -> str:
+def _load_prompt_variant_text(prompt_key: str, prompt_variant: Optional[str]) -> Optional[str]:
+    """Return prompt variant text when available in ai_prompts.json."""
+
+    if not (USE_JSON_PROMPTS and prompt_variant):
+        return None
+
+    try:
+        from ai_prompt_utils import load_prompts
+
+        prompts_data = cast(dict[str, Any], load_prompts() or {})
+        prompts_dict = cast(dict[str, Any], prompts_data.get("prompts", {}) or {})
+        prompt_entry = cast(dict[str, Any], prompts_dict.get(prompt_key, {}) or {})
+        variants = cast(dict[str, Any], prompt_entry.get("variants", {}) or {})
+        variant_entry = variants.get(prompt_variant)
+
+        if isinstance(variant_entry, dict):
+            variant_entry = cast(dict[str, Any], variant_entry)
+            return cast(Optional[str], variant_entry.get("prompt") or variant_entry.get("text"))
+        if isinstance(variant_entry, str):
+            return variant_entry
+    except Exception as exc:  # pragma: no cover - telemetry-only helper
+        logger.debug(f"Prompt variant lookup failed for {prompt_key}:{prompt_variant}: {exc}")
+
+    return None
+
+
+def _load_genealogical_reply_template(
+    prompt_key: str = "genealogical_reply", prompt_variant: Optional[str] = None
+) -> str:
     """Load the genealogical_reply prompt template from JSON or fallback."""
+
     system_prompt_template = get_fallback_reply_prompt()
     if USE_JSON_PROMPTS:
+        variant_text = _load_prompt_variant_text(prompt_key, prompt_variant)
+        if variant_text:
+            return variant_text
         try:
-            loaded_prompt = get_prompt("genealogical_reply")
+            loaded_prompt = get_prompt(prompt_key)
             if loaded_prompt:
                 return loaded_prompt
-            logger.warning("Failed to load 'genealogical_reply' prompt from JSON, using fallback.")
+            logger.warning(f"Failed to load '{prompt_key}' prompt from JSON, using fallback.")
         except Exception as e:
-            logger.warning(f"Error loading 'genealogical_reply' prompt: {e}, using fallback.")
+            logger.warning(f"Error loading '{prompt_key}' prompt: {e}, using fallback.")
     return system_prompt_template
 
 

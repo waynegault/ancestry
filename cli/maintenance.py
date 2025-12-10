@@ -426,7 +426,6 @@ class ReviewQueueMixin:
         """Display pending drafts for human review."""
         try:
             from core.approval_queue import ApprovalQueueService
-            from core.database import SuggestedFact
             from core.session_manager import SessionManager
 
             print("\n" + "=" * 70)
@@ -446,9 +445,9 @@ class ReviewQueueMixin:
             pending_drafts = service.get_pending_queue(limit=10)
             pending_facts = self._get_pending_suggested_facts(db_session, limit=10)
 
-            self._render_review_metrics(db_session, draft_stats, pending_facts)
+            self._render_review_metrics(db_session, draft_stats)
             self._render_pending_drafts(pending_drafts)
-            self._render_pending_facts(pending_facts, SuggestedFact)
+            self._render_pending_facts(pending_facts)
             self._render_contextual_draft_log_preview()
 
             if not pending_drafts and not pending_facts:
@@ -485,7 +484,7 @@ class ReviewQueueMixin:
             return "refresh"
 
         tokens = command.split()
-        handlers = {
+        handlers: dict[str, Callable[[list[str]], bool | None]] = {
             "approve": lambda t: self.approve_draft(int(t[1])) if len(t) >= 2 else None,
             "reject": lambda t: self.reject_draft(int(t[1]), " ".join(t[2:]) if len(t) > 2 else "")
             if len(t) >= 2
@@ -549,7 +548,8 @@ class ReviewQueueMixin:
         except Exception as exc:  # pragma: no cover - defensive only
             self._logger.debug("Could not render contextual draft log preview: %s", exc)
 
-    def _get_pending_suggested_facts(self, db_session: Any, limit: int = 10) -> list[dict[str, Any]]:
+    @staticmethod
+    def _get_pending_suggested_facts(db_session: Any, limit: int = 10) -> list[dict[str, Any]]:
         from sqlalchemy import asc
 
         from core.database import FactStatusEnum, Person, SuggestedFact
@@ -578,7 +578,8 @@ class ReviewQueueMixin:
             )
         return pending
 
-    def _render_pending_drafts(self, pending_drafts: list[Any]) -> None:
+    @staticmethod
+    def _render_pending_drafts(pending_drafts: list[Any]) -> None:
         if not pending_drafts:
             print("\n📝 Pending Drafts: none")
             return
@@ -594,7 +595,8 @@ class ReviewQueueMixin:
             print(f"   Created: {draft.created_at.strftime('%Y-%m-%d %H:%M')}")
             print(f"   Content preview: {draft.content[:100]}...")
 
-    def _render_pending_facts(self, pending_facts: list[dict[str, Any]], suggested_fact_cls: Any) -> None:
+    @staticmethod
+    def _render_pending_facts(pending_facts: list[dict[str, Any]]) -> None:
         if not pending_facts:
             print("\n🧾 Pending Suggested Facts: none")
             return
@@ -607,7 +609,8 @@ class ReviewQueueMixin:
             print(f"   Created: {fact['created_at'].strftime('%Y-%m-%d %H:%M')}")
             print(f"   Value: {fact['new_value'][:120]}...")
 
-    def _render_review_metrics(self, db_session: Any, draft_stats: Any, pending_facts: list[dict[str, Any]]) -> None:
+    @staticmethod
+    def _render_review_metrics(db_session: Any, draft_stats: Any) -> None:
         from sqlalchemy import func, or_
 
         from core.database import (
