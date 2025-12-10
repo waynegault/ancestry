@@ -32,5 +32,5 @@
 
 ## Phase 6 – Testing & Validation
 
-- [ ] Add TestSuite-covered unit tests for FactValidator integration, reply drafting guards, and review CLI entry points.
-- [ ] Run targeted test modules affected by changes and update docs with results.
+- [x] Add TestSuite-covered unit tests for FactValidator integration, reply drafting guards, and review CLI entry points.
+- [x] Run targeted test modules affected by changes and update docs with results. (Ran `python cli/maintenance.py` and `python run_all_tests.py`.)

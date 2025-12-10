@@ -6229,6 +6229,31 @@ def _test_has_message_after_tree_creation_detects_activity() -> bool:
     return True
 
 
+def _test_contextual_reply_guard_respects_config() -> bool:
+    """Ensure contextual reply drafts are gated by config flag."""
+
+    from types import SimpleNamespace
+
+    original_flag = getattr(config_schema, "enable_contextual_reply_drafts", False)
+    try:
+        config_schema.enable_contextual_reply_drafts = False
+        person = cast(Person, SimpleNamespace(username="Tester", id=1, uuid="TEST"))
+
+        result = _build_contextual_reply_draft(
+            db_session=None,
+            session_manager=cast(SessionManager, SimpleNamespace()),
+            person=person,
+            latest_in_log=None,
+            log_prefix="TestGuard",
+            conversation_id=None,
+        )
+
+        assert result is None
+        return True
+    finally:
+        config_schema.enable_contextual_reply_drafts = original_flag
+
+
 def _test_cancel_pending_messages_updates_state() -> bool:
     from types import SimpleNamespace
     from unittest import mock
@@ -6387,6 +6412,14 @@ def action8_messaging_tests() -> bool:
             "Confidence scoring avoids overconfident messaging for distant relationships.",
             "Test template selection for distant relationships.",
             "Ensure conservative template selection.",
+        )
+
+        suite.run_test(
+            "Contextual reply guard (config)",
+            _test_contextual_reply_guard_respects_config,
+            "Contextual drafts should not run when disabled in config.",
+            "Guardrail: contextual drafts gated by config flag.",
+            "Ensure early return when enable_contextual_reply_drafts is False.",
         )
 
         suite.run_test(

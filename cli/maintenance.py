@@ -20,9 +20,11 @@ import threading
 import time
 import webbrowser
 from collections.abc import Mapping
+from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, ClassVar, Optional, Protocol, TextIO, cast
 from unittest import mock
 from urllib import request as urllib_request
@@ -1358,6 +1360,96 @@ def _test_toggle_log_level_switches_levels() -> bool:
     return True
 
 
+def _test_review_queue_renderers() -> bool:
+    helper, logger = _create_helper_for_tests()
+    try:
+        drafts = [
+            SimpleNamespace(
+                priority=SimpleNamespace(value="high"),
+                draft_id=101,
+                person_name="Alice",
+                person_id=1,
+                ai_confidence=92,
+                created_at=datetime(2024, 1, 1, 12, 0),
+                content="Hello from Alice" * 3,
+            ),
+            SimpleNamespace(
+                priority=SimpleNamespace(value="low"),
+                draft_id=202,
+                person_name="Bob",
+                person_id=2,
+                ai_confidence=55,
+                created_at=datetime(2024, 1, 2, 9, 30),
+                content="Bob follow up" * 3,
+            ),
+        ]
+
+        _, draft_output = _capture_stdout(helper._render_pending_drafts, drafts)
+        assert "Pending Drafts (2 shown)" in draft_output
+        assert "ID: 101" in draft_output and "Alice" in draft_output
+        assert "Confidence: 92%" in draft_output
+        assert "LOW" in draft_output and "ID: 202" in draft_output
+
+        _, no_draft_output = _capture_stdout(helper._render_pending_drafts, [])
+        assert "Pending Drafts: none" in no_draft_output
+
+        facts = [
+            {
+                "id": 11,
+                "person_id": 3,
+                "person_name": "Carol",
+                "fact_type": "Birth",
+                "new_value": "Born 1900 in Boston",
+                "confidence": 0.87,
+                "created_at": datetime(2024, 1, 3, 8, 45),
+            }
+        ]
+
+        _, fact_output = _capture_stdout(helper._render_pending_facts, facts)
+        assert "Pending Suggested Facts (1 shown)" in fact_output
+        assert "ID: 11" in fact_output and "Carol" in fact_output
+        assert "Born 1900 in Boston" in fact_output
+
+        _, no_fact_output = _capture_stdout(helper._render_pending_facts, [])
+        assert "Pending Suggested Facts: none" in no_fact_output
+
+        def _make_scalar_query(value: int) -> mock.Mock:
+            query = mock.Mock()
+            query.filter.return_value = query
+            query.scalar.return_value = value
+            return query
+
+        db_session = mock.Mock()
+        db_session.query.side_effect = [
+            _make_scalar_query(2),
+            _make_scalar_query(1),
+            _make_scalar_query(6),
+            _make_scalar_query(3),
+            _make_scalar_query(4),
+            _make_scalar_query(8),
+            _make_scalar_query(9),
+        ]
+
+        draft_stats = SimpleNamespace(
+            pending_count=4,
+            auto_approved_count=1,
+            approved_today=2,
+            rejected_today=1,
+            expired_count=0,
+        )
+
+        _, metrics_output = _capture_stdout(helper._render_review_metrics, db_session, draft_stats)
+        assert "Critical alerts / Human review: 2" in metrics_output
+        assert "Opt-outs detected: 1" in metrics_output
+        assert "Suggested facts: pending 6, approved 3, rejected 4" in metrics_output
+        assert "Drafts: pending 4" in metrics_output
+        assert "Draft approvals (all time): 8" in metrics_output
+        assert "Outbound sends (all time): 9" in metrics_output
+    finally:
+        _teardown_test_logger(logger)
+    return True
+
+
 # ------------------------------------------------------------------
 # Embedded TestSuite
 # ------------------------------------------------------------------
@@ -1401,6 +1493,12 @@ def module_tests() -> bool:
         "Toggle console log level",
         _test_toggle_log_level_switches_levels,
         "Ensures log level toggle switches between INFO and DEBUG.",
+    )
+
+    suite.run_test(
+        "Render review queue summaries",
+        _test_review_queue_renderers,
+        "Ensures pending drafts, facts, and metrics render correctly.",
     )
 
     return suite.finish_suite()
