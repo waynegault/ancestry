@@ -68,6 +68,8 @@ import tempfile
 from pathlib import Path
 from types import ModuleType
 
+from core.feature_flags import FeatureFlags, bootstrap_feature_flags
+
 
 def _ensure_venv() -> None:
     """Ensure running in venv, auto-restart if needed."""
@@ -579,7 +581,7 @@ def run_linter() -> bool:
 # This function provides programmatic quality checking outside the test flow.
 # Integration pending: Will be connected to CI/CD pipeline or CLI command.
 # ============================================================================
-def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
+def run_quality_checks(flags: FeatureFlags | None = None) -> tuple[bool, list[tuple[str, float]]]:
     """
     Run Python best practices quality checks.
 
@@ -598,18 +600,43 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
         checker = CodeQualityChecker()
         current_dir = Path()
 
-        # Check key files for quality
-        key_files = [
-            "actions/action10.py",
-            "utils.py",
-            "main.py",
-            "python_best_practices.py",
-            "code_quality_checker.py",
-        ]
+        flags = flags or bootstrap_feature_flags()
+
+        if flags.is_enabled("DISABLE_QUALITY_CHECKS", default=False):
+            return True, []
+
+        key_files_env = os.getenv("QUALITY_CHECK_FILES")
+        if key_files_env:
+            key_files = [token.strip() for token in key_files_env.split(",") if token.strip()]
+        else:
+            key_files = [
+                "actions/action10.py",
+                "utils.py",
+                "main.py",
+                "python_best_practices.py",
+                "code_quality_checker.py",
+            ]
+            if flags.is_enabled("EXTENDED_QUALITY_SCOPE", default=False):
+                key_files.extend(
+                    [
+                        "run_all_tests.py",
+                        "core/feature_flags.py",
+                    ]
+                )
 
         quality_scores: list[tuple[str, float]] = []
         total_score = 0
         files_checked = 0
+
+        default_threshold = 70.0
+        env_threshold = os.getenv("QUALITY_CHECK_THRESHOLD")
+        try:
+            threshold = float(env_threshold) if env_threshold else default_threshold
+        except ValueError:
+            threshold = default_threshold
+
+        if flags.is_enabled("STRICT_QUALITY_CHECKS", default=False):
+            threshold = max(threshold, 80.0)
 
         for file_name in key_files:
             file_path = current_dir / file_name
@@ -618,10 +645,12 @@ def run_quality_checks() -> tuple[bool, list[tuple[str, float]]]:
                 total_score += metrics.quality_score
                 files_checked += 1
                 quality_scores.append((file_name, metrics.quality_score))
+            else:
+                quality_scores.append((file_name, 0.0))
 
         if files_checked > 0:
             avg_score = total_score / files_checked
-            if avg_score < 70:
+            if avg_score < threshold:
                 return False, quality_scores
 
         return True, quality_scores
@@ -2304,6 +2333,7 @@ def _print_final_quality_summary(all_metrics: list[TestExecutionMetrics]) -> Non
 
 def main() -> bool:
     """Comprehensive test runner with performance monitoring and optimization."""
+    flags = bootstrap_feature_flags()
     try:
         # Fix trailing whitespace before running tests
         _fix_trailing_whitespace()
@@ -2366,13 +2396,17 @@ def main() -> bool:
         quality_ok = True
         quality_scores: list[tuple[str, float]] = []
         if env.enable_quality_checks:
-            print("\n🧪 Running standalone code quality checks (--quality)...")
-            quality_ok, quality_scores = run_quality_checks()
-            if quality_scores:
-                for fname, score in quality_scores:
-                    print(f"   • {fname}: {score:.1f}/100")
-            if not quality_ok:
-                print("❌ Quality checks failed (average score below threshold).")
+            if flags.is_enabled("DISABLE_QUALITY_CHECKS", default=False):
+                print("\n🧪 Quality checks skipped (disabled via feature flag).")
+            else:
+                print("\n🧪 Running standalone code quality checks (--quality)...")
+                quality_ok, quality_scores = run_quality_checks(flags)
+                if quality_scores:
+                    for fname, score in quality_scores:
+                        label = "(missing)" if score == 0 else f"{score:.1f}/100"
+                        print(f"   • {fname}: {label}")
+                if not quality_ok:
+                    print("❌ Quality checks failed (average score below threshold).")
 
         return passed_count == len(discovered_modules) and quality_ok
 

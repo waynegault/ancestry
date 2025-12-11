@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 if __package__ in {None, ""}:
     parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -178,6 +178,7 @@ class ConfigurationValidator:
         self._validate_ai_provider(config)
         self._validate_paths(config)
         self._validate_processing_limits(config)
+        self._validate_observability(config)
 
         return self._report
 
@@ -299,6 +300,125 @@ class ConfigurationValidator:
                 severity="warning" if timeout < 30 else "info",
                 suggestion="Set REQUEST_TIMEOUT to at least 30 seconds",
             )
+        )
+
+    def _validate_observability(self, config: ConfigSchema) -> None:
+        """Validate observability / Prometheus settings."""
+        obs = getattr(config, "observability", None)
+        if obs is None:
+            self._add_obs_result(
+                name="Observability: Config",
+                passed=False,
+                message="Observability configuration missing",
+                severity="error",
+                suggestion="Define observability settings in config_schema (.env) section",
+            )
+            return
+
+        metrics_enabled = bool(getattr(obs, "enable_prometheus_metrics", False))
+        auto_start = bool(getattr(obs, "auto_start_prometheus", False))
+
+        self._add_obs_result(
+            name="Observability: Prometheus Enabled",
+            passed=True,
+            message=f"enable_prometheus_metrics={metrics_enabled}",
+            severity="info",
+        )
+
+        self._validate_obs_host(obs, metrics_enabled)
+        self._validate_obs_port(obs, metrics_enabled)
+        self._validate_obs_namespace(obs, metrics_enabled)
+        self._validate_obs_binary(obs, metrics_enabled, auto_start)
+        self._validate_obs_client(metrics_enabled)
+
+    def _add_obs_result(
+        self,
+        *,
+        name: str,
+        passed: bool,
+        message: str,
+        severity: str,
+        suggestion: Optional[str] = None,
+    ) -> None:
+        self._report.add(
+            ValidationResult(
+                name=name,
+                passed=passed,
+                message=message,
+                severity=severity,
+                suggestion=suggestion,
+            )
+        )
+
+    def _validate_obs_host(self, obs: Any, metrics_enabled: bool) -> None:
+        export_host = getattr(obs, "metrics_export_host", "")
+        host_valid = isinstance(export_host, str) and len(export_host.strip()) > 0
+        self._add_obs_result(
+            name="Observability: Export Host",
+            passed=host_valid,
+            message=f"metrics_export_host={export_host or 'unset'}",
+            severity="error" if not host_valid and metrics_enabled else "warning",
+            suggestion="Set METRICS_EXPORT_HOST (e.g., 127.0.0.1 or 0.0.0.0)",
+        )
+
+    def _validate_obs_port(self, obs: Any, metrics_enabled: bool) -> None:
+        export_port = getattr(obs, "metrics_export_port", 0)
+        port_valid = isinstance(export_port, int) and 1 <= export_port <= 65535
+        self._add_obs_result(
+            name="Observability: Export Port",
+            passed=port_valid,
+            message=f"metrics_export_port={export_port}",
+            severity="error" if not port_valid and metrics_enabled else "warning",
+            suggestion="Set METRICS_EXPORT_PORT to 1-65535",
+        )
+
+    def _validate_obs_namespace(self, obs: Any, metrics_enabled: bool) -> None:
+        namespace = getattr(obs, "metrics_namespace", "")
+        namespace_valid = isinstance(namespace, str) and len(namespace.strip()) > 0
+        self._add_obs_result(
+            name="Observability: Namespace",
+            passed=namespace_valid,
+            message=f"metrics_namespace={namespace or 'unset'}",
+            severity="error" if not namespace_valid and metrics_enabled else "warning",
+            suggestion="Set METRICS_NAMESPACE (default: ancestry)",
+        )
+
+    def _validate_obs_binary(self, obs: Any, metrics_enabled: bool, auto_start: bool) -> None:
+        binary_path = getattr(obs, "prometheus_binary_path", None)
+        binary_msg = "not set"
+        binary_ok = True
+        if binary_path:
+            binary_msg = str(binary_path)
+            binary_ok = Path(binary_path).exists()
+        severity = "warning" if metrics_enabled or auto_start else "info"
+        self._add_obs_result(
+            name="Observability: Prometheus Binary",
+            passed=binary_ok,
+            message=f"prometheus_binary_path={binary_msg}",
+            severity=severity if not binary_ok else "info",
+            suggestion="Point PROMETHEUS_BINARY_PATH to prometheus.exe when auto_start_prometheus is enabled",
+        )
+
+    def _validate_obs_client(self, metrics_enabled: bool) -> None:
+        prom_available = False
+        import_error: str | None = None
+        try:
+            from observability.metrics_registry import PROMETHEUS_AVAILABLE
+
+            prom_available = PROMETHEUS_AVAILABLE
+        except Exception as exc:  # pragma: no cover - defensive
+            import_error = str(exc)
+
+        self._add_obs_result(
+            name="Observability: Client Available",
+            passed=prom_available or not metrics_enabled,
+            message=(
+                "prometheus_client importable"
+                if prom_available
+                else f"prometheus_client unavailable: {import_error or 'missing package'}"
+            ),
+            severity="error" if metrics_enabled and not prom_available else "info",
+            suggestion="Install prometheus_client and ensure it imports in this environment",
         )
 
     def _validate_rate_limiting(self, config: ConfigSchema) -> None:

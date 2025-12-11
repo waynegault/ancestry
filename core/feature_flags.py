@@ -308,6 +308,10 @@ class FeatureFlags:
         self._config_path = None
         logger.debug("FeatureFlags reset")
 
+    def get_all_flags(self) -> dict[str, FeatureFlag]:
+        """Return a snapshot of all registered flags."""
+        return self._flags.copy()
+
 
 # Convenience function for quick access
 def is_feature_enabled(
@@ -317,6 +321,46 @@ def is_feature_enabled(
 ) -> bool:
     """Check if a feature flag is enabled (convenience wrapper)."""
     return FeatureFlags().is_enabled(name, user_id, default)
+
+
+def bootstrap_feature_flags(config: Any | None = None, default_path: Optional[Path] = None) -> FeatureFlags:
+    """Load feature flags from config/env/default path and return the singleton.
+
+    Order of precedence for loading:
+    1) `FEATURE_FLAGS_FILE` environment variable
+    2) `feature_flags_path` or `feature_flags_file` attribute on provided config
+    3) explicit ``default_path`` argument
+    4) fallback to ``config/feature_flags.json``
+
+    Missing files are ignored; the function is intentionally tolerant.
+    """
+
+    flags = FeatureFlags()
+
+    candidate_paths: list[Path] = []
+
+    env_path = os.getenv("FEATURE_FLAGS_FILE")
+    if env_path:
+        candidate_paths.append(Path(env_path))
+
+    if config is not None:
+        for attr in ("feature_flags_path", "feature_flags_file"):
+            cfg_value = getattr(config, attr, None)
+            if cfg_value:
+                candidate_paths.append(Path(cfg_value))
+
+    if default_path is not None:
+        candidate_paths.append(default_path)
+
+    candidate_paths.append(Path("config/feature_flags.json"))
+
+    for path in candidate_paths:
+        try_path = Path(path)
+        if try_path.exists():
+            flags.load_from_file(try_path)
+            break
+
+    return flags
 
 
 # =============================================================================

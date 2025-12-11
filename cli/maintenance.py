@@ -225,13 +225,28 @@ class AnalyticsMixin:
 
         server: Optional[ThreadingHTTPServer] = None
         try:
-            root_dir = Path(__file__).resolve().parent
+            docs_dir = Path(__file__).resolve().parents[1] / "docs"
+            graph_json = docs_dir / "code_graph.json"
+            graph_html = docs_dir / "visualize_code_graph.html"
+
+            if not graph_json.exists():
+                print("⚠️  docs/code_graph.json not found. Run: python scripts/update_code_graph.py")
+                input("\nPress Enter to return...")
+                return
+
+            if not graph_html.exists():
+                print("⚠️  docs/visualize_code_graph.html is missing. Regenerate the viewer or pull latest docs.")
+                input("\nPress Enter to return...")
+                return
+
+            root_dir = docs_dir
             preferred_port = 8765
 
             local_logger = self._logger
 
             class GraphRequestHandler(SimpleHTTPRequestHandler):
-                directory = str(root_dir)
+                def __init__(self, *args: Any, **kwargs: Any) -> None:
+                    super().__init__(*args, directory=str(root_dir), **kwargs)
 
                 def log_message(self, format: str, *args: Any) -> None:
                     client_host, client_port = getattr(self, "client_address", ("?", "?"))
@@ -268,6 +283,7 @@ class AnalyticsMixin:
             print("CODE GRAPH VISUALIZATION")
             print("=" * 70)
             print(f"Serving from: {root_dir}")
+            print(f"Graph source: {graph_json}")
             print(f"URL: {url}")
             print("\nPress Enter when you are finished exploring the visualization.")
             print("=" * 70)
@@ -322,7 +338,11 @@ class AnalyticsMixin:
         """Open Grafana dashboards or raw metrics depending on availability."""
 
         try:
-            from observability.metrics_registry import is_metrics_enabled
+            from config.config_manager import get_config_manager
+            from observability.metrics_registry import (
+                configure_metrics,
+                get_metrics_status,
+            )
         except Exception as exc:  # pragma: no cover - optional module missing
             self._logger.error("Unable to import metrics registry: %s", exc)
             print("\n⚠️  Metrics registry unavailable")
@@ -333,65 +353,114 @@ class AnalyticsMixin:
             print("📊 GRAFANA METRICS DASHBOARD")
             print("=" * 70)
 
-            if not is_metrics_enabled():
-                print("\n⚠️  Metrics collection is DISABLED")
-                print("\nTo enable metrics:")
-                print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
-                print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
-                print("  3. Restart the application")
-                print("\n" + "=" * 70 + "\n")
+            cfg = get_config_manager().get_observability_config()
+            configure_metrics(cfg)
+            status = get_metrics_status()
+
+            self._print_metrics_config(cfg)
+            if not self._metrics_ready(status):
                 return
 
             grafana_base = "http://localhost:3000"
-            try:
-                urllib_request.urlopen(grafana_base, timeout=1)
-                grafana_running = True
-            except Exception:
-                grafana_running = False
-
-            if not grafana_running:
-                print("\n⚠️  Grafana is NOT running on http://localhost:3000")
-                print("\n💡 Setup Instructions:")
-                print("   1. Install Grafana: https://grafana.com/grafana/download")
-                print("   2. Start Grafana service")
-                print("   3. Login at http://localhost:3000 (default: admin/admin)")
-                print("   4. Add Prometheus data source → http://localhost:9000")
-                print("   5. Import dashboard: docs/grafana/ancestry_overview.json")
-                print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
-                print("\n" + "=" * 70 + "\n")
+            if not self._is_grafana_running(grafana_base):
+                self._print_grafana_setup_hint()
                 webbrowser.open("http://localhost:9000/metrics")
                 return
 
-            print("\n✅ Grafana is running!")
-            print("🔍 Checking dashboards...")
-
-            if self._grafana_checker:
-                try:
-                    self._grafana_checker.ensure_dashboards_imported()
-                except Exception as import_err:  # pragma: no cover - optional dependency
-                    self._logger.debug("Dashboard auto-import check: %s", import_err)
-
-            system_perf_url = f"{grafana_base}/d/ancestry-performance"
-            genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
-            code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
-
-            print("🌐 Opening dashboards:")
-            print(f"   1. System Performance & Health: {system_perf_url}")
-            print(f"   2. Genealogy Research Insights: {genealogy_url}")
-            print(f"   3. Code Quality & Architecture: {code_quality_url}")
-            print("\n💡 If dashboards show 'Not found', run: l")
-            print("\n" + "=" * 70 + "\n")
-
-            webbrowser.open(system_perf_url)
-            time.sleep(0.5)
-            webbrowser.open(genealogy_url)
-            time.sleep(0.5)
-            webbrowser.open(code_quality_url)
+            self._open_grafana_dashboards(grafana_base)
 
         except Exception as exc:  # pragma: no cover - browser/IO issues
             self._logger.error("Error opening Grafana: %s", exc, exc_info=True)
             print(f"\n⚠️  Error: {exc}")
             print("\n" + "=" * 70 + "\n")
+
+    @staticmethod
+    def _print_metrics_config(cfg: Any) -> None:
+        print(
+            f"\nCurrent config → enabled={cfg.enable_prometheus_metrics} "
+            f"host={cfg.metrics_export_host}:{cfg.metrics_export_port} "
+            f"namespace={cfg.metrics_namespace}"
+        )
+
+    @staticmethod
+    def _metrics_ready(status: dict[str, Any]) -> bool:
+        if not status.get("config_enabled"):
+            print("\n⚠️  Metrics collection is DISABLED in configuration")
+            print("\nTo enable metrics:")
+            print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
+            print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
+            print("  3. Restart the application")
+            print("\n" + "=" * 70 + "\n")
+            return False
+
+        if not status.get("prometheus_available"):
+            print("\n⚠️  Prometheus client library is missing — metrics cannot start")
+            print("   Install: pip install prometheus-client")
+            import_error = status.get("import_error")
+            if import_error:
+                print(f"   Import error: {import_error}")
+            print("\n" + "=" * 70 + "\n")
+            return False
+
+        if not status.get("enabled"):
+            print("\n⚠️  Metrics are configured but not active (unexpected state)")
+            print("   Check logs for Prometheus errors and retry.")
+            print("\n" + "=" * 70 + "\n")
+            return False
+
+        return True
+
+    @staticmethod
+    def _is_grafana_running(grafana_base: str) -> bool:
+        try:
+            urllib_request.urlopen(grafana_base, timeout=1)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _print_grafana_setup_hint() -> None:
+        print("\n⚠️  Grafana is NOT running on http://localhost:3000")
+        print("\n💡 Setup Instructions:")
+        print("   1. Install Prometheus (https://prometheus.io/docs/introduction/first_steps/)")
+        print("      Use docs/prometheus/prometheus.yml and run: prometheus --config.file=prometheus.yml")
+        print("   2. Install Grafana: https://grafana.com/grafana/download")
+        print("   3. Start Prometheus (default: http://localhost:9090) and Grafana")
+        print("   4. Login at http://localhost:3000 (default: admin/admin)")
+        print("   5. Add Prometheus data source → http://localhost:9090")
+        print("   6. Import dashboard: docs/grafana/ancestry_overview.json")
+        print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
+        print("\n" + "=" * 70 + "\n")
+
+    def _open_grafana_dashboards(self, grafana_base: str) -> None:
+        print("\n✅ Grafana is running!")
+        print("🔍 Checking dashboards...")
+
+        if self._grafana_checker:
+            try:
+                self._grafana_checker.ensure_dashboards_imported()
+            except Exception as import_err:  # pragma: no cover - optional dependency
+                self._logger.debug("Dashboard auto-import check: %s", import_err)
+
+        system_perf_url = f"{grafana_base}/d/ancestry-performance"
+        genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
+        code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
+
+        print("🌐 Opening dashboards:")
+        print(f"   1. System Performance & Health: {system_perf_url}")
+        print(f"   2. Genealogy Research Insights: {genealogy_url}")
+        print(f"   3. Code Quality & Architecture: {code_quality_url}")
+        print("\n💡 If dashboards show 'Not found', run: l")
+        print(
+            "💡 If panels show 'No data': ensure Prometheus is scraping http://127.0.0.1:9000 (see docs/prometheus/prometheus.yml) and Grafana data source points to http://localhost:9090."
+        )
+        print("\n" + "=" * 70 + "\n")
+
+        webbrowser.open(system_perf_url)
+        time.sleep(0.5)
+        webbrowser.open(genealogy_url)
+        time.sleep(0.5)
+        webbrowser.open(code_quality_url)
 
     def run_grafana_setup(self) -> None:
         """Run grafana checker setup flow if helper module is present."""
@@ -459,8 +528,9 @@ class ReviewQueueMixin:
             print("\n" + "-" * 70)
             print(
                 "Commands: approve <draft_id> | reject <draft_id> <reason> | "
-                "fact approve <id> | fact reject <id> <reason> | refresh | back"
+                "fact approve <id> | fact reject <id> <reason> | refresh | back/exit/q"
             )
+            print("(Type back/exit/q to return to the main menu.)")
 
             while True:
                 result = self._handle_review_command(input("review> ").strip())
@@ -1103,6 +1173,7 @@ class ConfigMaintenanceMixin:
         """Hot-reload configuration using ConfigManager."""
         try:
             from config.config_manager import get_config_manager
+            from core.feature_flags import bootstrap_feature_flags
 
             manager = get_config_manager()
             if manager is None:
@@ -1110,7 +1181,13 @@ class ConfigMaintenanceMixin:
                 return
 
             manager.reload_config()
-            print("\n✅ Configuration reloaded from configured sources.\n")
+            flags = bootstrap_feature_flags(manager.get_config())
+            print(
+                f"\n✅ Configuration reloaded from configured sources. Feature flags: {len(flags.get_all_flags())} loaded.\n"
+            )
+        except ImportError as exc:
+            self._logger.error("Configuration reload failed: %s", exc)
+            print(f"Error reloading configuration: {exc}")
         except Exception as exc:
             self._logger.error("Error reloading configuration: %s", exc, exc_info=True)
             print(f"Error reloading configuration: {exc}")

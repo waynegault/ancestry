@@ -46,6 +46,7 @@ from core.action_runner import (
 from core.analytics_helpers import get_metrics_bundle as _get_metrics_bundle
 from core.caching_bootstrap import ensure_caching_initialized
 from core.config_validation import validate_action_config
+from core.feature_flags import bootstrap_feature_flags
 from core.maintenance_actions import (
     all_but_first_actn,
     backup_db_actn,
@@ -111,6 +112,8 @@ def _create_config_manager() -> Optional[ConfigManager]:
 
 config_manager = _create_config_manager()
 config: Any = config_manager.get_config() if config_manager is not None else None
+feature_flags = bootstrap_feature_flags(config)
+logger.debug("Feature flags loaded: %d", len(feature_flags.get_all_flags()))
 
 configure_action_runner(config=config, metrics_provider=_get_metrics_bundle)
 

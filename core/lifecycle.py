@@ -146,6 +146,27 @@ def check_startup_status(session_manager: SessionManager) -> None:
     except Exception as e:
         logger.warning(f"⚠️ Database connection check failed: {e}")
 
+    # Prometheus observability readiness (best-effort)
+    try:
+        from observability.metrics_exporter import get_exporter_status
+        from observability.metrics_registry import get_metrics_status
+
+        metrics_status = get_metrics_status()
+        exporter_status = get_exporter_status()
+
+        if not metrics_status.get("config_enabled"):
+            logger.info("⚠️ Prometheus metrics disabled in configuration")
+        elif not metrics_status.get("prometheus_available"):
+            logger.info("⚠️ Prometheus client library missing; install 'prometheus-client'")
+        elif exporter_status is None:
+            logger.info("⚠️ Metrics enabled but exporter is not running yet")
+        else:
+            host = exporter_status.get("host", "?")
+            port = exporter_status.get("port", "?")
+            logger.info("✅ Prometheus exporter listening on %s:%s", host, port)
+    except Exception as exc:  # pragma: no cover - optional dependency
+        logger.debug("Prometheus readiness check skipped: %s", exc)
+
     # CRITICAL: Proactive cookie sync during warmup
     # Ensures fresh cookies for ALL actions before menu display
     # Prevents 303 redirects from stale cookies across all actions

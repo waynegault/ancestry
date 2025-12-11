@@ -405,10 +405,13 @@ class MetricsRegistry:
         self._registry: Optional[Any] = None
         self._metrics = MetricsBundle()
         self._import_logged = False
+        self._config_enabled = False
 
     def configure(self, settings: Optional[ObservabilityConfig]) -> None:
         """Configure metrics using Observability settings."""
         with self._lock:
+            self._config_enabled = bool(settings and settings.enable_prometheus_metrics)
+
             if settings is None or not settings.enable_prometheus_metrics:
                 if self._enabled:
                     logger.info("Prometheus metrics disabled by configuration")
@@ -436,6 +439,17 @@ class MetricsRegistry:
             self._metrics.assign(metrics_map)
             self._enabled = True
             logger.info("Prometheus metrics enabled (namespace=%s)", namespace)
+
+    def status(self) -> dict[str, Any]:
+        """Return a debug snapshot of the metrics subsystem state."""
+        with self._lock:
+            return {
+                "config_enabled": self._config_enabled,
+                "enabled": self._enabled,
+                "namespace": self._namespace,
+                "prometheus_available": PROMETHEUS_AVAILABLE,
+                "import_error": repr(_IMPORT_ERROR) if _IMPORT_ERROR else None,
+            }
 
     def reset(self) -> None:
         """Disable metrics and clear existing registry."""
@@ -638,6 +652,11 @@ def get_metrics_registry() -> Optional[Any]:
 def is_metrics_enabled() -> bool:
     """Return True when Prometheus metrics are currently enabled."""
     return _METRICS_REGISTRY.is_enabled()
+
+
+def get_metrics_status() -> dict[str, Any]:
+    """Return debug information about metrics configuration and runtime state."""
+    return _METRICS_REGISTRY.status()
 
 
 def record_internal_metric_stat(service: str, metric_name: str, stat: str, value: float) -> None:
