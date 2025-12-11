@@ -40,7 +40,7 @@ from ai.ai_interface import (
 )
 
 # === LOCAL IMPORTS ===
-from config import config_schema
+from config import ConfigSchema, config_schema as _config_schema
 from core.database import (
     ConflictStatusEnum,
     ConversationLog,
@@ -113,6 +113,8 @@ SAFE_COLUMN_ENUMS = {
 }
 
 safe_column_value = build_safe_column_value(SAFE_COLUMN_ENUMS)
+
+config_schema: ConfigSchema = cast(ConfigSchema, _config_schema)
 
 
 def should_exclude_message(message_content: Optional[str]) -> bool:

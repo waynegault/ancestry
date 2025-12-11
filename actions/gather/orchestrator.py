@@ -148,7 +148,7 @@ def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional
     return resume_page, True, checkpoint_data
 
 
-@dataclass
+@dataclass()
 class GatherOrchestrator:
     """Coordinates Action 6 using modularized helpers."""
 

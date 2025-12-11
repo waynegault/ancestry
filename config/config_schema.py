@@ -8,6 +8,8 @@ with comprehensive validation, environment variable integration,
 and schema versioning support.
 """
 
+from __future__ import annotations
+
 # === CORE INFRASTRUCTURE ===
 import logging
 import os
@@ -129,7 +131,7 @@ class ConfigValidator:
 from testing.test_utilities import validate_positive_integer
 
 
-@dataclass
+@dataclass()
 class DatabaseConfig:
     """Enhanced database configuration schema with validation."""
 
@@ -320,7 +322,7 @@ class DatabaseConfig:
         return f"sqlite:///{self.database_file}"
 
 
-@dataclass
+@dataclass()
 class SeleniumConfig:
     """Selenium/WebDriver configuration schema."""
 
@@ -362,7 +364,7 @@ class SeleniumConfig:
             raise ValueError("window_size must be in format 'width,height'")
 
 
-@dataclass
+@dataclass()
 class APIConfig:
     """API configuration schema."""
 
@@ -600,7 +602,7 @@ class APIConfig:
             return default
 
 
-@dataclass
+@dataclass()
 class LoggingConfig:
     """Logging configuration schema."""
 
@@ -639,7 +641,7 @@ class LoggingConfig:
             raise ValueError("backup_count must be non-negative")
 
 
-@dataclass
+@dataclass()
 class CacheConfig:
     """Cache configuration schema."""
 
@@ -671,7 +673,7 @@ class CacheConfig:
             raise ValueError("disk_cache_ttl must be positive")
 
 
-@dataclass
+@dataclass()
 class SecurityConfig:
     """Security configuration schema."""
 
@@ -699,7 +701,7 @@ class SecurityConfig:
             raise ValueError("max_redirects must be non-negative")
 
 
-@dataclass
+@dataclass()
 class ObservabilityConfig:
     """Observability and Prometheus exporter configuration."""
 
@@ -723,7 +725,7 @@ class ObservabilityConfig:
             raise ValueError("prometheus_binary_path must be non-empty when provided")
 
 
-@dataclass
+@dataclass()
 class HealthConfig:
     """Health monitoring configuration."""
 
@@ -741,7 +743,7 @@ class HealthConfig:
     memory_usage_critical: float = 1200.0
 
 
-@dataclass
+@dataclass()
 class TestConfig:
     """Test configuration schema."""  # Test identifiers
 
@@ -753,7 +755,7 @@ class TestConfig:
     test_csrf_token: str = "mock_csrf_token_12345678901234567890"
 
 
-@dataclass
+@dataclass()
 class RetryChannelConfig:
     """Per-channel retry tuning derived from telemetry baselines."""
 
@@ -776,7 +778,7 @@ class RetryChannelConfig:
             raise ValueError("jitter_seconds cannot be negative")
 
 
-@dataclass
+@dataclass()
 class RetryPoliciesConfig:
     """Telemetry-derived retry policies for API and Selenium flows."""
 
@@ -817,7 +819,7 @@ class AppConfigView:
         "action6_checkpoint_file": "action6_checkpoint_file",
     }
 
-    def __init__(self, config: "ConfigSchema") -> None:
+    def __init__(self, config: ConfigSchema) -> None:
         object.__setattr__(self, "_config", config)
 
     def __getattr__(self, name: str) -> Any:
@@ -1032,7 +1034,7 @@ class ConfigSchema:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ConfigSchema":
+    def from_dict(cls, data: dict[str, Any]) -> ConfigSchema:
         """Create configuration from dictionary."""  # Extract sub-config data
         sub_config_builders: dict[str, type[Any]] = {
             "database": DatabaseConfig,

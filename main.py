@@ -347,7 +347,6 @@ def main() -> None:
     set_windows_console_focus()
 
     monitor = initialize_health_monitoring()
-    logger.info("✅ Health monitoring system initialized")
 
     try:
         # Initialize application (handles sleep prevention and diagnostics)
@@ -365,6 +364,7 @@ def main() -> None:
 
         # Check startup status and validate AI provider
         check_startup_status(session_manager)
+        logger.info("✅ Health monitoring system initialized")
         validate_ai_provider_on_startup()
 
         # Display tree owner at the end of startup checks

@@ -107,7 +107,7 @@ from ai.context_builder import ContextBuilder, MatchContext
 
 # === LOCAL IMPORTS ===
 # Import PersonStatusEnum early for use in safe_column_value
-from core.database import PersonStatusEnum
+from core.database import ConversationStatusEnum, PersonStatusEnum
 from core.opt_out_detection import OptOutDetector
 from messaging import (
     build_safe_column_value,
@@ -3337,10 +3337,21 @@ def _handle_person_status(
     # Honor conversation-level state machine hard stops
     try:
         conv_state_obj = getattr(person, "conversation_state", None)
-        conv_state_name = getattr(conv_state_obj, "state", None)
-        if conv_state_name and str(conv_state_name).upper() in {"HUMAN_REVIEW", "DESIST"}:
-            logger.debug(f"{log_prefix}: Conversation state '{conv_state_name}' blocks automation; skipping.")
-            raise StopIteration("skipped (conversation_state_block)")
+        if conv_state_obj:
+            status_val = getattr(conv_state_obj, "status", None)
+            status_str = str(getattr(status_val, "value", status_val) or "").upper()
+            state_val = getattr(conv_state_obj, "state", None)
+            state_str = str(getattr(state_val, "value", state_val) or "").upper()
+            active_state = next((s for s in (status_str, state_str) if s), "")
+            blocked_states = {"OPT_OUT", "HUMAN_REVIEW", "PAUSED", "DESIST"}
+
+            if active_state in blocked_states:
+                logger.debug(f"{log_prefix}: conversation_state status '{active_state}' blocks automation; skipping.")
+                raise StopIteration(f"skipped (conversation_state_{active_state.lower()})")
+
+            if getattr(conv_state_obj, "safety_flag", False):
+                logger.debug(f"{log_prefix}: conversation_state safety_flag set; skipping automation.")
+                raise StopIteration("skipped (conversation_state_safety)")
     except StopIteration:
         raise
     except Exception:
@@ -5731,6 +5742,45 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
     return True
 
 
+def _test_conversation_state_blocks_outbound() -> bool:
+    """Ensure conversation_state status and safety_flag block automation."""
+    from unittest.mock import Mock
+
+    from core.database import ConversationState, Person
+
+    person = Mock(spec=Person)
+    person.id = 123
+    person.username = "Test User"
+    person.status = PersonStatusEnum.ACTIVE
+    person.dna_match = None
+    person.family_tree = None
+
+    conv_state = Mock(spec=ConversationState)
+    conv_state.status = ConversationStatusEnum.HUMAN_REVIEW
+    conv_state.state = None
+    conv_state.safety_flag = False
+    person.conversation_state = conv_state
+
+    try:
+        _handle_person_status(person, "test", None, None, None, {})
+    except StopIteration as si:
+        assert "conversation_state_human_review" in str(si)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected StopIteration for HUMAN_REVIEW status")
+
+    conv_state.status = ConversationStatusEnum.ACTIVE
+    conv_state.safety_flag = True
+
+    try:
+        _handle_person_status(person, "test", None, None, None, {})
+    except StopIteration as si:
+        assert "conversation_state_safety" in str(si)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("Expected StopIteration when safety_flag is set")
+
+    return True
+
+
 def _test_status_change_template_exists() -> bool:
     """Test that In_Tree-Status_Change_Update template exists in database."""
     from core.database import MessageTemplate
@@ -6568,6 +6618,12 @@ def action8_messaging_tests() -> bool:
         "Log with no conversation state",
         _test_log_no_conversation_state,
         "Handles missing conversation_state gracefully.",
+    )
+
+    suite.run_test(
+        "Conversation state blocks outbound",
+        _test_conversation_state_blocks_outbound,
+        "Skips messaging when conversation_state status or safety flag disables automation.",
     )
 
     suite.run_test(

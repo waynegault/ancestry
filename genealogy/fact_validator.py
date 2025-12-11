@@ -193,7 +193,7 @@ class ExtractedFact:
         return date_str
 
 
-@dataclass
+@dataclass()
 class ExistingFact:
     """Representation of a fact already in the tree/database."""
 
@@ -205,7 +205,7 @@ class ExistingFact:
     last_updated: datetime
 
 
-@dataclass
+@dataclass()
 class ValidationResult:
     """Result of validating an extracted fact."""
 

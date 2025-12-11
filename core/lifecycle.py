@@ -163,7 +163,7 @@ def check_startup_status(session_manager: SessionManager) -> None:
         else:
             host = exporter_status.get("host", "?")
             port = exporter_status.get("port", "?")
-            logger.info("✅ Prometheus exporter listening on %s:%s", host, port)
+            logger.debug("Prometheus exporter already running on %s:%s (startup check)", host, port)
     except Exception as exc:  # pragma: no cover - optional dependency
         logger.debug("Prometheus readiness check skipped: %s", exc)
 
@@ -448,9 +448,12 @@ def _test_check_grafana_status_logs_branches() -> bool:
         "plugins_accessible": True,
     }
     ready_checker = SimpleNamespace(check_grafana_status=lambda: ready_status)
-    with mock.patch.object(logger, "info") as info_log:
+    with (
+        mock.patch.dict(os.environ, {"GRAFANA_BASE_URL": "http://localhost:3300"}, clear=False),
+        mock.patch.object(logger, "info") as info_log,
+    ):
         _check_grafana_status(ready_checker)
-    info_log.assert_called_with("✅ Grafana ready (http://localhost:3000)")
+    info_log.assert_called_with("✅ Grafana ready (http://localhost:3300)")
 
     not_ready_status = {
         "ready": False,
@@ -501,10 +504,12 @@ def _check_grafana_status(grafana_checker: Any) -> None:
     if not grafana_checker:
         return
 
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+
     try:
         grafana_status = grafana_checker.check_grafana_status()
         if grafana_status["ready"]:
-            logger.info("✅ Grafana ready (http://localhost:3000)")
+            logger.info(f"✅ Grafana ready ({grafana_base})")
         elif grafana_status["installed"]:
             logger.info("⚠️  Grafana installed but not fully configured (run 'l' from menu)")
         else:

@@ -72,7 +72,7 @@ services:
     image: grafana/grafana:latest
     container_name: ancestry-grafana
     ports:
-      - "3000:3000"
+      - "3300:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./observability/grafana:/etc/grafana/provisioning

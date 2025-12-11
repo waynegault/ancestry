@@ -56,20 +56,18 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 **Project Status & Planning:**
 
 - [Implementation Roadmap](todo.md) - Current status, remaining tasks, and next actions
+- [Mission Execution Spec](docs/specs/mission_execution_spec.md) - Scope, gaps, and acceptance criteria for reply automation
 
 **Architecture & Design:**
 
-- [Codebase Assessment](docs/specs/codebase_assessment.md) - Detailed audit of core modules and AI capabilities
 - [Data Flow Map](docs/specs/data_flow_map.md) - Visual and textual tracing of critical data paths
 - [Tech Stack Catalog](docs/specs/tech_stack.md) - Dependencies and infrastructure stability
-- [Gap Analysis](docs/specs/gap_analysis.md) - Analysis of feature gaps and technical debt
 
 **Technical Specifications:**
 
 - [Reply Management System](docs/specs/reply_management.md) - Conversation state machine design
 - [Response Engine](docs/specs/response_engine.md) - Context builder and RAG architecture
 - [Data Validation Pipeline](docs/specs/data_validation_pipeline.md) - Fact extraction and conflict detection
-- [Engagement Optimization](docs/specs/engagement_optimization.md) - A/B testing framework
 - [Human-in-the-Loop](docs/specs/human_in_the_loop.md) - Approval queue and safety controls
 
 **Operations:**
@@ -90,14 +88,14 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 
 ### Current State vs Mission
 
-- **Working today:** Action 6 DNA match gathering (with checkpoints), Action 7 inbox ingestion + intent classification with SafetyGuard critical-alert gating, Action 9 entity extraction with fact validation staging (SuggestedFact/DataConflict) and MS To-Do task creation, Action 10 GEDCOM/API lookups + TreeQueryService, Action 12 shared matches, Action 13 triangulation.
-- **Partial/Not yet:** Reply lifecycle not fully wired across Actions 7/8/9; ContextBuilder and response-generation prompts not yet integrated into messaging; fact validation only wired in Action 9 (not yet gating outbound messaging or other actions); approval/review queue and SystemControl/MessageApproval tables not implemented; person-level automation/opt-out checks not enforced in send path; ethnicity-based research suggestions not surfaced in replies.
-- **Safety stance:** Critical alerts block classification in Action 7; DESIST detection present, but outbound safety/opt-out enforcement still needs integration before bulk messaging.
-- **Roadmap:** See `docs/specs/mission_execution_spec.md` and `todo.md` for the plan to complete reply management, validation, HITL controls, and metrics.
+- **Working today:** Action 6 DNA match gathering (with checkpoints), Action 7 inbox ingestion with SafetyGuard + InboundOrchestrator (intent classification, SuggestedFact harvest, conversation_state status/safety_flag), Action 9 entity extraction with FactValidator + DataConflict staging and MS To-Do task creation, Action 10 GEDCOM/API lookups + TreeQueryService, Action 12 shared matches, Action 13 triangulation, Action 8 messaging with opt-out guard, contextual reply draft generation via ContextBuilder, and outbound blocks when conversation_state status is OPT_OUT/HUMAN_REVIEW or safety_flag is set.
+- **Partial/Not yet:** Approval/review queue uses `DraftReply` only (MessageApproval/SystemControl tables not implemented); person-level automation toggle still missing; inbound fact harvest uses a basic SuggestedFact write path without FactValidator conflict checks; engagement/quality metrics for replies are limited; ethnicity/cluster research suggestions are not surfaced in replies; contextual drafts are review-first unless explicitly auto-sent.
+- **Safety stance:** SafetyGuard blocks classification on critical alerts; opt-out detection runs inbound and outbound; outbound sends now honor conversation_state status/safety_flag; default posture keeps contextual drafts in review-only mode.
+- **Roadmap:** See [docs/specs/mission_execution_spec.md](docs/specs/mission_execution_spec.md) and [todo.md](todo.md) for the plan to complete reply management, validation, HITL controls, and metrics.
 
 ## Technology Stack
 
-### Core Dependencies
+### Runtime Dependencies (detailed)
 
 | Component | Technology | Version | Purpose |
 |-----------|------------|---------|---------|
@@ -160,6 +158,7 @@ cp .env.example .env
 >
 > This project uses Python's editable install mode. When you run `pip install -e .`, it adds
 > `__editable__.ancestry-0.1.0.finder.__path_hook__` to `sys.path`, which means:
+>
 > - All local imports (e.g., `from core.session_manager import SessionManager`) work from any directory
 > - No need for manual `sys.path.insert()` hacks in every file
 > - Standalone script execution works correctly (e.g., `python actions/action6_gather.py`)

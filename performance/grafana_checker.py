@@ -13,12 +13,16 @@ if str(_project_root) not in sys.path:
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import urllib.error
 import urllib.request
+from collections.abc import Mapping
 from pathlib import Path
 from unittest import mock
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SETUP_SCRIPT = PROJECT_ROOT / "docs" / "grafana" / "setup_grafana.ps1"
 
 
+def _grafana_base() -> str:
+    return os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+
+
+def _grafana_auth() -> tuple[str, str]:
+    return os.getenv("GRAFANA_USER", "admin"), os.getenv("GRAFANA_PASSWORD", "admin")
+
+
 def is_grafana_installed() -> bool:
     """Check if Grafana is installed by looking for grafana-cli.exe"""
     return GRAFANA_CLI.exists()
@@ -37,7 +49,8 @@ def is_grafana_installed() -> bool:
 def is_grafana_running() -> bool:
     """Check if Grafana service is accessible on port 3000"""
     try:
-        response = urllib.request.urlopen("http://localhost:3000/api/health", timeout=2)
+        grafana_base = _grafana_base()
+        response = urllib.request.urlopen(f"{grafana_base}/api/health", timeout=2)
         return response.status == 200
     except Exception:
         return False
@@ -211,8 +224,10 @@ def get_status_message() -> str:
     """
     status = check_grafana_status()
 
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+
     if status["ready"]:
-        return "✅ Grafana Ready (http://localhost:3000)"
+        return f"✅ Grafana Ready ({grafana_base})"
     if status["installed"] and status["running"]:
         return "⚠️  Grafana Running (plugins need setup)"
     if status["installed"]:
@@ -239,8 +254,11 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
 
     import base64
 
+    grafana_base = _grafana_base()
+    grafana_user, grafana_pass = _grafana_auth()
+
     # Check and import each dashboard
-    base64_auth = base64.b64encode(b"admin:ancestry").decode("ascii")
+    base64_auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode("ascii")).decode("ascii")
     headers = {
         "Authorization": f"Basic {base64_auth}",
         "Content-Type": "application/json",
@@ -252,7 +270,7 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
         if not should_import:
             try:
                 # Check if dashboard exists
-                check_req = urllib.request.Request(f"http://localhost:3000/api/dashboards/uid/{uid}", headers=headers)
+                check_req = urllib.request.Request(f"{grafana_base}/api/dashboards/uid/{uid}", headers=headers)
                 urllib.request.urlopen(check_req, timeout=2)
                 logger.debug(f"Dashboard {uid} already exists")
             except urllib.error.HTTPError as e:
@@ -293,7 +311,7 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
                 }
 
                 import_req = urllib.request.Request(
-                    "http://localhost:3000/api/dashboards/import",
+                    f"{grafana_base}/api/dashboards/import",
                     data=json.dumps(import_payload).encode("utf-8"),
                     headers=headers,
                     method="POST",
@@ -308,6 +326,82 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
         logger.info(f"Imported {imported_count} dashboard(s)")
 
     return True
+
+
+def _upsert_datasource(grafana_base: str, auth: tuple[str, str], payload: Mapping[str, object]) -> bool:
+    payload_dict = dict(payload)
+    headers = {"Content-Type": "application/json"}
+    session = requests.Session()
+    try:
+        existing = session.get(f"{grafana_base}/api/datasources/name/{payload_dict['name']}", auth=auth, timeout=5)
+        if existing.status_code == 200:
+            ds_id = existing.json().get("id")
+            if ds_id:
+                session.put(
+                    f"{grafana_base}/api/datasources/{ds_id}",
+                    auth=auth,
+                    headers=headers,
+                    data=json.dumps(payload_dict),
+                    timeout=5,
+                )
+                return True
+        session.post(
+            f"{grafana_base}/api/datasources",
+            auth=auth,
+            headers=headers,
+            data=json.dumps(payload_dict),
+            timeout=5,
+        )
+        return True
+    except Exception as exc:
+        logger.debug("Data source upsert failed: %s", exc)
+        return False
+
+
+def ensure_data_sources_configured(
+    prometheus_url: str | None = None,
+    sqlite_path: str | None = None,
+) -> bool:
+    """Ensure required Grafana data sources exist (Prometheus + SQLite)."""
+
+    if not is_grafana_running():
+        logger.debug("Grafana not running; skipping data source configuration")
+        return False
+
+    grafana_base = _grafana_base()
+    grafana_auth = _grafana_auth()
+
+    prom_url = prometheus_url or os.getenv("GRAFANA_PROM_URL") or os.getenv("PROMETHEUS_URL", "http://localhost:9091")
+    sqlite_db = sqlite_path or os.getenv("GRAFANA_SQLITE_PATH") or str(PROJECT_ROOT / "Data" / "ancestry.db")
+
+    success = True
+
+    prom_payload = {
+        "name": "Prometheus",
+        "type": "prometheus",
+        "url": prom_url,
+        "access": "proxy",
+        "basicAuth": False,
+        "isDefault": True,
+    }
+    if not _upsert_datasource(grafana_base, grafana_auth, prom_payload):
+        success = False
+
+    if Path(sqlite_db).exists():
+        sqlite_payload = {
+            "name": "SQLite",
+            "type": "frser-sqlite-datasource",
+            "url": "",
+            "access": "proxy",
+            "basicAuth": False,
+            "jsonData": {"database": sqlite_db},
+        }
+        if not _upsert_datasource(grafana_base, grafana_auth, sqlite_payload):
+            success = False
+    else:
+        logger.debug("SQLite database not found at %s; skipping SQLite data source", sqlite_db)
+
+    return success
 
 
 def _test_check_grafana_status_handles_installation_flag() -> None:
@@ -365,8 +459,10 @@ def _test_get_status_message_variants() -> None:
         "ready": False,
     }
 
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+
     cases = [
-        (ready_status, "✅ Grafana Ready (http://localhost:3000)"),
+        (ready_status, f"✅ Grafana Ready ({grafana_base})"),
         (running_status, "⚠️  Grafana Running (plugins need setup)"),
         (installed_status, "⚠️  Grafana Installed (service not running)"),
         (missing_status, "❌ Grafana Not Installed (run setup)"),

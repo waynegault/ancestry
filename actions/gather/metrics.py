@@ -20,7 +20,7 @@ PREFETCH_ENDPOINT_LABELS: dict[str, str] = {
 }
 
 
-@dataclass
+@dataclass()
 class PageProcessingMetrics:
     """Aggregated telemetry for a processed page."""
 

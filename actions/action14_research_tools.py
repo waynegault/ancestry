@@ -35,6 +35,9 @@ def run_research_tools(session_manager: SessionManager, *_: Any) -> bool:
     """
     logger.info("Starting Action 14: Research Tools")
 
+    if session_manager is None:
+        logger.debug("Session manager not provided for research tools")
+
     try:
         # The CLI handles its own menu loop and error catching
         run_interactive_menu()

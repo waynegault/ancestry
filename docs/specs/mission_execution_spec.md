@@ -7,21 +7,20 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 ## 2. Current Capabilities (baseline)
 
 - **Data gathering:** Action 6 scrapes DNA matches with checkpointing; Action 12 shared matches; Action 13 triangulation.
-- **Inbox ingestion:** Action 7 pulls conversations, classifies intent via AI, and includes SafetyGuard critical-alert detection (regex + AI) before classification.
-- **Productive message processing:** Action 9 extracts entities and creates MS To-Do tasks; GEDCOM/API lookups run for mentioned people; conversation_state table and workflow helpers exist.
-- **Response assets:** `ai/context_builder.py` builds rich context (identity, genetics, history, genealogy) but is not wired into outbound messaging; `genealogy/fact_validator.py` implements conflict-aware fact validation but is unused.
+- **Inbox ingestion:** Action 7 pulls conversations, classifies intent via AI, runs SafetyGuard critical-alert detection (regex + AI) before classification, and updates `conversation_state` (status + safety_flag) plus SuggestedFact harvest.
+- **Productive message processing:** Action 9 extracts entities, converts them to `ExtractedFact` objects, validates via `FactValidator`, stages `SuggestedFact`/`DataConflict`, and creates MS To-Do tasks; GEDCOM/API lookups run for mentioned people.
+- **Response assets:** `ai/context_builder.py` builds rich context (identity, genetics, history, genealogy) and Action 8 can generate contextual drafts (queued via `DraftReply`/ApprovalQueueService; auto-send optional).
 - **Genealogy search:** Action 10 GEDCOM/API comparison utilities and TreeQueryService support relationship explanations.
-- **Safety & state:** SafetyGuard hooks in Action 7; conversation_state model + helpers exist; DESIST handling via sentiment classification.
+- **Safety & state:** SafetyGuard hooks in Action 7; outbound messaging in Action 8 blocks when `conversation_state.status` is OPT_OUT/HUMAN_REVIEW/PAUSED or `safety_flag` is set; DESIST handling via sentiment classification and OptOutDetector.
 
 ## 3. Gaps vs Mission
 
-1. **Reply lifecycle orchestration** is not integrated across Actions 7/8/9; conversation_state not updated end-to-end.
-2. **Automated replies** are not generated or queued from Action 9 outcomes; Action 8 lacks inbound-driven reply mode using ContextBuilder.
-3. **Fact validation** results are not persisted/reviewed; FactValidator unused; no review queue CLI.
-4. **Opt-out & safety enforcement** not enforced in outbound send path; per-person automation toggle missing in send checks.
+1. **Review/approval system** still uses `DraftReply` only; MessageApproval/SystemControl tables + CLI wiring are not implemented.
+2. **Automation guard rails**: person-level automation toggle is missing; outbound still relies on Person.status + opt-out detector only.
+3. **Inbound fact validation** uses a basic SuggestedFact harvest in Action 7; FactValidator/DataConflict are not applied to inbound extractions or surfaced in review queues.
+4. **Reply lifecycle orchestration**: conversation_state updates are not propagated from Action 8 sends, and queue/approval decisions are not tied back to conversation_state.
 5. **Engagement insights**: metrics on reply quality/engagement and content-to-outcome correlation are minimal.
 6. **Research suggestions** based on ethnicity/clusters are not surfaced back into messaging.
-7. **Human-in-the-loop/approval** tables and commands not implemented (MessageApproval, SystemControl from spec).
 
 ## 4. Target Architecture
 
@@ -34,11 +33,11 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 
 ## 5. Scope for Next Increment
 
-- Wire FactValidator into Action 9 to persist SuggestedFacts/DataConflicts and log validation outcomes.
-- Add ContextBuilder + response_generation prompt path to Action 8 for reply drafting; gate by SafetyGuard/opt-out.
-- Add person-level automation checks in Action 8 (reuse messaging.workflow_helpers.can_send_message pattern once implemented).
-- Create lightweight review queue CLI scaffolding to list pending SuggestedFacts and (if added) draft replies.
-- Update README and docs to reflect current state and roadmap.
+- Align review queue and controls: implement MessageApproval/SystemControl tables (or extend DraftReply) with priority/auto-approve, expose minimal CLI commands, and route Action 8 contextual drafts through it.
+- Enforce automation guard rails: add a person-level automation toggle and honor it in Action 8 alongside conversation_state + opt-out.
+- Extend inbound validation loop: run FactValidator/DataConflict on Action 7 harvests and surface pending items in the review queue.
+- Observability: emit engagement/reply metrics (sent/queued/blocked, opt-outs, validation conflicts) to existing analytics tables and Prometheus hooks.
+- Research suggestions: thread ethnicity/cluster insights into ContextBuilder/Action 8 replies (still review-first).
 
 ## 6. Acceptance Criteria (increment)
 

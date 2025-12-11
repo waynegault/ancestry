@@ -43,6 +43,10 @@ class GrafanaCheckerProtocol(Protocol):
 
     def ensure_dashboards_imported(self) -> None: ...
 
+    def ensure_data_sources_configured(
+        self, prometheus_url: str | None = None, sqlite_path: str | None = None
+    ) -> bool: ...
+
     def check_grafana_status(self) -> Mapping[str, Any]: ...
 
     def ensure_grafana_ready(self, *, auto_setup: bool = False, silent: bool = True) -> None: ...
@@ -492,19 +496,26 @@ class AnalyticsMixin:
         if self._grafana_checker:
             status = self._grafana_checker.check_grafana_status()
             if status["ready"]:
+                grafana_url = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+                grafana_user = os.getenv("GRAFANA_USER", "admin")
+                grafana_pass = os.getenv("GRAFANA_PASSWORD", "admin")
+
                 print("\n✅ Grafana is already fully configured and running!")
-                print("   Dashboard URL: http://localhost:3000")
-                print("   Default credentials: admin / ancestry")
+                print(f"   Dashboard URL: {grafana_url}")
+                print(f"   Default credentials: {grafana_user} / {grafana_pass}")
                 print("\n📊 Checking dashboards...")
+                self._grafana_checker.ensure_data_sources_configured()
                 self._grafana_checker.ensure_dashboards_imported()
-                print("\n✅ Dashboard check complete!")
+                print("\n✅ Dashboard and data source checks complete!")
                 print("\n📊 Available Dashboards:")
-                print("   • Overview:    http://localhost:3000/d/ancestry-overview")
-                print("   • Performance: http://localhost:3000/d/ancestry-performance")
-                print("   • Genealogy:   http://localhost:3000/d/ancestry-genealogy")
-                print("   • Code Quality: http://localhost:3000/d/ancestry-code-quality")
-                print("\n💡 If dashboards are empty, configure data sources:")
-                print("   Run: .\\docs\\grafana\\configure_datasources.ps1\n")
+                print(f"   • Overview:    {grafana_url}/d/ancestry-overview")
+                print(f"   • Performance: {grafana_url}/d/ancestry-performance")
+                print(f"   • Genealogy:   {grafana_url}/d/ancestry-genealogy")
+                print(f"   • Code Quality: {grafana_url}/d/ancestry-code-quality")
+                print(
+                    "\n💡 If dashboards are empty, data sources are re-applied automatically. "
+                    "Verify Prometheus is reachable at http://localhost:9091 if panels stay blank.\n"
+                )
             else:
                 self._grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
         else:
