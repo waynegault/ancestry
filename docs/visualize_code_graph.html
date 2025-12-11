@@ -393,6 +393,71 @@
       state.graphLinks = edges;
     }
 
+    function renderFallbackGraph(container) {
+      const width = container.clientWidth || 960;
+      const height = container.clientHeight || 640;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.borderRadius = '12px';
+      canvas.style.background = '#0b1223';
+      container.innerHTML = '';
+      container.appendChild(canvas);
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        container.innerHTML = '<div class="empty">Unable to render fallback graph.</div>';
+        return;
+      }
+
+      const nodes = state.graphNodes.slice(0, 250); // cap for readability
+      const links = state.graphLinks.filter((l) => nodes.find((n) => n.id === l.source) && nodes.find((n) => n.id === l.target));
+      const radius = Math.max(Math.min(width, height) / 2 - 40, 120);
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      const positions = new Map();
+      nodes.forEach((n, i) => {
+        const angle = (2 * Math.PI * i) / nodes.length;
+        positions.set(n.id, {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+          type: n.type || 'node',
+          name: n.name || n.id,
+        });
+      });
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1;
+      links.forEach((l) => {
+        const a = positions.get(l.source);
+        const b = positions.get(l.target);
+        if (!a || !b) return;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      });
+
+      nodes.forEach((n) => {
+        const pos = positions.get(n.id);
+        if (!pos) return;
+        ctx.beginPath();
+        ctx.fillStyle = n.type === 'file' ? '#f59e0b' : '#22d3ee';
+        ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.font = '12px Space Grotesk, sans-serif';
+      ctx.fillText(`Fallback render • nodes: ${nodes.length} • edges: ${links.length}`, 12, height - 12);
+    }
+
     async function renderGraph() {
       const container = document.getElementById('graphContainer');
       if (!container) return;
@@ -406,10 +471,11 @@
 
       if (!window.vis) {
         const sources = [
+          'vis-network.min.js', // optional local copy in docs/
+          './vis-network.min.js',
           'https://unpkg.com/vis-network/standalone/umd/vis-network.min.js',
           'https://cdn.jsdelivr.net/npm/vis-network@9.1.2/standalone/umd/vis-network.min.js',
           'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/vis-network.min.js',
-          'vis-network.min.js', // optional local copy in docs/
         ];
 
         let loaded = false;
@@ -433,9 +499,8 @@
         }
 
         if (!loaded || !window.vis) {
-          const msg = `Graph library not available. Tried: ${sources.join(', ')}. Last error: ${lastErr || 'unknown'}`;
-          console.error(msg);
-          container.innerHTML = `<div class="empty">${msg}</div>`;
+          console.warn('Falling back to canvas graph (vis-network unavailable).', lastErr || 'unknown');
+          renderFallbackGraph(container);
           return;
         }
 
@@ -467,7 +532,7 @@
         network = new window.vis.Network(container, data, options);
       } catch (err) {
         console.error('Graph render failed', err);
-        container.innerHTML = '<div class="empty">Graph render failed. Check console/network access to vis-network CDN.</div>';
+        renderFallbackGraph(container);
       }
     }
 

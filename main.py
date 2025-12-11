@@ -347,6 +347,7 @@ def main() -> None:
     set_windows_console_focus()
 
     monitor = initialize_health_monitoring()
+    logger.info("✅ Health monitoring system initialized")
 
     try:
         # Initialize application (handles sleep prevention and diagnostics)

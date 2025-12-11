@@ -22,12 +22,12 @@ from core.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 
-def run_research_tools(_session_manager: SessionManager, *_: Any) -> bool:
+def run_research_tools(session_manager: SessionManager, *_: Any) -> bool:
     """
     Execute the Research Tools interactive menu.
 
     Args:
-        _session_manager: The active session manager (not strictly required for all tools,
+        session_manager: The active session manager (not strictly required for all tools,
                         but passed for consistency with action signature)
 
     Returns:

@@ -41,6 +41,25 @@ from testing.test_utilities import create_standard_test_runner
 logger = logging.getLogger(__name__)
 
 
+def _resolve_gedcom_path() -> Path:
+    """Resolve GEDCOM path strictly from .env (GEDCOM_FILE_PATH).
+
+    Returns:
+        Path to the GEDCOM file if configured.
+
+    Raises:
+        FileNotFoundError: If GEDCOM_FILE_PATH is unset or empty.
+    """
+
+    db_cfg = getattr(config_schema, "database", None)
+    gedcom_path = getattr(db_cfg, "gedcom_file_path", None) if db_cfg else None
+
+    if not gedcom_path:
+        raise FileNotFoundError("GEDCOM_FILE_PATH is not set in .env")
+
+    return Path(gedcom_path)
+
+
 class ResearchToolsCLI:
     """CLI interface for Innovation Features."""
 
@@ -123,19 +142,32 @@ class ResearchToolsCLI:
             print("❌ TriangulationIntelligence not available")
             return None
 
+        match_data = dict(tree_data or {})
+        target_uuid = (
+            match_data.get("target_uuid")
+            or match_data.get("target_person_uuid")
+            or match_data.get("owner_uuid")
+            or match_data.get("root_uuid")
+            or "ROOT"
+        )
+
         try:
-            hypothesis = triangulation.analyze_match(match_uuid, tree_data or {})
+            hypothesis = triangulation.analyze_match(target_uuid, match_uuid, match_data)
             print(f"\n📊 Triangulation Analysis for {match_uuid}")
             print("=" * 50)
 
             if hypothesis:
                 print(f"Hypothesis: {hypothesis.proposed_relationship}")
-                print(f"Confidence: {hypothesis.confidence_level.value} ({hypothesis.total_score:.2f})")
-                print(f"Evidence pieces: {len(hypothesis.supporting_evidence)}")
-                if hypothesis.supporting_evidence:
+                print(f"Confidence: {hypothesis.confidence_level.value} ({hypothesis.confidence_score:.2f})")
+                evidence_list = hypothesis.evidence or []
+                print(f"Evidence pieces: {len(evidence_list)}")
+                if evidence_list:
                     print("\nSupporting Evidence:")
-                    for evidence in hypothesis.supporting_evidence[:5]:
-                        print(f"  • {evidence.evidence_type}: {evidence.description} (weight: {evidence.weight:.2f})")
+                    for evidence in evidence_list[:5]:
+                        etype = getattr(evidence, "evidence_type", "unknown")
+                        desc = getattr(evidence, "description", "n/a")
+                        weight = float(getattr(evidence, "weight", 0.0) or 0.0)
+                        print(f"  • {etype}: {desc} (weight: {weight:.2f})")
             else:
                 print("No triangulation hypothesis generated")
 
@@ -890,11 +922,17 @@ def _handle_relationship_diagram(_cli: ResearchToolsCLI) -> None:
     print("📊 RELATIONSHIP DIAGRAM GENERATOR")
     print("=" * 60)
 
-    # Check if GEDCOM path is configured
-    gedcom_path = config_schema.gedcom_path
-    if not gedcom_path or not Path(gedcom_path).exists():
+    # Check if GEDCOM path is configured (no defaults)
+    try:
+        gedcom_path = _resolve_gedcom_path()
+    except FileNotFoundError as exc:
+        print(f"❌ {exc}")
+        print("Set GEDCOM_FILE_PATH in your .env (e.g., GEDCOM_FILE_PATH=Data/Gault Family.ged).")
+        return
+
+    if not Path(gedcom_path).exists():
         print(f"❌ GEDCOM file not found at: {gedcom_path}")
-        print("Please configure GEDCOM_PATH in your .env file.")
+        print("Set GEDCOM_FILE_PATH in your .env to the correct location (e.g., Data/Gault Family.ged).")
         return
 
     print(f"Loading GEDCOM data from: {gedcom_path}...")
@@ -986,10 +1024,17 @@ def _handle_research_prioritization(_cli: ResearchToolsCLI) -> None:
     print("📋 RESEARCH PRIORITIZATION")
     print("=" * 60)
 
-    # Check if GEDCOM path is configured
-    gedcom_path = config_schema.gedcom_path
-    if not gedcom_path or not Path(gedcom_path).exists():
+    # Check if GEDCOM path is configured (no defaults)
+    try:
+        gedcom_path = _resolve_gedcom_path()
+    except FileNotFoundError as exc:
+        print(f"❌ {exc}")
+        print("Set GEDCOM_FILE_PATH in your .env (e.g., GEDCOM_FILE_PATH=Data/Gault Family.ged).")
+        return
+
+    if not Path(gedcom_path).exists():
         print(f"❌ GEDCOM file not found at: {gedcom_path}")
+        print("Set GEDCOM_FILE_PATH in your .env to the correct location (e.g., Data/Gault Family.ged).")
         return
 
     print(f"Loading GEDCOM data from: {gedcom_path}...")

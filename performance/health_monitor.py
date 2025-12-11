@@ -1314,7 +1314,7 @@ def get_health_monitor() -> SessionHealthMonitor:
 def initialize_health_monitoring() -> Any:
     """Initialize health monitoring system."""
     monitor = get_health_monitor()
-    logger.info("Health monitoring system initialized")
+    logger.debug("Health monitoring system initialized")
     return monitor
 
 

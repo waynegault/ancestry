@@ -361,6 +361,12 @@ class AnalyticsMixin:
             if not self._metrics_ready(status):
                 return
 
+            prom_port = 9090
+            if not self._is_prometheus_running(prom_port):
+                self._print_prometheus_setup_hint(prom_port)
+                webbrowser.open(f"http://{cfg.metrics_export_host}:{cfg.metrics_export_port}/metrics")
+                return
+
             grafana_base = "http://localhost:3000"
             if not self._is_grafana_running(grafana_base):
                 self._print_grafana_setup_hint()
@@ -409,6 +415,24 @@ class AnalyticsMixin:
             return False
 
         return True
+
+    @staticmethod
+    def _is_prometheus_running(port: int = 9090) -> bool:
+        try:
+            urllib_request.urlopen(f"http://localhost:{port}/-/ready", timeout=1)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _print_prometheus_setup_hint(port: int) -> None:
+        print(f"\n⚠️  Prometheus is NOT running on http://localhost:{port}")
+        print("\n💡 Start Prometheus:")
+        print("   pwsh ./docs/prometheus/start_prometheus.ps1")
+        print("   (or run prometheus.exe with --config.file=docs/prometheus/prometheus.yml)")
+        print("\nWhen running, ensure Grafana data source points to http://localhost:9090")
+        print("\n📊 Opening raw app metrics instead...")
+        print("\n" + "=" * 70 + "\n")
 
     @staticmethod
     def _is_grafana_running(grafana_base: str) -> bool:
