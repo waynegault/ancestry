@@ -360,6 +360,7 @@ class AnalyticsMixin:
             cfg = get_config_manager().get_observability_config()
             configure_metrics(cfg)
             status = get_metrics_status()
+            metrics_url = self._build_metrics_url(cfg)
 
             self._print_metrics_config(cfg)
             if not self._metrics_ready(status):
@@ -367,14 +368,14 @@ class AnalyticsMixin:
 
             prom_port = 9090
             if not self._is_prometheus_running(prom_port):
-                self._print_prometheus_setup_hint(prom_port)
-                webbrowser.open(f"http://{cfg.metrics_export_host}:{cfg.metrics_export_port}/metrics")
+                self._print_prometheus_setup_hint(prom_port, metrics_url)
+                webbrowser.open(metrics_url)
                 return
 
             grafana_base = "http://localhost:3000"
             if not self._is_grafana_running(grafana_base):
-                self._print_grafana_setup_hint()
-                webbrowser.open("http://localhost:9000/metrics")
+                self._print_grafana_setup_hint(metrics_url)
+                webbrowser.open(metrics_url)
                 return
 
             self._open_grafana_dashboards(grafana_base)
@@ -386,10 +387,15 @@ class AnalyticsMixin:
 
     @staticmethod
     def _print_metrics_config(cfg: Any) -> None:
+        browse_host = AnalyticsMixin._browser_metrics_host(cfg.metrics_export_host)
+        browse_hint = ""
+        if browse_host != cfg.metrics_export_host:
+            browse_hint = f" (browse via http://{browse_host}:{cfg.metrics_export_port})"
+
         print(
             f"\nCurrent config → enabled={cfg.enable_prometheus_metrics} "
             f"host={cfg.metrics_export_host}:{cfg.metrics_export_port} "
-            f"namespace={cfg.metrics_namespace}"
+            f"namespace={cfg.metrics_namespace}{browse_hint}"
         )
 
     @staticmethod
@@ -429,13 +435,13 @@ class AnalyticsMixin:
             return False
 
     @staticmethod
-    def _print_prometheus_setup_hint(port: int) -> None:
+    def _print_prometheus_setup_hint(port: int, metrics_url: str) -> None:
         print(f"\n⚠️  Prometheus is NOT running on http://localhost:{port}")
         print("\n💡 Start Prometheus:")
         print("   pwsh ./docs/prometheus/start_prometheus.ps1")
         print("   (or run prometheus.exe with --config.file=docs/prometheus/prometheus.yml)")
         print("\nWhen running, ensure Grafana data source points to http://localhost:9090")
-        print("\n📊 Opening raw app metrics instead...")
+        print(f"\n📊 Opening raw app metrics instead at {metrics_url}")
         print("\n" + "=" * 70 + "\n")
 
     @staticmethod
@@ -447,7 +453,7 @@ class AnalyticsMixin:
             return False
 
     @staticmethod
-    def _print_grafana_setup_hint() -> None:
+    def _print_grafana_setup_hint(metrics_url: str) -> None:
         print("\n⚠️  Grafana is NOT running on http://localhost:3000")
         print("\n💡 Setup Instructions:")
         print("   1. Install Prometheus (https://prometheus.io/docs/introduction/first_steps/)")
@@ -457,8 +463,22 @@ class AnalyticsMixin:
         print("   4. Login at http://localhost:3000 (default: admin/admin)")
         print("   5. Add Prometheus data source → http://localhost:9090")
         print("   6. Import dashboard: docs/grafana/ancestry_overview.json")
-        print("\n📊 For now, opening raw metrics at http://localhost:9000/metrics")
+        print(f"\n📊 For now, opening raw metrics at {metrics_url}")
         print("\n" + "=" * 70 + "\n")
+
+    @staticmethod
+    def _browser_metrics_host(host: str) -> str:
+        """Return a loopback host suitable for browser navigation."""
+
+        normalized = (host or "").strip()
+        if normalized in {"0.0.0.0", "::", "[::]"}:
+            return "127.0.0.1"
+        return normalized or "127.0.0.1"
+
+    @staticmethod
+    def _build_metrics_url(cfg: Any) -> str:
+        host = AnalyticsMixin._browser_metrics_host(cfg.metrics_export_host)
+        return f"http://{host}:{cfg.metrics_export_port}/metrics"
 
     def _open_grafana_dashboards(self, grafana_base: str) -> None:
         print("\n✅ Grafana is running!")

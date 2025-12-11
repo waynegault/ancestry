@@ -62,8 +62,11 @@ def _any_target_up(job_name: str | None = None) -> bool:
     active = cast(list[dict[str, Any]], data_dict.get("activeTargets", []))
     candidates: list[dict[str, Any]] = []
     for target in active:
-        target_dict = target if isinstance(target, dict) else {}
-        labels = cast(dict[str, Any], target_dict.get("labels", {}))
+        if not isinstance(target, dict):
+            continue
+        target_dict: dict[str, Any] = target
+        labels_raw = target_dict.get("labels", {})
+        labels = cast(dict[str, Any], labels_raw if isinstance(labels_raw, dict) else {})
         if job_name and labels.get("job") != job_name:
             continue
         candidates.append(target_dict)
@@ -89,7 +92,8 @@ def _sum_prom_result(data: Any) -> float:
     for series in result:
         if not isinstance(series, dict):
             continue
-        value = series.get("value")
+        series_dict: dict[str, Any] = series
+        value = series_dict.get("value")
         if not isinstance(value, list) or len(value) < 2:
             continue
         try:

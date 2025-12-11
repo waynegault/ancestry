@@ -57,7 +57,7 @@
 
     .controls {
       display: grid;
-      grid-template-columns: 1.2fr 0.6fr 0.6fr auto;
+      grid-template-columns: 1.2fr 0.6fr 0.6fr 0.6fr auto;
       gap: 12px;
       margin: 18px 0;
       align-items: center;
@@ -222,6 +222,11 @@
       <select id="areaFilter" aria-label="Filter by area">
         <option value="">All areas</option>
       </select>
+      <select id="renderMode" aria-label="Render mode">
+        <option value="auto">Auto (prefer links)</option>
+        <option value="vis">Force Vis Network</option>
+        <option value="canvas">Force Canvas</option>
+      </select>
       <div class="status" id="status">Loading graph…</div>
     </div>
 
@@ -256,11 +261,13 @@
       graphNodes: [],
       graphLinks: [],
       filters: { search: '', type: '', area: '' },
+      renderMode: 'auto',
     };
 
     const searchInput = document.getElementById('search');
     const typeFilter = document.getElementById('typeFilter');
     const areaFilter = document.getElementById('areaFilter');
+    const renderModeEl = document.getElementById('renderMode');
     const statusEl = document.getElementById('status');
     const gridEl = document.getElementById('grid');
 
@@ -412,15 +419,32 @@
         return;
       }
 
-      const nodes = state.graphNodes.slice(0, 250); // cap for readability
-      const links = state.graphLinks.filter((l) => nodes.find((n) => n.id === l.source) && nodes.find((n) => n.id === l.target));
+      const baseNodes = state.graphNodes.length ? state.graphNodes : state.nodes;
+      const nodes = baseNodes.slice(0, 800); // cap for readability
+      let links = state.graphLinks;
+
+      if (!links.length && nodes.length) {
+        // Synthesize simple file→symbol edges for canvas rendering
+        const pseudoEdges = [];
+        const nodeIds = new Set(nodes.map((n) => n.id));
+        nodes.forEach((n) => {
+          const path = n.path || 'unknown';
+          const fileId = `file:${path}`;
+          if (nodeIds.has(fileId)) {
+            pseudoEdges.push({ source: fileId, target: n.id });
+          }
+        });
+        links = pseudoEdges;
+      }
+
+      const filteredLinks = links.filter((l) => nodes.find((n) => n.id === l.source) && nodes.find((n) => n.id === l.target));
       const radius = Math.max(Math.min(width, height) / 2 - 40, 120);
       const centerX = width / 2;
       const centerY = height / 2;
 
       const positions = new Map();
       nodes.forEach((n, i) => {
-        const angle = (2 * Math.PI * i) / nodes.length;
+        const angle = nodes.length ? (2 * Math.PI * i) / nodes.length : 0;
         positions.set(n.id, {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle),
@@ -431,7 +455,7 @@
 
       ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 1;
-      links.forEach((l) => {
+      filteredLinks.forEach((l) => {
         const a = positions.get(l.source);
         const b = positions.get(l.target);
         if (!a || !b) return;
@@ -455,7 +479,7 @@
 
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.font = '12px Space Grotesk, sans-serif';
-      ctx.fillText(`Fallback render • nodes: ${nodes.length} • edges: ${links.length}`, 12, height - 12);
+      ctx.fillText(`Fallback render • nodes: ${nodes.length} • edges: ${filteredLinks.length}`, 12, height - 12);
     }
 
     async function renderGraph() {
@@ -464,76 +488,16 @@
 
       buildGraphData();
 
-      if (!state.graphNodes.length || !state.graphLinks.length) {
-        container.innerHTML = '<div class="empty">No link data available. Add links to code_graph.json or rely on synthetic file edges.</div>';
+      // Ensure we always have nodes to render in canvas mode
+      const hasNodes = (state.graphNodes && state.graphNodes.length) || (state.nodes && state.nodes.length);
+      if (!hasNodes) {
+        container.innerHTML = '<div class="empty">No nodes to render.</div>';
         return;
       }
 
-      if (!window.vis) {
-        const sources = [
-          'vis-network.min.js', // optional local copy in docs/
-          './vis-network.min.js',
-          'https://unpkg.com/vis-network/standalone/umd/vis-network.min.js',
-          'https://cdn.jsdelivr.net/npm/vis-network@9.1.2/standalone/umd/vis-network.min.js',
-          'https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/vis-network.min.js',
-        ];
-
-        let loaded = false;
-        let lastErr = null;
-        for (const src of sources) {
-          try {
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise((resolve, reject) => {
-              const script = document.createElement('script');
-              script.src = src;
-              script.onload = resolve;
-              script.onerror = () => reject(new Error(`Failed to load ${src}`));
-              document.head.appendChild(script);
-            });
-            loaded = true;
-            break;
-          } catch (err) {
-            lastErr = err;
-            console.warn(err);
-          }
-        }
-
-        if (!loaded || !window.vis) {
-          console.warn('Falling back to canvas graph (vis-network unavailable).', lastErr || 'unknown');
-          renderFallbackGraph(container);
-          return;
-        }
-
-        const style = document.createElement('link');
-        style.rel = 'stylesheet';
-        style.href = 'https://unpkg.com/vis-network/styles/vis-network.min.css';
-        document.head.appendChild(style);
-      }
-
-      const nodes = new window.vis.DataSet(
-        state.graphNodes.map((n) => ({ id: n.id, label: n.name, group: n.type }))
-      );
-      const edges = new window.vis.DataSet(
-        state.graphLinks.map((l) => ({ from: l.source, to: l.target, label: l.kind || '' }))
-      );
-
-      const data = { nodes, edges };
-      const options = {
-        nodes: { shape: 'dot', size: 10 },
-        edges: { arrows: 'to', smooth: { type: 'dynamic' } },
-        physics: { stabilization: true },
-        layout: { improvedLayout: true },
-      };
-
-      if (network) {
-        network.destroy();
-      }
-      try {
-        network = new window.vis.Network(container, data, options);
-      } catch (err) {
-        console.error('Graph render failed', err);
-        renderFallbackGraph(container);
-      }
+      // Canvas-only path (simplified, offline-safe)
+      statusEl.textContent = `Render mode: canvas (${state.graphNodes.length} nodes, ${state.graphLinks.length} edges).`;
+      renderFallbackGraph(container);
     }
 
     async function loadGraph() {
@@ -585,6 +549,14 @@
     areaFilter.addEventListener('change', (e) => {
       state.filters.area = e.target.value;
       update();
+    });
+
+    renderModeEl.addEventListener('change', (e) => {
+      state.renderMode = e.target.value || 'auto';
+      // If graph view is active, re-render with the new mode
+      if (document.getElementById('graphContainer').style.display !== 'none') {
+        renderGraph();
+      }
     });
 
     // Toggle buttons
