@@ -130,7 +130,9 @@ def _get_person_for_draft(db_session: Session, draft: DraftReply) -> tuple[Optio
 
 
 def _get_message_text_for_draft(draft: DraftReply) -> tuple[Optional[str], Optional[str]]:
-    message_text = (draft.content or "").strip()
+    from core.draft_content import strip_internal_metadata
+
+    message_text = strip_internal_metadata((draft.content or "")).strip()
     if not message_text:
         return None, "skipped (empty_draft)"
     return message_text, None
@@ -335,10 +337,21 @@ def _test_sends_and_marks_sent() -> bool:
         session.add(person)
         session.commit()
 
+        from core.draft_content import DraftInternalMetadata, append_internal_metadata
+
+        draft_content = append_internal_metadata(
+            "Hello there",
+            DraftInternalMetadata(
+                ai_confidence=95,
+                ai_reasoning="High confidence (test)",
+                context_summary="Some internal context (test)",
+            ),
+        )
+
         draft = DraftReply(
             people_id=person.id,
             conversation_id="conv_123",
-            content="Hello there",
+            content=draft_content,
             status="APPROVED",
         )
         session.add(draft)
@@ -347,6 +360,7 @@ def _test_sends_and_marks_sent() -> bool:
         def fake_send(
             _sm: Any, _person: Person, _text: str, _conv: Optional[str], _lp: str
         ) -> tuple[str, Optional[str]]:
+            assert _text == "Hello there", "Internal metadata must be stripped before send"
             return SEND_SUCCESS_DRY_RUN, "conv_123"
 
         summary = run_send_approved_drafts(
@@ -364,6 +378,7 @@ def _test_sends_and_marks_sent() -> bool:
         out_logs = session.query(ConversationLog).filter(ConversationLog.people_id == person.id).all()
         assert len(out_logs) == 1
         assert out_logs[0].direction == MessageDirectionEnum.OUT
+        assert out_logs[0].latest_message_content == "Hello there"
 
         from core.database import ConversationMetrics
 

@@ -139,8 +139,8 @@ class ApprovalQueueService:
         conversation_id: str,
         content: str,
         ai_confidence: int,
-        _ai_reasoning: Optional[str] = None,  # Reserved for future use
-        _context_summary: Optional[str] = None,  # Reserved for future use
+        _ai_reasoning: Optional[str] = None,
+        _context_summary: Optional[str] = None,
         expiry_hours: int = 72,
     ) -> Optional[int]:
         """
@@ -160,6 +160,7 @@ class ApprovalQueueService:
         """
         try:
             from core.database import DraftReply, Person
+            from core.draft_content import DraftInternalMetadata, append_internal_metadata
 
             # Check if person exists and is contactable
             person = self.db_session.query(Person).filter(Person.id == person_id).first()
@@ -171,6 +172,16 @@ class ApprovalQueueService:
             if hasattr(person, "status") and person.status.value == "DESIST":
                 logger.warning(f"Cannot queue draft: Person {person_id} has DESIST status")
                 return None
+
+            # Embed review-only metadata (no schema migrations).
+            content_with_metadata = append_internal_metadata(
+                content,
+                DraftInternalMetadata(
+                    ai_confidence=ai_confidence,
+                    ai_reasoning=_ai_reasoning,
+                    context_summary=_context_summary,
+                ),
+            )
 
             # Determine priority based on confidence
             priority = self._calculate_priority(ai_confidence, person)
@@ -188,8 +199,8 @@ class ApprovalQueueService:
             )
 
             if existing_pending is not None:
-                if existing_pending.content != content:
-                    existing_pending.content = content
+                if existing_pending.content != content_with_metadata:
+                    existing_pending.content = content_with_metadata
                     self.db_session.add(existing_pending)
                     self.db_session.commit()
                     logger.info(
@@ -207,7 +218,12 @@ class ApprovalQueueService:
 
             # Check for auto-approval
             if self._should_auto_approve(ai_confidence, priority, person):
-                return self._create_auto_approved_draft(person_id, conversation_id, content, ai_confidence)
+                return self._create_auto_approved_draft(
+                    person_id,
+                    conversation_id,
+                    content_with_metadata,
+                    ai_confidence,
+                )
 
             # Calculate expiry time (reserved for future use)
             _expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
@@ -215,7 +231,7 @@ class ApprovalQueueService:
             draft = DraftReply(
                 people_id=person_id,
                 conversation_id=conversation_id,
-                content=content,
+                content=content_with_metadata,
                 status="PENDING",
             )
             self.db_session.add(draft)
@@ -740,6 +756,55 @@ def module_tests() -> bool:
         test_summary="Rejecting a draft marks it REJECTED, updates ConversationState.next_action, and records an engagement event.",
         functions_tested="ApprovalQueueService.reject",
         method_description="In-memory DB: Person + ConversationState + PENDING DraftReply then reject()",
+    )
+
+    # Test 8: Queue embeds review-only metadata (no schema migrations)
+    def test_queue_embeds_internal_metadata() -> None:
+        from core.database import DraftReply, Person
+        from core.draft_content import strip_internal_metadata
+        from testing.test_utilities import create_test_database
+
+        session = create_test_database()
+        try:
+            person = Person(username="Test User", profile_id="PROFILE_QUEUE")
+            session.add(person)
+            session.commit()
+
+            svc = ApprovalQueueService(session)
+            draft_id_1 = svc.queue_for_review(
+                person_id=person.id,
+                conversation_id="conv_meta_1",
+                content="Hello there",
+                ai_confidence=88,
+                _ai_reasoning="Reasoning (test)",
+                _context_summary="Context (test)",
+            )
+            assert draft_id_1 is not None
+
+            stored = session.query(DraftReply).filter(DraftReply.id == draft_id_1).first()
+            assert stored is not None
+            assert "Hello there" in (stored.content or "")
+            assert strip_internal_metadata(stored.content or "") == "Hello there"
+
+            # Updating should re-use the same pending draft row.
+            draft_id_2 = svc.queue_for_review(
+                person_id=person.id,
+                conversation_id="conv_meta_1",
+                content="Hello there",
+                ai_confidence=88,
+                _ai_reasoning="Reasoning updated (test)",
+                _context_summary="Context updated (test)",
+            )
+            assert draft_id_2 == draft_id_1
+        finally:
+            session.close()
+
+    suite.run_test(
+        "Queue embeds internal draft metadata",
+        test_queue_embeds_internal_metadata,
+        test_summary="queue_for_review appends internal metadata into DraftReply.content and remains idempotent for a pending draft.",
+        functions_tested="ApprovalQueueService.queue_for_review",
+        method_description="In-memory DB: create Person, queue draft with _ai_reasoning/_context_summary, assert strip_internal_metadata returns clean message.",
     )
 
     return suite.finish_suite()
