@@ -22,9 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def _nonempty_str(value: Any) -> Optional[str]:
-    if isinstance(value, str):
-        if value:
-            return value
+    if isinstance(value, str) and value:
+        return value
     return None
 
 
@@ -783,10 +782,12 @@ def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
             location: Optional[str] = None,
             max_results: int = 5,
         ) -> Any:
+            _ = (location, max_results)
             self.find_person_calls.append((name, approx_birth_year))
             return _StubSearchResult()
 
         def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:
+            _ = person_b_id
             self.explain_relationship_calls.append(person_a_id)
             return _StubRelResult()
 
@@ -830,13 +831,16 @@ def _test_build_genealogy_skips_when_no_name() -> bool:
             location: Optional[str] = None,
             max_results: int = 5,
         ) -> Any:  # pragma: no cover
+            _ = (self, name, approx_birth_year, location, max_results)
             raise AssertionError("find_person should not be called")
 
         def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+            _ = person_b_id
             self.explain_relationship_calls.append(person_a_id)
             raise AssertionError("explain_relationship should not be called")
 
         def get_common_ancestors(self, person_id: str) -> list[dict[str, Any]]:  # pragma: no cover
+            _ = (self, person_id)
             raise AssertionError("get_common_ancestors should not be called")
 
     class _StubPerson:
@@ -864,12 +868,15 @@ def _test_build_genealogy_includes_ancestry_tree_fields() -> bool:
             location: Optional[str] = None,
             max_results: int = 5,
         ) -> Any:  # pragma: no cover
+            _ = (self, name, approx_birth_year, location, max_results)
             raise AssertionError("find_person should not be called")
 
         def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+            _ = (self, person_a_id, person_b_id)
             raise AssertionError("explain_relationship should not be called")
 
         def get_common_ancestors(self, person_id: str) -> list[dict[str, Any]]:  # pragma: no cover
+            _ = (self, person_id)
             raise AssertionError("get_common_ancestors should not be called")
 
     class _StubFamilyTree:
