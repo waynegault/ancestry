@@ -14,6 +14,7 @@ This action:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -33,6 +34,7 @@ from core.database import (
     Person,
     PersonStatusEnum,
 )
+from core.logging_utils import log_final_summary
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner, create_test_database
@@ -297,22 +299,27 @@ def send_approved_drafts(session_manager: Any, *_: Any) -> bool:
             logger.error("Database session unavailable")
             return False
 
+        start_time = time.time()
         summary = run_send_approved_drafts(
             db_session=db_session,
             session_manager=session_manager,
             max_to_send=max_send_per_run if max_send_per_run > 0 else None,
             include_auto_approved=include_auto,
         )
+        duration_sec = time.time() - start_time
 
-    logger.info(
-        "Approved draft send run complete: attempted=%s sent=%s skipped=%s errors=%s",
-        summary.attempted,
-        summary.sent,
-        summary.skipped,
-        summary.errors,
+    log_final_summary(
+        summary_dict={
+            "App Mode": app_mode,
+            "Include AUTO_APPROVED": include_auto,
+            "Drafts Attempted": summary.attempted,
+            "Drafts Sent": summary.sent,
+            "Drafts Skipped": summary.skipped,
+            "Errors": summary.errors,
+            "Skip Reasons": (summary.skip_reasons or {}),
+        },
+        run_time_seconds=float(duration_sec),
     )
-    if summary.skip_reasons:
-        logger.debug("Skip reasons: %s", summary.skip_reasons)
 
     return True
 

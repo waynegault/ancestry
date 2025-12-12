@@ -44,17 +44,19 @@ def build_internal_metadata_block(
     The block is delimited by stable markers so it can be stripped reliably.
     """
 
-    lines: list[str] = []
+    reasoning = _sanitize_field(metadata.ai_reasoning, max_len=max_reasoning_len)
+    context = _sanitize_field(metadata.context_summary, max_len=max_context_len)
+    if reasoning is None and context is None:
+        return ""
 
+    lines: list[str] = []
     if metadata.ai_confidence is not None:
         lines.append(f"ai_confidence: {int(metadata.ai_confidence)}")
 
-    reasoning = _sanitize_field(metadata.ai_reasoning, max_len=max_reasoning_len)
     if reasoning is not None:
         lines.append("ai_reasoning:")
         lines.append(reasoning)
 
-    context = _sanitize_field(metadata.context_summary, max_len=max_context_len)
     if context is not None:
         lines.append("context_summary:")
         lines.append(context)

@@ -68,7 +68,7 @@ from core.error_handling import (
 )
 
 # === ACTION 7 IMPORTS ===
-from core.logging_utils import log_action_banner
+from core.logging_utils import log_action_banner, log_final_summary
 from core.session_manager import SessionManager
 from genealogy.research_service import ResearchService
 from messaging import build_safe_column_value
@@ -161,6 +161,9 @@ class InboxProcessor:
             "person_updates": 0,
             "critical_alerts": 0,  # Phase 2: Track critical alerts
             "high_value_discoveries": 0,  # Phase 2: Track high-value items
+            "opt_outs_detected": 0,
+            "human_review_flagged": 0,
+            "drafts_queued": 0,
             "errors": 0,
             "start_time": None,
             "end_time": None,
@@ -1184,28 +1187,10 @@ class InboxProcessor:
         end_time = self.stats.get("end_time") or datetime.now(timezone.utc)
         total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
 
-        # Step 1: Print header
-        print("")  # Blank line before summary
-        logger.info("-" * 35)
-        logger.info("Final summary")
-        logger.info("-" * 35)
-
         # Mark unused parameters to satisfy linter without changing signature
         _ = new_logs
 
-        # Step 2: Log key metrics
-        logger.info(f"API Conversations Fetched:    {total_api_items}")
-        logger.info(f"Conversations Processed:      {items_processed}")
-        logger.info(f"AI Classifications Attempted:  {ai_classified}")
-        logger.info(f"AI Engagement Assessments:     {engagement_assessments}")
-        logger.info(f"Person Status Updates Made:   {status_updates}")
-
-        # Step 2.5: Log session health metrics if any occurred
-        if session_deaths > 0 or session_recoveries > 0:
-            logger.info(f"Session Deaths:               {session_deaths}")
-            logger.info(f"Session Recoveries:           {session_recoveries}")
-
-        # Step 3: Log stopping reason
+        # Determine stopping reason
         final_reason = stop_reason
         if not stop_reason:
             # Infer reason if not explicitly set
@@ -1213,13 +1198,24 @@ class InboxProcessor:
                 final_reason = "End of Inbox Reached or Comparator Match"
             else:
                 final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
-        logger.info(f"Stopped Due To:    {final_reason}")
 
-        # Step 4: Log run time in consistent format
-        hours = int(total_run_time // 3600)
-        minutes = int((total_run_time % 3600) // 60)
-        seconds = total_run_time % 60
-        logger.info(f"Total Run Time: {hours} hr {minutes} min {seconds:.2f} sec")
+        summary_dict: dict[str, Any] = {
+            "API Conversations Fetched": total_api_items,
+            "Conversations Processed": items_processed,
+            "AI Classifications Attempted": ai_classified,
+            "AI Engagement Assessments": engagement_assessments,
+            "Person Status Updates Made": status_updates,
+            "Drafts Queued": int(self.stats.get("drafts_queued", 0) or 0),
+            "Opt-Outs Detected": int(self.stats.get("opt_outs_detected", 0) or 0),
+            "Human Review Flags": int(self.stats.get("human_review_flagged", 0) or 0),
+            "Stopped Due To": final_reason,
+        }
+
+        if session_deaths > 0 or session_recoveries > 0:
+            summary_dict["Session Recoveries"] = session_recoveries
+            summary_dict["Session Deaths"] = session_deaths
+
+        log_final_summary(summary_dict=summary_dict, run_time_seconds=float(total_run_time))
 
         # Print rate limiter metrics if available
         if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
@@ -2082,7 +2078,7 @@ class InboxProcessor:
         }
 
     @staticmethod
-    def _save_draft_reply(session: DbSession, profile_id: str, conversation_id: str, content: str) -> None:
+    def _save_draft_reply(session: DbSession, profile_id: str, conversation_id: str, content: str) -> bool:
         """
         Saves a generated reply as a draft for human review.
         """
@@ -2098,7 +2094,7 @@ class InboxProcessor:
 
             if not person:
                 logger.warning(f"Could not resolve person for draft reply. Profile ID: {profile_id}")
-                return
+                return False
 
             # Route through the unified approval queue to ensure de-duplication and consistent policy.
             # Inbound-generated replies are intentionally not high-confidence to avoid auto-approval.
@@ -2112,12 +2108,15 @@ class InboxProcessor:
 
             if draft_id is not None:
                 logger.info(f"Queued draft reply {draft_id} for conversation {conversation_id}")
+                return True
             else:
                 logger.info(f"Draft reply not queued (auto-approved or blocked) for conversation {conversation_id}")
+                return False
 
         except Exception as e:
             logger.error(f"Failed to save draft reply: {e}")
             session.rollback()
+            return False
 
     def _extract_follow_up_requirements(
         self,
@@ -3055,7 +3054,14 @@ class InboxProcessor:
         safety_result: Optional[SafetyCheckResult] = result.get("safety_result")
 
         if generated_reply:
-            self._save_draft_reply(session, profile_id, api_conv_id, generated_reply)
+            if self._save_draft_reply(session, profile_id, api_conv_id, generated_reply):
+                self.stats["drafts_queued"] = self.stats.get("drafts_queued", 0) + 1
+
+        if safety_result and isinstance(safety_result, SafetyCheckResult):
+            if safety_result.status == SafetyStatus.OPT_OUT:
+                self.stats["opt_outs_detected"] = self.stats.get("opt_outs_detected", 0) + 1
+            elif safety_result.status in {SafetyStatus.UNSAFE, SafetyStatus.NEEDS_REVIEW, SafetyStatus.CRITICAL_ALERT}:
+                self.stats["human_review_flagged"] = self.stats.get("human_review_flagged", 0) + 1
 
         if ai_sentiment_result:
             ai_classified_count += 1
@@ -4183,7 +4189,8 @@ def _test_save_draft_reply() -> None:
         # Test saving draft
         conv_id = "TEST_CONV_DRAFT"
         content = "This is a draft reply."
-        processor._save_draft_reply(session, test_profile_id, conv_id, content)
+        queued = processor._save_draft_reply(session, test_profile_id, conv_id, content)
+        assert queued is True
 
         # Verify
         draft = session.query(DraftReply).filter_by(conversation_id=conv_id).first()
