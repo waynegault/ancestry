@@ -10,11 +10,11 @@
 
 ### 1) Person-Level Automation Toggle (Outbound Guard Rail)
 
-- [ ] Add `Person.automation_enabled` boolean column (default True for backward compatibility).
+- [x] Add `Person.automation_enabled` boolean column (default True for backward compatibility).
   - Files: `core/database.py`, `core/database_manager.py`
-- [ ] Enforce the toggle in Action 8 send gating (skip sends when disabled; still allow draft generation/queue).
+- [x] Enforce the toggle in Action 8 send gating (skip sends when disabled; still allow draft generation/queue).
   - Files: `actions/action8_messaging.py`
-- [ ] Add a focused unit test proving disabled automation prevents sends.
+- [x] Add a focused unit test proving disabled automation prevents sends.
   - Files: `actions/action8_messaging.py` (embedded `TestSuite`)
 
 #### Acceptance Criteria (Automation Toggle)
@@ -25,17 +25,17 @@
 
 ### 2) Semantic Search (Tree-Aware Q&A) — Spec → Implementation
 
-- [ ] Finalize spec wording and keep link in README.
+- [x] Finalize spec wording and keep link in README.
   - Files: `docs/specs/semantic_search.md`, `readme.md`
-- [ ] Implement a reusable service layer for tree-aware Q&A:
+- [x] Implement a reusable service layer for tree-aware Q&A:
   - Parse query → intent/entities
   - Tree-first candidate retrieval (via `TreeQueryService`)
   - Evidence assembly + safe answer drafting
   - Output a structured result object (JSON-serializable)
   - Suggested location: `genealogy/semantic_search.py` or `research/semantic_search.py`
-- [ ] Wire Action 7 to call semantic search for inbound questions (PRODUCTIVE only), storing results for review.
+- [x] Wire Action 7 to call semantic search for inbound questions (PRODUCTIVE only), storing results for review.
   - Files: `actions/action7_inbox.py`, `messaging/inbound.py` (or wherever InboundOrchestrator lives)
-- [ ] Add tests for:
+- [x] Add tests for:
   - parse failure → clarification
   - ambiguity → clarification questions
   - candidate retrieval ranking stability for synthetic input
@@ -48,9 +48,9 @@
 
 ### 3) Review/Approval Queue (HITL) Hardening
 
-- [ ] Decide: implement `MessageApproval/SystemControl` tables vs extending `DraftReply`.
-- [ ] Route Action 8 contextual drafts through the chosen approval queue abstraction.
-- [ ] Provide minimal CLI surface to list/approve/reject queued drafts.
+- [x] Decide: implement `MessageApproval/SystemControl` tables vs extending `DraftReply`.
+- [x] Route Action 8 contextual drafts through the chosen approval queue abstraction.
+- [x] Provide minimal CLI surface to list/approve/reject queued drafts.
   - Files: `cli/maintenance.py` or `core/maintenance_actions.py` (depending on existing patterns)
 
 #### Acceptance Criteria (Approval Queue)
@@ -60,8 +60,8 @@
 
 ### 4) Inbound Fact Validation Consistency
 
-- [ ] Apply `FactValidator`/`DataConflict` staging to Action 7 inbound fact harvests (not just Action 9).
-- [ ] Surface inbound conflicts/pending facts in the review workflow.
+- [x] Apply `FactValidator`/`DataConflict` staging to Action 7 inbound fact harvests (not just Action 9).
+- [x] Surface inbound conflicts/pending facts in the review workflow.
 
 #### Acceptance Criteria (Inbound Validation)
 
@@ -69,8 +69,8 @@
 
 ### 5) Observability (Minimal, No External Hard Dependencies in Tests)
 
-- [ ] Emit counters for: drafts queued, sends blocked (opt-out/safety/automation), validation conflicts.
-- [ ] Ensure automated tests do not require live Prometheus/Grafana.
+- [x] Emit counters for: drafts queued, sends blocked (opt-out/safety/automation), validation conflicts.
+- [x] Ensure automated tests do not require live Prometheus/Grafana.
 
 #### Acceptance Criteria (Observability)
 

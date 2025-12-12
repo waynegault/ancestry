@@ -131,6 +131,8 @@ class SemanticSearchService:
         "are ",
     )
 
+    _AMBIGUOUS_SCORE_GAP = 10
+
     def should_run(self, message_text: str) -> bool:
         text = (message_text or "").strip()
         if not text:
@@ -437,6 +439,32 @@ class SemanticSearchService:
             ]
             return
 
+        if SemanticSearchService._is_ambiguous_candidates(matches):
+            first_two = matches[:2]
+
+            def _candidate_summary(candidate: CandidatePerson) -> str:
+                details: list[str] = []
+                if candidate.birth_year:
+                    details.append(f"b. {candidate.birth_year}")
+                if candidate.birth_place:
+                    details.append(f"in {candidate.birth_place}")
+                return f"{candidate.name} ({', '.join(details)})" if details else candidate.name
+
+            result.intent = SemanticSearchIntent.CLARIFICATION_NEEDED
+            result.answer_draft = (
+                f"I found a couple possible matches for {first.name} in my tree: "
+                f"1) {_candidate_summary(first_two[0])} "
+                f"2) {_candidate_summary(first_two[1])}. "
+                "Do you know an exact birth year/place, or a spouse/parent name, so I can confirm the right one?"
+            )
+            result.confidence = 35
+            result.missing_information = [
+                "Exact birth year",
+                "Birth place (county/state)",
+                "Spouse/parent names",
+            ]
+            return
+
         top = matches[0]
         line = f"I may have {first.name} in my tree as {top.name}"
         details: list[str] = []
@@ -454,6 +482,18 @@ class SemanticSearchService:
             line += " If you can share an approximate birth year or place, I can confirm."
 
         result.answer_draft = line
+
+    @staticmethod
+    def _is_ambiguous_candidates(matches: list[CandidatePerson]) -> bool:
+        if len(matches) < 2:
+            return False
+
+        top, second = matches[0], matches[1]
+
+        if top.match_score is None or second.match_score is None:
+            return True
+
+        return abs(top.match_score - second.match_score) <= SemanticSearchService._AMBIGUOUS_SCORE_GAP
 
 
 # -----------------------------------------------------------------------------
@@ -546,6 +586,56 @@ def module_tests() -> bool:
         test_summary="Returns top candidates and parses alt scores safely",
         functions_tested="SemanticSearchService._lookup_person, SemanticSearchService.search",
         method_description="Stub tree query to validate ranking and score parsing",
+    )
+
+    def test_ambiguity_produces_clarification() -> None:
+        class StubTreeQueryService:
+            @staticmethod
+            def find_person(
+                name: str,
+                *,
+                approx_birth_year: Optional[int] = None,
+                location: Optional[str] = None,
+                max_results: int = 5,
+            ) -> PersonSearchResult:
+                _ = (name, approx_birth_year, location, max_results)
+                return PersonSearchResult(
+                    found=True,
+                    person_id="P1",
+                    name="Mary Smith",
+                    birth_year=1900,
+                    birth_place="Ohio",
+                    confidence="medium",
+                    match_score=80,
+                    alternatives=[
+                        {
+                            "id": "P2",
+                            "name": "Mary Smith (alt)",
+                            "birth_year": 1901,
+                            "birth_place": "Ohio",
+                            "total_score": "72",
+                        }
+                    ],
+                )
+
+        svc = SemanticSearchService()
+        res = svc.search(
+            "Do you have Mary Smith in your tree?",
+            tree_query_service=cast(TreeQueryService, StubTreeQueryService()),
+            max_candidates=2,
+        )
+
+        assert res.intent == SemanticSearchIntent.CLARIFICATION_NEEDED
+        assert res.missing_information
+        assert "Spouse/parent names" in res.missing_information
+        assert "possible matches" in res.answer_draft
+
+    suite.run_test(
+        "ambiguity prompts clarification",
+        test_ambiguity_produces_clarification,
+        test_summary="Close candidates trigger clarification questions",
+        functions_tested="SemanticSearchService._compose_person_lookup_answer",
+        method_description="When candidate scores are close, fail closed and ask for disambiguating details",
     )
 
     return suite.finish_suite()
