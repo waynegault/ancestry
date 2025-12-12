@@ -346,7 +346,7 @@ class DraftReply(Base):
         String,
         default="PENDING",
         index=True,
-        comment="Status: PENDING, SENT, DISCARDED.",
+        comment="Status: PENDING, APPROVED, AUTO_APPROVED, REJECTED, EXPIRED, SENT (legacy: DISCARDED).",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

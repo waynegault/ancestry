@@ -309,7 +309,7 @@ class ApprovalQueueService:
                     content=draft.content,
                     ai_confidence=80,  # Default; would come from draft if stored
                     priority=ReviewPriority.NORMAL,
-                    status=ApprovalStatus(draft.status),
+                    status=self._parse_draft_status(draft.status),
                     created_at=draft.created_at,
                 )
                 results.append(queued)
@@ -319,6 +319,17 @@ class ApprovalQueueService:
         except SQLAlchemyError as e:
             logger.error(f"Failed to get pending queue: {e}")
             return []
+
+    @staticmethod
+    def _parse_draft_status(status: str) -> ApprovalStatus:
+        """Parse DraftReply.status into ApprovalStatus with backward compatibility."""
+        if status == "DISCARDED":
+            return ApprovalStatus.REJECTED
+        try:
+            return ApprovalStatus(status)
+        except Exception:
+            logger.debug("Unknown DraftReply status '%s'; defaulting to PENDING", status)
+            return ApprovalStatus.PENDING
 
     def approve(
         self, draft_id: int, reviewer: str = "operator", edited_content: Optional[str] = None
@@ -412,7 +423,7 @@ class ApprovalQueueService:
                     message=f"Draft {draft_id} is not pending (status: {draft.status})",
                 )
 
-            draft.status = "DISCARDED"
+            draft.status = "REJECTED"
             self.db_session.commit()
 
             logger.info(f"Draft {draft_id} rejected by {reviewer}: {reason}")
@@ -471,7 +482,7 @@ class ApprovalQueueService:
                 self.db_session.query(func.count(DraftReply.id))
                 .filter(
                     and_(
-                        DraftReply.status == "DISCARDED",
+                        DraftReply.status.in_(["REJECTED", "DISCARDED"]),
                         DraftReply.created_at >= today_start,
                     )
                 )
