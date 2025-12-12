@@ -41,7 +41,7 @@ from testing.test_framework import TestSuite, create_standard_test_runner
 class GrafanaCheckerProtocol(Protocol):
     """Protocol describing the optional grafana checker helpers."""
 
-    def ensure_dashboards_imported(self) -> None: ...
+    def ensure_dashboards_imported(self, force: bool = False) -> bool: ...
 
     def ensure_data_sources_configured(
         self, prometheus_url: str | None = None, sqlite_path: str | None = None
@@ -516,17 +516,28 @@ class AnalyticsMixin:
         if self._grafana_checker:
             status = self._grafana_checker.check_grafana_status()
             if status["ready"]:
-                grafana_url = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+                grafana_url = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
                 grafana_user = os.getenv("GRAFANA_USER", "admin")
                 grafana_pass = os.getenv("GRAFANA_PASSWORD", "admin")
+                grafana_token_set = bool(os.getenv("GRAFANA_API_TOKEN"))
 
-                print("\n✅ Grafana is already fully configured and running!")
+                print("\n✅ Grafana is running!")
                 print(f"   Dashboard URL: {grafana_url}")
-                print(f"   Default credentials: {grafana_user} / {grafana_pass}")
+                if grafana_token_set:
+                    print("   API auth: GRAFANA_API_TOKEN is set")
+                else:
+                    print(f"   Credentials: {grafana_user} / {grafana_pass}")
                 print("\n📊 Checking dashboards...")
-                self._grafana_checker.ensure_data_sources_configured()
-                self._grafana_checker.ensure_dashboards_imported()
-                print("\n✅ Dashboard and data source checks complete!")
+                data_sources_ok = self._grafana_checker.ensure_data_sources_configured()
+                dashboards_ok = self._grafana_checker.ensure_dashboards_imported()
+
+                if data_sources_ok and dashboards_ok:
+                    print("\n✅ Dashboard and data source checks complete!")
+                else:
+                    print("\n⚠️  Dashboard/data source setup could not be verified.")
+                    print(
+                        "   💡 Set GRAFANA_USER/GRAFANA_PASSWORD or GRAFANA_API_TOKEN so the app can access the Grafana HTTP API."
+                    )
                 print("\n📊 Available Dashboards:")
                 print(f"   • Overview:    {grafana_url}/d/ancestry-overview")
                 print(f"   • Performance: {grafana_url}/d/ancestry-performance")

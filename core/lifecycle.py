@@ -524,7 +524,7 @@ def _check_grafana_status(grafana_checker: Any) -> None:
     if not grafana_checker:
         return
 
-    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
 
     try:
         grafana_status = grafana_checker.check_grafana_status()

@@ -14,6 +14,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
+# Allow running this module directly (python observability/metrics_exporter.py)
+# by ensuring the repository root is on sys.path.
+if __package__ in {None, ""}:
+    _repo_root = Path(__file__).resolve().parents[1]
+    if str(_repo_root) not in sys.path:
+        sys.path.insert(0, str(_repo_root))
+
 import requests
 
 if TYPE_CHECKING:

@@ -34,11 +34,36 @@ SETUP_SCRIPT = PROJECT_ROOT / "docs" / "grafana" / "setup_grafana.ps1"
 
 
 def _grafana_base() -> str:
-    return os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+    return os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
 
 
 def _grafana_auth() -> tuple[str, str]:
     return os.getenv("GRAFANA_USER", "admin"), os.getenv("GRAFANA_PASSWORD", "admin")
+
+
+def _grafana_api_auth_headers() -> dict[str, str]:
+    """Return auth headers for Grafana HTTP API.
+
+    Supports either basic auth (GRAFANA_USER/GRAFANA_PASSWORD) or a bearer token
+    (GRAFANA_API_TOKEN).
+    """
+
+    token = os.getenv("GRAFANA_API_TOKEN")
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+
+    import base64
+
+    grafana_user, grafana_pass = _grafana_auth()
+    base64_auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode("ascii")).decode("ascii")
+    return {"Authorization": f"Basic {base64_auth}"}
+
+
+def _log_grafana_auth_failure(grafana_base: str) -> None:
+    logger.warning(
+        "Grafana API auth failed for %s. Set GRAFANA_USER/GRAFANA_PASSWORD or GRAFANA_API_TOKEN.",
+        grafana_base,
+    )
 
 
 def is_grafana_installed() -> bool:
@@ -224,7 +249,7 @@ def get_status_message() -> str:
     """
     status = check_grafana_status()
 
-    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
 
     if status["ready"]:
         return f"✅ Grafana Ready ({grafana_base})"
@@ -235,124 +260,57 @@ def get_status_message() -> str:
     return "❌ Grafana Not Installed (run setup)"
 
 
-def ensure_dashboards_imported(force: bool = False) -> bool:
-    """
-    Check if dashboards are imported and import them if missing or forced
-    Returns True if all dashboards are present or successfully imported
-    """
-    if not is_grafana_running():
-        logger.debug("Grafana not running, skipping dashboard check")
-        return False
-
-    dashboards_dir = PROJECT_ROOT / "docs" / "grafana"
-    required_dashboards = [
-        ("ancestry-overview", "ancestry_overview.json"),
-        ("ancestry-performance", "system_performance.json"),
-        ("ancestry-genealogy", "genealogy_insights.json"),
-        ("ancestry-code-quality", "code_quality.json"),
-    ]
-
-    import base64
-
-    grafana_base = _grafana_base()
-    grafana_user, grafana_pass = _grafana_auth()
-
-    # Check and import each dashboard
-    base64_auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode("ascii")).decode("ascii")
-    headers = {
-        "Authorization": f"Basic {base64_auth}",
-        "Content-Type": "application/json",
-    }
-
-    imported_count = 0
-    for uid, filename in required_dashboards:
-        should_import = force
-        if not should_import:
-            try:
-                # Check if dashboard exists
-                check_req = urllib.request.Request(f"{grafana_base}/api/dashboards/uid/{uid}", headers=headers)
-                urllib.request.urlopen(check_req, timeout=2)
-                logger.debug(f"Dashboard {uid} already exists")
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    should_import = True
-                else:
-                    logger.debug(f"Error checking dashboard {uid}: {e}")
-
-        if should_import:
-            # Dashboard missing or forced update, try to import
-            logger.info(f"Importing dashboard: {filename}")
-            dashboard_path = dashboards_dir / filename
-            if not dashboard_path.exists():
-                logger.warning(f"Dashboard file not found: {dashboard_path}")
-                continue
-
-            try:
-                with dashboard_path.open(encoding="utf-8") as f:
-                    dashboard_json = json.load(f)
-
-                import_payload = {
-                    "dashboard": dashboard_json,
-                    "overwrite": True,
-                    "inputs": [
-                        {
-                            "name": "DS_PROMETHEUS",
-                            "type": "datasource",
-                            "pluginId": "prometheus",
-                            "value": "Prometheus",
-                        },
-                        {
-                            "name": "DS_SQLITE",
-                            "type": "datasource",
-                            "pluginId": "frser-sqlite-datasource",
-                            "value": "SQLite",
-                        },
-                    ],
-                }
-
-                import_req = urllib.request.Request(
-                    f"{grafana_base}/api/dashboards/import",
-                    data=json.dumps(import_payload).encode("utf-8"),
-                    headers=headers,
-                    method="POST",
-                )
-                urllib.request.urlopen(import_req, timeout=5)
-                logger.info(f"✓ Successfully imported {filename}")
-                imported_count += 1
-            except Exception as import_error:
-                logger.warning(f"Failed to import {filename}: {import_error}")
-
-    if imported_count > 0:
-        logger.info(f"Imported {imported_count} dashboard(s)")
-
-    return True
-
-
-def _upsert_datasource(grafana_base: str, auth: tuple[str, str], payload: Mapping[str, object]) -> bool:
+def _upsert_datasource(grafana_base: str, payload: Mapping[str, object]) -> bool:
     payload_dict = dict(payload)
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json", **_grafana_api_auth_headers()}
     session = requests.Session()
     try:
-        existing = session.get(f"{grafana_base}/api/datasources/name/{payload_dict['name']}", auth=auth, timeout=5)
+        existing = session.get(
+            f"{grafana_base}/api/datasources/name/{payload_dict['name']}",
+            headers=headers,
+            timeout=5,
+        )
+        if existing.status_code in {401, 403}:
+            _log_grafana_auth_failure(grafana_base)
+            return False
         if existing.status_code == 200:
             ds_id = existing.json().get("id")
             if ds_id:
-                session.put(
+                updated = session.put(
                     f"{grafana_base}/api/datasources/{ds_id}",
-                    auth=auth,
                     headers=headers,
                     data=json.dumps(payload_dict),
                     timeout=5,
                 )
-                return True
-        session.post(
+                if updated.status_code in {401, 403}:
+                    _log_grafana_auth_failure(grafana_base)
+                    return False
+                if updated.status_code in {200, 201}:
+                    return True
+                logger.debug("Grafana data source update failed (%s): %s", updated.status_code, updated.text)
+                return False
+
+        if existing.status_code not in {404, 200}:
+            logger.debug(
+                "Grafana data source lookup failed (%s): %s",
+                existing.status_code,
+                existing.text,
+            )
+            return False
+
+        created = session.post(
             f"{grafana_base}/api/datasources",
-            auth=auth,
             headers=headers,
             data=json.dumps(payload_dict),
             timeout=5,
         )
-        return True
+        if created.status_code in {401, 403}:
+            _log_grafana_auth_failure(grafana_base)
+            return False
+        if created.status_code in {200, 201, 409}:
+            return True
+        logger.debug("Grafana data source create failed (%s): %s", created.status_code, created.text)
+        return False
     except Exception as exc:
         logger.debug("Data source upsert failed: %s", exc)
         return False
@@ -369,7 +327,6 @@ def ensure_data_sources_configured(
         return False
 
     grafana_base = _grafana_base()
-    grafana_auth = _grafana_auth()
 
     prom_url = prometheus_url or os.getenv("GRAFANA_PROM_URL") or os.getenv("PROMETHEUS_URL", "http://localhost:9091")
     sqlite_db = sqlite_path or os.getenv("GRAFANA_SQLITE_PATH") or str(PROJECT_ROOT / "Data" / "ancestry.db")
@@ -384,7 +341,7 @@ def ensure_data_sources_configured(
         "basicAuth": False,
         "isDefault": True,
     }
-    if not _upsert_datasource(grafana_base, grafana_auth, prom_payload):
+    if not _upsert_datasource(grafana_base, prom_payload):
         success = False
 
     if Path(sqlite_db).exists():
@@ -396,10 +353,144 @@ def ensure_data_sources_configured(
             "basicAuth": False,
             "jsonData": {"database": sqlite_db},
         }
-        if not _upsert_datasource(grafana_base, grafana_auth, sqlite_payload):
+        if not _upsert_datasource(grafana_base, sqlite_payload):
             success = False
     else:
         logger.debug("SQLite database not found at %s; skipping SQLite data source", sqlite_db)
+
+    return success
+
+
+def _dashboard_should_import(
+    *,
+    grafana_base: str,
+    headers: Mapping[str, str],
+    uid: str,
+    force: bool,
+) -> tuple[bool, bool]:
+    if force:
+        return True, True
+
+    try:
+        check_req = urllib.request.Request(f"{grafana_base}/api/dashboards/uid/{uid}", headers=dict(headers))
+        urllib.request.urlopen(check_req, timeout=2)
+        logger.debug("Dashboard %s already exists", uid)
+        return False, True
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return True, True
+        if e.code in {401, 403}:
+            _log_grafana_auth_failure(grafana_base)
+            return False, False
+        logger.debug("Error checking dashboard %s: %s", uid, e)
+        return False, False
+    except Exception as e:
+        logger.debug("Error checking dashboard %s: %s", uid, e)
+        return False, False
+
+
+def _import_dashboard(
+    *,
+    grafana_base: str,
+    headers: Mapping[str, str],
+    dashboards_dir: Path,
+    filename: str,
+) -> bool:
+    logger.info("Importing dashboard: %s", filename)
+    dashboard_path = dashboards_dir / filename
+    if not dashboard_path.exists():
+        logger.warning("Dashboard file not found: %s", dashboard_path)
+        return False
+
+    try:
+        with dashboard_path.open(encoding="utf-8") as f:
+            dashboard_json = json.load(f)
+
+        import_payload = {
+            "dashboard": dashboard_json,
+            "overwrite": True,
+            "inputs": [
+                {
+                    "name": "DS_PROMETHEUS",
+                    "type": "datasource",
+                    "pluginId": "prometheus",
+                    "value": "Prometheus",
+                },
+                {
+                    "name": "DS_SQLITE",
+                    "type": "datasource",
+                    "pluginId": "frser-sqlite-datasource",
+                    "value": "SQLite",
+                },
+            ],
+        }
+
+        import_req = urllib.request.Request(
+            f"{grafana_base}/api/dashboards/import",
+            data=json.dumps(import_payload).encode("utf-8"),
+            headers=dict(headers),
+            method="POST",
+        )
+        urllib.request.urlopen(import_req, timeout=5)
+        logger.info("✓ Successfully imported %s", filename)
+        return True
+    except urllib.error.HTTPError as import_error:
+        if import_error.code in {401, 403}:
+            _log_grafana_auth_failure(grafana_base)
+        logger.warning("Failed to import %s: %s", filename, import_error)
+        return False
+    except Exception as import_error:
+        logger.warning("Failed to import %s: %s", filename, import_error)
+        return False
+
+
+def ensure_dashboards_imported(force: bool = False) -> bool:
+    """Check if dashboards are imported and import them if missing or forced.
+
+    Returns True if all dashboards are present or successfully imported.
+    """
+    if not is_grafana_running():
+        logger.debug("Grafana not running, skipping dashboard check")
+        return False
+
+    dashboards_dir = PROJECT_ROOT / "docs" / "grafana"
+    required_dashboards = [
+        ("ancestry-overview", "ancestry_overview.json"),
+        ("ancestry-performance", "system_performance.json"),
+        ("ancestry-genealogy", "genealogy_insights.json"),
+        ("ancestry-code-quality", "code_quality.json"),
+    ]
+
+    grafana_base = _grafana_base()
+    headers = {
+        **_grafana_api_auth_headers(),
+        "Content-Type": "application/json",
+    }
+
+    success = True
+    imported_count = 0
+    for uid, filename in required_dashboards:
+        should_import, check_ok = _dashboard_should_import(
+            grafana_base=grafana_base,
+            headers=headers,
+            uid=uid,
+            force=force,
+        )
+        if not check_ok:
+            success = False
+
+        if should_import and _import_dashboard(
+            grafana_base=grafana_base,
+            headers=headers,
+            dashboards_dir=dashboards_dir,
+            filename=filename,
+        ):
+            imported_count += 1
+        elif should_import:
+            success = False
+
+    if imported_count > 0:
+        logger.info("Imported %s dashboard(s)", imported_count)
 
     return success
 
@@ -459,7 +550,7 @@ def _test_get_status_message_variants() -> None:
         "ready": False,
     }
 
-    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3300")
+    grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
 
     cases = [
         (ready_status, f"✅ Grafana Ready ({grafana_base})"),
@@ -471,6 +562,34 @@ def _test_get_status_message_variants() -> None:
     for provided_status, expected in cases:
         with mock.patch(f"{__name__}.check_grafana_status", return_value=provided_status):
             assert get_status_message() == expected
+
+
+def _test_upsert_datasource_fails_on_auth_error() -> None:
+    fake_session = mock.Mock()
+    fake_response = mock.Mock(status_code=401, text="Invalid username or password")
+    fake_session.get.return_value = fake_response
+
+    with mock.patch(f"{__name__}.requests.Session", return_value=fake_session):
+        assert _upsert_datasource("http://localhost:3000", {"name": "Prometheus"}) is False
+
+
+def _test_ensure_dashboards_imported_fails_on_auth_error() -> None:
+    from email.message import Message
+
+    auth_error = urllib.error.HTTPError(
+        url="http://localhost:3000/api/dashboards/uid/ancestry-overview",
+        code=401,
+        msg="Unauthorized",
+        hdrs=Message(),
+        fp=None,
+    )
+
+    with (
+        mock.patch(f"{__name__}.is_grafana_running", return_value=True),
+        mock.patch(f"{__name__}._grafana_base", return_value="http://localhost:3000"),
+        mock.patch(f"{__name__}.urllib.request.urlopen", side_effect=auth_error),
+    ):
+        assert ensure_dashboards_imported(force=False) is False
 
 
 def _test_ensure_grafana_ready_runs_setup_when_needed() -> None:
@@ -534,6 +653,18 @@ def grafana_checker_module_tests() -> bool:
         "Status message variants",
         _test_get_status_message_variants,
         "Confirms get_status_message returns the correct text for each state.",
+    )
+
+    suite.run_test(
+        "Datasource upsert fails on auth error",
+        _test_upsert_datasource_fails_on_auth_error,
+        "Ensures Grafana API datasource configuration returns False on 401/403 instead of reporting success.",
+    )
+
+    suite.run_test(
+        "Dashboard import fails on auth error",
+        _test_ensure_dashboards_imported_fails_on_auth_error,
+        "Ensures dashboard checks return False on 401/403 so the CLI can prompt for credentials/token.",
     )
 
     suite.run_test(
