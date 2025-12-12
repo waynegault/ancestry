@@ -22,6 +22,7 @@ from core.database import (
     ConversationState,
     ConversationStatusEnum,
     Person,
+    SuggestedFact,
 )
 from messaging.inbound import InboundOrchestrator
 from messaging.safety import SafetyCheckResult, SafetyStatus
@@ -66,6 +67,9 @@ class TestInboundOrchestrator(unittest.TestCase):
         mock_person = MagicMock()
         mock_person.id = 123
         mock_person.profile_id = 'sender1'
+        mock_person.display_name = 'Sender One'
+        mock_person.birth_year = None
+        mock_person.death_year = None
 
         mock_state = MagicMock(spec=ConversationState)
         mock_metrics = MagicMock(spec=ConversationMetrics)
@@ -80,6 +84,8 @@ class TestInboundOrchestrator(unittest.TestCase):
                 mock_query.filter.return_value.first.return_value = mock_state if state_found else None
             elif model == ConversationMetrics:
                 mock_query.filter.return_value.first.return_value = mock_metrics
+            elif model == SuggestedFact:
+                mock_query.filter.return_value.all.return_value = []
             return mock_query
 
         self.mock_db.query.side_effect = query_side_effect

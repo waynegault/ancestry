@@ -11,9 +11,11 @@ from ai.ai_interface import (
     generate_genealogical_reply,
 )
 from core.database import (
+    ConflictStatusEnum,
     ConversationMetrics,
     ConversationState,
     ConversationStatusEnum,
+    DataConflict,
     EngagementTracking,
     FactStatusEnum,
     FactTypeEnum,
@@ -21,6 +23,7 @@ from core.database import (
     SuggestedFact,
 )
 from core.session_manager import SessionManager
+from genealogy.fact_validator import ConflictType, ExtractedFact, FactValidator, extract_facts_from_ai_response
 from genealogy.research_service import ResearchService
 from genealogy.semantic_search import SemanticSearchService
 from messaging.safety import SafetyCheckResult, SafetyGuard, SafetyStatus
@@ -125,7 +128,12 @@ class InboundOrchestrator:
 
             # B. Harvest Facts
             if extracted_data:
-                self._harvest_facts(person, extracted_data)
+                self._harvest_facts(
+                    person,
+                    extracted_data,
+                    original_message=message_content,
+                    conversation_id=conversation_id,
+                )
 
             # C. Research & Reply
             if extracted_data:
@@ -175,45 +183,108 @@ class InboundOrchestrator:
                 return fact_type
         return FactTypeEnum.OTHER
 
-    def _harvest_facts(self, person: Person, extracted_data: dict[str, Any]) -> None:
-        """Create SuggestedFact records from extracted data."""
+    @staticmethod
+    def _map_field_name_for_conflict(fact_type: str) -> str:
+        mapping = {
+            "BIRTH": "birth_year",
+            "DEATH": "death_year",
+            "MARRIAGE": "marriage_date",
+            "RELATIONSHIP": "relationship",
+            "LOCATION": "location",
+        }
+        return mapping.get(fact_type, fact_type.lower())
+
+    @staticmethod
+    def _resolve_fact_type_enum(fact_type: str) -> FactTypeEnum:
+        try:
+            return FactTypeEnum(fact_type)
+        except Exception:
+            return FactTypeEnum.OTHER
+
+    @staticmethod
+    def _structured_value_for_fact(fact: ExtractedFact) -> str:
+        return fact.normalized_value or fact.structured_value or ""
+
+    def _harvest_facts(
+        self,
+        person: Person,
+        extracted_data: dict[str, Any],
+        *,
+        original_message: str,
+        conversation_id: str,
+    ) -> None:
+        """Validate extracted facts and stage SuggestedFact/DataConflict records."""
+
+        facts: list[ExtractedFact] = extract_facts_from_ai_response(
+            extracted_data,
+            conversation_id=conversation_id,
+            original_message=original_message,
+        )
+
         data = extracted_data.get("extracted_data", {})
-
-        # Process mentioned people as potential facts
-        for mentioned_person in data.get("mentioned_people", []):
-            fact_desc = f"Mentioned Person: {mentioned_person.get('name')}"
-            details: list[str] = []
-            if mentioned_person.get('birth_year'):
-                details.append(f"Born: {mentioned_person['birth_year']}")
-            if mentioned_person.get('birth_place'):
-                details.append(f"Birth Place: {mentioned_person['birth_place']}")
-            if mentioned_person.get('death_year'):
-                details.append(f"Died: {mentioned_person['death_year']}")
-            if mentioned_person.get('relationship'):
-                details.append(f"Relationship: {mentioned_person['relationship']}")
-
-            if details:
-                fact_desc += " (" + ", ".join(details) + ")"
-
-            fact = SuggestedFact(
-                people_id=person.id,
-                fact_type=self._infer_fact_type(fact_desc),
-                new_value=fact_desc,
-                confidence_score=80,  # Placeholder
-                status=FactStatusEnum.PENDING,
-            )
-            self.db.add(fact)
-
-        # Process specific key facts
         for key_fact in data.get("key_facts", []):
-            fact = SuggestedFact(
-                people_id=person.id,
-                fact_type=self._infer_fact_type(key_fact),
-                new_value=key_fact,
-                confidence_score=80,  # Placeholder
-                status=FactStatusEnum.PENDING,
+            try:
+                inferred = self._infer_fact_type(str(key_fact))
+                fact_type = inferred.value
+            except Exception:
+                fact_type = FactTypeEnum.OTHER.value
+
+            facts.append(
+                ExtractedFact(
+                    fact_type=fact_type,
+                    subject_name=str(getattr(person, "display_name", "") or getattr(person, "id", "")),
+                    original_text=original_message,
+                    structured_value=str(key_fact),
+                    normalized_value=str(key_fact).strip(),
+                    confidence=80,
+                    source_conversation_id=conversation_id,
+                )
             )
-            self.db.add(fact)
+
+        if not facts:
+            return
+
+        validator = FactValidator(db_session=self.db)
+
+        for fact in facts:
+            try:
+                validation_result = validator.validate_fact(fact, person)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("Fact validation failed (non-fatal): %s", exc)
+                continue
+
+            structured_value = self._structured_value_for_fact(fact)
+            fact_type_enum = self._resolve_fact_type_enum(fact.fact_type)
+            status = FactStatusEnum.APPROVED if validation_result.auto_approved else FactStatusEnum.PENDING
+
+            self.db.add(
+                SuggestedFact(
+                    people_id=person.id,
+                    fact_type=fact_type_enum,
+                    original_value=fact.original_text,
+                    new_value=structured_value,
+                    source_message_id=conversation_id,
+                    status=status,
+                    confidence_score=fact.confidence,
+                )
+            )
+
+            if validation_result.conflict_type in {ConflictType.MINOR_CONFLICT, ConflictType.MAJOR_CONFLICT}:
+                existing_value = (
+                    validation_result.conflicting_fact.value if validation_result.conflicting_fact else None
+                )
+                self.db.add(
+                    DataConflict(
+                        people_id=person.id,
+                        field_name=self._map_field_name_for_conflict(fact.fact_type),
+                        existing_value=existing_value,
+                        new_value=structured_value,
+                        source="conversation",
+                        source_message_id=None,
+                        confidence_score=fact.confidence,
+                        status=ConflictStatusEnum.OPEN,
+                    )
+                )
 
         self.db.commit()
 
