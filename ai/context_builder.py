@@ -461,6 +461,19 @@ class ContextBuilder:
         if hasattr(person, 'in_my_tree'):
             genealogy["in_tree"] = person.in_my_tree
 
+        family_tree = getattr(person, "family_tree", None)
+        if family_tree:
+            actual_relationship = getattr(family_tree, "actual_relationship", None)
+            if isinstance(actual_relationship, str) and actual_relationship:
+                genealogy["ancestry_tree_relationship"] = actual_relationship
+
+            relationship_path = getattr(family_tree, "relationship_path", None)
+            if isinstance(relationship_path, str) and relationship_path:
+                max_chars = 1500
+                genealogy["ancestry_tree_relationship_path"] = relationship_path[:max_chars]
+                if len(relationship_path) > max_chars:
+                    genealogy["ancestry_tree_relationship_path_truncated"] = True
+
         # Try to get relationship path from GEDCOM.
         # IMPORTANT: `Person.uuid` is the Ancestry DNA sample GUID, not a GEDCOM person id.
         # We must resolve a GEDCOM person id (best-effort) before asking TreeQueryService
@@ -470,7 +483,6 @@ class ContextBuilder:
             try:
                 search_name: Optional[str] = None
 
-                family_tree = getattr(person, "family_tree", None)
                 if family_tree and getattr(family_tree, "person_name_in_tree", None):
                     search_name = family_tree.person_name_in_tree
                 else:
@@ -651,6 +663,39 @@ def _test_build_genealogy_skips_when_no_name() -> bool:
     return True
 
 
+def _test_build_genealogy_includes_ancestry_tree_fields() -> bool:
+    class _StubTreeService:
+        def find_person(self, name: str, approx_birth_year: Optional[int] = None, location: Optional[str] = None, max_results: int = 5) -> Any:  # pragma: no cover
+            raise AssertionError("find_person should not be called")
+
+        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+            raise AssertionError("explain_relationship should not be called")
+
+        def get_common_ancestors(self, person_id: str) -> list[dict[str, Any]]:  # pragma: no cover
+            raise AssertionError("get_common_ancestors should not be called")
+
+    class _StubFamilyTree:
+        def __init__(self) -> None:
+            self.actual_relationship = "2nd cousin"
+            self.relationship_path = "A → B → C"
+
+    class _StubPerson:
+        def __init__(self) -> None:
+            self.uuid = "DNA-GUID-IGNORED"
+            self.username = None
+            self.birth_year = None
+            self.in_my_tree = True
+            self.family_tree = _StubFamilyTree()
+
+    ctx = ContextBuilder(db_session=cast(Session, None), tree_service=_StubTreeService())
+    genealogy = ctx._build_genealogy(_StubPerson())
+
+    assert genealogy["in_tree"] is True
+    assert genealogy.get("ancestry_tree_relationship") == "2nd cousin"
+    assert genealogy.get("ancestry_tree_relationship_path") == "A → B → C"
+    return True
+
+
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 # Add the new test to the runner manually if the utility supports it,
 # or just run it as part of a suite.
@@ -666,6 +711,7 @@ def _run_local_tests() -> bool:
         and _test_to_prompt_string()
         and _test_build_genealogy_resolves_gedcom_person_id()
         and _test_build_genealogy_skips_when_no_name()
+        and _test_build_genealogy_includes_ancestry_tree_fields()
     )
 
 
