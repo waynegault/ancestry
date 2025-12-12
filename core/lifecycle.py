@@ -480,6 +480,26 @@ def _test_log_sleep_prevention_status_reports_correctly() -> bool:
     return True
 
 
+def _test_pre_authenticate_session_respects_skip_env() -> bool:
+    with (
+        mock.patch.dict(os.environ, {"SKIP_STARTUP_PREAUTH": "1"}, clear=False),
+        mock.patch.object(logger, "info") as info_log,
+    ):
+        pre_authenticate_session()
+    info_log.assert_called_with("⚠️ Startup pre-authentication skipped (SKIP_STARTUP_PREAUTH=1)")
+    return True
+
+
+def _test_pre_authenticate_ms_graph_respects_skip_env() -> bool:
+    with (
+        mock.patch.dict(os.environ, {"SKIP_STARTUP_PREAUTH": "1"}, clear=False),
+        mock.patch.object(logger, "info") as info_log,
+    ):
+        pre_authenticate_ms_graph()
+    info_log.assert_called_with("⚠️ Startup MS Graph pre-authentication skipped (SKIP_STARTUP_PREAUTH=1)")
+    return True
+
+
 def _log_action_registry_status() -> None:
     """Log the number of registered actions in the action registry."""
     logger.info("✅ Action registry initialized (%d actions)", len(get_action_registry().get_all_actions()))
@@ -524,6 +544,10 @@ def pre_authenticate_session() -> None:
     CRITICAL: This ensures the global session is fully authenticated and ready
     before the menu displays, preventing authentication delays during actions.
     """
+    if os.getenv("SKIP_STARTUP_PREAUTH", "").strip().lower() in {"1", "true", "yes", "on"}:
+        logger.info("⚠️ Startup pre-authentication skipped (SKIP_STARTUP_PREAUTH=1)")
+        return
+
     try:
         from core.session_utils import get_authenticated_session
 
@@ -545,6 +569,10 @@ def pre_authenticate_session() -> None:
 
 def pre_authenticate_ms_graph() -> None:
     """Pre-authenticate MS Graph for MS To-Do integration."""
+    if os.getenv("SKIP_STARTUP_PREAUTH", "").strip().lower() in {"1", "true", "yes", "on"}:
+        logger.info("⚠️ Startup MS Graph pre-authentication skipped (SKIP_STARTUP_PREAUTH=1)")
+        return
+
     try:
         from integrations.ms_graph_utils import acquire_token_device_flow
 
@@ -631,6 +659,22 @@ def lifecycle_module_tests() -> bool:
         test_summary="Ensures _log_sleep_prevention_status reports both active and inactive states",
         functions_tested="_log_sleep_prevention_status",
         expected_outcome="Logger receives ✅ message when active and ⚠️ message when inactive.",
+    )
+
+    suite.run_test(
+        "Startup pre-auth respects SKIP_STARTUP_PREAUTH",
+        _test_pre_authenticate_session_respects_skip_env,
+        test_summary="Ensures pre_authenticate_session can be disabled for dry-run startup",
+        functions_tested="pre_authenticate_session",
+        expected_outcome="When SKIP_STARTUP_PREAUTH=1, pre_authenticate_session returns early and logs the skip.",
+    )
+
+    suite.run_test(
+        "Startup MS Graph pre-auth respects SKIP_STARTUP_PREAUTH",
+        _test_pre_authenticate_ms_graph_respects_skip_env,
+        test_summary="Ensures pre_authenticate_ms_graph can be disabled for dry-run startup",
+        functions_tested="pre_authenticate_ms_graph",
+        expected_outcome="When SKIP_STARTUP_PREAUTH=1, pre_authenticate_ms_graph returns early and logs the skip.",
     )
 
     return suite.finish_suite()
