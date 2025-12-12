@@ -28,11 +28,12 @@ from core.database import (
     ConversationLog,
     ConversationState,
     DraftReply,
+    EngagementTracking,
     MessageDirectionEnum,
     Person,
     PersonStatusEnum,
 )
-from observability.conversation_analytics import update_conversation_metrics
+from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner, create_test_database
 
@@ -94,21 +95,24 @@ def _person_blocks_outbound(person: Person) -> Optional[str]:
     return None
 
 
-def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> None:
+def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> Optional[str]:
     """Lightweight state update: after an outbound send we are awaiting a reply."""
 
     conv_state = db_session.query(ConversationState).filter_by(people_id=people_id).first()
     if conv_state is None:
-        return
+        return None
+
+    conversation_phase = conv_state.conversation_phase
 
     # Avoid mutating hard-stop states.
     status_str = _normalize_enum(getattr(conv_state, "status", None))
     if status_str in {"OPT_OUT", "HUMAN_REVIEW", "PAUSED"}:
-        return
+        return conversation_phase
 
     conv_state.next_action = "await_reply"
     conv_state.next_action_date = None
     db_session.add(conv_state)
+    return conversation_phase
 
 
 def _fetch_approved_drafts(db_session: Session, *, statuses: list[str], max_to_send: Optional[int]) -> list[DraftReply]:
@@ -203,8 +207,23 @@ def _send_single_approved_draft(
     db_session.add(log)
     draft.status = "SENT"
     db_session.add(draft)
-    _touch_conversation_state_after_send(db_session, person.id)
+    conversation_phase = _touch_conversation_state_after_send(db_session, person.id)
     db_session.commit()
+
+    record_engagement_event(
+        session=db_session,
+        people_id=person.id,
+        event_type="message_sent",
+        event_description="Approved draft sent",
+        event_data={
+            "source": "approved_draft",
+            "draft_id": draft.id,
+            "conversation_id": effective_id,
+            "send_status": message_status,
+            "app_mode": app_mode,
+        },
+        conversation_phase=conversation_phase,
+    )
 
     update_conversation_metrics(db_session, people_id=person.id, message_sent=True)
     return "sent", ""
@@ -351,6 +370,9 @@ def _test_sends_and_marks_sent() -> bool:
         metrics = session.query(ConversationMetrics).filter_by(people_id=person.id).first()
         assert metrics is not None
         assert metrics.messages_sent == 1
+
+        events = session.query(EngagementTracking).filter(EngagementTracking.people_id == person.id).all()
+        assert any(e.event_type == "message_sent" for e in events), "Should record a message_sent engagement event"
 
         assert summary.sent == 1
         assert summary.errors == 0

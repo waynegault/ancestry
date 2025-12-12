@@ -434,7 +434,8 @@ class ApprovalQueueService:
             ReviewDecision with result
         """
         try:
-            from core.database import DraftReply
+            from core.database import ConversationState, DraftReply
+            from observability.conversation_analytics import record_engagement_event
 
             draft = self.db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
             if not draft:
@@ -454,7 +455,38 @@ class ApprovalQueueService:
                 )
 
             draft.status = "REJECTED"
+
+            conversation_phase: Optional[str] = None
+            conv_state = (
+                self.db_session.query(ConversationState).filter(ConversationState.people_id == draft.people_id).first()
+            )
+            if conv_state is not None:
+                conversation_phase = conv_state.conversation_phase
+
+                # Avoid mutating hard-stop states.
+                status_val = getattr(conv_state, "status", None)
+                status_str = str(getattr(status_val, "value", status_val) or "")
+                if status_str not in {"OPT_OUT", "HUMAN_REVIEW", "PAUSED"}:
+                    conv_state.next_action = "no_action"
+                    conv_state.next_action_date = None
+                    self.db_session.add(conv_state)
+
             self.db_session.commit()
+
+            # Record as an engagement event for observability/metrics.
+            record_engagement_event(
+                session=self.db_session,
+                people_id=draft.people_id,
+                event_type="draft_rejected",
+                event_description="Draft rejected by operator",
+                event_data={
+                    "draft_id": draft.id,
+                    "conversation_id": draft.conversation_id,
+                    "reviewer": reviewer,
+                    "reason": reason,
+                },
+                conversation_phase=conversation_phase,
+            )
 
             logger.info(f"Draft {draft_id} rejected by {reviewer}: {reason}")
             return ReviewDecision(
@@ -659,6 +691,55 @@ def module_tests() -> bool:
         test_summary="All ApprovalStatus values are strings",
         functions_tested="ApprovalStatus enum",
         method_description="Verify value types",
+    )
+
+    # Test 7: Reject updates state + records event (in-memory DB)
+    def test_reject_updates_state_and_records_event() -> None:
+        from core.database import ConversationState, DraftReply, EngagementTracking, Person
+        from testing.test_utilities import create_test_database
+
+        session = create_test_database()
+        try:
+            person = Person(username="Test User", profile_id="PROFILE_REJECT")
+            session.add(person)
+            session.commit()
+
+            conv_state = ConversationState(people_id=person.id)
+            session.add(conv_state)
+            session.commit()
+
+            draft = DraftReply(
+                people_id=person.id,
+                conversation_id="conv_reject_1",
+                content="Draft content",
+                status="PENDING",
+            )
+            session.add(draft)
+            session.commit()
+
+            svc = ApprovalQueueService(session)
+            decision = svc.reject(draft.id, reviewer="tester", reason="not appropriate")
+            assert decision.success is True
+
+            updated = session.query(DraftReply).filter(DraftReply.id == draft.id).first()
+            assert updated is not None
+            assert updated.status == "REJECTED"
+
+            updated_state = session.query(ConversationState).filter(ConversationState.people_id == person.id).first()
+            assert updated_state is not None
+            assert updated_state.next_action == "no_action"
+
+            events = session.query(EngagementTracking).filter(EngagementTracking.people_id == person.id).all()
+            assert any(e.event_type == "draft_rejected" for e in events), "Should record a draft_rejected event"
+        finally:
+            session.close()
+
+    suite.run_test(
+        "Reject updates state + records engagement",
+        test_reject_updates_state_and_records_event,
+        test_summary="Rejecting a draft marks it REJECTED, updates ConversationState.next_action, and records an engagement event.",
+        functions_tested="ApprovalQueueService.reject",
+        method_description="In-memory DB: Person + ConversationState + PENDING DraftReply then reject()",
     )
 
     return suite.finish_suite()

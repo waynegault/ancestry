@@ -141,7 +141,7 @@ This file is the working implementation plan for completing the mission:
 ### Next (high priority)
 
 - [x] Add a small “Reply Send Runner” that sends only **approved** drafts and marks them as SENT, with strict guardrails
-- [ ] Ensure conversation_state / metrics are updated when a draft is sent (or rejected)
+- [x] Ensure conversation_state / metrics are updated when a draft is sent (or rejected)
 - [ ] Add refusal rules for tree Q&A (e.g., no speculation; ask clarifying questions instead)
 
 ### Next (medium priority)
