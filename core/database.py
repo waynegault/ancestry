@@ -854,18 +854,19 @@ class ConversationState(Base):
         default=ConversationStatusEnum.ACTIVE,
         server_default=ConversationStatusEnum.ACTIVE.value,
         index=True,
-        comment="Operational status of the conversation.",
+        comment="Operational status of the conversation (ACTIVE, OPT_OUT, HUMAN_REVIEW, PAUSED).",
     )
     safety_flag: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
+        nullable=False,
         index=True,
-        comment="Flag indicating if the conversation has been flagged for safety reasons.",
+        comment="True if a safety violation (self-harm, hostility) was detected.",
     )
     last_intent: Mapped[Optional[str]] = mapped_column(
         String,
         nullable=True,
-        comment="The last classified intent of the user.",
+        comment="The intent classification of the last received message.",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -879,27 +880,6 @@ class ConversationState(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when conversation state was last updated.",
-    )
-
-    # --- New Fields for Phase 4 (Inbound Engine) ---
-    status: Mapped[ConversationStatusEnum] = mapped_column(
-        SQLEnum(ConversationStatusEnum),
-        nullable=False,
-        default=ConversationStatusEnum.ACTIVE,
-        index=True,
-        comment="Operational status of the conversation (ACTIVE, OPT_OUT, HUMAN_REVIEW).",
-    )
-    safety_flag: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False,
-        index=True,
-        comment="True if a safety violation (self-harm, hostility) was detected.",
-    )
-    last_intent: Mapped[Optional[str]] = mapped_column(
-        String,
-        nullable=True,
-        comment="The intent classification of the last received message.",
     )
 
     # --- Relationships ---
