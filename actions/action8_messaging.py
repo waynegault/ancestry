@@ -2872,8 +2872,7 @@ def _build_ethnicity_cluster_suggestion(
 
         region_phrase = _format_ethnicity_text(shared_regions)
         suggestion_text = (
-            f"DNA ethnicity cluster: {region_phrase}. "
-            f"Consider records in {shared_regions[0]} and nearby regions."
+            f"DNA ethnicity cluster: {region_phrase}. Consider records in {shared_regions[0]} and nearby regions."
         )
         metadata: dict[str, Any] = {
             "ethnicity_shared_regions": shared_regions,
