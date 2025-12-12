@@ -82,6 +82,6 @@
 
 ## Testing
 
-- [ ] Run `python run_all_tests.py --fast` after each completed section above.
+- [x] Run `python run_all_tests.py --fast` after each completed section above.
 - [ ] Validate messaging dry-runs with `contextual_reply_auto_send=false` to confirm drafts queue without sends.
 - [ ] For production runs: ensure `DRY_RUN_VERIFIED=true` and keep `contextual_reply_auto_send=false` until the approval queue is operational.
