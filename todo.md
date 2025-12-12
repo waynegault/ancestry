@@ -151,6 +151,7 @@ This file is the working implementation plan for completing the mission:
 - [x] Improve research suggestions injection (ethnicity/cluster-based) into drafts in a review-first manner
 - [x] Fix ContextBuilder genealogy: resolve GEDCOM person id via match name (avoid using DNA GUID as GEDCOM id)
 - [x] Include relationship path/confidence evidence in AI context (bounded/truncated)
+- [x] Include Ancestry tree relationship/path (from FamilyTree) in AI context
 
 ### Later (requires schema decisions)
 
