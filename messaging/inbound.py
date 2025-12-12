@@ -2,7 +2,12 @@ import logging
 import sys
 from contextlib import suppress
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar, Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy.orm import Session
 
@@ -564,54 +569,36 @@ class InboundOrchestrator:
 
 
 def module_tests() -> bool:
-    """
-    Run comprehensive unit tests for the InboundOrchestrator.
-    Uses the separate test module messaging/test_inbound.py.
-    """
-    import sys
+    """Run comprehensive unit tests for the InboundOrchestrator."""
     import unittest
 
-    from testing.test_framework import Colors, Icons, TestSuite
+    from messaging.test_inbound import TestInboundOrchestrator
+    from testing.test_framework import TestSuite
 
-    # Initialize the standard test suite for reporting
+    def _run_unittest_case(case_cls: type[unittest.TestCase], case_name: str) -> None:
+        """Execute a unittest.TestCase method and raise on failure for standardized reporting."""
+        result = unittest.TestResult()
+        case = case_cls(methodName=case_name)
+        case.run(result)
+
+        if result.failures or result.errors:
+            failure_case, failure_trace = (result.failures + result.errors)[0]
+            summary = failure_trace.splitlines()[-1] if failure_trace else "Test case failed"
+            raise AssertionError(f"{failure_case.id()} failed: {summary}")
+
     suite = TestSuite("Inbound Orchestrator", "messaging/inbound.py")
     suite.start_suite()
 
-    print(f"{Colors.BLUE}{Icons.GEAR} Running unittest suite from messaging/test_inbound.py...{Colors.RESET}")
+    loader = unittest.TestLoader()
+    for test_name in loader.getTestCaseNames(TestInboundOrchestrator):
+        suite.run_test(
+            test_name=f"TestInboundOrchestrator.{test_name}",
+            test_func=lambda name=test_name: _run_unittest_case(TestInboundOrchestrator, name),
+            test_summary=f"Execute unittest method '{test_name}' with standardized reporting",
+            expected_outcome="Underlying unittest completes with no failures or errors",
+        )
 
-    # Load tests from the separate test file
-    try:
-        from messaging import test_inbound
-
-        # Create a unittest suite
-        loader = unittest.TestLoader()
-        unittest_suite = loader.loadTestsFromModule(test_inbound)
-
-        # Run the tests using a custom runner or just TextTestRunner
-        # We use TextTestRunner but capture the result to update our TestSuite stats
-        runner = unittest.TextTestRunner(verbosity=1, stream=sys.stdout)
-        result = runner.run(unittest_suite)
-
-        # Update the custom suite stats based on unittest results
-        suite.tests_run = result.testsRun
-        suite.tests_failed = len(result.failures) + len(result.errors)
-        suite.tests_passed = suite.tests_run - suite.tests_failed
-
-        # We don't have individual test details for the custom suite report,
-        # but we can report the aggregate result.
-
-        if result.wasSuccessful():
-            print(f"\n{Colors.GREEN}{Icons.PASS} All unit tests passed.{Colors.RESET}")
-            return True
-        print(f"\n{Colors.RED}{Icons.FAIL} Unit tests failed.{Colors.RESET}")
-        return False
-
-    except ImportError as e:
-        print(f"{Colors.RED}Failed to import test module: {e}{Colors.RESET}")
-        return False
-    except Exception as e:
-        print(f"{Colors.RED}An error occurred during testing: {e}{Colors.RESET}")
-        return False
+    return suite.finish_suite()
 
 
 # Standard test runner for test discovery
