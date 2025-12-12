@@ -40,6 +40,16 @@ from messaging.safety import SafetyCheckResult, SafetyGuard, SafetyStatus
 logger = logging.getLogger(__name__)
 
 
+def _record_messaging_counter(metric_name: str, *, labels: dict[str, str]) -> None:
+    """Best-effort internal metrics emission (safe for offline tests)."""
+    try:
+        from core.metrics_collector import get_metrics_registry
+
+        get_metrics_registry().record_metric("Messaging", metric_name, 1.0, labels)
+    except Exception:
+        return
+
+
 class InboundOrchestrator:
     """
     Orchestrates the processing of inbound messages, including safety checks,
@@ -90,6 +100,16 @@ class InboundOrchestrator:
         # 1. Safety Check
         safety_result = self.safety_guard.check_message(message_content)
         if safety_result.status != SafetyStatus.SAFE:
+            if safety_result.status == SafetyStatus.OPT_OUT:
+                _record_messaging_counter(
+                    "sends_blocked",
+                    labels={"source": "inbound", "reason": "safety_opt_out"},
+                )
+            else:
+                _record_messaging_counter(
+                    "sends_blocked",
+                    labels={"source": "inbound", "reason": "safety_unsafe"},
+                )
             # Opt-out detection is EXPECTED behavior - log at appropriate level
             if safety_result.status == SafetyStatus.OPT_OUT:
                 logger.info(f"Opt-out detected for {sender_id}: skipping automated response ({safety_result.reason})")
@@ -414,6 +434,13 @@ class InboundOrchestrator:
             )
 
             if validation_result.conflict_type in {ConflictType.MINOR_CONFLICT, ConflictType.MAJOR_CONFLICT}:
+                _record_messaging_counter(
+                    "validation_conflicts",
+                    labels={
+                        "source": "inbound",
+                        "conflict_type": str(getattr(validation_result.conflict_type, "value", "UNKNOWN")),
+                    },
+                )
                 existing_value = (
                     validation_result.conflicting_fact.value if validation_result.conflicting_fact else None
                 )

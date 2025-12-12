@@ -2193,6 +2193,16 @@ def _check_person_eligibility(person: Person, log_prefix: str) -> None:
         raise StopIteration("skipped (status)")
 
 
+def _record_messaging_counter(metric_name: str, *, labels: dict[str, str]) -> None:
+    """Best-effort internal metrics emission (safe for offline tests)."""
+    try:
+        from core.metrics_collector import get_metrics_registry
+
+        get_metrics_registry().record_metric("Messaging", metric_name, 1.0, labels)
+    except Exception:
+        return
+
+
 def _should_skip_for_opt_out(
     db_session: Optional[Session],
     person: Person,
@@ -2228,6 +2238,10 @@ def _opt_out_status_reason(detector: OptOutDetector, person_id: Optional[int], l
         can_send, reason = detector.validate_can_send(person_id)
         if not can_send:
             logger.info(f"{log_prefix}: Opt-out guard blocked send: {reason}")
+            _record_messaging_counter(
+                "sends_blocked",
+                labels={"source": "action8", "reason": "opt_out_status"},
+            )
             return f"skipped (opt_out_status: {reason})"
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning(f"{log_prefix}: Opt-out status check failed: {exc}")
@@ -2249,6 +2263,10 @@ def _opt_out_inbound_reason(
             logger.info(
                 f"{log_prefix}: Opt-out indicator detected in latest inbound "
                 f"(suggested_action={analysis.suggested_action}, confidence={analysis.confidence:.2f})"
+            )
+            _record_messaging_counter(
+                "sends_blocked",
+                labels={"source": "action8", "reason": "opt_out_detected"},
             )
             return "skipped (opt_out_detected)"
     except Exception as exc:  # pragma: no cover - defensive
@@ -2954,6 +2972,10 @@ def _queue_contextual_draft_for_review(
         )
         if draft_id:
             logger.info(f"{log_prefix}: Contextual draft queued for review (Draft ID: {draft_id})")
+            _record_messaging_counter(
+                "drafts_queued",
+                labels={"source": "action8", "type": "contextual_reply"},
+            )
     except Exception as exc:  # pragma: no cover - defensive logging only
         logger.debug(f"{log_prefix}: Review queue enqueue skipped: {exc}")
 
@@ -3186,6 +3208,10 @@ def _create_message_flags(person: Person, log_prefix: str) -> "MessageFlags":
     if send_message_flag and not getattr(person, "automation_enabled", True):
         send_message_flag = False
         skip_log_reason = "skipped (automation_disabled)"
+        _record_messaging_counter(
+            "sends_blocked",
+            labels={"source": "action8", "reason": "automation_disabled"},
+        )
     return MessageFlags(
         send_message_flag=send_message_flag,
         skip_log_reason=skip_log_reason,
@@ -3351,10 +3377,18 @@ def _handle_person_status(
 
             if active_state in blocked_states:
                 logger.debug(f"{log_prefix}: conversation_state status '{active_state}' blocks automation; skipping.")
+                _record_messaging_counter(
+                    "sends_blocked",
+                    labels={"source": "action8", "reason": f"conversation_state_{active_state.lower()}"},
+                )
                 raise StopIteration(f"skipped (conversation_state_{active_state.lower()})")
 
             if getattr(conv_state_obj, "safety_flag", False):
                 logger.debug(f"{log_prefix}: conversation_state safety_flag set; skipping automation.")
+                _record_messaging_counter(
+                    "sends_blocked",
+                    labels={"source": "action8", "reason": "conversation_state_safety"},
+                )
                 raise StopIteration("skipped (conversation_state_safety)")
     except StopIteration:
         raise
