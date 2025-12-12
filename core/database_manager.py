@@ -632,6 +632,33 @@ class DatabaseManager:
             return
 
         self._ensure_conversation_log_columns(inspector)
+        self._ensure_people_columns(inspector)
+
+    def _ensure_people_columns(self, inspector: Inspector) -> None:
+        """Ensure people table contains newly introduced columns."""
+        try:
+            current_columns = {col["name"] for col in inspector.get_columns("people")}
+        except SQLAlchemyError as inspect_err:
+            logger.warning(
+                "Unable to inspect people columns for schema upgrade: %s",
+                inspect_err,
+            )
+            return
+
+        desired_columns = [
+            ("automation_enabled", "BOOLEAN", "1"),
+        ]
+
+        for column_name, column_type, default_value in desired_columns:
+            if column_name in current_columns:
+                continue
+            self._add_column_with_default(
+                table_name="people",
+                column_name=column_name,
+                column_type=column_type,
+                default_value=default_value,
+            )
+            current_columns.add(column_name)
 
     def _run_schema_migrations(self) -> None:
         """Apply registered schema migrations using the shared migrator."""

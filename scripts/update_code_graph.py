@@ -248,7 +248,9 @@ class CodeGraphUpdater:
                 orig_data = json.load(f)
                 if "metadata" in orig_data:
                     output_data["metadata"] = orig_data["metadata"]
-                    output_data["metadata"]["lastUpdated"] = datetime.now(timezone.utc).isoformat()
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    output_data["metadata"]["generatedAt"] = now_iso
+                    output_data["metadata"]["lastUpdated"] = now_iso
                     output_data["metadata"]["recentUpdates"] = (
                         f"{datetime.now().strftime('%Y-%m-%d')}: Automated scan. {new_count} new, {updated_count} updated, {removed_count} removed."
                     )

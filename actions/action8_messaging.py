@@ -3182,6 +3182,10 @@ def _create_message_flags(person: Person, log_prefix: str) -> "MessageFlags":
     from core.common_params import MessageFlags
 
     send_message_flag, skip_log_reason = _check_mode_filtering(person, log_prefix)
+
+    if send_message_flag and not getattr(person, "automation_enabled", True):
+        send_message_flag = False
+        skip_log_reason = "skipped (automation_disabled)"
     return MessageFlags(
         send_message_flag=send_message_flag,
         skip_log_reason=skip_log_reason,
@@ -5781,6 +5785,28 @@ def _test_conversation_state_blocks_outbound() -> bool:
     return True
 
 
+def _test_person_automation_toggle_blocks_outbound() -> bool:
+    """Ensure person-level automation toggle disables outbound sending."""
+    from unittest.mock import Mock
+
+    from core.database import Person
+
+    original_mode = config_schema.app_mode
+    try:
+        config_schema.app_mode = "development"
+
+        person = Mock(spec=Person)
+        person.profile_id = "TEST_PROFILE"
+        person.automation_enabled = False
+
+        flags = _create_message_flags(person, log_prefix="test")
+        assert flags.send_message_flag is False
+        assert flags.skip_log_reason == "skipped (automation_disabled)"
+        return True
+    finally:
+        config_schema.app_mode = original_mode
+
+
 def _test_status_change_template_exists() -> bool:
     """Test that In_Tree-Status_Change_Update template exists in database."""
     from core.database import MessageTemplate
@@ -6624,6 +6650,12 @@ def action8_messaging_tests() -> bool:
         "Conversation state blocks outbound",
         _test_conversation_state_blocks_outbound,
         "Skips messaging when conversation_state status or safety flag disables automation.",
+    )
+
+    suite.run_test(
+        "Person automation toggle blocks outbound",
+        _test_person_automation_toggle_blocks_outbound,
+        "Skips messaging when person-level automation_enabled is false.",
     )
 
     suite.run_test(

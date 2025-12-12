@@ -26,10 +26,15 @@ from testing.test_utilities import create_standard_test_runner
 PROM_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9091").rstrip("/")
 FAKE_METRICS_URL = os.getenv("PROM_FAKE_METRICS_URL", "http://localhost:9000/metrics")
 REQUEST_TIMEOUT = 5
-# Availability is strict; sample enforcement is on by default to catch missing data
-REQUIRE_PROM_SAMPLES = os.getenv("PROM_REQUIRE_SAMPLES", "true").lower() == "true"
-REQUIRE_PROM_TARGET = os.getenv("PROM_REQUIRE_TARGET", "true").lower() == "true"
-REQUIRE_PROM_AVAILABLE = os.getenv("PROM_REQUIRE_AVAILABLE", "true").lower() == "true"
+
+# When running under the repo-wide test orchestrator, prefer skipping external-service
+# checks unless explicitly required.
+_RUNNING_REPO_TESTS = os.getenv("RUN_MODULE_TESTS") == "1"
+_DEFAULT_REQUIRE = "false" if _RUNNING_REPO_TESTS else "true"
+
+REQUIRE_PROM_SAMPLES = os.getenv("PROM_REQUIRE_SAMPLES", _DEFAULT_REQUIRE).lower() == "true"
+REQUIRE_PROM_TARGET = os.getenv("PROM_REQUIRE_TARGET", _DEFAULT_REQUIRE).lower() == "true"
+REQUIRE_PROM_AVAILABLE = os.getenv("PROM_REQUIRE_AVAILABLE", _DEFAULT_REQUIRE).lower() == "true"
 
 
 def _get_json(path: str, params: dict[str, Any] | None = None) -> Any:

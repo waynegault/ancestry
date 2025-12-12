@@ -1505,6 +1505,14 @@ class Person(Base):
         comment="Flag indicating if the user's profile allows messaging.",
     )
 
+    automation_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="1",
+        index=True,
+        comment="When false, automated outbound messaging is disabled for this person (drafts may still be generated).",
+    )
+
     # --- Relationships ---
     conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
         "ConversationLog", back_populates="person", cascade="all, delete-orphan"

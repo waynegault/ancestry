@@ -62,11 +62,13 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 
 - [Data Flow Map](docs/specs/data_flow_map.md) - Visual and textual tracing of critical data paths
 - [Tech Stack Catalog](docs/specs/tech_stack.md) - Dependencies and infrastructure stability
+- [Code Graph Updater](scripts/update_code_graph.py) - Regenerates docs/code_graph.json from the current codebase
 
 **Technical Specifications:**
 
 - [Reply Management System](docs/specs/reply_management.md) - Conversation state machine design
 - [Response Engine](docs/specs/response_engine.md) - Context builder and RAG architecture
+- [Semantic Search](docs/specs/semantic_search.md) - Tree-aware Q&A with evidence-backed retrieval
 - [Data Validation Pipeline](docs/specs/data_validation_pipeline.md) - Fact extraction and conflict detection
 - [Human-in-the-Loop](docs/specs/human_in_the_loop.md) - Approval queue and safety controls
 
@@ -79,7 +81,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Enterprise Design**: SQLAlchemy ORM, Selenium WebDriver, connection pooling, circuit breakers
 - **Zero-Tolerance Rate Limiting**: Thread-safe token bucket algorithm (0.3 RPS), validated across 800+ pages
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright 1.1.407), 100% test pass rate
-- **Comprehensive Testing**: 138 test modules, 1096+ tests, no smoke tests—all validate real behavior
+- **Comprehensive Testing**: 178 standardized test modules, 1193 tests, no smoke tests—all validate real behavior
 - **Smart Caching**: Test runner skips unchanged modules for rapid feedback loops
 - **Health Monitoring**: Integrated system health tracking with auto-recovery for stale sessions
 - **CI/CD Integration**: Automated testing, linting, and quality gates via GitHub Actions

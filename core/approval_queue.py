@@ -232,14 +232,14 @@ class ApprovalQueueService:
     def _is_first_message(self, person: Any) -> bool:
         """Check if this would be the first message to a person."""
         try:
-            from core.database import ConversationLog
+            from core.database import ConversationLog, MessageDirectionEnum
 
             outbound_count = (
                 self.db_session.query(func.count(ConversationLog.id))
                 .filter(
                     and_(
-                        ConversationLog.person_id == person.id,
-                        ConversationLog.direction == "OUT",
+                        ConversationLog.people_id == person.id,
+                        ConversationLog.direction == MessageDirectionEnum.OUT,
                     )
                 )
                 .scalar()
