@@ -152,6 +152,7 @@ This file is the working implementation plan for completing the mission:
 - [x] Fix ContextBuilder genealogy: resolve GEDCOM person id via match name (avoid using DNA GUID as GEDCOM id)
 - [x] Include relationship path/confidence evidence in AI context (bounded/truncated)
 - [x] Include Ancestry tree relationship/path (from FamilyTree) in AI context
+- [x] Pass tree lookup + relationship evidence into AI reply prompts (tree_lookup_results + relationship_context)
 
 ### Later (requires schema decisions)
 
