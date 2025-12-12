@@ -8,11 +8,14 @@ This module intentionally has no SQLAlchemy dependencies.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 _INTERNAL_BLOCK_BEGIN = "\n\n---\n[INTERNAL_DRAFT_METADATA]\n"
 _INTERNAL_BLOCK_END = "\n[/INTERNAL_DRAFT_METADATA]\n"
+
+_LEGACY_RESEARCH_SUGGESTIONS_MARKER = "\n\n---\nResearch Suggestions:\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +23,8 @@ class DraftInternalMetadata:
     ai_confidence: Optional[int] = None
     ai_reasoning: Optional[str] = None
     context_summary: Optional[str] = None
+    research_suggestions: Optional[str] = None
+    research_metadata: Optional[dict[str, Any]] = None
 
 
 def _sanitize_field(value: Optional[str], *, max_len: int) -> Optional[str]:
@@ -33,11 +38,23 @@ def _sanitize_field(value: Optional[str], *, max_len: int) -> Optional[str]:
     return cleaned
 
 
+def _sanitize_json(value: Optional[dict[str, Any]], *, max_len: int) -> Optional[str]:
+    if not value:
+        return None
+    try:
+        rendered = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        rendered = str(value)
+    return _sanitize_field(rendered, max_len=max_len)
+
+
 def build_internal_metadata_block(
     metadata: DraftInternalMetadata,
     *,
     max_reasoning_len: int = 2000,
     max_context_len: int = 4000,
+    max_research_suggestions_len: int = 4000,
+    max_research_metadata_len: int = 2000,
 ) -> str:
     """Return a human-readable internal metadata block.
 
@@ -46,7 +63,16 @@ def build_internal_metadata_block(
 
     reasoning = _sanitize_field(metadata.ai_reasoning, max_len=max_reasoning_len)
     context = _sanitize_field(metadata.context_summary, max_len=max_context_len)
-    if reasoning is None and context is None:
+    research_suggestions = _sanitize_field(
+        metadata.research_suggestions,
+        max_len=max_research_suggestions_len,
+    )
+    research_metadata = _sanitize_json(
+        metadata.research_metadata,
+        max_len=max_research_metadata_len,
+    )
+
+    if reasoning is None and context is None and research_suggestions is None and research_metadata is None:
         return ""
 
     lines: list[str] = []
@@ -60,6 +86,14 @@ def build_internal_metadata_block(
     if context is not None:
         lines.append("context_summary:")
         lines.append(context)
+
+    if research_suggestions is not None:
+        lines.append("research_suggestions:")
+        lines.append(research_suggestions)
+
+    if research_metadata is not None:
+        lines.append("research_metadata:")
+        lines.append(research_metadata)
 
     payload = "\n".join(lines).strip()
     if not payload:
@@ -104,6 +138,33 @@ def strip_internal_metadata(text: str) -> str:
     return (text[:start] + text[end + len(_INTERNAL_BLOCK_END) :]).rstrip()
 
 
+def strip_legacy_research_suggestions(text: str) -> str:
+    """Remove legacy Action 8 research suggestion appendix from message text.
+
+    Historically, some drafts appended a review-only section:
+        ---\nResearch Suggestions:\n...
+    That content should never be sent outbound.
+    """
+
+    cleaned = (text or "").rstrip()
+    if not cleaned:
+        return cleaned
+
+    idx = cleaned.find(_LEGACY_RESEARCH_SUGGESTIONS_MARKER)
+    if idx == -1:
+        return cleaned
+
+    return cleaned[:idx].rstrip()
+
+
+def strip_review_only_content(text: str) -> str:
+    """Remove any review-only additions (internal metadata + legacy appendices)."""
+
+    cleaned = strip_internal_metadata(text)
+    cleaned = strip_legacy_research_suggestions(cleaned)
+    return cleaned.rstrip()
+
+
 def module_tests() -> bool:
     from testing.test_framework import TestSuite
 
@@ -136,6 +197,18 @@ def module_tests() -> bool:
         test_summary="If the internal block end marker is missing, strip removes from the start marker onward.",
         functions_tested="strip_internal_metadata",
         method_description="Provide malformed internal block and verify safe stripping.",
+    )
+
+    def test_strip_review_only_content_strips_legacy_appendix() -> None:
+        draft = "Hello there" + _LEGACY_RESEARCH_SUGGESTIONS_MARKER + "Something internal"
+        assert strip_review_only_content(draft) == "Hello there"
+
+    suite.run_test(
+        "Strip review-only content removes legacy appendix",
+        test_strip_review_only_content_strips_legacy_appendix,
+        test_summary="Legacy research-suggestions appendices are removed for outbound safety.",
+        functions_tested="strip_review_only_content, strip_legacy_research_suggestions",
+        method_description="Append the legacy research suggestion section and verify it is removed.",
     )
 
     return suite.finish_suite()

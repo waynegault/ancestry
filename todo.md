@@ -148,7 +148,7 @@ This file is the working implementation plan for completing the mission:
 
 - [x] Add evidence fields to reply drafts (which GEDCOM person(s) matched, why, and relationship path)
 - [x] Add standardized metrics output summary for each run (counts: processed, opted out, human review, drafts created)
-- [ ] Improve research suggestions injection (ethnicity/cluster-based) into drafts in a review-first manner
+- [x] Improve research suggestions injection (ethnicity/cluster-based) into drafts in a review-first manner
 
 ### Later (requires schema decisions)
 

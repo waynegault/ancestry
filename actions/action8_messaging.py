@@ -3029,6 +3029,8 @@ def _queue_contextual_draft_for_review(
             ai_confidence=int(draft_payload.get("confidence") or 0),
             _ai_reasoning=draft_payload.get("quality_reason"),
             _context_summary=draft_payload.get("context_json"),
+            _research_suggestions=draft_payload.get("research_suggestions"),
+            _research_metadata=draft_payload.get("research_metadata"),
         )
         if draft_id:
             logger.info(f"{log_prefix}: Contextual draft queued for review (Draft ID: {draft_id})")
@@ -3089,8 +3091,7 @@ def _generate_contextual_draft_payload(
             logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
             return None
 
-        if research_data[0]:
-            draft_text = _inject_research_suggestions(draft_text, research_data[0])
+        # Research suggestions are review-only. Do not append them to the outbound draft text.
 
         confidence_score, quality_reason = _score_draft_quality(draft_text, context_json)
         experiment_metadata = {

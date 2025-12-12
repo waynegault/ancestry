@@ -141,6 +141,8 @@ class ApprovalQueueService:
         ai_confidence: int,
         _ai_reasoning: Optional[str] = None,
         _context_summary: Optional[str] = None,
+        _research_suggestions: Optional[str] = None,
+        _research_metadata: Optional[dict[str, Any]] = None,
         expiry_hours: int = 72,
     ) -> Optional[int]:
         """
@@ -180,6 +182,8 @@ class ApprovalQueueService:
                     ai_confidence=ai_confidence,
                     ai_reasoning=_ai_reasoning,
                     context_summary=_context_summary,
+                    research_suggestions=_research_suggestions,
+                    research_metadata=_research_metadata,
                 ),
             )
 
@@ -778,12 +782,15 @@ def module_tests() -> bool:
                 ai_confidence=88,
                 _ai_reasoning="Reasoning (test)",
                 _context_summary="Context (test)",
+                _research_suggestions="Suggestion A\nSuggestion B",
+                _research_metadata={"shared_match_count": 3},
             )
             assert draft_id_1 is not None
 
             stored = session.query(DraftReply).filter(DraftReply.id == draft_id_1).first()
             assert stored is not None
             assert "Hello there" in (stored.content or "")
+            assert "research_suggestions" in (stored.content or "")
             assert strip_internal_metadata(stored.content or "") == "Hello there"
 
             # Updating should re-use the same pending draft row.
@@ -794,6 +801,8 @@ def module_tests() -> bool:
                 ai_confidence=88,
                 _ai_reasoning="Reasoning updated (test)",
                 _context_summary="Context updated (test)",
+                _research_suggestions="Suggestion updated",
+                _research_metadata={"shared_match_count": 5},
             )
             assert draft_id_2 == draft_id_1
         finally:

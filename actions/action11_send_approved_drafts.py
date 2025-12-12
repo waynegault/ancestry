@@ -132,9 +132,9 @@ def _get_person_for_draft(db_session: Session, draft: DraftReply) -> tuple[Optio
 
 
 def _get_message_text_for_draft(draft: DraftReply) -> tuple[Optional[str], Optional[str]]:
-    from core.draft_content import strip_internal_metadata
+    from core.draft_content import strip_review_only_content
 
-    message_text = strip_internal_metadata((draft.content or "")).strip()
+    message_text = strip_review_only_content(draft.content or "").strip()
     if not message_text:
         return None, "skipped (empty_draft)"
     return message_text, None
@@ -346,12 +346,15 @@ def _test_sends_and_marks_sent() -> bool:
 
         from core.draft_content import DraftInternalMetadata, append_internal_metadata
 
+        legacy_with_appendix = "Hello there\n\n---\nResearch Suggestions:\nInternal-only suggestion"
         draft_content = append_internal_metadata(
-            "Hello there",
+            legacy_with_appendix,
             DraftInternalMetadata(
                 ai_confidence=95,
                 ai_reasoning="High confidence (test)",
                 context_summary="Some internal context (test)",
+                research_suggestions="Suggestion A\nSuggestion B",
+                research_metadata={"shared_match_count": 3},
             ),
         )
 
@@ -367,7 +370,7 @@ def _test_sends_and_marks_sent() -> bool:
         def fake_send(
             _sm: Any, _person: Person, _text: str, _conv: Optional[str], _lp: str
         ) -> tuple[str, Optional[str]]:
-            assert _text == "Hello there", "Internal metadata must be stripped before send"
+            assert _text == "Hello there", "Review-only content must be stripped before send"
             return SEND_SUCCESS_DRY_RUN, "conv_123"
 
         summary = run_send_approved_drafts(

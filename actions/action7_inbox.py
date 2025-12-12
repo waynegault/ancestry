@@ -1168,6 +1168,54 @@ class InboxProcessor:
             state["logs_processed_in_run"] += logs_committed
             logger.debug(f"Final commit complete: {logs_committed} logs, {persons_updated} persons updated")
 
+    @staticmethod
+    def _resolve_stop_reason(stop_reason: Optional[str], max_inbox_limit: int, items_processed: int) -> str:
+        """Resolve the final run stop reason (stable, user-facing text)."""
+
+        if stop_reason:
+            return stop_reason
+
+        # Infer reason if not explicitly set
+        if max_inbox_limit == 0 or items_processed < max_inbox_limit:
+            return "End of Inbox Reached or Comparator Match"
+
+        return f"Inbox Limit ({max_inbox_limit}) Reached"
+
+    def _build_unified_summary_dict(
+        self,
+        *,
+        total_api_items: int,
+        items_processed: int,
+        ai_classified: int,
+        engagement_assessments: int,
+        status_updates: int,
+        final_reason: str,
+        session_deaths: int,
+        session_recoveries: int,
+    ) -> dict[str, Any]:
+        summary_dict: dict[str, Any] = {
+            "API Conversations Fetched": total_api_items,
+            "Conversations Processed": items_processed,
+            "AI Classifications Attempted": ai_classified,
+            "AI Engagement Assessments": engagement_assessments,
+            "Person Status Updates Made": status_updates,
+            "Drafts Queued": int(self.stats.get("drafts_queued", 0) or 0),
+            "Opt-Outs Detected": int(self.stats.get("opt_outs_detected", 0) or 0),
+            "Human Review Flags": int(self.stats.get("human_review_flagged", 0) or 0),
+            "Stopped Due To": final_reason,
+        }
+
+        if session_deaths > 0 or session_recoveries > 0:
+            summary_dict["Session Recoveries"] = session_recoveries
+            summary_dict["Session Deaths"] = session_deaths
+
+        return summary_dict
+
+    def _maybe_print_rate_limiter_metrics(self) -> None:
+        rate_limiter = getattr(self.session_manager, "rate_limiter", None)
+        if rate_limiter:
+            rate_limiter.print_metrics_summary()
+
     def _log_unified_summary(
         self,
         total_api_items: int,
@@ -1190,36 +1238,21 @@ class InboxProcessor:
         # Mark unused parameters to satisfy linter without changing signature
         _ = new_logs
 
-        # Determine stopping reason
-        final_reason = stop_reason
-        if not stop_reason:
-            # Infer reason if not explicitly set
-            if max_inbox_limit == 0 or items_processed < max_inbox_limit:
-                final_reason = "End of Inbox Reached or Comparator Match"
-            else:
-                final_reason = f"Inbox Limit ({max_inbox_limit}) Reached"
-
-        summary_dict: dict[str, Any] = {
-            "API Conversations Fetched": total_api_items,
-            "Conversations Processed": items_processed,
-            "AI Classifications Attempted": ai_classified,
-            "AI Engagement Assessments": engagement_assessments,
-            "Person Status Updates Made": status_updates,
-            "Drafts Queued": int(self.stats.get("drafts_queued", 0) or 0),
-            "Opt-Outs Detected": int(self.stats.get("opt_outs_detected", 0) or 0),
-            "Human Review Flags": int(self.stats.get("human_review_flagged", 0) or 0),
-            "Stopped Due To": final_reason,
-        }
-
-        if session_deaths > 0 or session_recoveries > 0:
-            summary_dict["Session Recoveries"] = session_recoveries
-            summary_dict["Session Deaths"] = session_deaths
+        final_reason = self._resolve_stop_reason(stop_reason, max_inbox_limit, items_processed)
+        summary_dict = self._build_unified_summary_dict(
+            total_api_items=total_api_items,
+            items_processed=items_processed,
+            ai_classified=ai_classified,
+            engagement_assessments=engagement_assessments,
+            status_updates=status_updates,
+            final_reason=final_reason,
+            session_deaths=session_deaths,
+            session_recoveries=session_recoveries,
+        )
 
         log_final_summary(summary_dict=summary_dict, run_time_seconds=float(total_run_time))
 
-        # Print rate limiter metrics if available
-        if hasattr(self.session_manager, 'rate_limiter') and self.session_manager.rate_limiter:
-            self.session_manager.rate_limiter.print_metrics_summary()
+        self._maybe_print_rate_limiter_metrics()
 
         # Update statistics
         self.stats.update(
@@ -2109,9 +2142,8 @@ class InboxProcessor:
             if draft_id is not None:
                 logger.info(f"Queued draft reply {draft_id} for conversation {conversation_id}")
                 return True
-            else:
-                logger.info(f"Draft reply not queued (auto-approved or blocked) for conversation {conversation_id}")
-                return False
+            logger.info(f"Draft reply not queued (auto-approved or blocked) for conversation {conversation_id}")
+            return False
 
         except Exception as e:
             logger.error(f"Failed to save draft reply: {e}")
@@ -3053,9 +3085,8 @@ class InboxProcessor:
         generated_reply = result.get("generated_reply")
         safety_result: Optional[SafetyCheckResult] = result.get("safety_result")
 
-        if generated_reply:
-            if self._save_draft_reply(session, profile_id, api_conv_id, generated_reply):
-                self.stats["drafts_queued"] = self.stats.get("drafts_queued", 0) + 1
+        if generated_reply and self._save_draft_reply(session, profile_id, api_conv_id, generated_reply):
+            self.stats["drafts_queued"] = self.stats.get("drafts_queued", 0) + 1
 
         if safety_result and isinstance(safety_result, SafetyCheckResult):
             if safety_result.status == SafetyStatus.OPT_OUT:
