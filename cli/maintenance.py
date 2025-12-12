@@ -25,7 +25,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, ClassVar, Optional, Protocol, TextIO, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Protocol, TextIO, cast
 from unittest import mock
 from urllib import request as urllib_request
 
@@ -33,6 +33,9 @@ if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[1]
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
+
+if TYPE_CHECKING:
+    from core.session_manager import SessionManager
 
 from core.logging_config import setup_logging
 from testing.test_framework import TestSuite, create_standard_test_runner
@@ -559,7 +562,7 @@ class ReviewQueueMixin:
 
     _logger: logging.Logger
 
-    def show_review_queue(self) -> None:
+    def show_review_queue(self, session_manager: Optional[SessionManager] = None) -> None:
         """Display pending drafts for human review."""
         try:
             from core.approval_queue import ApprovalQueueService
@@ -569,8 +572,8 @@ class ReviewQueueMixin:
             print("📋 REVIEW QUEUE - Pending AI-Generated Drafts")
             print("=" * 70)
 
-            sm = SessionManager()
-            db_session = sm.db_manager.get_session()
+            sm = session_manager or SessionManager()
+            db_session = cast(Any, sm.db_manager).get_session()
 
             if not db_session:
                 print("✗ Failed to get database session")

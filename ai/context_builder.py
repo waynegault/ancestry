@@ -21,6 +21,25 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
+def _nonempty_str(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        if value:
+            return value
+    return None
+
+
+def _trim_with_suffix(value: str, *, max_chars: int, suffix: str = "…") -> str:
+    if len(value) <= max_chars:
+        return value
+    return f"{value[:max_chars]}{suffix}"
+
+
+def _truncate_list(items: list[Any], *, max_items: int) -> tuple[list[Any], bool]:
+    if len(items) <= max_items:
+        return items, False
+    return items[:max_items], True
+
+
 @dataclass
 class MatchContext:
     """
@@ -109,43 +128,74 @@ class MatchContext:
         genealogy: dict[str, Any] = self.genealogy
         lines: list[str] = []
 
-        ancestry_rel = genealogy.get("ancestry_tree_relationship")
-        if isinstance(ancestry_rel, str) and ancestry_rel:
-            lines.append(f"Ancestry tree relationship: {ancestry_rel}")
+        lines.extend(self._format_ancestry_tree_relationship_lines(genealogy))
 
-        ancestry_path = genealogy.get("ancestry_tree_relationship_path")
-        if isinstance(ancestry_path, str) and ancestry_path:
-            max_chars = 400
-            trimmed = ancestry_path[:max_chars]
-            suffix = "…" if len(ancestry_path) > max_chars else ""
-            lines.append(f"Ancestry tree path: {trimmed}{suffix}")
+        rel_line = self._format_gedcom_relationship_line(genealogy)
+        if rel_line:
+            lines.append(rel_line)
 
-        rel_label = genealogy.get("relationship_label")
-        rel_desc = genealogy.get("relationship_description")
-        rel_conf = genealogy.get("relationship_confidence")
-        if isinstance(rel_label, str) and rel_label:
-            if isinstance(rel_conf, str) and rel_conf:
-                lines.append(f"GEDCOM relationship: {rel_label} (confidence={rel_conf})")
-            else:
-                lines.append(f"GEDCOM relationship: {rel_label}")
-        elif isinstance(rel_desc, str) and rel_desc:
-            lines.append(f"GEDCOM relationship: {rel_desc}")
-
-        path = genealogy.get("relationship_path")
-        if isinstance(path, list) and path:
-            def _node_label(node: Any) -> str:
-                if isinstance(node, dict):
-                    node = cast(dict[str, Any], node)
-                    return str(node.get("name") or node.get("person_id") or "?")
-                return str(node)
-
-            max_nodes = 10
-            chain = " -> ".join(_node_label(n) for n in path[:max_nodes])
-            if len(path) > max_nodes:
-                chain += " -> …"
-            lines.append(f"GEDCOM path: {chain}")
+        path_line = self._format_gedcom_path_line(genealogy)
+        if path_line:
+            lines.append(path_line)
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_ancestry_tree_relationship_lines(genealogy: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
+
+        ancestry_rel = _nonempty_str(genealogy.get("ancestry_tree_relationship"))
+        if ancestry_rel is not None:
+            lines.append(f"Ancestry tree relationship: {ancestry_rel}")
+
+        ancestry_path = _nonempty_str(genealogy.get("ancestry_tree_relationship_path"))
+        if ancestry_path is not None:
+            lines.append(f"Ancestry tree path: {_trim_with_suffix(ancestry_path, max_chars=400)}")
+
+        return lines
+
+    @staticmethod
+    def _format_gedcom_relationship_line(genealogy: dict[str, Any]) -> str:
+        rel_label = _nonempty_str(genealogy.get("relationship_label"))
+        rel_desc = _nonempty_str(genealogy.get("relationship_description"))
+        rel_conf = _nonempty_str(genealogy.get("relationship_confidence"))
+
+        if rel_label is not None:
+            if rel_conf is not None:
+                return f"GEDCOM relationship: {rel_label} (confidence={rel_conf})"
+            return f"GEDCOM relationship: {rel_label}"
+
+        if rel_desc is not None:
+            return f"GEDCOM relationship: {rel_desc}"
+
+        return ""
+
+    @staticmethod
+    def _node_label(node: Any) -> str:
+        if isinstance(node, dict):
+            node = cast(dict[str, Any], node)
+            name = _nonempty_str(node.get("name"))
+            if name is not None:
+                return name
+            person_id = _nonempty_str(node.get("person_id"))
+            if person_id is not None:
+                return person_id
+            return "?"
+        return str(node)
+
+    def _format_gedcom_path_line(self, genealogy: dict[str, Any]) -> str:
+        path = genealogy.get("relationship_path")
+        if not isinstance(path, list):
+            return ""
+        if not path:
+            return ""
+
+        max_nodes = 10
+        prefix, truncated = _truncate_list(path, max_items=max_nodes)
+        chain = " -> ".join(self._node_label(n) for n in prefix)
+        if truncated:
+            chain = f"{chain} -> …"
+        return f"GEDCOM path: {chain}"
 
     def _format_identity(self) -> list[str]:
         lines: list[str] = []
@@ -529,6 +579,28 @@ class ContextBuilder:
 
     def _build_genealogy(self, person: Any) -> dict[str, Any]:
         """Build genealogy section using TreeQueryService."""
+        genealogy = self._init_genealogy(person)
+        family_tree = getattr(person, "family_tree", None)
+        self._apply_ancestry_tree_evidence(genealogy, family_tree)
+
+        tree_service = self._ensure_tree_service()
+        if not tree_service:
+            return genealogy
+
+        try:
+            resolved_person_id = self._resolve_gedcom_person_id(tree_service, person, family_tree, genealogy)
+            if resolved_person_id is None:
+                return genealogy
+
+            self._apply_gedcom_relationship_evidence(genealogy, tree_service, resolved_person_id)
+            self._apply_gedcom_common_ancestors(genealogy, tree_service, resolved_person_id)
+        except Exception as e:
+            logger.debug(f"Error getting genealogy from TreeQueryService: {e}")
+
+        return genealogy
+
+    @staticmethod
+    def _init_genealogy(person: Any) -> dict[str, Any]:
         genealogy: dict[str, Any] = {
             "known_common_ancestors": [],
             "surnames_in_common": [],
@@ -536,80 +608,90 @@ class ContextBuilder:
             "in_tree": False,
         }
 
-        # Check if person is in tree
-        if hasattr(person, 'in_my_tree'):
-            genealogy["in_tree"] = person.in_my_tree
-
-        family_tree = getattr(person, "family_tree", None)
-        if family_tree:
-            actual_relationship = getattr(family_tree, "actual_relationship", None)
-            if isinstance(actual_relationship, str) and actual_relationship:
-                genealogy["ancestry_tree_relationship"] = actual_relationship
-
-            relationship_path = getattr(family_tree, "relationship_path", None)
-            if isinstance(relationship_path, str) and relationship_path:
-                max_chars = 1500
-                genealogy["ancestry_tree_relationship_path"] = relationship_path[:max_chars]
-                if len(relationship_path) > max_chars:
-                    genealogy["ancestry_tree_relationship_path_truncated"] = True
-
-        # Try to get relationship path from GEDCOM.
-        # IMPORTANT: `Person.uuid` is the Ancestry DNA sample GUID, not a GEDCOM person id.
-        # We must resolve a GEDCOM person id (best-effort) before asking TreeQueryService
-        # for relationship paths.
-        tree_service = self._ensure_tree_service()
-        if tree_service:
-            try:
-                search_name: Optional[str] = None
-
-                if family_tree and getattr(family_tree, "person_name_in_tree", None):
-                    search_name = family_tree.person_name_in_tree
-                else:
-                    search_name = getattr(person, "username", None)
-
-                approx_birth_year = getattr(person, "birth_year", None)
-
-                resolved_person_id: Optional[str] = None
-                if search_name:
-                    search_result = tree_service.find_person(
-                        name=search_name,
-                        approx_birth_year=approx_birth_year,
-                    )
-                    if getattr(search_result, "found", False) and getattr(search_result, "person_id", None):
-                        resolved_person_id = search_result.person_id
-                        if hasattr(search_result, "to_dict"):
-                            genealogy["gedcom_person_match"] = search_result.to_dict()
-
-                if resolved_person_id:
-                    # Get relationship explanation
-                    rel_result = tree_service.explain_relationship(resolved_person_id)
-                    if rel_result.found:
-                        genealogy["relationship_description"] = rel_result.relationship_description
-                        genealogy["relationship_label"] = rel_result.relationship_label
-
-                        confidence = getattr(rel_result, "confidence", None)
-                        if isinstance(confidence, str) and confidence:
-                            genealogy["relationship_confidence"] = confidence
-
-                        path = getattr(rel_result, "path", None)
-                        if isinstance(path, list) and path:
-                            max_nodes = 12
-                            genealogy["relationship_path"] = path[:max_nodes]
-                            if len(path) > max_nodes:
-                                genealogy["relationship_path_truncated"] = True
-
-                        if rel_result.common_ancestor:
-                            genealogy["known_common_ancestors"].append(rel_result.common_ancestor)
-
-                    # Get common ancestors
-                    common = tree_service.get_common_ancestors(resolved_person_id)
-                    if common:
-                        genealogy["known_common_ancestors"].extend(common[:5])
-
-            except Exception as e:
-                logger.debug(f"Error getting genealogy from TreeQueryService: {e}")
-
+        in_tree = getattr(person, "in_my_tree", None)
+        if isinstance(in_tree, bool):
+            genealogy["in_tree"] = in_tree
         return genealogy
+
+    @staticmethod
+    def _apply_ancestry_tree_evidence(genealogy: dict[str, Any], family_tree: Any) -> None:
+        if not family_tree:
+            return
+
+        actual_relationship = _nonempty_str(getattr(family_tree, "actual_relationship", None))
+        if actual_relationship is not None:
+            genealogy["ancestry_tree_relationship"] = actual_relationship
+
+        relationship_path = _nonempty_str(getattr(family_tree, "relationship_path", None))
+        if relationship_path is not None:
+            max_chars = 1500
+            genealogy["ancestry_tree_relationship_path"] = relationship_path[:max_chars]
+            if len(relationship_path) > max_chars:
+                genealogy["ancestry_tree_relationship_path_truncated"] = True
+
+    @staticmethod
+    def _resolve_search_name(person: Any, family_tree: Any) -> Optional[str]:
+        if family_tree:
+            candidate = _nonempty_str(getattr(family_tree, "person_name_in_tree", None))
+            if candidate is not None:
+                return candidate
+        return _nonempty_str(getattr(person, "username", None))
+
+    def _resolve_gedcom_person_id(
+        self,
+        tree_service: Any,
+        person: Any,
+        family_tree: Any,
+        genealogy: dict[str, Any],
+    ) -> Optional[str]:
+        # IMPORTANT: `Person.uuid` is the Ancestry DNA sample GUID, not a GEDCOM person id.
+        # We must resolve a GEDCOM person id (best-effort) before asking TreeQueryService for relationships.
+        search_name = self._resolve_search_name(person, family_tree)
+        if search_name is None:
+            return None
+
+        approx_birth_year = getattr(person, "birth_year", None)
+        search_result = tree_service.find_person(name=search_name, approx_birth_year=approx_birth_year)
+
+        found = getattr(search_result, "found", False)
+        person_id = getattr(search_result, "person_id", None)
+        if not found or not person_id:
+            return None
+
+        if hasattr(search_result, "to_dict"):
+            genealogy["gedcom_person_match"] = search_result.to_dict()
+
+        return cast(str, person_id)
+
+    @staticmethod
+    def _apply_gedcom_relationship_evidence(genealogy: dict[str, Any], tree_service: Any, person_id: str) -> None:
+        rel_result = tree_service.explain_relationship(person_id)
+        if not getattr(rel_result, "found", False):
+            return
+
+        genealogy["relationship_description"] = getattr(rel_result, "relationship_description", None)
+        genealogy["relationship_label"] = getattr(rel_result, "relationship_label", None)
+
+        confidence = _nonempty_str(getattr(rel_result, "confidence", None))
+        if confidence is not None:
+            genealogy["relationship_confidence"] = confidence
+
+        path = getattr(rel_result, "path", None)
+        if isinstance(path, list) and path:
+            trimmed, truncated = _truncate_list(path, max_items=12)
+            genealogy["relationship_path"] = trimmed
+            if truncated:
+                genealogy["relationship_path_truncated"] = True
+
+        common_ancestor = getattr(rel_result, "common_ancestor", None)
+        if common_ancestor:
+            genealogy["known_common_ancestors"].append(common_ancestor)
+
+    @staticmethod
+    def _apply_gedcom_common_ancestors(genealogy: dict[str, Any], tree_service: Any, person_id: str) -> None:
+        common = tree_service.get_common_ancestors(person_id)
+        if common:
+            genealogy["known_common_ancestors"].extend(common[:5])
 
 
 # -----------------------------------------------------------------------------

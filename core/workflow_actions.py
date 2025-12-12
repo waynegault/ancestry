@@ -367,6 +367,36 @@ def run_core_workflow_action(session_manager: SessionManager, *_: Any) -> bool:
     return result
 
 
+def run_daily_review_first_loop_action(session_manager: SessionManager, *_: Any) -> bool:
+    """Run a review-first daily operator loop: Action 7 → Review Queue → (confirm) Action 11."""
+    if not session_manager or not session_manager.session_ready:
+        logger.error("Cannot run daily review-first loop: Session not ready.")
+        return False
+
+    logger.info("--- Running Daily Review-First Loop: Action 7 → Review Queue → Action 11 ---")
+
+    if not _run_action7_inbox(session_manager):
+        return False
+
+    try:
+        from cli.maintenance import MainCLIHelpers
+
+        helpers = MainCLIHelpers(logger=logger)
+        helpers.show_review_queue(session_manager=session_manager)
+    except Exception as exc:
+        logger.error("Failed to open review queue: %s", exc, exc_info=True)
+        print(f"ERROR: Failed to open review queue: {exc}")
+        return False
+
+    answer = input("\nSend APPROVED drafts now (Action 11)? [y/N] ").strip().lower()
+    if answer not in {"y", "yes"}:
+        logger.info("Operator declined Action 11 send step.")
+        print("\nSkipped sending approved drafts.")
+        return True
+
+    return send_approved_drafts_action(session_manager)
+
+
 # === TESTS ===
 
 
@@ -402,6 +432,54 @@ def _test_run_core_workflow_requires_ready_session() -> bool:
     mock_session = SimpleNamespace(session_ready=False)
     result = run_core_workflow_action(cast(SessionManager, mock_session))
     assert result is False, "Should fail with session_ready=False"
+
+    return True
+
+
+def _test_daily_review_first_loop_requires_ready_session() -> bool:
+    """Test that daily loop fails when session is not ready."""
+    from types import SimpleNamespace
+    from typing import cast
+
+    none_session: Any = None
+    result = run_daily_review_first_loop_action(cast(SessionManager, none_session))
+    assert result is False, "Should fail with None session"
+
+    mock_session = SimpleNamespace(session_ready=False)
+    result = run_daily_review_first_loop_action(cast(SessionManager, mock_session))
+    assert result is False, "Should fail with session_ready=False"
+
+    return True
+
+
+def _test_daily_review_first_loop_respects_send_confirmation() -> bool:
+    """Test that Action 11 is only invoked when operator confirms."""
+    from types import SimpleNamespace
+    from typing import cast
+    from unittest.mock import patch
+
+    mock_session = SimpleNamespace(session_ready=True)
+
+    module_ref = sys.modules[__name__]
+    with (
+        patch.object(module_ref, "_run_action7_inbox", return_value=True),
+        patch("cli.maintenance.MainCLIHelpers.show_review_queue", return_value=None),
+        patch("builtins.input", return_value="n"),
+        patch.object(module_ref, "send_approved_drafts_action", return_value=True) as mock_send,
+    ):
+        result = run_daily_review_first_loop_action(cast(SessionManager, mock_session))
+        assert result is True
+        mock_send.assert_not_called()
+
+    with (
+        patch.object(module_ref, "_run_action7_inbox", return_value=True),
+        patch("cli.maintenance.MainCLIHelpers.show_review_queue", return_value=None),
+        patch("builtins.input", return_value="y"),
+        patch.object(module_ref, "send_approved_drafts_action", return_value=True) as mock_send,
+    ):
+        result = run_daily_review_first_loop_action(cast(SessionManager, mock_session))
+        assert result is True
+        mock_send.assert_called_once()
 
     return True
 
@@ -444,6 +522,18 @@ def module_tests() -> bool:
         "run_core_workflow session guard",
         _test_run_core_workflow_requires_ready_session,
         "Ensures run_core_workflow_action fails cleanly when session is not ready.",
+    )
+
+    suite.run_test(
+        "daily review-first loop session guard",
+        _test_daily_review_first_loop_requires_ready_session,
+        "Ensures daily review-first loop fails cleanly when session is not ready.",
+    )
+
+    suite.run_test(
+        "daily review-first loop send confirmation",
+        _test_daily_review_first_loop_respects_send_confirmation,
+        "Ensures Action 11 runs only when operator confirms.",
     )
 
     suite.run_test(

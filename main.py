@@ -59,6 +59,7 @@ from core.workflow_actions import (
     gather_dna_matches,
     process_productive_messages_action,
     run_core_workflow_action,
+    run_daily_review_first_loop_action,
     send_approved_drafts_action,
     send_messages_action,
     srch_inbox_actn,
@@ -305,6 +306,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("12", fetch_shared_matches)
     registry.set_action_function("13", run_triangulation_analysis)
     registry.set_action_function("14", run_research_tools)
+    registry.set_action_function("15", run_daily_review_first_loop_action)
 
     # Use _cli_helpers directly
     registry.set_action_function("a", _cli_helpers.show_analytics_dashboard)

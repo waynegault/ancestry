@@ -253,13 +253,27 @@ class ActionRegistry:
             ActionMetadata(
                 id="1",
                 name="Run Full Workflow",
-                description="Run complete workflow: Action 7 → Action 9 → Action 8",
+                description="Run workflow: Action 7 → Action 9 → Action 8 (sending approved drafts is Action 11)",
                 function=None,
                 category=ActionCategory.WORKFLOW,
                 browser_requirement=ActionRequirement.FULL_SESSION,
                 close_session_after=True,
                 enable_caching=True,
                 menu_order=1,
+            )
+        )
+
+        self.register(
+            ActionMetadata(
+                id="15",
+                name="Daily Review-First Loop",
+                description="Run review-first operator loop: Action 7 → Review Queue → (confirm) Action 11",
+                function=None,
+                category=ActionCategory.WORKFLOW,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                close_session_after=True,
+                enable_caching=True,
+                menu_order=15,
             )
         )
 
@@ -305,7 +319,7 @@ class ActionRegistry:
             ActionMetadata(
                 id="8",
                 name="Send Messages",
-                description="Send AI-powered messages to DNA matches with context awareness",
+                description="Send AI-powered messages to DNA matches (approved-drafts-only send is Action 11)",
                 function=None,
                 category=ActionCategory.BROWSER,
                 browser_requirement=ActionRequirement.FULL_SESSION,
