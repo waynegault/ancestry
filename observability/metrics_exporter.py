@@ -398,8 +398,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port",
         type=int,
-        default=9000,
-        help="Port for the Prometheus exporter (default: 9000)",
+        default=9001,
+        help="Port for the Prometheus exporter (default: 9001)",
     )
     parser.add_argument(
         "--namespace",

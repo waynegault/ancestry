@@ -404,7 +404,7 @@ class AnalyticsMixin:
             print("\n⚠️  Metrics collection is DISABLED in configuration")
             print("\nTo enable metrics:")
             print("  1. Add to .env: PROMETHEUS_METRICS_ENABLED=true")
-            print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9000")
+            print("  2. Optionally configure: PROMETHEUS_METRICS_PORT=9001")
             print("  3. Restart the application")
             print("\n" + "=" * 70 + "\n")
             return False
@@ -500,7 +500,7 @@ class AnalyticsMixin:
         print(f"   3. Code Quality & Architecture: {code_quality_url}")
         print("\n💡 If dashboards show 'Not found', run: l")
         print(
-            "💡 If panels show 'No data': ensure Prometheus is scraping http://127.0.0.1:9000 (see docs/prometheus/prometheus.yml) and Grafana data source points to http://localhost:9090."
+            "💡 If panels show 'No data': ensure Prometheus is scraping http://127.0.0.1:9001 (see docs/prometheus/prometheus.yml) and Grafana data source points to http://localhost:9090."
         )
         print("\n" + "=" * 70 + "\n")
 

@@ -39,9 +39,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    with socketserver.TCPServer(("0.0.0.0", 9000), Handler) as httpd:
+    with socketserver.TCPServer(("0.0.0.0", 9001), Handler) as httpd:
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        print("Static metrics server running on http://0.0.0.0:9000/metrics")
+        print("Static metrics server running on http://0.0.0.0:9001/metrics")
         try:
             while True:
                 time.sleep(1)

@@ -24,7 +24,7 @@ from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
 PROM_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9091").rstrip("/")
-FAKE_METRICS_URL = os.getenv("PROM_FAKE_METRICS_URL", "http://localhost:9000/metrics")
+FAKE_METRICS_URL = os.getenv("PROM_FAKE_METRICS_URL", "http://localhost:9001/metrics")
 REQUEST_TIMEOUT = 5
 
 # When running under the repo-wide test orchestrator, prefer skipping external-service
@@ -133,10 +133,10 @@ def _request_samples(window: str = "5m") -> Optional[float]:
 
 
 def _start_static_metrics_server() -> Optional[socketserver.TCPServer]:
-    """Start the lightweight static metrics server on port 9000."""
+    """Start the lightweight static metrics server on port 9001."""
 
     try:
-        server = socketserver.TCPServer(("0.0.0.0", 9000), static_metrics_server.Handler)
+        server = socketserver.TCPServer(("0.0.0.0", 9001), static_metrics_server.Handler)
     except OSError:
         return None
 

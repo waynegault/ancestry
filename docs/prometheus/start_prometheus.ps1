@@ -1,6 +1,6 @@
 <#
 Starts a local Prometheus server using docs/prometheus/prometheus.yml
-Scrapes the app's exporter at 127.0.0.1:9000 and serves Prometheus at 9090 by default.
+Scrapes the app's exporter at 127.0.0.1:9001 and serves Prometheus at 9090 by default.
 
 Usage:
   pwsh ./docs/prometheus/start_prometheus.ps1

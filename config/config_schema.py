@@ -707,7 +707,7 @@ class ObservabilityConfig:
 
     enable_prometheus_metrics: bool = False
     metrics_export_host: str = "127.0.0.1"
-    metrics_export_port: int = 9000
+    metrics_export_port: int = 9001
     metrics_namespace: str = "ancestry"
     auto_start_prometheus: bool = False
     prometheus_binary_path: Optional[str] = None
