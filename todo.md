@@ -152,7 +152,7 @@ This file is the working implementation plan for completing the mission:
 
 ### Later (requires schema decisions)
 
-- [ ] Consolidate/fix ORM model duplication in `core/database.py` (clean mapping, reduce risk)
+- [x] Consolidate/fix ORM model duplication in `core/database.py` (clean mapping, reduce risk)
 - [ ] Decide whether to rebuild DB (recollect) after schema cleanup
 
 ---
