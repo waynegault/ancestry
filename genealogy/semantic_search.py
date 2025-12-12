@@ -343,7 +343,9 @@ class SemanticSearchService:
         return out
 
     @staticmethod
-    def _evidence_for_top(entity: SemanticPersonEntity, top: CandidatePerson, *, confidence_score: int) -> EvidenceBlock:
+    def _evidence_for_top(
+        entity: SemanticPersonEntity, top: CandidatePerson, *, confidence_score: int
+    ) -> EvidenceBlock:
         summary_bits = [f"Tree match for '{entity.name}': {top.name}"]
         if top.birth_year:
             summary_bits.append(f"b. {top.birth_year}")
