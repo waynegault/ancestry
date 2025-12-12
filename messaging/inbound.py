@@ -341,11 +341,27 @@ class InboundOrchestrator:
             research_results = self._perform_genealogical_research(extracted_data)
             if research_results:
                 genealogical_data_str = self._format_research_results(research_results)
+
+                tree_lookup_results = ""
+                relationship_context = ""
+                try:
+                    match_uuid = getattr(person, "uuid", None)
+                    if isinstance(match_uuid, str) and match_uuid:
+                        from ai.context_builder import ContextBuilder
+
+                        match_context = ContextBuilder(db_session=self.db).build_context(match_uuid)
+                        tree_lookup_results = match_context.to_tree_lookup_results_string()
+                        relationship_context = match_context.to_relationship_context_string()
+                except Exception as exc:  # pragma: no cover
+                    logger.debug("Tree context enrichment skipped (non-fatal): %s", exc)
+
                 generated_reply = generate_genealogical_reply(
                     context_history,
                     message_content,
                     genealogical_data_str,
                     self.session_manager,
+                    tree_lookup_results=tree_lookup_results,
+                    relationship_context=relationship_context,
                 )
 
                 if generated_reply:

@@ -3054,6 +3054,8 @@ def _generate_draft_text_with_timing(
         conversation_context=context.to_prompt_string(),
         user_last_message=last_message,
         genealogical_data_str=context_json,
+        tree_lookup_results=context.to_tree_lookup_results_string(),
+        relationship_context=context.to_relationship_context_string(),
         session_manager=session_manager,
         prompt_key=prompt_selection[0],
         prompt_variant=prompt_selection[1],

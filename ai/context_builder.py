@@ -83,6 +83,70 @@ class MatchContext:
         lines.append("\n=== END CONTEXT ===")
         return "\n".join(lines)
 
+    def to_tree_lookup_results_string(self) -> str:
+        """Compact string describing any GEDCOM person-resolution step."""
+        genealogy: dict[str, Any] = self.genealogy
+        match = genealogy.get("gedcom_person_match")
+        if not isinstance(match, dict):
+            return ""
+
+        match = cast(dict[str, Any], match)
+
+        name = match.get("name") or "Unknown"
+        person_id = match.get("person_id") or "Unknown"
+        confidence = match.get("confidence")
+        score = match.get("match_score")
+
+        bits: list[str] = [f"GEDCOM person match: {name} (id={person_id})"]
+        if isinstance(confidence, str) and confidence:
+            bits.append(f"confidence={confidence}")
+        if isinstance(score, int):
+            bits.append(f"score={score}")
+        return " | ".join(bits)
+
+    def to_relationship_context_string(self) -> str:
+        """Compact string describing relationship evidence (GEDCOM + Ancestry tree)."""
+        genealogy: dict[str, Any] = self.genealogy
+        lines: list[str] = []
+
+        ancestry_rel = genealogy.get("ancestry_tree_relationship")
+        if isinstance(ancestry_rel, str) and ancestry_rel:
+            lines.append(f"Ancestry tree relationship: {ancestry_rel}")
+
+        ancestry_path = genealogy.get("ancestry_tree_relationship_path")
+        if isinstance(ancestry_path, str) and ancestry_path:
+            max_chars = 400
+            trimmed = ancestry_path[:max_chars]
+            suffix = "…" if len(ancestry_path) > max_chars else ""
+            lines.append(f"Ancestry tree path: {trimmed}{suffix}")
+
+        rel_label = genealogy.get("relationship_label")
+        rel_desc = genealogy.get("relationship_description")
+        rel_conf = genealogy.get("relationship_confidence")
+        if isinstance(rel_label, str) and rel_label:
+            if isinstance(rel_conf, str) and rel_conf:
+                lines.append(f"GEDCOM relationship: {rel_label} (confidence={rel_conf})")
+            else:
+                lines.append(f"GEDCOM relationship: {rel_label}")
+        elif isinstance(rel_desc, str) and rel_desc:
+            lines.append(f"GEDCOM relationship: {rel_desc}")
+
+        path = genealogy.get("relationship_path")
+        if isinstance(path, list) and path:
+            def _node_label(node: Any) -> str:
+                if isinstance(node, dict):
+                    node = cast(dict[str, Any], node)
+                    return str(node.get("name") or node.get("person_id") or "?")
+                return str(node)
+
+            max_nodes = 10
+            chain = " -> ".join(_node_label(n) for n in path[:max_nodes])
+            if len(path) > max_nodes:
+                chain += " -> …"
+            lines.append(f"GEDCOM path: {chain}")
+
+        return "\n".join(lines)
+
     def _format_identity(self) -> list[str]:
         lines: list[str] = []
         if self.identity:
@@ -105,6 +169,15 @@ class MatchContext:
         lines: list[str] = []
         if self.genealogy:
             lines.append("\n## Genealogical Connection")
+
+            ancestry_rel = self.genealogy.get("ancestry_tree_relationship")
+            if isinstance(ancestry_rel, str) and ancestry_rel:
+                lines.append(f"Ancestry tree relationship: {ancestry_rel}")
+
+            tree_lookup = self.to_tree_lookup_results_string()
+            if tree_lookup:
+                lines.append(tree_lookup)
+
             if self.genealogy.get('known_common_ancestors'):
                 lines.append("Common Ancestors:")
                 for ancestor in self.genealogy['known_common_ancestors'][:3]:
@@ -114,6 +187,12 @@ class MatchContext:
                     lines.append(f"  - {name} ({birth}-{death})")
             if self.genealogy.get('relationship_description'):
                 lines.append(f"Relationship: {self.genealogy['relationship_description']}")
+
+            rel_context = self.to_relationship_context_string()
+            if rel_context:
+                # Keep evidence bounded inside the prompt string.
+                for evidence_line in rel_context.splitlines()[:4]:
+                    lines.append(evidence_line)
         return lines
 
     def _format_history(self) -> list[str]:
@@ -560,6 +639,37 @@ def _test_to_prompt_string() -> bool:
     return True
 
 
+def _test_tree_lookup_and_relationship_strings() -> bool:
+    context = MatchContext(
+        genealogy={
+            "gedcom_person_match": {
+                "found": True,
+                "person_id": "I42",
+                "name": "Jane Doe",
+                "confidence": "high",
+                "match_score": 90,
+            },
+            "relationship_label": "2nd cousin",
+            "relationship_description": "2nd cousin",
+            "relationship_confidence": "high",
+            "relationship_path": [{"name": "Jane Doe"}, {"name": "Ancestor"}],
+            "ancestry_tree_relationship": "2nd cousin",
+            "ancestry_tree_relationship_path": "Jane Doe → Parent → Ancestor",
+            "known_common_ancestors": [{"name": "Common Ancestor", "birth": "1800", "death": "1870"}],
+        }
+    )
+
+    tree_lookup = context.to_tree_lookup_results_string()
+    rel_context = context.to_relationship_context_string()
+    prompt = context.to_prompt_string()
+
+    assert "I42" in tree_lookup
+    assert "2nd cousin" in rel_context
+    assert "GEDCOM path" in rel_context
+    assert "Genealogical Connection" in prompt
+    return True
+
+
 def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
     class _StubSearchResult:
         def __init__(self) -> None:
@@ -665,7 +775,13 @@ def _test_build_genealogy_skips_when_no_name() -> bool:
 
 def _test_build_genealogy_includes_ancestry_tree_fields() -> bool:
     class _StubTreeService:
-        def find_person(self, name: str, approx_birth_year: Optional[int] = None, location: Optional[str] = None, max_results: int = 5) -> Any:  # pragma: no cover
+        def find_person(
+            self,
+            name: str,
+            approx_birth_year: Optional[int] = None,
+            location: Optional[str] = None,
+            max_results: int = 5,
+        ) -> Any:  # pragma: no cover
             raise AssertionError("find_person should not be called")
 
         def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
@@ -709,6 +825,7 @@ def _run_local_tests() -> bool:
     return (
         _test_module_integrity()
         and _test_to_prompt_string()
+        and _test_tree_lookup_and_relationship_strings()
         and _test_build_genealogy_resolves_gedcom_person_id()
         and _test_build_genealogy_skips_when_no_name()
         and _test_build_genealogy_includes_ancestry_tree_fields()
