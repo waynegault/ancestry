@@ -339,6 +339,19 @@ class ActionRegistry:
         )
         self.register(
             ActionMetadata(
+                id="11",
+                name="Send Approved Drafts",
+                description="Send only human-approved DraftReply messages and mark them SENT",
+                function=None,
+                category=ActionCategory.BROWSER,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                requires_confirmation=True,
+                confirmation_message="send APPROVED drafts (will create outbound messages)",
+                menu_order=11,
+            )
+        )
+        self.register(
+            ActionMetadata(
                 id="12",
                 name="Shared Match Scraper",
                 description="Fetch shared matches for high-cM matches",

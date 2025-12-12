@@ -50,6 +50,13 @@ def _get_send_messages() -> Any:
     return send_messages_to_matches
 
 
+def _get_send_approved_drafts() -> Any:
+    """Lazy import of send_approved_drafts from Action 11."""
+    from actions.action11_send_approved_drafts import send_approved_drafts
+
+    return send_approved_drafts
+
+
 def _get_process_productive() -> Any:
     """Lazy import of process_productive_messages from action9_process_productive."""
     from actions.action9_process_productive import process_productive_messages
@@ -107,6 +114,34 @@ def send_messages_action(session_manager: Any, *_: Any) -> bool:
         return True
     except Exception as e:
         logger.error(f"Error during message sending: {e}", exc_info=True)
+        return False
+
+
+@require_interactive_session("send approved drafts")
+def send_approved_drafts_action(session_manager: Any, *_: Any) -> bool:
+    """Action to send only approved drafts. Relies on exec_actn ensuring session is ready."""
+    logger.debug("Starting approved draft send...")
+    try:
+        logger.debug("Navigating to Base URL before sending approved drafts...")
+        if not nav_to_page(
+            session_manager.browser_manager.driver,
+            config.api.base_url,
+            WAIT_FOR_PAGE_SELECTOR,
+            session_manager,
+        ):
+            logger.error("Failed nav to base URL. Aborting approved draft send.")
+            return False
+
+        send_approved_drafts = _get_send_approved_drafts()
+        result = send_approved_drafts(session_manager)
+        if result is False:
+            logger.error("Approved draft send reported failure.")
+            return False
+        print("")
+        logger.info("Approved drafts sent OK.")
+        return True
+    except Exception as e:
+        logger.error(f"Error during approved draft send: {e}", exc_info=True)
         return False
 
 

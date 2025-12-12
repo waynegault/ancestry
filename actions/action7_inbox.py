@@ -2087,6 +2087,8 @@ class InboxProcessor:
         Saves a generated reply as a draft for human review.
         """
         try:
+            from core.approval_queue import ApprovalQueueService
+
             # Resolve person
             person = (
                 session.query(Person)
@@ -2098,15 +2100,20 @@ class InboxProcessor:
                 logger.warning(f"Could not resolve person for draft reply. Profile ID: {profile_id}")
                 return
 
-            draft = DraftReply(
-                people_id=person.id,
+            # Route through the unified approval queue to ensure de-duplication and consistent policy.
+            # Inbound-generated replies are intentionally not high-confidence to avoid auto-approval.
+            service = ApprovalQueueService(session)
+            draft_id = service.queue_for_review(
+                person_id=person.id,
                 conversation_id=conversation_id,
                 content=content,
-                status="PENDING",
+                ai_confidence=80,
             )
-            session.add(draft)
-            session.commit()
-            logger.info(f"Saved draft reply for conversation {conversation_id}")
+
+            if draft_id is not None:
+                logger.info(f"Queued draft reply {draft_id} for conversation {conversation_id}")
+            else:
+                logger.info(f"Draft reply not queued (auto-approved or blocked) for conversation {conversation_id}")
 
         except Exception as e:
             logger.error(f"Failed to save draft reply: {e}")
@@ -4142,7 +4149,7 @@ def _test_task_importance_calculation() -> None:
 
 def _test_save_draft_reply() -> None:
     """Test saving a draft reply."""
-    from core.database import DraftReply, Person
+    from core.database import Person
     from core.session_manager import SessionManager
 
     # Setup

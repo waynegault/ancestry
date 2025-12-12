@@ -175,6 +175,36 @@ class ApprovalQueueService:
             # Determine priority based on confidence
             priority = self._calculate_priority(ai_confidence, person)
 
+            # De-duplicate: if a pending draft already exists for this conversation/person,
+            # update it in-place instead of inserting a new row.
+            existing_pending = (
+                self.db_session.query(DraftReply)
+                .filter(
+                    DraftReply.people_id == person_id,
+                    DraftReply.conversation_id == conversation_id,
+                    DraftReply.status == "PENDING",
+                )
+                .first()
+            )
+
+            if existing_pending is not None:
+                if existing_pending.content != content:
+                    existing_pending.content = content
+                    self.db_session.add(existing_pending)
+                    self.db_session.commit()
+                    logger.info(
+                        "Updated existing pending draft %s for review (confidence=%s, priority=%s)",
+                        existing_pending.id,
+                        ai_confidence,
+                        priority.value,
+                    )
+                else:
+                    logger.debug(
+                        "Skipped updating pending draft %s (content unchanged)",
+                        existing_pending.id,
+                    )
+                return existing_pending.id
+
             # Check for auto-approval
             if self._should_auto_approve(ai_confidence, priority, person):
                 return self._create_auto_approved_draft(person_id, conversation_id, content, ai_confidence)

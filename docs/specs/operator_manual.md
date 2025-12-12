@@ -13,6 +13,7 @@ This manual describes how to operate the Human-in-the-Loop (HITL) system for rev
 5. [Opt-Out Management](#opt-out-management)
 6. [Emergency Controls](#emergency-controls)
 7. [Monitoring & Metrics](#monitoring--metrics)
+8. [Sending Approved Drafts (Action 11)](#sending-approved-drafts-action-11)
 
 ---
 
@@ -38,6 +39,10 @@ python -m cli.review_queue reject --id 123 --reason "Inappropriate tone"
 
 # View queue statistics
 python -m cli.review_queue stats
+
+# Send approved drafts (Action 11)
+# - From the main menu, choose option 11
+python main.py
 ```
 
 ---
@@ -59,7 +64,8 @@ python -m cli.review_queue list --priority critical
 ```
 
 **Output Example:**
-```
+
+```text
 ┌──────┬────────────────┬──────────────────┬────────────┬──────────┐
 │  ID  │ Person         │ Conversation     │ Confidence │ Priority │
 ├──────┼────────────────┼──────────────────┼────────────┼──────────┤
@@ -77,7 +83,8 @@ python -m cli.review_queue view --id 123
 ```
 
 **Output Example:**
-```
+
+```text
 ═══════════════════════════════════════════════════════════════
 DRAFT #123 - John Smith
 ═══════════════════════════════════════════════════════════════
@@ -158,7 +165,7 @@ python -m cli.review_queue clear-rejected
 
 ### Auto-Approval Rules
 
-Auto-approval is enabled by default for drafts that meet ALL criteria:
+Auto-approval is disabled by default. When enabled, auto-approval applies to drafts that meet ALL criteria:
 
 1. AI confidence ≥ 90%
 2. Not the first message to this person
@@ -166,11 +173,13 @@ Auto-approval is enabled by default for drafts that meet ALL criteria:
 4. Priority is LOW or NORMAL
 
 **To disable auto-approval:**
+
 ```bash
 python -m cli.review_queue config --auto-approve off
 ```
 
 **To re-enable:**
+
 ```bash
 python -m cli.review_queue config --auto-approve on
 ```
@@ -184,6 +193,22 @@ Before approving a draft, verify:
 - [ ] **Personalization**: Uses correct names and details
 - [ ] **No PII Leaks**: Doesn't expose sensitive information
 - [ ] **Opt-Out Respected**: Person hasn't requested no contact
+
+---
+
+## Sending Approved Drafts (Action 11)
+
+Once you approve drafts, send them using **Action 11**. This action sends only drafts with `DraftReply.status=APPROVED`.
+
+- AUTO_APPROVED drafts are only included when `AUTO_APPROVE_ENABLED=true`, and they are blocked in production unless `ALLOW_PRODUCTION_AUTO_APPROVE=true`.
+- The send runner re-checks outbound guardrails (opt-out, safety flags, DESIST status, and automation-enabled flags) before sending.
+
+Run:
+
+```bash
+python main.py
+# Choose: 11  (Send Approved Drafts)
+```
 
 ---
 
@@ -206,7 +231,8 @@ python -m cli.experiments export --id experiment_1 --output results.json
 ```
 
 **Output Example:**
-```
+
+```text
 ═══════════════════════════════════════════════════════════════
 EXPERIMENT: prompt_tone_test
 ═══════════════════════════════════════════════════════════════
@@ -276,7 +302,8 @@ python -m cli.optout export --output optout_log.csv
 ```
 
 **Output Example:**
-```
+
+```text
 ═══════════════════════════════════════════════════════════════
 OPT-OUT AUDIT (Last 7 Days)
 ═══════════════════════════════════════════════════════════════
@@ -313,6 +340,8 @@ python -m cli.emergency stop-all
 # - Log emergency stop event
 ```
 
+If `EMERGENCY_STOP=true`, Action 11 refuses to send drafts.
+
 ### Resume Processing
 
 ```bash
@@ -341,7 +370,8 @@ python -m cli.review_queue stats
 ```
 
 **Output Example:**
-```
+
+```text
 ═══════════════════════════════════════════════════════════════
 QUEUE STATISTICS
 ═══════════════════════════════════════════════════════════════
@@ -434,6 +464,17 @@ python -m cli.review_queue approve --help
 | `REVIEW_QUEUE_EXPIRE_HOURS` | `72` | Hours before drafts expire |
 | `REVIEW_QUEUE_MIN_CONFIDENCE` | `90` | Minimum confidence for auto-approve |
 
+### Messaging Send Controls (Action 11)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_MODE` | `dry_run` | One of `dry_run`, `testing`, `production` |
+| `MAX_SEND_PER_RUN` | `50` | Hard per-run cap for sends (`0` = unlimited; not recommended) |
+| `DRY_RUN_VERIFIED` | `false` | Must be `true` before production sends are permitted |
+| `EMERGENCY_STOP` | `false` | When `true`, sending is blocked |
+| `AUTO_APPROVE_ENABLED` | `false` | When `true`, Action 11 may include AUTO_APPROVED drafts (subject to production guard) |
+| `ALLOW_PRODUCTION_AUTO_APPROVE` | `false` | Explicit opt-in required to include AUTO_APPROVED drafts in production |
+
 ### Configuration File
 
 Location: `config/review_queue.json`
@@ -466,4 +507,5 @@ Location: `config/review_queue.json`
 
 ---
 
-*Last Updated: December 1, 2025*
+Last Updated: December 12, 2025
+

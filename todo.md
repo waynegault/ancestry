@@ -1,87 +1,171 @@
-# Implementation Roadmap (Dec 2025)
+# Implementation Roadmap (Reply Management & Tree Accuracy)
 
-## Completed
+Date: 2025-12-12
 
-- [x] Block outbound messaging when conversation_state status is OPT_OUT/HUMAN_REVIEW/PAUSED or safety_flag is set.
-- [x] Contextual reply drafts remain review-first unless `contextual_reply_auto_send` is explicitly enabled.
-- [x] Regenerate `docs/code_graph.json` via `scripts/update_code_graph.py` and keep repo-wide tests green.
+This file is the working implementation plan for completing the mission:
 
-## Next Actions (Planned In Order)
+- strengthen accuracy of the family tree
+- maximize verified relationship paths to DNA matches
+- automate communications at scale **safely** (no harassment, no unwanted contact)
+- handle replies with high quality, evidence-backed answers, and a strict human-review/safety posture
 
-### 1) Person-Level Automation Toggle (Outbound Guard Rail)
 
-- [x] Add `Person.automation_enabled` boolean column (default True for backward compatibility).
-  - Files: `core/database.py`, `core/database_manager.py`
-- [x] Enforce the toggle in Action 8 send gating (skip sends when disabled; still allow draft generation/queue).
-  - Files: `actions/action8_messaging.py`
-- [x] Add a focused unit test proving disabled automation prevents sends.
-  - Files: `actions/action8_messaging.py` (embedded `TestSuite`)
+> Note on DB changes: per operator preference, this roadmap avoids schema migrations in the current iteration.
+> If/when the ORM schema is updated, the expectation is to **recreate/recollect** data rather than migrate.
 
-#### Acceptance Criteria (Automation Toggle)
+---
 
-- When `person.automation_enabled == False`, Action 8 produces `skipped (automation_disabled)` and does not call outbound send.
-- Draft-only behavior remains unchanged (contextual drafts still queue when auto-send is off).
-- `python run_all_tests.py --fast` passes.
+## 0) Current Capabilities (What The Codebase Can Do Today)
 
-### 2) Semantic Search (Tree-Aware Q&A) — Spec → Implementation
+### Data Collection & Analysis
 
-- [x] Finalize spec wording and keep link in README.
-  - Files: `docs/specs/semantic_search.md`, `readme.md`
-- [x] Implement a reusable service layer for tree-aware Q&A:
-  - Parse query → intent/entities
-  - Tree-first candidate retrieval (via `TreeQueryService`)
-  - Evidence assembly + safe answer drafting
-  - Output a structured result object (JSON-serializable)
-  - Suggested location: `genealogy/semantic_search.py` or `research/semantic_search.py`
-- [x] Wire Action 7 to call semantic search for inbound questions (PRODUCTIVE only), storing results for review.
-  - Files: `actions/action7_inbox.py`, `messaging/inbound.py` (or wherever InboundOrchestrator lives)
-- [x] Add tests for:
-  - parse failure → clarification
-  - ambiguity → clarification questions
-  - candidate retrieval ranking stability for synthetic input
+- Action 6: gather DNA matches (checkpoint resume, rate limiting, caching)
+- Action 12: shared match scraping
+- Action 13: triangulation / cluster analysis
+- Action 10: GEDCOM vs Ancestry API comparison, TreeQueryService utilities
 
-#### Acceptance Criteria (Semantic Search)
+### Reply Intake + AI Triage
 
-- Semantic search never invents facts; low evidence produces clarification questions.
-- Tree-first retrieval is used; API search is optional/supplemental and still rate-limited.
-- No direct writes to core person/tree fields from AI output.
+- Action 7: inbox ingestion via Ancestry API
+- SafetyGuard:
+  - opt-out detection
+  - critical alert detection (self-harm, legal/privacy, threats)
+- InboundOrchestrator:
+  - intent classification
+  - entity extraction
+  - fact validation/staging to SuggestedFact + DataConflict
+  - research lookups (ResearchService + relationship path)
+  - draft reply generation (stored for review; not auto-sent)
 
-### 3) Review/Approval Queue (HITL) Hardening
+### Human-in-the-loop (HITL)
 
-- [x] Decide: implement `MessageApproval/SystemControl` tables vs extending `DraftReply`.
-- [x] Route Action 8 contextual drafts through the chosen approval queue abstraction.
-- [x] Provide minimal CLI surface to list/approve/reject queued drafts.
-  - Files: `cli/maintenance.py` or `core/maintenance_actions.py` (depending on existing patterns)
+- Draft message review queue based on DraftReply table
+- CLI review queue UI in `cli/maintenance.py` (draft approve/reject + fact approve/reject)
+- Action 8: outbound messaging with strong guardrails:
+  - respects `APP_MODE` (`dry_run`, `testing`, `production`)
+  - requires `DRY_RUN_VERIFIED=true` before production
+  - blocks on `EMERGENCY_STOP`
+  - blocks auto-approval in production unless explicitly permitted
+  - respects `Person.automation_enabled` and conversation_state status/safety
+- Action 11: send approved drafts (review queue -> send) with strict guardrails
 
-#### Acceptance Criteria (Approval Queue)
+### Observability
 
-- Drafts are reviewable with basic approve/reject lifecycle.
-- Auto-send remains opt-in and guarded.
+- Conversation metrics tables and helper functions
+- Prometheus/Grafana hooks available
 
-### 4) Inbound Fact Validation Consistency
+---
 
-- [x] Apply `FactValidator`/`DataConflict` staging to Action 7 inbound fact harvests (not just Action 9).
-- [x] Surface inbound conflicts/pending facts in the review workflow.
+## 1) Gaps vs Mission (What’s Not Yet Complete)
 
-#### Acceptance Criteria (Inbound Validation)
+### A) Fully automated reply handling (100% automation except true escalation)
 
-- Action 7 produces `SuggestedFact`/`DataConflict` consistently for extracted facts.
+- Draft replies exist, but the end-to-end “approve -> send reply -> mark state” workflow needs a single, explicit operator loop.
+- Clarify which replies are safe to auto-approve (likely very few) and keep default review-first.
 
-### 5) Observability (Minimal, No External Hard Dependencies in Tests)
+### B) Evidence-backed Q&A over your tree (RAG)
 
-- [x] Emit counters for: drafts queued, sends blocked (opt-out/safety/automation), validation conflicts.
-- [x] Ensure automated tests do not require live Prometheus/Grafana.
+- There is tree search (GEDCOM + some API lookup), but a robust Q&A layer needs:
+  - explicit citations/evidence fields in generated replies
+  - consistent identity resolution (who is “ROOT”, who is the match, who is the queried ancestor)
+  - confidence scoring and refusal rules
 
-#### Acceptance Criteria (Observability)
+### C) Better fact extraction quality and validation
 
-- Metrics hooks do not break offline test runs.
+- FactValidator exists and is used, but:
+  - needs consistent provenance (which message, which claim)
+  - needs clearer review UX for conflicts vs suggestions
+  - needs “do not mutate tree automatically” guardrails documented and enforced
 
-## Later
+### D) Engagement optimization / performance metrics
 
-- [x] Research suggestions: surface ethnicity/cluster insights in ContextBuilder + Action 8 replies (review-first) to nudge next-best questions.
+- Metrics exist but mission-oriented KPIs are not yet standardized:
+  - response rate by template
+  - desist rate
+  - time-to-first-response
+  - “useful info gained” count per 100 conversations
 
-## Testing
+### E) Research suggestions in replies (ethnicity/cluster-guided prompts)
 
-- [x] Run `python run_all_tests.py --fast` after each completed section above.
-- [ ] Validate messaging dry-runs with `contextual_reply_auto_send=false` to confirm drafts queue without sends.
-- [ ] For production runs: ensure `DRY_RUN_VERIFIED=true` and keep `contextual_reply_auto_send=false` until the approval queue is operational.
+- Some tools exist (research suggestions, ethnicity analysis), but are not consistently surfaced in reply drafts.
+
+---
+
+## 2) Specification (Next Increment)
+
+### 2.1 Safety & Compliance (Non-Negotiable)
+
+- Any inbound message matching critical alert patterns triggers **HUMAN_REVIEW** and disables outbound automation for that person.
+- Any opt-out request triggers **OPT_OUT** and disables outbound automation permanently for that person.
+- Outbound sending must always honor:
+  - `ConversationState.status in {OPT_OUT, HUMAN_REVIEW, PAUSED}`
+  - `ConversationState.safety_flag`
+  - `Person.status in {DESIST, BLOCKED, ARCHIVE}`
+  - `Person.automation_enabled == False`
+  - production guard flags (`DRY_RUN_VERIFIED`, `EMERGENCY_STOP`, auto-approve lockouts)
+
+### 2.2 Reply Draft Generation
+
+- Inbound-generated replies must always be stored as drafts (review-first).
+- Draft creation must be idempotent per person+conversation so repeated inbox scans do not create duplicates.
+
+### 2.3 Fact Handling
+
+- Extracted facts are staged only as `SuggestedFact` / `DataConflict` (no automatic tree mutation).
+- Suggested facts should include:
+  - source message id / conversation id
+  - extracted structured value
+  - confidence
+  - conflict classification when applicable
+
+### 2.4 Operator Workflow
+
+- Single daily loop:
+  1) run Action 7 (ingest)
+  2) review queue: approve/reject drafts, approve/reject facts
+  3) run Action 11 to send only approved drafts (start in `dry_run`, then limited `production` once ready)
+  4) (optional) run Action 8 for proactive outbound messaging when configured
+
+---
+
+## 3) Implementation Plan (No Schema Migrations)
+
+### Completed (this iteration)
+
+- [x] De-duplicate draft creation in `ApprovalQueueService.queue_for_review` (update-in-place if already pending)
+- [x] Route Action 7 draft creation through `ApprovalQueueService` (consistent policy + dedupe)
+- [x] Enforce opt-out as OPT_OUT (not HUMAN_REVIEW) and disable automation on opt-out
+- [x] Run critical-alert checks before AI work in inbound processing
+- [x] Add Action 11 “Send Approved Drafts” runner (send approved drafts only; mark SENT; update logs/metrics/state)
+
+### Next (high priority)
+
+- [x] Add a small “Reply Send Runner” that sends only **approved** drafts and marks them as SENT, with strict guardrails
+- [ ] Ensure conversation_state / metrics are updated when a draft is sent (or rejected)
+- [ ] Add refusal rules for tree Q&A (e.g., no speculation; ask clarifying questions instead)
+
+### Next (medium priority)
+
+- [ ] Add evidence fields to reply drafts (which GEDCOM person(s) matched, why, and relationship path)
+- [ ] Add standardized metrics output summary for each run (counts: processed, opted out, human review, drafts created)
+- [ ] Improve research suggestions injection (ethnicity/cluster-based) into drafts in a review-first manner
+
+### Later (requires schema decisions)
+
+- [ ] Consolidate/fix ORM model duplication in `core/database.py` (clean mapping, reduce risk)
+- [ ] Decide whether to rebuild DB (recollect) after schema cleanup
+
+---
+
+## 4) Run Safety Checklist (Go/No-Go Inputs)
+
+Before any production sends:
+
+- `APP_MODE=production`
+- `DRY_RUN_VERIFIED=true`
+- `AUTO_APPROVE_ENABLED=false` (keep off until proven)
+- `ALLOW_PRODUCTION_AUTO_APPROVE=false` (keep off)
+- `EMERGENCY_STOP=false`
+- `REQUESTS_PER_SECOND=0.3`
+- Start with `MAX_INBOX=20-50` and `MAX_SEND_PER_RUN=20-50`
+

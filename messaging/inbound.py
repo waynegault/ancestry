@@ -29,6 +29,7 @@ from core.database import (
     FactTypeEnum,
     MessageDirectionEnum,
     Person,
+    PersonStatusEnum,
     SuggestedFact,
 )
 from core.session_manager import SessionManager
@@ -97,7 +98,45 @@ class InboundOrchestrator:
 
         inbound_log = self._persist_inbound_conversation_log(person, conversation_id, message_content)
 
-        # 1. Safety Check
+        # 1. Phase 2 Critical Alert Check (must run before any AI work)
+        critical_result = self.safety_guard.check_critical_alerts(message_content)
+        if critical_result.status == SafetyStatus.CRITICAL_ALERT:
+            _record_messaging_counter(
+                "sends_blocked",
+                labels={
+                    "source": "inbound",
+                    "reason": "critical_alert",
+                    "category": str(getattr(critical_result.category, "value", "unknown")),
+                },
+            )
+            logger.error(
+                "Critical alert detected for %s (Conv: %s): %s", sender_id, conversation_id, critical_result.reason
+            )
+            self._handle_unsafe_message(person, critical_result)
+            return {
+                "status": "unsafe",
+                "safety_result": critical_result,
+                "action": "human_review",
+            }
+
+        if critical_result.status == SafetyStatus.HIGH_VALUE:
+            _record_messaging_counter(
+                "high_value_discovery",
+                labels={
+                    "source": "inbound",
+                    "category": str(getattr(critical_result.category, "value", "unknown")),
+                },
+            )
+            # High-value is notification-only: keep processing, but annotate state for review.
+            with suppress(Exception):
+                state = self._get_or_create_conversation_state(person)
+                if state is not None:
+                    current_summary = state.ai_summary or ""
+                    note = f"HIGH_VALUE_DISCOVERY: {critical_result.reason} | Terms={critical_result.flagged_terms}\n"
+                    state.ai_summary = note + current_summary
+                    self.db.commit()
+
+        # 2. Legacy Safety Check (opt-out / danger / hostility)
         safety_result = self.safety_guard.check_message(message_content)
         if safety_result.status != SafetyStatus.SAFE:
             if safety_result.status == SafetyStatus.OPT_OUT:
@@ -119,10 +158,10 @@ class InboundOrchestrator:
             return {
                 "status": "unsafe",
                 "safety_result": safety_result,
-                "action": "flagged",
+                "action": "opt_out" if safety_result.status == SafetyStatus.OPT_OUT else "flagged",
             }
 
-        # 2. Intent Classification
+        # 3. Intent Classification
         intent = classify_message_intent(context_history, self.session_manager)
         logger.info(f"Classified intent for {sender_id}: {intent}")
 
@@ -546,11 +585,27 @@ class InboundOrchestrator:
         # Update conversation state to flagged
         state = self._get_or_create_conversation_state(person)
         if state:
-            state.safety_flag = True
-            # Append reason to ai_summary
             current_summary = state.ai_summary or ""
-            state.ai_summary = f"SAFETY FLAG: {safety_result.reason}\n{current_summary}"
-            state.status = ConversationStatusEnum.HUMAN_REVIEW
+
+            if safety_result.status == SafetyStatus.OPT_OUT:
+                # Hard stop: never contact again.
+                state.status = ConversationStatusEnum.OPT_OUT
+                state.safety_flag = False
+                state.ai_summary = f"OPT_OUT: {safety_result.reason}\n{current_summary}"
+                with suppress(Exception):
+                    person.status = PersonStatusEnum.DESIST
+                    person.automation_enabled = False
+            else:
+                # Safety/critical/human review.
+                state.status = ConversationStatusEnum.HUMAN_REVIEW
+                state.safety_flag = True
+                state.ai_summary = f"SAFETY FLAG: {safety_result.reason}\n{current_summary}"
+                with suppress(Exception):
+                    # Use BLOCKED as a safety lock (can be manually cleared later).
+                    if getattr(person, "status", None) != PersonStatusEnum.DESIST:
+                        person.status = PersonStatusEnum.BLOCKED
+                    person.automation_enabled = False
+
             self.db.commit()
 
     def _update_conversation_state(self, person: Person, intent: Optional[str]) -> None:

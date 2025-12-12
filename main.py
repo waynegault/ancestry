@@ -59,6 +59,7 @@ from core.workflow_actions import (
     gather_dna_matches,
     process_productive_messages_action,
     run_core_workflow_action,
+    send_approved_drafts_action,
     send_messages_action,
     srch_inbox_actn,
 )
@@ -300,6 +301,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("8", send_messages_action)
     registry.set_action_function("9", process_productive_messages_action)
     registry.set_action_function("10", run_gedcom_then_api_fallback)
+    registry.set_action_function("11", send_approved_drafts_action)
     registry.set_action_function("12", fetch_shared_matches)
     registry.set_action_function("13", run_triangulation_analysis)
     registry.set_action_function("14", run_research_tools)
