@@ -137,6 +137,12 @@ This file is the working implementation plan for completing the mission:
 - [x] Enforce opt-out as OPT_OUT (not HUMAN_REVIEW) and disable automation on opt-out
 - [x] Run critical-alert checks before AI work in inbound processing
 - [x] Add Action 11 “Send Approved Drafts” runner (send approved drafts only; mark SENT; update logs/metrics/state)
+- [x] Add Action 15 "Daily Review-First Loop" (run Action 7 -> open review queue -> confirm -> run Action 11)
+
+#### Recent Milestones
+
+- 2025-12-12: Full suite passed (`python run_all_tests.py --fast`)
+- 2025-12-12: Committed changes: `6855183` (Review-first daily loop + context builder refactor)
 
 ### Next (high priority)
 
