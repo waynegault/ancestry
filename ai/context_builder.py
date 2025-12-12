@@ -461,23 +461,48 @@ class ContextBuilder:
         if hasattr(person, 'in_my_tree'):
             genealogy["in_tree"] = person.in_my_tree
 
-        # Try to get relationship path from GEDCOM
+        # Try to get relationship path from GEDCOM.
+        # IMPORTANT: `Person.uuid` is the Ancestry DNA sample GUID, not a GEDCOM person id.
+        # We must resolve a GEDCOM person id (best-effort) before asking TreeQueryService
+        # for relationship paths.
         tree_service = self._ensure_tree_service()
-        if tree_service and person.uuid:
+        if tree_service:
             try:
-                # Get relationship explanation
-                rel_result = tree_service.explain_relationship(person.uuid)
-                if rel_result.found:
-                    genealogy["relationship_description"] = rel_result.relationship_description
-                    genealogy["relationship_label"] = rel_result.relationship_label
+                search_name: Optional[str] = None
 
-                    if rel_result.common_ancestor:
-                        genealogy["known_common_ancestors"].append(rel_result.common_ancestor)
+                family_tree = getattr(person, "family_tree", None)
+                if family_tree and getattr(family_tree, "person_name_in_tree", None):
+                    search_name = family_tree.person_name_in_tree
+                else:
+                    search_name = getattr(person, "username", None)
 
-                # Get common ancestors
-                common = tree_service.get_common_ancestors(person.uuid)
-                if common:
-                    genealogy["known_common_ancestors"].extend(common[:5])
+                approx_birth_year = getattr(person, "birth_year", None)
+
+                resolved_person_id: Optional[str] = None
+                if search_name:
+                    search_result = tree_service.find_person(
+                        name=search_name,
+                        approx_birth_year=approx_birth_year,
+                    )
+                    if getattr(search_result, "found", False) and getattr(search_result, "person_id", None):
+                        resolved_person_id = search_result.person_id
+                        if hasattr(search_result, "to_dict"):
+                            genealogy["gedcom_person_match"] = search_result.to_dict()
+
+                if resolved_person_id:
+                    # Get relationship explanation
+                    rel_result = tree_service.explain_relationship(resolved_person_id)
+                    if rel_result.found:
+                        genealogy["relationship_description"] = rel_result.relationship_description
+                        genealogy["relationship_label"] = rel_result.relationship_label
+
+                        if rel_result.common_ancestor:
+                            genealogy["known_common_ancestors"].append(rel_result.common_ancestor)
+
+                    # Get common ancestors
+                    common = tree_service.get_common_ancestors(resolved_person_id)
+                    if common:
+                        genealogy["known_common_ancestors"].extend(common[:5])
 
             except Exception as e:
                 logger.debug(f"Error getting genealogy from TreeQueryService: {e}")
@@ -512,6 +537,105 @@ def _test_to_prompt_string() -> bool:
     return True
 
 
+def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
+    class _StubSearchResult:
+        def __init__(self) -> None:
+            self.found = True
+            self.person_id = "I123"
+
+        def to_dict(self) -> dict[str, Any]:
+            return {"found": True, "person_id": self.person_id, "name": "John Doe", "confidence": "high"}
+
+    class _StubRelResult:
+        def __init__(self) -> None:
+            self.found = True
+            self.relationship_description = "3rd cousin"
+            self.relationship_label = "3rd cousin"
+            self.common_ancestor = {"name": "Common Ancestor"}
+
+    class _StubTreeService:
+        def __init__(self) -> None:
+            self.find_person_calls: list[tuple[str, Optional[int]]] = []
+            self.explain_relationship_calls: list[str] = []
+            self.get_common_ancestors_calls: list[str] = []
+
+        def find_person(
+            self,
+            name: str,
+            approx_birth_year: Optional[int] = None,
+            location: Optional[str] = None,
+            max_results: int = 5,
+        ) -> Any:
+            self.find_person_calls.append((name, approx_birth_year))
+            return _StubSearchResult()
+
+        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:
+            self.explain_relationship_calls.append(person_a_id)
+            return _StubRelResult()
+
+        def get_common_ancestors(self, person_id: str) -> list[dict[str, Any]]:
+            self.get_common_ancestors_calls.append(person_id)
+            return [{"name": "CA2"}]
+
+    class _StubPerson:
+        def __init__(self) -> None:
+            self.uuid = "DNA-GUID-IGNORED"
+            self.username = "John Doe"
+            self.birth_year = 1900
+            self.in_my_tree = False
+            self.family_tree = None
+
+    tree_service = _StubTreeService()
+    ctx = ContextBuilder(db_session=cast(Session, None), tree_service=tree_service)
+    genealogy = ctx._build_genealogy(_StubPerson())
+
+    assert tree_service.find_person_calls == [("John Doe", 1900)]
+    assert tree_service.explain_relationship_calls == ["I123"]
+    assert tree_service.get_common_ancestors_calls == ["I123"]
+    assert genealogy.get("relationship_description") == "3rd cousin"
+    assert genealogy.get("relationship_label") == "3rd cousin"
+    assert genealogy.get("known_common_ancestors"), "Expected common ancestors list to be populated"
+    assert genealogy.get("gedcom_person_match", {}).get("person_id") == "I123"
+    return True
+
+
+def _test_build_genealogy_skips_when_no_name() -> bool:
+    class _StubTreeService:
+        def __init__(self) -> None:
+            self.explain_relationship_calls: list[str] = []
+
+        def find_person(
+            self,
+            name: str,
+            approx_birth_year: Optional[int] = None,
+            location: Optional[str] = None,
+            max_results: int = 5,
+        ) -> Any:  # pragma: no cover
+            raise AssertionError("find_person should not be called")
+
+        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+            self.explain_relationship_calls.append(person_a_id)
+            raise AssertionError("explain_relationship should not be called")
+
+        def get_common_ancestors(self, person_id: str) -> list[dict[str, Any]]:  # pragma: no cover
+            raise AssertionError("get_common_ancestors should not be called")
+
+    class _StubPerson:
+        def __init__(self) -> None:
+            self.uuid = "DNA-GUID-IGNORED"
+            self.username = None
+            self.birth_year = None
+            self.in_my_tree = False
+            self.family_tree = None
+
+    tree_service = _StubTreeService()
+    ctx = ContextBuilder(db_session=cast(Session, None), tree_service=tree_service)
+    genealogy = ctx._build_genealogy(_StubPerson())
+    assert genealogy["relationship_description"] is None
+    assert genealogy["known_common_ancestors"] == []
+    return True
+
+
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 # Add the new test to the runner manually if the utility supports it,
 # or just run it as part of a suite.
@@ -522,7 +646,12 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 
 def _run_local_tests() -> bool:
-    return _test_module_integrity() and _test_to_prompt_string()
+    return (
+        _test_module_integrity()
+        and _test_to_prompt_string()
+        and _test_build_genealogy_resolves_gedcom_person_id()
+        and _test_build_genealogy_skips_when_no_name()
+    )
 
 
 run_comprehensive_tests = create_standard_test_runner(_run_local_tests)
