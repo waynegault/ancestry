@@ -284,6 +284,80 @@ class SemanticSearchService:
         return [SemanticPersonEntity(name=n, approx_birth_year=approx_year) for n in unique[:3]]
 
     @staticmethod
+    def _confidence_to_score(confidence: Optional[str]) -> int:
+        if confidence == "high":
+            return 80
+        if confidence == "medium":
+            return 60
+        return 40
+
+    @staticmethod
+    def _parse_optional_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _candidate_from_result(entity: SemanticPersonEntity, r: PersonSearchResult) -> CandidatePerson:
+        return CandidatePerson(
+            person_id=r.person_id,
+            name=r.name or entity.name,
+            birth_year=r.birth_year,
+            birth_place=r.birth_place,
+            death_year=r.death_year,
+            death_place=r.death_place,
+            match_score=r.match_score,
+            confidence=r.confidence,
+        )
+
+    @staticmethod
+    def _candidates_from_alternatives(alternatives: Any, *, max_count: int) -> list[CandidatePerson]:
+        if not alternatives or max_count <= 0:
+            return []
+        if not isinstance(alternatives, list):
+            return []
+
+        out: list[CandidatePerson] = []
+        for alt in alternatives[:max_count]:
+            if not isinstance(alt, dict):
+                continue
+
+            alt_dict = cast(dict[str, Any], alt)
+
+            out.append(
+                CandidatePerson(
+                    person_id=alt_dict.get("id"),
+                    name=alt_dict.get("name") or "",
+                    birth_year=alt_dict.get("birth_year"),
+                    birth_place=alt_dict.get("birth_place"),
+                    death_year=alt_dict.get("death_year"),
+                    death_place=alt_dict.get("death_place"),
+                    match_score=SemanticSearchService._parse_optional_int(alt_dict.get("total_score")),
+                    confidence=None,
+                )
+            )
+
+        return out
+
+    @staticmethod
+    def _evidence_for_top(entity: SemanticPersonEntity, top: CandidatePerson, *, confidence_score: int) -> EvidenceBlock:
+        summary_bits = [f"Tree match for '{entity.name}': {top.name}"]
+        if top.birth_year:
+            summary_bits.append(f"b. {top.birth_year}")
+        if top.birth_place:
+            summary_bits.append(str(top.birth_place))
+
+        return EvidenceBlock(
+            source_type="GEDCOM",
+            source_id=top.person_id,
+            summary="; ".join(summary_bits),
+            confidence=confidence_score,
+        )
+
+    @staticmethod
     def _lookup_person(
         service: TreeQueryService,
         entity: SemanticPersonEntity,
@@ -297,77 +371,28 @@ class SemanticSearchService:
             max_results=max(5, max_candidates),
         )
 
-        candidates: list[CandidatePerson] = []
-        evidence: list[EvidenceBlock] = []
-
         if not res.found:
-            evidence.append(
-                EvidenceBlock(
-                    source_type="GEDCOM",
-                    source_id=None,
-                    summary=f"No strong tree match found for '{entity.name}'.",
-                    confidence=0,
-                )
-            )
-            return candidates, evidence
-
-        def add_candidate_from_result(r: PersonSearchResult) -> None:
-            candidates.append(
-                CandidatePerson(
-                    person_id=r.person_id,
-                    name=r.name or entity.name,
-                    birth_year=r.birth_year,
-                    birth_place=r.birth_place,
-                    death_year=r.death_year,
-                    death_place=r.death_place,
-                    match_score=r.match_score,
-                    confidence=r.confidence,
-                )
+            return (
+                [],
+                [
+                    EvidenceBlock(
+                        source_type="GEDCOM",
+                        source_id=None,
+                        summary=f"No strong tree match found for '{entity.name}'.",
+                        confidence=0,
+                    )
+                ],
             )
 
-        add_candidate_from_result(res)
-
-        for alt in (res.alternatives or [])[: max(0, max_candidates - 1)]:
-            if not isinstance(alt, dict):
-                continue
-
-            raw_score = alt.get("total_score")
-            alt_score: Optional[int]
-            if raw_score is None:
-                alt_score = None
-            else:
-                try:
-                    alt_score = int(raw_score)
-                except (TypeError, ValueError):
-                    alt_score = None
-            candidates.append(
-                CandidatePerson(
-                    person_id=alt.get("id"),
-                    name=alt.get("name") or "",
-                    birth_year=alt.get("birth_year"),
-                    birth_place=alt.get("birth_place"),
-                    death_year=alt.get("death_year"),
-                    death_place=alt.get("death_place"),
-                    match_score=alt_score,
-                    confidence=None,
-                )
-            )
-
-        # Evidence block for the top candidate.
-        top = candidates[0]
-        summary_bits = [f"Tree match for '{entity.name}': {top.name}"]
-        if top.birth_year:
-            summary_bits.append(f"b. {top.birth_year}")
-        if top.birth_place:
-            summary_bits.append(str(top.birth_place))
-        evidence.append(
-            EvidenceBlock(
-                source_type="GEDCOM",
-                source_id=top.person_id,
-                summary="; ".join(summary_bits),
-                confidence=80 if (res.confidence == "high") else 60 if (res.confidence == "medium") else 40,
-            )
+        top_candidate = SemanticSearchService._candidate_from_result(entity, res)
+        alt_candidates = SemanticSearchService._candidates_from_alternatives(
+            res.alternatives,
+            max_count=max(0, max_candidates - 1),
         )
+
+        candidates = [top_candidate, *alt_candidates]
+        confidence_score = SemanticSearchService._confidence_to_score(res.confidence)
+        evidence = [SemanticSearchService._evidence_for_top(entity, top_candidate, confidence_score=confidence_score)]
 
         return candidates[:max_candidates], evidence
 
@@ -375,34 +400,7 @@ class SemanticSearchService:
     def _compose_answer(result: SemanticSearchResult) -> None:
         # Conservative answer composition: never claim certainty.
         if result.intent == SemanticSearchIntent.PERSON_LOOKUP and result.people:
-            first = result.people[0]
-            matches = result.candidates.get(first.name) or []
-            if not matches:
-                result.answer_draft = (
-                    f"I checked my tree and couldn't find a strong match for {first.name}. "
-                    "If you can share an approximate birth year, spouse, or a place (county/state), I can look again."
-                )
-                result.confidence = 20
-                result.missing_information = [
-                    "Approximate birth year",
-                    "Spouse/parent names",
-                    "Location (county/state)",
-                ]
-                return
-
-            top = matches[0]
-            line = f"I may have {first.name} in my tree as {top.name}"
-            details: list[str] = []
-            if top.birth_year:
-                details.append(f"born {top.birth_year}")
-            if top.birth_place:
-                details.append(f"in {top.birth_place}")
-            if details:
-                line += " (" + ", ".join(details) + ")"
-            line += ". Does that match what you know?"
-
-            result.answer_draft = line
-            result.confidence = 70
+            SemanticSearchService._compose_person_lookup_answer(result)
             return
 
         if result.intent == SemanticSearchIntent.RELATIONSHIP_EXPLANATION:
@@ -414,6 +412,148 @@ class SemanticSearchService:
             result.missing_information = ["Any ancestor name", "Approximate dates/locations"]
             return
 
-        # Default.
-        result.answer_draft = "I can help with that. If you share a person name (and ideally a birth year/location), I can check my tree and report what I find."
+        result.answer_draft = (
+            "I can help with that. If you share a person name (and ideally a birth year/location), "
+            "I can check my tree and report what I find."
+        )
         result.confidence = 10
+
+    @staticmethod
+    def _compose_person_lookup_answer(result: SemanticSearchResult) -> None:
+        first = result.people[0]
+        matches = result.candidates.get(first.name) or []
+        if not matches:
+            result.answer_draft = (
+                f"I checked my tree and couldn't find a strong match for {first.name}. "
+                "If you can share an approximate birth year, spouse, or a place (county/state), I can look again."
+            )
+            result.confidence = 20
+            result.missing_information = [
+                "Approximate birth year",
+                "Spouse/parent names",
+                "Location (county/state)",
+            ]
+            return
+
+        top = matches[0]
+        line = f"I may have {first.name} in my tree as {top.name}"
+        details: list[str] = []
+        if top.birth_year:
+            details.append(f"born {top.birth_year}")
+        if top.birth_place:
+            details.append(f"in {top.birth_place}")
+        if details:
+            line += " (" + ", ".join(details) + ")"
+        line += ". Does that match what you know?"
+
+        evidence_conf = next((e.confidence for e in result.evidence if e.source_id == top.person_id), None)
+        result.confidence = int(max(20, min(80, evidence_conf if evidence_conf is not None else 50)))
+        if result.confidence < 60:
+            line += " If you can share an approximate birth year or place, I can confirm."
+
+        result.answer_draft = line
+
+
+# -----------------------------------------------------------------------------
+# Tests
+# -----------------------------------------------------------------------------
+
+
+def module_tests() -> bool:
+    """Module-specific tests for SemanticSearchService."""
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Semantic Search Service", "genealogy/semantic_search.py")
+    suite.start_suite()
+
+    def test_should_run() -> None:
+        svc = SemanticSearchService()
+        assert svc.should_run("Who is John Doe?") is True
+        assert svc.should_run("Hello there") is False
+
+    suite.run_test(
+        "should_run heuristic",
+        test_should_run,
+        test_summary="Detects question-like messages",
+        functions_tested="SemanticSearchService.should_run",
+        method_description="Check '?' and prefix heuristics",
+    )
+
+    def test_person_lookup_missing_name() -> None:
+        svc = SemanticSearchService()
+        res = svc.search("Do you have this person in your tree?")
+        assert res.intent == SemanticSearchIntent.CLARIFICATION_NEEDED
+        assert "Person name" in res.missing_information
+
+    suite.run_test(
+        "clarification when missing person name",
+        test_person_lookup_missing_name,
+        test_summary="Person lookup without a name fails closed",
+        functions_tested="SemanticSearchService.search",
+        method_description="Infer PERSON_LOOKUP but require a name",
+    )
+
+    def test_candidate_retrieval_and_scoring() -> None:
+        class StubTreeQueryService:
+            @staticmethod
+            def find_person(
+                name: str,
+                *,
+                approx_birth_year: Optional[int] = None,
+                location: Optional[str] = None,
+                max_results: int = 5,
+            ) -> PersonSearchResult:
+                _ = (name, approx_birth_year, location, max_results)
+                return PersonSearchResult(
+                    found=True,
+                    person_id="P1",
+                    name="John Doe",
+                    birth_year=1900,
+                    birth_place="Ohio",
+                    confidence="medium",
+                    match_score=88,
+                    alternatives=[
+                        {
+                            "id": "P2",
+                            "name": "John Doe (alt)",
+                            "birth_year": 1901,
+                            "birth_place": "Ohio",
+                            "total_score": "77",
+                        }
+                    ],
+                )
+
+        svc = SemanticSearchService()
+        res = svc.search(
+            "Do you have John Doe in your tree? He was born 1900 in Ohio.",
+            tree_query_service=cast(TreeQueryService, StubTreeQueryService()),
+            max_candidates=2,
+        )
+
+        assert res.intent == SemanticSearchIntent.PERSON_LOOKUP
+        assert res.people and res.people[0].name == "John Doe"
+        assert "John Doe" in res.candidates
+        assert len(res.candidates["John Doe"]) == 2
+        assert res.candidates["John Doe"][1].match_score == 77
+        assert "I may have John Doe in my tree" in res.answer_draft
+        assert res.confidence == 60
+
+    suite.run_test(
+        "candidate retrieval + alt score parsing",
+        test_candidate_retrieval_and_scoring,
+        test_summary="Returns top candidates and parses alt scores safely",
+        functions_tested="SemanticSearchService._lookup_person, SemanticSearchService.search",
+        method_description="Stub tree query to validate ranking and score parsing",
+    )
+
+    return suite.finish_suite()
+
+
+from testing.test_utilities import create_standard_test_runner
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(0 if run_comprehensive_tests() else 1)
