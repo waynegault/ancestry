@@ -264,6 +264,7 @@ def _upsert_datasource(grafana_base: str, payload: Mapping[str, object]) -> bool
     payload_dict = dict(payload)
     headers = {"Content-Type": "application/json", **_grafana_api_auth_headers()}
     session = requests.Session()
+    success = False
     try:
         existing = session.get(
             f"{grafana_base}/api/datasources/name/{payload_dict['name']}",
@@ -286,9 +287,10 @@ def _upsert_datasource(grafana_base: str, payload: Mapping[str, object]) -> bool
                     _log_grafana_auth_failure(grafana_base)
                     return False
                 if updated.status_code in {200, 201}:
-                    return True
-                logger.debug("Grafana data source update failed (%s): %s", updated.status_code, updated.text)
-                return False
+                    success = True
+                else:
+                    logger.debug("Grafana data source update failed (%s): %s", updated.status_code, updated.text)
+                return success
 
         if existing.status_code not in {404, 200}:
             logger.debug(
@@ -296,24 +298,25 @@ def _upsert_datasource(grafana_base: str, payload: Mapping[str, object]) -> bool
                 existing.status_code,
                 existing.text,
             )
-            return False
-
-        created = session.post(
-            f"{grafana_base}/api/datasources",
-            headers=headers,
-            data=json.dumps(payload_dict),
-            timeout=5,
-        )
-        if created.status_code in {401, 403}:
-            _log_grafana_auth_failure(grafana_base)
-            return False
-        if created.status_code in {200, 201, 409}:
-            return True
-        logger.debug("Grafana data source create failed (%s): %s", created.status_code, created.text)
-        return False
+        else:
+            created = session.post(
+                f"{grafana_base}/api/datasources",
+                headers=headers,
+                data=json.dumps(payload_dict),
+                timeout=5,
+            )
+            if created.status_code in {401, 403}:
+                _log_grafana_auth_failure(grafana_base)
+                return False
+            if created.status_code in {200, 201, 409}:
+                success = True
+            else:
+                logger.debug("Grafana data source create failed (%s): %s", created.status_code, created.text)
     except Exception as exc:
         logger.debug("Data source upsert failed: %s", exc)
-        return False
+        success = False
+
+    return success
 
 
 def ensure_data_sources_configured(

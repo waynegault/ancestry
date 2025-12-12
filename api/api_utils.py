@@ -101,6 +101,7 @@ PYDANTIC_AVAILABLE = _pydantic_available
 
 # === LOCAL IMPORTS ===
 from config import config_schema
+from core.app_mode_policy import should_allow_outbound_to_person
 from core.common_params import ApiIdentifiers
 from core.database import Person
 from core.logging_config import setup_logging
@@ -2639,47 +2640,64 @@ def call_send_message_api(
     existing_conv_id: Optional[str],
     log_prefix: str,
 ) -> tuple[str, Optional[str]]:
+    app_mode = config_schema.app_mode
+    if app_mode == "dry_run":
+        validation_error = _validate_send_message_request(session_manager, person, message_text, log_prefix)
+        if validation_error:
+            return validation_error
+        return _handle_dry_run_mode(person, existing_conv_id, log_prefix)
+
+    decision = should_allow_outbound_to_person(person, app_mode=app_mode)
+    if not decision.allowed:
+        return decision.reason, existing_conv_id
+
     validation_error = _validate_send_message_request(session_manager, person, message_text, log_prefix)
     if validation_error:
         return validation_error
 
-    app_mode = config_schema.app_mode
-    if app_mode == "dry_run":
-        return _handle_dry_run_mode(person, existing_conv_id, log_prefix)
+    message_status: str = SEND_ERROR_INTERNAL_MODE
+    effective_conv_id: Optional[str] = None
+
     if app_mode not in {"production", "testing"}:
         logger.error(f"{log_prefix}: Logic Error - Unexpected APP_MODE '{app_mode}' reached send logic.")
-        return SEND_ERROR_INTERNAL_MODE, None
+    else:
+        my_profile_id = session_manager.my_profile_id
+        if not my_profile_id:
+            logger.error(f"{log_prefix}: my_profile_id is None, cannot send message")
+        else:
+            api_request_data = _prepare_send_message_request(
+                message_text,
+                my_profile_id.lower(),
+                getattr(person, "profile_id", "").upper(),
+                existing_conv_id,
+                log_prefix,
+            )
+            if not api_request_data:
+                message_status, effective_conv_id = SEND_ERROR_API_PREP_FAILED, None
+            else:
+                send_api_url, payload, send_api_desc, api_headers = api_request_data
 
-    my_profile_id = session_manager.my_profile_id
-    if not my_profile_id:
-        logger.error(f"{log_prefix}: my_profile_id is None, cannot send message")
-        return SEND_ERROR_INTERNAL_MODE, None
+                api_response = _call_api_request(
+                    url=send_api_url,
+                    session_manager=session_manager,
+                    method="POST",
+                    json_data=payload,
+                    headers=api_headers,
+                    api_description=send_api_desc,
+                )
 
-    MY_PROFILE_ID_LOWER = my_profile_id.lower()
-    MY_PROFILE_ID_UPPER = my_profile_id.upper()
-    recipient_profile_id_upper = getattr(person, "profile_id", "").upper()
+                is_initial = not existing_conv_id
+                message_status, effective_conv_id = _process_send_message_response(
+                    api_response,
+                    is_initial,
+                    existing_conv_id,
+                    my_profile_id.upper(),
+                    person,
+                    send_api_desc,
+                    log_prefix,
+                )
 
-    api_request_data = _prepare_send_message_request(
-        message_text, MY_PROFILE_ID_LOWER, recipient_profile_id_upper, existing_conv_id, log_prefix
-    )
-    if not api_request_data:
-        return SEND_ERROR_API_PREP_FAILED, None
-
-    send_api_url, payload, send_api_desc, api_headers = api_request_data
-
-    api_response = _call_api_request(
-        url=send_api_url,
-        session_manager=session_manager,
-        method="POST",
-        json_data=payload,
-        headers=api_headers,
-        api_description=send_api_desc,
-    )
-
-    is_initial = not existing_conv_id
-    return _process_send_message_response(
-        api_response, is_initial, existing_conv_id, MY_PROFILE_ID_UPPER, person, send_api_desc, log_prefix
-    )
+    return message_status, effective_conv_id
 
 
 # End of call_send_message_api

@@ -864,7 +864,25 @@ class ConfigManager:
         """Load application mode from environment variables."""
         app_mode_value = os.getenv("APP_MODE")
         if app_mode_value:
-            config["app_mode"] = app_mode_value
+            normalized = app_mode_value.strip().strip('"').strip("'").strip().lower()
+            aliases = {
+                "dev": "dry_run",
+                "development": "dry_run",
+                "dryrun": "dry_run",
+                "test": "testing",
+            }
+            normalized = aliases.get(normalized, normalized)
+
+            allowed = {"dry_run", "testing", "production"}
+            if normalized not in allowed:
+                logger.warning(
+                    "Unknown APP_MODE '%s' (expected one of %s); defaulting to 'dry_run'",
+                    app_mode_value,
+                    ", ".join(sorted(allowed)),
+                )
+                normalized = "dry_run"
+
+            config["app_mode"] = normalized
 
     @staticmethod
     def _load_ai_config_from_env(config: dict[str, Any]) -> None:

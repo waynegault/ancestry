@@ -135,6 +135,7 @@ from sqlalchemy.orm import Session, joinedload
 from api.api_utils import call_send_message_api
 from caching.cache import cache_result
 from config import config_schema
+from core.app_mode_policy import should_allow_outbound_to_person
 from core.common_params import BatchConfig, BatchCounters, MessagingBatchData, ProcessingState
 
 # === DATABASE ===
@@ -3216,26 +3217,11 @@ def _persist_contextual_draft(draft_payload: dict[str, Any], person: Person, log
 
 def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
     """Check if message should be filtered based on app mode and testing profile."""
-    app_mode = getattr(config_schema, 'app_mode', 'production')
-    testing_profile_id_config = config_schema.testing_profile_id
-    current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
-
-    # Testing mode checks
-    if app_mode == "testing":
-        if not testing_profile_id_config:
-            logger.error(f"Testing mode active, but TESTING_PROFILE_ID not configured. Skipping {log_prefix}.")
-            return False, "skipped (config_error)"
-        if current_profile_id != testing_profile_id_config:
-            skip_reason = f"skipped (testing_mode_filter: not {testing_profile_id_config})"
-            logger.debug(f"Testing Mode: Skipping send to {log_prefix} ({skip_reason}).")
-            return False, skip_reason
-
-    # Production mode checks
-    elif app_mode == "production" and (testing_profile_id_config and current_profile_id == testing_profile_id_config):
-        skip_reason = f"skipped (production_mode_filter: is {testing_profile_id_config})"
-        logger.debug(f"Production Mode: Skipping send to test profile {log_prefix} ({skip_reason}).")
-        return False, skip_reason
-
+    app_mode = getattr(config_schema, "app_mode", "production")
+    decision = should_allow_outbound_to_person(person, app_mode=app_mode)
+    if not decision.allowed:
+        logger.debug(f"Mode Filter: Skipping send to {log_prefix} ({decision.reason}).")
+        return False, decision.reason
     return True, ""
 
 

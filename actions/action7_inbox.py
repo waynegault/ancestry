@@ -2318,8 +2318,9 @@ class InboxProcessor:
             if not getattr(ms_graph_utils, "msal_app_instance", None):
                 raise RuntimeError("MS Graph not configured")
 
-            if config_schema.app_mode in {"dry_run", "test"}:
-                logger.info(f"[DRY RUN] Would create follow-up reminder task: {task_title}")
+            if config_schema.app_mode in {"dry_run", "testing"}:
+                mode = getattr(config_schema, "app_mode", "dry_run")
+                logger.info(f"[{mode}] Would create follow-up reminder task: {task_title}")
                 return True
 
             token = ms_graph_utils.acquire_token_device_flow()

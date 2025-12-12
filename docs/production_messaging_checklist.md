@@ -5,6 +5,7 @@ Use this checklist before attempting any large-scale outreach (e.g., 16k DNA mat
 ## 0) Configuration
 
 - Set `APP_MODE=production` for real sends; `APP_MODE=dry_run` for rehearsal.
+- Use `APP_MODE=testing` to permit real sends but only to the built-in allowlist (Frances McHardy/Milne).
 - Keep `AUTO_APPROVE_ENABLED=false` until manual quality is verified; enable only after spot-checking.
 - Set `MAX_INBOX` to the exact per-run cap (start small: 20–50). `MAX_INBOX=0` is not recommended for production.
 - Set `MAX_SEND_PER_RUN` to a hard ceiling (start at 20–50); final sends are capped by `min(MAX_INBOX, MAX_SEND_PER_RUN)`.

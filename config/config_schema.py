@@ -881,7 +881,7 @@ class ConfigSchema:
 
     # Messaging settings
     message_truncation_length: int = 1000
-    app_mode: str = "development"
+    app_mode: str = "dry_run"
     enable_opt_out_guard: bool = True
     enable_contextual_reply_drafts: bool = False
     contextual_reply_auto_send: bool = False

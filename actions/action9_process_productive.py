@@ -41,6 +41,7 @@ from ai.ai_interface import (
 
 # === LOCAL IMPORTS ===
 from config import ConfigSchema, config_schema as _config_schema
+from core.app_mode_policy import should_allow_outbound_to_person
 from core.database import (
     ConflictStatusEnum,
     ConversationLog,
@@ -2720,20 +2721,9 @@ class PersonProcessor:
     def _should_send_message(person: Person) -> tuple[bool, str]:
         """Determine if message should be sent based on app mode and filters."""
 
-        app_mode = config_schema.app_mode
-        testing_profile_id = config_schema.testing_profile_id
-        # Get current profile ID safely
-        current_profile_id = safe_column_value(person, "profile_id", "UNKNOWN")
-
-        if app_mode == "testing":
-            if not testing_profile_id:
-                return False, "skipped (config_error)"
-            if current_profile_id != str(testing_profile_id):
-                return False, f"skipped (testing_mode_filter: not {testing_profile_id})"
-        elif app_mode == "production" and testing_profile_id and current_profile_id == str(testing_profile_id):
-            return False, f"skipped (production_mode_filter: is {testing_profile_id})"
-
-        return True, ""
+        app_mode = getattr(config_schema, "app_mode", "production")
+        decision = should_allow_outbound_to_person(person, app_mode=app_mode)
+        return decision.allowed, decision.reason
 
     @staticmethod
     def _get_conversation_id(context_logs: list[ConversationLog], log_prefix: str) -> Optional[str]:
