@@ -180,11 +180,13 @@ class InboundOrchestrator:
         max_len = self._get_message_truncation_length()
 
         template_key = "INBOUND_GENERATED_REPLY"
-        reason = (
-            f"intent={intent or 'Unknown'}; matches={research_matches_count}; "
-            f"semantic_search={'yes' if semantic_search_ran else 'no'}"
+        intent_phrase = intent or "Unknown"
+        semantic_phrase = "with semantic search" if semantic_search_ran else "without semantic search"
+        template_reason = (
+            f"Inbound AI reply generated after intent '{intent_phrase}' using {research_matches_count} "
+            f"research match(es), {semantic_phrase}"
         )
-        enhanced_status = f"generated_reply | Template: {template_key} (Reason: {reason})"
+        enhanced_status = f"generated_reply | Template: {template_key} ({template_reason})"
 
         try:
             log_entry = ConversationLog(
