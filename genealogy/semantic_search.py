@@ -107,9 +107,7 @@ class SemanticSearchResult:
             "entities": {
                 "people": [p.to_dict() for p in self.people],
             },
-            "candidates": {
-                key: [c.to_dict() for c in value] for key, value in self.candidates.items()
-            },
+            "candidates": {key: [c.to_dict() for c in value] for key, value in self.candidates.items()},
             "evidence": [e.to_dict() for e in self.evidence],
             "answer_draft": self.answer_draft,
             "confidence": self.confidence,
@@ -417,7 +415,5 @@ class SemanticSearchService:
             return
 
         # Default.
-        result.answer_draft = (
-            "I can help with that. If you share a person name (and ideally a birth year/location), I can check my tree and report what I find."
-        )
+        result.answer_draft = "I can help with that. If you share a person name (and ideally a birth year/location), I can check my tree and report what I find."
         result.confidence = 10
