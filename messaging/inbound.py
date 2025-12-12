@@ -1,5 +1,6 @@
 import logging
 import sys
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any, ClassVar, Optional
 
@@ -10,8 +11,10 @@ from ai.ai_interface import (
     extract_genealogical_entities,
     generate_genealogical_reply,
 )
+from config import config_schema
 from core.database import (
     ConflictStatusEnum,
+    ConversationLog,
     ConversationMetrics,
     ConversationState,
     ConversationStatusEnum,
@@ -19,6 +22,7 @@ from core.database import (
     EngagementTracking,
     FactStatusEnum,
     FactTypeEnum,
+    MessageDirectionEnum,
     Person,
     SuggestedFact,
 )
@@ -76,6 +80,8 @@ class InboundOrchestrator:
             logger.error(f"Could not resolve person for sender_id: {sender_id}")
             return {"status": "error", "reason": "person_not_found"}
 
+        inbound_log = self._persist_inbound_conversation_log(person, conversation_id, message_content)
+
         # 1. Safety Check
         safety_result = self.safety_guard.check_message(message_content)
         if safety_result.status != SafetyStatus.SAFE:
@@ -95,57 +101,22 @@ class InboundOrchestrator:
         intent = classify_message_intent(context_history, self.session_manager)
         logger.info(f"Classified intent for {sender_id}: {intent}")
 
+        self._attach_intent_to_log(inbound_log, intent)
+
         # Update Conversation State
         self._update_conversation_state(person, intent)
 
-        # 3. Genealogical Research & Reply Generation
-        research_results = None
-        generated_reply = None
-        extracted_data = None
-        semantic_search = None
+        source_message_id = getattr(inbound_log, "id", None) if inbound_log is not None else None
 
-        if intent in {"PRODUCTIVE", "ENTHUSIASTIC"}:
-            # A. Extract Entities
-            extracted_data = extract_genealogical_entities(context_history, self.session_manager)
-
-            # A2. Semantic Search (tree-aware Q&A) for inbound questions
-            semantic_service = SemanticSearchService()
-            if semantic_service.should_run(message_content):
-                try:
-                    semantic_result = semantic_service.search(
-                        message_content,
-                        extracted_entities=extracted_data,
-                    )
-                    semantic_search = semantic_result.to_dict()
-                    semantic_service.persist_jsonl(
-                        payload=semantic_search,
-                        person_id=getattr(person, "id", None),
-                        sender_id=sender_id,
-                        conversation_id=conversation_id,
-                    )
-                except Exception as exc:  # pragma: no cover
-                    logger.debug("Semantic search failed (non-fatal): %s", exc)
-
-            # B. Harvest Facts
-            if extracted_data:
-                self._harvest_facts(
-                    person,
-                    extracted_data,
-                    original_message=message_content,
-                    conversation_id=conversation_id,
-                )
-
-            # C. Research & Reply
-            if extracted_data:
-                research_results = self._perform_genealogical_research(extracted_data)
-
-                # D. Generate Reply
-                if research_results:
-                    # Format data for AI
-                    genealogical_data_str = self._format_research_results(research_results)
-                    generated_reply = generate_genealogical_reply(
-                        context_history, message_content, genealogical_data_str, self.session_manager
-                    )
+        research_results, generated_reply, extracted_data, semantic_search = self._run_research_flow(
+            intent=intent,
+            person=person,
+            message_content=message_content,
+            sender_id=sender_id,
+            conversation_id=conversation_id,
+            context_history=context_history,
+            source_message_id=source_message_id,
+        )
 
         # 4. Update Metrics
         self._update_metrics(person, intent, generated_reply is not None, extracted_data is not None)
@@ -159,6 +130,121 @@ class InboundOrchestrator:
             "extracted_data": extracted_data,
             "semantic_search": semantic_search,
         }
+
+    @staticmethod
+    def _get_message_truncation_length() -> int:
+        try:
+            return int(getattr(config_schema, "message_truncation_length", 500))
+        except Exception:
+            return 500
+
+    def _persist_inbound_conversation_log(
+        self, person: Person, conversation_id: str, message_content: str
+    ) -> Optional[ConversationLog]:
+        log_entry: Optional[ConversationLog] = None
+        max_len = self._get_message_truncation_length()
+
+        try:
+            log_entry = ConversationLog(
+                conversation_id=conversation_id,
+                direction=MessageDirectionEnum.IN,
+                people_id=person.id,
+                latest_message_content=(message_content or "")[:max_len],
+                latest_timestamp=datetime.now(timezone.utc),
+                ai_sentiment=None,
+            )
+            self.db.add(log_entry)
+            self.db.flush()
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Failed to persist inbound ConversationLog (non-fatal): %s", exc)
+            return None
+
+        return log_entry
+
+    @staticmethod
+    def _attach_intent_to_log(inbound_log: Optional[ConversationLog], intent: Optional[str]) -> None:
+        if inbound_log is None:
+            return
+        with suppress(Exception):
+            inbound_log.ai_sentiment = intent
+
+    @staticmethod
+    def _maybe_run_semantic_search(
+        *,
+        message_content: str,
+        sender_id: str,
+        conversation_id: str,
+        person: Person,
+        extracted_data: Optional[dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        semantic_service = SemanticSearchService()
+        if not semantic_service.should_run(message_content):
+            return None
+
+        try:
+            semantic_result = semantic_service.search(
+                message_content,
+                extracted_entities=extracted_data,
+            )
+            semantic_search = semantic_result.to_dict()
+            semantic_service.persist_jsonl(
+                payload=semantic_search,
+                person_id=getattr(person, "id", None),
+                sender_id=sender_id,
+                conversation_id=conversation_id,
+            )
+            return semantic_search
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Semantic search failed (non-fatal): %s", exc)
+            return None
+
+    def _run_research_flow(
+        self,
+        *,
+        intent: Optional[str],
+        person: Person,
+        message_content: str,
+        sender_id: str,
+        conversation_id: str,
+        context_history: str,
+        source_message_id: Optional[int],
+    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+        if intent not in {"PRODUCTIVE", "ENTHUSIASTIC"}:
+            return None, None, None, None
+
+        extracted_data = extract_genealogical_entities(context_history, self.session_manager)
+        semantic_search = self._maybe_run_semantic_search(
+            message_content=message_content,
+            sender_id=sender_id,
+            conversation_id=conversation_id,
+            person=person,
+            extracted_data=extracted_data,
+        )
+
+        if extracted_data:
+            self._harvest_facts(
+                person,
+                extracted_data,
+                original_message=message_content,
+                conversation_id=conversation_id,
+                source_message_id=source_message_id,
+            )
+
+        research_results: Optional[list[dict[str, Any]]] = None
+        generated_reply: Optional[str] = None
+
+        if extracted_data:
+            research_results = self._perform_genealogical_research(extracted_data)
+            if research_results:
+                genealogical_data_str = self._format_research_results(research_results)
+                generated_reply = generate_genealogical_reply(
+                    context_history,
+                    message_content,
+                    genealogical_data_str,
+                    self.session_manager,
+                )
+
+        return research_results, generated_reply, extracted_data, semantic_search
 
     def _resolve_person(self, sender_id: str) -> Optional[Person]:
         """Resolve Person object from sender_id (UUID or profile_id)."""
@@ -212,6 +298,7 @@ class InboundOrchestrator:
         *,
         original_message: str,
         conversation_id: str,
+        source_message_id: Optional[int],
     ) -> None:
         """Validate extracted facts and stage SuggestedFact/DataConflict records."""
 
@@ -257,13 +344,15 @@ class InboundOrchestrator:
             fact_type_enum = self._resolve_fact_type_enum(fact.fact_type)
             status = FactStatusEnum.APPROVED if validation_result.auto_approved else FactStatusEnum.PENDING
 
+            fact_source_id = str(source_message_id) if source_message_id is not None else conversation_id
+
             self.db.add(
                 SuggestedFact(
                     people_id=person.id,
                     fact_type=fact_type_enum,
                     original_value=fact.original_text,
                     new_value=structured_value,
-                    source_message_id=conversation_id,
+                    source_message_id=fact_source_id,
                     status=status,
                     confidence_score=fact.confidence,
                 )
@@ -280,7 +369,7 @@ class InboundOrchestrator:
                         existing_value=existing_value,
                         new_value=structured_value,
                         source="conversation",
-                        source_message_id=None,
+                        source_message_id=source_message_id,
                         confidence_score=fact.confidence,
                         status=ConflictStatusEnum.OPEN,
                     )
