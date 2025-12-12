@@ -48,6 +48,11 @@ class TestInboundOrchestrator(unittest.TestCase):
         self.patcher_generate = patch('messaging.inbound.generate_genealogical_reply')
         self.mock_generate = self.patcher_generate.start()
 
+        self.patcher_semantic = patch('messaging.inbound.SemanticSearchService')
+        self.mock_semantic_cls = self.patcher_semantic.start()
+        self.mock_semantic = self.mock_semantic_cls.return_value
+        self.mock_semantic.should_run.return_value = False
+
         self.orchestrator = InboundOrchestrator(self.mock_db, self.mock_research_service, self.mock_session_manager)
 
     def tearDown(self) -> None:
@@ -55,6 +60,7 @@ class TestInboundOrchestrator(unittest.TestCase):
         self.patcher_classify.stop()
         self.patcher_extract.stop()
         self.patcher_generate.stop()
+        self.patcher_semantic.stop()
 
     def _setup_db_mocks(self, person_found: bool = True, state_found: bool = True) -> tuple[Any, Any]:
         mock_person = MagicMock()
@@ -129,6 +135,7 @@ class TestInboundOrchestrator(unittest.TestCase):
         self.assertEqual(result['status'], 'processed')
         self.assertEqual(result['intent'], 'PRODUCTIVE')
         self.assertEqual(result['generated_reply'], 'Hello, I found John Doe in my tree.')
+        self.assertIsNone(result.get('semantic_search'))
 
         # Verify DB interactions
         # Should add SuggestedFact (2 times: person and key fact)
@@ -140,6 +147,38 @@ class TestInboundOrchestrator(unittest.TestCase):
         # Check if research service was called
         self.mock_research_service.search_people.assert_called()
         self.mock_research_service.get_relationship_path.assert_called()
+
+    def test_process_message_safe_productive_semantic_search(self):
+        # Setup
+        self.mock_safety_guard.check_message.return_value = SafetyCheckResult(
+            status=SafetyStatus.SAFE, reason='', flagged_terms=[]
+        )
+        self.mock_classify.return_value = 'PRODUCTIVE'
+
+        self.mock_extract.return_value = {
+            'extracted_data': {
+                'mentioned_people': [{'name': 'John Doe', 'birth_year': 1900}],
+                'key_facts': ['Lived in London'],
+            }
+        }
+
+        self.mock_semantic.should_run.return_value = True
+        semantic_result = MagicMock()
+        semantic_result.to_dict.return_value = {'intent': 'question', 'final_answer': 'Test answer'}
+        self.mock_semantic.search.return_value = semantic_result
+
+        self.mock_generate.return_value = 'Hello, I found John Doe in my tree.'
+        _, _ = self._setup_db_mocks()
+
+        # Execute
+        result = self.orchestrator.process_message('Who is John Doe?', 'sender1', 'conv1', 'history')
+
+        # Verify
+        self.assertEqual(result['status'], 'processed')
+        self.assertEqual(result['intent'], 'PRODUCTIVE')
+        self.assertEqual(result['semantic_search'], {'intent': 'question', 'final_answer': 'Test answer'})
+        self.mock_semantic.search.assert_called_once()
+        self.mock_semantic.persist_jsonl.assert_called_once()
 
     def test_process_message_desist(self):
         # Setup

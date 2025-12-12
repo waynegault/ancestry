@@ -22,6 +22,7 @@ from core.database import (
 )
 from core.session_manager import SessionManager
 from genealogy.research_service import ResearchService
+from genealogy.semantic_search import SemanticSearchService
 from messaging.safety import SafetyCheckResult, SafetyGuard, SafetyStatus
 
 logger = logging.getLogger(__name__)
@@ -98,10 +99,29 @@ class InboundOrchestrator:
         research_results = None
         generated_reply = None
         extracted_data = None
+        semantic_search = None
 
         if intent in {"PRODUCTIVE", "ENTHUSIASTIC"}:
             # A. Extract Entities
             extracted_data = extract_genealogical_entities(context_history, self.session_manager)
+
+            # A2. Semantic Search (tree-aware Q&A) for inbound questions
+            semantic_service = SemanticSearchService()
+            if semantic_service.should_run(message_content):
+                try:
+                    semantic_result = semantic_service.search(
+                        message_content,
+                        extracted_entities=extracted_data,
+                    )
+                    semantic_search = semantic_result.to_dict()
+                    semantic_service.persist_jsonl(
+                        payload=semantic_search,
+                        person_id=getattr(person, "id", None),
+                        sender_id=sender_id,
+                        conversation_id=conversation_id,
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.debug("Semantic search failed (non-fatal): %s", exc)
 
             # B. Harvest Facts
             if extracted_data:
@@ -129,6 +149,7 @@ class InboundOrchestrator:
             "research_results": research_results,
             "generated_reply": generated_reply,
             "extracted_data": extracted_data,
+            "semantic_search": semantic_search,
         }
 
     def _resolve_person(self, sender_id: str) -> Optional[Person]:
