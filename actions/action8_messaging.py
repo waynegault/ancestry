@@ -2803,8 +2803,29 @@ def _build_research_suggestions_for_context(
 ) -> tuple[str, dict[str, Any]]:
     """Generate research suggestions (collections + ethnicity clusters) for drafts."""
 
-    suggestion_text = ""
+    parts: list[str] = []
     metadata: dict[str, Any] = {}
+
+    collections_text, collections_meta = _build_collection_suggestions_for_context(context, log_prefix)
+    if collections_text:
+        parts.append(collections_text)
+    metadata.update(collections_meta)
+
+    ethnicity_text, ethnicity_meta = _build_ethnicity_cluster_suggestion(db_session, person, log_prefix)
+    if ethnicity_text:
+        parts.append(ethnicity_text)
+    metadata.update(ethnicity_meta)
+
+    cluster_text, cluster_meta = _build_shared_match_cluster_suggestion(context, log_prefix)
+    if cluster_text:
+        parts.append(cluster_text)
+    metadata.update(cluster_meta)
+
+    return "\n\n".join(p.strip() for p in parts if p.strip()).strip(), metadata
+
+
+def _build_collection_suggestions_for_context(context: MatchContext, log_prefix: str) -> tuple[str, dict[str, Any]]:
+    """Best-effort record-collection suggestions based on extracted facts."""
 
     try:
         from research.research_suggestions import generate_research_suggestions
@@ -2821,35 +2842,74 @@ def _build_research_suggestions_for_context(
             relationship_context=relationship_context,
         )
         suggestion_text = research.get("formatted_message", "") or ""
-        metadata["research_collections"] = research.get("collections", [])
-        metadata["research_record_types"] = research.get("record_types", [])
+        metadata = {
+            "research_collections": research.get("collections", []),
+            "research_record_types": research.get("record_types", []),
+        }
+        return suggestion_text.strip(), metadata
     except Exception as exc:  # pragma: no cover - suggestion enrichment is best-effort
         logger.debug(f"{log_prefix}: research suggestions unavailable: {exc}")
+        return "", {}
+
+
+def _build_ethnicity_cluster_suggestion(
+    db_session: Session,
+    person: Person,
+    log_prefix: str,
+) -> tuple[str, dict[str, Any]]:
+    """Best-effort ethnicity overlap note for draft-only research suggestions."""
 
     try:
         owner_profile_id = _get_owner_profile_id()
         person_id = safe_column_value(person, "id", None)
-        if owner_profile_id and person_id:
-            ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, int(person_id))
-            shared_regions = ethnicity.get("shared_regions", []) or []
-            if shared_regions:
-                region_phrase = _format_ethnicity_text(shared_regions)
-                cluster_line = (
-                    f"DNA ethnicity cluster: {region_phrase}. "
-                    f"Consider records in {shared_regions[0]} and nearby regions."
-                )
-                suggestion_text = f"{suggestion_text}\n\n{cluster_line}" if suggestion_text else cluster_line
-                metadata.update(
-                    {
-                        "ethnicity_shared_regions": shared_regions,
-                        "ethnicity_similarity": ethnicity.get("similarity_score"),
-                        "ethnicity_top_region": ethnicity.get("top_shared_region"),
-                    }
-                )
+        if not (owner_profile_id and person_id):
+            return "", {}
+
+        ethnicity = calculate_ethnicity_commonality(db_session, owner_profile_id, int(person_id))
+        shared_regions = ethnicity.get("shared_regions", []) or []
+        if not shared_regions:
+            return "", {}
+
+        region_phrase = _format_ethnicity_text(shared_regions)
+        suggestion_text = (
+            f"DNA ethnicity cluster: {region_phrase}. "
+            f"Consider records in {shared_regions[0]} and nearby regions."
+        )
+        metadata: dict[str, Any] = {
+            "ethnicity_shared_regions": shared_regions,
+            "ethnicity_similarity": ethnicity.get("similarity_score"),
+            "ethnicity_top_region": ethnicity.get("top_shared_region"),
+        }
+        return suggestion_text.strip(), metadata
     except Exception as exc:  # pragma: no cover - defensive logging only
         logger.debug(f"{log_prefix}: ethnicity enrichment skipped: {exc}")
+        return "", {}
 
-    return suggestion_text.strip(), metadata
+
+def _build_shared_match_cluster_suggestion(
+    context: MatchContext,
+    log_prefix: str,
+) -> tuple[str, dict[str, Any]]:
+    """Draft-only suggestion that nudges review of shared-match clusters."""
+
+    try:
+        cluster = getattr(context, "research", {}).get("shared_match_cluster")
+        if not isinstance(cluster, dict):
+            return "", {}
+
+        cluster_dict = cast(dict[str, Any], cluster)
+        shared_count = cluster_dict.get("shared_match_count")
+        if not (isinstance(shared_count, int) and shared_count > 0):
+            return "", {}
+
+        suggestion_text = (
+            f"Shared match cluster: you and this match have {shared_count} shared matches. "
+            "Review the shared matches for repeating surnames/locations and ask which branch they connect to."
+        )
+        return suggestion_text.strip(), {"shared_match_count": shared_count}
+    except Exception as exc:  # pragma: no cover - best-effort enrichment
+        logger.debug(f"{log_prefix}: shared match cluster enrichment skipped: {exc}")
+        return "", {}
 
 
 def _inject_research_suggestions(draft_text: str, suggestions: str) -> str:

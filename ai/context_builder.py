@@ -14,7 +14,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,9 @@ class MatchContext:
     # Extracted facts from conversations
     extracted_facts: dict[str, Any] = field(default_factory=dict)
 
+    # Research insights (best-effort enrichment)
+    research: dict[str, Any] = field(default_factory=dict)
+
     # Metadata
     context_generated_at: str = ""
     context_version: str = "1.0"
@@ -57,6 +60,7 @@ class MatchContext:
             "genealogy": self.genealogy,
             "history": self.history,
             "extracted_facts": self.extracted_facts,
+            "research": self.research,
             "context_generated_at": self.context_generated_at,
             "context_version": self.context_version,
         }
@@ -75,6 +79,7 @@ class MatchContext:
         lines.extend(self._format_genealogy())
         lines.extend(self._format_history())
         lines.extend(self._format_facts())
+        lines.extend(self._format_research())
         lines.append("\n=== END CONTEXT ===")
         return "\n".join(lines)
 
@@ -133,6 +138,27 @@ class MatchContext:
             for key, values in self.extracted_facts.items():
                 if values:
                     lines.append(f"{key}: {', '.join(str(v) for v in values[:5])}")
+        return lines
+
+    def _format_research(self) -> list[str]:
+        lines: list[str] = []
+        if not self.research:
+            return lines
+
+        lines.append("\n## Research Insights")
+
+        shared_regions = self.research.get("ethnicity_shared_regions")
+        if shared_regions:
+            lines.append(f"Ethnicity overlap: {', '.join(str(r) for r in shared_regions[:3])}")
+
+        cluster = self.research.get("shared_match_cluster")
+        cluster_count: Any = None
+        if isinstance(cluster, dict):
+            cluster_dict = cast(dict[str, Any], cluster)
+            cluster_count = cluster_dict.get("shared_match_count")
+        if isinstance(cluster_count, int) and cluster_count > 0:
+            lines.append(f"Shared matches: {cluster_count}")
+
         return lines
 
 
@@ -201,11 +227,95 @@ class ContextBuilder:
             context.history = self._build_history(person)
             context.extracted_facts = self._build_extracted_facts(person)
             context.genealogy = self._build_genealogy(person)
+            context.research = self._build_research_insights(person)
 
         except Exception as e:
             logger.error(f"Error building context for {match_uuid}: {e}", exc_info=True)
 
         return context
+
+    @staticmethod
+    def _resolve_owner_profile_id() -> Optional[str]:
+        """Best-effort owner profile ID resolution (session manager > config)."""
+        try:
+            from core.session_utils import get_session_manager
+
+            session_manager = get_session_manager()
+            if session_manager and getattr(session_manager, "my_profile_id", None):
+                return session_manager.my_profile_id
+        except Exception:
+            pass
+
+        try:
+            from config import config_schema
+
+            return getattr(config_schema, "testing_profile_id", None)
+        except Exception:
+            return None
+
+    def _build_research_insights(self, person: Any) -> dict[str, Any]:
+        """Build lightweight research insights used for draft suggestions."""
+        research: dict[str, Any] = {}
+
+        # Shared-match cluster insight (pure DB; no external calls)
+        try:
+            research["shared_match_cluster"] = self._build_shared_match_cluster(person)
+        except Exception as exc:
+            logger.debug(f"Shared match cluster enrichment skipped: {exc}")
+
+        # Ethnicity commonality insight (best-effort; requires owner_profile_id)
+        try:
+            owner_profile_id = ContextBuilder._resolve_owner_profile_id()
+            person_id = getattr(person, "id", None)
+            if owner_profile_id and person_id:
+                from genealogy.tree_stats_utils import calculate_ethnicity_commonality
+
+                ethnicity = calculate_ethnicity_commonality(self._session, owner_profile_id, int(person_id))
+                shared_regions = ethnicity.get("shared_regions", []) or []
+                if shared_regions:
+                    research.update(
+                        {
+                            "ethnicity_shared_regions": shared_regions,
+                            "ethnicity_similarity": ethnicity.get("similarity_score"),
+                            "ethnicity_top_region": ethnicity.get("top_shared_region"),
+                        }
+                    )
+        except Exception as exc:
+            logger.debug(f"Ethnicity enrichment skipped: {exc}")
+
+        return research
+
+    def _build_shared_match_cluster(self, person: Any) -> dict[str, Any]:
+        """Summarize the shared-match network for this match (count + sample)."""
+        cluster: dict[str, Any] = {
+            "shared_match_count": 0,
+            "example_shared_matches": [],
+        }
+
+        person_id = getattr(person, "id", None)
+        if not person_id:
+            return cluster
+
+        from core.database import SharedMatch
+
+        shared_matches = self._session.query(SharedMatch).filter(SharedMatch.person_id == int(person_id)).all()
+        cluster["shared_match_count"] = len(shared_matches)
+
+        # Provide a small sample (first N) to aid human review.
+        examples: list[dict[str, Any]] = []
+        for row in shared_matches[:5]:
+            shared_person = getattr(row, "shared_match_person", None)
+            examples.append(
+                {
+                    "uuid": getattr(shared_person, "uuid", None),
+                    "name": getattr(shared_person, "display_name", None)
+                    or getattr(shared_person, "username", None)
+                    or "Unknown",
+                    "shared_cm": getattr(row, "shared_cm", None),
+                }
+            )
+        cluster["example_shared_matches"] = examples
+        return cluster
 
     @staticmethod
     def _build_identity(person: Any) -> dict[str, Any]:

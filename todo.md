@@ -78,7 +78,7 @@
 
 ## Later
 
-- [ ] Research suggestions: surface ethnicity/cluster insights in ContextBuilder + Action 8 replies (review-first) to nudge next-best questions.
+- [x] Research suggestions: surface ethnicity/cluster insights in ContextBuilder + Action 8 replies (review-first) to nudge next-best questions.
 
 ## Testing
 
