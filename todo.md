@@ -155,6 +155,11 @@ This file is the working implementation plan for completing the mission:
 - [x] Consolidate/fix ORM model duplication in `core/database.py` (clean mapping, reduce risk)
 - [ ] Decide whether to rebuild DB (recollect) after schema cleanup
 
+Decision note:
+- No rebuild is required for the duplication fix alone (no schema changes were introduced).
+- Plan a rebuild if/when you remove/rename columns or tables, or if you do a larger `core/database.py` cleanup that intentionally changes the ORM schema.
+- Safe rebuild workflow: backup DB (main menu option), delete `Data/ancestry.db`, run `python -m core.database` to recreate tables/seed templates, then re-run Actions 6/12/13 to recollect.
+
 ---
 
 ## 4) Run Safety Checklist (Go/No-Go Inputs)
