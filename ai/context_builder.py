@@ -496,6 +496,17 @@ class ContextBuilder:
                         genealogy["relationship_description"] = rel_result.relationship_description
                         genealogy["relationship_label"] = rel_result.relationship_label
 
+                        confidence = getattr(rel_result, "confidence", None)
+                        if isinstance(confidence, str) and confidence:
+                            genealogy["relationship_confidence"] = confidence
+
+                        path = getattr(rel_result, "path", None)
+                        if isinstance(path, list) and path:
+                            max_nodes = 12
+                            genealogy["relationship_path"] = path[:max_nodes]
+                            if len(path) > max_nodes:
+                                genealogy["relationship_path_truncated"] = True
+
                         if rel_result.common_ancestor:
                             genealogy["known_common_ancestors"].append(rel_result.common_ancestor)
 
@@ -551,6 +562,8 @@ def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
             self.found = True
             self.relationship_description = "3rd cousin"
             self.relationship_label = "3rd cousin"
+            self.confidence = "high"
+            self.path = [{"person_id": "I123", "name": "John Doe"}, {"person_id": "I999", "name": "Ancestor"}]
             self.common_ancestor = {"name": "Common Ancestor"}
 
     class _StubTreeService:
@@ -594,6 +607,8 @@ def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
     assert tree_service.get_common_ancestors_calls == ["I123"]
     assert genealogy.get("relationship_description") == "3rd cousin"
     assert genealogy.get("relationship_label") == "3rd cousin"
+    assert genealogy.get("relationship_confidence") == "high"
+    assert isinstance(genealogy.get("relationship_path"), list)
     assert genealogy.get("known_common_ancestors"), "Expected common ancestors list to be populated"
     assert genealogy.get("gedcom_person_match", {}).get("person_id") == "I123"
     return True
