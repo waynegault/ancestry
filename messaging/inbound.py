@@ -167,10 +167,24 @@ class InboundOrchestrator:
         return log_entry
 
     def _persist_outbound_generated_reply_log(
-        self, person: Person, conversation_id: str, reply_content: str
+        self,
+        person: Person,
+        conversation_id: str,
+        reply_content: str,
+        *,
+        intent: Optional[str],
+        research_matches_count: int,
+        semantic_search_ran: bool,
     ) -> Optional[ConversationLog]:
         log_entry: Optional[ConversationLog] = None
         max_len = self._get_message_truncation_length()
+
+        template_key = "INBOUND_GENERATED_REPLY"
+        reason = (
+            f"intent={intent or 'Unknown'}; matches={research_matches_count}; "
+            f"semantic_search={'yes' if semantic_search_ran else 'no'}"
+        )
+        enhanced_status = f"generated_reply | Template: {template_key} (Reason: {reason})"
 
         try:
             log_entry = ConversationLog(
@@ -181,7 +195,7 @@ class InboundOrchestrator:
                 latest_timestamp=datetime.now(timezone.utc),
                 ai_sentiment=None,
                 message_template_id=None,
-                script_message_status="generated_reply",
+                script_message_status=enhanced_status,
             )
             self.db.add(log_entry)
         except Exception as exc:  # pragma: no cover
@@ -278,6 +292,9 @@ class InboundOrchestrator:
                         person=person,
                         conversation_id=conversation_id,
                         reply_content=generated_reply,
+                        intent=intent,
+                        research_matches_count=len(research_results),
+                        semantic_search_ran=semantic_search is not None,
                     )
 
         return research_results, generated_reply, extracted_data, semantic_search
