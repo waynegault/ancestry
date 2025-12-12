@@ -166,6 +166,30 @@ class InboundOrchestrator:
 
         return log_entry
 
+    def _persist_outbound_generated_reply_log(
+        self, person: Person, conversation_id: str, reply_content: str
+    ) -> Optional[ConversationLog]:
+        log_entry: Optional[ConversationLog] = None
+        max_len = self._get_message_truncation_length()
+
+        try:
+            log_entry = ConversationLog(
+                conversation_id=conversation_id,
+                direction=MessageDirectionEnum.OUT,
+                people_id=person.id,
+                latest_message_content=(reply_content or "")[:max_len],
+                latest_timestamp=datetime.now(timezone.utc),
+                ai_sentiment=None,
+                message_template_id=None,
+                script_message_status="generated_reply",
+            )
+            self.db.add(log_entry)
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Failed to persist outbound generated-reply ConversationLog (non-fatal): %s", exc)
+            return None
+
+        return log_entry
+
     @staticmethod
     def _attach_intent_to_log(inbound_log: Optional[ConversationLog], intent: Optional[str]) -> None:
         if inbound_log is None:
@@ -248,6 +272,13 @@ class InboundOrchestrator:
                     genealogical_data_str,
                     self.session_manager,
                 )
+
+                if generated_reply:
+                    self._persist_outbound_generated_reply_log(
+                        person=person,
+                        conversation_id=conversation_id,
+                        reply_content=generated_reply,
+                    )
 
         return research_results, generated_reply, extracted_data, semantic_search
 
