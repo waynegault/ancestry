@@ -408,6 +408,7 @@ class SessionValidator:
             "action6b": "Action 6B - cookies will be available after navigation",
             "srch_inbox": "Action 7 - API login verification is sufficient",
             "search_inbox": "Action 7 - API login verification is sufficient",
+            "run_daily_review_first_loop_action": "Action 15 - starts with Action 7; API login verification is sufficient",
             "send_messages": "Action 8 - API login verification is sufficient",
             "process_productive": "Action 9 - API login verification is sufficient",
             "main": "Action 10 - Local file operation",
@@ -757,6 +758,11 @@ def _test_should_skip_cookie_check_action7() -> bool:
     should_skip, reason = validator._should_skip_cookie_check("srch_inbox")
     assert should_skip is True, "Should skip cookie check for srch_inbox"
     assert reason is not None and "Action 7" in reason, f"Reason should mention Action 7, got: {reason}"
+
+    # Test with Action 15 daily loop action name
+    should_skip, reason = validator._should_skip_cookie_check("run_daily_review_first_loop_action")
+    assert should_skip is True, "Should skip cookie check for run_daily_review_first_loop_action"
+    assert reason is not None and "Action 15" in reason, f"Reason should mention Action 15, got: {reason}"
 
     return True
 

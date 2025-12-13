@@ -375,7 +375,8 @@ def run_daily_review_first_loop_action(session_manager: SessionManager, *_: Any)
 
     logger.info("--- Running Daily Review-First Loop: Action 7 → Review Queue → Action 11 ---")
 
-    if not _run_action7_inbox(session_manager):
+    # Use the Action 7 wrapper (API-first) rather than requiring a specific inbox page selector.
+    if not srch_inbox_actn(session_manager):
         return False
 
     try:
@@ -462,7 +463,7 @@ def _test_daily_review_first_loop_respects_send_confirmation() -> bool:
 
     module_ref = sys.modules[__name__]
     with (
-        patch.object(module_ref, "_run_action7_inbox", return_value=True),
+        patch.object(module_ref, "srch_inbox_actn", return_value=True),
         patch("cli.maintenance.MainCLIHelpers.show_review_queue", return_value=None),
         patch("builtins.input", return_value="n"),
         patch.object(module_ref, "send_approved_drafts_action", return_value=True) as mock_send,
@@ -472,7 +473,7 @@ def _test_daily_review_first_loop_respects_send_confirmation() -> bool:
         mock_send.assert_not_called()
 
     with (
-        patch.object(module_ref, "_run_action7_inbox", return_value=True),
+        patch.object(module_ref, "srch_inbox_actn", return_value=True),
         patch("cli.maintenance.MainCLIHelpers.show_review_queue", return_value=None),
         patch("builtins.input", return_value="y"),
         patch.object(module_ref, "send_approved_drafts_action", return_value=True) as mock_send,
