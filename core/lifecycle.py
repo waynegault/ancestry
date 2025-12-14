@@ -173,6 +173,47 @@ def check_startup_status(session_manager: SessionManager) -> None:
     _perform_proactive_cookie_sync(session_manager)
 
 
+def run_startup_maintenance_tasks(session_manager: SessionManager) -> None:
+    """
+    Run maintenance tasks on application startup.
+
+    Phase 10.1: Handles periodic housekeeping that would otherwise require
+    a background scheduler. Safe to run on every startup.
+
+    Tasks:
+    - Expire stale PENDING drafts (Phase 1.6.2 expiration logic)
+    - Future: Session cleanup, cache pruning, etc.
+
+    Args:
+        session_manager: Active session manager with DB access
+    """
+    logger.info("🔧 Running startup maintenance tasks...")
+
+    # Task 1: Expire old drafts
+    try:
+        from core.approval_queue import ApprovalQueueService
+        from core.action_runner import get_database_manager
+
+        db_manager = get_database_manager(session_manager)
+        if db_manager and db_manager.ensure_ready():
+            db_session = db_manager.get_session()
+            if db_session:
+                service = ApprovalQueueService(db_session)
+                expired_count = service.expire_old_drafts()
+                if expired_count > 0:
+                    logger.info(f"♻️ Expired {expired_count} stale draft(s)")
+                else:
+                    logger.debug("No stale drafts to expire")
+            else:
+                logger.debug("No DB session available for draft expiration")
+        else:
+            logger.debug("Database not ready - skipping draft expiration")
+    except Exception as e:
+        logger.warning(f"Draft expiration task failed (non-fatal): {e}")
+
+    logger.info("✅ Startup maintenance complete")
+
+
 def _check_lm_studio_running() -> bool:
     """Check if LM Studio process is running.
 

@@ -343,10 +343,11 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Enable hands-off operation with periodic maintenance tasks
 
-### 10.1 Draft Lifecycle Management
-- [ ] Create `expire_old_drafts` scheduled job (call `ApprovalQueueService.expire_old_drafts()`)
-- [ ] Run every 6 hours or on application startup
-- [ ] Log expired draft count to metrics
+### 10.1 Draft Lifecycle Management ✅ IMPLEMENTED
+- [x] Create `expire_old_drafts` scheduled job (call `ApprovalQueueService.expire_old_drafts()`)
+- [x] Run every 6 hours or on application startup
+- [x] Log expired draft count to metrics
+- **Implementation:** Added `run_startup_maintenance_tasks()` to core/lifecycle.py; called from main.py after check_startup_status(); runs expire_old_drafts() on every app startup with count logging
 
 ### 10.2 Inbox Polling
 - [ ] Add periodic inbox check (every 15-30 minutes when app is running)

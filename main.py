@@ -341,6 +341,7 @@ from core.lifecycle import (
     initialize_application,
     pre_authenticate_ms_graph,
     pre_authenticate_session,
+    run_startup_maintenance_tasks,
     set_windows_console_focus,
     validate_ai_provider_on_startup,
 )
@@ -371,6 +372,9 @@ def main() -> None:
         check_startup_status(session_manager)
         logger.info("✅ Health monitoring system initialized")
         validate_ai_provider_on_startup()
+
+        # Run maintenance tasks (Phase 10.1: expire stale drafts, etc.)
+        run_startup_maintenance_tasks(session_manager)
 
         # Display tree owner at the end of startup checks
         display_tree_owner(session_manager)
