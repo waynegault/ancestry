@@ -98,23 +98,56 @@ def _person_blocks_outbound(person: Person) -> Optional[str]:
 
 
 def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> Optional[str]:
-    """Lightweight state update: after an outbound send we are awaiting a reply."""
+    """
+    Update conversation state after successful outbound send.
+    
+    Per the reply_management.md state machine:
+    - After sending, we transition to 'awaiting_reply' phase
+    - The status remains ACTIVE (unless in a hard-stop state)
+    - next_action is set to 'await_reply'
+    - updated_at is refreshed to track when the send occurred
+    
+    Phase 1.6.4 Implementation: ConversationState Synchronization
+    """
+    from datetime import datetime, timezone
 
     conv_state = db_session.query(ConversationState).filter_by(people_id=people_id).first()
     if conv_state is None:
         return None
 
-    conversation_phase = conv_state.conversation_phase
+    old_phase = conv_state.conversation_phase
 
-    # Avoid mutating hard-stop states.
+    # Avoid mutating hard-stop states
     status_str = _normalize_enum(getattr(conv_state, "status", None))
-    if status_str in {"OPT_OUT", "HUMAN_REVIEW", "PAUSED"}:
-        return conversation_phase
+    if status_str in {"OPT_OUT", "HUMAN_REVIEW", "PAUSED", "COMPLETED"}:
+        logger.debug(
+            "Skipping phase update for person %d: status=%s is a hard-stop state",
+            people_id,
+            status_str,
+        )
+        return old_phase
 
+    # Update phase based on current state per state machine
+    # initial_outreach -> awaiting_reply (first message sent)
+    # active_dialogue -> awaiting_reply (follow-up sent)
+    # Any other phase -> awaiting_reply (we just sent a message)
+    new_phase = "awaiting_reply"
+    
+    conv_state.conversation_phase = new_phase
     conv_state.next_action = "await_reply"
     conv_state.next_action_date = None
+    conv_state.updated_at = datetime.now(timezone.utc)
     db_session.add(conv_state)
-    return conversation_phase
+    
+    logger.debug(
+        "Updated conversation state for person %d: phase %s -> %s, next_action=%s",
+        people_id,
+        old_phase,
+        new_phase,
+        "await_reply",
+    )
+    
+    return new_phase
 
 
 def _fetch_approved_drafts(db_session: Session, *, statuses: list[str], max_to_send: Optional[int]) -> list[DraftReply]:
@@ -150,6 +183,52 @@ def _app_mode_blocks_outbound(person: Person, app_mode: str) -> Optional[str]:
     return decision.reason
 
 
+def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int) -> Optional[str]:
+    """
+    Phase 1.6.3: Duplicate Send Prevention
+    
+    Check if this draft was already sent or if there's a recent outbound message
+    to this person (idempotency window).
+    
+    Returns:
+        None if send should proceed, or a skip reason string if duplicate detected.
+    """
+    from datetime import timedelta
+    
+    # Guard 1: Check if draft is already SENT
+    if draft.status == "SENT":
+        logger.info(
+            "Duplicate prevention: DraftReply #%d already has status SENT, skipping",
+            draft.id,
+        )
+        return "already_sent"
+    
+    # Guard 2: Check for recent outbound log to same person (idempotency window: 5 minutes)
+    idempotency_window = timedelta(minutes=5)
+    cutoff = datetime.now(timezone.utc) - idempotency_window
+    
+    recent_outbound = (
+        db_session.query(ConversationLog)
+        .filter(
+            ConversationLog.people_id == person_id,
+            ConversationLog.direction == MessageDirectionEnum.OUT,
+            ConversationLog.latest_timestamp > cutoff,
+        )
+        .first()
+    )
+    
+    if recent_outbound:
+        logger.info(
+            "Duplicate prevention: Recent outbound message found for person #%d within %s, skipping draft #%d",
+            person_id,
+            idempotency_window,
+            draft.id,
+        )
+        return f"recent_outbound_within_{int(idempotency_window.total_seconds())}s"
+    
+    return None
+
+
 def _send_single_approved_draft(
     *,
     db_session: Session,
@@ -160,11 +239,17 @@ def _send_single_approved_draft(
 ) -> tuple[str, Optional[str]]:
     """Send one draft and persist results. Returns (outcome, reason)."""
 
+    # Phase 1.6.3: Check for duplicate send before any processing
     person, person_skip = _get_person_for_draft(db_session, draft)
     if person_skip:
         return "skipped", person_skip
 
     assert person is not None  # for type checkers
+
+    # Check for duplicate send
+    duplicate_reason = _check_duplicate_send(db_session, draft, person.id)
+    if duplicate_reason:
+        return "skipped", f"skipped ({duplicate_reason})"
 
     block_reason = _person_blocks_outbound(person)
     if block_reason:
@@ -195,41 +280,72 @@ def _send_single_approved_draft(
         logger.warning("%s: send failed (%s)", log_prefix, message_status)
         return "error", message_status
 
+    # Phase 1.6.1: Transaction Safety
+    # All database updates within a single transaction with proper rollback
     now = datetime.now(timezone.utc)
     effective_id = effective_conv_id or existing_conv_id or f"draft_{draft.id}"
-    log = ConversationLog(
-        conversation_id=effective_id,
-        direction=MessageDirectionEnum.OUT,
-        people_id=person.id,
-        latest_message_content=message_text[: int(getattr(config_schema, "message_truncation_length", 1000))],
-        latest_timestamp=now,
-        ai_sentiment=None,
-        message_template_id=None,
-        script_message_status=f"{message_status} | Source: approved_draft (draft_id={draft.id})",
-    )
+    
+    try:
+        # Create conversation log
+        log = ConversationLog(
+            conversation_id=effective_id,
+            direction=MessageDirectionEnum.OUT,
+            people_id=person.id,
+            latest_message_content=message_text[: int(getattr(config_schema, "message_truncation_length", 1000))],
+            latest_timestamp=now,
+            ai_sentiment=None,
+            message_template_id=None,
+            script_message_status=f"{message_status} | Source: approved_draft (draft_id={draft.id})",
+        )
+        db_session.add(log)
+        
+        # Update draft status
+        draft.status = "SENT"
+        db_session.add(draft)
+        
+        # Update conversation state
+        conversation_phase = _touch_conversation_state_after_send(db_session, person.id)
+        
+        # Commit the core send transaction
+        db_session.commit()
+        
+    except Exception as exc:
+        # Rollback on any failure - draft stays APPROVED for retry
+        logger.error(
+            "%s: Transaction failed, rolling back. Draft remains APPROVED. Error: %s",
+            log_prefix,
+            exc,
+        )
+        db_session.rollback()
+        return "error", f"transaction_failed: {exc}"
 
-    db_session.add(log)
-    draft.status = "SENT"
-    db_session.add(draft)
-    conversation_phase = _touch_conversation_state_after_send(db_session, person.id)
-    db_session.commit()
+    # Record engagement event (non-critical, separate transaction)
+    try:
+        record_engagement_event(
+            session=db_session,
+            people_id=person.id,
+            event_type="message_sent",
+            event_description="Approved draft sent",
+            event_data={
+                "source": "approved_draft",
+                "draft_id": draft.id,
+                "conversation_id": effective_id,
+                "send_status": message_status,
+                "app_mode": app_mode,
+            },
+            conversation_phase=conversation_phase,
+        )
+    except Exception as exc:
+        # Non-critical: log failure but don't rollback the send
+        logger.warning("%s: Failed to record engagement event: %s", log_prefix, exc)
 
-    record_engagement_event(
-        session=db_session,
-        people_id=person.id,
-        event_type="message_sent",
-        event_description="Approved draft sent",
-        event_data={
-            "source": "approved_draft",
-            "draft_id": draft.id,
-            "conversation_id": effective_id,
-            "send_status": message_status,
-            "app_mode": app_mode,
-        },
-        conversation_phase=conversation_phase,
-    )
+    # Update metrics (non-critical, separate transaction)
+    try:
+        update_conversation_metrics(db_session, people_id=person.id, message_sent=True)
+    except Exception as exc:
+        # Non-critical: log failure but don't rollback the send
+        logger.warning("%s: Failed to update conversation metrics: %s", log_prefix, exc)
 
-    update_conversation_metrics(db_session, people_id=person.id, message_sent=True)
     return "sent", ""
 
 

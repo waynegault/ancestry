@@ -115,25 +115,28 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Ensure reliable, auditable message delivery with proper state management
 
-### 1.6.1 Transaction Safety
-- [ ] Wrap `_send_single_approved_draft` in explicit transaction (currently commits mid-loop)
-- [ ] Add rollback on partial failure (e.g., log created but metrics update failed)
-- [ ] Ensure draft status stays APPROVED if send API fails
+### 1.6.1 Transaction Safety ✅ IMPLEMENTED
+- [x] Wrap `_send_single_approved_draft` in explicit transaction (currently commits mid-loop)
+- [x] Add rollback on partial failure (e.g., log created but metrics update failed)
+- [x] Ensure draft status stays APPROVED if send API fails
+- **Implementation:** Core operations wrapped in try/except with `db_session.rollback()` on failure; non-critical operations (engagement event, metrics) isolated with separate error handling
 
 ### 1.6.2 Draft Expiration
 - [ ] Implement draft expiration logic (expires_at field calculated but unused)
 - [ ] Add scheduled job to mark PENDING → EXPIRED after 72 hours
 - [ ] Surface expired drafts in review queue with different styling
 
-### 1.6.3 Duplicate Send Prevention
-- [ ] Add guard: skip if draft already SENT (prevent re-processing on retry)
-- [ ] Check for recent OUT log before sending (idempotency window)
-- [ ] Log duplicate attempt instead of sending again
+### 1.6.3 Duplicate Send Prevention ✅ IMPLEMENTED
+- [x] Add guard: skip if draft already SENT (prevent re-processing on retry)
+- [x] Check for recent OUT log before sending (idempotency window)
+- [x] Log duplicate attempt instead of sending again
+- **Implementation:** New `_check_duplicate_send()` function checks draft.status=="SENT" and queries ConversationLog for recent OUT messages within 5-minute idempotency window
 
-### 1.6.4 ConversationState Synchronization
-- [ ] Update ConversationState.status after successful send (ACTIVE → AwaitingReply)
-- [ ] Set ConversationState.last_outbound_at timestamp
-- [ ] Verify state machine transitions per reply_management.md spec
+### 1.6.4 ConversationState Synchronization ✅ IMPLEMENTED
+- [x] Update ConversationState.status after successful send (ACTIVE → AwaitingReply)
+- [x] Set ConversationState.last_outbound_at timestamp
+- [x] Verify state machine transitions per reply_management.md spec
+- **Implementation:** Enhanced `_touch_conversation_state_after_send()` to update `conversation_phase="awaiting_reply"`, refresh `updated_at`, respect hard-stop states (OPT_OUT, HUMAN_REVIEW, PAUSED, COMPLETED), with debug logging
 
 ---
 
@@ -911,13 +914,14 @@ The system is **SAFE** for:
 1. **✅ DONE: Add self-message prevention** - Block drafts where recipient == owner (Draft #3 issue)
 2. **⏸️ DEFERRED: Context inversion detection** - Detect when AI explains recipient's own ancestor to them (Draft #1 issue) - see Phase 1.5.2/1.5.3
 3. **Send 4 approved drafts** - Run Option 11 to deliver reviewed messages
-4. **Add draft expiration job** - Mark PENDING → EXPIRED after 72h (Phase 1.6.2)
-5. **Complete ConversationState update after send** - Required for state machine integrity (Phase 1.6.4)
-6. **Add transaction safety to send loop** - Prevent partial commit on failure (Phase 1.6.1)
-7. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
-8. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
-9. **Wire TriangulationIntelligence into ContextBuilder** - Leverage 724 lines of ready code (Phase 11.1)
-10. **Wire PredictiveGapDetector into draft personalization** - Surface research suggestions (Phase 11.3)
+4. **✅ DONE: Add transaction safety to send loop** - Wrap in try/except with rollback (Phase 1.6.1)
+5. **✅ DONE: Add duplicate send prevention** - Skip already-sent drafts, 5-min idempotency window (Phase 1.6.3)
+6. **✅ DONE: ConversationState sync after send** - Update conversation_phase to "awaiting_reply" (Phase 1.6.4)
+7. **Add draft expiration job** - Mark PENDING → EXPIRED after 72h (Phase 1.6.2)
+8. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
+9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
+10. **Wire TriangulationIntelligence into ContextBuilder** - Leverage 724 lines of ready code (Phase 11.1)
+11. **Wire PredictiveGapDetector into draft personalization** - Surface research suggestions (Phase 11.3)
 
 ---
 
