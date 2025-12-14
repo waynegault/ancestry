@@ -3,7 +3,7 @@
 **Last Updated:** December 14, 2025 (Session 5: Final review complete)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
-**Review Status:** ~95,000+ lines reviewed across 50+ modules
+**Review Status:** ~103,000+ lines reviewed across 55+ modules
 
 ---
 
@@ -700,9 +700,16 @@ The system is **SAFE** for:
 - **message_types.py** (~200 lines): Message type definitions
 
 ### Research Modules (research/)
+- **relationship_utils.py** (2219 lines): Core relationship processing - PRODUCTION READY
+  - Relationship calculation, path finding, family tree traversal
+  - fast_bidirectional_bfs() for GEDCOM path resolution
+  - Relationship description formatting
 - **research_prioritization.py** (1207 lines): AI-powered research task prioritization
   - ResearchPriority, FamilyLineStatus, LocationResearchCluster dataclasses
   - IntelligentResearchPrioritizer class
+- **person_lookup_utils.py** (539 lines): Person lookup structures - PRODUCTION READY
+  - PersonLookupResult, PersonMention, LookupContext dataclasses
+  - Used by inbound message entity resolution
 - **research_suggestions.py** (551 lines): Location/time-based research suggestions
   - ANCESTRY_COLLECTIONS by region (Scotland, England, Ireland, Canada, USA)
   - TIME_PERIOD_COLLECTIONS for 1800s/1900s
@@ -713,6 +720,8 @@ The system is **SAFE** for:
 - **triangulation_intelligence.py** (724 lines): Hypothesis generation - NOT INTEGRATED
 - **conflict_detector.py** (547 lines): Field comparison logic - NOT INTEGRATED
 - **predictive_gaps.py** (827 lines): Gap detection heuristics - NOT INTEGRATED
+- **search_criteria_utils.py** (~300 lines): Search criteria construction
+- **research_guidance_prompts.py** (~200 lines): AI prompts for research suggestions
 
 ### Testing Infrastructure (testing/)
 - **test_framework.py** (1115 lines): Comprehensive test suite infrastructure
@@ -1057,7 +1066,7 @@ The system is **SAFE** for:
 | Browser/UI (menu, review_server, terminal_test_agent) | ~1,100 |
 | Scripts/Validation | ~800 |
 | Messaging (inbound, safety) | ~1,200 |
-| Research (prioritization, suggestions, record sharing, diagrams) | ~2,800 |
+| Research (relationship_utils, prioritization, suggestions, diagrams, etc.) | ~8,100 |
 | Testing/Config | ~2,800 |
 | API Layer (api_utils, api_search_core, api_constants) | ~5,400 |
 | Action Modules (6, 7, 8, 9, 10, 11, 12, 13, 14) | ~26,000 |
@@ -1065,12 +1074,12 @@ The system is **SAFE** for:
 | Observability (metrics, APM, analytics) | ~3,600 |
 | Documentation Specs | ~1,400 |
 | Main Entry Point | ~850 |
-| **Session 5 Total** | **~76,500** |
+| **Session 5 Total** | **~82,000** |
 
 **Cumulative Lines Reviewed (Sessions 3-5):**
 | Session | Lines |
 |---------|-------|
 | Session 3 | ~8,000 |
 | Session 4 | ~13,000 |
-| Session 5 | ~76,500 |
-| **Grand Total** | **~97,500+** |
+| Session 5 | ~82,000 |
+| **Grand Total** | **~103,000+** |

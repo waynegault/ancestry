@@ -1,13 +1,13 @@
 {
-  "fill_rate": 0.3494586025233228,
-  "success_threshold": 15,
+  "fill_rate": 0.31218120299999996,
+  "success_threshold": 25,
   "capacity": 5.0,
   "min_fill_rate": 0.1,
-  "max_fill_rate": 6.0,
-  "timestamp": 1765184399.8873706,
-  "total_requests": 41988,
-  "avg_wait_time": 0.5862013453560275,
-  "rate_increases": 2747,
-  "rate_decreases": 248,
-  "error_429_count": 248
+  "max_fill_rate": 0.6,
+  "timestamp": 1765732572.10043,
+  "total_requests": 116,
+  "avg_wait_time": 2.518554123147474,
+  "rate_increases": 4,
+  "rate_decreases": 0,
+  "error_429_count": 0
 }

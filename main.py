@@ -318,6 +318,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("m", _cli_helpers.run_config_setup_wizard)
     registry.set_action_function("n", _cli_helpers.reload_configuration)
     registry.set_action_function("f", _cli_helpers.show_review_queue)
+    registry.set_action_function("v", _cli_helpers.launch_review_web_ui)
     registry.set_action_function("h", _cli_helpers.run_dry_run_validation)
     registry.set_action_function("k", _cli_helpers.run_schema_migrations_action)
     registry.set_action_function("t", _cli_helpers.toggle_log_level)

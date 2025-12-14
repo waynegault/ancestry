@@ -595,10 +595,8 @@ class ReviewQueueMixin:
                 return
 
             print("\n" + "-" * 70)
-            print(
-                "Commands: approve <draft_id> | reject <draft_id> <reason> | "
-                "fact approve <id> | fact reject <id> <reason> | refresh | back/exit/q"
-            )
+            print("Commands: view <id> | approve <id> | reject <id> <reason> | rewrite <id> <feedback>")
+            print("          fact approve <id> | fact reject <id> <reason> | refresh | back/exit/q")
             print("(Type back/exit/q to return to the main menu.)")
 
             while True:
@@ -626,8 +624,12 @@ class ReviewQueueMixin:
 
         tokens = command.split()
         handlers: dict[str, Callable[[list[str]], bool | None]] = {
+            "view": lambda t: self._view_draft(int(t[1])) if len(t) >= 2 else None,
             "approve": lambda t: self.approve_draft(int(t[1])) if len(t) >= 2 else None,
             "reject": lambda t: self.reject_draft(int(t[1]), " ".join(t[2:]) if len(t) > 2 else "")
+            if len(t) >= 2
+            else None,
+            "rewrite": lambda t: self._rewrite_draft(int(t[1]), " ".join(t[2:]) if len(t) > 2 else "")
             if len(t) >= 2
             else None,
             "fact": self._handle_fact_command,
@@ -657,6 +659,182 @@ class ReviewQueueMixin:
             return
 
         print("Unknown fact command. Use: fact approve <id> | fact reject <id> <reason>")
+
+    def _view_draft(self, draft_id: int) -> bool:
+        """View full draft content and conversation context."""
+        try:
+            from core.database import ConversationLog, DraftReply, Person
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            # Get the draft
+            draft = db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
+            if not draft:
+                print(f"❌ Draft {draft_id} not found")
+                return False
+
+            # Get person info
+            person = db_session.query(Person).filter(Person.id == draft.people_id).first()
+            person_name = getattr(person, "display_name", None) or getattr(person, "username", "Unknown")
+
+            # Get conversation history
+            conv_logs = (
+                db_session.query(ConversationLog)
+                .filter(ConversationLog.conversation_id == draft.conversation_id)
+                .order_by(ConversationLog.latest_timestamp.asc())
+                .limit(10)
+                .all()
+            )
+
+            print("\n" + "=" * 70)
+            print(f"📄 DRAFT #{draft_id} - To: {person_name}")
+            print("=" * 70)
+            print(f"Status: {draft.status}")
+            print(f"Created: {draft.created_at.strftime('%Y-%m-%d %H:%M')}")
+            print(f"Conversation ID: {draft.conversation_id}")
+
+            if conv_logs:
+                print("\n📨 CONVERSATION HISTORY:")
+                print("-" * 50)
+                for log in conv_logs:
+                    direction = "←" if log.direction.value == "IN" else "→"
+                    ts = log.latest_timestamp.strftime("%Y-%m-%d %H:%M")
+                    content = log.latest_message_content or "(no content)"
+                    # Truncate very long messages
+                    if len(content) > 500:
+                        content = content[:500] + "..."
+                    print(f"\n{direction} [{ts}]")
+                    print(f"   {content}")
+
+            print("\n" + "-" * 50)
+            print("📝 DRAFT REPLY:")
+            print("-" * 50)
+            print(draft.content)
+            print("-" * 50)
+
+            return True
+
+        except Exception as exc:
+            self._logger.error("Error viewing draft: %s", exc, exc_info=True)
+            print(f"Error viewing draft: {exc}")
+            return False
+
+    def _rewrite_draft(self, draft_id: int, feedback: str) -> bool:
+        """Regenerate a draft using AI with user feedback."""
+        try:
+            from ai.ai_interface import generate_genealogical_reply
+            from core.database import ConversationLog, DraftReply, Person
+            from core.session_manager import SessionManager
+
+            if not feedback.strip():
+                print("⚠️  Please provide feedback for the rewrite, e.g.: rewrite 1 make it more formal")
+                return False
+
+            sm = SessionManager()
+            db_session = sm.db_manager.get_session()
+            if not db_session:
+                print("✗ Failed to get database session")
+                return False
+
+            # Get the draft
+            draft = db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
+            if not draft:
+                print(f"❌ Draft {draft_id} not found")
+                return False
+
+            if draft.status != "PENDING":
+                print(f"⚠️  Draft {draft_id} is already {draft.status} - cannot rewrite")
+                return False
+
+            # Get person info
+            person = db_session.query(Person).filter(Person.id == draft.people_id).first()
+            if not person:
+                print(f"❌ Person for draft {draft_id} not found")
+                return False
+
+            person_name = getattr(person, "display_name", None) or getattr(person, "username", "Unknown")
+
+            # Get conversation history for context
+            conv_logs = (
+                db_session.query(ConversationLog)
+                .filter(ConversationLog.conversation_id == draft.conversation_id)
+                .order_by(ConversationLog.latest_timestamp.desc())
+                .limit(5)
+                .all()
+            )
+
+            # Build conversation context
+            conversation_context = ""
+            user_last_message = ""
+            for log in reversed(conv_logs):
+                direction = "THEM" if log.direction.value == "IN" else "ME"
+                content = log.latest_message_content or ""
+                conversation_context += f"[{direction}]: {content}\n"
+                if log.direction.value == "IN" and not user_last_message:
+                    user_last_message = content
+
+            if not user_last_message:
+                user_last_message = "(No inbound message found)"
+
+            # Build genealogical data
+            import json
+
+            genealogical_data = json.dumps(
+                {
+                    "person_name": person_name,
+                    "relationship": getattr(person, "relationship", None),
+                    "shared_dna": getattr(person, "total_cm", None),
+                }
+            )
+
+            # Add rewrite instructions to conversation context
+            rewrite_context = (
+                f"{conversation_context}\n\n"
+                f"[REWRITE INSTRUCTIONS]: The previous draft was rejected. "
+                f"User feedback: {feedback}\n"
+                f"Previous draft that needs improvement:\n{draft.content}"
+            )
+
+            print(f"🔄 Regenerating draft for {person_name} with feedback: '{feedback}'...")
+
+            # Generate new reply
+            new_reply = generate_genealogical_reply(
+                conversation_context=rewrite_context,
+                user_last_message=user_last_message,
+                genealogical_data_str=genealogical_data,
+                session_manager=sm,
+            )
+
+            if not new_reply:
+                print("❌ AI failed to generate a new reply")
+                return False
+
+            # Update the draft with new content
+            from datetime import datetime, timezone
+
+            draft.content = new_reply
+            draft.created_at = datetime.now(timezone.utc)  # Reset creation time
+            db_session.commit()
+
+            print("\n" + "=" * 70)
+            print(f"✅ DRAFT #{draft_id} REWRITTEN")
+            print("=" * 70)
+            print("\n📝 NEW DRAFT:")
+            print("-" * 50)
+            print(new_reply)
+            print("-" * 50)
+            print("\nUse 'approve', 'reject', or 'rewrite' to continue.")
+            return True
+
+        except Exception as exc:
+            self._logger.error("Error rewriting draft: %s", exc, exc_info=True)
+            print(f"Error rewriting draft: {exc}")
+            return False
 
     def _render_contextual_draft_log_preview(self, limit: int = 5) -> None:
         """Show recent contextual draft log entries (draft-only stub)."""
@@ -978,6 +1156,27 @@ class ReviewQueueMixin:
             self._logger.info("Validation metrics recorded to MetricRegistry")
         except Exception as exc:
             self._logger.debug("Could not record validation metrics: %s", exc)
+
+    def launch_review_web_ui(self, session_manager: Optional["SessionManager"] = None) -> None:
+        """Launch the browser-based review queue interface."""
+        try:
+            from ui.review_server import run_server
+
+            print("\n🌐 Launching Review Queue Web Interface...")
+            print("   The browser will open automatically.")
+            print("   Press Ctrl+C to stop the server and return to the menu.\n")
+
+            run_server(port=5000, open_browser_on_start=True)
+
+        except ImportError as exc:
+            self._logger.error("Failed to import review server: %s", exc)
+            print("❌ Error: Could not load web interface.")
+            print("   Make sure Flask is installed: pip install flask")
+        except KeyboardInterrupt:
+            print("\n\n✅ Web server stopped. Returning to menu...")
+        except Exception as exc:
+            self._logger.error("Error launching web review UI: %s", exc, exc_info=True)
+            print(f"Error: {exc}")
 
 
 class CacheStatsMixin:

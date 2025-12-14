@@ -501,13 +501,25 @@ class ActionRegistry:
         self.register(
             ActionMetadata(
                 id="f",
-                name="Review Queue (AI Drafts)",
-                description="View and approve/reject pending AI-generated message drafts",
+                name="Review Queue (CLI)",
+                description="View and approve/reject pending AI-generated drafts (terminal)",
                 function=None,
                 category=ActionCategory.WORKFLOW,
                 browser_requirement=ActionRequirement.NONE,
                 is_meta_action=True,
                 menu_order=140,
+            )
+        )
+        self.register(
+            ActionMetadata(
+                id="v",
+                name="Review Queue (Web UI)",
+                description="Launch browser-based review interface for drafts",
+                function=None,
+                category=ActionCategory.WORKFLOW,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=141,
             )
         )
         self.register(
