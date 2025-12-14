@@ -509,7 +509,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 ### Core Infrastructure Gaps
 - [x] Wire FeatureFlags (594 lines) into action modules for gradual rollout ✅ IMPLEMENTED: Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
 - [x] Enable PII redaction filter (523 lines) in production logging ✅ WIRED: logging_config.py adds PIIRedactionFilter to file handler; enabled via PII_REDACTION_ENABLED=true
-- [ ] Integrate HealthCheckRunner into startup validation (currently menu action only)
+- [x] Integrate HealthCheckRunner into startup validation (currently menu action only) ✅ WIRED: lifecycle.py calls run_startup_health_checks() in initialize_application()
 - [ ] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator
 - [ ] Connect A/B testing framework (612 lines) to prompt selection
 
@@ -987,8 +987,8 @@ The system is **SAFE** for:
 2. **PII redaction not enabled** - 523 lines of redaction code but not active in production logging ✅ FIXED: Wired to logging_config.py, enabled via PII_REDACTION_ENABLED=true
 3. **A/B testing disconnected** - ExperimentManager exists but not connected to prompt selection
 4. **Conversation analytics not wired** - 892 lines of engagement tracking not called from InboundOrchestrator
-5. **Health checks menu-only** - Should run on startup, currently only via 'health' menu action
-6. **Empty tests/ directory** - All tests are in testing/ directory or embedded in modules
+5. **Health checks menu-only** - Should run on startup, currently only via 'health' menu action ✅ FIXED: lifecycle.py calls run_startup_health_checks()
+6. **Empty tests/ directory** - All tests are in testing/ directory or embedded in modules ✅ FIXED: Added tests/README.md explaining embedded pattern
 7. **ResearchToolsCLI comprehensive** - Good lazy-loading patterns, full research feature access
 
 **Total Codebase Lines Reviewed (Session 3+4):**

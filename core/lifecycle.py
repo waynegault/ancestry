@@ -444,6 +444,9 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
     register_session_manager(session_manager)
     logger.debug("✅ SessionManager registered via DI container")
 
+    # Run startup health checks (non-blocking, logs results)
+    _run_startup_health_checks(session_manager)
+
     return session_manager, sleep_state
 
 
@@ -480,6 +483,25 @@ def _log_sleep_prevention_status(sleep_state: Any) -> None:
         logger.info("✅ System sleep prevention active")
     else:
         logger.info("⚠️ System sleep prevention inactive")
+
+
+def _run_startup_health_checks(session_manager: "SessionManager") -> None:
+    """Run startup health checks and log results (non-blocking).
+
+    Health checks validate database connectivity, file system access,
+    and cache systems. Failures are logged but don't block startup.
+    """
+    try:
+        from core.health_check import run_startup_health_checks
+
+        if run_startup_health_checks(session_manager):
+            logger.debug("🏥 Startup health checks completed successfully")
+        else:
+            logger.warning("⚠️ Some health checks failed - see health report for details")
+    except ImportError:
+        logger.debug("Health check module not available - skipping startup checks")
+    except Exception as e:
+        logger.warning(f"⚠️ Health check error (non-blocking): {e}")
 
 
 def _test_clear_startup_log_file_truncates_existing_log() -> bool:
