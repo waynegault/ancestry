@@ -133,6 +133,39 @@ class ApprovalQueueService:
             # Default to safest option if configuration not available
             return False
 
+    @staticmethod
+    def _get_owner_profile_id() -> Optional[str]:
+        """Get the tree owner's profile ID for self-message prevention."""
+        import os
+
+        # First try environment variable
+        owner_id = os.getenv("MY_PROFILE_ID")
+        if owner_id:
+            return owner_id
+
+        # Try SessionManager if available
+        try:
+            from core.session_manager import SessionManager
+
+            sm = SessionManager()
+            if hasattr(sm, "my_profile_id") and sm.my_profile_id:
+                return sm.my_profile_id
+            if hasattr(sm, "api_manager") and hasattr(sm.api_manager, "my_profile_id"):
+                return sm.api_manager.my_profile_id
+        except Exception:
+            pass
+
+        # Try config schema
+        try:
+            from config import config_schema
+
+            if hasattr(config_schema, "test") and hasattr(config_schema.test, "test_profile_id"):
+                return config_schema.test.test_profile_id
+        except Exception:
+            pass
+
+        return None
+
     def queue_for_review(
         self,
         person_id: int,
@@ -174,6 +207,17 @@ class ApprovalQueueService:
             if hasattr(person, "status") and person.status.value == "DESIST":
                 logger.warning(f"Cannot queue draft: Person {person_id} has DESIST status")
                 return None
+
+            # CRITICAL: Self-message prevention - don't draft messages to ourselves
+            owner_profile_id = self._get_owner_profile_id()
+            if owner_profile_id and hasattr(person, "profile_id") and person.profile_id:
+                if str(person.profile_id) == str(owner_profile_id):
+                    logger.error(
+                        f"🚫 BLOCKED: Self-message attempt! Person {person_id} "
+                        f"(profile_id={person.profile_id}) is the tree owner. "
+                        "Draft NOT queued."
+                    )
+                    return None
 
             # Embed review-only metadata (no schema migrations).
             content_with_metadata = append_internal_metadata(

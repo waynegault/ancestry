@@ -1,17 +1,69 @@
 # Mission Execution Specification
 
+**Last Updated:** December 14, 2025
+
 ## 1. Purpose
 
 Deliver an end-to-end, automated but safety-conscious workflow to engage DNA matches, manage replies, and strengthen the family tree through validated facts and relationship evidence.
 
+### 1.1 Mission Statement
+
+> Strengthen the accuracy of my family tree by drawing on the insights of ~16,000 DNA matches whilst minimizing manual effort. The more DNA matches placed in the tree, the more evidence to corroborate genealogical connections. Goal: 100% automated communication except human-escalation cases.
+
+### 1.2 Mission Requirements (from user)
+
+| # | Requirement | Status |
+|---|-------------|--------|
+| 1 | Acknowledge contact & respect opt-out; never contact again | ✅ Implemented (SafetyGuard, OptOutDetector) |
+| 2 | Answer questions from tree (GEDCOM/API); explain relationship paths | ⚠️ Partial (SemanticSearch + TreeQuery scaffolded) |
+| 3 | Extract & validate genealogical data; raise as MS To-Do tasks | ✅ Implemented (FactValidator, Action 9) |
+| 4 | Suggest research areas based on ethnicity/clusters | ⚠️ Not integrated into messaging |
+| 5 | 100% automated unless escalation (visit requests, self-harm, threats) | ⚠️ Safety detection works; auto-approval not enabled |
+| 6 | Performance metrics: engagement quality, code effectiveness | ⚠️ Minimal (ConversationMetrics exists, dashboards empty) |
+| 7 | High-quality, non-generic, personalized messages | ✅ Implemented (ContextBuilder, templates) |
+| 8 | Extract insights for tree incorporation | ⚠️ Extraction works; tree write not implemented |
+
 ## 2. Current Capabilities (baseline)
 
-- **Data gathering:** Action 6 scrapes DNA matches with checkpointing; Action 12 shared matches; Action 13 triangulation.
-- **Inbox ingestion:** Action 7 pulls conversations, classifies intent via AI, runs SafetyGuard critical-alert detection (regex + AI) before classification, and updates `conversation_state` (status + safety_flag) plus SuggestedFact harvest.
-- **Productive message processing:** Action 9 extracts entities, converts them to `ExtractedFact` objects, validates via `FactValidator`, stages `SuggestedFact`/`DataConflict`, and creates MS To-Do tasks; GEDCOM/API lookups run for mentioned people.
-- **Response assets:** `ai/context_builder.py` builds rich context (identity, genetics, history, genealogy) and Action 8 can generate contextual drafts (queued via `DraftReply`/ApprovalQueueService; auto-send optional).
-- **Genealogy search:** Action 10 GEDCOM/API comparison utilities and TreeQueryService support relationship explanations.
-- **Safety & state:** SafetyGuard hooks in Action 7; outbound messaging in Action 8 blocks when `conversation_state.status` is OPT_OUT/HUMAN_REVIEW/PAUSED or `safety_flag` is set; DESIST handling via sentiment classification and OptOutDetector.
+### 2.1 Data Gathering (PRODUCTION READY)
+- **Action 6:** Scrapes DNA matches with checkpointing, ethnicity comparison, tree data extraction
+- **Action 12:** Shared matches for high-cM matches
+- **Action 13:** DNA triangulation and cluster analysis
+
+### 2.2 Inbox Processing (PRODUCTION READY)
+- **Action 7:**
+  - SafetyGuard critical-alert detection (regex + AI) runs BEFORE any AI work
+  - Intent classification: PRODUCTIVE, DESIST, ENTHUSIASTIC, CASUAL_CHAT, OTHER
+  - Entity extraction: names, dates, places, relationships
+  - SuggestedFact harvest from inbound messages
+  - ConversationState updates (status + safety_flag)
+
+### 2.3 Productive Message Processing (PRODUCTION READY)
+- **Action 9:**
+  - Converts entities to `ExtractedFact` objects
+  - Validates via `FactValidator` with conflict detection
+  - Stages `SuggestedFact` and `DataConflict` records
+  - Creates MS To-Do tasks from productive conversations
+  - GEDCOM/API lookups for mentioned people
+
+### 2.4 Response Generation (IMPLEMENTED, NEEDS INTEGRATION)
+- **ContextBuilder:** Assembles rich context (identity, genetics, history, genealogy)
+- **Action 8:**
+  - Generates contextual drafts
+  - Queues via `DraftReply`/ApprovalQueueService
+  - Respects safety blocks (OPT_OUT, HUMAN_REVIEW, PAUSED)
+  - Auto-send is DISABLED by default
+
+### 2.5 Genealogy Search (PRODUCTION READY)
+- **Action 10:** GEDCOM/API comparison with unified scoring
+- **TreeQueryService:** Person lookup, relationship path calculation
+- **SemanticSearchService:** Question detection, evidence-backed candidate retrieval
+
+### 2.6 Safety & State (PRODUCTION READY)
+- **SafetyGuard:** Critical alerts block automation immediately
+- **OptOutDetector:** Multi-layer pattern matching for opt-out detection
+- **ConversationState:** Status tracking (ACTIVE, OPT_OUT, HUMAN_REVIEW, PAUSED)
+- **DraftReply queue:** All messages require approval before send
 
 ## 3. Gaps vs Mission
 
