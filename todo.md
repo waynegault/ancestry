@@ -510,8 +510,8 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Wire FeatureFlags (594 lines) into action modules for gradual rollout ✅ IMPLEMENTED: Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
 - [x] Enable PII redaction filter (523 lines) in production logging ✅ WIRED: logging_config.py adds PIIRedactionFilter to file handler; enabled via PII_REDACTION_ENABLED=true
 - [x] Integrate HealthCheckRunner into startup validation (currently menu action only) ✅ WIRED: lifecycle.py calls run_startup_health_checks() in initialize_application()
-- [ ] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator
-- [ ] Connect A/B testing framework (612 lines) to prompt selection
+- [x] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator ✅ ALREADY WIRED: _update_metrics() tracks EngagementTracking events (message_received, reply_generated, facts_extracted)
+- [x] Connect A/B testing framework (612 lines) to prompt selection ✅ ALREADY WIRED: ai_interface.py uses get_prompt_with_experiment(); MessagePersonalizer uses ExperimentManager for strategy A/B tests
 
 ### CLI Enhancement
 - [ ] Add `cli/review_queue.py` module (referenced in operator_manual.md but uses approval_queue.py instead)
@@ -985,8 +985,8 @@ The system is **SAFE** for:
 **Key Findings:**
 1. **Feature flags underutilized** - Full rollout framework exists but not wired to actions ✅ FIXED: Action 11 uses ACTION11_SEND_ENABLED flag
 2. **PII redaction not enabled** - 523 lines of redaction code but not active in production logging ✅ FIXED: Wired to logging_config.py, enabled via PII_REDACTION_ENABLED=true
-3. **A/B testing disconnected** - ExperimentManager exists but not connected to prompt selection
-4. **Conversation analytics not wired** - 892 lines of engagement tracking not called from InboundOrchestrator
+3. **A/B testing disconnected** - ExperimentManager exists but not connected to prompt selection ✅ FIXED: ai_interface uses get_prompt_with_experiment(); MessagePersonalizer uses ExperimentManager
+4. **Conversation analytics not wired** - 892 lines of engagement tracking not called from InboundOrchestrator ✅ FIXED: _update_metrics() already wires EngagementTracking
 5. **Health checks menu-only** - Should run on startup, currently only via 'health' menu action ✅ FIXED: lifecycle.py calls run_startup_health_checks()
 6. **Empty tests/ directory** - All tests are in testing/ directory or embedded in modules ✅ FIXED: Added tests/README.md explaining embedded pattern
 7. **ResearchToolsCLI comprehensive** - Good lazy-loading patterns, full research feature access
