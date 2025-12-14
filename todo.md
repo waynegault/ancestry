@@ -469,8 +469,8 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 ### Code Quality
 - [ ] Add missing type hints to action modules
-- [ ] Resolve remaining # type: ignore comments (see check_type_ignores.py)
-- [ ] Update dead_code_candidates.json and clean stale code
+- [x] Resolve remaining # type: ignore comments (see check_type_ignores.py) ✅ FIXED: 1 occurrence in message_personalization.py
+- [x] Update dead_code_candidates.json and clean stale code ✅ UPDATED: 136 candidates across 199 files
 - [x] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery) ✅ IMPLEMENTED
 - [ ] Remove TODO/FIXME comments by completing referenced tasks (83 found across codebase)
 - [ ] Address placeholder implementations in triangulation_intelligence.py line 390
@@ -480,7 +480,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add integration tests for full inbound→reply flow
 - [ ] Add tests for SemanticSearchService end-to-end
 - [ ] Add tests for FactValidator conflict detection
-- [ ] Populate empty `tests/` directory or remove it
+- [x] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
 - [ ] Add Action 11 transaction failure recovery tests
 - [ ] Add tests for triangulation_intelligence.py hypothesis scoring
 - [ ] Add tests for conflict_detector.py field comparison logic

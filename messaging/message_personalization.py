@@ -44,7 +44,7 @@ except ImportError:
     def is_metrics_enabled() -> bool:
         return False
 
-    def metrics() -> Any:  # type: ignore[misc]
+    def metrics() -> None:
         return None
 
 
@@ -258,9 +258,7 @@ class MessagePersonalizer:
             if not template:
                 return self._create_fallback_message(person_payload, normalized_base_format), []
 
-            selected_functions = self._select_optimal_personalization_functions(
-                extraction_payload, person_id=person_id
-            )
+            selected_functions = self._select_optimal_personalization_functions(extraction_payload, person_id=person_id)
             enhanced_format_data = self._create_enhanced_format_data(
                 extraction_payload, normalized_base_format, person_payload, selected_functions
             )
@@ -478,11 +476,13 @@ class MessagePersonalizer:
             # DNA-focused strategy: prioritize DNA-related functions
             logger.debug(f"A/B: Using DNA-focused strategy for person_id={person_id}")
             if extracted_data.get("dna_information"):
-                selected_functions.extend([
-                    "dna_segment_analysis",
-                    "dna_ethnicity_correlation",
-                    "estimated_relationship",
-                ])
+                selected_functions.extend(
+                    [
+                        "dna_segment_analysis",
+                        "dna_ethnicity_correlation",
+                        "estimated_relationship",
+                    ]
+                )
 
         self._add_data_based_functions(extracted_data, selected_functions)
         self._add_advanced_functions(selected_functions)
@@ -492,9 +492,7 @@ class MessagePersonalizer:
 
         return list(set(selected_functions))
 
-    def _get_ab_test_variant(
-        self, experiment_id: str, person_id: Optional[int]
-    ) -> Optional[Variant]:
+    def _get_ab_test_variant(self, experiment_id: str, person_id: Optional[int]) -> Optional[Variant]:
         """Get A/B test variant assignment for a person."""
         if not self.ab_testing_enabled or self._experiment_manager is None:
             return None
@@ -1571,9 +1569,7 @@ class MessageEffectivenessTracker:
             self._save_effectiveness_data()
 
             # Phase 11.4: Record Prometheus metrics for effectiveness
-            self._record_effectiveness_metrics(
-                personalization_functions_used, response_intent, person_id
-            )
+            self._record_effectiveness_metrics(personalization_functions_used, response_intent, person_id)
 
             logger.info(
                 f"Tracked message effectiveness for template '{template_key}' with response '{response_intent}'"
@@ -1732,9 +1728,7 @@ class MessageEffectivenessTracker:
             try:
                 results = exp_manager.get_experiment_results(exp_id)
                 if len(results) < 20:
-                    insights.append(
-                        f"Experiment '{exp_id}': Need more data ({len(results)}/20 minimum samples)"
-                    )
+                    insights.append(f"Experiment '{exp_id}': Need more data ({len(results)}/20 minimum samples)")
                     continue
 
                 # Calculate stats per variant
@@ -1926,8 +1920,9 @@ def _test_ab_testing_integration() -> bool:
 
     # Verify experiments were created
     exp_manager = MessagePersonalizer._experiment_manager
-    assert "personalization_strategy_dna" in exp_manager.experiments or len(exp_manager.experiments) >= 0, \
+    assert "personalization_strategy_dna" in exp_manager.experiments or len(exp_manager.experiments) >= 0, (
         "DNA strategy experiment should exist or be creatable"
+    )
 
     # Test variant assignment consistency (same person_id = same variant)
     variant1 = personalizer._get_ab_test_variant("personalization_strategy_dna", 12345)
