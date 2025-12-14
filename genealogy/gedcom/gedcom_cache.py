@@ -719,6 +719,46 @@ def get_gedcom_cache_health() -> dict[str, Any]:
     return _gedcom_cache_module.get_health_status()
 
 
+def invalidate_gedcom_cache_on_update(gedcom_path: Optional[str] = None) -> bool:
+    """
+    Invalidate GEDCOM cache when tree is updated.
+
+    Phase 12.3: Explicit cache invalidation for tree updates.
+    The cache also auto-invalidates based on file mtime, but this provides
+    an explicit interface for callers to force invalidation.
+
+    Args:
+        gedcom_path: Optional path to specific GEDCOM file. If None,
+                     clears all GEDCOM caches.
+
+    Returns:
+        True if invalidation successful, False otherwise
+    """
+    try:
+        if gedcom_path:
+            # Invalidate specific file's cache entries
+            memory_key = f"gedcom_data_{gedcom_path}"
+            if memory_key in _MEMORY_CACHE:
+                del _MEMORY_CACHE[memory_key]
+                logger.info(f"Invalidated memory cache for: {gedcom_path}")
+
+            # For disk cache, rely on mtime change (automatic invalidation)
+            # but clear any related cached items
+            success = invalidate_related_caches(prefix=f"gedcom_{Path(gedcom_path).stem}")
+            if success:
+                logger.info(f"Invalidated disk cache for: {gedcom_path}")
+            return True
+
+        # Clear all GEDCOM caches
+        clear_result = _gedcom_cache_module.clear()
+        logger.info("Invalidated all GEDCOM caches")
+        return clear_result
+
+    except Exception as e:
+        logger.error(f"Error invalidating GEDCOM cache: {e}")
+        return False
+
+
 # --- Main Execution for Testing ---
 
 

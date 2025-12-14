@@ -182,6 +182,7 @@ def run_startup_maintenance_tasks(session_manager: SessionManager) -> None:
 
     Tasks:
     - Expire stale PENDING drafts (Phase 1.6.2 expiration logic)
+    - Warm GEDCOM cache (Phase 12.3)
     - Future: Session cleanup, cache pruning, etc.
 
     Args:
@@ -210,6 +211,19 @@ def run_startup_maintenance_tasks(session_manager: SessionManager) -> None:
             logger.debug("Database not ready - skipping draft expiration")
     except Exception as e:
         logger.warning(f"Draft expiration task failed (non-fatal): {e}")
+
+    # Task 2: Warm GEDCOM cache (Phase 12.3)
+    try:
+        from genealogy.gedcom.gedcom_cache import preload_gedcom_cache
+
+        if preload_gedcom_cache():
+            logger.info("🌳 GEDCOM cache warmed successfully")
+        else:
+            logger.debug("GEDCOM cache warming skipped (no file configured or already cached)")
+    except ImportError:
+        logger.debug("GEDCOM cache module not available - skipping cache warming")
+    except Exception as e:
+        logger.warning(f"GEDCOM cache warming failed (non-fatal): {e}")
 
     logger.info("✅ Startup maintenance complete")
 

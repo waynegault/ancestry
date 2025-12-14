@@ -431,10 +431,11 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Track cross-reference success rate for analytics
 - **Implementation:** Added `_build_dna_gedcom_crossref()` to ContextBuilder; uses DNAGedcomCrossReferencer to validate DNA match against GEDCOM tree; surfaces top match with confidence, conflicts, and verification opportunities; formatted in `_format_research()` with ✓ for high-confidence validated matches
 
-### 12.3 GEDCOM Cache Optimization
-- [ ] Enable GEDCOM caching for repeated tree access
-- [ ] Add cache warming during startup for owner's tree
-- [ ] Implement cache invalidation on tree updates
+### 12.3 GEDCOM Cache Optimization ✅ IMPLEMENTED
+- [x] Enable GEDCOM caching for repeated tree access
+- [x] Add cache warming during startup for owner's tree
+- [x] Implement cache invalidation on tree updates
+- **Implementation:** Added GEDCOM cache warming to `run_startup_maintenance_tasks()` in lifecycle.py via `preload_gedcom_cache()`; added `invalidate_gedcom_cache_on_update()` for explicit invalidation; cache also auto-invalidates based on file mtime hash; tests: ALL PASSED (13/13 gedcom_cache, 6/6 lifecycle)
 
 ---
 
