@@ -717,6 +717,40 @@ class MetricsRegistry:
             registry=registry,
         )
 
+        # Phase 11.4: Personalization effectiveness metrics
+        metrics_map["personalization_usage"] = Counter(
+            "personalization_function_usage_total",
+            "Usage count of personalization functions",
+            labelnames=("function_name", "template_key"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["personalization_effectiveness"] = Histogram(
+            "personalization_effectiveness_score",
+            "Effectiveness score per personalization function (0-5)",
+            labelnames=("function_name",),
+            namespace=namespace,
+            buckets=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0),
+            registry=registry,
+        )
+
+        metrics_map["personalization_ab_assignment"] = Counter(
+            "personalization_ab_assignment_total",
+            "A/B test variant assignments for personalization strategies",
+            labelnames=("experiment_id", "variant_name"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["personalization_ab_outcome"] = Counter(
+            "personalization_ab_outcome_total",
+            "A/B test outcomes for personalization strategies",
+            labelnames=("experiment_id", "variant_name", "response_intent"),
+            namespace=namespace,
+            registry=registry,
+        )
+
         return metrics_map
 
     def get_registry(self) -> Optional[Any]:
