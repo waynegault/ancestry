@@ -273,14 +273,15 @@ class ApprovalQueueService:
                     ai_confidence,
                 )
 
-            # Calculate expiry time (reserved for future use)
-            _expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+            # Calculate expiry time for PENDING drafts
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
 
             draft = DraftReply(
                 people_id=person_id,
                 conversation_id=conversation_id,
                 content=content_with_metadata,
                 status="PENDING",
+                expires_at=expires_at,
             )
             self.db_session.add(draft)
             self.db_session.commit()
@@ -628,29 +629,56 @@ class ApprovalQueueService:
         logger.info(f"Auto-approve {'enabled' if enabled else 'disabled'}")
 
     def expire_old_drafts(self, hours: int = 72) -> int:
-        """Expire drafts older than specified hours."""
+        """
+        Expire PENDING drafts that have passed their expiration time.
+        
+        Phase 1.6.2: Uses expires_at field if set, otherwise falls back to
+        created_at + hours for backwards compatibility with existing drafts.
+        
+        Args:
+            hours: Fallback expiration age for drafts without expires_at (default 72h)
+            
+        Returns:
+            Number of drafts marked as EXPIRED
+        """
         try:
+            from sqlalchemy import or_
+
             from core.database import DraftReply
 
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+            now = datetime.now(timezone.utc)
+            fallback_cutoff = now - timedelta(hours=hours)
+            
+            # Expire drafts where:
+            # 1. expires_at is set and has passed, OR
+            # 2. expires_at is NULL and created_at is older than fallback
             count = (
                 self.db_session.query(DraftReply)
                 .filter(
-                    and_(
-                        DraftReply.status == "PENDING",
-                        DraftReply.created_at < cutoff,
-                    )
+                    DraftReply.status == "PENDING",
+                    or_(
+                        # New drafts with expires_at field
+                        and_(
+                            DraftReply.expires_at.isnot(None),
+                            DraftReply.expires_at <= now,
+                        ),
+                        # Legacy drafts without expires_at (fallback to created_at)
+                        and_(
+                            DraftReply.expires_at.is_(None),
+                            DraftReply.created_at < fallback_cutoff,
+                        ),
+                    ),
                 )
-                .update({"status": "EXPIRED"})
+                .update({"status": "EXPIRED"}, synchronize_session=False)
             )
             self.db_session.commit()
 
             if count > 0:
-                logger.info(f"Expired {count} old drafts")
+                logger.info("Expired %d stale PENDING drafts", count)
             return count
 
         except SQLAlchemyError as e:
-            logger.error(f"Failed to expire old drafts: {e}")
+            logger.error("Failed to expire old drafts: %s", e)
             self.db_session.rollback()
             return 0
 
@@ -858,6 +886,69 @@ def module_tests() -> bool:
         test_summary="queue_for_review appends internal metadata into DraftReply.content and remains idempotent for a pending draft.",
         functions_tested="ApprovalQueueService.queue_for_review",
         method_description="In-memory DB: create Person, queue draft with _ai_reasoning/_context_summary, assert strip_internal_metadata returns clean message.",
+    )
+
+    # Test: expire_old_drafts uses expires_at field
+    def test_expire_old_drafts_uses_expires_at() -> None:
+        from core.database import DraftReply, Person
+        from testing.test_utilities import create_test_database
+
+        session = create_test_database()
+        try:
+            person = Person(username="Expiry Test", profile_id="PROFILE_EXPIRY")
+            session.add(person)
+            session.commit()
+
+            now = datetime.now(timezone.utc)
+
+            # Draft 1: expires_at in the past (should be expired)
+            draft_expired = DraftReply(
+                people_id=person.id,
+                conversation_id="conv_exp_1",
+                content="Old draft",
+                status="PENDING",
+                expires_at=now - timedelta(hours=1),
+            )
+            # Draft 2: expires_at in the future (should NOT be expired)
+            draft_valid = DraftReply(
+                people_id=person.id,
+                conversation_id="conv_exp_2",
+                content="Fresh draft",
+                status="PENDING",
+                expires_at=now + timedelta(hours=24),
+            )
+            # Draft 3: no expires_at, created recently (should NOT be expired by fallback)
+            draft_legacy_fresh = DraftReply(
+                people_id=person.id,
+                conversation_id="conv_exp_3",
+                content="Legacy fresh draft",
+                status="PENDING",
+                expires_at=None,
+                created_at=now - timedelta(hours=1),
+            )
+            session.add_all([draft_expired, draft_valid, draft_legacy_fresh])
+            session.commit()
+
+            svc = ApprovalQueueService(session)
+            expired_count = svc.expire_old_drafts(hours=72)
+
+            # Only draft_expired should be marked EXPIRED
+            assert expired_count == 1, f"Expected 1 expired, got {expired_count}"
+
+            session.expire_all()
+            assert draft_expired.status == "EXPIRED", "Past expires_at draft should be EXPIRED"
+            assert draft_valid.status == "PENDING", "Future expires_at draft should stay PENDING"
+            assert draft_legacy_fresh.status == "PENDING", "Recent legacy draft should stay PENDING"
+
+        finally:
+            session.close()
+
+    suite.run_test(
+        "expire_old_drafts uses expires_at field",
+        test_expire_old_drafts_uses_expires_at,
+        test_summary="expire_old_drafts correctly expires drafts based on expires_at field",
+        functions_tested="ApprovalQueueService.expire_old_drafts",
+        method_description="In-memory DB: create drafts with various expires_at values, verify only past-expiry drafts are marked EXPIRED",
     )
 
     return suite.finish_suite()

@@ -354,6 +354,12 @@ class DraftReply(Base):
         default=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when draft was created.",
     )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp (UTC) when draft expires if not reviewed. PENDING → EXPIRED after this time.",
+    )
 
     # Relationships
     person: Mapped["Person"] = relationship("Person", back_populates="draft_replies")

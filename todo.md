@@ -121,10 +121,11 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Ensure draft status stays APPROVED if send API fails
 - **Implementation:** Core operations wrapped in try/except with `db_session.rollback()` on failure; non-critical operations (engagement event, metrics) isolated with separate error handling
 
-### 1.6.2 Draft Expiration
-- [ ] Implement draft expiration logic (expires_at field calculated but unused)
-- [ ] Add scheduled job to mark PENDING → EXPIRED after 72 hours
-- [ ] Surface expired drafts in review queue with different styling
+### 1.6.2 Draft Expiration ✅ IMPLEMENTED
+- [x] Implement draft expiration logic (expires_at field calculated but unused)
+- [x] Add scheduled job to mark PENDING → EXPIRED after 72 hours
+- [x] Surface expired drafts in review queue with different styling
+- **Implementation:** Added `expires_at` column to DraftReply model; `ApprovalQueueService.queue_for_review()` now stores expiration timestamp; `expire_old_drafts()` enhanced to use expires_at with fallback to created_at for legacy drafts
 
 ### 1.6.3 Duplicate Send Prevention ✅ IMPLEMENTED
 - [x] Add guard: skip if draft already SENT (prevent re-processing on retry)
@@ -917,7 +918,7 @@ The system is **SAFE** for:
 4. **✅ DONE: Add transaction safety to send loop** - Wrap in try/except with rollback (Phase 1.6.1)
 5. **✅ DONE: Add duplicate send prevention** - Skip already-sent drafts, 5-min idempotency window (Phase 1.6.3)
 6. **✅ DONE: ConversationState sync after send** - Update conversation_phase to "awaiting_reply" (Phase 1.6.4)
-7. **Add draft expiration job** - Mark PENDING → EXPIRED after 72h (Phase 1.6.2)
+7. **✅ DONE: Add draft expiration job** - expires_at field + expire_old_drafts() method (Phase 1.6.2)
 8. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
 9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
 10. **Wire TriangulationIntelligence into ContextBuilder** - Leverage 724 lines of ready code (Phase 11.1)
