@@ -474,7 +474,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery) ✅ IMPLEMENTED
 - [ ] Remove TODO/FIXME comments by completing referenced tasks (83 found across codebase)
 - [ ] Address placeholder implementations in triangulation_intelligence.py line 390
-- [ ] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file)
+- [x] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file) ✅ REVIEWED: These are local dataclasses inside _test_gedcom_path_conversion() function, properly scoped; follows standard pattern of embedded tests
 
 ### Testing
 - [ ] Add integration tests for full inbound→reply flow
