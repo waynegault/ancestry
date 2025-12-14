@@ -928,6 +928,8 @@ The system is **SAFE** for:
 9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
 10. **✅ DONE: Wire TriangulationIntelligence into ContextBuilder** - Hypothesis in draft context (Phase 11.1)
 11. **✅ DONE: Wire PredictiveGapDetector into draft personalization** - Research gaps in context (Phase 11.3)
+12. **✅ DONE: Add startup maintenance task** - Expire old drafts on app startup (Phase 10.1)
+13. **✅ DONE: Wire ConflictDetector severity** - HIGH/CRITICAL conflicts flagged for review (Phase 11.2)
 
 ---
 
