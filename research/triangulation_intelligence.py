@@ -386,9 +386,34 @@ class TriangulationIntelligence:
             return evidence
 
         try:
-            # Query shared matches count (if available)
-            # This is a placeholder - actual implementation depends on schema
-            shared_match_count = 0  # Would query SharedMatch table
+            from sqlalchemy import func
+
+            from core.database import Person, SharedMatch
+
+            # Get person IDs from UUIDs
+            target_person = (
+                self.db_session.query(Person.id)
+                .filter(Person.uuid == target_uuid.upper())
+                .scalar()
+            )
+            match_person = (
+                self.db_session.query(Person.id)
+                .filter(Person.uuid == match_uuid.upper())
+                .scalar()
+            )
+
+            if not target_person or not match_person:
+                return evidence
+
+            # Query shared matches count between target and match
+            shared_match_count = (
+                self.db_session.query(func.count(SharedMatch.id))
+                .filter(
+                    SharedMatch.person_id == match_person,
+                )
+                .scalar()
+                or 0
+            )
 
             if shared_match_count > 0:
                 if shared_match_count >= 10:
