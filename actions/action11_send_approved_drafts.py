@@ -18,6 +18,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
@@ -45,6 +46,67 @@ from testing.test_utilities import create_standard_test_runner, create_test_data
 logger = logging.getLogger(__name__)
 
 
+class SendErrorCategory(Enum):
+    """Categorization of send failure types for monitoring and debugging.
+
+    Categories help identify root causes:
+    - NETWORK: Transient connectivity issues (retry recommended)
+    - AUTH: Authentication failures (session refresh needed)
+    - RATE_LIMIT: API throttling (backoff required)
+    - VALIDATION: Pre-send checks failed (skip this draft)
+    - API_ERROR: Server-side error from Ancestry API
+    - TRANSACTION: Database commit failure
+    - UNKNOWN: Uncategorized exception
+    """
+
+    NETWORK = "network"
+    AUTH = "auth"
+    RATE_LIMIT = "rate_limit"
+    VALIDATION = "validation"
+    API_ERROR = "api_error"
+    TRANSACTION = "transaction"
+    UNKNOWN = "unknown"
+
+
+def categorize_send_error(exc: Exception) -> SendErrorCategory:
+    """Categorize an exception into a send error type.
+
+    Args:
+        exc: The exception to categorize
+
+    Returns:
+        SendErrorCategory for monitoring and retry decisions
+    """
+    error_msg = str(exc).lower()
+    error_type = type(exc).__name__.lower()
+
+    # Network errors
+    if any(term in error_msg for term in ["timeout", "connection", "network", "socket"]):
+        return SendErrorCategory.NETWORK
+
+    # Authentication errors
+    if any(term in error_msg for term in ["401", "403", "unauthorized", "forbidden", "auth"]):
+        return SendErrorCategory.AUTH
+
+    # Rate limiting
+    if any(term in error_msg for term in ["429", "rate", "throttle", "too many"]):
+        return SendErrorCategory.RATE_LIMIT
+
+    # API errors (5xx)
+    if any(term in error_msg for term in ["500", "502", "503", "504", "server error"]):
+        return SendErrorCategory.API_ERROR
+
+    # Database/transaction errors
+    if any(term in error_type for term in ["sqlalchemy", "database", "transaction", "commit"]):
+        return SendErrorCategory.TRANSACTION
+
+    # Validation errors (from our code)
+    if any(term in error_msg for term in ["validation", "invalid", "missing required"]):
+        return SendErrorCategory.VALIDATION
+
+    return SendErrorCategory.UNKNOWN
+
+
 _SEND_SUCCESS_STATUSES: frozenset[str] = frozenset({SEND_SUCCESS_DELIVERED, SEND_SUCCESS_DRY_RUN})
 
 
@@ -55,6 +117,7 @@ class SendApprovedDraftsSummary:
     skipped: int = 0
     errors: int = 0
     skip_reasons: dict[str, int] = field(default_factory=dict)
+    error_categories: dict[str, int] = field(default_factory=dict)
 
 
 def _normalize_enum(value: Any) -> str:
@@ -408,8 +471,17 @@ def run_send_approved_drafts(
             )
         except Exception as exc:  # pragma: no cover - defensive
             summary.errors += 1
+            error_category = categorize_send_error(exc)
+            summary.error_categories[error_category.value] = summary.error_categories.get(error_category.value, 0) + 1
             circuit_breaker.record_failure()
-            logger.error("DraftReply #%s: unexpected exception: %s", getattr(draft, "id", "?"), exc, exc_info=True)
+            logger.error(
+                "DraftReply #%s: %s error (%s): %s",
+                getattr(draft, "id", "?"),
+                error_category.value,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
             continue
 
         if outcome == "sent":
@@ -616,6 +688,30 @@ def _test_skips_desist_people() -> bool:
     return True
 
 
+def _test_error_categorization() -> bool:
+    """Test that send errors are correctly categorized."""
+    # Network errors
+    assert categorize_send_error(Exception("Connection timeout")) == SendErrorCategory.NETWORK
+    assert categorize_send_error(Exception("socket error")) == SendErrorCategory.NETWORK
+
+    # Auth errors
+    assert categorize_send_error(Exception("401 Unauthorized")) == SendErrorCategory.AUTH
+    assert categorize_send_error(Exception("403 Forbidden")) == SendErrorCategory.AUTH
+
+    # Rate limiting
+    assert categorize_send_error(Exception("429 Too Many Requests")) == SendErrorCategory.RATE_LIMIT
+    assert categorize_send_error(Exception("Rate limit exceeded")) == SendErrorCategory.RATE_LIMIT
+
+    # API errors
+    assert categorize_send_error(Exception("500 Internal Server Error")) == SendErrorCategory.API_ERROR
+    assert categorize_send_error(Exception("503 Service Unavailable")) == SendErrorCategory.API_ERROR
+
+    # Unknown (default)
+    assert categorize_send_error(Exception("Something weird")) == SendErrorCategory.UNKNOWN
+
+    return True
+
+
 def module_tests() -> bool:
     suite = TestSuite("Action 11 - Send Approved Drafts", "actions/action11_send_approved_drafts.py")
     suite.start_suite()
@@ -635,6 +731,14 @@ def module_tests() -> bool:
         functions_tested="run_send_approved_drafts",
         method_description="In-memory DB with DESIST Person and APPROVED draft; send_fn should not be called",
         expected_outcome="Draft remains APPROVED and summary records a skip",
+    )
+    suite.run_test(
+        "Error categorization works correctly",
+        _test_error_categorization,
+        test_summary="Send errors are categorized by type (network, auth, rate_limit, etc.)",
+        functions_tested="categorize_send_error, SendErrorCategory",
+        method_description="Test various exception messages and verify correct category",
+        expected_outcome="Each error type returns the expected SendErrorCategory",
     )
 
     return suite.finish_suite()
