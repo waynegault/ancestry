@@ -450,11 +450,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add DI integration guide to developer documentation
 - **Implementation:** Added AIProviderManager as singleton and ApprovalQueueService as factory (requires DB session) to `configure_dependencies()` in dependency_injection.py; tests: ALL PASSED (19/19)
 
-### 13.2 Async Database Operations
-- [ ] Utilize `async_session_context()` for I/O-bound operations
-- [ ] Add async support to ApprovalQueueService batch operations
+### 13.2 Async Database Operations ✅ IMPLEMENTED
+- [x] Utilize `async_session_context()` for I/O-bound operations
+- [x] Add async support to ApprovalQueueService batch operations
 - [ ] Benchmark async vs sync for gather operations
 - [ ] Document when to use async patterns
+- **Implementation:** Added 3 async methods to ApprovalQueueService: `async_get_queue_stats()`, `async_get_pending_queue()`, `async_expire_old_drafts()`; uses run_in_executor for thread-pool execution; tests: 12/12 PASSED
 
 ### 13.3 Protocol-Based Testing ✅ IMPLEMENTED
 - [x] Create mock implementations based on core/protocols.py

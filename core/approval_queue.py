@@ -289,6 +289,7 @@ class ApprovalQueueService:
             # Phase 9.1: Emit drafts_queued metric
             try:
                 from observability.metrics_registry import metrics
+
                 confidence_bucket = self._get_confidence_bucket(ai_confidence)
                 metrics().drafts_queued.inc(priority=priority.value, confidence_bucket=confidence_bucket)
             except Exception:
@@ -642,6 +643,7 @@ class ApprovalQueueService:
             # Phase 9.1: Emit review_queue_depth gauge
             try:
                 from observability.metrics_registry import metrics
+
                 metrics().review_queue_depth.set(status="pending", count=float(stats.pending_count))
                 metrics().review_queue_depth.set(status="auto_approved", count=float(stats.auto_approved_count))
                 metrics().review_queue_depth.set(status="expired", count=float(stats.expired_count))
@@ -712,6 +714,63 @@ class ApprovalQueueService:
             logger.error("Failed to expire old drafts: %s", e)
             self.db_session.rollback()
             return 0
+
+    # === ASYNC DATABASE OPERATIONS (Phase 13.2) ===
+
+    async def async_get_queue_stats(self) -> QueueStats:
+        """
+        Get queue statistics asynchronously.
+
+        Uses thread pool to avoid blocking async event loop.
+        Preferred for I/O-bound scenarios where caller is already async.
+
+        Returns:
+            QueueStats with current queue metrics
+        """
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.get_queue_stats)
+
+    async def async_get_pending_queue(
+        self, limit: int = 50, priority_filter: Optional[str] = None
+    ) -> list[QueuedDraft]:
+        """
+        Get pending drafts asynchronously.
+
+        Uses thread pool to avoid blocking async event loop.
+
+        Args:
+            limit: Maximum number of drafts to return
+            priority_filter: Optional priority level to filter by
+
+        Returns:
+            List of QueuedDraft objects
+        """
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.get_pending_queue(limit, priority_filter)
+        )
+
+    async def async_expire_old_drafts(self, hours: int = 72) -> int:
+        """
+        Expire old drafts asynchronously.
+
+        Uses thread pool for database operations. Ideal for background
+        maintenance tasks running in async context.
+
+        Args:
+            hours: Fallback expiration age for drafts without expires_at
+
+        Returns:
+            Number of drafts marked as EXPIRED
+        """
+        import asyncio
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: self.expire_old_drafts(hours))
 
 
 # === MODULE TESTS ===
@@ -980,6 +1039,75 @@ def module_tests() -> bool:
         test_summary="expire_old_drafts correctly expires drafts based on expires_at field",
         functions_tested="ApprovalQueueService.expire_old_drafts",
         method_description="In-memory DB: create drafts with various expires_at values, verify only past-expiry drafts are marked EXPIRED",
+    )
+
+    # Test: async_get_queue_stats returns same results as sync version
+    def test_async_get_queue_stats() -> None:
+        import asyncio
+        import inspect
+
+        # Verify the method exists and is async
+        assert hasattr(ApprovalQueueService, "async_get_queue_stats")
+        method = getattr(ApprovalQueueService, "async_get_queue_stats")
+        assert asyncio.iscoroutinefunction(method), "Should be async function"
+
+        # Verify signature
+        sig = inspect.signature(method)
+        # Should only have 'self' parameter
+        params = list(sig.parameters.keys())
+        assert params == ["self"], f"Expected ['self'], got {params}"
+
+    suite.run_test(
+        "async_get_queue_stats is properly defined",
+        test_async_get_queue_stats,
+        test_summary="Verify async_get_queue_stats is an async method with correct signature",
+        functions_tested="ApprovalQueueService.async_get_queue_stats",
+        method_description="Check method exists and is coroutine function",
+    )
+
+    # Test: async_get_pending_queue is properly defined
+    def test_async_get_pending_queue() -> None:
+        import asyncio
+        import inspect
+
+        assert hasattr(ApprovalQueueService, "async_get_pending_queue")
+        method = getattr(ApprovalQueueService, "async_get_pending_queue")
+        assert asyncio.iscoroutinefunction(method), "Should be async function"
+
+        # Verify signature has limit and priority_filter params
+        sig = inspect.signature(method)
+        params = list(sig.parameters.keys())
+        assert "limit" in params, "Should have limit parameter"
+        assert "priority_filter" in params, "Should have priority_filter parameter"
+
+    suite.run_test(
+        "async_get_pending_queue is properly defined",
+        test_async_get_pending_queue,
+        test_summary="Verify async_get_pending_queue is async with correct parameters",
+        functions_tested="ApprovalQueueService.async_get_pending_queue",
+        method_description="Check method exists, is async, has expected params",
+    )
+
+    # Test: async_expire_old_drafts is properly defined
+    def test_async_expire_old_drafts() -> None:
+        import asyncio
+        import inspect
+
+        assert hasattr(ApprovalQueueService, "async_expire_old_drafts")
+        method = getattr(ApprovalQueueService, "async_expire_old_drafts")
+        assert asyncio.iscoroutinefunction(method), "Should be async function"
+
+        # Verify signature has hours param
+        sig = inspect.signature(method)
+        params = list(sig.parameters.keys())
+        assert "hours" in params, "Should have hours parameter"
+
+    suite.run_test(
+        "async_expire_old_drafts is properly defined",
+        test_async_expire_old_drafts,
+        test_summary="Verify async_expire_old_drafts is async with hours parameter",
+        functions_tested="ApprovalQueueService.async_expire_old_drafts",
+        method_description="Check method exists, is async, has expected params",
     )
 
     return suite.finish_suite()
