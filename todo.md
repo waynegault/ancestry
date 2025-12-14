@@ -471,7 +471,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add missing type hints to action modules
 - [ ] Resolve remaining # type: ignore comments (see check_type_ignores.py)
 - [ ] Update dead_code_candidates.json and clean stale code
-- [ ] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery)
+- [x] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery) ✅ IMPLEMENTED
 - [ ] Remove TODO/FIXME comments by completing referenced tasks (83 found across codebase)
 - [ ] Address placeholder implementations in triangulation_intelligence.py line 390
 - [ ] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file)

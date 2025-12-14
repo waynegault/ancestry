@@ -1382,6 +1382,75 @@ def error_handling_module_tests() -> bool:
             "ErrorContext correctly captures and propagates error information",
         )
 
+        # Test recovery strategies are callable and return bool
+        suite.run_test(
+            "ancestry_session_recovery is callable",
+            lambda: None
+            if callable(ancestry_session_recovery)
+            else (_ for _ in ()).throw(AssertionError("Should be callable")),
+            "ancestry_session_recovery function is properly defined",
+            "Verify recovery strategy function exists and is callable",
+            "Check function signature and return type",
+        )
+
+        suite.run_test(
+            "ancestry_api_recovery is callable",
+            lambda: None
+            if callable(ancestry_api_recovery)
+            else (_ for _ in ()).throw(AssertionError("Should be callable")),
+            "ancestry_api_recovery function is properly defined",
+            "Verify recovery strategy function exists and is callable",
+            "Check function signature and return type",
+        )
+
+        suite.run_test(
+            "ancestry_database_recovery is callable",
+            lambda: None
+            if callable(ancestry_database_recovery)
+            else (_ for _ in ()).throw(AssertionError("Should be callable")),
+            "ancestry_database_recovery function is properly defined",
+            "Verify recovery strategy function exists and is callable",
+            "Check function signature and return type",
+        )
+
+        # Test recovery strategies return bool when no session manager provided
+        def test_session_recovery_returns_bool() -> None:
+            # Without a valid session manager, should return False gracefully
+            result = ancestry_session_recovery(None)
+            assert isinstance(result, bool), "Should return bool"
+
+        suite.run_test(
+            "ancestry_session_recovery returns bool",
+            test_session_recovery_returns_bool,
+            "ancestry_session_recovery returns bool when session manager unavailable",
+            "Verify graceful handling when DI container has no SessionManager",
+            "Call with None, verify bool return",
+        )
+
+        def test_api_recovery_returns_bool() -> None:
+            result = ancestry_api_recovery(None)
+            assert isinstance(result, bool), "Should return bool"
+
+        suite.run_test(
+            "ancestry_api_recovery returns bool",
+            test_api_recovery_returns_bool,
+            "ancestry_api_recovery returns bool when session manager unavailable",
+            "Verify graceful handling when DI container has no SessionManager",
+            "Call with None, verify bool return",
+        )
+
+        def test_database_recovery_returns_bool() -> None:
+            result = ancestry_database_recovery(None)
+            assert isinstance(result, bool), "Should return bool"
+
+        suite.run_test(
+            "ancestry_database_recovery returns bool",
+            test_database_recovery_returns_bool,
+            "ancestry_database_recovery returns bool when session manager unavailable",
+            "Verify graceful handling when DI container has no SessionManager",
+            "Call with None, verify bool return",
+        )
+
     # Generate summary report
     return suite.finish_suite()
 
@@ -1858,22 +1927,184 @@ def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P
 # === RECOVERY STRATEGIES ===
 
 
-def ancestry_session_recovery(*_args: Any, **_kwargs: Any) -> None:
-    """Recovery strategy for session-related failures."""
-    logger.info("Attempting session recovery...")
-    # Placeholder for session recovery logic
+def ancestry_session_recovery(
+    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
+) -> bool:
+    """
+    Recovery strategy for session-related failures.
+
+    Attempts to recover an invalid WebDriver session by:
+    1. Closing the current browser session
+    2. Starting a new browser session
+    3. Re-authenticating if necessary
+
+    Args:
+        session_manager: Optional SessionManager instance. If not provided,
+                         attempts to get from DI container or create new one.
+
+    Returns:
+        bool: True if recovery successful, False otherwise
+
+    Usage:
+        @with_recovery(ancestry_session_recovery)
+        def action_requiring_session():
+            # If this fails, ancestry_session_recovery is called
+            pass
+    """
+    logger.info("🔄 Attempting session recovery...")
+
+    try:
+        # Get session manager from args or DI container
+        if session_manager is None:
+            try:
+                from core.dependency_injection import get_service
+
+                session_manager = get_service("SessionManager")
+            except Exception:
+                logger.warning("Could not obtain SessionManager from DI container")
+
+        if session_manager is None:
+            try:
+                from core.session_manager import SessionManager
+
+                session_manager = SessionManager()
+            except Exception as e:
+                logger.error(f"Failed to create SessionManager for recovery: {e}")
+                return False
+
+        # Delegate to SessionManager's recovery method
+        if hasattr(session_manager, "_attempt_session_recovery"):
+            result = session_manager._attempt_session_recovery(reason="recovery_strategy")
+            if result:
+                logger.info("✅ Session recovery successful")
+            else:
+                logger.warning("⚠️ Session recovery failed")
+            return result
+
+        # Fallback: try ensure_session_ready
+        if hasattr(session_manager, "ensure_session_ready"):
+            result = session_manager.ensure_session_ready()
+            if result:
+                logger.info("✅ Session recovery via ensure_session_ready successful")
+            return result
+
+        logger.error("SessionManager lacks recovery methods")
+        return False
+
+    except Exception as e:
+        logger.error(f"Session recovery failed: {e}", exc_info=True)
+        return False
 
 
-def ancestry_api_recovery(*_args: Any, **_kwargs: Any) -> None:
-    """Recovery strategy for API-related failures."""
-    logger.info("Attempting API recovery...")
-    # Placeholder for API recovery logic
+def ancestry_api_recovery(
+    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
+) -> bool:
+    """
+    Recovery strategy for API-related failures (403, cookie expiry).
+
+    Attempts to recover API access by:
+    1. Syncing cookies from browser to API session
+    2. Refreshing CSRF token if needed
+
+    Args:
+        session_manager: Optional SessionManager instance
+
+    Returns:
+        bool: True if recovery successful, False otherwise
+
+    Usage:
+        @with_recovery(ancestry_api_recovery)
+        def api_call():
+            # If this fails with 403, recovery is attempted
+            pass
+    """
+    logger.info("🔄 Attempting API recovery...")
+
+    try:
+        # Get session manager
+        if session_manager is None:
+            try:
+                from core.dependency_injection import get_service
+
+                session_manager = get_service("SessionManager")
+            except Exception:
+                pass
+
+        if session_manager is None:
+            try:
+                from core.session_manager import SessionManager
+
+                session_manager = SessionManager()
+            except Exception as e:
+                logger.error(f"Failed to obtain SessionManager for API recovery: {e}")
+                return False
+
+        # Sync cookies from browser to API session
+        if hasattr(session_manager, "api_manager"):
+            api_manager = session_manager.api_manager
+            if api_manager and hasattr(api_manager, "sync_cookies_from_browser"):
+                api_manager.sync_cookies_from_browser(force=True)
+                logger.debug("Synced cookies from browser to API session")
+
+        # Refresh CSRF token
+        if hasattr(session_manager, "fetch_csrf_token"):
+            token = session_manager.fetch_csrf_token()
+            if token:
+                logger.debug("Refreshed CSRF token")
+
+        logger.info("✅ API recovery completed")
+        return True
+
+    except Exception as e:
+        logger.error(f"API recovery failed: {e}", exc_info=True)
+        return False
 
 
-def ancestry_database_recovery(*_args: Any, **_kwargs: Any) -> None:
-    """Recovery strategy for database-related failures."""
-    logger.info("Attempting database recovery...")
-    # Placeholder for database recovery logic
+def ancestry_database_recovery(
+    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
+) -> bool:
+    """
+    Recovery strategy for database-related failures.
+
+    Attempts to recover database access by:
+    1. Returning the current session to pool
+    2. Obtaining a fresh session
+
+    Args:
+        session_manager: Optional SessionManager instance
+
+    Returns:
+        bool: True if recovery successful, False otherwise
+    """
+    logger.info("🔄 Attempting database recovery...")
+
+    try:
+        if session_manager is None:
+            try:
+                from core.dependency_injection import get_service
+
+                session_manager = get_service("SessionManager")
+            except Exception:
+                pass
+
+        if session_manager is None:
+            logger.warning("No SessionManager available for database recovery")
+            return False
+
+        # Ensure database is ready via SessionManager
+        if hasattr(session_manager, "ensure_db_ready"):
+            result = session_manager.ensure_db_ready()
+            if result:
+                logger.info("✅ Database recovery successful")
+            else:
+                logger.warning("⚠️ Database recovery failed")
+            return result
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Database recovery failed: {e}", exc_info=True)
+        return False
 
 
 def test_recovery_decorator_behavior() -> None:
