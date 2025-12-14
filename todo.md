@@ -501,10 +501,10 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Create error categorization for send failures (network vs auth vs rate limit) ✅ IMPLEMENTED: SendErrorCategory enum with categorize_send_error() function
 
 ### Research Module Integration
-- [ ] Wire TriangulationIntelligence into draft generation (724 lines ready but not called)
-- [ ] Wire ConflictDetector into fact review workflow (547 lines ready but not called)
-- [ ] Wire PredictiveGapDetector suggestions into message personalization (827 lines ready)
-- [ ] Add research module status to ContextBuilder output
+- [x] Wire TriangulationIntelligence into draft generation (724 lines ready but not called) ✅ ALREADY WIRED: ContextBuilder._build_triangulation_hypothesis() uses TriangulationIntelligence.analyze_match()
+- [x] Wire ConflictDetector into fact review workflow (547 lines ready but not called) ✅ ALREADY WIRED: Action 9 uses ConflictDetector for severity mapping; GEDCOM intelligence surfaces conflicts
+- [x] Wire PredictiveGapDetector suggestions into message personalization (827 lines ready) ✅ ALREADY WIRED: ContextBuilder._build_predictive_gaps() uses PredictiveGapDetector
+- [x] Add research module status to ContextBuilder output ✅ ALREADY IMPLEMENTED: _build_research_insights() includes triangulation, research_gaps, gedcom_intelligence, dna_gedcom_crossref
 
 ### Core Infrastructure Gaps
 - [x] Wire FeatureFlags (594 lines) into action modules for gradual rollout ✅ IMPLEMENTED: Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
