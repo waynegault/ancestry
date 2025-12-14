@@ -416,11 +416,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 | gedcom_cache.py | ~400 | ✅ Implemented | Caching available but not widely used |
 | dna_utils.py | ~300 | ✅ Implemented | Utility functions available |
 
-### 12.1 GEDCOM Intelligence Integration
-- [ ] Call `GedcomIntelligenceAnalyzer.analyze_gaps()` during ContextBuilder assembly
-- [ ] Surface `GedcomGap` findings in draft personalization
-- [ ] Include `GedcomConflict` warnings in human review notes
+### 12.1 GEDCOM Intelligence Integration ✅ IMPLEMENTED
+- [x] Call `GedcomIntelligenceAnalyzer.analyze_gaps()` during ContextBuilder assembly
+- [x] Surface `GedcomGap` findings in draft personalization
+- [x] Include `GedcomConflict` warnings in human review notes
 - [ ] Route `ResearchOpportunity` items to MS To-Do tasks
+- **Implementation:** Added `_build_gedcom_intelligence()` to ContextBuilder; surfaces top gap, conflict (with severity), and research opportunity; formatted in `_format_research()` for AI prompts with ⚠️ warning for critical/major conflicts
 
 ### 12.2 DNA-GEDCOM Cross-Reference Integration
 - [ ] Call `CrossReferenceService.find_matches()` during match processing

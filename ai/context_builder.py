@@ -294,7 +294,7 @@ class MatchContext:
             proposed_rel = tri_dict.get("proposed_relationship")
             confidence = tri_dict.get("confidence_score")
             common_ancestor = tri_dict.get("common_ancestor_name")
-            
+
             if proposed_rel:
                 lines.append(f"Triangulation hypothesis: {proposed_rel}")
             if confidence is not None:
@@ -309,13 +309,44 @@ class MatchContext:
             gap_type = gaps_dict.get("top_gap_type")
             gap_desc = gaps_dict.get("top_gap_description")
             suggested_actions = gaps_dict.get("suggested_actions", [])
-            
+
             if gap_type:
                 lines.append(f"Research opportunity: {gap_type.replace('_', ' ').title()}")
             if gap_desc:
                 lines.append(f"Gap details: {gap_desc}")
             if suggested_actions:
                 lines.append(f"Suggested action: {suggested_actions[0]}")
+
+        # Phase 12.1: GEDCOM intelligence findings
+        gedcom_intel = self.research.get("gedcom_intelligence")
+        if isinstance(gedcom_intel, dict):
+            intel_dict = cast(dict[str, Any], gedcom_intel)
+
+            # Surface top GEDCOM gap
+            top_gap = intel_dict.get("top_gap")
+            if isinstance(top_gap, dict):
+                gap_type = top_gap.get("type", "")
+                gap_desc = top_gap.get("description", "")
+                if gap_type:
+                    lines.append(f"Tree gap: {gap_type.replace('_', ' ').title()}")
+                if gap_desc:
+                    lines.append(f"Gap: {gap_desc[:100]}")
+
+            # Surface GEDCOM conflicts for review context
+            top_conflict = intel_dict.get("top_conflict")
+            if isinstance(top_conflict, dict):
+                conflict_type = top_conflict.get("type", "")
+                severity = top_conflict.get("severity", "")
+                if conflict_type and severity in ("critical", "major"):
+                    lines.append(f"⚠️ Tree conflict ({severity}): {conflict_type.replace('_', ' ')}")
+
+            # Surface research opportunity
+            top_opp = intel_dict.get("top_opportunity")
+            if isinstance(top_opp, dict):
+                opp_type = top_opp.get("type", "")
+                opp_desc = top_opp.get("description", "")
+                if opp_type:
+                    lines.append(f"Research opportunity: {opp_type.replace('_', ' ').title()}")
 
         return lines
 
@@ -457,22 +488,30 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"Predictive gaps enrichment skipped: {exc}")
 
+        # Phase 12.1: GEDCOM intelligence - gaps, conflicts, and research opportunities
+        try:
+            gedcom_intel = self._build_gedcom_intelligence(person)
+            if gedcom_intel:
+                research["gedcom_intelligence"] = gedcom_intel
+        except Exception as exc:
+            logger.debug(f"GEDCOM intelligence enrichment skipped: {exc}")
+
         return research
 
     def _build_triangulation_hypothesis(self, person: Any) -> Optional[dict[str, Any]]:
         """
         Generate triangulation hypothesis for a DNA match.
-        
-        Phase 11.1: Uses TriangulationIntelligence to analyze the match and 
+
+        Phase 11.1: Uses TriangulationIntelligence to analyze the match and
         generate a confidence-scored hypothesis for draft personalization.
-        
+
         Returns:
             Dictionary with hypothesis details, or None if analysis not possible.
         """
         person_uuid = getattr(person, "uuid", None)
         if not person_uuid:
             return None
-        
+
         # Build match_data from Person attributes
         match_data: dict[str, Any] = {
             "name": getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown",
@@ -480,29 +519,29 @@ class ContextBuilder:
             "segments": getattr(person, "segments", None),
             "predicted_relationship": getattr(person, "predicted_relationship", None),
         }
-        
+
         # Skip if no meaningful DNA data
         if match_data["shared_cm"] < 20:
             return None
-        
+
         from research.triangulation_intelligence import TriangulationIntelligence
-        
+
         # Initialize with db_session for shared-match queries
         engine = TriangulationIntelligence(
             db_session=self._session,
             research_service=self._ensure_tree_service(),
         )
-        
+
         # Get owner UUID for target comparison (best-effort)
         owner_profile_id = ContextBuilder._resolve_owner_profile_id()
         target_uuid = owner_profile_id or "OWNER"
-        
+
         hypothesis = engine.analyze_match(
             target_uuid=target_uuid,
             match_uuid=person_uuid,
             match_data=match_data,
         )
-        
+
         # Convert to dictionary for JSON serialization
         return {
             "proposed_relationship": hypothesis.proposed_relationship,
@@ -517,19 +556,19 @@ class ContextBuilder:
     def _build_predictive_gaps(self, person: Any) -> Optional[dict[str, Any]]:
         """
         Identify research gaps for a DNA match using PredictiveGapDetector.
-        
+
         Phase 11.3: Surfaces research suggestions that can be incorporated into
         personalized draft messages (e.g., "I'm researching the Smith line...").
-        
+
         Returns:
             Dictionary with research gaps, or None if analysis not possible.
         """
         person_name = getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown"
         person_uuid = getattr(person, "uuid", None)
-        
+
         if not person_uuid:
             return None
-        
+
         # Build person_data for gap analysis
         person_data: dict[str, Any] = {
             "id": person_uuid,
@@ -539,23 +578,23 @@ class ContextBuilder:
             "tree_size": getattr(person, "tree_size", 0) or 0,
             "ethnicity_regions": getattr(person, "ethnicity_regions", None),
         }
-        
+
         from research.predictive_gaps import PredictiveGapDetector
-        
+
         detector = PredictiveGapDetector(
             db_session=self._session,
             research_service=self._ensure_tree_service(),
         )
-        
+
         # Analyze the match as a potential DNA research target
         gaps = detector.identify_dna_research_priorities(
             matches=[person_data],
             max_results=3,
         )
-        
+
         if not gaps:
             return None
-        
+
         # Convert to dictionary for JSON serialization
         top_gap = gaps[0]
         return {
@@ -566,6 +605,75 @@ class ContextBuilder:
             "suggested_actions": top_gap.suggested_actions[:3],  # Limit for context size
             "total_gaps_found": len(gaps),
         }
+
+    def _build_gedcom_intelligence(self, person: Any) -> Optional[dict[str, Any]]:
+        """
+        Analyze GEDCOM data for gaps, conflicts, and research opportunities.
+
+        Phase 12.1: Uses GedcomIntelligenceAnalyzer to provide AI with context
+        about family tree issues that can be addressed through conversation.
+
+        Returns:
+            Dictionary with GEDCOM intelligence findings, or None if not available.
+        """
+        tree_service = self._ensure_tree_service()
+        if not tree_service:
+            return None
+
+        # Get GEDCOM data from tree service
+        gedcom_data = getattr(tree_service, "gedcom_data", None)
+        if not gedcom_data:
+            return None
+
+        from genealogy.gedcom.gedcom_intelligence import GedcomIntelligenceAnalyzer
+
+        analyzer = GedcomIntelligenceAnalyzer()
+        analysis = analyzer.analyze_gedcom_data(gedcom_data)
+
+        if not analysis or analysis.get("individuals_analyzed", 0) == 0:
+            return None
+
+        # Extract key findings for context (limit for prompt size)
+        gaps = analysis.get("gaps_identified", [])[:3]
+        conflicts = analysis.get("conflicts_identified", [])[:2]
+        opportunities = analysis.get("research_opportunities", [])[:2]
+
+        result: dict[str, Any] = {
+            "individuals_analyzed": analysis.get("individuals_analyzed", 0),
+        }
+
+        # Surface top gap for personalization
+        if gaps:
+            top_gap = gaps[0]
+            result["top_gap"] = {
+                "type": top_gap.get("gap_type", "unknown"),
+                "description": top_gap.get("description", "")[:200],
+                "priority": top_gap.get("priority", "medium"),
+                "suggestions": top_gap.get("research_suggestions", [])[:2],
+            }
+            result["total_gaps"] = len(analysis.get("gaps_identified", []))
+
+        # Surface critical conflicts for review notes
+        if conflicts:
+            top_conflict = conflicts[0]
+            result["top_conflict"] = {
+                "type": top_conflict.get("conflict_type", "unknown"),
+                "description": top_conflict.get("description", "")[:200],
+                "severity": top_conflict.get("severity", "minor"),
+            }
+            result["total_conflicts"] = len(analysis.get("conflicts_identified", []))
+
+        # Surface research opportunities
+        if opportunities:
+            top_opp = opportunities[0]
+            result["top_opportunity"] = {
+                "type": top_opp.get("opportunity_type", "unknown"),
+                "description": top_opp.get("description", "")[:200],
+                "priority": top_opp.get("priority", "medium"),
+            }
+            result["total_opportunities"] = len(analysis.get("research_opportunities", []))
+
+        return result if len(result) > 1 else None  # Only return if we have findings
 
     def _build_shared_match_cluster(self, person: Any) -> dict[str, Any]:
         """Summarize the shared-match network for this match (count + sample)."""
