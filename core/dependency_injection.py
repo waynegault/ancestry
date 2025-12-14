@@ -415,6 +415,8 @@ def configure_dependencies() -> None:
 
     This function sets up the dependency injection container
     with all the application services.
+
+    Phase 13.1: Expanded to include AIProviderManager and ApprovalQueueService.
     """
     container = get_container()
 
@@ -451,6 +453,37 @@ def configure_dependencies() -> None:
 
     except ImportError as e:
         logger.warning(f"Could not register configuration services: {e}")
+
+    # Phase 13.1: Register AI and Approval services
+    try:
+        from ai.providers.ai_provider_manager import AIProviderManager
+
+        container.register_singleton(AIProviderManager, AIProviderManager)
+        logger.info("AIProviderManager registered in DI container")
+
+    except ImportError as e:
+        logger.debug(f"Could not register AIProviderManager: {e}")
+
+    try:
+        from core.approval_queue import ApprovalQueueService
+
+        # ApprovalQueueService requires a DB session, so register as factory
+        def create_approval_service() -> "ApprovalQueueService":
+            """Factory to create ApprovalQueueService with session."""
+            from core.session_utils import get_session_manager
+
+            sm = get_session_manager()
+            if sm and sm.db_manager:
+                session = sm.db_manager.get_session()
+                if session:
+                    return ApprovalQueueService(session)
+            raise RuntimeError("Cannot create ApprovalQueueService: no database session available")
+
+        container.register_factory(ApprovalQueueService, create_approval_service)
+        logger.info("ApprovalQueueService registered in DI container")
+
+    except ImportError as e:
+        logger.debug(f"Could not register ApprovalQueueService: {e}")
 
     logger.info("Dependency injection configuration completed")
 

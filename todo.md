@@ -443,11 +443,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 **Goal:** Leverage advanced infrastructure patterns for better maintainability
 
-### 13.1 Dependency Injection Expansion
-- [ ] Expand DI container usage beyond session_utils.py (currently only 2 imports)
-- [ ] Register AIProviderManager in DI container
-- [ ] Register ApprovalQueueService in DI container
+### 13.1 Dependency Injection Expansion ✅ IMPLEMENTED
+- [x] Expand DI container usage beyond session_utils.py (currently only 2 imports)
+- [x] Register AIProviderManager in DI container
+- [x] Register ApprovalQueueService in DI container
 - [ ] Add DI integration guide to developer documentation
+- **Implementation:** Added AIProviderManager as singleton and ApprovalQueueService as factory (requires DB session) to `configure_dependencies()` in dependency_injection.py; tests: ALL PASSED (19/19)
 
 ### 13.2 Async Database Operations
 - [ ] Utilize `async_session_context()` for I/O-bound operations
