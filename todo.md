@@ -384,11 +384,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add conflict resolution workflow to operator manual
 - [ ] Surface resolved conflicts as tree improvement candidates
 
-### 11.3 Predictive Gap Integration
-- [ ] Call `PredictiveGapDetector.analyze_gaps()` for match tree analysis
-- [ ] Include `ResearchGap` suggestions in draft personalization
+### 11.3 Predictive Gap Integration ✅ IMPLEMENTED
+- [x] Call `PredictiveGapDetector.analyze_gaps()` for match tree analysis
+- [x] Include `ResearchGap` suggestions in draft personalization
 - [ ] Prioritize brick wall research in message content
 - [ ] Track gap resolution through conversation outcomes
+- **Implementation:** Added `_build_predictive_gaps()` to ContextBuilder; surfaces top research gap with type, description, suggested actions; formatted in `_format_research()` for AI prompts
 
 ### 11.4 Personalization Enhancement
 - [ ] Enable full personalization function registry in MessagePersonalizer
@@ -923,7 +924,7 @@ The system is **SAFE** for:
 8. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
 9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
 10. **✅ DONE: Wire TriangulationIntelligence into ContextBuilder** - Hypothesis in draft context (Phase 11.1)
-11. **Wire PredictiveGapDetector into draft personalization** - Surface research suggestions (Phase 11.3)
+11. **✅ DONE: Wire PredictiveGapDetector into draft personalization** - Research gaps in context (Phase 11.3)
 
 ---
 

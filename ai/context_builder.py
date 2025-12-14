@@ -302,6 +302,21 @@ class MatchContext:
             if common_ancestor:
                 lines.append(f"Possible common ancestor: {common_ancestor}")
 
+        # Phase 11.3: Research gaps and suggestions
+        research_gaps = self.research.get("research_gaps")
+        if isinstance(research_gaps, dict):
+            gaps_dict = cast(dict[str, Any], research_gaps)
+            gap_type = gaps_dict.get("top_gap_type")
+            gap_desc = gaps_dict.get("top_gap_description")
+            suggested_actions = gaps_dict.get("suggested_actions", [])
+            
+            if gap_type:
+                lines.append(f"Research opportunity: {gap_type.replace('_', ' ').title()}")
+            if gap_desc:
+                lines.append(f"Gap details: {gap_desc}")
+            if suggested_actions:
+                lines.append(f"Suggested action: {suggested_actions[0]}")
+
         return lines
 
 
@@ -434,6 +449,14 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"Triangulation enrichment skipped: {exc}")
 
+        # Phase 11.3: Predictive gap detection - surface research suggestions
+        try:
+            research_gaps = self._build_predictive_gaps(person)
+            if research_gaps:
+                research["research_gaps"] = research_gaps
+        except Exception as exc:
+            logger.debug(f"Predictive gaps enrichment skipped: {exc}")
+
         return research
 
     def _build_triangulation_hypothesis(self, person: Any) -> Optional[dict[str, Any]]:
@@ -491,7 +514,58 @@ class ContextBuilder:
             "notes": hypothesis.notes[:3] if hypothesis.notes else [],  # Limit notes for context size
         }
 
-        return research
+    def _build_predictive_gaps(self, person: Any) -> Optional[dict[str, Any]]:
+        """
+        Identify research gaps for a DNA match using PredictiveGapDetector.
+        
+        Phase 11.3: Surfaces research suggestions that can be incorporated into
+        personalized draft messages (e.g., "I'm researching the Smith line...").
+        
+        Returns:
+            Dictionary with research gaps, or None if analysis not possible.
+        """
+        person_name = getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown"
+        person_uuid = getattr(person, "uuid", None)
+        
+        if not person_uuid:
+            return None
+        
+        # Build person_data for gap analysis
+        person_data: dict[str, Any] = {
+            "id": person_uuid,
+            "name": person_name,
+            "shared_cm": getattr(person, "shared_cm", 0) or 0,
+            "has_tree": bool(getattr(person, "tree_size", 0)),
+            "tree_size": getattr(person, "tree_size", 0) or 0,
+            "ethnicity_regions": getattr(person, "ethnicity_regions", None),
+        }
+        
+        from research.predictive_gaps import PredictiveGapDetector
+        
+        detector = PredictiveGapDetector(
+            db_session=self._session,
+            research_service=self._ensure_tree_service(),
+        )
+        
+        # Analyze the match as a potential DNA research target
+        gaps = detector.identify_dna_research_priorities(
+            matches=[person_data],
+            max_results=3,
+        )
+        
+        if not gaps:
+            return None
+        
+        # Convert to dictionary for JSON serialization
+        top_gap = gaps[0]
+        return {
+            "top_gap_type": top_gap.gap_type.value,
+            "top_gap_description": top_gap.description,
+            "top_gap_priority": top_gap.priority.value,
+            "potential_score": top_gap.potential_score,
+            "suggested_actions": top_gap.suggested_actions[:3],  # Limit for context size
+            "total_gaps_found": len(gaps),
+        }
 
     def _build_shared_match_cluster(self, person: Any) -> dict[str, Any]:
         """Summarize the shared-match network for this match (count + sample)."""
