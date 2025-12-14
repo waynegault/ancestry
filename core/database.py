@@ -181,6 +181,20 @@ class ConflictStatusEnum(enum.Enum):
     AUTO_RESOLVED = "AUTO_RESOLVED"  # System auto-resolved (e.g., merged identical values)
 
 
+class ConflictSeverityEnum(enum.Enum):
+    """
+    Severity levels for data conflicts.
+
+    Phase 11.2: Used by ConflictDetector to prioritize conflicts for review.
+    HIGH and CRITICAL conflicts are routed to the review queue.
+    """
+
+    LOW = "LOW"  # Minor difference (typo, formatting)
+    MEDIUM = "MEDIUM"  # Significant difference requiring review
+    HIGH = "HIGH"  # Major contradiction (different dates/places)
+    CRITICAL = "CRITICAL"  # Fundamental conflict (relationship change)
+
+
 # ----------------------------------------------------------------------
 # SQLAlchemy Model Definitions
 # ----------------------------------------------------------------------
@@ -1008,6 +1022,13 @@ class DataConflict(Base):
         Text,
         nullable=False,
         comment="Newly extracted value from conversation or import.",
+    )
+    severity: Mapped[Optional[ConflictSeverityEnum]] = mapped_column(
+        SQLEnum(ConflictSeverityEnum),
+        nullable=True,
+        default=ConflictSeverityEnum.MEDIUM,
+        index=True,
+        comment="Severity level (LOW, MEDIUM, HIGH, CRITICAL). HIGH/CRITICAL require review.",
     )
     source: Mapped[str] = mapped_column(
         String(100),

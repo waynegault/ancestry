@@ -43,6 +43,7 @@ from ai.ai_interface import (
 from config import ConfigSchema, config_schema as _config_schema
 from core.app_mode_policy import should_allow_outbound_to_person
 from core.database import (
+    ConflictSeverityEnum,
     ConflictStatusEnum,
     ConversationLog,
     ConversationState,
@@ -77,6 +78,7 @@ from integrations import ms_graph_utils
 from messaging import build_safe_column_value
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from performance.connection_resilience import with_connection_resilience
+from research.conflict_detector import ConflictDetector, ConflictSeverity
 from research.person_lookup_utils import (
     PersonLookupResult,
     create_not_found_result,
@@ -979,6 +981,34 @@ class PersonProcessor:
         session.add(suggested)
         return status
 
+    def _map_conflict_severity(self, fact_type: str, conflict_type: ConflictType) -> ConflictSeverityEnum:
+        """
+        Map conflict type and fact type to ConflictSeverityEnum.
+
+        Phase 11.2: Uses ConflictDetector's field-severity mappings to determine
+        appropriate severity level for routing to review queue.
+        """
+        # Critical fields that should escalate
+        critical_fields = {"relationship", "relationship_to_me"}
+        high_fields = {"birth_year", "death_year", "birth_place", "death_place", "gender"}
+
+        field_name = fact_type.lower()
+
+        # MAJOR_CONFLICT always escalates
+        if conflict_type == ConflictType.MAJOR_CONFLICT:
+            if field_name in critical_fields:
+                return ConflictSeverityEnum.CRITICAL
+            if field_name in high_fields:
+                return ConflictSeverityEnum.HIGH
+            return ConflictSeverityEnum.MEDIUM
+
+        # MINOR_CONFLICT uses field-based severity
+        if field_name in critical_fields:
+            return ConflictSeverityEnum.HIGH  # Even minor relationship conflicts are important
+        if field_name in high_fields:
+            return ConflictSeverityEnum.MEDIUM
+        return ConflictSeverityEnum.LOW
+
     def _stage_conflict_if_needed(
         self,
         person: Person,
@@ -987,24 +1017,44 @@ class PersonProcessor:
         message_id: Optional[int],
         validation_result: Any,
     ) -> int:
-        """Stage a DataConflict when validation detects conflicts, returning increment count."""
+        """
+        Stage a DataConflict when validation detects conflicts.
+
+        Phase 11.2: Now includes severity mapping for review queue routing.
+        HIGH/CRITICAL severity conflicts are prioritized for human review.
+
+        Returns:
+            1 if conflict was staged, 0 otherwise
+        """
         if validation_result.conflict_type not in {ConflictType.MINOR_CONFLICT, ConflictType.MAJOR_CONFLICT}:
             return 0
 
         existing_value = validation_result.conflicting_fact.value if validation_result.conflicting_fact else None
         session = cast(DbSession, self.db_state.session)
 
+        # Phase 11.2: Determine severity for review routing
+        severity = self._map_conflict_severity(fact.fact_type, validation_result.conflict_type)
+
         conflict = DataConflict(
             people_id=person.id,
             field_name=self._map_field_name_for_conflict(fact.fact_type),
             existing_value=existing_value,
             new_value=structured_value,
+            severity=severity,
             source="conversation",
             source_message_id=message_id,
             confidence_score=fact.confidence,
             status=ConflictStatusEnum.OPEN,
         )
         session.add(conflict)
+
+        # Log HIGH/CRITICAL conflicts for visibility
+        if severity in {ConflictSeverityEnum.HIGH, ConflictSeverityEnum.CRITICAL}:
+            logger.warning(
+                f"⚠️ {severity.value} severity conflict detected for Person {person.id}: "
+                f"{fact.fact_type} (existing: {existing_value!r} → new: {structured_value!r})"
+            )
+
         return 1
 
     def _validate_and_record_facts(

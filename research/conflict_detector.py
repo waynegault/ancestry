@@ -29,7 +29,7 @@ if __package__ in {None, ""}:
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
 
-from core.database import ConflictStatusEnum, DataConflict, Person
+from core.database import ConflictSeverityEnum, ConflictStatusEnum, DataConflict, Person
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConflictSeverity(Enum):
-    """Severity levels for data conflicts."""
+    """Severity levels for data conflicts (module-level, maps to ConflictSeverityEnum)."""
 
     LOW = "low"  # Minor difference (typo, formatting)
     MEDIUM = "medium"  # Significant difference requiring review
@@ -380,6 +380,46 @@ class ConflictDetector:
             query = query.filter(DataConflict.people_id == person_id)
 
         return query.order_by(DataConflict.created_at.desc()).limit(limit).all()
+
+    @staticmethod
+    def get_critical_conflicts(
+        db_session: Session,
+        limit: int = 50,
+    ) -> list[DataConflict]:
+        """
+        Get HIGH and CRITICAL severity conflicts requiring review.
+
+        Phase 11.2: Routes significant conflicts to human review queue.
+        These conflicts have fundamental data contradictions that need
+        human validation before applying changes.
+
+        Args:
+            db_session: Active database session
+            limit: Maximum number of conflicts to return
+
+        Returns:
+            List of HIGH/CRITICAL DataConflict records ordered by severity then date
+        """
+        from sqlalchemy import case
+
+        # Create severity ordering (CRITICAL first, then HIGH)
+        severity_order = case(
+            (DataConflict.severity == ConflictSeverityEnum.CRITICAL, 1),
+            (DataConflict.severity == ConflictSeverityEnum.HIGH, 2),
+            else_=3,
+        )
+
+        query = (
+            db_session.query(DataConflict)
+            .filter(
+                DataConflict.status == ConflictStatusEnum.OPEN,
+                DataConflict.severity.in_([ConflictSeverityEnum.HIGH, ConflictSeverityEnum.CRITICAL]),
+            )
+            .order_by(severity_order, DataConflict.created_at.desc())
+            .limit(limit)
+        )
+
+        return query.all()
 
     @staticmethod
     def get_conflict_summary(

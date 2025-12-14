@@ -380,11 +380,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add `MatchCluster` detection to group related matches
 - **Implementation:** Added `_build_triangulation_hypothesis()` to ContextBuilder; hypothesis includes proposed_relationship, common_ancestor, confidence_score, evidence_count; formatted in `_format_research()` for AI prompts
 
-### 11.2 Conflict Detection Integration
-- [ ] Wire `ConflictDetector.detect_conflicts()` to Action 9 fact extraction
-- [ ] Route HIGH/CRITICAL severity conflicts to review queue
+### 11.2 Conflict Detection Integration ✅ IMPLEMENTED
+- [x] Wire `ConflictDetector.detect_conflicts()` to Action 9 fact extraction
+- [x] Route HIGH/CRITICAL severity conflicts to review queue
 - [ ] Add conflict resolution workflow to operator manual
 - [ ] Surface resolved conflicts as tree improvement candidates
+- **Implementation:** Added `ConflictSeverityEnum` to database.py; added `severity` column to DataConflict model; added `_map_conflict_severity()` and enhanced `_stage_conflict_if_needed()` in action9; added `get_critical_conflicts()` query method to ConflictDetector; HIGH/CRITICAL conflicts logged with warning for visibility
 
 ### 11.3 Predictive Gap Integration ✅ IMPLEMENTED
 - [x] Call `PredictiveGapDetector.analyze_gaps()` for match tree analysis
