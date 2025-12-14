@@ -100,13 +100,13 @@ def _person_blocks_outbound(person: Person) -> Optional[str]:
 def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> Optional[str]:
     """
     Update conversation state after successful outbound send.
-    
+
     Per the reply_management.md state machine:
     - After sending, we transition to 'awaiting_reply' phase
     - The status remains ACTIVE (unless in a hard-stop state)
     - next_action is set to 'await_reply'
     - updated_at is refreshed to track when the send occurred
-    
+
     Phase 1.6.4 Implementation: ConversationState Synchronization
     """
     from datetime import datetime, timezone
@@ -132,13 +132,13 @@ def _touch_conversation_state_after_send(db_session: Session, people_id: int) ->
     # active_dialogue -> awaiting_reply (follow-up sent)
     # Any other phase -> awaiting_reply (we just sent a message)
     new_phase = "awaiting_reply"
-    
+
     conv_state.conversation_phase = new_phase
     conv_state.next_action = "await_reply"
     conv_state.next_action_date = None
     conv_state.updated_at = datetime.now(timezone.utc)
     db_session.add(conv_state)
-    
+
     logger.debug(
         "Updated conversation state for person %d: phase %s -> %s, next_action=%s",
         people_id,
@@ -146,7 +146,7 @@ def _touch_conversation_state_after_send(db_session: Session, people_id: int) ->
         new_phase,
         "await_reply",
     )
-    
+
     return new_phase
 
 
@@ -186,15 +186,15 @@ def _app_mode_blocks_outbound(person: Person, app_mode: str) -> Optional[str]:
 def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int) -> Optional[str]:
     """
     Phase 1.6.3: Duplicate Send Prevention
-    
+
     Check if this draft was already sent or if there's a recent outbound message
     to this person (idempotency window).
-    
+
     Returns:
         None if send should proceed, or a skip reason string if duplicate detected.
     """
     from datetime import timedelta
-    
+
     # Guard 1: Check if draft is already SENT
     if draft.status == "SENT":
         logger.info(
@@ -202,11 +202,11 @@ def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int
             draft.id,
         )
         return "already_sent"
-    
+
     # Guard 2: Check for recent outbound log to same person (idempotency window: 5 minutes)
     idempotency_window = timedelta(minutes=5)
     cutoff = datetime.now(timezone.utc) - idempotency_window
-    
+
     recent_outbound = (
         db_session.query(ConversationLog)
         .filter(
@@ -216,7 +216,7 @@ def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int
         )
         .first()
     )
-    
+
     if recent_outbound:
         logger.info(
             "Duplicate prevention: Recent outbound message found for person #%d within %s, skipping draft #%d",
@@ -225,7 +225,7 @@ def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int
             draft.id,
         )
         return f"recent_outbound_within_{int(idempotency_window.total_seconds())}s"
-    
+
     return None
 
 
@@ -284,7 +284,7 @@ def _send_single_approved_draft(
     # All database updates within a single transaction with proper rollback
     now = datetime.now(timezone.utc)
     effective_id = effective_conv_id or existing_conv_id or f"draft_{draft.id}"
-    
+
     try:
         # Create conversation log
         log = ConversationLog(
@@ -298,17 +298,17 @@ def _send_single_approved_draft(
             script_message_status=f"{message_status} | Source: approved_draft (draft_id={draft.id})",
         )
         db_session.add(log)
-        
+
         # Update draft status
         draft.status = "SENT"
         db_session.add(draft)
-        
+
         # Update conversation state
         conversation_phase = _touch_conversation_state_after_send(db_session, person.id)
-        
+
         # Commit the core send transaction
         db_session.commit()
-        
+
     except Exception as exc:
         # Rollback on any failure - draft stays APPROVED for retry
         logger.error(
@@ -390,12 +390,30 @@ def run_send_approved_drafts(
 
         if outcome == "sent":
             summary.sent += 1
+            # Phase 9.1: Emit drafts_sent metric for successful send
+            try:
+                from observability.metrics_registry import metrics
+                metrics().drafts_sent.inc(outcome="sent")
+            except Exception:
+                pass  # Metrics are non-critical
         elif outcome == "skipped":
             summary.skipped += 1
             reason_key = reason or "skipped (unknown)"
             summary.skip_reasons[reason_key] = summary.skip_reasons.get(reason_key, 0) + 1
+            # Phase 9.1: Emit drafts_sent metric for skip
+            try:
+                from observability.metrics_registry import metrics
+                metrics().drafts_sent.inc(outcome="skipped")
+            except Exception:
+                pass  # Metrics are non-critical
         else:
             summary.errors += 1
+            # Phase 9.1: Emit drafts_sent metric for error
+            try:
+                from observability.metrics_registry import metrics
+                metrics().drafts_sent.inc(outcome="error")
+            except Exception:
+                pass  # Metrics are non-critical
 
     return summary
 

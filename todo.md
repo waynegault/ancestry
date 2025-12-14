@@ -318,11 +318,12 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Production-grade visibility into system health and engagement outcomes
 
-### 9.1 Prometheus Metrics Integration
-- [ ] Emit `drafts_queued_total` counter (by priority, confidence bucket)
-- [ ] Emit `drafts_sent_total` counter (by outcome: sent/skipped/error)
-- [ ] Emit `review_queue_depth` gauge (by status: PENDING/APPROVED/EXPIRED)
-- [ ] Add `response_rate` histogram (time from sent to reply received)
+### 9.1 Prometheus Metrics Integration ✅ IMPLEMENTED
+- [x] Emit `drafts_queued_total` counter (by priority, confidence bucket)
+- [x] Emit `drafts_sent_total` counter (by outcome: sent/skipped/error)
+- [x] Emit `review_queue_depth` gauge (by status: PENDING/APPROVED/EXPIRED)
+- [x] Add `response_rate` histogram (time from sent to reply received)
+- **Implementation:** Added proxy classes and Prometheus metrics in metrics_registry.py; wired into approval_queue.py (queue_for_review, get_queue_stats) and action11 (send loop)
 
 ### 9.2 Grafana Dashboard Panels
 - [ ] Response funnel: Sent → Replied → Productive → Fact Extracted
@@ -921,7 +922,7 @@ The system is **SAFE** for:
 5. **✅ DONE: Add duplicate send prevention** - Skip already-sent drafts, 5-min idempotency window (Phase 1.6.3)
 6. **✅ DONE: ConversationState sync after send** - Update conversation_phase to "awaiting_reply" (Phase 1.6.4)
 7. **✅ DONE: Add draft expiration job** - expires_at field + expire_old_drafts() method (Phase 1.6.2)
-8. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
+8. **✅ DONE: Emit Prometheus metrics** - drafts_queued, drafts_sent, review_queue_depth (Phase 9.1)
 9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
 10. **✅ DONE: Wire TriangulationIntelligence into ContextBuilder** - Hypothesis in draft context (Phase 11.1)
 11. **✅ DONE: Wire PredictiveGapDetector into draft personalization** - Research gaps in context (Phase 11.3)

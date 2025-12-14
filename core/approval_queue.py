@@ -286,6 +286,14 @@ class ApprovalQueueService:
             self.db_session.add(draft)
             self.db_session.commit()
 
+            # Phase 9.1: Emit drafts_queued metric
+            try:
+                from observability.metrics_registry import metrics
+                confidence_bucket = self._get_confidence_bucket(ai_confidence)
+                metrics().drafts_queued.inc(priority=priority.value, confidence_bucket=confidence_bucket)
+            except Exception:
+                pass  # Metrics are non-critical
+
             logger.info(f"Queued draft {draft.id} for review (confidence={ai_confidence}, priority={priority.value})")
             return draft.id
 
@@ -293,6 +301,20 @@ class ApprovalQueueService:
             logger.error(f"Failed to queue draft for review: {e}")
             self.db_session.rollback()
             return None
+
+    @staticmethod
+    def _get_confidence_bucket(confidence: int) -> str:
+        """Map confidence score to bucket for metrics labeling."""
+        if confidence >= 90:
+            return "90-100"
+        elif confidence >= 80:
+            return "80-89"
+        elif confidence >= 70:
+            return "70-79"
+        elif confidence >= 50:
+            return "50-69"
+        else:
+            return "0-49"
 
     def _calculate_priority(self, confidence: int, person: Any) -> ReviewPriority:
         """Calculate review priority based on confidence and person context."""
@@ -617,6 +639,15 @@ class ApprovalQueueService:
                 or 0
             )
 
+            # Phase 9.1: Emit review_queue_depth gauge
+            try:
+                from observability.metrics_registry import metrics
+                metrics().review_queue_depth.set(status="pending", count=float(stats.pending_count))
+                metrics().review_queue_depth.set(status="auto_approved", count=float(stats.auto_approved_count))
+                metrics().review_queue_depth.set(status="expired", count=float(stats.expired_count))
+            except Exception:
+                pass  # Metrics are non-critical
+
             return stats
 
         except SQLAlchemyError as e:
@@ -631,13 +662,13 @@ class ApprovalQueueService:
     def expire_old_drafts(self, hours: int = 72) -> int:
         """
         Expire PENDING drafts that have passed their expiration time.
-        
+
         Phase 1.6.2: Uses expires_at field if set, otherwise falls back to
         created_at + hours for backwards compatibility with existing drafts.
-        
+
         Args:
             hours: Fallback expiration age for drafts without expires_at (default 72h)
-            
+
         Returns:
             Number of drafts marked as EXPIRED
         """
@@ -648,7 +679,7 @@ class ApprovalQueueService:
 
             now = datetime.now(timezone.utc)
             fallback_cutoff = now - timedelta(hours=hours)
-            
+
             # Expire drafts where:
             # 1. expires_at is set and has passed, OR
             # 2. expires_at is NULL and created_at is older than fallback

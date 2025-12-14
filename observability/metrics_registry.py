@@ -348,6 +348,73 @@ class _AIParseResultCounterProxy:
         metric.labels(provider=provider or "unknown", prompt_key=prompt_key or "unknown", result=normalized).inc()
 
 
+# === Phase 9.1: Draft and Review Queue Metrics ===
+
+
+class _DraftsQueuedCounterProxy:
+    """Wrapper for drafts_queued_total counter (Phase 9.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, priority: str, confidence_bucket: str, amount: float = 1.0) -> None:
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(priority=priority or "normal", confidence_bucket=confidence_bucket or "unknown").inc(amount)
+
+
+class _DraftsSentCounterProxy:
+    """Wrapper for drafts_sent_total counter (Phase 9.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, outcome: str, amount: float = 1.0) -> None:
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(outcome=outcome or "unknown").inc(amount)
+
+
+class _ReviewQueueDepthGaugeProxy:
+    """Wrapper for review_queue_depth gauge (Phase 9.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusGauge] = None
+
+    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+        self._metric = metric
+
+    def set(self, status: str, count: float) -> None:
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(status=status or "unknown").set(max(count, 0.0))
+
+
+class _ResponseTimeHistogramProxy:
+    """Wrapper for response_time histogram (Phase 9.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusHistogram] = None
+
+    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+        self._metric = metric
+
+    def observe(self, hours: float) -> None:
+        metric = self._metric
+        if metric is None:
+            return
+        metric.observe(max(hours, 0.0))
+
+
 class MetricsBundle:
     """Container exposing all metric proxies."""
 
@@ -369,6 +436,11 @@ class MetricsBundle:
         self.internal_metrics = _InternalMetricGaugeProxy()
         self.ai_quality = _AIQualityHistogramProxy()
         self.ai_parse_results = _AIParseResultCounterProxy()
+        # Phase 9.1: Draft and review queue metrics
+        self.drafts_queued = _DraftsQueuedCounterProxy()
+        self.drafts_sent = _DraftsSentCounterProxy()
+        self.review_queue_depth = _ReviewQueueDepthGaugeProxy()
+        self.response_time = _ResponseTimeHistogramProxy()
 
     def assign(self, metrics_map: dict[str, Any]) -> None:
         """Bind proxies to real metrics."""
@@ -389,6 +461,11 @@ class MetricsBundle:
         self.internal_metrics.set_metric(metrics_map.get("internal_metrics"))
         self.ai_quality.set_metric(metrics_map.get("ai_quality"))
         self.ai_parse_results.set_metric(metrics_map.get("ai_parse_results"))
+        # Phase 9.1: Draft and review queue metrics
+        self.drafts_queued.set_metric(metrics_map.get("drafts_queued"))
+        self.drafts_sent.set_metric(metrics_map.get("drafts_sent"))
+        self.review_queue_depth.set_metric(metrics_map.get("review_queue_depth"))
+        self.response_time.set_metric(metrics_map.get("response_time"))
 
     def reset(self) -> None:
         """Clear metric bindings (no-op proxies)."""
@@ -604,6 +681,39 @@ class MetricsRegistry:
             "AI parse success/failure totals",
             labelnames=("provider", "prompt_key", "result"),
             namespace=namespace,
+            registry=registry,
+        )
+
+        # Phase 9.1: Draft and review queue metrics
+        metrics_map["drafts_queued"] = Counter(
+            "drafts_queued_total",
+            "Total drafts queued for review",
+            labelnames=("priority", "confidence_bucket"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["drafts_sent"] = Counter(
+            "drafts_sent_total",
+            "Total drafts sent (by outcome: sent/skipped/error)",
+            labelnames=("outcome",),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["review_queue_depth"] = Gauge(
+            "review_queue_depth",
+            "Current depth of draft review queue by status",
+            labelnames=("status",),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["response_time"] = Histogram(
+            "response_time_hours",
+            "Time from message sent to reply received (hours)",
+            namespace=namespace,
+            buckets=(1.0, 6.0, 12.0, 24.0, 48.0, 72.0, 168.0, 336.0),
             registry=registry,
         )
 
