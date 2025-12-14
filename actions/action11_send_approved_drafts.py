@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from api.api_utils import SEND_SUCCESS_DELIVERED, SEND_SUCCESS_DRY_RUN, call_send_message_api
 from config import config_schema
 from core.app_mode_policy import should_allow_outbound_to_person
+from core.circuit_breaker import SessionCircuitBreaker
 from core.database import (
     ConversationLog,
     ConversationState,
@@ -359,7 +360,11 @@ def run_send_approved_drafts(
     include_auto_approved: bool = False,
     send_fn: Callable[[Any, Person, str, Optional[str], str], tuple[str, Optional[str]]] = call_send_message_api,
 ) -> SendApprovedDraftsSummary:
-    """Core runner implementation (callable from Action wrapper and tests)."""
+    """Core runner implementation (callable from Action wrapper and tests).
+
+    Uses circuit breaker pattern to fail fast after consecutive failures,
+    preventing wasted API calls when the service is unavailable.
+    """
 
     summary = SendApprovedDraftsSummary()
 
@@ -369,12 +374,28 @@ def run_send_approved_drafts(
 
     app_mode = str(getattr(config_schema, "app_mode", "dry_run") or "dry_run").strip().lower()
 
+    # Circuit breaker: fail fast after 5 consecutive send failures
+    circuit_breaker = SessionCircuitBreaker(
+        name="action11_send",
+        threshold=5,
+        recovery_timeout_sec=300,  # 5 minutes before retry
+    )
+
     statuses: list[str] = ["APPROVED"]
     if include_auto_approved:
         statuses.append("AUTO_APPROVED")
 
     drafts = _fetch_approved_drafts(db_session, statuses=statuses, max_to_send=max_to_send)
     for draft in drafts:
+        # Circuit breaker check: abort remaining drafts if tripped
+        if circuit_breaker.is_tripped():
+            logger.warning(
+                "🚨 Circuit breaker TRIPPED after %d consecutive failures - aborting remaining %d drafts",
+                circuit_breaker.threshold,
+                len(drafts) - summary.attempted,
+            )
+            break
+
         summary.attempted += 1
 
         try:
@@ -387,11 +408,13 @@ def run_send_approved_drafts(
             )
         except Exception as exc:  # pragma: no cover - defensive
             summary.errors += 1
+            circuit_breaker.record_failure()
             logger.error("DraftReply #%s: unexpected exception: %s", getattr(draft, "id", "?"), exc, exc_info=True)
             continue
 
         if outcome == "sent":
             summary.sent += 1
+            circuit_breaker.record_success()  # Reset failure count on success
             # Phase 9.1: Emit drafts_sent metric for successful send
             try:
                 from observability.metrics_registry import metrics
@@ -403,6 +426,7 @@ def run_send_approved_drafts(
             summary.skipped += 1
             reason_key = reason or "skipped (unknown)"
             summary.skip_reasons[reason_key] = summary.skip_reasons.get(reason_key, 0) + 1
+            # Skips don't count as failures (intentional guards)
             # Phase 9.1: Emit drafts_sent metric for skip
             try:
                 from observability.metrics_registry import metrics
@@ -412,6 +436,7 @@ def run_send_approved_drafts(
                 pass  # Metrics are non-critical
         else:
             summary.errors += 1
+            circuit_breaker.record_failure()  # Record failure for circuit breaker
             # Phase 9.1: Emit drafts_sent metric for error
             try:
                 from observability.metrics_registry import metrics
