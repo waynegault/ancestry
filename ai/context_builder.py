@@ -348,6 +348,26 @@ class MatchContext:
                 if opp_type:
                     lines.append(f"Research opportunity: {opp_type.replace('_', ' ').title()}")
 
+        # Phase 12.2: DNA-GEDCOM cross-reference findings
+        dna_crossref = self.research.get("dna_gedcom_crossref")
+        if isinstance(dna_crossref, dict):
+            crossref_dict = cast(dict[str, Any], dna_crossref)
+
+            # Surface cross-reference validation
+            top_match = crossref_dict.get("top_match")
+            if isinstance(top_match, dict):
+                confidence = top_match.get("confidence", 0)
+                match_type = top_match.get("match_type", "")
+                if confidence > 0.7:
+                    lines.append(f"✓ DNA-Tree match validated: {match_type} ({confidence:.0%} confidence)")
+                elif confidence > 0.4:
+                    lines.append(f"DNA-Tree match: {match_type} ({confidence:.0%} confidence)")
+
+            # Surface verification opportunities
+            verif_opps = crossref_dict.get("verification_opportunities", 0)
+            if verif_opps > 0:
+                lines.append(f"Verification opportunities: {verif_opps}")
+
         return lines
 
 
@@ -495,6 +515,14 @@ class ContextBuilder:
                 research["gedcom_intelligence"] = gedcom_intel
         except Exception as exc:
             logger.debug(f"GEDCOM intelligence enrichment skipped: {exc}")
+
+        # Phase 12.2: DNA-GEDCOM cross-reference - relationship validation
+        try:
+            crossref = self._build_dna_gedcom_crossref(person)
+            if crossref:
+                research["dna_gedcom_crossref"] = crossref
+        except Exception as exc:
+            logger.debug(f"DNA-GEDCOM cross-reference enrichment skipped: {exc}")
 
         return research
 
@@ -674,6 +702,86 @@ class ContextBuilder:
             result["total_opportunities"] = len(analysis.get("research_opportunities", []))
 
         return result if len(result) > 1 else None  # Only return if we have findings
+
+    def _build_dna_gedcom_crossref(self, person: Any) -> Optional[dict[str, Any]]:
+        """
+        Cross-reference DNA match with GEDCOM tree data.
+
+        Phase 12.2: Uses DNAGedcomCrossReferencer to validate relationship
+        predictions and surface verification opportunities.
+
+        Returns:
+            Dictionary with cross-reference findings, or None if not available.
+        """
+        tree_service = self._ensure_tree_service()
+        if not tree_service:
+            return None
+
+        gedcom_data = getattr(tree_service, "gedcom_data", None)
+        if not gedcom_data:
+            return None
+
+        # Build DNAMatch dataclass from Person
+        person_name = getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown"
+        person_uuid = getattr(person, "uuid", None)
+        shared_cm = getattr(person, "shared_cm", 0) or 0
+        relationship = getattr(person, "relationship", None) or "Unknown"
+
+        if not person_uuid:
+            return None
+
+        from genealogy.dna.dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch as CrossRefDNAMatch
+
+        # Create DNA match for cross-referencing
+        dna_match = CrossRefDNAMatch(
+            match_id=person_uuid,
+            match_name=person_name,
+            estimated_relationship=relationship,
+            shared_dna_cm=shared_cm,
+            tree_size=getattr(person, "tree_size", None),
+        )
+
+        crossreferencer = DNAGedcomCrossReferencer()
+        analysis = crossreferencer.analyze_dna_gedcom_connections(
+            dna_matches=[dna_match],
+            gedcom_data=gedcom_data,
+        )
+
+        if not analysis or analysis.get("dna_matches_analyzed", 0) == 0:
+            return None
+
+        # Extract key findings for context
+        crossref_matches = analysis.get("cross_reference_matches", [])
+        conflicts = analysis.get("conflicts_identified", [])
+        verification_opps = analysis.get("verification_opportunities", [])
+
+        result: dict[str, Any] = {
+            "matches_found": len(crossref_matches),
+        }
+
+        # Surface top cross-reference match
+        if crossref_matches:
+            top_match = crossref_matches[0]
+            result["top_match"] = {
+                "gedcom_match_count": len(top_match.get("potential_gedcom_matches", [])),
+                "confidence": top_match.get("confidence_score", 0),
+                "match_type": top_match.get("match_type", "unknown"),
+            }
+
+        # Surface conflicts for review
+        if conflicts:
+            top_conflict = conflicts[0]
+            result["top_conflict"] = {
+                "type": top_conflict.get("conflict_type", "unknown"),
+                "severity": top_conflict.get("severity", "minor"),
+            }
+            result["total_conflicts"] = len(conflicts)
+
+        # Surface verification opportunities
+        if verification_opps:
+            result["verification_opportunities"] = len(verification_opps)
+
+        return result if len(result) > 1 else None
 
     def _build_shared_match_cluster(self, person: Any) -> dict[str, Any]:
         """Summarize the shared-match network for this match (count + sample)."""

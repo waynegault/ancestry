@@ -423,11 +423,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Route `ResearchOpportunity` items to MS To-Do tasks
 - **Implementation:** Added `_build_gedcom_intelligence()` to ContextBuilder; surfaces top gap, conflict (with severity), and research opportunity; formatted in `_format_research()` for AI prompts with ⚠️ warning for critical/major conflicts
 
-### 12.2 DNA-GEDCOM Cross-Reference Integration
-- [ ] Call `CrossReferenceService.find_matches()` during match processing
-- [ ] Include relationship path confidence in draft context
-- [ ] Surface cross-reference validation in draft quality scoring
+### 12.2 DNA-GEDCOM Cross-Reference Integration ✅ IMPLEMENTED
+- [x] Call `CrossReferenceService.find_matches()` during match processing
+- [x] Include relationship path confidence in draft context
+- [x] Surface cross-reference validation in draft quality scoring
 - [ ] Track cross-reference success rate for analytics
+- **Implementation:** Added `_build_dna_gedcom_crossref()` to ContextBuilder; uses DNAGedcomCrossReferencer to validate DNA match against GEDCOM tree; surfaces top match with confidence, conflicts, and verification opportunities; formatted in `_format_research()` with ✓ for high-confidence validated matches
 
 ### 12.3 GEDCOM Cache Optimization
 - [ ] Enable GEDCOM caching for repeated tree access
