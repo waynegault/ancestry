@@ -287,6 +287,21 @@ class MatchContext:
         if isinstance(cluster_count, int) and cluster_count > 0:
             lines.append(f"Shared matches: {cluster_count}")
 
+        # Phase 11.1: Triangulation hypothesis
+        triangulation = self.research.get("triangulation")
+        if isinstance(triangulation, dict):
+            tri_dict = cast(dict[str, Any], triangulation)
+            proposed_rel = tri_dict.get("proposed_relationship")
+            confidence = tri_dict.get("confidence_score")
+            common_ancestor = tri_dict.get("common_ancestor_name")
+            
+            if proposed_rel:
+                lines.append(f"Triangulation hypothesis: {proposed_rel}")
+            if confidence is not None:
+                lines.append(f"Confidence score: {confidence:.0f}%")
+            if common_ancestor:
+                lines.append(f"Possible common ancestor: {common_ancestor}")
+
         return lines
 
 
@@ -410,6 +425,71 @@ class ContextBuilder:
                     )
         except Exception as exc:
             logger.debug(f"Ethnicity enrichment skipped: {exc}")
+
+        # Phase 11.1: Triangulation intelligence - generate hypotheses for draft personalization
+        try:
+            triangulation = self._build_triangulation_hypothesis(person)
+            if triangulation:
+                research["triangulation"] = triangulation
+        except Exception as exc:
+            logger.debug(f"Triangulation enrichment skipped: {exc}")
+
+        return research
+
+    def _build_triangulation_hypothesis(self, person: Any) -> Optional[dict[str, Any]]:
+        """
+        Generate triangulation hypothesis for a DNA match.
+        
+        Phase 11.1: Uses TriangulationIntelligence to analyze the match and 
+        generate a confidence-scored hypothesis for draft personalization.
+        
+        Returns:
+            Dictionary with hypothesis details, or None if analysis not possible.
+        """
+        person_uuid = getattr(person, "uuid", None)
+        if not person_uuid:
+            return None
+        
+        # Build match_data from Person attributes
+        match_data: dict[str, Any] = {
+            "name": getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown",
+            "shared_cm": getattr(person, "shared_cm", 0) or 0,
+            "segments": getattr(person, "segments", None),
+            "predicted_relationship": getattr(person, "predicted_relationship", None),
+        }
+        
+        # Skip if no meaningful DNA data
+        if match_data["shared_cm"] < 20:
+            return None
+        
+        from research.triangulation_intelligence import TriangulationIntelligence
+        
+        # Initialize with db_session for shared-match queries
+        engine = TriangulationIntelligence(
+            db_session=self._session,
+            research_service=self._ensure_tree_service(),
+        )
+        
+        # Get owner UUID for target comparison (best-effort)
+        owner_profile_id = ContextBuilder._resolve_owner_profile_id()
+        target_uuid = owner_profile_id or "OWNER"
+        
+        hypothesis = engine.analyze_match(
+            target_uuid=target_uuid,
+            match_uuid=person_uuid,
+            match_data=match_data,
+        )
+        
+        # Convert to dictionary for JSON serialization
+        return {
+            "proposed_relationship": hypothesis.proposed_relationship,
+            "common_ancestor_name": hypothesis.common_ancestor_name,
+            "confidence_score": hypothesis.confidence_score,
+            "confidence_level": hypothesis.confidence_level.value if hypothesis.confidence_level else None,
+            "suggested_message": hypothesis.suggested_message,
+            "evidence_count": len(hypothesis.evidence) if hypothesis.evidence else 0,
+            "notes": hypothesis.notes[:3] if hypothesis.notes else [],  # Limit notes for context size
+        }
 
         return research
 

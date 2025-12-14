@@ -371,11 +371,12 @@ The following modules are **fully implemented** but **not integrated** into the 
 | predictive_gaps.py | 827 | ✅ Implemented | Not surfaced in drafts |
 | message_personalization.py | 1987 | ✅ Implemented | 30+ personalization functions available |
 
-### 11.1 Triangulation Integration
-- [ ] Call `TriangulationIntelligence.generate_hypothesis()` during ContextBuilder assembly
-- [ ] Include confidence scores in draft context
-- [ ] Surface triangulation opportunities in follow-up message suggestions
+### 11.1 Triangulation Integration ✅ IMPLEMENTED
+- [x] Call `TriangulationIntelligence.generate_hypothesis()` during ContextBuilder assembly
+- [x] Include confidence scores in draft context
+- [x] Surface triangulation opportunities in follow-up message suggestions
 - [ ] Add `MatchCluster` detection to group related matches
+- **Implementation:** Added `_build_triangulation_hypothesis()` to ContextBuilder; hypothesis includes proposed_relationship, common_ancestor, confidence_score, evidence_count; formatted in `_format_research()` for AI prompts
 
 ### 11.2 Conflict Detection Integration
 - [ ] Wire `ConflictDetector.detect_conflicts()` to Action 9 fact extraction
@@ -921,7 +922,7 @@ The system is **SAFE** for:
 7. **✅ DONE: Add draft expiration job** - expires_at field + expire_old_drafts() method (Phase 1.6.2)
 8. **Emit Prometheus metrics** - Hook into scaffolded observability (Phase 9.1)
 9. **Run full inbox → reply dry-run test** - Validate end-to-end flow before any live sends
-10. **Wire TriangulationIntelligence into ContextBuilder** - Leverage 724 lines of ready code (Phase 11.1)
+10. **✅ DONE: Wire TriangulationIntelligence into ContextBuilder** - Hypothesis in draft context (Phase 11.1)
 11. **Wire PredictiveGapDetector into draft personalization** - Surface research suggestions (Phase 11.3)
 
 ---
