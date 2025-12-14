@@ -9,6 +9,7 @@ This action:
 - Marks drafts SENT only on successful send
 - Writes an OUT ConversationLog entry for auditability
 - Updates ConversationMetrics and ConversationState without schema migrations
+- Supports feature flags for gradual rollout (ACTION11_SEND_ENABLED)
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from core.database import (
     Person,
     PersonStatusEnum,
 )
+from core.feature_flags import is_feature_enabled
 from core.logging_utils import log_final_summary
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from testing.test_framework import TestSuite
@@ -393,6 +395,7 @@ def run_send_approved_drafts(
             # Phase 9.1: Emit drafts_sent metric for successful send
             try:
                 from observability.metrics_registry import metrics
+
                 metrics().drafts_sent.inc(outcome="sent")
             except Exception:
                 pass  # Metrics are non-critical
@@ -403,6 +406,7 @@ def run_send_approved_drafts(
             # Phase 9.1: Emit drafts_sent metric for skip
             try:
                 from observability.metrics_registry import metrics
+
                 metrics().drafts_sent.inc(outcome="skipped")
             except Exception:
                 pass  # Metrics are non-critical
@@ -411,6 +415,7 @@ def run_send_approved_drafts(
             # Phase 9.1: Emit drafts_sent metric for error
             try:
                 from observability.metrics_registry import metrics
+
                 metrics().drafts_sent.inc(outcome="error")
             except Exception:
                 pass  # Metrics are non-critical
@@ -419,7 +424,17 @@ def run_send_approved_drafts(
 
 
 def send_approved_drafts(session_manager: Any, *_: Any) -> bool:
-    """Action entrypoint (invoked via exec_actn)."""
+    """Action entrypoint (invoked via exec_actn).
+
+    Feature Flags:
+        ACTION11_SEND_ENABLED: Master kill-switch for sending (default: True)
+            Set FEATURE_FLAG_ACTION11_SEND_ENABLED=false to disable sending globally
+    """
+
+    # Feature flag check for gradual rollout / emergency disable
+    if not is_feature_enabled("ACTION11_SEND_ENABLED", default=True):
+        logger.warning("🚫 Action 11 disabled via feature flag ACTION11_SEND_ENABLED")
+        return False
 
     max_send_per_run = int(getattr(config_schema, "max_send_per_run", 0) or 0)
 

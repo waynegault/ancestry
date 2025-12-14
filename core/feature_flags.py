@@ -333,9 +333,30 @@ def bootstrap_feature_flags(config: Any | None = None, default_path: Optional[Pa
     4) fallback to ``config/feature_flags.json``
 
     Missing files are ignored; the function is intentionally tolerant.
+
+    Default flags are registered for core functionality:
+    - ACTION11_SEND_ENABLED: Master kill-switch for Action 11 sending (default: True)
+    - AUTO_APPROVAL_ENABLED: Controls auto-approval in ApprovalQueue (default: False)
     """
 
     flags = FeatureFlags()
+
+    # Register default feature flags for core functionality
+    flags.register(
+        "ACTION11_SEND_ENABLED",
+        description="Master kill-switch for Action 11 send loop. Set to false to disable all sending.",
+        default_enabled=True,
+    )
+    flags.register(
+        "AUTO_APPROVAL_ENABLED",
+        description="Enable auto-approval of high-confidence drafts in ApprovalQueue.",
+        default_enabled=False,
+    )
+    flags.register(
+        "CIRCUIT_BREAKER_ENABLED",
+        description="Enable circuit breaker pattern for API failure protection.",
+        default_enabled=True,
+    )
 
     candidate_paths: list[Path] = []
 

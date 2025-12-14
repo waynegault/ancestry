@@ -507,7 +507,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add research module status to ContextBuilder output
 
 ### Core Infrastructure Gaps
-- [ ] Wire FeatureFlags (594 lines) into action modules for gradual rollout
+- [x] Wire FeatureFlags (594 lines) into action modules for gradual rollout ✅ IMPLEMENTED: Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
 - [ ] Enable PII redaction filter (523 lines) in production logging
 - [ ] Integrate HealthCheckRunner into startup validation (currently menu action only)
 - [ ] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator
