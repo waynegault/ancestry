@@ -553,13 +553,22 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Log expired draft count to metrics
 - **Implementation:** Added `run_startup_maintenance_tasks()` to core/lifecycle.py; called from main.py after check_startup_status(); runs expire_old_drafts() on every app startup with count logging
 
-### 10.2 Inbox Polling
-- [ ] Add periodic inbox check (every 15-30 minutes when app is running)
-- [ ] Process new inbound messages through InboundOrchestrator
-- [ ] Queue drafts for review automatically
+### 10.2 Inbox Polling ✅ IMPLEMENTED
+- [x] Add periodic inbox check (every 15-30 minutes when app is running)
+  - ✅ `setup_inbox_polling()` in core/background_scheduler.py
+  - ✅ Configurable interval (default 15 minutes)
+- [x] Process new inbound messages through InboundOrchestrator
+  - ✅ Callback integrates with action7_inbox.process_inbox_messages()
+- [x] Queue drafts for review automatically
+  - ✅ InboundOrchestrator generates drafts as part of processing
+- **Implementation:** Created core/background_scheduler.py with BackgroundScheduler class; 8 module tests
 
-### 10.3 Session Maintenance
-- [ ] Implement session keepalive for long-running operations
+### 10.3 Session Maintenance ✅ IMPLEMENTED
+- [x] Implement session keepalive for long-running operations
+  - ✅ `setup_session_keepalive()` in core/background_scheduler.py
+  - ✅ Refreshes cookies at 25-minute mark (before 40-minute expiry)
+  - ✅ Configurable interval (default 10 minutes)
+- **Implementation:** Session keepalive task checks session age, refreshes browser cookies and syncs to API session when nearing expiry
 
 ---
 
