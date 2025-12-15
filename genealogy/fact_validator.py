@@ -1116,7 +1116,13 @@ def fact_validator_tests() -> bool:
             """Test from_conversation factory method."""
             extracted_data = {
                 "vital_records": [
-                    {"person": "John Smith", "event_type": "birth", "date": "circa 1920", "place": "Boston, MA", "certainty": "probable"},
+                    {
+                        "person": "John Smith",
+                        "event_type": "birth",
+                        "date": "circa 1920",
+                        "place": "Boston, MA",
+                        "certainty": "probable",
+                    },
                 ],
                 "relationships": [
                     {"person1": "John Smith", "relationship": "father", "person2": "Mary Smith"},
@@ -1167,7 +1173,9 @@ def fact_validator_tests() -> bool:
 
         suite.run_test("from_conversation factory", test_from_conversation, "Creates facts from AI extraction output")
         suite.run_test("Date qualifier extraction", test_extract_date_qualifier, "Extracts circa/before/after")
-        suite.run_test("Vital record with qualifier", test_from_vital_record_with_qualifier, "Sets date_qualifier field")
+        suite.run_test(
+            "Vital record with qualifier", test_from_vital_record_with_qualifier, "Sets date_qualifier field"
+        )
 
         return suite.finish_suite()
 

@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 10: Phase 3.1 Fact Extraction 2.0)
+**Last Updated:** December 15, 2025 (Session 10: Phase 3.2-3.3 Conflict Detection & Review Queue)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -244,15 +244,38 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Confidence tracking already implemented in factory methods (95=certain, 75=probable, 50=uncertain)
 - Added 3 new tests (13 tests total in fact_validator.py)
 
-### 3.2 Conflict Detection
-- [ ] Run `FactValidator.validate_fact()` on Action 9 extracted entities
-- [ ] Stage conflicts in `DataConflict` table with severity classification
-- [ ] Generate SuggestedFact rows for non-conflicting high-confidence facts
+### 3.2 Conflict Detection ✅ IMPLEMENTED
+- [x] Run `FactValidator.validate_fact()` on Action 9 extracted entities
+- [x] Stage conflicts in `DataConflict` table with severity classification
+- [x] Generate SuggestedFact rows for non-conflicting high-confidence facts
 
-### 3.3 Review Queue for Facts
-- [ ] Add CLI commands: `facts list`, `facts review <id>`, `facts approve/reject`
-- [ ] Surface pending SuggestedFacts in main review queue
-- [ ] Track approval rates for quality metrics
+**Implementation Notes (Session 10 - December 15, 2025):**
+- Infrastructure already fully implemented in `action9_process_productive.py`
+- `_validate_and_record_facts()` (line 1061): Iterates extracted facts, calls `FactValidator.validate_fact()`
+- `_stage_suggested_fact()` (line 958): Creates `SuggestedFact` with APPROVED/PENDING status based on validation
+- `_stage_conflict_if_needed()` (line 1013): Creates `DataConflict` records with severity classification
+- `_map_conflict_severity()` maps fact types to `ConflictSeverityEnum` (CRITICAL for relationships, HIGH for dates)
+- Also implemented in `messaging/inbound.py` `_harvest_facts()` method for InboundOrchestrator flow
+- `ConflictDetector` class in `research/conflict_detector.py` provides additional conflict management utilities
+
+### 3.3 Review Queue for Facts ✅ IMPLEMENTED
+- [x] Add CLI commands: `facts list`, `facts review <id>`, `facts approve/reject`
+- [x] Surface pending SuggestedFacts in main review queue
+- [x] Track approval rates for quality metrics
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- Created `cli/facts_queue.py` with full CLI for facts management:
+  - `python -m cli.facts_queue list [--limit N] [--status STATUS] [--type TYPE]`
+  - `python -m cli.facts_queue view --id ID`
+  - `python -m cli.facts_queue approve --id ID`
+  - `python -m cli.facts_queue reject --id ID --reason REASON`
+  - `python -m cli.facts_queue stats` (shows approval rates, avg confidence, by-type breakdown)
+  - `python -m cli.facts_queue conflicts [--limit N] [--severity SEVERITY]`
+- Added `FactsQueueService` class with methods: `get_pending_facts()`, `approve_fact()`, `reject_fact()`, `get_queue_stats()`
+- Added `FactsQueueStats` and `ConflictsStats` dataclasses for statistics tracking
+- Approval rate calculation: `approved / (approved + rejected) * 100`
+- Color-coded severity display: 🔴 CRITICAL, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
+- Added 7 new tests (184 modules total)
 
 ### 3.4 MS To-Do Integration
 - [ ] Create tasks for MAJOR_CONFLICT items requiring research
