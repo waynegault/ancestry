@@ -1217,6 +1217,7 @@ def generate_genealogical_reply(
     session_manager: SessionManager,
     tree_lookup_results: str = "",
     relationship_context: str = "",
+    semantic_search_results: str = "",
     prompt_key: str = "genealogical_reply",
     prompt_variant: Optional[str] = None,
 ) -> str | None:
@@ -1224,6 +1225,7 @@ def generate_genealogical_reply(
     Generates a personalized genealogical reply with RAG-style tree context.
 
     Sprint 3: Enhanced to integrate TreeQueryService results for accurate tree-based answers.
+    Phase 2.1: Enhanced to include SemanticSearchService results for evidence-backed Q&A.
 
     Args:
         conversation_context: Formatted conversation history
@@ -1232,6 +1234,7 @@ def generate_genealogical_reply(
         session_manager: Session manager for AI calls
         tree_lookup_results: Results from TreeQueryService.find_person() lookups
         relationship_context: Relationship path/explanation from TreeQueryService.explain_relationship()
+        semantic_search_results: Results from SemanticSearchService (evidence-backed Q&A)
 
     Returns:
         Generated reply text, or None if generation fails
@@ -1252,6 +1255,7 @@ def generate_genealogical_reply(
         genealogical_data_str,
         tree_lookup_results,
         relationship_context,
+        semantic_search_results,
     )
 
     start_time = time.time()
@@ -1336,6 +1340,7 @@ def _format_genealogical_reply_prompt(
     genealogical_data: str,
     tree_lookup_results: str,
     relationship_context: str,
+    semantic_search_results: str = "",
 ) -> str:
     """Format the genealogical reply prompt with provided context."""
     try:
@@ -1344,6 +1349,7 @@ def _format_genealogical_reply_prompt(
             user_message=user_message,
             tree_lookup_results=tree_lookup_results or "No tree lookup performed.",
             relationship_context=relationship_context or "Relationship not determined.",
+            semantic_search_results=semantic_search_results or "No semantic search results available.",
             genealogical_data=genealogical_data,
         )
     except KeyError as ke:
@@ -3793,11 +3799,7 @@ def ai_interface_module_tests() -> bool:
         """Test name extraction from draft text."""
         text = "My grandfather John Smith was born in 1920. His wife Mary Jane Watson lived in Chicago."
         names = extract_names_from_text(text)
-        return (
-            len(names) >= 2
-            and any("John Smith" in n for n in names)
-            and any("Mary Jane Watson" in n for n in names)
-        )
+        return len(names) >= 2 and any("John Smith" in n for n in names) and any("Mary Jane Watson" in n for n in names)
 
     suite.run_test(
         "Context Accuracy: Name Extraction",

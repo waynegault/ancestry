@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 10: Context accuracy validation + Phase 1.5 complete)
+**Last Updated:** December 15, 2025 (Session 10: Phase 2.1 Semantic Search Enhancement)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -32,7 +32,8 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 | GEDCOM/API Tree Search | ✅ Production | High |
 | Context-Aware Draft Generation | ✅ Implemented | Medium |
 | Fact Validation Pipeline | ✅ Implemented | Medium |
-| Semantic Search (Q&A) | ✅ Implemented | Low |
+| Semantic Search (Q&A) | ✅ Implemented | Medium |
+| Semantic Search → Reply Integration | ✅ Implemented | Medium |
 | Approval Queue + Web UI | ✅ Implemented | Medium |
 | Self-Message Prevention | ✅ Implemented | High |
 | Draft Quality Guards | ✅ Implemented | High |
@@ -162,10 +163,18 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Answer genealogical questions from matches using GEDCOM/API evidence
 
-### 2.1 Semantic Search Enhancement
-- [ ] Integrate `SemanticSearchService.search()` into InboundOrchestrator for PRODUCTIVE messages with questions
-- [ ] Store `SemanticSearchResult` in ConversationState.ai_summary (or dedicated field)
-- [ ] Pass search results to ContextBuilder for draft generation
+### 2.1 Semantic Search Enhancement ✅ IMPLEMENTED
+- [x] Integrate `SemanticSearchService.search()` into InboundOrchestrator for PRODUCTIVE messages with questions
+- [x] Add `to_prompt_string()` method to `SemanticSearchResult` for AI prompt integration
+- [x] Pass search results to `generate_genealogical_reply()` for draft generation
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- Enhanced `genealogical_reply` prompt (v2.1.0) with `{semantic_search_results}` placeholder
+- Added `semantic_search_results` parameter to `generate_genealogical_reply()` in ai_interface.py
+- Added `to_prompt_string()` to `SemanticSearchResult` for human-readable formatting
+- Updated `_maybe_run_semantic_search()` to return tuple of (dict, prompt_string)
+- Modified `_run_research_flow()` to pass semantic search results to reply generation
+- Added test for `to_prompt_string()` formatting in semantic_search.py (5 tests total)
 
 ### 2.2 Evidence-Backed Answers
 - [ ] Extend `TreeQueryService.find_person()` with fuzzy birth-year tolerance (±5 years)

@@ -114,6 +114,55 @@ class SemanticSearchResult:
             "missing_information": list(self.missing_information),
         }
 
+    def to_prompt_string(self) -> str:
+        """Format semantic search results for inclusion in AI prompts.
+
+        Returns a human-readable summary suitable for the genealogical_reply prompt.
+        """
+        lines: list[str] = []
+
+        # Intent and confidence
+        lines.append(f"Search Intent: {self.intent.value}")
+        lines.append(f"Confidence: {self.confidence}%")
+
+        # Answer draft (main result)
+        if self.answer_draft:
+            lines.append(f"\nPreliminary Answer: {self.answer_draft}")
+
+        # Candidates found
+        if self.candidates:
+            lines.append("\nCandidates Found in Tree:")
+            for name, candidate_list in self.candidates.items():
+                if candidate_list:
+                    lines.append(f"  {name}:")
+                    for c in candidate_list[:3]:  # Limit to top 3 per name
+                        details = []
+                        if c.birth_year:
+                            details.append(f"b. {c.birth_year}")
+                        if c.birth_place:
+                            details.append(f"in {c.birth_place}")
+                        if c.death_year:
+                            details.append(f"d. {c.death_year}")
+                        if c.match_score:
+                            details.append(f"score: {c.match_score}")
+                        detail_str = f" ({', '.join(details)})" if details else ""
+                        lines.append(f"    - {c.name}{detail_str}")
+
+        # Evidence blocks
+        if self.evidence:
+            lines.append("\nEvidence:")
+            for e in self.evidence[:5]:  # Limit to top 5 evidence blocks
+                conf_str = f" (confidence: {e.confidence}%)" if e.confidence else ""
+                lines.append(f"  [{e.source_type}]{conf_str}: {e.summary}")
+
+        # Missing information
+        if self.missing_information:
+            lines.append("\nInformation Needed for Better Match:")
+            for info in self.missing_information:
+                lines.append(f"  - {info}")
+
+        return "\n".join(lines) if lines else "No semantic search results."
+
 
 class SemanticSearchService:
     """Minimal semantic search service (tree-first, evidence-backed)."""
@@ -636,6 +685,49 @@ def module_tests() -> bool:
         test_summary="Close candidates trigger clarification questions",
         functions_tested="SemanticSearchService._compose_person_lookup_answer",
         method_description="When candidate scores are close, fail closed and ask for disambiguating details",
+    )
+
+    def test_to_prompt_string() -> None:
+        """Test SemanticSearchResult.to_prompt_string() formatting."""
+        result = SemanticSearchResult(
+            intent=SemanticSearchIntent.PERSON_LOOKUP,
+            people=[SemanticPersonEntity(name="John Doe", approx_birth_year=1900, location="Ohio")],
+            candidates={
+                "John Doe": [
+                    CandidatePerson(
+                        person_id="P1",
+                        name="John Doe",
+                        birth_year=1900,
+                        birth_place="Ohio",
+                        death_year=1970,
+                        match_score=85,
+                    )
+                ]
+            },
+            evidence=[EvidenceBlock(source_type="GEDCOM", source_id="P1", summary="Born 1900 in Ohio", confidence=90)],
+            answer_draft="I may have John Doe in my tree as John Doe (born 1900, in Ohio).",
+            confidence=75,
+            missing_information=[],
+        )
+        prompt_str = result.to_prompt_string()
+        assert "Search Intent: PERSON_LOOKUP" in prompt_str
+        assert "Confidence: 75%" in prompt_str
+        assert "Preliminary Answer:" in prompt_str
+        assert "I may have John Doe" in prompt_str
+        assert "Candidates Found in Tree:" in prompt_str
+        assert "John Doe" in prompt_str
+        assert "b. 1900" in prompt_str
+        assert "in Ohio" in prompt_str
+        assert "Evidence:" in prompt_str
+        assert "[GEDCOM]" in prompt_str
+        assert "Born 1900 in Ohio" in prompt_str
+
+    suite.run_test(
+        "to_prompt_string formatting",
+        test_to_prompt_string,
+        test_summary="Formats SemanticSearchResult for AI prompts",
+        functions_tested="SemanticSearchResult.to_prompt_string",
+        method_description="Validate prompt string contains all key sections",
     )
 
     return suite.finish_suite()

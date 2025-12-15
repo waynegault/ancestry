@@ -280,10 +280,15 @@ class InboundOrchestrator:
         conversation_id: str,
         person: Person,
         extracted_data: Optional[dict[str, Any]],
-    ) -> Optional[dict[str, Any]]:
+    ) -> tuple[Optional[dict[str, Any]], str]:
+        """Run semantic search if message contains questions.
+
+        Returns:
+            Tuple of (semantic_search_dict for persistence, prompt_string for AI generation).
+        """
         semantic_service = SemanticSearchService()
         if not semantic_service.should_run(message_content):
-            return None
+            return None, ""
 
         try:
             semantic_result = semantic_service.search(
@@ -291,16 +296,17 @@ class InboundOrchestrator:
                 extracted_entities=extracted_data,
             )
             semantic_search = semantic_result.to_dict()
+            prompt_string = semantic_result.to_prompt_string()
             semantic_service.persist_jsonl(
                 payload=semantic_search,
                 person_id=getattr(person, "id", None),
                 sender_id=sender_id,
                 conversation_id=conversation_id,
             )
-            return semantic_search
+            return semantic_search, prompt_string
         except Exception as exc:  # pragma: no cover
             logger.debug("Semantic search failed (non-fatal): %s", exc)
-            return None
+            return None, ""
 
     def _run_research_flow(
         self,
@@ -317,7 +323,7 @@ class InboundOrchestrator:
             return None, None, None, None
 
         extracted_data = extract_genealogical_entities(context_history, self.session_manager)
-        semantic_search = self._maybe_run_semantic_search(
+        semantic_search, semantic_search_prompt = self._maybe_run_semantic_search(
             message_content=message_content,
             sender_id=sender_id,
             conversation_id=conversation_id,
@@ -362,6 +368,7 @@ class InboundOrchestrator:
                     self.session_manager,
                     tree_lookup_results=tree_lookup_results,
                     relationship_context=relationship_context,
+                    semantic_search_results=semantic_search_prompt,
                 )
 
                 if generated_reply:
