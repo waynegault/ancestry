@@ -75,8 +75,10 @@ class TestInboundOrchestrator(unittest.TestCase):
         mock_state.status = ConversationStatusEnum.ACTIVE
 
         # Add transition_status method that updates the status
-        def transition_status(  # noqa: ARG001
-            new_status: ConversationStatusEnum, reason: str = "", triggered_by: str = "test"
+        def transition_status(
+            new_status: ConversationStatusEnum,
+            reason: str = "",  # noqa: ARG001
+            triggered_by: str = "test",  # noqa: ARG001
         ) -> bool:
             if mock_state.status != new_status:
                 mock_state.status = new_status

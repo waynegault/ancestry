@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 7: Code graph visualization fix)
+**Last Updated:** December 16, 2025 (Session 8: Opt-out acknowledgment, todo.md cleanup)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -68,20 +68,20 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 ### 1.2 Review Queue Integration
 - [x] Wire DraftReply queue to Action 7 inbound processing ✅ IMPLEMENTED (InboundOrchestrator)
-- [ ] Implement idempotent draft creation (update existing pending draft per person/conversation)
-- [ ] Add confidence scoring to drafts from ContextBuilder output
+- [x] Implement idempotent draft creation (update existing pending draft per person/conversation) ✅ IMPLEMENTED (_find_existing_pending + _update_existing_pending)
+- [ ] Add confidence scoring to drafts from ContextBuilder output (DEFERRED: requires AI response format changes)
 - [x] Create CLI commands: `list`, `review <id>`, `approve`, `reject`, `edit` ✅ PARTIAL (ApprovalQueueService exists)
 - [x] Create Web UI for draft review ✅ IMPLEMENTED (review_server.py on localhost:5000)
 
 ### 1.3 Send Loop Completion
 - [x] Action 11: Mark DraftReply as SENT after successful send ✅ IMPLEMENTED
-- [ ] Update ConversationState.status after send (ACTIVE → AwaitingReply)
-- [ ] Log engagement event for analytics
+- [x] Update ConversationState.status after send (ACTIVE → AwaitingReply) ✅ IMPLEMENTED (see 1.6.4)
+- [x] Log engagement event for analytics ✅ IMPLEMENTED (_record_engagement_event in action11)
 
 ### 1.4 Opt-Out Enforcement
 - [x] On DESIST detection: set Person.automation_enabled=False, ConversationState.status=OPT_OUT ✅ IMPLEMENTED
 - [x] Block all future outbound for OPT_OUT persons ✅ IMPLEMENTED
-- [ ] Add opt-out acknowledgment message generation (one final polite closure)
+- [x] Add opt-out acknowledgment message generation (one final polite closure) ✅ IMPLEMENTED (generate_opt_out_acknowledgment in opt_out_detection.py)
 
 ---
 

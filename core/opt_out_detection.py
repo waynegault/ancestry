@@ -18,11 +18,14 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
+
+if TYPE_CHECKING:
+    from core.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +441,87 @@ def can_send_message(person_id: int, db_session: DbSession) -> tuple[bool, str]:
     return detector.validate_can_send(person_id)
 
 
+def generate_opt_out_acknowledgment(
+    opt_out_message: str,
+    conversation_context: str = "",
+    session_manager: Optional["SessionManager"] = None,
+) -> Optional[str]:
+    """
+    Generate a polite opt-out acknowledgment message.
+
+    This is the "final polite closure" message sent when a user opts out.
+    After this message is sent, no further contact will be made.
+
+    Args:
+        opt_out_message: The user's message that triggered the opt-out
+        conversation_context: Optional summary of prior conversation
+        session_manager: Optional SessionManager for AI calls
+
+    Returns:
+        Acknowledgment message text, or None if generation fails
+    """
+    try:
+        from ai.prompts import get_prompt
+        from config.config_manager import get_config_manager
+
+        config_manager = get_config_manager()
+        config = config_manager.get_config()
+        ai_provider = config.ai_provider.lower()
+
+        if not ai_provider:
+            logger.warning("AI provider not configured, using fallback acknowledgment")
+            return _get_fallback_acknowledgment()
+
+        # Load the prompt template
+        prompt_template = get_prompt("opt_out_acknowledgment")
+        if not prompt_template:
+            logger.warning("opt_out_acknowledgment prompt not found, using fallback")
+            return _get_fallback_acknowledgment()
+
+        # Substitute placeholders (these are template strings, not f-strings)
+        opt_out_placeholder = "{opt_out_message}"  # noqa: RUF027
+        context_placeholder = "{conversation_context}"  # noqa: RUF027
+        system_prompt = prompt_template.replace(
+            opt_out_placeholder, opt_out_message
+        ).replace(
+            context_placeholder, conversation_context or "No prior context available."
+        )
+
+        # Import here to avoid circular dependency
+        # Using internal function as there's no public simple-text API
+        from ai.ai_interface import _call_ai_model  # noqa: PLC2701
+
+        result = _call_ai_model(
+            provider=ai_provider,
+            system_prompt=system_prompt,
+            user_content="Generate the acknowledgment message now.",
+            session_manager=session_manager,
+            max_tokens=150,
+            temperature=0.7,
+        )
+
+        if result and isinstance(result, str) and len(result.strip()) > 0:
+            acknowledgment = result.strip()
+            # Ensure it's not too long (max 300 chars for a polite goodbye)
+            if len(acknowledgment) > 300:
+                acknowledgment = acknowledgment[:297] + "..."
+            logger.info("Generated opt-out acknowledgment message")
+            return acknowledgment
+
+        # Fallback to simple message if AI fails
+        logger.warning("AI opt-out acknowledgment generation failed, using fallback")
+        return _get_fallback_acknowledgment()
+
+    except Exception as e:
+        logger.error(f"Error generating opt-out acknowledgment: {e}")
+        return _get_fallback_acknowledgment()
+
+
+def _get_fallback_acknowledgment() -> str:
+    """Return a simple fallback acknowledgment when AI is unavailable."""
+    return "Understood - I'll respect your request. Best wishes with your family research!"
+
+
 # === MODULE TESTS ===
 
 
@@ -578,6 +662,43 @@ def module_tests() -> bool:
         test_summary="Detects multiple opt-out patterns in one message",
         functions_tested="OptOutDetector.analyze_message",
         method_description="Analyze message with multiple opt-out phrases",
+    )
+
+    # Test 9: Opt-out acknowledgment fallback
+    def test_opt_out_acknowledgment_fallback() -> None:
+        fallback = _get_fallback_acknowledgment()
+        assert isinstance(fallback, str), "Fallback should be a string"
+        assert len(fallback) > 10, "Fallback should have meaningful content"
+        assert "respect" in fallback.lower() or "understood" in fallback.lower(), (
+            "Fallback should acknowledge the request"
+        )
+
+    suite.run_test(
+        "Opt-out acknowledgment fallback",
+        test_opt_out_acknowledgment_fallback,
+        test_summary="Fallback acknowledgment is polite and meaningful",
+        functions_tested="_get_fallback_acknowledgment",
+        method_description="Check fallback message content",
+    )
+
+    # Test 10: Opt-out acknowledgment generation (fallback when AI unavailable)
+    def test_opt_out_acknowledgment_generation() -> None:
+        # Without session_manager/AI, should return fallback
+        result = generate_opt_out_acknowledgment(
+            opt_out_message="Please stop contacting me",
+            conversation_context="We discussed Fetch family research",
+        )
+        assert result is not None, "Should return a message (fallback if AI unavailable)"
+        assert isinstance(result, str), "Should return a string"
+        assert len(result) > 0, "Should not be empty"
+        assert len(result) <= 300, "Should be concise (max 300 chars)"
+
+    suite.run_test(
+        "Opt-out acknowledgment generation",
+        test_opt_out_acknowledgment_generation,
+        test_summary="Generates opt-out acknowledgment (fallback without AI)",
+        functions_tested="generate_opt_out_acknowledgment",
+        method_description="Generate acknowledgment without AI session",
     )
 
     return suite.finish_suite()
