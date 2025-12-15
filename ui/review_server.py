@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from threading import Timer
 from typing import Any, Optional
 
-from flask import Flask, jsonify, redirect, render_template_string, request, url_for
+from flask import Flask, jsonify, render_template_string, request
 
 from ai.ai_interface import generate_genealogical_reply
 from core.database import ConversationLog, DraftReply, Person
@@ -599,7 +599,7 @@ def get_pending_drafts(limit: int = 20) -> list[dict[str, Any]]:
     """Get pending drafts with conversation context."""
     try:
         from core.approval_queue import ApprovalQueueService
-        from core.database import ConversationLog, Person
+        from core.database import ConversationLog
 
         db_session = get_db_session()
         if not db_session:

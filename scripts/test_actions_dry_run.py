@@ -38,7 +38,7 @@ def _ensure_venv() -> None:
 
     print(f"🔄 Re-running with venv Python: {venv_python}")
     _os.chdir(project_root)
-    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+    _os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
 
 
 _ensure_venv()

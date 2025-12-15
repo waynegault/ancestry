@@ -94,7 +94,7 @@ def _ensure_venv() -> None:
 
     print(f"🔄 Re-running tests with venv Python: {venv_python}")
     print()
-    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+    _os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
 
 
 _ensure_venv()

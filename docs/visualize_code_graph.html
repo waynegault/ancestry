@@ -333,9 +333,37 @@
     function renderGraph(filteredNodes) {
       const nodeIds = new Set(filteredNodes.map(n => n.id));
 
-      // Limit nodes for performance
+      // Smart node selection: prioritize files (hubs) and their connections
       const maxNodes = 500;
-      const limitedNodes = filteredNodes.slice(0, maxNodes);
+      let limitedNodes;
+
+      if (filteredNodes.length > maxNodes) {
+        // Start with file nodes (these are the hubs with many connections)
+        const fileNodes = filteredNodes.filter(n => n.type === 'file');
+        const fileIds = new Set(fileNodes.map(n => n.id));
+
+        // Find nodes connected to files
+        const connectedIds = new Set();
+        for (const link of state.links) {
+          if (fileIds.has(link.source) && nodeIds.has(link.target)) {
+            connectedIds.add(link.target);
+          }
+          if (fileIds.has(link.target) && nodeIds.has(link.source)) {
+            connectedIds.add(link.source);
+          }
+        }
+
+        // Build priority list: files first, then connected nodes, then others
+        const connectedNodes = filteredNodes.filter(n => connectedIds.has(n.id) && !fileIds.has(n.id));
+        const otherNodes = filteredNodes.filter(n => !connectedIds.has(n.id) && !fileIds.has(n.id));
+
+        // Take files + connected nodes up to maxNodes
+        const prioritized = [...fileNodes, ...connectedNodes, ...otherNodes];
+        limitedNodes = prioritized.slice(0, maxNodes);
+      } else {
+        limitedNodes = filteredNodes;
+      }
+
       const limitedNodeIds = new Set(limitedNodes.map(n => n.id));
 
       // Build vis.js dataset
@@ -406,9 +434,16 @@
       state.network = new vis.Network(graphContainer, { nodes: visNodes, edges: visEdges }, options);
 
       const edgeCount = visEdges.length;
-      statusEl.textContent = filteredNodes.length > maxNodes
-        ? `Showing ${maxNodes} of ${filteredNodes.length} nodes (${edgeCount} edges). Filter to see more.`
-        : `Showing ${limitedNodes.length} nodes, ${edgeCount} edges.`;
+      let statusText;
+      if (filteredNodes.length > maxNodes) {
+        statusText = `Showing ${maxNodes} of ${filteredNodes.length} nodes (${edgeCount} edges). Filter by area to see connections.`;
+      } else {
+        statusText = `Showing ${limitedNodes.length} nodes, ${edgeCount} edges.`;
+      }
+      if (edgeCount === 0 && limitedNodes.length > 0) {
+        statusText += ' Try selecting an area filter to see connections.';
+      }
+      statusEl.textContent = statusText;
     }
 
     function renderList(filteredNodes) {

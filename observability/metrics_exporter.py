@@ -322,6 +322,9 @@ def _serve_metrics_endpoint(host: str, port: int, namespace: str) -> int:
 
 
 def test_exporter_noop_when_metrics_disabled() -> None:
+    # Clean up any previous state
+    stop_metrics_exporter()
+
     host, port = _find_free_port("127.0.0.1")
     _configure_observability(False, host, port)
 
@@ -333,6 +336,9 @@ def test_exporter_noop_when_metrics_disabled() -> None:
 
 
 def test_exporter_lifecycle() -> None:
+    # Clean up any previous state first
+    stop_metrics_exporter()
+
     if not (PROMETHEUS_AVAILABLE and PROMETHEUS_SERVER_AVAILABLE):
         return
 
