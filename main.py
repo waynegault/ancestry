@@ -8,6 +8,38 @@ all automation workflows including DNA match gathering, inbox processing,
 messaging, and genealogical research tools.
 """
 
+# === VENV AUTO-DETECTION (must be before any project imports) ===
+import sys
+from pathlib import Path
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    # Check if already in venv
+    in_venv = hasattr(sys, "real_prefix") or (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix)
+
+    if in_venv:
+        return  # Already in venv, continue
+
+    # Check if .venv exists
+    venv_python = Path(".venv") / "Scripts" / "python.exe"
+    if not venv_python.exists():
+        # Try Unix-style path
+        venv_python = Path(".venv") / "bin" / "python"
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
+            return
+
+    # Re-run with venv Python - use os.execv to replace current process
+    # This avoids the parent process waiting on a subprocess
+    import os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
+
+
+_ensure_venv()
+
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
 # === CORE INFRASTRUCTURE ===
 import logging
@@ -21,7 +53,6 @@ logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import importlib
-import sys
 import time
 from importlib import import_module
 from typing import Any, Callable, Optional, cast
@@ -283,7 +314,6 @@ def _dispatch_menu_action(choice: str, session_manager: SessionManager, config: 
             result = True
     else:
         result = _execute_primary_action(metadata, session_manager, config, arg_tokens)
-
     return result
 
 

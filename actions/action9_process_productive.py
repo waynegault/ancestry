@@ -981,7 +981,8 @@ class PersonProcessor:
         session.add(suggested)
         return status
 
-    def _map_conflict_severity(self, fact_type: str, conflict_type: ConflictType) -> ConflictSeverityEnum:
+    @staticmethod
+    def _map_conflict_severity(fact_type: str, conflict_type: ConflictType) -> ConflictSeverityEnum:
         """
         Map conflict type and fact type to ConflictSeverityEnum.
 

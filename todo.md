@@ -1,9 +1,20 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 14, 2025 (Session 5: Final review complete)
+**Last Updated:** December 15, 2025 (Session 6: venv activation, code graph fixes)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
+
+---
+
+## Immediate Tasks
+
+### Code Graph Visualization (Priority: HIGH)
+- [ ] **Fix visualize_code_graph.html** - Graph view not rendering properly
+  - Currently using vis-network library but graph doesn't display
+  - Need to debug: check if vis-network CDN is loading, verify node/link data structure
+  - Consider fallback to D3.js or simpler canvas-based rendering
+  - Test with smaller dataset first (filter by type or area)
 
 ---
 
@@ -490,13 +501,13 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Update copilot-instructions.md with Phase 2 patterns
 - [x] Add operator manual for review queue ✅ EXISTS (docs/specs/operator_manual.md - 512 lines)
 - [ ] Create architecture diagram for reply flow
-- [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI, needs Web UI section)
-- [ ] Add Web UI section to operator_manual.md (localhost:5000 workflow)
+- [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)
+- [x] Add Web UI section to operator_manual.md (localhost:5000 workflow) ✅ CREATED: Section 9 with full usage guide
 - [ ] Document MS Graph integration setup (integrations/ms_graph_utils.py - 813 lines)
 - [ ] Add troubleshooting guide for common errors
 
 ### Error Handling
-- [ ] Implement recovery strategies referenced in error_handling.py header comments
+- [x] Implement recovery strategies referenced in error_handling.py header comments ✅ WIRED: action_runner._ensure_required_state() uses ancestry_session_recovery, ancestry_api_recovery, ancestry_database_recovery on failure
 - [x] Add circuit breaker integration to Action 11 send loop ✅ IMPLEMENTED: SessionCircuitBreaker with threshold=5, 5min recovery
 - [x] Create error categorization for send failures (network vs auth vs rate limit) ✅ IMPLEMENTED: SendErrorCategory enum with categorize_send_error() function
 
@@ -516,13 +527,13 @@ The following modules are **fully implemented** but **not integrated** into the 
 ### CLI Enhancement
 - [x] Add `cli/review_queue.py` module (referenced in operator_manual.md but uses approval_queue.py instead) ✅ CREATED: CLI with list, view, approve, reject, stats commands
 - [ ] Consolidate ResearchToolsCLI (1210 lines) - many lazy-load patterns but good coverage
-- [ ] Add progress indicators for long-running CLI operations
+- [x] Add progress indicators for long-running CLI operations ✅ ADDED: tqdm progress for ethnicity batch analysis in cli/research_tools.py
 
 ### CI/CD Enhancements
 - [x] GitHub Actions for tests ✅ EXISTS (.github/workflows/tests.yml)
 - [x] GitHub Actions for quality gate ✅ EXISTS (.github/workflows/quality-gate.yml)
 - [x] GitHub Actions for lint/typecheck ✅ EXISTS (.github/workflows/lint-typecheck.yml)
-- [ ] Add Docker workflow for containerized testing
+- [x] Add Docker workflow for containerized testing ✅ CREATED: .github/workflows/docker-test.yml
 - [x] Add production checklist validation to CI (scripts/check_production_guard.py) ✅ CREATED: .github/workflows/production-guard.yml
 
 ---

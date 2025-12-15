@@ -6,18 +6,42 @@ Adds new nodes for found files, classes, and functions.
 Removes nodes for code that no longer exists.
 """
 
-import ast
-import json
-import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 # Add repo root to path to allow imports if needed, though this script uses safe parsing
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = REPO_ROOT / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = REPO_ROOT / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(REPO_ROOT)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
+import ast
+import json
+import os
+from datetime import datetime, timezone
+from typing import Any
 
 GRAPH_PATH = REPO_ROOT / "docs" / "code_graph.json"
 
@@ -53,6 +77,7 @@ class CodeGraphUpdater:
         self.graph_path = graph_path
         self.current_nodes: dict[str, dict[str, Any]] = {}
         self.scanned_nodes: dict[str, dict[str, Any]] = {}
+        self.generated_links: list[dict[str, str]] = []
 
     def load_current_graph(self):
         """Loads existing graph to preserve metadata."""
@@ -113,13 +138,15 @@ class CodeGraphUpdater:
         self._visit_nodes(tree, rel_path)
 
     def _visit_nodes(self, tree: ast.AST, rel_path: str):
-        """Visits nodes using GraphVisitor."""
+        """Visits nodes using GraphVisitor and generates links."""
         module_name = rel_path.replace("/", ".").replace(".py", "")
+        file_id = f"file:{rel_path}"
 
         class GraphVisitor(ast.NodeVisitor):
             def __init__(self, scanner: "CodeGraphUpdater"):
                 self.scanner = scanner
                 self.current_class = None
+                self.current_function = None
 
             def visit_ClassDef(self, node: ast.ClassDef):
                 node_id = f"class:{module_name}.{node.name}"
@@ -137,6 +164,14 @@ class CodeGraphUpdater:
                     "tests": None,
                     "notes": "",
                 }
+                # Link: file defines class
+                self.scanner.generated_links.append(
+                    {
+                        "source": file_id,
+                        "target": node_id,
+                        "kind": "defines",
+                    }
+                )
 
                 prev_class = self.current_class
                 self.current_class = node.name
@@ -152,11 +187,28 @@ class CodeGraphUpdater:
                     node_id = f"method:{self.current_class}.{node.name}"
                     node_type = "method"
                     name_display = f"{self.current_class}.{node.name}"
+                    # Link: class defines method
+                    class_id = f"class:{module_name}.{self.current_class}"
+                    self.scanner.generated_links.append(
+                        {
+                            "source": class_id,
+                            "target": node_id,
+                            "kind": "defines",
+                        }
+                    )
                 else:
                     # Top-level function
                     node_id = f"function:{module_name}.{node.name}"
                     node_type = "function"
                     name_display = f"{module_name}.{node.name}"
+                    # Link: file defines function
+                    self.scanner.generated_links.append(
+                        {
+                            "source": file_id,
+                            "target": node_id,
+                            "kind": "defines",
+                        }
+                    )
 
                 doc = ast.get_docstring(node)
                 self.scanner.scanned_nodes[node_id] = {
@@ -229,7 +281,7 @@ class CodeGraphUpdater:
                 "generatedAt": datetime.now(timezone.utc).isoformat(),
                 "lastUpdated": datetime.now(timezone.utc).isoformat(),
                 "description": "Code structure knowledge graph for Ancestry research automation platform.",
-                "scope": "Complete project codebase analysis.",
+                "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
                 "recentUpdates": f"Automated update: {new_count} added, {removed_count} removed.",
                 "documentation": self.current_nodes.get("metadata", {}).get(
                     "documentation", {}
@@ -237,10 +289,10 @@ class CodeGraphUpdater:
                 # Need to load metadata separately.
             },
             "nodes": final_nodes,
-            "links": [],  # Would need separate pass for links. For now, empty or preserve?
-            # Existing script shows links exist.
-            # Ideally we preserve links if both source/target exist.
+            "links": self.generated_links,  # Use generated links from AST parsing
         }
+
+        print(f"Generated {len(self.generated_links)} links from code structure.")
 
         # Recover metadata and links from original file if possible
         if self.graph_path.exists():
@@ -251,20 +303,12 @@ class CodeGraphUpdater:
                     now_iso = datetime.now(timezone.utc).isoformat()
                     output_data["metadata"]["generatedAt"] = now_iso
                     output_data["metadata"]["lastUpdated"] = now_iso
-                    output_data["metadata"]["recentUpdates"] = (
-                        f"{datetime.now().strftime('%Y-%m-%d')}: Automated scan. {new_count} new, {updated_count} updated, {removed_count} removed."
+                    output_data["metadata"]["scope"] = (
+                        "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers."
                     )
-
-                if "links" in orig_data:
-                    # Filter links where both nodes still exist
-                    valid_ids = set(self.scanned_nodes.keys())
-                    valid_links = [
-                        link
-                        for link in orig_data["links"]
-                        if link.get("source") in valid_ids and link.get("target") in valid_ids
-                    ]
-                    output_data["links"] = valid_links
-                    print(f"Preserved {len(valid_links)} valid links.")
+                    output_data["metadata"]["recentUpdates"] = (
+                        f"{datetime.now().strftime('%Y-%m-%d')}: Automated scan. {new_count} new, {updated_count} updated, {removed_count} removed. {len(self.generated_links)} links generated."
+                    )
 
         with self.graph_path.open("w", encoding="utf-8") as f:
             json.dump(output_data, f, indent=2)

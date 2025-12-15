@@ -194,30 +194,12 @@ class ApprovalQueueService:
             Draft ID if queued, None if auto-approved or failed
         """
         try:
-            from core.database import DraftReply, Person
+            from core.database import DraftReply
             from core.draft_content import DraftInternalMetadata, append_internal_metadata
 
-            # Check if person exists and is contactable
-            person = self.db_session.query(Person).filter(Person.id == person_id).first()
-            if not person:
-                logger.warning(f"Cannot queue draft: Person {person_id} not found")
+            person = self._validate_person_for_queue(person_id)
+            if person is None:
                 return None
-
-            # Check if person opted out (DESIST status)
-            if hasattr(person, "status") and person.status.value == "DESIST":
-                logger.warning(f"Cannot queue draft: Person {person_id} has DESIST status")
-                return None
-
-            # CRITICAL: Self-message prevention - don't draft messages to ourselves
-            owner_profile_id = self._get_owner_profile_id()
-            if owner_profile_id and hasattr(person, "profile_id") and person.profile_id:
-                if str(person.profile_id) == str(owner_profile_id):
-                    logger.error(
-                        f"🚫 BLOCKED: Self-message attempt! Person {person_id} "
-                        f"(profile_id={person.profile_id}) is the tree owner. "
-                        "Draft NOT queued."
-                    )
-                    return None
 
             # Embed review-only metadata (no schema migrations).
             content_with_metadata = append_internal_metadata(
@@ -236,33 +218,9 @@ class ApprovalQueueService:
 
             # De-duplicate: if a pending draft already exists for this conversation/person,
             # update it in-place instead of inserting a new row.
-            existing_pending = (
-                self.db_session.query(DraftReply)
-                .filter(
-                    DraftReply.people_id == person_id,
-                    DraftReply.conversation_id == conversation_id,
-                    DraftReply.status == "PENDING",
-                )
-                .first()
-            )
-
+            existing_pending = self._find_existing_pending(DraftReply, person_id, conversation_id)
             if existing_pending is not None:
-                if existing_pending.content != content_with_metadata:
-                    existing_pending.content = content_with_metadata
-                    self.db_session.add(existing_pending)
-                    self.db_session.commit()
-                    logger.info(
-                        "Updated existing pending draft %s for review (confidence=%s, priority=%s)",
-                        existing_pending.id,
-                        ai_confidence,
-                        priority.value,
-                    )
-                else:
-                    logger.debug(
-                        "Skipped updating pending draft %s (content unchanged)",
-                        existing_pending.id,
-                    )
-                return existing_pending.id
+                return self._update_existing_pending(existing_pending, content_with_metadata, ai_confidence, priority)
 
             # Check for auto-approval
             if self._should_auto_approve(ai_confidence, priority, person):
@@ -274,48 +232,135 @@ class ApprovalQueueService:
                 )
 
             # Calculate expiry time for PENDING drafts
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
-
-            draft = DraftReply(
-                people_id=person_id,
-                conversation_id=conversation_id,
-                content=content_with_metadata,
-                status="PENDING",
-                expires_at=expires_at,
+            return self._create_pending_draft(
+                DraftReply,
+                person_id,
+                conversation_id,
+                content_with_metadata,
+                priority,
+                expiry_hours,
+                ai_confidence,
             )
-            self.db_session.add(draft)
-            self.db_session.commit()
-
-            # Phase 9.1: Emit drafts_queued metric
-            try:
-                from observability.metrics_registry import metrics
-
-                confidence_bucket = self._get_confidence_bucket(ai_confidence)
-                metrics().drafts_queued.inc(priority=priority.value, confidence_bucket=confidence_bucket)
-            except Exception:
-                pass  # Metrics are non-critical
-
-            logger.info(f"Queued draft {draft.id} for review (confidence={ai_confidence}, priority={priority.value})")
-            return draft.id
 
         except SQLAlchemyError as e:
             logger.error(f"Failed to queue draft for review: {e}")
             self.db_session.rollback()
             return None
 
+    def _validate_person_for_queue(self, person_id: int) -> Optional[Any]:
+        from core.database import Person
+
+        person = self.db_session.query(Person).filter(Person.id == person_id).first()
+        if not person:
+            logger.warning(f"Cannot queue draft: Person {person_id} not found")
+            return None
+
+        if hasattr(person, "status") and person.status.value == "DESIST":
+            logger.warning(f"Cannot queue draft: Person {person_id} has DESIST status")
+            return None
+
+        if self._is_self_message(person, person_id):
+            return None
+
+        return person
+
+    def _is_self_message(self, person: Any, person_id: int) -> bool:
+        owner_profile_id = self._get_owner_profile_id()
+        is_self = (
+            owner_profile_id
+            and hasattr(person, "profile_id")
+            and person.profile_id
+            and str(person.profile_id) == str(owner_profile_id)
+        )
+        if is_self:
+            logger.error(
+                f"🚫 BLOCKED: Self-message attempt! Person {person_id} "
+                f"(profile_id={person.profile_id}) is the tree owner. "
+                "Draft NOT queued."
+            )
+            return True
+        return False
+
+    def _find_existing_pending(self, draft_model: Any, person_id: int, conversation_id: str) -> Optional[Any]:
+        return (
+            self.db_session.query(draft_model)
+            .filter(
+                draft_model.people_id == person_id,
+                draft_model.conversation_id == conversation_id,
+                draft_model.status == "PENDING",
+            )
+            .first()
+        )
+
+    def _update_existing_pending(
+        self, existing_pending: Any, content_with_metadata: str, ai_confidence: int, priority: ReviewPriority
+    ) -> Optional[int]:
+        if existing_pending.content != content_with_metadata:
+            existing_pending.content = content_with_metadata
+            self.db_session.add(existing_pending)
+            self.db_session.commit()
+            logger.info(
+                "Updated existing pending draft %s for review (confidence=%s, priority=%s)",
+                existing_pending.id,
+                ai_confidence,
+                priority.value,
+            )
+        else:
+            logger.debug(
+                "Skipped updating pending draft %s (content unchanged)",
+                existing_pending.id,
+            )
+        return existing_pending.id
+
+    def _create_pending_draft(
+        self,
+        draft_model: Any,
+        person_id: int,
+        conversation_id: str,
+        content_with_metadata: str,
+        priority: ReviewPriority,
+        expiry_hours: int,
+        ai_confidence: int,
+    ) -> Optional[int]:
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+
+        draft = draft_model(
+            people_id=person_id,
+            conversation_id=conversation_id,
+            content=content_with_metadata,
+            status="PENDING",
+            expires_at=expires_at,
+        )
+        self.db_session.add(draft)
+        self.db_session.commit()
+
+        self._record_drafts_queued_metric(priority, ai_confidence)
+
+        logger.info(f"Queued draft {draft.id} for review (confidence={ai_confidence}, priority={priority.value})")
+        return draft.id
+
+    @staticmethod
+    def _record_drafts_queued_metric(priority: ReviewPriority, ai_confidence: int) -> None:
+        try:
+            from observability.metrics_registry import metrics
+
+            confidence_bucket = ApprovalQueueService._get_confidence_bucket(ai_confidence)
+            metrics().drafts_queued.inc(priority=priority.value, confidence_bucket=confidence_bucket)
+        except Exception:
+            pass  # Metrics are non-critical
+
     @staticmethod
     def _get_confidence_bucket(confidence: int) -> str:
         """Map confidence score to bucket for metrics labeling."""
         if confidence >= 90:
             return "90-100"
-        elif confidence >= 80:
+        if confidence >= 80:
             return "80-89"
-        elif confidence >= 70:
+        if confidence >= 70:
             return "70-79"
-        elif confidence >= 50:
+        if confidence >= 50:
             return "50-69"
-        else:
-            return "0-49"
+        return "0-49"
 
     def _calculate_priority(self, confidence: int, person: Any) -> ReviewPriority:
         """Calculate review priority based on confidence and person context."""
@@ -750,9 +795,7 @@ class ApprovalQueueService:
         import asyncio
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.get_pending_queue(limit, priority_filter)
-        )
+        return await loop.run_in_executor(None, lambda: self.get_pending_queue(limit, priority_filter))
 
     async def async_expire_old_drafts(self, hours: int = 72) -> int:
         """

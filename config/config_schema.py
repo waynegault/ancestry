@@ -1109,7 +1109,14 @@ class ConfigSchema:
 
 
 def _test_database_config() -> None:
-    """Test DatabaseConfig creation and validation."""
+    """Test DatabaseConfig creation and validation.
+
+    NOTE: This test deliberately creates invalid configs to verify validation.
+    The ERR log messages for 'pool_size must be a positive integer' and
+    'journal_mode must be one of...' are EXPECTED and indicate validation is working.
+    """
+    from testing.test_framework import suppress_logging
+
     # Test default creation
     db_config = DatabaseConfig()
     assert db_config.pool_size == 10
@@ -1119,18 +1126,21 @@ def _test_database_config() -> None:
     # Test custom values
     custom_config = DatabaseConfig(pool_size=20, journal_mode="DELETE", backup_enabled=False)
     assert custom_config.pool_size == 20
-    assert custom_config.journal_mode == "DELETE"  # Test validation errors
-    try:
-        DatabaseConfig(pool_size=-1)
-        raise AssertionError("Should have raised ConfigValidationError for negative pool_size")
-    except ConfigValidationError:
-        pass  # Expected
+    assert custom_config.journal_mode == "DELETE"
 
-    try:
-        DatabaseConfig(journal_mode="INVALID")
-        raise AssertionError("Should have raised ConfigValidationError for invalid journal_mode")
-    except ConfigValidationError:
-        pass  # Expected
+    # Test validation errors (suppress expected error logs)
+    with suppress_logging():
+        try:
+            DatabaseConfig(pool_size=-1)
+            raise AssertionError("Should have raised ConfigValidationError for negative pool_size")
+        except ConfigValidationError:
+            pass  # Expected - validation correctly rejects invalid pool_size
+
+        try:
+            DatabaseConfig(journal_mode="INVALID")
+            raise AssertionError("Should have raised ConfigValidationError for invalid journal_mode")
+        except ConfigValidationError:
+            pass  # Expected - validation correctly rejects invalid journal_mode
 
 
 def _test_selenium_config() -> None:

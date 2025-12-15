@@ -21,6 +21,11 @@ if parent_dir not in sys.path:
 import logging
 
 from core.action_registry import ActionMetadata, ActionRequirement, get_action_registry
+from core.error_handling import (
+    ancestry_api_recovery,
+    ancestry_database_recovery,
+    ancestry_session_recovery,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,34 +164,87 @@ def _ensure_required_state(
     choice: str,
     metadata: Optional[ActionMetadata] = None,
 ) -> bool:
-    result = True
+    """Ensure the required state for action execution with recovery strategies.
 
+    Uses recovery strategies from error_handling module when initial setup fails:
+    - db_ready: Uses ancestry_database_recovery on failure
+    - driver_ready: Uses ancestry_session_recovery on failure
+    - session_ready: Uses ancestry_session_recovery + ancestry_api_recovery on failure
+    """
     if required_state == "db_ready":
-        db_manager = get_database_manager(session_manager)
-        if db_manager is None:
-            logger.error("Database manager unavailable for action '%s'", action_name)
-            result = False
-        else:
-            result = db_manager.ensure_ready()
+        return _ensure_db_ready(session_manager, action_name)
 
-    elif required_state == "driver_ready":
-        browser_manager = get_browser_manager(session_manager)
-        if browser_manager is None:
-            logger.error("Browser manager unavailable for action '%s'", action_name)
-            result = False
-        else:
-            result = browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+    if required_state == "driver_ready":
+        return _ensure_driver_ready(session_manager, action_name)
 
-    elif required_state == "session_ready":
-        skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
-        if not session_manager._guard_action(required_state, action_name):
-            result = False
-        else:
-            result = session_manager.ensure_session_ready(
-                action_name=f"{action_name} - Setup",
-                skip_csrf=skip_csrf,
-            )
+    if required_state == "session_ready":
+        return _ensure_session_ready(session_manager, action_name, choice, metadata)
 
+    return True
+
+
+def _ensure_db_ready(session_manager: SessionManager, action_name: str) -> bool:
+    db_manager = get_database_manager(session_manager)
+    if db_manager is None:
+        logger.error("Database manager unavailable for action '%s'", action_name)
+        return False
+
+    result = db_manager.ensure_ready()
+    if result:
+        return True
+
+    logger.info("🔄 Database setup failed, attempting recovery...")
+    if ancestry_database_recovery(session_manager):
+        result = db_manager.ensure_ready()
+        if result:
+            logger.info("✅ Database recovery successful")
+    return result
+
+
+def _ensure_driver_ready(session_manager: SessionManager, action_name: str) -> bool:
+    browser_manager = get_browser_manager(session_manager)
+    if browser_manager is None:
+        logger.error("Browser manager unavailable for action '%s'", action_name)
+        return False
+
+    result = browser_manager.ensure_driver_live(f"{action_name} - Browser Start")
+    if result:
+        return True
+
+    logger.info("🔄 Driver setup failed, attempting session recovery...")
+    if ancestry_session_recovery(session_manager):
+        result = browser_manager.ensure_driver_live(f"{action_name} - Browser Retry")
+        if result:
+            logger.info("✅ Driver recovery successful")
+    return result
+
+
+def _ensure_session_ready(
+    session_manager: SessionManager,
+    action_name: str,
+    choice: str,
+    metadata: Optional[ActionMetadata],
+) -> bool:
+    skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
+    if not session_manager._guard_action("session_ready", action_name):
+        return False
+
+    result = session_manager.ensure_session_ready(
+        action_name=f"{action_name} - Setup",
+        skip_csrf=skip_csrf,
+    )
+    if result:
+        return True
+
+    logger.info("🔄 Session setup failed, attempting recovery...")
+    if ancestry_session_recovery(session_manager):
+        ancestry_api_recovery(session_manager)
+        result = session_manager.ensure_session_ready(
+            action_name=f"{action_name} - Retry",
+            skip_csrf=skip_csrf,
+        )
+        if result:
+            logger.info("✅ Session recovery successful")
     return result
 
 

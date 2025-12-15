@@ -12,19 +12,43 @@ It enforces:
 3. Logging setup to capture behavior.
 """
 
-import logging
-import os
 import sys
-import time
 from pathlib import Path
-
-# 1. Set Environment to dry_run BEFORE importing other modules
-os.environ["APP_MODE"] = "dry_run"
 
 # Add project root to path to ensure imports work
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = project_root / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = project_root / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(project_root)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
+import logging
+import os
+import time
+
+# 1. Set Environment to dry_run BEFORE importing other modules
+os.environ["APP_MODE"] = "dry_run"
 
 # Import Action Entry Points
 from actions.action12_shared_matches import fetch_shared_matches as action12_run

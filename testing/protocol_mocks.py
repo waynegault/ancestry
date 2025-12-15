@@ -74,9 +74,7 @@ class MockRateLimiter:
         """Record success."""
         self.success_count += 1
 
-    def on_429_error(
-        self, endpoint: Optional[str] = None, retry_after: Optional[float] = None
-    ) -> None:
+    def on_429_error(self, endpoint: Optional[str] = None, retry_after: Optional[float] = None) -> None:
         """Record 429 error."""
         self.error_429_count += 1
         self.last_endpoint = endpoint
@@ -126,7 +124,7 @@ class MockDatabaseSession:
         """Record rollback."""
         self.rollback_count += 1
 
-    def query(self, *args: Any) -> "MockQuery":
+    def query(self, *_args: Any) -> "MockQuery":
         """Return a mock query object."""
         self.query_count += 1
         return MockQuery(self._query_results)
@@ -185,7 +183,7 @@ class MockQuery:
         """Return count of results."""
         return len(self._results)
 
-    def order_by(self, *args: Any) -> "MockQuery":
+    def order_by(self, *_args: Any) -> "MockQuery":
         """Return self for chaining."""
         return self
 
@@ -307,30 +305,25 @@ class MockLogger:
         self.warning_messages: list[str] = []
         self.error_messages: list[str] = []
 
-    def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def debug(self, msg: str, *args: Any, **_kwargs: Any) -> None:
         """Capture debug message."""
         self.debug_messages.append(msg % args if args else msg)
 
-    def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def info(self, msg: str, *args: Any, **_kwargs: Any) -> None:
         """Capture info message."""
         self.info_messages.append(msg % args if args else msg)
 
-    def warning(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def warning(self, msg: str, *args: Any, **_kwargs: Any) -> None:
         """Capture warning message."""
         self.warning_messages.append(msg % args if args else msg)
 
-    def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
+    def error(self, msg: str, *args: Any, **_kwargs: Any) -> None:
         """Capture error message."""
         self.error_messages.append(msg % args if args else msg)
 
     def all_messages(self) -> list[str]:
         """Return all messages in order."""
-        return (
-            self.debug_messages
-            + self.info_messages
-            + self.warning_messages
-            + self.error_messages
-        )
+        return self.debug_messages + self.info_messages + self.warning_messages + self.error_messages
 
     def reset(self) -> None:
         """Clear all captured messages."""
@@ -358,14 +351,10 @@ def verify_protocol_compliance() -> dict[str, bool]:
     results["MockRateLimiter"] = isinstance(MockRateLimiter(), RateLimiterProtocol)
 
     # Check DatabaseSessionProtocol
-    results["MockDatabaseSession"] = isinstance(
-        MockDatabaseSession(), DatabaseSessionProtocol
-    )
+    results["MockDatabaseSession"] = isinstance(MockDatabaseSession(), DatabaseSessionProtocol)
 
     # Check SessionManagerProtocol
-    results["MockSessionManager"] = isinstance(
-        MockSessionManager(), SessionManagerProtocol
-    )
+    results["MockSessionManager"] = isinstance(MockSessionManager(), SessionManagerProtocol)
 
     # Check CacheProtocol
     results["MockCache"] = isinstance(MockCache(), CacheProtocol)
@@ -437,7 +426,7 @@ def _test_mock_database_session() -> bool:
     session.configure_commit_failure(RuntimeError("DB error"))
     try:
         session.commit()
-        assert False, "Should raise exception"
+        raise AssertionError("Should raise exception")
     except RuntimeError:
         pass  # Expected
 

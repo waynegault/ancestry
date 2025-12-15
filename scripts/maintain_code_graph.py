@@ -3,18 +3,42 @@
 
 from __future__ import annotations
 
-import io
-import json
-import os
 import sys
-from contextlib import redirect_stdout
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = REPO_ROOT / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = REPO_ROOT / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(REPO_ROOT)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
+import io
+import json
+import os
+from contextlib import redirect_stdout
+from tempfile import TemporaryDirectory
+from typing import Any
 
 from testing.test_framework import TestSuite, create_standard_test_runner
 

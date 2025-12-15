@@ -192,8 +192,8 @@ def run_startup_maintenance_tasks(session_manager: SessionManager) -> None:
 
     # Task 1: Expire old drafts
     try:
-        from core.approval_queue import ApprovalQueueService
         from core.action_runner import get_database_manager
+        from core.approval_queue import ApprovalQueueService
 
         db_manager = get_database_manager(session_manager)
         if db_manager and db_manager.ensure_ready():

@@ -274,12 +274,26 @@ class MatchContext:
             return lines
 
         lines.append("\n## Research Insights")
+        research = self.research
 
-        shared_regions = self.research.get("ethnicity_shared_regions")
+        self._append_ethnicity(lines, research)
+        self._append_shared_match_cluster(lines, research)
+        self._append_triangulation(lines, research)
+        self._append_research_gaps(lines, research)
+        self._append_gedcom_insights(lines, research)
+        self._append_dna_crossref(lines, research)
+
+        return lines
+
+    @staticmethod
+    def _append_ethnicity(lines: list[str], research: dict[str, Any]) -> None:
+        shared_regions = research.get("ethnicity_shared_regions")
         if shared_regions:
             lines.append(f"Ethnicity overlap: {', '.join(str(r) for r in shared_regions[:3])}")
 
-        cluster = self.research.get("shared_match_cluster")
+    @staticmethod
+    def _append_shared_match_cluster(lines: list[str], research: dict[str, Any]) -> None:
+        cluster = research.get("shared_match_cluster")
         cluster_count: Any = None
         if isinstance(cluster, dict):
             cluster_dict = cast(dict[str, Any], cluster)
@@ -287,88 +301,91 @@ class MatchContext:
         if isinstance(cluster_count, int) and cluster_count > 0:
             lines.append(f"Shared matches: {cluster_count}")
 
-        # Phase 11.1: Triangulation hypothesis
-        triangulation = self.research.get("triangulation")
-        if isinstance(triangulation, dict):
-            tri_dict = cast(dict[str, Any], triangulation)
-            proposed_rel = tri_dict.get("proposed_relationship")
-            confidence = tri_dict.get("confidence_score")
-            common_ancestor = tri_dict.get("common_ancestor_name")
+    @staticmethod
+    def _append_triangulation(lines: list[str], research: dict[str, Any]) -> None:
+        triangulation = research.get("triangulation")
+        if not isinstance(triangulation, dict):
+            return
 
-            if proposed_rel:
-                lines.append(f"Triangulation hypothesis: {proposed_rel}")
-            if confidence is not None:
-                lines.append(f"Confidence score: {confidence:.0f}%")
-            if common_ancestor:
-                lines.append(f"Possible common ancestor: {common_ancestor}")
+        tri_dict = cast(dict[str, Any], triangulation)
+        proposed_rel = tri_dict.get("proposed_relationship")
+        confidence = tri_dict.get("confidence_score")
+        common_ancestor = tri_dict.get("common_ancestor_name")
 
-        # Phase 11.3: Research gaps and suggestions
-        research_gaps = self.research.get("research_gaps")
-        if isinstance(research_gaps, dict):
-            gaps_dict = cast(dict[str, Any], research_gaps)
-            gap_type = gaps_dict.get("top_gap_type")
-            gap_desc = gaps_dict.get("top_gap_description")
-            suggested_actions = gaps_dict.get("suggested_actions", [])
+        if proposed_rel:
+            lines.append(f"Triangulation hypothesis: {proposed_rel}")
+        if confidence is not None:
+            lines.append(f"Confidence score: {confidence:.0f}%")
+        if common_ancestor:
+            lines.append(f"Possible common ancestor: {common_ancestor}")
 
+    @staticmethod
+    def _append_research_gaps(lines: list[str], research: dict[str, Any]) -> None:
+        research_gaps = research.get("research_gaps")
+        if not isinstance(research_gaps, dict):
+            return
+
+        gaps_dict = cast(dict[str, Any], research_gaps)
+        gap_type = gaps_dict.get("top_gap_type")
+        gap_desc = gaps_dict.get("top_gap_description")
+        suggested_actions = gaps_dict.get("suggested_actions", [])
+
+        if gap_type:
+            lines.append(f"Research opportunity: {gap_type.replace('_', ' ').title()}")
+        if gap_desc:
+            lines.append(f"Gap details: {gap_desc}")
+        if suggested_actions:
+            lines.append(f"Suggested action: {suggested_actions[0]}")
+
+    @staticmethod
+    def _append_gedcom_insights(lines: list[str], research: dict[str, Any]) -> None:
+        gedcom_intel = research.get("gedcom_intelligence")
+        if not isinstance(gedcom_intel, dict):
+            return
+
+        intel_dict = cast(dict[str, Any], gedcom_intel)
+
+        top_gap = intel_dict.get("top_gap")
+        if isinstance(top_gap, dict):
+            gap_type = top_gap.get("type", "")
+            gap_desc = top_gap.get("description", "")
             if gap_type:
-                lines.append(f"Research opportunity: {gap_type.replace('_', ' ').title()}")
+                lines.append(f"Tree gap: {gap_type.replace('_', ' ').title()}")
             if gap_desc:
-                lines.append(f"Gap details: {gap_desc}")
-            if suggested_actions:
-                lines.append(f"Suggested action: {suggested_actions[0]}")
+                lines.append(f"Gap: {gap_desc[:100]}")
 
-        # Phase 12.1: GEDCOM intelligence findings
-        gedcom_intel = self.research.get("gedcom_intelligence")
-        if isinstance(gedcom_intel, dict):
-            intel_dict = cast(dict[str, Any], gedcom_intel)
+        top_conflict = intel_dict.get("top_conflict")
+        if isinstance(top_conflict, dict):
+            conflict_type = top_conflict.get("type", "")
+            severity = top_conflict.get("severity", "")
+            if conflict_type and severity in {"critical", "major"}:
+                lines.append(f"⚠️ Tree conflict ({severity}): {conflict_type.replace('_', ' ')}")
 
-            # Surface top GEDCOM gap
-            top_gap = intel_dict.get("top_gap")
-            if isinstance(top_gap, dict):
-                gap_type = top_gap.get("type", "")
-                gap_desc = top_gap.get("description", "")
-                if gap_type:
-                    lines.append(f"Tree gap: {gap_type.replace('_', ' ').title()}")
-                if gap_desc:
-                    lines.append(f"Gap: {gap_desc[:100]}")
+        top_opp = intel_dict.get("top_opportunity")
+        if isinstance(top_opp, dict):
+            opp_type = top_opp.get("type", "")
+            if opp_type:
+                lines.append(f"Research opportunity: {opp_type.replace('_', ' ').title()}")
 
-            # Surface GEDCOM conflicts for review context
-            top_conflict = intel_dict.get("top_conflict")
-            if isinstance(top_conflict, dict):
-                conflict_type = top_conflict.get("type", "")
-                severity = top_conflict.get("severity", "")
-                if conflict_type and severity in ("critical", "major"):
-                    lines.append(f"⚠️ Tree conflict ({severity}): {conflict_type.replace('_', ' ')}")
+    @staticmethod
+    def _append_dna_crossref(lines: list[str], research: dict[str, Any]) -> None:
+        dna_crossref = research.get("dna_gedcom_crossref")
+        if not isinstance(dna_crossref, dict):
+            return
 
-            # Surface research opportunity
-            top_opp = intel_dict.get("top_opportunity")
-            if isinstance(top_opp, dict):
-                opp_type = top_opp.get("type", "")
-                opp_desc = top_opp.get("description", "")
-                if opp_type:
-                    lines.append(f"Research opportunity: {opp_type.replace('_', ' ').title()}")
+        crossref_dict = cast(dict[str, Any], dna_crossref)
+        top_match = crossref_dict.get("top_match")
+        if isinstance(top_match, dict):
+            confidence = top_match.get("confidence", 0)
+            match_type = top_match.get("match_type", "")
+            if confidence > 0.7:
+                lines.append(f"✓ DNA-Tree match validated: {match_type} ({confidence:.0%} confidence)")
+            elif confidence > 0.4:
+                lines.append(f"DNA-Tree match: {match_type} ({confidence:.0%} confidence)")
 
-        # Phase 12.2: DNA-GEDCOM cross-reference findings
-        dna_crossref = self.research.get("dna_gedcom_crossref")
-        if isinstance(dna_crossref, dict):
-            crossref_dict = cast(dict[str, Any], dna_crossref)
-
-            # Surface cross-reference validation
-            top_match = crossref_dict.get("top_match")
-            if isinstance(top_match, dict):
-                confidence = top_match.get("confidence", 0)
-                match_type = top_match.get("match_type", "")
-                if confidence > 0.7:
-                    lines.append(f"✓ DNA-Tree match validated: {match_type} ({confidence:.0%} confidence)")
-                elif confidence > 0.4:
-                    lines.append(f"DNA-Tree match: {match_type} ({confidence:.0%} confidence)")
-
-            # Surface verification opportunities
-            verif_opps = crossref_dict.get("verification_opportunities", 0)
-            if verif_opps > 0:
-                lines.append(f"Verification opportunities: {verif_opps}")
-
-        return lines
+        verif_opps = crossref_dict.get("verification_opportunities", 0)
+        if verif_opps > 0:
+            lines.append(f"Verification opportunities: {verif_opps}")
 
 
 class ContextBuilder:
@@ -466,33 +483,49 @@ class ContextBuilder:
         """Build lightweight research insights used for draft suggestions."""
         research: dict[str, Any] = {}
 
-        # Shared-match cluster insight (pure DB; no external calls)
+        enrichers = (
+            self._add_shared_match_cluster,
+            self._add_ethnicity_commonality,
+            self._add_triangulation_insight,
+            self._add_predictive_gaps_insight,
+            self._add_gedcom_intelligence,
+            self._add_dna_crossref_insight,
+        )
+
+        for enrich in enrichers:
+            enrich(person, research)
+
+        return research
+
+    def _add_shared_match_cluster(self, person: Any, research: dict[str, Any]) -> None:
         try:
             research["shared_match_cluster"] = self._build_shared_match_cluster(person)
         except Exception as exc:
             logger.debug(f"Shared match cluster enrichment skipped: {exc}")
 
-        # Ethnicity commonality insight (best-effort; requires owner_profile_id)
+    def _add_ethnicity_commonality(self, person: Any, research: dict[str, Any]) -> None:
         try:
             owner_profile_id = ContextBuilder._resolve_owner_profile_id()
             person_id = getattr(person, "id", None)
-            if owner_profile_id and person_id:
-                from genealogy.tree_stats_utils import calculate_ethnicity_commonality
+            if not (owner_profile_id and person_id):
+                return
 
-                ethnicity = calculate_ethnicity_commonality(self._session, owner_profile_id, int(person_id))
-                shared_regions = ethnicity.get("shared_regions", []) or []
-                if shared_regions:
-                    research.update(
-                        {
-                            "ethnicity_shared_regions": shared_regions,
-                            "ethnicity_similarity": ethnicity.get("similarity_score"),
-                            "ethnicity_top_region": ethnicity.get("top_shared_region"),
-                        }
-                    )
+            from genealogy.tree_stats_utils import calculate_ethnicity_commonality
+
+            ethnicity = calculate_ethnicity_commonality(self._session, owner_profile_id, int(person_id))
+            shared_regions = ethnicity.get("shared_regions", []) or []
+            if shared_regions:
+                research.update(
+                    {
+                        "ethnicity_shared_regions": shared_regions,
+                        "ethnicity_similarity": ethnicity.get("similarity_score"),
+                        "ethnicity_top_region": ethnicity.get("top_shared_region"),
+                    }
+                )
         except Exception as exc:
             logger.debug(f"Ethnicity enrichment skipped: {exc}")
 
-        # Phase 11.1: Triangulation intelligence - generate hypotheses for draft personalization
+    def _add_triangulation_insight(self, person: Any, research: dict[str, Any]) -> None:
         try:
             triangulation = self._build_triangulation_hypothesis(person)
             if triangulation:
@@ -500,7 +533,7 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"Triangulation enrichment skipped: {exc}")
 
-        # Phase 11.3: Predictive gap detection - surface research suggestions
+    def _add_predictive_gaps_insight(self, person: Any, research: dict[str, Any]) -> None:
         try:
             research_gaps = self._build_predictive_gaps(person)
             if research_gaps:
@@ -508,7 +541,7 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"Predictive gaps enrichment skipped: {exc}")
 
-        # Phase 12.1: GEDCOM intelligence - gaps, conflicts, and research opportunities
+    def _add_gedcom_intelligence(self, person: Any, research: dict[str, Any]) -> None:
         try:
             gedcom_intel = self._build_gedcom_intelligence(person)
             if gedcom_intel:
@@ -516,15 +549,13 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"GEDCOM intelligence enrichment skipped: {exc}")
 
-        # Phase 12.2: DNA-GEDCOM cross-reference - relationship validation
+    def _add_dna_crossref_insight(self, person: Any, research: dict[str, Any]) -> None:
         try:
             crossref = self._build_dna_gedcom_crossref(person)
             if crossref:
                 research["dna_gedcom_crossref"] = crossref
         except Exception as exc:
             logger.debug(f"DNA-GEDCOM cross-reference enrichment skipped: {exc}")
-
-        return research
 
     def _build_triangulation_hypothesis(self, person: Any) -> Optional[dict[str, Any]]:
         """
@@ -634,7 +665,7 @@ class ContextBuilder:
             "total_gaps_found": len(gaps),
         }
 
-    def _build_gedcom_intelligence(self, person: Any) -> Optional[dict[str, Any]]:
+    def _build_gedcom_intelligence(self, _person: Any) -> Optional[dict[str, Any]]:
         """
         Analyze GEDCOM data for gaps, conflicts, and research opportunities.
 
@@ -713,6 +744,13 @@ class ContextBuilder:
         Returns:
             Dictionary with cross-reference findings, or None if not available.
         """
+        analysis = self._get_crossref_analysis(person)
+        if not analysis or analysis.get("dna_matches_analyzed", 0) == 0:
+            return None
+
+        return self._summarize_crossref_analysis(analysis)
+
+    def _get_crossref_analysis(self, person: Any) -> Optional[dict[str, Any]]:
         tree_service = self._ensure_tree_service()
         if not tree_service:
             return None
@@ -721,45 +759,34 @@ class ContextBuilder:
         if not gedcom_data:
             return None
 
-        # Build DNAMatch dataclass from Person
-        person_name = getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown"
         person_uuid = getattr(person, "uuid", None)
-        shared_cm = getattr(person, "shared_cm", 0) or 0
-        relationship = getattr(person, "relationship", None) or "Unknown"
-
         if not person_uuid:
             return None
 
         from genealogy.dna.dna_gedcom_crossref import DNAGedcomCrossReferencer, DNAMatch as CrossRefDNAMatch
 
-        # Create DNA match for cross-referencing
         dna_match = CrossRefDNAMatch(
             match_id=person_uuid,
-            match_name=person_name,
-            estimated_relationship=relationship,
-            shared_dna_cm=shared_cm,
+            match_name=getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown",
+            estimated_relationship=getattr(person, "relationship", None) or "Unknown",
+            shared_dna_cm=getattr(person, "shared_cm", 0) or 0,
             tree_size=getattr(person, "tree_size", None),
         )
 
         crossreferencer = DNAGedcomCrossReferencer()
-        analysis = crossreferencer.analyze_dna_gedcom_connections(
+        return crossreferencer.analyze_dna_gedcom_connections(
             dna_matches=[dna_match],
             gedcom_data=gedcom_data,
         )
 
-        if not analysis or analysis.get("dna_matches_analyzed", 0) == 0:
-            return None
-
-        # Extract key findings for context
+    @staticmethod
+    def _summarize_crossref_analysis(analysis: dict[str, Any]) -> Optional[dict[str, Any]]:
         crossref_matches = analysis.get("cross_reference_matches", [])
         conflicts = analysis.get("conflicts_identified", [])
         verification_opps = analysis.get("verification_opportunities", [])
 
-        result: dict[str, Any] = {
-            "matches_found": len(crossref_matches),
-        }
+        result: dict[str, Any] = {"matches_found": len(crossref_matches)}
 
-        # Surface top cross-reference match
         if crossref_matches:
             top_match = crossref_matches[0]
             result["top_match"] = {
@@ -768,7 +795,6 @@ class ContextBuilder:
                 "match_type": top_match.get("match_type", "unknown"),
             }
 
-        # Surface conflicts for review
         if conflicts:
             top_conflict = conflicts[0]
             result["top_conflict"] = {
@@ -777,7 +803,6 @@ class ContextBuilder:
             }
             result["total_conflicts"] = len(conflicts)
 
-        # Surface verification opportunities
         if verification_opps:
             result["verification_opportunities"] = len(verification_opps)
 

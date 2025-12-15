@@ -8,7 +8,6 @@ When RUN_MODULE_TESTS=1, it should execute the embedded test harness and avoid
 attempting live Grafana deployment.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -16,6 +15,31 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = PROJECT_ROOT / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = PROJECT_ROOT / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(PROJECT_ROOT)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
+import os
 
 from core.logging_config import setup_logging
 from performance.grafana_checker import ensure_dashboards_imported

@@ -6,6 +6,34 @@ running the full app. Intended for local/dev use only.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = _PROJECT_ROOT / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = _PROJECT_ROOT / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(_PROJECT_ROOT)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
 import http.server
 import socketserver
 import threading

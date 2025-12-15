@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 # --- Standard library imports ---
 import hashlib
 import time
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -393,11 +394,19 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
     """
     try:
         if cache is not None and disk_cache_key is not None:
+            cleaned_processed = {}
+            for norm_id, data in getattr(gedcom_data, "processed_data_cache", {}).items():
+                cleaned = _clean_value_for_disk_cache(data)
+                if cleaned is not None:
+                    cleaned_processed[norm_id] = cleaned
+                else:
+                    logger.debug("Skipping non-serializable processed data for %s", norm_id)
+
             # Create a serializable version without the reader and indi_index
             # Only cache the processed data and family relationships
             cache_data = {
                 "path": str(gedcom_data.path),
-                "processed_data_cache": gedcom_data.processed_data_cache,
+                "processed_data_cache": cleaned_processed,
                 "id_to_parents": gedcom_data.id_to_parents,
                 "id_to_children": gedcom_data.id_to_children,
                 "id_to_spouses": getattr(gedcom_data, "id_to_spouses", {}),
@@ -544,6 +553,34 @@ def _serialize_processed_data_cache(processed_data_cache: dict[str, Any]) -> dic
     return serializable_processed_data
 
 
+def _clean_value_for_disk_cache(value: Any) -> Optional[Any]:
+    """Remove non-picklable objects (e.g., BinaryFileCR) before disk caching."""
+    if isinstance(value, (str, int, float, bool, datetime, date, type(None))):
+        return value
+
+    if isinstance(value, list):
+        cleaned_list = [_clean_value_for_disk_cache(v) for v in value]
+        return [v for v in cleaned_list if v is not None]
+
+    if isinstance(value, tuple):
+        return tuple(v for v in (_clean_value_for_disk_cache(v) for v in value) if v is not None)
+
+    if isinstance(value, set):
+        cleaned_set = {_clean_value_for_disk_cache(v) for v in value}
+        return {v for v in cleaned_set if v is not None}
+
+    if isinstance(value, dict):
+        cleaned_dict: dict[Any, Any] = {}
+        for k, v in value.items():
+            cleaned_val = _clean_value_for_disk_cache(v)
+            if cleaned_val is not None:
+                cleaned_dict[k] = cleaned_val
+        return cleaned_dict
+
+    # Unknown/unserializable type (e.g., BinaryFileCR) - drop it
+    return None
+
+
 def _serialize_indi_index_object(value: Any) -> Optional[dict[str, Any]]:
     """Serialize a complex object from indi_index."""
     if not hasattr(value, "__dict__"):
@@ -551,8 +588,10 @@ def _serialize_indi_index_object(value: Any) -> Optional[dict[str, Any]]:
 
     obj_dict = {}
     for attr, attr_value in value.__dict__.items():
-        if isinstance(attr_value, (str, int, float, bool, list, dict, tuple, type(None))):
-            obj_dict[attr] = attr_value
+        # Recursively clean nested values to remove non-picklable objects like BinaryFileCR
+        cleaned_value = _clean_value_for_disk_cache(attr_value)
+        if cleaned_value is not None:
+            obj_dict[attr] = cleaned_value
 
     return obj_dict if obj_dict else None
 
@@ -976,6 +1015,48 @@ def test_cache_validation_integrity():
     return True
 
 
+def test_store_gedcom_in_disk_cache_skips_unpicklable():
+    """Ensure disk cache storage drops non-picklable values from processed_data_cache."""
+
+    class DummyObj:
+        pass
+
+    class DummyCache:
+        def __init__(self) -> None:
+            self.saved: Optional[tuple[str, Any, Any, bool]] = None
+
+        def set(self, key: str, value: Any, expire: Optional[float] = None, retry: bool = True) -> None:
+            self.saved = (key, value, expire, retry)
+
+    class DummyGedcom:
+        def __init__(self) -> None:
+            self.path = "demo.ged"
+            self.processed_data_cache: dict[str, dict[str, Any]] = {
+                "I1": {"ok": 1, "bad": DummyObj()},
+            }
+            self.id_to_parents: dict[str, set[str]] = {}
+            self.id_to_children: dict[str, set[str]] = {}
+            self.id_to_spouses: dict[str, set[str]] = {}
+            self.indi_index_build_time = 0.0
+            self.family_maps_build_time = 0.0
+            self.data_processing_time = 0.0
+
+    dummy_cache = DummyCache()
+    original_cache = cache
+    try:
+        globals()["cache"] = dummy_cache
+        with suppress_logging():
+            _store_gedcom_in_disk_cache(DummyGedcom(), "cache_key")
+
+        assert dummy_cache.saved is not None, "Cache set should be invoked"
+        _, cache_data, _, _ = dummy_cache.saved
+        assert cache_data["processed_data_cache"]["I1"] == {"ok": 1}, "Non-picklable entries should be dropped"
+    finally:
+        globals()["cache"] = original_cache
+
+    return True
+
+
 def gedcom_cache_module_tests() -> bool:
     """
     GEDCOM Cache Management & Optimization module test suite.
@@ -1041,6 +1122,14 @@ def gedcom_cache_module_tests() -> bool:
         "File modification detection works correctly for cache management",
         "Edge",
         "Check file modification detection for cache invalidation",
+    )
+
+    suite.run_test(
+        "Disk Cache Skips Non-picklable",
+        test_store_gedcom_in_disk_cache_skips_unpicklable,
+        "Disk cache storage drops non-picklable processed_data entries",
+        "Edge",
+        "Verify disk cache cleaning removes unpicklable data and still writes cache",
     )
 
     suite.run_test(

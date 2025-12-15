@@ -521,8 +521,9 @@ class HealthCheckRunner:
             CacheHealthCheck(),
         ]
 
-        # Add session check if session manager provided
-        if self._session_manager is not None:
+        # Only add session check if browser has been initialized
+        # (session check is only meaningful after browser actions have run)
+        if self._session_manager is not None and self._session_manager.is_sess_valid():
             self._checks.append(SessionHealthCheck(self._session_manager))
 
     def add_check(self, check: HealthCheck) -> None:

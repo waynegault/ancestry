@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from sqlalchemy import text
+from tqdm import tqdm
 
 from config import config_schema
 from core.database import DnaMatch, Person
@@ -795,16 +796,19 @@ def _select_ethnicity_region(regions: list[dict[str, Any]]) -> Optional[dict[str
 def _process_ethnicity_matches(cli: ResearchToolsCLI, matches: list[Any], count: int) -> None:
     """Process the list of matches for ethnicity analysis."""
     print(f"\nRunning analysis on {count} matches...")
+    progress = tqdm(matches, total=count, desc="Analyzing matches", unit="match")
 
-    for i, person in enumerate(matches, 1):
+    for i, person in enumerate(progress, 1):
         uuid = person.uuid
         name = person.username
         if not uuid:
-            print(f"[{i}/{count}] Skipping {name} (No UUID)")
+            progress.write(f"[{i}/{count}] Skipping {name} (No UUID)")
             continue
 
-        print(f"\n[{i}/{count}] Analyzing {name} ({uuid})...")
+        progress.write(f"\n[{i}/{count}] Analyzing {name} ({uuid})...")
         cli.analyze_match_triangulation(uuid)
+
+    progress.close()
 
 
 def _handle_ethnicity_analysis(cli: ResearchToolsCLI) -> None:

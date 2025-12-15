@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -80,29 +81,18 @@ def categorize_send_error(exc: Exception) -> SendErrorCategory:
     error_msg = str(exc).lower()
     error_type = type(exc).__name__.lower()
 
-    # Network errors
-    if any(term in error_msg for term in ["timeout", "connection", "network", "socket"]):
-        return SendErrorCategory.NETWORK
+    checks: list[tuple[Iterable[str], SendErrorCategory, str]] = [
+        (["timeout", "connection", "network", "socket"], SendErrorCategory.NETWORK, error_msg),
+        (["401", "403", "unauthorized", "forbidden", "auth"], SendErrorCategory.AUTH, error_msg),
+        (["429", "rate", "throttle", "too many"], SendErrorCategory.RATE_LIMIT, error_msg),
+        (["500", "502", "503", "504", "server error"], SendErrorCategory.API_ERROR, error_msg),
+        (["sqlalchemy", "database", "transaction", "commit"], SendErrorCategory.TRANSACTION, error_type),
+        (["validation", "invalid", "missing required"], SendErrorCategory.VALIDATION, error_msg),
+    ]
 
-    # Authentication errors
-    if any(term in error_msg for term in ["401", "403", "unauthorized", "forbidden", "auth"]):
-        return SendErrorCategory.AUTH
-
-    # Rate limiting
-    if any(term in error_msg for term in ["429", "rate", "throttle", "too many"]):
-        return SendErrorCategory.RATE_LIMIT
-
-    # API errors (5xx)
-    if any(term in error_msg for term in ["500", "502", "503", "504", "server error"]):
-        return SendErrorCategory.API_ERROR
-
-    # Database/transaction errors
-    if any(term in error_type for term in ["sqlalchemy", "database", "transaction", "commit"]):
-        return SendErrorCategory.TRANSACTION
-
-    # Validation errors (from our code)
-    if any(term in error_msg for term in ["validation", "invalid", "missing required"]):
-        return SendErrorCategory.VALIDATION
+    for terms, category, haystack in checks:
+        if any(term in haystack for term in terms):
+            return category
 
     return SendErrorCategory.UNKNOWN
 
@@ -295,6 +285,39 @@ def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int
     return None
 
 
+def _gather_send_context(
+    db_session: Session,
+    draft: DraftReply,
+    app_mode: str,
+) -> tuple[Optional[Person], Optional[str], Optional[str], Optional[str]]:
+    """Collect pre-send context and detect skip reasons."""
+
+    person, person_skip = _get_person_for_draft(db_session, draft)
+    if person_skip:
+        return None, None, None, person_skip
+
+    assert person is not None
+
+    duplicate_reason = _check_duplicate_send(db_session, draft, person.id)
+    if duplicate_reason:
+        return person, None, None, f"skipped ({duplicate_reason})"
+
+    block_reason = _person_blocks_outbound(person)
+    if block_reason:
+        return person, None, None, f"skipped ({block_reason})"
+
+    mode_skip = _app_mode_blocks_outbound(person, app_mode)
+    if mode_skip:
+        return person, None, None, mode_skip
+
+    message_text, text_skip = _get_message_text_for_draft(draft)
+    if text_skip:
+        return person, None, None, text_skip
+
+    existing_conv_id = (draft.conversation_id or "").strip() or None
+    return person, message_text, existing_conv_id, None
+
+
 def _send_single_approved_draft(
     *,
     db_session: Session,
@@ -304,34 +327,13 @@ def _send_single_approved_draft(
     send_fn: Callable[[Any, Person, str, Optional[str], str], tuple[str, Optional[str]]],
 ) -> tuple[str, Optional[str]]:
     """Send one draft and persist results. Returns (outcome, reason)."""
+    person, message_text, existing_conv_id, skip_reason = _gather_send_context(db_session, draft, app_mode)
+    if skip_reason:
+        return "skipped", skip_reason
 
-    # Phase 1.6.3: Check for duplicate send before any processing
-    person, person_skip = _get_person_for_draft(db_session, draft)
-    if person_skip:
-        return "skipped", person_skip
-
-    assert person is not None  # for type checkers
-
-    # Check for duplicate send
-    duplicate_reason = _check_duplicate_send(db_session, draft, person.id)
-    if duplicate_reason:
-        return "skipped", f"skipped ({duplicate_reason})"
-
-    block_reason = _person_blocks_outbound(person)
-    if block_reason:
-        return "skipped", f"skipped ({block_reason})"
-
-    mode_skip = _app_mode_blocks_outbound(person, app_mode)
-    if mode_skip:
-        return "skipped", mode_skip
-
-    message_text, text_skip = _get_message_text_for_draft(draft)
-    if text_skip:
-        return "skipped", text_skip
-
+    assert person is not None
     assert message_text is not None
 
-    existing_conv_id = (draft.conversation_id or "").strip() or None
     log_prefix = f"DraftReply #{draft.id} Person #{person.id}"
 
     message_status, effective_conv_id = send_fn(
@@ -484,40 +486,42 @@ def run_send_approved_drafts(
             )
             continue
 
-        if outcome == "sent":
-            summary.sent += 1
-            circuit_breaker.record_success()  # Reset failure count on success
-            # Phase 9.1: Emit drafts_sent metric for successful send
-            try:
-                from observability.metrics_registry import metrics
-
-                metrics().drafts_sent.inc(outcome="sent")
-            except Exception:
-                pass  # Metrics are non-critical
-        elif outcome == "skipped":
-            summary.skipped += 1
-            reason_key = reason or "skipped (unknown)"
-            summary.skip_reasons[reason_key] = summary.skip_reasons.get(reason_key, 0) + 1
-            # Skips don't count as failures (intentional guards)
-            # Phase 9.1: Emit drafts_sent metric for skip
-            try:
-                from observability.metrics_registry import metrics
-
-                metrics().drafts_sent.inc(outcome="skipped")
-            except Exception:
-                pass  # Metrics are non-critical
-        else:
-            summary.errors += 1
-            circuit_breaker.record_failure()  # Record failure for circuit breaker
-            # Phase 9.1: Emit drafts_sent metric for error
-            try:
-                from observability.metrics_registry import metrics
-
-                metrics().drafts_sent.inc(outcome="error")
-            except Exception:
-                pass  # Metrics are non-critical
+        _handle_draft_outcome(outcome, reason, summary, circuit_breaker)
 
     return summary
+
+
+def _handle_draft_outcome(
+    outcome: str,
+    reason: Optional[str],
+    summary: SendApprovedDraftsSummary,
+    circuit_breaker: SessionCircuitBreaker,
+) -> None:
+    if outcome == "sent":
+        summary.sent += 1
+        circuit_breaker.record_success()
+        _record_drafts_sent_metric("sent")
+        return
+
+    if outcome == "skipped":
+        summary.skipped += 1
+        reason_key = reason or "skipped (unknown)"
+        summary.skip_reasons[reason_key] = summary.skip_reasons.get(reason_key, 0) + 1
+        _record_drafts_sent_metric("skipped")
+        return
+
+    summary.errors += 1
+    circuit_breaker.record_failure()
+    _record_drafts_sent_metric("error")
+
+
+def _record_drafts_sent_metric(outcome: str) -> None:
+    try:
+        from observability.metrics_registry import metrics
+
+        metrics().drafts_sent.inc(outcome=outcome)
+    except Exception:
+        pass  # Metrics are non-critical
 
 
 def send_approved_drafts(session_manager: Any, *_: Any) -> bool:

@@ -1,0 +1,52 @@
+{
+  "experiments": [
+    {
+      "experiment_id": "personalization_strategy_dna",
+      "name": "DNA-Focused vs Standard Personalization",
+      "description": "Test whether DNA-focused personalization yields better responses",
+      "variants": [
+        {
+          "name": "control",
+          "prompt_key": "standard_personalization",
+          "prompt_variant": null,
+          "weight": 1.0
+        },
+        {
+          "name": "dna_focused",
+          "prompt_key": "dna_personalization",
+          "prompt_variant": null,
+          "weight": 1.0
+        }
+      ],
+      "start_time": "2025-12-14T21:53:32.512902+00:00",
+      "end_time": null,
+      "min_sample_size": 100,
+      "enabled": true,
+      "metadata": {}
+    },
+    {
+      "experiment_id": "personalization_strategy_research",
+      "name": "Research-Heavy vs Brief Personalization",
+      "description": "Test detailed research context vs concise messages",
+      "variants": [
+        {
+          "name": "brief",
+          "prompt_key": "brief_personalization",
+          "prompt_variant": null,
+          "weight": 1.0
+        },
+        {
+          "name": "research_heavy",
+          "prompt_key": "research_personalization",
+          "prompt_variant": null,
+          "weight": 1.0
+        }
+      ],
+      "start_time": "2025-12-14T21:53:32.512902+00:00",
+      "end_time": null,
+      "min_sample_size": 100,
+      "enabled": true,
+      "metadata": {}
+    }
+  ]
+}

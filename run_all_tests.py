@@ -89,15 +89,12 @@ def _ensure_venv() -> None:
             print("   Some tests may fail due to missing dependencies")
             return
 
-    # Re-run with venv Python
+    # Re-run with venv Python using os.execv to replace current process
+    import os as _os
+
     print(f"🔄 Re-running tests with venv Python: {venv_python}")
     print()
-    try:
-        result = subprocess.run([str(venv_python), __file__, *sys.argv[1:]], cwd=Path.cwd(), check=False)
-        sys.exit(result.returncode)
-    except Exception as e:
-        print(f"❌ Failed to restart in venv: {e}")
-        sys.exit(1)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
 
 
 _ensure_venv()
@@ -1295,8 +1292,13 @@ def _build_test_command(
         env["CHROME_USER_DATA_DIR"] = user_data_dir
 
     # For modules with internal test suite, set env var to trigger test output
-    suite_env_modules = {"prompt_telemetry.py", "quality_regression_gate.py"}
-    if module_name in suite_env_modules:
+    suite_env_modules = {
+        "prompt_telemetry.py",
+        "quality_regression_gate.py",
+        "ui/review_server.py",
+        "ui\\review_server.py",
+    }
+    if module_name in suite_env_modules or module_name.endswith("review_server.py"):
         env["RUN_INTERNAL_TESTS"] = "1"
 
     # Convert file path to module name for proper import resolution
@@ -1393,6 +1395,8 @@ def _run_test_subprocess(
         timeout_seconds = 240
     elif "session_manager.py" in module_name:
         timeout_seconds = 240  # Session manager tests can be slow (116s+)
+    elif "review_server.py" in module_name:
+        timeout_seconds = 240  # Review server tests can be slow
     else:
         timeout_seconds = 120
 

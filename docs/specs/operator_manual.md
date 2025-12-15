@@ -14,6 +14,7 @@ This manual describes how to operate the Human-in-the-Loop (HITL) system for rev
 6. [Emergency Controls](#emergency-controls)
 7. [Monitoring & Metrics](#monitoring--metrics)
 8. [Sending Approved Drafts (Action 11)](#sending-approved-drafts-action-11)
+9. [Web UI Review Interface](#web-ui-review-interface)
 
 ---
 
@@ -499,13 +500,146 @@ Location: `config/review_queue.json`
 
 ---
 
+## Web UI Review Interface
+
+### Overview
+
+The Web UI provides a browser-based interface for reviewing drafts at `http://localhost:5000`. This is an alternative to the CLI for users who prefer a visual interface.
+
+### Starting the Web UI
+
+```bash
+# Start the review server
+python -m ui.review_server
+
+# The browser opens automatically to http://localhost:5000
+# Press Ctrl+C to stop the server
+```
+
+**Server Output:**
+
+```text
+════════════════════════════════════════════════════════════════
+📋 Review Queue Web Interface
+════════════════════════════════════════════════════════════════
+
+🌐 Starting server at http://localhost:5000
+   Press Ctrl+C to stop
+```
+
+### Web UI Features
+
+#### Dashboard Header
+
+The header displays real-time queue statistics:
+
+| Stat | Description |
+|------|-------------|
+| **Pending** | Number of drafts awaiting review |
+| **Approved Today** | Drafts approved in current 24-hour window |
+| **Rejected Today** | Drafts rejected in current 24-hour window |
+
+#### Draft Cards
+
+Each pending draft is displayed as a card containing:
+
+- **Draft ID** - Unique identifier
+- **Confidence Badge** - Color-coded AI confidence score:
+  - 🟢 Green (≥85%): High confidence
+  - 🟡 Yellow (70-84%): Medium confidence
+  - 🔴 Red (<70%): Low confidence
+- **Priority Badge** - Review urgency (LOW, NORMAL, HIGH, CRITICAL)
+- **Person Info** - Match name and relationship details
+- **Conversation History** - Recent messages (inbound/outbound)
+- **Draft Content** - The AI-generated reply to review
+
+#### Action Buttons
+
+Each draft card has three action buttons:
+
+| Button | Color | Action |
+|--------|-------|--------|
+| **✓ Approve** | Green | Mark draft as APPROVED (ready for Action 11) |
+| **✗ Reject** | Red | Opens rejection form for reason entry |
+| **⟳ Rewrite** | Purple | Opens AI rewrite form with feedback instructions |
+
+### Approving Drafts
+
+1. Review the draft content against the conversation history
+2. Verify facts mentioned match your family tree
+3. Click **✓ Approve**
+4. The card disappears and the Approved Today count increments
+
+### Rejecting Drafts
+
+1. Click **✗ Reject**
+2. Enter a rejection reason in the form that appears
+3. Click **Submit Rejection**
+4. The draft is marked REJECTED and removed from the queue
+
+### Requesting AI Rewrite
+
+1. Click **⟳ Rewrite**
+2. Enter feedback/instructions for improvement:
+   - "Make the tone friendlier"
+   - "Remove mention of specific dates"
+   - "Ask about their Smith ancestors instead"
+3. Click **Rewrite Draft**
+4. The AI generates a new draft incorporating your feedback
+5. Review the updated content and Approve/Reject as needed
+
+### Empty Queue State
+
+When no pending drafts exist:
+
+```text
+✅ All caught up!
+No pending drafts to review.
+```
+
+### Keyboard Shortcuts
+
+Currently, the Web UI does not support keyboard shortcuts. Use mouse/trackpad for all interactions.
+
+### Browser Compatibility
+
+Tested and supported on:
+
+- Chrome 90+
+- Firefox 88+
+- Safari 14+
+- Edge 90+
+
+### Troubleshooting Web UI
+
+#### "Connection refused" on localhost:5000
+
+- Ensure the server is running (`python -m ui.review_server`)
+- Check if another process is using port 5000
+- Try specifying a different port: `python -m ui.review_server --port 5001`
+
+#### Drafts not appearing
+
+- Verify drafts exist: `python -m cli.review_queue stats`
+- Check database connection in `.env`
+- Ensure drafts have status=PENDING (not already processed)
+
+#### Approval/Rejection not saving
+
+- Check browser console for JavaScript errors
+- Verify database write permissions
+- Review `Logs/app.log` for server-side errors
+
+---
+
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.0 | 2025-12-14 | Added Web UI section |
 | 1.0.0 | 2025-12-01 | Initial release with Sprint 4 features |
 
 ---
 
-Last Updated: December 12, 2025
+Last Updated: December 14, 2025
 

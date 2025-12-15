@@ -60,9 +60,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         # Filter by priority if specified
         if args.priority:
             priority_upper = args.priority.upper()
-            drafts = [
-                d for d in drafts if getattr(d, "priority", "NORMAL").upper() == priority_upper
-            ]
+            drafts = [d for d in drafts if getattr(d, "priority", "NORMAL").upper() == priority_upper]
 
         if not drafts:
             print("✅ No pending drafts in the review queue.")
@@ -78,10 +76,10 @@ def cmd_list(args: argparse.Namespace) -> int:
             draft_id = getattr(draft, "id", "?")
             person = getattr(draft, "person", None)
             person_name = (
-                getattr(person, "display_name", None)
-                or getattr(person, "username", None)
-                or "Unknown"
-            ) if person else "Unknown"
+                (getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown")
+                if person
+                else "Unknown"
+            )
             confidence = getattr(draft, "ai_confidence", 0) or 0
             priority = getattr(draft, "priority", "NORMAL")
             created = getattr(draft, "created_at", None)
@@ -109,10 +107,10 @@ def cmd_view(args: argparse.Namespace) -> int:
 
         person = getattr(draft, "person", None)
         person_name = (
-            getattr(person, "display_name", None)
-            or getattr(person, "username", None)
-            or "Unknown"
-        ) if person else "Unknown"
+            (getattr(person, "display_name", None) or getattr(person, "username", None) or "Unknown")
+            if person
+            else "Unknown"
+        )
 
         print("\n" + "═" * 70)
         print(f"DRAFT #{args.id} - {person_name}")
@@ -143,9 +141,8 @@ def cmd_approve(args: argparse.Namespace) -> int:
         if success:
             print(f"✅ Draft #{args.id} approved successfully.")
             return 0
-        else:
-            print(f"❌ Failed to approve draft #{args.id}. It may not exist or may not be pending.")
-            return 1
+        print(f"❌ Failed to approve draft #{args.id}. It may not exist or may not be pending.")
+        return 1
 
     finally:
         session.close()
@@ -161,15 +158,14 @@ def cmd_reject(args: argparse.Namespace) -> int:
         if success:
             print(f"✅ Draft #{args.id} rejected: {args.reason}")
             return 0
-        else:
-            print(f"❌ Failed to reject draft #{args.id}. It may not exist or may not be pending.")
-            return 1
+        print(f"❌ Failed to reject draft #{args.id}. It may not exist or may not be pending.")
+        return 1
 
     finally:
         session.close()
 
 
-def cmd_stats(args: argparse.Namespace) -> int:
+def cmd_stats(_args: argparse.Namespace) -> int:
     """Display queue statistics."""
     session = _get_db_session()
     service = _get_queue_service(session)

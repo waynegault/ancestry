@@ -728,84 +728,18 @@ class ReviewQueueMixin:
         """Regenerate a draft using AI with user feedback."""
         try:
             from ai.ai_interface import generate_genealogical_reply
-            from core.database import ConversationLog, DraftReply, Person
-            from core.session_manager import SessionManager
 
-            if not feedback.strip():
-                print("⚠️  Please provide feedback for the rewrite, e.g.: rewrite 1 make it more formal")
+            rewrite_context = self._prepare_rewrite_context(draft_id, feedback)
+            if rewrite_context is None:
                 return False
 
-            sm = SessionManager()
-            db_session = sm.db_manager.get_session()
-            if not db_session:
-                print("✗ Failed to get database session")
-                return False
-
-            # Get the draft
-            draft = db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
-            if not draft:
-                print(f"❌ Draft {draft_id} not found")
-                return False
-
-            if draft.status != "PENDING":
-                print(f"⚠️  Draft {draft_id} is already {draft.status} - cannot rewrite")
-                return False
-
-            # Get person info
-            person = db_session.query(Person).filter(Person.id == draft.people_id).first()
-            if not person:
-                print(f"❌ Person for draft {draft_id} not found")
-                return False
-
-            person_name = getattr(person, "display_name", None) or getattr(person, "username", "Unknown")
-
-            # Get conversation history for context
-            conv_logs = (
-                db_session.query(ConversationLog)
-                .filter(ConversationLog.conversation_id == draft.conversation_id)
-                .order_by(ConversationLog.latest_timestamp.desc())
-                .limit(5)
-                .all()
-            )
-
-            # Build conversation context
-            conversation_context = ""
-            user_last_message = ""
-            for log in reversed(conv_logs):
-                direction = "THEM" if log.direction.value == "IN" else "ME"
-                content = log.latest_message_content or ""
-                conversation_context += f"[{direction}]: {content}\n"
-                if log.direction.value == "IN" and not user_last_message:
-                    user_last_message = content
-
-            if not user_last_message:
-                user_last_message = "(No inbound message found)"
-
-            # Build genealogical data
-            import json
-
-            genealogical_data = json.dumps(
-                {
-                    "person_name": person_name,
-                    "relationship": getattr(person, "relationship", None),
-                    "shared_dna": getattr(person, "total_cm", None),
-                }
-            )
-
-            # Add rewrite instructions to conversation context
-            rewrite_context = (
-                f"{conversation_context}\n\n"
-                f"[REWRITE INSTRUCTIONS]: The previous draft was rejected. "
-                f"User feedback: {feedback}\n"
-                f"Previous draft that needs improvement:\n{draft.content}"
-            )
+            db_session, sm, draft, person_name, genealogical_data, conv_context, last_message = rewrite_context
 
             print(f"🔄 Regenerating draft for {person_name} with feedback: '{feedback}'...")
 
-            # Generate new reply
             new_reply = generate_genealogical_reply(
-                conversation_context=rewrite_context,
-                user_last_message=user_last_message,
+                conversation_context=conv_context,
+                user_last_message=last_message,
                 genealogical_data_str=genealogical_data,
                 session_manager=sm,
             )
@@ -814,7 +748,6 @@ class ReviewQueueMixin:
                 print("❌ AI failed to generate a new reply")
                 return False
 
-            # Update the draft with new content
             from datetime import datetime, timezone
 
             draft.content = new_reply
@@ -835,6 +768,83 @@ class ReviewQueueMixin:
             self._logger.error("Error rewriting draft: %s", exc, exc_info=True)
             print(f"Error rewriting draft: {exc}")
             return False
+
+    def _prepare_rewrite_context(
+        self, draft_id: int, feedback: str
+    ) -> Optional[tuple[Any, Any, Any, str, str, str, str]]:
+        import json
+
+        from core.database import ConversationLog, DraftReply, Person
+        from core.session_manager import SessionManager
+
+        if not feedback.strip():
+            print("⚠️  Please provide feedback for the rewrite, e.g.: rewrite 1 make it more formal")
+            return None
+
+        sm = SessionManager()
+        db_session = sm.db_manager.get_session()
+        if not db_session:
+            print("✗ Failed to get database session")
+            return None
+
+        draft = db_session.query(DraftReply).filter(DraftReply.id == draft_id).first()
+        if not draft:
+            print(f"❌ Draft {draft_id} not found")
+            return None
+
+        if draft.status != "PENDING":
+            print(f"⚠️  Draft {draft_id} is already {draft.status} - cannot rewrite")
+            return None
+
+        person = db_session.query(Person).filter(Person.id == draft.people_id).first()
+        if not person:
+            print(f"❌ Person for draft {draft_id} not found")
+            return None
+
+        person_name = getattr(person, "display_name", None) or getattr(person, "username", "Unknown")
+
+        conv_logs = (
+            db_session.query(ConversationLog)
+            .filter(ConversationLog.conversation_id == draft.conversation_id)
+            .order_by(ConversationLog.latest_timestamp.desc())
+            .limit(5)
+            .all()
+        )
+
+        conversation_context, user_last_message = self._build_rewrite_context(conv_logs)
+        if not user_last_message:
+            user_last_message = "(No inbound message found)"
+
+        genealogical_data = json.dumps(
+            {
+                "person_name": person_name,
+                "relationship": getattr(person, "relationship", None),
+                "shared_dna": getattr(person, "total_cm", None),
+            }
+        )
+
+        rewrite_context = (
+            f"{conversation_context}\n\n"
+            f"[REWRITE INSTRUCTIONS]: The previous draft was rejected. "
+            f"User feedback: {feedback}\n"
+            f"Previous draft that needs improvement:\n{draft.content}"
+        )
+
+        return db_session, sm, draft, person_name, genealogical_data, rewrite_context, user_last_message
+
+    @staticmethod
+    def _build_rewrite_context(conv_logs: list[Any]) -> tuple[str, str]:
+        conversation_context = ""
+        user_last_message = ""
+
+        for log in reversed(conv_logs):
+            direction = "THEM" if log.direction.value == "IN" else "ME"
+            content = log.latest_message_content or ""
+            conversation_context += f"[{direction}]: {content}\n"
+            if log.direction.value == "IN" and not user_last_message:
+                user_last_message = content
+
+        return conversation_context, user_last_message
 
     def _render_contextual_draft_log_preview(self, limit: int = 5) -> None:
         """Show recent contextual draft log entries (draft-only stub)."""
@@ -1157,7 +1167,7 @@ class ReviewQueueMixin:
         except Exception as exc:
             self._logger.debug("Could not record validation metrics: %s", exc)
 
-    def launch_review_web_ui(self, session_manager: Optional["SessionManager"] = None) -> None:
+    def launch_review_web_ui(self, _session_manager: Optional[SessionManager] = None) -> None:
         """Launch the browser-based review queue interface."""
         try:
             from ui.review_server import run_server

@@ -1578,6 +1578,29 @@ _DEFAULT_STOP_EXCEPTIONS = (
 )
 
 
+def _resolve_exception_tuples(
+    retry_on: Optional[list[type[Exception]]],
+    stop_on: Optional[list[type[Exception]]],
+    resolved_policy: Optional[RetryPolicyProfile],
+) -> tuple[tuple[type[Exception], ...], tuple[type[Exception], ...]]:
+    """Resolve retry and stop exception tuples from arguments or policy."""
+    if retry_on is not None:
+        retry_source = tuple(retry_on)
+    elif resolved_policy:
+        retry_source = tuple(resolved_policy.retry_on)
+    else:
+        retry_source = _DEFAULT_RETRY_EXCEPTIONS
+
+    if stop_on is not None:
+        stop_source = tuple(stop_on)
+    elif resolved_policy:
+        stop_source = tuple(resolved_policy.stop_on)
+    else:
+        stop_source = _DEFAULT_STOP_EXCEPTIONS
+
+    return retry_source, stop_source
+
+
 def _resolve_retry_settings(
     max_attempts: Optional[int],
     backoff_factor: Optional[float],
@@ -1604,19 +1627,7 @@ def _resolve_retry_settings(
             return float(getattr(resolved_policy, attr))
         return fallback
 
-    if retry_on is not None:
-        retry_source = tuple(retry_on)
-    elif resolved_policy:
-        retry_source = tuple(resolved_policy.retry_on)
-    else:
-        retry_source = _DEFAULT_RETRY_EXCEPTIONS
-
-    if stop_on is not None:
-        stop_source = tuple(stop_on)
-    elif resolved_policy:
-        stop_source = tuple(resolved_policy.stop_on)
-    else:
-        stop_source = _DEFAULT_STOP_EXCEPTIONS
+    retry_source, stop_source = _resolve_exception_tuples(retry_on, stop_on, resolved_policy)
 
     policy_jitter_value = _float_value(None, "jitter_seconds", 0.5)
     jitter_enabled = jitter if jitter is not None else (bool(policy_jitter_value) if resolved_policy else True)
@@ -1927,9 +1938,7 @@ def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P
 # === RECOVERY STRATEGIES ===
 
 
-def ancestry_session_recovery(
-    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
-) -> bool:
+def ancestry_session_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for session-related failures.
 
@@ -1996,9 +2005,27 @@ def ancestry_session_recovery(
         return False
 
 
-def ancestry_api_recovery(
-    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
-) -> bool:
+def _get_session_manager_for_recovery(session_manager: Optional[Any]) -> Optional[Any]:
+    """Get or create SessionManager for recovery operations."""
+    if session_manager is not None:
+        return session_manager
+
+    try:
+        from core.dependency_injection import get_service
+
+        return get_service("SessionManager")
+    except Exception:
+        pass
+
+    try:
+        from core.session_manager import SessionManager
+
+        return SessionManager()
+    except Exception:
+        return None
+
+
+def ancestry_api_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for API-related failures (403, cookie expiry).
 
@@ -2021,34 +2048,20 @@ def ancestry_api_recovery(
     logger.info("🔄 Attempting API recovery...")
 
     try:
-        # Get session manager
-        if session_manager is None:
-            try:
-                from core.dependency_injection import get_service
-
-                session_manager = get_service("SessionManager")
-            except Exception:
-                pass
-
-        if session_manager is None:
-            try:
-                from core.session_manager import SessionManager
-
-                session_manager = SessionManager()
-            except Exception as e:
-                logger.error(f"Failed to obtain SessionManager for API recovery: {e}")
-                return False
+        sm = _get_session_manager_for_recovery(session_manager)
+        if sm is None:
+            logger.error("Failed to obtain SessionManager for API recovery")
+            return False
 
         # Sync cookies from browser to API session
-        if hasattr(session_manager, "api_manager"):
-            api_manager = session_manager.api_manager
-            if api_manager and hasattr(api_manager, "sync_cookies_from_browser"):
-                api_manager.sync_cookies_from_browser(force=True)
-                logger.debug("Synced cookies from browser to API session")
+        api_manager = getattr(sm, "api_manager", None)
+        if api_manager and hasattr(api_manager, "sync_cookies_from_browser"):
+            api_manager.sync_cookies_from_browser(force=True)
+            logger.debug("Synced cookies from browser to API session")
 
         # Refresh CSRF token
-        if hasattr(session_manager, "fetch_csrf_token"):
-            token = session_manager.fetch_csrf_token()
+        if hasattr(sm, "fetch_csrf_token"):
+            token = sm.fetch_csrf_token()
             if token:
                 logger.debug("Refreshed CSRF token")
 
@@ -2060,9 +2073,7 @@ def ancestry_api_recovery(
         return False
 
 
-def ancestry_database_recovery(
-    session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any
-) -> bool:
+def ancestry_database_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for database-related failures.
 

@@ -31,14 +31,13 @@ import logging
 from datetime import datetime
 from typing import Any, Callable, Optional
 
+# A/B testing and metrics imports for Phase 11.4
+from ai.ab_testing import ExperimentManager, Variant
 from core.registry_utils import auto_register_module
 from research.record_sharing import format_multiple_records
 
-# A/B testing and metrics imports for Phase 11.4
-from ai.ab_testing import ExperimentManager, Variant
-
 try:
-    from observability.metrics_registry import metrics, is_metrics_enabled
+    from observability.metrics_registry import is_metrics_enabled, metrics
 except ImportError:
     # Graceful fallback if observability not available
     def is_metrics_enabled() -> bool:
@@ -1383,7 +1382,8 @@ class MessagePersonalizer:
 
         return "Document preservation varies by location and institution - I can help identify the best sources for our research."
 
-    def get_experiment_summary(self) -> dict[str, Any]:
+    @classmethod
+    def get_experiment_summary(cls) -> dict[str, Any]:
         """
         Get summary of all personalization A/B experiments.
 
@@ -1396,10 +1396,10 @@ class MessagePersonalizer:
             "active_experiments": 0,
         }
 
-        if MessagePersonalizer._experiment_manager is None:
+        if cls._experiment_manager is None:
             return summary
 
-        exp_manager = MessagePersonalizer._experiment_manager
+        exp_manager = cls._experiment_manager
 
         for exp_id, experiment in exp_manager.experiments.items():
             results = exp_manager.get_experiment_results(exp_id)
@@ -1593,48 +1593,65 @@ class MessageEffectivenessTracker:
             return
 
         try:
-            m = metrics()
-            if not m:
+            metrics_client = metrics()
+            if not metrics_client:
                 return
 
-            # Record effectiveness score per function
-            engagement_score = {
-                "ENTHUSIASTIC": 5.0,
-                "PRODUCTIVE": 4.0,
-                "CAUTIOUSLY_INTERESTED": 3.0,
-                "CONFUSED": 2.0,
-                "UNINTERESTED": 1.0,
-                "DESIST": 0.0,
-                "OTHER": 2.0,
-            }.get(response_intent, 2.0)
-
-            if hasattr(m, "personalization_effectiveness"):
-                for func_name in personalization_functions_used:
-                    m.personalization_effectiveness.observe(engagement_score, func_name)
-
-            # Record A/B test outcome if person was in an experiment
-            if person_id is not None and hasattr(m, "personalization_ab_outcome"):
-                # Check all active experiments for this person
-                exp_manager = MessagePersonalizer._experiment_manager
-                if exp_manager:
-                    for exp_id in ["personalization_strategy_dna", "personalization_strategy_research"]:
-                        variant = exp_manager.assign_variant(exp_id, str(person_id))
-                        if variant:
-                            m.personalization_ab_outcome.inc(exp_id, variant.name, response_intent)
-
-                            # Also record result to experiment manager for statistical analysis
-                            exp_manager.record_result(
-                                experiment_id=exp_id,
-                                variant_name=variant.name,
-                                quality_score=engagement_score,
-                                response_time_ms=0.0,  # Not applicable here
-                                success=response_intent in {"ENTHUSIASTIC", "PRODUCTIVE"},
-                                person_id=person_id,
-                                metadata={"response_intent": response_intent},
-                            )
+            engagement_score = self._calculate_engagement_score(response_intent)
+            self._record_function_metrics(metrics_client, personalization_functions_used, engagement_score)
+            self._record_ab_outcomes(metrics_client, person_id, response_intent, engagement_score)
 
         except Exception as e:
             logger.debug(f"Failed to record effectiveness metrics: {e}")
+
+    @staticmethod
+    def _calculate_engagement_score(response_intent: str) -> float:
+        return {
+            "ENTHUSIASTIC": 5.0,
+            "PRODUCTIVE": 4.0,
+            "CAUTIOUSLY_INTERESTED": 3.0,
+            "CONFUSED": 2.0,
+            "UNINTERESTED": 1.0,
+            "DESIST": 0.0,
+            "OTHER": 2.0,
+        }.get(response_intent, 2.0)
+
+    @staticmethod
+    def _record_function_metrics(metrics_client: Any, funcs_used: list[str], engagement_score: float) -> None:
+        if not hasattr(metrics_client, "personalization_effectiveness"):
+            return
+        for func_name in funcs_used:
+            metrics_client.personalization_effectiveness.observe(engagement_score, func_name)
+
+    @staticmethod
+    def _record_ab_outcomes(
+        metrics_client: Any,
+        person_id: Optional[int],
+        response_intent: str,
+        engagement_score: float,
+    ) -> None:
+        if person_id is None or not hasattr(metrics_client, "personalization_ab_outcome"):
+            return
+
+        exp_manager = MessagePersonalizer._experiment_manager
+        if not exp_manager:
+            return
+
+        for exp_id in ["personalization_strategy_dna", "personalization_strategy_research"]:
+            variant = exp_manager.assign_variant(exp_id, str(person_id))
+            if not variant:
+                continue
+
+            metrics_client.personalization_ab_outcome.inc(exp_id, variant.name, response_intent)
+            exp_manager.record_result(
+                experiment_id=exp_id,
+                variant_name=variant.name,
+                quality_score=engagement_score,
+                response_time_ms=0.0,  # Not applicable here
+                success=response_intent in {"ENTHUSIASTIC", "PRODUCTIVE"},
+                person_id=person_id,
+                metadata={"response_intent": response_intent},
+            )
 
     def get_template_effectiveness_score(self, template_key: str) -> float:
         """Get effectiveness score for a specific template (0-10)."""
@@ -1716,54 +1733,64 @@ class MessageEffectivenessTracker:
         """
         insights: list[str] = []
 
-        if MessagePersonalizer._experiment_manager is None:
+        exp_manager = MessagePersonalizer._experiment_manager
+        if exp_manager is None:
             return insights
 
-        exp_manager = MessagePersonalizer._experiment_manager
-
         for exp_id in ["personalization_strategy_dna", "personalization_strategy_research"]:
-            if exp_id not in exp_manager.experiments:
-                continue
-
-            try:
-                results = exp_manager.get_experiment_results(exp_id)
-                if len(results) < 20:
-                    insights.append(f"Experiment '{exp_id}': Need more data ({len(results)}/20 minimum samples)")
-                    continue
-
-                # Calculate stats per variant
-                variant_stats: dict[str, dict[str, float]] = {}
-                for result in results:
-                    vname = result.variant_name
-                    if vname not in variant_stats:
-                        variant_stats[vname] = {"count": 0, "success_sum": 0, "quality_sum": 0.0}
-
-                    variant_stats[vname]["count"] += 1
-                    variant_stats[vname]["success_sum"] += 1 if result.success else 0
-                    variant_stats[vname]["quality_sum"] += result.quality_score
-
-                # Compare variants
-                if len(variant_stats) >= 2:
-                    best_variant = None
-                    best_rate = 0.0
-
-                    for vname, stats in variant_stats.items():
-                        if stats["count"] > 0:
-                            success_rate = stats["success_sum"] / stats["count"]
-                            if success_rate > best_rate:
-                                best_rate = success_rate
-                                best_variant = vname
-
-                    if best_variant and best_rate > 0.5:
-                        insights.append(
-                            f"A/B test '{exp_id}': Variant '{best_variant}' leads with "
-                            f"{best_rate:.1%} success rate. Consider promoting to default."
-                        )
-
-            except Exception as e:
-                logger.debug(f"Error analyzing A/B test {exp_id}: {e}")
+            insight = self._summarize_experiment(exp_manager, exp_id)
+            if insight:
+                insights.append(insight)
 
         return insights
+
+    def _summarize_experiment(self, exp_manager: Any, exp_id: str) -> Optional[str]:
+        if exp_id not in exp_manager.experiments:
+            return None
+
+        try:
+            results = exp_manager.get_experiment_results(exp_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(f"Error analyzing A/B test {exp_id}: {exc}")
+            return None
+
+        if len(results) < 20:
+            return f"Experiment '{exp_id}': Need more data ({len(results)}/20 minimum samples)"
+
+        variant_stats = self._aggregate_variant_stats(results)
+        best_variant, best_rate = self._pick_best_variant(variant_stats)
+
+        if best_variant and best_rate > 0.5:
+            return (
+                f"A/B test '{exp_id}': Variant '{best_variant}' leads with "
+                f"{best_rate:.1%} success rate. Consider promoting to default."
+            )
+        return None
+
+    @staticmethod
+    def _aggregate_variant_stats(results: list[Any]) -> dict[str, dict[str, float]]:
+        variant_stats: dict[str, dict[str, float]] = {}
+        for result in results:
+            stats = variant_stats.setdefault(result.variant_name, {"count": 0, "success_sum": 0, "quality_sum": 0.0})
+            stats["count"] += 1
+            stats["success_sum"] += 1 if result.success else 0
+            stats["quality_sum"] += result.quality_score
+        return variant_stats
+
+    @staticmethod
+    def _pick_best_variant(variant_stats: dict[str, dict[str, float]]) -> tuple[Optional[str], float]:
+        best_variant: Optional[str] = None
+        best_rate = 0.0
+
+        for vname, stats in variant_stats.items():
+            if stats["count"] == 0:
+                continue
+            success_rate = stats["success_sum"] / stats["count"]
+            if success_rate > best_rate:
+                best_rate = success_rate
+                best_variant = vname
+
+        return best_variant, best_rate
 
     def _save_effectiveness_data(self) -> None:
         """Save effectiveness data to file."""

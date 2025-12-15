@@ -12,44 +12,234 @@ Usage:
     python testing/run_tests_fast.py --list    # List available test modules
 """
 
+import subprocess
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports to work
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+
+def _ensure_venv() -> None:
+    """Ensure running in venv, auto-restart if needed."""
+    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
+    if in_venv:
+        return
+
+    venv_python = _PROJECT_ROOT / '.venv' / 'Scripts' / 'python.exe'
+    if not venv_python.exists():
+        venv_python = _PROJECT_ROOT / '.venv' / 'bin' / 'python'
+        if not venv_python.exists():
+            print("⚠️  WARNING: Not running in virtual environment")
+            return
+
+    import os as _os
+
+    print(f"🔄 Re-running with venv Python: {venv_python}")
+    _os.chdir(_PROJECT_ROOT)
+    _os.execv(str(venv_python), [str(venv_python), __file__] + sys.argv[1:])
+
+
+_ensure_venv()
+
 import argparse
 import importlib
-import sys
 import time
 
-# Fast test modules - these complete in <2s each and provide good coverage
+# Fast test modules - comprehensive set that covers all testable modules
+# These mirror the full test suite in run_all_tests.py for complete coverage
 FAST_TEST_MODULES = [
-    # Core infrastructure (fast, isolated tests)
-    "test_utilities",
-    "test_framework",
+    # Testing infrastructure
+    "testing.test_framework",
+    "testing.test_utilities",
+    "testing.code_quality_checker",
+    "testing.dead_code_scan",
+    "testing.import_audit",
+    "testing.check_type_ignores",
+    "testing.protocol_mocks",
+    # Configuration
     "config.config_schema",
+    "config.config_manager",
     "config.validator",
-    # Database and caching (in-memory tests)
-    "database",
-    "cache",
-    "cache_manager",
-    # Utilities (pure functions, no I/O)
-    "api_constants",
-    "common_params",
-    "genealogical_normalization",
-    # AI and prompts (mock-based)
-    "ai.prompts",
-    "ai_prompt_utils",
-    # Core modules (fast initialization)
+    # Core infrastructure
+    "core.database",
+    "core.database_manager",
     "core.error_handling",
-    "core.session_cache",
+    "core.common_params",
     "core.action_registry",
-]
-
-# Integration test modules - slower but important
-INTEGRATION_TEST_MODULES = [
-    "core.session_manager",
+    "core.action_runner",
+    "core.app_mode_policy",
+    "core.cache_backend",
+    "core.cache_registry",
+    "core.caching_bootstrap",
+    "core.cancellation",
+    "core.circuit_breaker",
+    "core.config_validation",
+    "core.correlation",
+    "core.dependency_injection",
+    "core.feature_flags",
     "core.health_check",
+    "core.lifecycle",
+    "core.logging_config",
+    "core.logging_utils",
+    "core.maintenance_actions",
+    "core.metrics_collector",
+    "core.metrics_integration",
+    "core.opt_out_detection",
+    "core.progress_indicators",
+    "core.protocols",
+    "core.rate_limiter",
+    "core.registry_utils",
+    "core.schema_migrator",
+    "core.session_cache",
+    "core.session_guards",
+    "core.session_manager",
+    "core.session_mixins",
+    "core.session_utils",
+    "core.session_validator",
+    "core.system_cache",
+    "core.type_definitions",
+    "core.unified_cache_manager",
+    "core.utils",
+    "core.validation_factory",
+    "core.workflow_actions",
+    "core.approval_queue",
+    "core.analytics_helpers",
+    "core.api_manager",
+    "core.browser_manager",
+    "core.draft_content",
+    "core.selenium_utils",
+    # Core cache subpackage
+    "core.cache.adapters",
+    "core.cache.interface",
+    # Caching
+    "caching.cache",
+    "caching.cache_manager",
+    "caching.cache_retention",
+    # API
+    "api.api_constants",
+    "api.api_search_core",
+    "api.api_search_utils",
+    "api.api_utils",
+    # Browser
+    "browser.chromedriver",
+    "browser.css_selectors",
+    "browser.diagnose_chrome",
+    "browser.selenium_utils",
+    # AI
+    "ai.prompts",
+    "ai.ai_prompt_utils",
+    "ai.ai_interface",
+    "ai.ab_testing",
+    "ai.context_builder",
+    "ai.prompt_telemetry",
+    "ai.quality_regression_gate",
+    "ai.sentiment_adaptation",
+    # AI providers
+    "ai.providers.base",
+    "ai.providers.deepseek",
+    "ai.providers.gemini",
+    "ai.providers.local_llm",
+    "ai.providers.moonshot",
+    # CLI
+    "cli.maintenance",
+    "cli.research_tools",
+    # Genealogy
+    "genealogy.genealogical_normalization",
+    "genealogy.genealogy_presenter",
+    "genealogy.relationship_calculations",
+    "genealogy.research_service",
+    "genealogy.semantic_search",
+    "genealogy.fact_validator",
+    "genealogy.tree_stats_utils",
+    "genealogy.triangulation",
+    "genealogy.universal_scoring",
+    "genealogy.test_research_service",
+    "genealogy.test_triangulation",
+    # Genealogy - DNA
+    "genealogy.dna.dna_ethnicity_utils",
+    "genealogy.dna.dna_gedcom_crossref",
+    "genealogy.dna.dna_utils",
+    # Genealogy - GEDCOM
+    "genealogy.gedcom.gedcom_cache",
+    "genealogy.gedcom.gedcom_intelligence",
+    "genealogy.gedcom.gedcom_search_utils",
+    "genealogy.gedcom.gedcom_utils",
+    # Integrations
+    "integrations.ms_graph_utils",
+    # Messaging
+    "messaging.inbound",
+    "messaging.message_personalization",
+    "messaging.message_types",
+    "messaging.safety",
+    "messaging.workflow_helpers",
+    "messaging.test_inbound",
+    # Observability
+    "observability.analytics",
+    "observability.apm",
+    "observability.conversation_analytics",
+    "observability.metrics_exporter",
+    "observability.metrics_registry",
+    "observability.utils",
+    # Performance
+    "performance.connection_resilience",
+    "performance.grafana_checker",
+    "performance.health_monitor",
+    "performance.memory_utils",
+    "performance.performance_cache",
+    "performance.performance_monitor",
+    "performance.performance_orchestrator",
+    "performance.performance_profiling",
+    # Research
+    "research.conflict_detector",
+    "research.person_lookup_utils",
+    "research.predictive_gaps",
+    "research.record_sharing",
+    "research.relationship_diagram",
+    "research.relationship_utils",
+    "research.research_guidance_prompts",
+    "research.research_prioritization",
+    "research.research_suggestions",
+    "research.search_criteria_utils",
+    "research.triangulation_intelligence",
+    # Scripts
+    "scripts.deploy_dashboards",
+    "scripts.dry_run_validation",
+    "scripts.maintain_code_graph",
+    # UI
+    "ui.menu",
+    "ui.review_server",
+    "ui.terminal_test_agent",
+    # Actions
+    "actions.action_review",
     "actions.action6_gather",
     "actions.action7_inbox",
     "actions.action8_messaging",
     "actions.action9_process_productive",
     "actions.action10",
+    "actions.action11_send_approved_drafts",
+    "actions.action12_shared_matches",
+    "actions.action13_triangulation",
+    "actions.action14_research_tools",
+    # Actions - Gather submodule
+    "actions.gather.api_implementations",
+    "actions.gather.checkpoint",
+    "actions.gather.fetch",
+    "actions.gather.metrics",
+    "actions.gather.orchestrator",
+    "actions.gather.persistence",
+    "actions.gather.prefetch",
+]
+
+# Integration test modules (requires browser/live API) - optional slow tests
+INTEGRATION_TEST_MODULES = [
+    "testing.test_integration_e2e",
+    "testing.test_integration_workflow",
+    "testing.test_prometheus_smoke",
+    "testing.test_triangulation_service",
+    "testing.verify_opt_out",
 ]
 
 

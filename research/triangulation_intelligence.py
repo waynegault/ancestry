@@ -391,16 +391,8 @@ class TriangulationIntelligence:
             from core.database import Person, SharedMatch
 
             # Get person IDs from UUIDs
-            target_person = (
-                self.db_session.query(Person.id)
-                .filter(Person.uuid == target_uuid.upper())
-                .scalar()
-            )
-            match_person = (
-                self.db_session.query(Person.id)
-                .filter(Person.uuid == match_uuid.upper())
-                .scalar()
-            )
+            target_person = self.db_session.query(Person.id).filter(Person.uuid == target_uuid.upper()).scalar()
+            match_person = self.db_session.query(Person.id).filter(Person.uuid == match_uuid.upper()).scalar()
 
             if not target_person or not match_person:
                 return evidence

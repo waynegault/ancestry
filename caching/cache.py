@@ -1472,9 +1472,13 @@ def _test_basic_cache_operations() -> bool:
 
 def _test_cache_decorator() -> bool:
     """Test @cache_result decorator functionality."""
-    call_count = 0
+    import uuid
 
-    @cache_result("test_decorator")
+    call_count = 0
+    # Use unique prefix to avoid conflicts with cached values from previous runs
+    unique_prefix = f"test_decorator_{uuid.uuid4().hex[:8]}"
+
+    @cache_result(unique_prefix)
     def cached_function(x: int, y: int) -> int:
         nonlocal call_count
         call_count += 1
@@ -1482,13 +1486,13 @@ def _test_cache_decorator() -> bool:
 
     # First call should execute function
     result1 = cached_function(1, 2)
-    assert result1 == 3
-    assert call_count == 1
+    assert result1 == 3, f"Expected 3, got {result1}"
+    assert call_count == 1, f"Expected call_count=1, got {call_count}"
 
     # Second call should use cache
     result2 = cached_function(1, 2)
-    assert result2 == 3
-    assert call_count == 1  # Should not increment
+    assert result2 == 3, f"Expected 3 from cache, got {result2}"
+    assert call_count == 1, f"Should not increment, got {call_count}"  # Should not increment
     return True
 
 
