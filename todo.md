@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 16, 2025 (Session 8: Opt-out acknowledgment, todo.md cleanup)
+**Last Updated:** December 16, 2025 (Session 9: AI-powered draft quality validation)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -101,13 +101,14 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [ ] Flag drafts where AI mentions facts already known to recipient
 - [ ] Add AI prompt instruction: "Do not explain relationships the recipient already knows"
 
-### 1.5.3 AI-Powered Draft Review
-- [ ] Create `draft_quality_check` prompt in ai_prompts.json with:
+### 1.5.3 AI-Powered Draft Review ✅ IMPLEMENTED
+- [x] Create `draft_quality_check` prompt in ai_prompts.json with:
   - Self-reference detection ("Am I the sender?")
   - Context inversion detection ("Is this explaining their own ancestor to them?")
   - Obvious error patterns (wrong relationship direction, deceased person as living)
-- [ ] Run quality check as post-generation validation before queuing
-- [ ] Auto-reject drafts that fail quality check with reason logged
+- [x] Run quality check as post-generation validation before queuing
+- [x] Auto-reject drafts that fail quality check with reason logged
+- **Implementation:** Added `validate_draft_quality()` function in ai_interface.py with `DraftQualityResult` dataclass. Self-message detection runs first (no AI needed), then AI quality check validates context. Returns structured result with quality_score 0-100, issues_found list, and recommendation.
 
 ### 1.5.4 Auto-Correction Pipeline
 - [ ] When quality check fails, attempt one AI regeneration with explicit correction

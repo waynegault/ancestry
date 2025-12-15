@@ -54,6 +54,7 @@ import json
 # import logging - removed unused
 import time
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, cast
 
 # === THIRD-PARTY IMPORTS ===
@@ -2037,6 +2038,137 @@ def verify_family_tree_connections(context_history: str, session_manager: Sessio
         return default_empty_result
 
 
+@dataclass
+class DraftQualityResult:
+    """Result of draft quality validation."""
+
+    passes_quality_check: bool
+    issues_found: list[dict[str, Any]]
+    quality_score: int
+    recommendation: str  # "approve", "revise", "reject", "human_review"
+
+
+def validate_draft_quality(
+    draft_message: str,
+    recipient_name: str,
+    recipient_profile_id: str,
+    sender_name: str,
+    sender_profile_id: str,
+    context_summary: str,
+    session_manager: Optional[SessionManager] = None,
+) -> DraftQualityResult:
+    """
+    Validate a draft message for quality issues before queueing.
+
+    Phase 1.5.3: AI-powered draft review to detect:
+    - Self-message attempts
+    - Context inversion (explaining their facts to them)
+    - Relationship direction errors
+    - Deceased person errors
+    - Factual inconsistencies
+
+    Args:
+        draft_message: The draft message to validate
+        recipient_name: Name of the recipient
+        recipient_profile_id: Profile ID of the recipient
+        sender_name: Name of the sender (typically the tree owner)
+        sender_profile_id: Profile ID of the sender
+        context_summary: Brief summary of conversation context
+        session_manager: Optional SessionManager for AI calls
+
+    Returns:
+        DraftQualityResult with validation outcome
+    """
+    # Default result for failures
+    default_result = DraftQualityResult(
+        passes_quality_check=True,
+        issues_found=[],
+        quality_score=100,
+        recommendation="approve",
+    )
+
+    # Quick self-message check (don't need AI for this)
+    is_self_message = (
+        recipient_profile_id
+        and sender_profile_id
+        and str(recipient_profile_id) == str(sender_profile_id)
+    )
+    if is_self_message:
+        logger.error(f"Draft quality check: Self-message detected! recipient={recipient_profile_id}")
+        return DraftQualityResult(
+            passes_quality_check=False,
+            issues_found=[{
+                "category": "self_message",
+                "severity": "critical",
+                "description": "Message is addressed to the sender themselves",
+                "suggestion": "Do not send - this is a self-message",
+            }],
+            quality_score=0,
+            recommendation="reject",
+        )
+
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider or not draft_message:
+        if not ai_provider:
+            logger.warning("validate_draft_quality: AI_PROVIDER not configured, skipping AI validation")
+        else:
+            logger.warning("validate_draft_quality: Empty draft, returning default pass")
+        return default_result
+
+    # Load prompt
+    prompt_template = get_prompt("draft_quality_check")
+    if not prompt_template:
+        logger.warning("validate_draft_quality: draft_quality_check prompt not found, skipping")
+        return default_result
+
+    # Substitute placeholders (template strings)
+    draft_placeholder = "{draft_message}"  # noqa: RUF027
+    recipient_name_placeholder = "{recipient_name}"  # noqa: RUF027
+    recipient_id_placeholder = "{recipient_profile_id}"  # noqa: RUF027
+    sender_name_placeholder = "{sender_name}"  # noqa: RUF027
+    sender_id_placeholder = "{sender_profile_id}"  # noqa: RUF027
+    context_placeholder = "{context_summary}"  # noqa: RUF027
+
+    system_prompt = (
+        prompt_template
+        .replace(draft_placeholder, draft_message)
+        .replace(recipient_name_placeholder, recipient_name or "Unknown")
+        .replace(recipient_id_placeholder, recipient_profile_id or "Unknown")
+        .replace(sender_name_placeholder, sender_name or "Tree Owner")
+        .replace(sender_id_placeholder, sender_profile_id or "Unknown")
+        .replace(context_placeholder, context_summary or "No context available")
+    )
+
+    start_time = time.time()
+    ai_response_str = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content="Validate this draft now.",
+        session_manager=session_manager,
+        max_tokens=500,
+        temperature=0.1,
+        response_format_type="json_object",
+    )
+    duration = time.time() - start_time
+
+    if ai_response_str:
+        try:
+            ai_response = json.loads(ai_response_str)
+            logger.info(f"Draft quality validation complete. Score={ai_response.get('quality_score', 'N/A')} (Took {duration:.2f}s)")
+            return DraftQualityResult(
+                passes_quality_check=ai_response.get("passes_quality_check", True),
+                issues_found=ai_response.get("issues_found", []),
+                quality_score=ai_response.get("quality_score", 100),
+                recommendation=ai_response.get("recommendation", "approve"),
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Draft quality check JSON parsing failed: {e}")
+            return default_result
+    else:
+        logger.warning(f"Draft quality validation failed (AI call failed). (Took {duration:.2f}s)")
+        return default_result
+
+
 def generate_record_research_strategy(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
     """
     Analyzes conversations to suggest specific genealogical record research strategies.
@@ -2940,6 +3072,78 @@ def ai_interface_module_tests() -> bool:
                 logger.warning(f"Could not run live session tests: {e}")
         else:
             logger.info("⏭️  Skipping live AI tests (SKIP_LIVE_API_TESTS=true) - running in parallel mode")
+
+    # === DRAFT QUALITY VALIDATION TESTS (no AI required) ===
+    def test_self_message_detection() -> bool:
+        """Test that self-message is detected without AI."""
+        result = validate_draft_quality(
+            draft_message="Hello!",
+            recipient_name="Wayne",
+            recipient_profile_id="PROFILE123",
+            sender_name="Wayne",
+            sender_profile_id="PROFILE123",
+            context_summary="Test",
+            session_manager=None,
+        )
+        return (
+            not result.passes_quality_check
+            and result.quality_score == 0
+            and result.recommendation == "reject"
+            and any(i["category"] == "self_message" for i in result.issues_found)
+        )
+
+    suite.run_test(
+        "Draft Quality: Self-Message Detection",
+        test_self_message_detection,
+        "Self-message detection works without AI call",
+        "validate_draft_quality",
+        "Test that matching sender/recipient profile IDs are rejected",
+    )
+
+    def test_default_pass_on_empty_provider() -> bool:
+        """Test that validation passes by default when AI unavailable."""
+        result = validate_draft_quality(
+            draft_message="Hello there!",
+            recipient_name="John",
+            recipient_profile_id="PROFILE456",
+            sender_name="Wayne",
+            sender_profile_id="PROFILE123",
+            context_summary="Test",
+            session_manager=None,
+        )
+        # Should pass with default score when AI can't run
+        return result.passes_quality_check and result.quality_score == 100
+
+    suite.run_test(
+        "Draft Quality: Default Pass Without AI",
+        test_default_pass_on_empty_provider,
+        "Draft passes validation when AI unavailable (graceful degradation)",
+        "validate_draft_quality",
+        "Test that validation doesn't block when AI can't validate",
+    )
+
+    def test_draft_quality_result_dataclass() -> bool:
+        """Test DraftQualityResult dataclass."""
+        result = DraftQualityResult(
+            passes_quality_check=False,
+            issues_found=[{"category": "test", "severity": "low"}],
+            quality_score=75,
+            recommendation="revise",
+        )
+        return (
+            not result.passes_quality_check
+            and len(result.issues_found) == 1
+            and result.quality_score == 75
+            and result.recommendation == "revise"
+        )
+
+    suite.run_test(
+        "Draft Quality: Result Dataclass",
+        test_draft_quality_result_dataclass,
+        "DraftQualityResult dataclass stores values correctly",
+        "DraftQualityResult",
+        "Test dataclass field assignment and retrieval",
+    )
 
     return suite.finish_suite()
 
