@@ -80,6 +80,87 @@ class RelationshipResult:
         }
 
 
+@dataclass
+class FamilyMember:
+    """A single family member with basic details."""
+
+    person_id: str
+    name: str
+    relation: str  # parent, sibling, spouse, child
+    birth_year: Optional[int] = None
+    death_year: Optional[int] = None
+    birth_place: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "person_id": self.person_id,
+            "name": self.name,
+            "relation": self.relation,
+            "birth_year": self.birth_year,
+            "death_year": self.death_year,
+            "birth_place": self.birth_place,
+        }
+
+
+@dataclass
+class FamilyMembersResult:
+    """Result of getting family members for a person."""
+
+    found: bool = False
+    person_id: str = ""
+    person_name: str = ""
+    parents: list[FamilyMember] = field(default_factory=list)
+    siblings: list[FamilyMember] = field(default_factory=list)
+    spouses: list[FamilyMember] = field(default_factory=list)
+    children: list[FamilyMember] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "found": self.found,
+            "person_id": self.person_id,
+            "person_name": self.person_name,
+            "parents": [p.to_dict() for p in self.parents],
+            "siblings": [s.to_dict() for s in self.siblings],
+            "spouses": [s.to_dict() for s in self.spouses],
+            "children": [c.to_dict() for c in self.children],
+        }
+
+    def to_prompt_string(self) -> str:
+        """Format family members for inclusion in AI prompts."""
+        if not self.found:
+            return "No family members found."
+
+        lines: list[str] = [f"Family of {self.person_name}:"]
+
+        if self.parents:
+            lines.append("\nParents:")
+            for p in self.parents:
+                details = f" (b. {p.birth_year})" if p.birth_year else ""
+                lines.append(f"  - {p.name}{details}")
+
+        if self.siblings:
+            lines.append("\nSiblings:")
+            for s in self.siblings:
+                details = f" (b. {s.birth_year})" if s.birth_year else ""
+                lines.append(f"  - {s.name}{details}")
+
+        if self.spouses:
+            lines.append("\nSpouses:")
+            for s in self.spouses:
+                details = f" (b. {s.birth_year})" if s.birth_year else ""
+                lines.append(f"  - {s.name}{details}")
+
+        if self.children:
+            lines.append("\nChildren:")
+            for c in self.children:
+                details = f" (b. {c.birth_year})" if c.birth_year else ""
+                lines.append(f"  - {c.name}{details}")
+
+        return "\n".join(lines)
+
+
 class TreeQueryService:
     """
     Service for querying family tree data.
@@ -443,6 +524,126 @@ class TreeQueryService:
             logger.error(f"Error getting person details: {e}", exc_info=True)
             return None
 
+    def get_family_members(self, person_id: str) -> FamilyMembersResult:
+        """
+        Get all family members for a person: parents, siblings, spouses, and children.
+
+        Args:
+            person_id: GEDCOM ID of the person
+
+        Returns:
+            FamilyMembersResult with lists of family members by relation type
+        """
+        not_found = FamilyMembersResult(found=False)
+
+        if not self._ensure_initialized():
+            return not_found
+
+        try:
+            from genealogy.gedcom import gedcom_utils
+
+            norm_id = gedcom_utils.normalize_id(person_id)
+
+            if norm_id not in self._gedcom_data.indi_index:
+                return not_found
+
+            indi = self._gedcom_data.indi_index[norm_id]
+            person_name = gedcom_utils.get_full_name(indi) if hasattr(gedcom_utils, "get_full_name") else str(indi)
+
+            result = FamilyMembersResult(found=True, person_id=norm_id, person_name=person_name)
+
+            # Get parents
+            parent_ids = self._gedcom_data.id_to_parents.get(norm_id, set())
+            for pid in parent_ids:
+                member = self._get_family_member_details(pid, "parent")
+                if member:
+                    result.parents.append(member)
+
+            # Get siblings (other children of same parents)
+            for parent_id in parent_ids:
+                sibling_ids = self._gedcom_data.id_to_children.get(parent_id, set())
+                for sid in sibling_ids:
+                    if sid != norm_id and not any(s.person_id == sid for s in result.siblings):
+                        member = self._get_family_member_details(sid, "sibling")
+                        if member:
+                            result.siblings.append(member)
+
+            # Get spouses (from FAMS records)
+            spouse_ids = self._get_spouse_ids(norm_id)
+            for sid in spouse_ids:
+                member = self._get_family_member_details(sid, "spouse")
+                if member:
+                    result.spouses.append(member)
+
+            # Get children
+            children_ids = self._gedcom_data.id_to_children.get(norm_id, set())
+            for cid in children_ids:
+                member = self._get_family_member_details(cid, "child")
+                if member:
+                    result.children.append(member)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting family members: {e}", exc_info=True)
+            return not_found
+
+    def _get_family_member_details(self, person_id: str, relation: str) -> Optional[FamilyMember]:
+        """Get details for a single family member."""
+        try:
+            from genealogy.gedcom import gedcom_utils
+
+            if person_id not in self._gedcom_data.indi_index:
+                return None
+
+            indi = self._gedcom_data.indi_index[person_id]
+            name = gedcom_utils.get_full_name(indi) if hasattr(gedcom_utils, "get_full_name") else str(indi)
+
+            birth_date, _, birth_place = gedcom_utils.get_event_info(indi, "BIRT")
+            death_date, _, _ = gedcom_utils.get_event_info(indi, "DEAT")
+
+            return FamilyMember(
+                person_id=person_id,
+                name=name,
+                relation=relation,
+                birth_year=birth_date.year if birth_date else None,
+                death_year=death_date.year if death_date else None,
+                birth_place=birth_place,
+            )
+        except Exception:
+            return None
+
+    def _get_spouse_ids(self, person_id: str) -> set[str]:
+        """Get spouse IDs from FAMS records."""
+        spouse_ids: set[str] = set()
+        if not self._gedcom_data or person_id not in self._gedcom_data.indi_index:
+            return spouse_ids
+
+        try:
+            indi = self._gedcom_data.indi_index[person_id]
+            spouse_ids = self._extract_spouse_ids_from_individual(indi, person_id)
+        except Exception:
+            pass  # Silent failure for spouse lookup
+        return spouse_ids
+
+    def _extract_spouse_ids_from_individual(self, indi: Any, person_id: str) -> set[str]:
+        """Extract spouse IDs from individual's FAMS records."""
+        spouse_ids: set[str] = set()
+        spouse_tags = {"HUSB", "WIFE"}
+
+        for sub in indi.sub_records:
+            if sub.tag != "FAMS" or not sub.value:
+                continue
+            fam_id = sub.value
+            if fam_id not in self._gedcom_data.fam_index:
+                continue
+            fam = self._gedcom_data.fam_index[fam_id]
+            for fam_sub in fam.sub_records:
+                if fam_sub.tag in spouse_tags and fam_sub.value and fam_sub.value != person_id:
+                    spouse_ids.add(fam_sub.value)
+
+        return spouse_ids
+
     def get_common_ancestors(
         self,
         person_a_id: str,
@@ -588,6 +789,72 @@ def module_tests() -> bool:
         "Ordinal number generation",
         test_ordinal,
         test_summary="Verify ordinal number generation works correctly",
+    )
+
+    # Test 5: FamilyMember dataclass
+    def test_family_member():
+        member = FamilyMember(
+            person_id="I002",
+            name="Jane Doe",
+            relation="parent",
+            birth_year=1950,
+            death_year=2020,
+            birth_place="Boston, MA",
+        )
+        assert member.name == "Jane Doe"
+        assert member.relation == "parent"
+        d = member.to_dict()
+        assert d["birth_year"] == 1950
+
+    suite.run_test(
+        "FamilyMember dataclass",
+        test_family_member,
+        test_summary="Verify FamilyMember dataclass works correctly",
+    )
+
+    # Test 6: FamilyMembersResult dataclass
+    def test_family_members_result():
+        result = FamilyMembersResult(
+            found=True,
+            person_id="I001",
+            person_name="John Smith",
+            parents=[FamilyMember(person_id="I002", name="Jane Doe", relation="parent", birth_year=1950)],
+            children=[FamilyMember(person_id="I003", name="Jack Smith", relation="child", birth_year=1990)],
+        )
+        assert result.found is True
+        assert len(result.parents) == 1
+        assert len(result.children) == 1
+        d = result.to_dict()
+        assert d["person_name"] == "John Smith"
+        assert len(d["parents"]) == 1
+
+    suite.run_test(
+        "FamilyMembersResult dataclass",
+        test_family_members_result,
+        test_summary="Verify FamilyMembersResult dataclass works correctly",
+    )
+
+    # Test 7: FamilyMembersResult.to_prompt_string
+    def test_family_members_prompt_string():
+        result = FamilyMembersResult(
+            found=True,
+            person_id="I001",
+            person_name="John Smith",
+            parents=[FamilyMember(person_id="I002", name="Jane Doe", relation="parent", birth_year=1950)],
+            siblings=[FamilyMember(person_id="I004", name="James Smith", relation="sibling", birth_year=1972)],
+        )
+        prompt_str = result.to_prompt_string()
+        assert "John Smith" in prompt_str
+        assert "Parents:" in prompt_str
+        assert "Jane Doe" in prompt_str
+        assert "(b. 1950)" in prompt_str
+        assert "Siblings:" in prompt_str
+        assert "James Smith" in prompt_str
+
+    suite.run_test(
+        "FamilyMembersResult.to_prompt_string",
+        test_family_members_prompt_string,
+        test_summary="Verify to_prompt_string formats family members correctly",
     )
 
     return suite.finish_suite()

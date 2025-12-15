@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 10: Phase 2.1 Semantic Search Enhancement)
+**Last Updated:** December 15, 2025 (Session 10: Phase 2.2 Evidence-Backed Answers)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -44,7 +44,7 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 | Opt-Out Detection | ✅ Production | High |
 | Health Checks | ✅ Implemented | Medium |
 | Automated Reply Loop | ⚠️ Partial | Low |
-| Tree-Aware Answer Generation | ⚠️ Partial | Low |
+| Tree-Aware Answer Generation | ✅ Implemented | Medium |
 | Engagement Analytics | ⚠️ Scaffolded | Low |
 | Auto-Approval Path | ⚠️ Scaffolded | Low |
 | Scheduled Jobs | ⚠️ Not Implemented | Low |
@@ -176,11 +176,21 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Modified `_run_research_flow()` to pass semantic search results to reply generation
 - Added test for `to_prompt_string()` formatting in semantic_search.py (5 tests total)
 
-### 2.2 Evidence-Backed Answers
-- [ ] Extend `TreeQueryService.find_person()` with fuzzy birth-year tolerance (±5 years)
-- [ ] Add `get_family_members()` method: parents, siblings, spouses, children
-- [ ] Implement `explain_relationship()` for DNA match → common ancestor path
-- [ ] Format evidence blocks for inclusion in AI prompts
+### 2.2 Evidence-Backed Answers ✅ IMPLEMENTED
+- [x] Extend `TreeQueryService.find_person()` with fuzzy birth-year tolerance (±5 years)
+- [x] Add `get_family_members()` method: parents, siblings, spouses, children
+- [x] Implement `explain_relationship()` for DNA match → common ancestor path
+- [x] Format evidence blocks for inclusion in AI prompts
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- `find_person()` already had ±5 year fuzzy matching via `_match_year()` helper
+- `explain_relationship()` already existed with full path calculation
+- Added `FamilyMember` dataclass: person_id, name, relation, birth_year, death_year, birth_place
+- Added `FamilyMembersResult` dataclass with `to_prompt_string()` for AI prompt integration
+- Added `get_family_members(person_id)` returning parents, siblings, spouses, children
+- Added `_get_family_member_details()` helper for extracting individual member data
+- Added `_get_spouse_ids()` with `_extract_spouse_ids_from_individual()` for spouse lookup
+- Added 3 new tests for family member functionality (7 tests total in tree_query_service.py)
 
 ### 2.3 Answer Generation
 - [ ] Create `response_generation` prompt in ai_prompts.json with:
