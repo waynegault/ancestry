@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 10: Phase 2.3 Answer Generation)
+**Last Updated:** December 15, 2025 (Session 10: Phase 2.4 Relationship Explanation)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -211,10 +211,18 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Human review routing: `confidence < 50` OR explicit `route_to_human_review=True`
 - Added 5 new tests for Phase 2.3 functionality (23 tests total in ai_interface.py)
 
-### 2.4 Relationship Explanation
-- [ ] Use ThruLines data (if scraped) or GEDCOM path calculation
-- [ ] Generate natural-language explanations: "We both descend from [Ancestor] through [Path]"
-- [ ] Include relationship labels: "3rd cousin twice removed via the Smith line"
+### 2.4 Relationship Explanation ✅ IMPLEMENTED
+- [x] Use ThruLines data (if scraped) or GEDCOM path calculation
+- [x] Generate natural-language explanations: "We both descend from [Ancestor] through [Path]"
+- [x] Include relationship labels: "3rd cousin twice removed via the Smith line"
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- `explain_relationship()` already existed with GEDCOM path calculation via `fast_bidirectional_bfs`
+- `_generate_relationship_label()` already generates labels like "3rd Cousin (approx)"
+- `_generate_relationship_description()` already produces natural language path descriptions
+- Added `get_surname_line()` method to extract "via the [Surname] line" from common ancestor
+- Added `to_prompt_string()` to `RelationshipResult` for AI prompt integration
+- Added 2 new tests for relationship methods (9 tests total in tree_query_service.py)
 
 ---
 

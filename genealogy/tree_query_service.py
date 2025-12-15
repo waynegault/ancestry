@@ -79,6 +79,69 @@ class RelationshipResult:
             "confidence": self.confidence,
         }
 
+    def get_surname_line(self) -> str:
+        """
+        Extract the primary surname line from the common ancestor.
+
+        Returns:
+            Surname line description like "via the Smith line" or empty string
+        """
+        if not self.common_ancestor:
+            return ""
+        ancestor_name = self.common_ancestor.get("name", "")
+        if not ancestor_name:
+            return ""
+        # Extract surname (last word of name, typically)
+        name_parts = ancestor_name.split()
+        if len(name_parts) >= 2:
+            surname = name_parts[-1]
+            return f"via the {surname} line"
+        return f"via {ancestor_name}"
+
+    def to_prompt_string(self) -> str:
+        """
+        Format the relationship for inclusion in an AI prompt.
+
+        Returns:
+            Human-readable relationship explanation for AI prompts
+        """
+        if not self.found:
+            return "No relationship found between these individuals."
+
+        parts: list[str] = []
+
+        # Main relationship label
+        if self.relationship_label:
+            parts.append(f"RELATIONSHIP: {self.relationship_label}")
+
+        # Surname line if available
+        surname_line = self.get_surname_line()
+        if surname_line:
+            parts.append(f"CONNECTION: {surname_line}")
+
+        # Common ancestor if available
+        if self.common_ancestor:
+            ancestor_name = self.common_ancestor.get("name", "Unknown")
+            ancestor_birth = self.common_ancestor.get("birth_year")
+            if ancestor_birth:
+                parts.append(f"COMMON ANCESTOR: {ancestor_name} (b. {ancestor_birth})")
+            else:
+                parts.append(f"COMMON ANCESTOR: {ancestor_name}")
+
+        # Generations apart
+        if self.generations_apart > 0:
+            parts.append(f"GENERATIONS APART: {self.generations_apart}")
+
+        # Full path description
+        if self.relationship_description:
+            parts.append(f"PATH: {self.relationship_description}")
+
+        # Confidence level
+        if self.confidence:
+            parts.append(f"CONFIDENCE: {self.confidence}")
+
+        return "\n".join(parts)
+
 
 @dataclass
 class FamilyMember:
@@ -855,6 +918,60 @@ def module_tests() -> bool:
         "FamilyMembersResult.to_prompt_string",
         test_family_members_prompt_string,
         test_summary="Verify to_prompt_string formats family members correctly",
+    )
+
+    # Test 8: RelationshipResult.get_surname_line
+    def test_relationship_surname_line():
+        result = RelationshipResult(
+            found=True,
+            relationship_label="3rd cousin",
+            common_ancestor={"name": "John Smith", "birth_year": 1850},
+        )
+        surname_line = result.get_surname_line()
+        assert surname_line == "via the Smith line"
+
+        # Test with single name
+        result_single = RelationshipResult(
+            found=True,
+            common_ancestor={"name": "Elizabeth"},
+        )
+        assert result_single.get_surname_line() == "via Elizabeth"
+
+        # Test with no common ancestor
+        result_none = RelationshipResult(found=False)
+        assert not result_none.get_surname_line()
+
+    suite.run_test(
+        "RelationshipResult.get_surname_line",
+        test_relationship_surname_line,
+        test_summary="Verify surname line extraction from common ancestor",
+    )
+
+    # Test 9: RelationshipResult.to_prompt_string
+    def test_relationship_prompt_string():
+        result = RelationshipResult(
+            found=True,
+            relationship_label="3rd cousin twice removed",
+            relationship_description="Starting from John (b. 1970) → parent: Mary (b. 1940)",
+            common_ancestor={"name": "William Smith", "birth_year": 1850},
+            generations_apart=5,
+            confidence="high",
+        )
+        prompt_str = result.to_prompt_string()
+        assert "RELATIONSHIP: 3rd cousin twice removed" in prompt_str
+        assert "via the Smith line" in prompt_str
+        assert "COMMON ANCESTOR: William Smith (b. 1850)" in prompt_str
+        assert "GENERATIONS APART: 5" in prompt_str
+        assert "CONFIDENCE: high" in prompt_str
+
+        # Test not found case
+        not_found = RelationshipResult(found=False)
+        assert "No relationship found" in not_found.to_prompt_string()
+
+    suite.run_test(
+        "RelationshipResult.to_prompt_string",
+        test_relationship_prompt_string,
+        test_summary="Verify to_prompt_string formats relationship for AI prompts",
     )
 
     return suite.finish_suite()
