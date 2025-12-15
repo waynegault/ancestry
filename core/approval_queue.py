@@ -92,6 +92,17 @@ class QueueStats:
     rejected_today: int = 0
     expired_count: int = 0
     by_priority: dict[str, int] = field(default_factory=dict)
+    # Phase 4.2: Acceptance rate tracking
+    total_approved: int = 0
+    total_rejected: int = 0
+
+    @property
+    def acceptance_rate(self) -> float:
+        """Calculate acceptance rate as percentage (approved / total reviewed * 100)."""
+        total_reviewed = self.total_approved + self.total_rejected
+        if total_reviewed == 0:
+            return 0.0
+        return round((self.total_approved / total_reviewed) * 100, 2)
 
 
 # === APPROVAL QUEUE SERVICE ===
@@ -658,6 +669,11 @@ class ApprovalQueueService:
                     stats.auto_approved_count = count
                 elif status == "EXPIRED":
                     stats.expired_count = count
+                # Phase 4.2: Track total approved/rejected for acceptance_rate
+                elif status in {"APPROVED", "SENT"}:
+                    stats.total_approved += count
+                elif status in {"REJECTED", "DISCARDED"}:
+                    stats.total_rejected += count
 
             # Count approved/rejected today
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
@@ -692,6 +708,8 @@ class ApprovalQueueService:
                 metrics().review_queue_depth.set(status="pending", count=float(stats.pending_count))
                 metrics().review_queue_depth.set(status="auto_approved", count=float(stats.auto_approved_count))
                 metrics().review_queue_depth.set(status="expired", count=float(stats.expired_count))
+                # Phase 4.2: Emit acceptance rate metric
+                metrics().review_queue_depth.set(status="acceptance_rate", count=stats.acceptance_rate)
             except Exception:
                 pass  # Metrics are non-critical
 
@@ -1151,6 +1169,36 @@ def module_tests() -> bool:
         test_summary="Verify async_expire_old_drafts is async with hours parameter",
         functions_tested="ApprovalQueueService.async_expire_old_drafts",
         method_description="Check method exists, is async, has expected params",
+    )
+
+    # Test: QueueStats.acceptance_rate property
+    def test_acceptance_rate_property() -> None:
+        # Test with no data
+        stats_empty = QueueStats()
+        assert stats_empty.acceptance_rate == 0.0, "Empty stats should have 0% acceptance rate"
+
+        # Test with only approved
+        stats_approved = QueueStats(total_approved=10, total_rejected=0)
+        assert stats_approved.acceptance_rate == 100.0, "100% approved should have 100% rate"
+
+        # Test with only rejected
+        stats_rejected = QueueStats(total_approved=0, total_rejected=10)
+        assert stats_rejected.acceptance_rate == 0.0, "0% approved should have 0% rate"
+
+        # Test with mixed data
+        stats_mixed = QueueStats(total_approved=8, total_rejected=2)
+        assert stats_mixed.acceptance_rate == 80.0, "8/10 approved should have 80% rate"
+
+        # Test rounding
+        stats_decimal = QueueStats(total_approved=1, total_rejected=2)
+        assert stats_decimal.acceptance_rate == 33.33, "1/3 approved should round to 33.33%"
+
+    suite.run_test(
+        "QueueStats.acceptance_rate property",
+        test_acceptance_rate_property,
+        test_summary="Verify acceptance_rate calculated as approved/(approved+rejected)*100",
+        functions_tested="QueueStats.acceptance_rate",
+        method_description="Test various scenarios: empty, all approved, all rejected, mixed",
     )
 
     return suite.finish_suite()

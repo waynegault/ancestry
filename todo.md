@@ -322,10 +322,30 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
   - Added `status_counts` section to dashboard output
   - Updated test to verify status_counts structure (10 tests total)
 
-### 4.2 Quality Scoring
-- [ ] Score draft quality: 0-100 based on personalization, evidence, specificity
-- [ ] Track acceptance_rate for drafts (approved vs rejected)
-- [ ] Compare quality scores to engagement outcomes
+### 4.2 Quality Scoring ✅ IMPLEMENTED
+- [x] Score draft quality: 0-100 based on personalization, evidence, specificity
+  - ✅ Already implemented in `ai_interface.py` via `DraftQualityResult.quality_score`
+  - ✅ NEW: Added `quality_score` column to `DraftReply` model for persistence
+- [x] Track acceptance_rate for drafts (approved vs rejected)
+  - ✅ NEW: Added `acceptance_rate` property to `QueueStats` dataclass
+  - ✅ Updated `get_queue_stats()` to track `total_approved` and `total_rejected`
+  - ✅ Emits `acceptance_rate` to Prometheus metrics
+  - ✅ Displayed in CLI: `python -m cli.review_queue stats`
+  - ✅ Added test for acceptance_rate property (13 tests in approval_queue.py)
+- [x] Compare quality scores to engagement outcomes
+  - ✅ NEW: Added `get_quality_to_outcome_correlation()` function
+  - ✅ Groups drafts by quality tiers (excellent/good/acceptable/poor)
+  - ✅ Calculates acceptance rate per quality tier
+
+**Implementation Notes (Session 11):**
+- `core/database.py`: Added `quality_score` column to DraftReply (nullable, indexed)
+- `core/approval_queue.py`:
+  - Added `total_approved`, `total_rejected` fields to QueueStats
+  - Added `acceptance_rate` property with percentage calculation
+  - Updated `get_queue_stats()` to populate approval counts
+  - Emits `acceptance_rate` metric to Prometheus
+- `cli/review_queue.py`: Added acceptance rate to stats display
+- `observability/conversation_analytics.py`: Added `get_quality_to_outcome_correlation()`
 
 ### 4.3 Dashboard Integration
 - [ ] Emit metrics to Prometheus hooks (already scaffolded)

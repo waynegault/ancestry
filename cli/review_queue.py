@@ -180,6 +180,10 @@ def cmd_stats(_args: argparse.Namespace) -> int:
         print(f"  Approved Today:{stats.approved_today:>6}")
         print(f"  Rejected Today:{stats.rejected_today:>6}")
         print(f"  Expired:       {stats.expired_count:>6}")
+        print("-" * 40)
+        print(f"  Total Approved:{stats.total_approved:>6}")
+        print(f"  Total Rejected:{stats.total_rejected:>6}")
+        print(f"  Acceptance Rate: {stats.acceptance_rate:>5.1f}%")
         if stats.by_priority:
             print("-" * 40)
             print("  By Priority:")

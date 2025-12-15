@@ -362,6 +362,13 @@ class DraftReply(Base):
         index=True,
         comment="Status: PENDING, APPROVED, AUTO_APPROVED, REJECTED, EXPIRED, SENT (legacy: DISCARDED).",
     )
+    # Phase 4.2: Quality score for outcome correlation
+    quality_score: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="Quality score 0-100 from draft validation (personalization, evidence, specificity).",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

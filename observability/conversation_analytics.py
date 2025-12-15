@@ -388,6 +388,75 @@ def _get_research_outcomes(session: Session, total_conversations: int) -> dict[s
     }
 
 
+def get_quality_to_outcome_correlation(session: Session) -> dict[str, Any]:
+    """
+    Phase 4.2: Compare draft quality scores to engagement outcomes.
+
+    Groups drafts by quality score ranges and calculates:
+    - Response rate for each quality tier
+    - Average engagement score by quality tier
+    - Acceptance rate by quality tier
+
+    Args:
+        session: Database session
+
+    Returns:
+        Dictionary with quality-to-outcome correlation data
+    """
+    from sqlalchemy import case, func
+
+    from core.database import DraftReply
+
+    # Define quality tiers
+    quality_tiers = {
+        "excellent": (85, 100),
+        "good": (70, 84),
+        "acceptable": (50, 69),
+        "poor": (0, 49),
+    }
+
+    correlation_data: dict[str, Any] = {"quality_tiers": {}}
+
+    for tier_name, (min_score, max_score) in quality_tiers.items():
+        # Count drafts in this tier
+        tier_query = session.query(DraftReply).filter(
+            DraftReply.quality_score.isnot(None),
+            DraftReply.quality_score >= min_score,
+            DraftReply.quality_score <= max_score,
+        )
+
+        total_drafts = tier_query.count()
+        if total_drafts == 0:
+            correlation_data["quality_tiers"][tier_name] = {
+                "total_drafts": 0,
+                "approved_count": 0,
+                "rejected_count": 0,
+                "acceptance_rate": 0.0,
+            }
+            continue
+
+        # Count approved vs rejected in this tier
+        approved_count = tier_query.filter(DraftReply.status.in_(["APPROVED", "SENT", "AUTO_APPROVED"])).count()
+        rejected_count = tier_query.filter(DraftReply.status.in_(["REJECTED", "DISCARDED"])).count()
+
+        reviewed = approved_count + rejected_count
+        acceptance_rate = round((approved_count / reviewed * 100) if reviewed > 0 else 0, 2)
+
+        correlation_data["quality_tiers"][tier_name] = {
+            "score_range": f"{min_score}-{max_score}",
+            "total_drafts": total_drafts,
+            "approved_count": approved_count,
+            "rejected_count": rejected_count,
+            "acceptance_rate": acceptance_rate,
+        }
+
+    # Calculate overall average quality score
+    avg_quality = session.query(func.avg(DraftReply.quality_score)).filter(DraftReply.quality_score.isnot(None)).scalar()
+    correlation_data["avg_quality_score"] = round(avg_quality, 2) if avg_quality else 0
+
+    return correlation_data
+
+
 def get_overall_analytics(session: Session) -> dict[str, Any]:
     """
     Get overall analytics across all conversations.
