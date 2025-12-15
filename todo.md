@@ -455,10 +455,16 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Not flagged for manual review
   - ✅ `_is_first_message()` blocks first messages, priority check blocks flagged
 
-### 7.2 Gradual Rollout
-- [ ] Start with DRY_RUN mode (save but don't send)
-- [ ] Manual review first 100 auto-approved drafts
-- [ ] Enable live sending only after 95%+ approval rate
+### 7.2 Gradual Rollout ✅ IMPLEMENTED
+- [x] Start with DRY_RUN mode (save but don't send)
+  - ✅ Existing `app_mode=dry_run` prevents actual sends
+  - ✅ `dry_run_verified` config gate for production
+- [x] Manual review first 100 auto-approved drafts
+  - ✅ `auto_approve_min_reviewed` config (default: 100)
+  - ✅ `is_auto_approve_ready()` checks review count
+- [x] Enable live sending only after 95%+ approval rate
+  - ✅ `auto_approve_min_acceptance_rate` config (default: 95.0)
+  - ✅ `is_auto_approve_ready()` checks acceptance rate
 
 ### 7.3 Safety Rails ✅ IMPLEMENTED
 - [x] Daily send limit per person (default: 1)

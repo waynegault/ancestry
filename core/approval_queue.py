@@ -139,12 +139,38 @@ class ApprovalQueueService:
             return override
 
         try:
-            from config import config_schema
-
             return getattr(config_schema, "auto_approve_enabled", False)
         except Exception:
             # Default to safest option if configuration not available
             return False
+
+    def is_auto_approve_ready(self) -> tuple[bool, str]:
+        """
+        Phase 7.2: Check if auto-approval is ready based on gradual rollout criteria.
+
+        Returns:
+            Tuple of (ready: bool, reason: str)
+        """
+        if not self._auto_approve_enabled:
+            return False, "Auto-approval disabled in config"
+
+        try:
+            stats = self.get_queue_stats()
+            total_reviewed = stats.total_approved + stats.total_rejected
+
+            min_reviewed = getattr(config_schema, "auto_approve_min_reviewed", 100)
+            min_rate = getattr(config_schema, "auto_approve_min_acceptance_rate", 95.0)
+
+            if total_reviewed < min_reviewed:
+                return False, f"Only {total_reviewed}/{min_reviewed} drafts reviewed"
+
+            if stats.acceptance_rate < min_rate:
+                return False, f"Acceptance rate {stats.acceptance_rate:.1f}% < {min_rate}%"
+
+            return True, f"Ready: {total_reviewed} reviewed, {stats.acceptance_rate:.1f}% acceptance"
+        except Exception as e:
+            logger.warning(f"Could not check auto-approve readiness: {e}")
+            return False, f"Error checking readiness: {e}"
 
     @staticmethod
     def _get_owner_profile_id() -> Optional[str]:
@@ -1416,6 +1442,48 @@ def module_tests() -> bool:
         test_summary="Verify _is_within_daily_limit respects max_messages_per_person_per_day",
         functions_tested="ApprovalQueueService._is_within_daily_limit",
         method_description="Test under limit vs at/over limit scenarios",
+    )
+
+    # Test: is_auto_approve_ready checks gradual rollout criteria
+    def test_is_auto_approve_ready() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_session = MagicMock()
+
+        # Test when auto-approve disabled
+        service_disabled = ApprovalQueueService(mock_session, auto_approve_enabled=False)
+        ready, reason = service_disabled.is_auto_approve_ready()
+        assert ready is False, "Should not be ready when disabled"
+        assert "disabled" in reason.lower(), "Reason should mention disabled"
+
+        # Test when not enough reviews (mocked)
+        service_enabled = ApprovalQueueService(mock_session, auto_approve_enabled=True)
+        mock_stats = QueueStats(total_approved=5, total_rejected=5)  # Only 10 reviews
+        with patch.object(service_enabled, "get_queue_stats", return_value=mock_stats):
+            ready, reason = service_enabled.is_auto_approve_ready()
+            assert ready is False, "Should not be ready with only 10 reviews"
+            assert "10/100" in reason, "Reason should show 10/100 reviewed"
+
+        # Test when acceptance rate too low
+        mock_stats_low_rate = QueueStats(total_approved=80, total_rejected=20)  # 80% rate
+        with patch.object(service_enabled, "get_queue_stats", return_value=mock_stats_low_rate):
+            ready, reason = service_enabled.is_auto_approve_ready()
+            assert ready is False, "Should not be ready with 80% acceptance"
+            assert "80.0%" in reason, "Reason should show acceptance rate"
+
+        # Test when ready (100 reviews, 96% acceptance)
+        mock_stats_ready = QueueStats(total_approved=96, total_rejected=4)  # 96% rate
+        with patch.object(service_enabled, "get_queue_stats", return_value=mock_stats_ready):
+            ready, reason = service_enabled.is_auto_approve_ready()
+            assert ready is True, "Should be ready with 96% acceptance and 100 reviews"
+            assert "Ready" in reason, "Reason should indicate readiness"
+
+    suite.run_test(
+        "is_auto_approve_ready checks gradual rollout criteria",
+        test_is_auto_approve_ready,
+        test_summary="Verify is_auto_approve_ready checks min reviews and acceptance rate",
+        functions_tested="ApprovalQueueService.is_auto_approve_ready",
+        method_description="Test disabled, insufficient reviews, low rate, and ready scenarios",
     )
 
     return suite.finish_suite()
