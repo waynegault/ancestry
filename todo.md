@@ -392,10 +392,13 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [ ] Surface region-specific research suggestions in drafts
 - [ ] Link to relevant surname clusters
 
-### 5.2 Gap-Based Suggestions
-- [ ] Run PredictiveGapDetector on match tree (if available)
-- [ ] Include gap-filling suggestions in follow-up messages
-- [ ] Prioritize suggestions by research impact
+### 5.2 Gap-Based Suggestions ✅ IMPLEMENTED (via Phase 11.3)
+- [x] Run PredictiveGapDetector on match tree (if available)
+  - ✅ `ContextBuilder._build_predictive_gaps()` calls PredictiveGapDetector.analyze_gaps()
+- [x] Include gap-filling suggestions in follow-up messages
+  - ✅ Top research gap surfaced in `_format_research()` for AI prompts
+- [x] Prioritize suggestions by research impact
+  - ✅ Gaps include type, description, suggested_actions
 
 ### 5.3 Cluster Analysis
 - [ ] Group matches by shared match patterns
@@ -523,12 +526,20 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Review queue age histogram (hours since creation)
   - ✅ `review_queue_depth` gauge tracks queue depth by status
 
-### 9.3 Alerting Rules
-- [ ] Alert if opt-out rate exceeds 5% in 24h window
-- [ ] Alert if review queue depth > 50 for > 24 hours
-- [ ] Alert on circuit breaker trips (API/session failures)
+### 9.3 Alerting Rules ✅ IMPLEMENTED
+- [x] Alert if opt-out rate exceeds 5% in 24h window
+  - ✅ `AlertChecker._check_opt_out_rate()` in observability/alerts.py
+  - ✅ Queries ConversationState for opt-out statuses in configurable time window
+- [x] Alert if review queue depth > 50 for > 24 hours
+  - ✅ `AlertChecker._check_queue_depth()` checks pending DraftReply count
+  - ✅ Configurable thresholds via AlertThresholds dataclass
+- [x] Alert on circuit breaker trips (API/session failures)
+  - ✅ `AlertChecker._check_circuit_breaker()` checks circuit_breaker_registry
+  - ✅ Returns WARNING alert when any breaker is OPEN
 - [x] Alert on emergency_stop_enabled activation
-  - ✅ Logged by action8/action11 when enabled
+  - ✅ `AlertChecker._check_emergency_stop()` returns CRITICAL alert
+  - ✅ Also logged by action8/action11 when enabled
+- **Implementation:** Created observability/alerts.py with AlertChecker class; AlertSeverity/AlertType enums; Alert/AlertThresholds dataclasses; 9 module tests
 
 ---
 
