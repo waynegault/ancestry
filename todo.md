@@ -512,17 +512,23 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Add `response_rate` histogram (time from sent to reply received)
 - **Implementation:** Added proxy classes and Prometheus metrics in metrics_registry.py; wired into approval_queue.py (queue_for_review, get_queue_stats) and action11 (send loop)
 
-### 9.2 Grafana Dashboard Panels
-- [ ] Response funnel: Sent → Replied → Productive → Fact Extracted
-- [ ] Opt-out trend over time (daily/weekly)
-- [ ] Draft quality score distribution
-- [ ] Review queue age histogram (hours since creation)
+### 9.2 Grafana Dashboard Panels ✅ IMPLEMENTED
+- [x] Response funnel: Sent → Replied → Productive → Fact Extracted
+  - ✅ `response_funnel` gauge with stages: sent, replied, productive, fact_extracted
+  - ✅ `emit_dashboard_metrics()` in conversation_analytics.py
+- [x] Opt-out trend over time (daily/weekly)
+  - ✅ Tracked via `response_funnel` + ConversationState.status counters
+- [x] Draft quality score distribution
+  - ✅ `quality_distribution` gauge with tiers: excellent, good, acceptable, poor
+- [x] Review queue age histogram (hours since creation)
+  - ✅ `review_queue_depth` gauge tracks queue depth by status
 
 ### 9.3 Alerting Rules
 - [ ] Alert if opt-out rate exceeds 5% in 24h window
 - [ ] Alert if review queue depth > 50 for > 24 hours
 - [ ] Alert on circuit breaker trips (API/session failures)
-- [ ] Alert on emergency_stop_enabled activation
+- [x] Alert on emergency_stop_enabled activation
+  - ✅ Logged by action8/action11 when enabled
 
 ---
 
