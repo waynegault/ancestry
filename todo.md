@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 15, 2025 (Session 10: Phase 2.4 Relationship Explanation)
+**Last Updated:** December 15, 2025 (Session 10: Phase 3.1 Fact Extraction 2.0)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -230,11 +230,19 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Extract, validate, and stage genealogical facts for tree improvement
 
-### 3.1 Fact Extraction 2.0
-- [ ] Standardize all entity extraction to output `ExtractedFact` objects
-- [ ] Add `from_conversation()` factory for common patterns
-- [ ] Include date normalization (circa, before, after qualifiers)
-- [ ] Track extraction confidence per fact type
+### 3.1 Fact Extraction 2.0 ✅ IMPLEMENTED
+- [x] Standardize all entity extraction to output `ExtractedFact` objects
+- [x] Add `from_conversation()` factory for common patterns
+- [x] Include date normalization (circa, before, after qualifiers)
+- [x] Track extraction confidence per fact type
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- `ExtractedFact` class already existed with `from_vital_record()` and `from_relationship()` factories
+- Added `from_conversation()` factory: parses AI extraction output (vital_records, relationships, mentioned_people)
+- Added `_extract_date_qualifier()` static method: extracts "circa", "before", "after" from date strings
+- Enhanced `from_vital_record()` to call `_extract_date_qualifier()` and set `date_qualifier` field
+- Confidence tracking already implemented in factory methods (95=certain, 75=probable, 50=uncertain)
+- Added 3 new tests (13 tests total in fact_validator.py)
 
 ### 3.2 Conflict Detection
 - [ ] Run `FactValidator.validate_fact()` on Action 9 extracted entities

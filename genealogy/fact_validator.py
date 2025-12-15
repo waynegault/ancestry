@@ -124,8 +124,9 @@ class ExtractedFact:
         certainty_map = {"certain": 95, "probable": 75, "uncertain": 50}
         confidence = certainty_map.get(certainty.lower(), 70)
 
-        # Normalize the date
+        # Normalize the date and extract qualifier
         normalized = cls._normalize_date(date)
+        qualifier = cls._extract_date_qualifier(date)
 
         return cls(
             fact_type=fact_type,
@@ -136,6 +137,7 @@ class ExtractedFact:
             confidence=confidence,
             source_conversation_id=conversation_id,
             location=place if place else None,
+            date_qualifier=qualifier,
         )
 
     @classmethod
@@ -158,6 +160,126 @@ class ExtractedFact:
             source_conversation_id=conversation_id,
             related_person_name=person2,
         )
+
+    @classmethod
+    def from_conversation(
+        cls,
+        conversation_id: str,
+        extracted_data: dict[str, Any],
+        original_text: str = "",
+    ) -> list[ExtractedFact]:
+        """
+        Factory method to create ExtractedFact objects from AI extraction output.
+
+        This is the main entry point for converting AI-extracted data
+        (from the extraction_task prompt) into standardized ExtractedFact objects.
+
+        Args:
+            conversation_id: ID of the source conversation
+            extracted_data: Dictionary from AI extraction (matches extraction_task schema)
+            original_text: Original message text for context
+
+        Returns:
+            List of ExtractedFact objects extracted from the data
+        """
+        facts: list[ExtractedFact] = []
+
+        # Extract from vital_records
+        for record in extracted_data.get("vital_records", []):
+            fact = cls.from_vital_record(
+                person_name=record.get("person", "Unknown"),
+                event_type=record.get("event_type", "OTHER"),
+                date=record.get("date", ""),
+                place=record.get("place", ""),
+                certainty=record.get("certainty", "probable"),
+                original_text=original_text,
+                conversation_id=conversation_id,
+            )
+            facts.append(fact)
+
+        # Extract from relationships
+        for rel in extracted_data.get("relationships", []):
+            fact = cls.from_relationship(
+                person1=rel.get("person1", "Unknown"),
+                relationship=rel.get("relationship", "related to"),
+                person2=rel.get("person2", "Unknown"),
+                original_text=original_text,
+                conversation_id=conversation_id,
+            )
+            facts.append(fact)
+
+        # Extract from mentioned_people (as person facts)
+        for person in extracted_data.get("mentioned_people", []):
+            name = person.get("name", "")
+            if not name:
+                continue
+
+            # Create BIRTH fact if birth year available
+            birth_year = person.get("birth_year")
+            if birth_year:
+                facts.append(
+                    cls(
+                        fact_type="BIRTH",
+                        subject_name=name,
+                        original_text=original_text,
+                        structured_value=str(birth_year),
+                        normalized_value=f"{birth_year}-01-01",
+                        confidence=80,
+                        source_conversation_id=conversation_id,
+                        location=person.get("birth_place"),
+                    )
+                )
+
+            # Create DEATH fact if death year available
+            death_year = person.get("death_year")
+            if death_year:
+                facts.append(
+                    cls(
+                        fact_type="DEATH",
+                        subject_name=name,
+                        original_text=original_text,
+                        structured_value=str(death_year),
+                        normalized_value=f"{death_year}-01-01",
+                        confidence=80,
+                        source_conversation_id=conversation_id,
+                        location=person.get("death_place"),
+                    )
+                )
+
+            # Create LOCATION fact if location available (residence context)
+            for loc in extracted_data.get("locations", []):
+                if loc.get("context") == "residence" and loc.get("place"):
+                    facts.append(
+                        cls(
+                            fact_type="LOCATION",
+                            subject_name=name,
+                            original_text=original_text,
+                            structured_value=loc.get("place", ""),
+                            normalized_value=loc.get("place", ""),
+                            confidence=70,
+                            source_conversation_id=conversation_id,
+                            location=loc.get("place"),
+                        )
+                    )
+
+        return facts
+
+    @staticmethod
+    def _extract_date_qualifier(date_str: str) -> Optional[str]:
+        """Extract date qualifier (circa, before, after) from date string."""
+        if not date_str:
+            return None
+
+        date_str = date_str.strip().lower()
+
+        if re.match(r"^(?:circa|about|~|c\.?)\s*\d", date_str):
+            return "circa"
+        if re.match(r"^(?:before|bef\.?)\s*\d", date_str):
+            return "before"
+        if re.match(r"^(?:after|aft\.?)\s*\d", date_str):
+            return "after"
+
+        return None
 
     @staticmethod
     def _normalize_date(date_str: str) -> str:  # noqa: PLR0911 - multiple return paths for clarity
@@ -988,6 +1110,64 @@ def fact_validator_tests() -> bool:
         suite.run_test("Extract from AI response", test_extract_facts_from_ai, "Parse AI output to facts")
         suite.run_test("Validation: no existing", test_validation_no_existing, "High confidence auto-approves")
         suite.run_test("Validation: low confidence", test_validation_low_confidence, "Low confidence needs review")
+
+        # Phase 3.1: New tests for from_conversation and date_qualifier
+        def test_from_conversation():
+            """Test from_conversation factory method."""
+            extracted_data = {
+                "vital_records": [
+                    {"person": "John Smith", "event_type": "birth", "date": "circa 1920", "place": "Boston, MA", "certainty": "probable"},
+                ],
+                "relationships": [
+                    {"person1": "John Smith", "relationship": "father", "person2": "Mary Smith"},
+                ],
+                "mentioned_people": [
+                    {"name": "Jane Doe", "birth_year": 1950, "death_year": 2020, "birth_place": "New York"},
+                ],
+            }
+            facts = ExtractedFact.from_conversation("conv-456", extracted_data, "Test message")
+            assert len(facts) >= 4  # 1 vital + 1 relationship + 2 from mentioned_people (birth + death)
+            # Check vital record was created
+            birth_facts = [f for f in facts if f.fact_type == "BIRTH" and "John" in f.subject_name]
+            assert len(birth_facts) == 1
+            assert birth_facts[0].date_qualifier == "circa"
+            # Check relationship was created
+            rel_facts = [f for f in facts if f.fact_type == "RELATIONSHIP"]
+            assert len(rel_facts) == 1
+            assert rel_facts[0].related_person_name == "Mary Smith"
+            # Check mentioned_people created facts
+            jane_facts = [f for f in facts if "Jane" in f.subject_name]
+            assert len(jane_facts) >= 2  # Birth and death
+
+        def test_extract_date_qualifier():
+            """Test _extract_date_qualifier static method."""
+            assert ExtractedFact._extract_date_qualifier("circa 1920") == "circa"
+            assert ExtractedFact._extract_date_qualifier("about 1920") == "circa"
+            assert ExtractedFact._extract_date_qualifier("~1920") == "circa"
+            assert ExtractedFact._extract_date_qualifier("c.1920") == "circa"
+            assert ExtractedFact._extract_date_qualifier("before 1920") == "before"
+            assert ExtractedFact._extract_date_qualifier("bef 1920") == "before"
+            assert ExtractedFact._extract_date_qualifier("after 1920") == "after"
+            assert ExtractedFact._extract_date_qualifier("aft. 1920") == "after"
+            assert ExtractedFact._extract_date_qualifier("1920") is None
+            assert ExtractedFact._extract_date_qualifier("") is None
+
+        def test_from_vital_record_with_qualifier():
+            """Test that from_vital_record sets date_qualifier."""
+            fact = ExtractedFact.from_vital_record(
+                person_name="John Smith",
+                event_type="birth",
+                date="circa 1920",
+                place="Boston",
+                certainty="probable",
+                original_text="Born circa 1920",
+            )
+            assert fact.date_qualifier == "circa"
+            assert fact.normalized_value == "1920-01-01"
+
+        suite.run_test("from_conversation factory", test_from_conversation, "Creates facts from AI extraction output")
+        suite.run_test("Date qualifier extraction", test_extract_date_qualifier, "Extracts circa/before/after")
+        suite.run_test("Vital record with qualifier", test_from_vital_record_with_qualifier, "Sets date_qualifier field")
 
         return suite.finish_suite()
 
