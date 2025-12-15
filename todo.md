@@ -387,10 +387,18 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Proactively suggest research areas based on match characteristics
 
-### 5.1 Ethnicity-Based Suggestions
-- [ ] Identify shared ethnicity regions between owner and match
-- [ ] Surface region-specific research suggestions in drafts
-- [ ] Link to relevant surname clusters
+### 5.1 Ethnicity-Based Suggestions ✅ IMPLEMENTED
+- [x] Identify shared ethnicity regions between owner and match
+  - ✅ `_add_ethnicity_commonality()` in ai/context_builder.py calls `calculate_ethnicity_commonality()`
+  - ✅ Returns shared_regions, similarity_score, top_shared_region
+- [x] Surface region-specific research suggestions in drafts
+  - ✅ `ETHNICITY_RESEARCH_SUGGESTIONS` mapping in research/research_suggestions.py
+  - ✅ 7 ethnicity regions mapped (Scotland, Ireland, England, Wales, Germany, Norway, Sweden)
+  - ✅ `_extract_ethnicity_suggestions()` returns collections, surname_clusters, strategies
+- [x] Link to relevant surname clusters
+  - ✅ Surname clusters per region (e.g., MacLeod, Campbell for Scotland)
+  - ✅ Surfaced in formatted_message as "Common Surname Clusters to Watch For"
+- **Implementation:** Enhanced generate_research_suggestions() with ethnicity_regions parameter; 3 new tests added
 
 ### 5.2 Gap-Based Suggestions ✅ IMPLEMENTED (via Phase 11.3)
 - [x] Run PredictiveGapDetector on match tree (if available)
