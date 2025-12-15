@@ -3007,6 +3007,100 @@ def _score_draft_quality(draft_text: str, context_json: Optional[str]) -> tuple[
     return score, reason
 
 
+def _validate_and_correct_draft(
+    draft_text: str,
+    person: Person,
+    context_summary: str,
+    session_manager: SessionManager,
+    log_prefix: str,
+) -> tuple[Optional[str], bool]:
+    """
+    Validate draft quality and attempt correction if needed.
+
+    Phase 1.5.3/1.5.4 integration: Run AI quality check on drafts and
+    attempt auto-correction if quality issues are found.
+
+    Args:
+        draft_text: The generated draft to validate
+        person: The Person (recipient) record
+        context_summary: Brief context for validation
+        session_manager: SessionManager for AI calls
+        log_prefix: Logging prefix
+
+    Returns:
+        Tuple of (final_draft_text, routed_to_human_review)
+        - If draft passes or is corrected: (draft_text, False)
+        - If uncorrectable: (None, True) - should route to HUMAN_REVIEW
+    """
+    from ai.ai_interface import (
+        attempt_draft_correction,
+        validate_draft_quality,
+    )
+
+    # Get sender info
+    owner_profile_id = _get_owner_profile_id()
+    owner_name = "Tree Owner"  # Could enhance to get actual name
+
+    # Get recipient info
+    recipient_name = safe_column_value(person, "name", "Unknown") or "Unknown"
+    recipient_profile_id = safe_column_value(person, "profile_id", "") or ""
+
+    # Run quality validation
+    quality_result = validate_draft_quality(
+        draft_message=draft_text,
+        recipient_name=recipient_name,
+        recipient_profile_id=recipient_profile_id,
+        sender_name=owner_name,
+        sender_profile_id=owner_profile_id or "",
+        context_summary=context_summary,
+        session_manager=session_manager,
+    )
+
+    # If quality check passes, return the draft
+    if quality_result.passes_quality_check:
+        logger.debug(f"{log_prefix}: Draft passed quality check. Score: {quality_result.quality_score}")
+        return draft_text, False
+
+    # Log quality issues
+    logger.warning(
+        f"{log_prefix}: Draft failed quality check. Score: {quality_result.quality_score}, "
+        f"Issues: {len(quality_result.issues_found)}, Recommendation: {quality_result.recommendation}"
+    )
+
+    # If recommendation is to reject without correction, route to human review
+    if quality_result.recommendation == "reject":
+        logger.warning(f"{log_prefix}: Draft rejected - routing to HUMAN_REVIEW")
+        return None, True
+
+    # Attempt correction for "revise" recommendations
+    if quality_result.recommendation in {"revise", "human_review"}:
+        correction_result = attempt_draft_correction(
+            original_draft=draft_text,
+            quality_result=quality_result,
+            recipient_name=recipient_name,
+            recipient_profile_id=recipient_profile_id,
+            sender_name=owner_name,
+            sender_profile_id=owner_profile_id or "",
+            context_summary=context_summary,
+            session_manager=session_manager,
+            max_attempts=1,
+        )
+
+        if correction_result.success and correction_result.corrected_draft:
+            logger.info(
+                f"{log_prefix}: Draft corrected successfully after {correction_result.attempt_count} attempt(s). "
+                f"New score: {correction_result.final_quality_result.quality_score if correction_result.final_quality_result else 'N/A'}"
+            )
+            return correction_result.corrected_draft, False
+
+        # Correction failed - route to human review
+        logger.warning(f"{log_prefix}: Draft correction failed - routing to HUMAN_REVIEW. Reason: {correction_result.failure_reason}")
+        return None, True
+
+    # Default: pass through (approve or unknown recommendation)
+    return draft_text, False
+
+
 def _queue_contextual_draft_for_review(
     db_session: Session,
     person: Person,
@@ -3064,7 +3158,7 @@ def _generate_draft_text_with_timing(
     return draft_text, generation_ms
 
 
-def _generate_contextual_draft_payload(
+def _generate_contextual_draft_payload(  # noqa: PLR0914
     db_session: Session,
     session_manager: SessionManager,
     person: Person,
@@ -3093,9 +3187,28 @@ def _generate_contextual_draft_payload(
             logger.debug(f"{log_prefix}: Contextual draft generation returned empty")
             return None
 
+        # Phase 1.5.3/1.5.4: AI-powered draft quality validation and auto-correction
+        validated_draft, routed_to_human = _validate_and_correct_draft(
+            draft_text=draft_text,
+            person=person,
+            context_summary=context_json[:500] if context_json else "",  # Truncate for context
+            session_manager=session_manager,
+            log_prefix=log_prefix,
+        )
+
+        if routed_to_human:
+            # Draft failed quality checks and correction - route to human review
+            logger.warning(f"{log_prefix}: Draft routed to HUMAN_REVIEW due to quality issues")
+            # Still create payload but mark it for human review
+            validated_draft = draft_text  # Use original draft for review
+            # TODO: Could add a flag to the payload to mark as requiring human review
+
+        # Use validated/corrected draft
+        final_draft = validated_draft or draft_text
+
         # Research suggestions are review-only. Do not append them to the outbound draft text.
 
-        confidence_score, quality_reason = _score_draft_quality(draft_text, context_json)
+        confidence_score, quality_reason = _score_draft_quality(final_draft, context_json)
         experiment_metadata = {
             "prompt_key": prompt_key,
             "prompt_variant": prompt_variant,
@@ -3107,7 +3220,7 @@ def _generate_contextual_draft_payload(
         experiment_metadata.update(research_data[1])
 
         draft_payload = {
-            "draft_text": draft_text,
+            "draft_text": final_draft,
             "context_json": context_json,
             "confidence": confidence_score,
             "quality_reason": quality_reason,
@@ -3119,6 +3232,8 @@ def _generate_contextual_draft_payload(
             "prompt_variant": prompt_variant,
             "experiment_variant": experiment_variant,
             "generation_ms": round(generation_ms, 2),
+            "quality_validated": not routed_to_human,
+            "routed_to_human_review": routed_to_human,
         }
         _persist_contextual_draft(draft_payload, person, log_prefix)
         _queue_contextual_draft_for_review(
