@@ -323,9 +323,7 @@ def _get_status_counts(session: Session) -> dict[str, int]:
         "human_review": session.query(ConversationState)
         .filter(ConversationState.status == ConversationStatusEnum.HUMAN_REVIEW)
         .count(),
-        "productive": session.query(ConversationState)
-        .filter(ConversationState.last_intent == "PRODUCTIVE")
-        .count(),
+        "productive": session.query(ConversationState).filter(ConversationState.last_intent == "PRODUCTIVE").count(),
     }
 
 
@@ -451,10 +449,78 @@ def get_quality_to_outcome_correlation(session: Session) -> dict[str, Any]:
         }
 
     # Calculate overall average quality score
-    avg_quality = session.query(func.avg(DraftReply.quality_score)).filter(DraftReply.quality_score.isnot(None)).scalar()
+    avg_quality = (
+        session.query(func.avg(DraftReply.quality_score)).filter(DraftReply.quality_score.isnot(None)).scalar()
+    )
     correlation_data["avg_quality_score"] = round(avg_quality, 2) if avg_quality else 0
 
     return correlation_data
+
+
+def emit_dashboard_metrics(session: Session) -> None:
+    """
+    Phase 4.3: Emit response funnel and quality distribution metrics to Prometheus.
+
+    Emits:
+    - response_funnel gauge: sent, replied, productive, fact_extracted stages
+    - quality_distribution gauge: excellent, good, acceptable, poor tiers
+
+    Args:
+        session: Database session
+    """
+    from core.database import ConversationState, DraftReply, SuggestedFact
+
+    try:
+        from observability.metrics_registry import metrics
+
+        # Response funnel: Sent → Replied → Productive → Fact Extracted
+        # Stage 1: Messages sent (conversations with at least one message)
+        sent_count = session.query(ConversationMetrics).filter(ConversationMetrics.messages_sent > 0).count()
+        metrics().response_funnel.set("sent", float(sent_count))
+
+        # Stage 2: Replied (conversations with first_response_received)
+        replied_count = (
+            session.query(ConversationMetrics).filter(ConversationMetrics.first_response_received.is_(True)).count()
+        )
+        metrics().response_funnel.set("replied", float(replied_count))
+
+        # Stage 3: Productive (conversations with PRODUCTIVE last_intent)
+        productive_count = (
+            session.query(ConversationState).filter(ConversationState.last_intent == "PRODUCTIVE").count()
+        )
+        metrics().response_funnel.set("productive", float(productive_count))
+
+        # Stage 4: Fact Extracted (conversations with approved suggested facts)
+        fact_extracted_count = (
+            session.query(SuggestedFact)
+            .filter(SuggestedFact.status == "APPROVED")
+            .distinct(SuggestedFact.people_id)
+            .count()
+        )
+        metrics().response_funnel.set("fact_extracted", float(fact_extracted_count))
+
+        # Quality distribution by tier
+        quality_tiers = {
+            "excellent": (85, 100),
+            "good": (70, 84),
+            "acceptable": (50, 69),
+            "poor": (0, 49),
+        }
+
+        for tier_name, (min_score, max_score) in quality_tiers.items():
+            tier_count = (
+                session.query(DraftReply)
+                .filter(
+                    DraftReply.quality_score.isnot(None),
+                    DraftReply.quality_score >= min_score,
+                    DraftReply.quality_score <= max_score,
+                )
+                .count()
+            )
+            metrics().quality_distribution.set(tier_name, float(tier_count))
+
+    except Exception:
+        pass  # Metrics are non-critical
 
 
 def get_overall_analytics(session: Session) -> dict[str, Any]:

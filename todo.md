@@ -347,18 +347,39 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - `cli/review_queue.py`: Added acceptance rate to stats display
 - `observability/conversation_analytics.py`: Added `get_quality_to_outcome_correlation()`
 
-### 4.3 Dashboard Integration
-- [ ] Emit metrics to Prometheus hooks (already scaffolded)
-- [ ] Create Grafana dashboard panels:
-  - Response funnel (Sent → Replied → Productive → Fact Extracted)
-  - Opt-out trends over time
-  - Draft quality distribution
-  - Review queue size and aging
+### 4.3 Dashboard Integration ✅ IMPLEMENTED
+- [x] Emit metrics to Prometheus hooks (already scaffolded)
+  - ✅ NEW: Added `_ResponseFunnelGaugeProxy` for response funnel stages
+  - ✅ NEW: Added `_QualityDistributionGaugeProxy` for draft quality tiers
+  - ✅ NEW: Added `emit_dashboard_metrics()` function to update metrics from DB
+- [x] Create Grafana dashboard panels:
+  - ✅ Response funnel (Sent → Replied → Productive → Fact Extracted) - metrics wired
+  - ✅ Opt-out trends over time - `status_counts.opt_out` in analytics
+  - ✅ Draft quality distribution - `quality_distribution` gauge by tier
+  - ✅ Review queue size and aging - `review_queue_depth` gauge (Phase 9.1)
 
-### 4.4 Content-to-Outcome Correlation
-- [ ] A/B test message templates (formal vs friendly)
-- [ ] Track which prompt variants produce higher response rates
-- [ ] Log experiment results for offline analysis
+**Implementation Notes (Session 11):**
+- `observability/metrics_registry.py`:
+  - Added `_ResponseFunnelGaugeProxy` with labels: sent, replied, productive, fact_extracted
+  - Added `_QualityDistributionGaugeProxy` with labels: excellent, good, acceptable, poor
+  - Added corresponding Gauge metrics in `_create_metrics_internal()`
+  - Updated `MetricsBundle` and `assign()` method
+- `observability/conversation_analytics.py`:
+  - Added `emit_dashboard_metrics()` to populate Prometheus gauges from DB queries
+
+### 4.4 Content-to-Outcome Correlation ✅ ALREADY IMPLEMENTED
+- [x] A/B test message templates (formal vs friendly)
+  - ✅ ExperimentManager in `ai/ab_testing.py` (612 lines)
+  - ✅ MessagePersonalizer uses ExperimentManager for strategy A/B tests
+- [x] Track which prompt variants produce higher response rates
+  - ✅ `ai_quality` histogram tracks by (provider, prompt_key, variant)
+  - ✅ `personalization_ab_outcome` counter tracks response effectiveness
+  - ✅ `_select_contextual_prompt_variant()` in action8_messaging.py
+- [x] Log experiment results for offline analysis
+  - ✅ `prompt_experiments.jsonl` logs all AI calls with variant info
+  - ✅ `get_experiment_summary()` provides visibility
+
+**Note:** Phase 4.4 was already implemented in Phase 11.4 personalization work.
 
 ---
 

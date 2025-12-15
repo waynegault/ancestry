@@ -415,6 +415,40 @@ class _ResponseTimeHistogramProxy:
         metric.observe(max(hours, 0.0))
 
 
+class _ResponseFunnelGaugeProxy:
+    """Wrapper for response_funnel gauge (Phase 4.3)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusGauge] = None
+
+    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+        self._metric = metric
+
+    def set(self, stage: str, count: float) -> None:
+        """Set count for a funnel stage: sent, replied, productive, fact_extracted."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(stage=stage or "unknown").set(max(count, 0.0))
+
+
+class _QualityDistributionGaugeProxy:
+    """Wrapper for draft_quality_distribution gauge (Phase 4.3)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusGauge] = None
+
+    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+        self._metric = metric
+
+    def set(self, tier: str, count: float) -> None:
+        """Set count for a quality tier: excellent, good, acceptable, poor."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(tier=tier or "unknown").set(max(count, 0.0))
+
+
 class MetricsBundle:
     """Container exposing all metric proxies."""
 
@@ -441,6 +475,9 @@ class MetricsBundle:
         self.drafts_sent = _DraftsSentCounterProxy()
         self.review_queue_depth = _ReviewQueueDepthGaugeProxy()
         self.response_time = _ResponseTimeHistogramProxy()
+        # Phase 4.3: Dashboard integration metrics
+        self.response_funnel = _ResponseFunnelGaugeProxy()
+        self.quality_distribution = _QualityDistributionGaugeProxy()
 
     def assign(self, metrics_map: dict[str, Any]) -> None:
         """Bind proxies to real metrics."""
@@ -466,6 +503,9 @@ class MetricsBundle:
         self.drafts_sent.set_metric(metrics_map.get("drafts_sent"))
         self.review_queue_depth.set_metric(metrics_map.get("review_queue_depth"))
         self.response_time.set_metric(metrics_map.get("response_time"))
+        # Phase 4.3: Dashboard integration metrics
+        self.response_funnel.set_metric(metrics_map.get("response_funnel"))
+        self.quality_distribution.set_metric(metrics_map.get("quality_distribution"))
 
     def reset(self) -> None:
         """Clear metric bindings (no-op proxies)."""
@@ -705,6 +745,23 @@ class MetricsRegistry:
             "review_queue_depth",
             "Current depth of draft review queue by status",
             labelnames=("status",),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        # Phase 4.3: Dashboard integration metrics
+        metrics_map["response_funnel"] = Gauge(
+            "response_funnel",
+            "Response funnel counts by stage: sent, replied, productive, fact_extracted",
+            labelnames=("stage",),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["quality_distribution"] = Gauge(
+            "quality_distribution",
+            "Draft quality distribution by tier: excellent, good, acceptable, poor",
+            labelnames=("tier",),
             namespace=namespace,
             registry=registry,
         )
