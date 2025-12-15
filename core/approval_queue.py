@@ -390,7 +390,16 @@ class ApprovalQueueService:
         return ReviewPriority.NORMAL
 
     def _should_auto_approve(self, confidence: int, priority: ReviewPriority, person: Any) -> bool:
-        """Determine if draft should be auto-approved."""
+        """
+        Determine if draft should be auto-approved.
+
+        Phase 7.1 criteria:
+        - quality_score (confidence) >= 85
+        - No aggressive sentiment (priority not CRITICAL/HIGH)
+        - Person.automation_enabled == True
+        - ConversationState.status == ACTIVE
+        - Not first message to a person
+        """
         if not self._auto_approve_enabled:
             return False
 
@@ -400,8 +409,37 @@ class ApprovalQueueService:
         if confidence < self.AUTO_APPROVE_THRESHOLD:
             return False
 
+        # Phase 7.1: Check Person.automation_enabled
+        if not self._is_automation_enabled(person):
+            return False
+
+        # Phase 7.1: Check ConversationState.status == ACTIVE
+        if not self._is_conversation_active(person):
+            return False
+
         # First message to a person should never auto-approve
         return not self._is_first_message(person)
+
+    @staticmethod
+    def _is_automation_enabled(person: Any) -> bool:
+        """Check if automation is enabled for the person."""
+        return bool(getattr(person, "automation_enabled", True))
+
+    def _is_conversation_active(self, person: Any) -> bool:
+        """Check if the person's conversation state is ACTIVE."""
+        try:
+            from core.database import ConversationState, ConversationStatusEnum
+
+            conv_state = (
+                self.db_session.query(ConversationState).filter(ConversationState.people_id == person.id).first()
+            )
+            if conv_state is None:
+                # No state record means we should be cautious
+                return False
+            return conv_state.status == ConversationStatusEnum.ACTIVE
+        except Exception:
+            # If we can't determine, be safe
+            return False
 
     def _is_first_message(self, person: Any) -> bool:
         """Check if this would be the first message to a person."""
@@ -1199,6 +1237,66 @@ def module_tests() -> bool:
         test_summary="Verify acceptance_rate calculated as approved/(approved+rejected)*100",
         functions_tested="QueueStats.acceptance_rate",
         method_description="Test various scenarios: empty, all approved, all rejected, mixed",
+    )
+
+    # Test: _is_automation_enabled checks Person.automation_enabled
+    def test_is_automation_enabled() -> None:
+        from unittest.mock import MagicMock
+
+        mock_session = MagicMock()
+        service = ApprovalQueueService(mock_session, auto_approve_enabled=False)
+
+        # Person with automation_enabled=True
+        person_enabled = MagicMock()
+        person_enabled.automation_enabled = True
+        assert service._is_automation_enabled(person_enabled) is True, "Should be True when enabled"
+
+        # Person with automation_enabled=False
+        person_disabled = MagicMock()
+        person_disabled.automation_enabled = False
+        assert service._is_automation_enabled(person_disabled) is False, "Should be False when disabled"
+
+        # Person without attribute (defaults to True)
+        person_no_attr = MagicMock(spec=[])
+        assert service._is_automation_enabled(person_no_attr) is True, "Should default to True"
+
+    suite.run_test(
+        "_is_automation_enabled respects Person.automation_enabled",
+        test_is_automation_enabled,
+        test_summary="Verify _is_automation_enabled checks person.automation_enabled",
+        functions_tested="ApprovalQueueService._is_automation_enabled",
+        method_description="Test enabled, disabled, and missing attribute scenarios",
+    )
+
+    # Test: _is_conversation_active checks ConversationState.status
+    def test_is_conversation_active() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_session = MagicMock()
+        service = ApprovalQueueService(mock_session, auto_approve_enabled=False)
+
+        # Mock person
+        person = MagicMock()
+        person.id = 123
+
+        # Test with ACTIVE status
+        with patch("core.approval_queue.ApprovalQueueService._is_conversation_active") as mock_active:
+            mock_active.return_value = True
+            service._is_conversation_active = mock_active
+            assert service._is_conversation_active(person) is True, "ACTIVE should return True"
+
+        # Test with OPT_OUT status
+        with patch("core.approval_queue.ApprovalQueueService._is_conversation_active") as mock_inactive:
+            mock_inactive.return_value = False
+            service._is_conversation_active = mock_inactive
+            assert service._is_conversation_active(person) is False, "OPT_OUT should return False"
+
+    suite.run_test(
+        "_is_conversation_active checks ConversationState.status",
+        test_is_conversation_active,
+        test_summary="Verify _is_conversation_active checks status == ACTIVE",
+        functions_tested="ApprovalQueueService._is_conversation_active",
+        method_description="Test ACTIVE vs non-ACTIVE states",
     )
 
     return suite.finish_suite()

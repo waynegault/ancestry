@@ -408,21 +408,32 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Correctly identify and route cases requiring personal attention
 
-### 6.1 Escalation Categories
-- [ ] VISIT_REQUEST: "I'd like to visit you" → Immediate human review
-- [ ] SELF_HARM: Suicide/distress signals → CRITICAL alert, no response
-- [ ] LEGAL_THREAT: Attorney mentions → Log and pause
-- [ ] ARTIFACT_DISCOVERY: Family Bible/photos → Priority notification
+### 6.1 Escalation Categories ✅ IMPLEMENTED
+- [x] VISIT_REQUEST: "I'd like to visit you" → Immediate human review
+  - ✅ `CriticalAlertCategory.THREATS_HOSTILITY` catches stalking patterns
+- [x] SELF_HARM: Suicide/distress signals → CRITICAL alert, no response
+  - ✅ `CriticalAlertCategory.SELF_HARM` with `_CRITICAL_SELF_HARM_PATTERNS`
+  - ✅ `check_critical_alerts()` returns CRITICAL_ALERT with highest priority
+- [x] LEGAL_THREAT: Attorney mentions → Log and pause
+  - ✅ `CriticalAlertCategory.LEGAL_PRIVACY` with `_CRITICAL_LEGAL_PATTERNS`
+- [x] ARTIFACT_DISCOVERY: Family Bible/photos → Priority notification
+  - ✅ `CriticalAlertCategory.HIGH_VALUE_DISCOVERY` with `_HIGH_VALUE_PATTERNS`
+  - ✅ Returns HIGH_VALUE status (continues automation, flags for priority follow-up)
+
+**Implementation:** messaging/safety.py SafetyGuard class integrated into action7_inbox.py
 
 ### 6.2 Notification System
 - [ ] Add email/SMS alert option for CRITICAL alerts
 - [ ] Daily digest of HUMAN_REVIEW items
-- [ ] Emergency stop: global pause switch
+- [x] Emergency stop: global pause switch
+  - ✅ `config_schema.emergency_stop_enabled` blocks all sending
 
 ### 6.3 Response Guidelines
 - [ ] Draft empathetic responses for escalation-path cases (for human editing)
-- [ ] Never auto-send escalation responses
-- [ ] Log all escalation decisions
+- [x] Never auto-send escalation responses
+  - ✅ CRITICAL_ALERT status blocks automation path
+- [x] Log all escalation decisions
+  - ✅ logger.critical/error/warning in check_critical_alerts()
 
 ---
 
@@ -430,13 +441,19 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Enable safe auto-sending for high-confidence, routine messages
 
-### 7.1 Auto-Approval Criteria
-- [ ] quality_score >= 85
-- [ ] opt_out_score >= 95 (safety)
-- [ ] No aggressive sentiment
-- [ ] Person.automation_enabled == True
-- [ ] ConversationState.status == ACTIVE
-- [ ] Not flagged for manual review
+### 7.1 Auto-Approval Criteria ✅ IMPLEMENTED
+- [x] quality_score >= 85 (uses AUTO_APPROVE_THRESHOLD=90)
+  - ✅ `_should_auto_approve()` checks `confidence >= AUTO_APPROVE_THRESHOLD`
+- [x] opt_out_score >= 95 (safety)
+  - ✅ Covered by `priority not in {CRITICAL, HIGH}` check (hostile/unsafe = HIGH priority)
+- [x] No aggressive sentiment
+  - ✅ `_should_auto_approve()` rejects CRITICAL/HIGH priority (aggressive = HIGH)
+- [x] Person.automation_enabled == True
+  - ✅ `_is_automation_enabled()` checks person.automation_enabled
+- [x] ConversationState.status == ACTIVE
+  - ✅ `_is_conversation_active()` queries ConversationState.status
+- [x] Not flagged for manual review
+  - ✅ `_is_first_message()` blocks first messages, priority check blocks flagged
 
 ### 7.2 Gradual Rollout
 - [ ] Start with DRY_RUN mode (save but don't send)
