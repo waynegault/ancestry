@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 16, 2025 (Session 9: AI-powered draft quality validation + auto-correction pipeline)
+**Last Updated:** December 15, 2025 (Session 10: Context accuracy validation + Phase 1.5 complete)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -35,6 +35,8 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 | Semantic Search (Q&A) | ✅ Implemented | Low |
 | Approval Queue + Web UI | ✅ Implemented | Medium |
 | Self-Message Prevention | ✅ Implemented | High |
+| Draft Quality Guards | ✅ Implemented | High |
+| Context Accuracy Validation | ✅ Implemented | Medium |
 | Message Personalization | ✅ Production | High |
 | Rate Limiting | ✅ Production | High |
 | Circuit Breakers | ✅ Production | High |
@@ -95,11 +97,12 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Log and alert when self-message attempt detected ✅ IMPLEMENTED
 - [x] Add to SafetyGuard as SELF_MESSAGE category ✅ IMPLEMENTED (check_self_message static method)
 
-### 1.5.2 Context Accuracy Validation
-- [ ] Pre-draft validation: verify mentioned ancestors exist in OUR tree, not theirs
-- [ ] Cross-reference extracted names against TreeQueryService before drafting
-- [ ] Flag drafts where AI mentions facts already known to recipient
-- [ ] Add AI prompt instruction: "Do not explain relationships the recipient already knows"
+### 1.5.2 Context Accuracy Validation ✅ IMPLEMENTED
+- [x] Pre-draft validation: verify mentioned ancestors exist in OUR tree, not theirs ✅ IMPLEMENTED
+- [x] Cross-reference extracted names against TreeQueryService before drafting ✅ IMPLEMENTED
+- [x] Flag drafts where AI mentions facts already known to recipient ✅ IMPLEMENTED
+- [x] Add AI prompt instruction: "Do not explain relationships the recipient already knows" ✅ IMPLEMENTED
+- **Implementation:** Added `ContextAccuracyResult` dataclass and `validate_context_accuracy()` function in ai_interface.py. Uses TreeQueryService to validate extracted names against our GEDCOM tree. Tracks verified_facts (found in tree), unverified_facts (not found), and known_to_recipient (likely already in recipient's tree). Updated `draft_quality_check` prompt v1.1.0 with new quality checks: unverified_fact and known_to_recipient categories. Enhanced `validate_draft_quality()` to run context accuracy validation automatically with optional extracted_names parameter. Added `extract_names_from_text()` helper for heuristic name extraction from drafts. 4 new tests added (18 total in ai_interface.py).
 
 ### 1.5.3 AI-Powered Draft Review ✅ IMPLEMENTED
 - [x] Create `draft_quality_check` prompt in ai_prompts.json with:

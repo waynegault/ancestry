@@ -3094,7 +3094,9 @@ def _validate_and_correct_draft(
             return correction_result.corrected_draft, False
 
         # Correction failed - route to human review
-        logger.warning(f"{log_prefix}: Draft correction failed - routing to HUMAN_REVIEW. Reason: {correction_result.failure_reason}")
+        logger.warning(
+            f"{log_prefix}: Draft correction failed - routing to HUMAN_REVIEW. Reason: {correction_result.failure_reason}"
+        )
         return None, True
 
     # Default: pass through (approve or unknown recommendation)

@@ -2038,6 +2038,225 @@ def verify_family_tree_connections(context_history: str, session_manager: Sessio
         return default_empty_result
 
 
+# === PHASE 1.5.2: CONTEXT ACCURACY VALIDATION ===
+
+
+@dataclass
+class ContextAccuracyResult:
+    """Result of context accuracy validation."""
+
+    is_accurate: bool
+    verified_facts: list[dict[str, Any]]  # Facts found in our tree
+    unverified_facts: list[dict[str, Any]]  # Facts NOT found in our tree
+    known_to_recipient: list[dict[str, Any]]  # Facts already in recipient's tree
+    accuracy_score: int  # 0-100
+    warnings: list[str]
+    recommendation: str  # "proceed", "review", "revise"
+
+
+def validate_context_accuracy(  # noqa: PLR0914 - necessary for comprehensive validation
+    extracted_names: list[str],
+    context_summary: str,
+    recipient_tree_context: Optional[dict[str, Any]] = None,
+    tree_service: Optional[Any] = None,
+) -> ContextAccuracyResult:
+    """
+    Validate that extracted names exist in OUR tree before generating drafts.
+
+    Phase 1.5.2: Pre-draft validation to ensure we don't mention ancestors
+    that don't exist in our tree, or explain facts already known to recipient.
+
+    Args:
+        extracted_names: Names extracted from conversation/context to validate
+        context_summary: Brief context for logging
+        recipient_tree_context: Optional dict with recipient's known facts/ancestors
+        tree_service: Optional TreeQueryService instance for lookups
+
+    Returns:
+        ContextAccuracyResult with validation outcome
+    """
+    _ = context_summary  # Used for logging context identification
+
+    # Initialize result
+    verified_facts: list[dict[str, Any]] = []
+    unverified_facts: list[dict[str, Any]] = []
+    known_to_recipient: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    # Quick exit if no names to validate
+    if not extracted_names:
+        return ContextAccuracyResult(
+            is_accurate=True,
+            verified_facts=[],
+            unverified_facts=[],
+            known_to_recipient=[],
+            accuracy_score=100,
+            warnings=[],
+            recommendation="proceed",
+        )
+
+    # Get or initialize TreeQueryService
+    if tree_service is None:
+        try:
+            from genealogy.tree_query_service import TreeQueryService
+
+            tree_service = TreeQueryService()
+        except Exception as e:
+            logger.warning(f"Could not initialize TreeQueryService: {e}")
+            # Return cautious result - we can't verify
+            return ContextAccuracyResult(
+                is_accurate=True,  # Allow to proceed, but with warning
+                verified_facts=[],
+                unverified_facts=[],
+                known_to_recipient=[],
+                accuracy_score=50,
+                warnings=["TreeQueryService unavailable - could not verify facts"],
+                recommendation="review",
+            )
+
+    # Validate each extracted name against our tree
+    for name in extracted_names:
+        if not name or not name.strip():
+            continue
+
+        clean_name = name.strip()
+
+        try:
+            # Search for this person in our tree
+            search_result = tree_service.find_person(name=clean_name)
+
+            if search_result.found:
+                verified_facts.append(
+                    {
+                        "name": clean_name,
+                        "matched_name": search_result.name,
+                        "confidence": search_result.confidence,
+                        "person_id": search_result.person_id,
+                        "birth_year": search_result.birth_year,
+                    }
+                )
+            else:
+                unverified_facts.append(
+                    {
+                        "name": clean_name,
+                        "reason": "Not found in tree",
+                        "alternatives": search_result.alternatives[:2] if search_result.alternatives else [],
+                    }
+                )
+                warnings.append(f"'{clean_name}' not found in our tree")
+
+        except Exception as e:
+            logger.warning(f"Error searching for '{clean_name}': {e}")
+            unverified_facts.append({"name": clean_name, "reason": f"Search error: {e}", "alternatives": []})
+
+    # Check for facts already known to recipient
+    if recipient_tree_context:
+        recipient_ancestors = recipient_tree_context.get("ancestors", [])
+        recipient_known_names = {a.get("name", "").lower() for a in recipient_ancestors if a.get("name")}
+
+        for fact in verified_facts:
+            if fact.get("name", "").lower() in recipient_known_names:
+                known_to_recipient.append(
+                    {"name": fact.get("name"), "warning": "Recipient may already know this ancestor"}
+                )
+                warnings.append(f"'{fact.get('name')}' likely already known to recipient")
+
+    # Calculate accuracy score
+    total_names = len(extracted_names)
+    verified_count = len(verified_facts)
+    known_count = len(known_to_recipient)
+
+    if total_names > 0:
+        # Score based on verification rate, penalize for explaining known facts
+        verification_rate = verified_count / total_names
+        known_penalty = min(known_count * 10, 30)  # Up to 30 point penalty
+        accuracy_score = int(verification_rate * 100) - known_penalty
+        accuracy_score = max(0, min(100, accuracy_score))
+    else:
+        accuracy_score = 100
+
+    # Determine recommendation
+    unverified_count = len(unverified_facts)
+    if unverified_count == 0 and known_count == 0:
+        recommendation = "proceed"
+    elif unverified_count > total_names / 2:  # More than half unverified
+        recommendation = "revise"
+    elif known_count > 0 or unverified_count > 0:
+        recommendation = "review"
+    else:
+        recommendation = "proceed"
+
+    is_accurate = unverified_count == 0
+
+    logger.debug(
+        f"Context accuracy validation: {verified_count}/{total_names} verified, "
+        f"{unverified_count} unverified, {known_count} known to recipient. "
+        f"Score: {accuracy_score}, Recommendation: {recommendation}"
+    )
+
+    return ContextAccuracyResult(
+        is_accurate=is_accurate,
+        verified_facts=verified_facts,
+        unverified_facts=unverified_facts,
+        known_to_recipient=known_to_recipient,
+        accuracy_score=accuracy_score,
+        warnings=warnings,
+        recommendation=recommendation,
+    )
+
+
+def extract_names_from_text(text: str) -> list[str]:
+    """
+    Extract potential person names from text for context validation.
+
+    Simple heuristic extraction - looks for capitalized word sequences
+    that might be names. AI-based extraction is more accurate but slower.
+
+    Args:
+        text: Text to extract names from
+
+    Returns:
+        List of potential person names
+    """
+    import re
+
+    if not text:
+        return []
+
+    names: list[str] = []
+
+    # Pattern: Capitalized words that look like names
+    # Matches sequences like "John Smith", "Mary Jane Watson", etc.
+    name_pattern = r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b"
+    matches = re.findall(name_pattern, text)
+
+    # Filter out common non-names
+    non_names = {
+        "Dear Friend",
+        "Best Regards",
+        "Kind Regards",
+        "Thank You",
+        "Looking Forward",
+        "Best Wishes",
+        "Many Thanks",
+        "Take Care",
+    }
+
+    for match in matches:
+        if match not in non_names and len(match) > 3:
+            names.append(match)
+
+    # Deduplicate while preserving order
+    seen = set()
+    unique_names = []
+    for name in names:
+        if name.lower() not in seen:
+            seen.add(name.lower())
+            unique_names.append(name)
+
+    return unique_names
+
+
 @dataclass
 class DraftQualityResult:
     """Result of draft quality validation."""
@@ -2048,7 +2267,7 @@ class DraftQualityResult:
     recommendation: str  # "approve", "revise", "reject", "human_review"
 
 
-def validate_draft_quality(
+def validate_draft_quality(  # noqa: PLR0914 - necessary for comprehensive validation with context accuracy
     draft_message: str,
     recipient_name: str,
     recipient_profile_id: str,
@@ -2056,13 +2275,17 @@ def validate_draft_quality(
     sender_profile_id: str,
     context_summary: str,
     session_manager: Optional[SessionManager] = None,
+    extracted_names: Optional[list[str]] = None,
+    recipient_tree_context: Optional[dict[str, Any]] = None,
 ) -> DraftQualityResult:
     """
     Validate a draft message for quality issues before queueing.
 
-    Phase 1.5.3: AI-powered draft review to detect:
+    Phase 1.5.2/1.5.3: AI-powered draft review to detect:
     - Self-message attempts
     - Context inversion (explaining their facts to them)
+    - Unverified facts (names not in our tree)
+    - Known-to-recipient facts (don't re-explain their ancestors)
     - Relationship direction errors
     - Deceased person errors
     - Factual inconsistencies
@@ -2075,6 +2298,8 @@ def validate_draft_quality(
         sender_profile_id: Profile ID of the sender
         context_summary: Brief summary of conversation context
         session_manager: Optional SessionManager for AI calls
+        extracted_names: Optional list of names to validate against our tree
+        recipient_tree_context: Optional dict with recipient's known ancestors
 
     Returns:
         DraftQualityResult with validation outcome
@@ -2105,6 +2330,25 @@ def validate_draft_quality(
             recommendation="reject",
         )
 
+    # Phase 1.5.2: Run context accuracy validation if names provided
+    context_accuracy_result: Optional[ContextAccuracyResult] = None
+    if extracted_names or recipient_tree_context:
+        # If no names provided, extract from draft
+        if not extracted_names:
+            extracted_names = extract_names_from_text(draft_message)
+
+        if extracted_names:
+            context_accuracy_result = validate_context_accuracy(
+                extracted_names=extracted_names,
+                context_summary=context_summary,
+                recipient_tree_context=recipient_tree_context,
+            )
+            logger.debug(
+                f"Context accuracy: {len(context_accuracy_result.verified_facts)} verified, "
+                f"{len(context_accuracy_result.unverified_facts)} unverified, "
+                f"{len(context_accuracy_result.known_to_recipient)} known to recipient"
+            )
+
     ai_provider = config_schema.ai_provider.lower()
     if not ai_provider or not draft_message:
         if not ai_provider:
@@ -2119,6 +2363,27 @@ def validate_draft_quality(
         logger.warning("validate_draft_quality: draft_quality_check prompt not found, skipping")
         return default_result
 
+    # Build context accuracy strings for prompt
+    verified_facts_str = "None"
+    unverified_facts_str = "None"
+    known_to_recipient_str = "None"
+
+    if context_accuracy_result:
+        if context_accuracy_result.verified_facts:
+            verified_facts_str = ", ".join(
+                f"{f.get('name', 'Unknown')} (confidence: {f.get('confidence', 'unknown')})"
+                for f in context_accuracy_result.verified_facts
+            )
+        if context_accuracy_result.unverified_facts:
+            unverified_facts_str = ", ".join(
+                f"{f.get('name', 'Unknown')} ({f.get('reason', 'unknown reason')})"
+                for f in context_accuracy_result.unverified_facts
+            )
+        if context_accuracy_result.known_to_recipient:
+            known_to_recipient_str = ", ".join(
+                f"{f.get('name', 'Unknown')}" for f in context_accuracy_result.known_to_recipient
+            )
+
     # Substitute placeholders (template strings)
     draft_placeholder = "{draft_message}"  # noqa: RUF027
     recipient_name_placeholder = "{recipient_name}"  # noqa: RUF027
@@ -2126,6 +2391,9 @@ def validate_draft_quality(
     sender_name_placeholder = "{sender_name}"  # noqa: RUF027
     sender_id_placeholder = "{sender_profile_id}"  # noqa: RUF027
     context_placeholder = "{context_summary}"  # noqa: RUF027
+    verified_placeholder = "{verified_facts}"
+    unverified_placeholder = "{unverified_facts}"
+    known_placeholder = "{known_to_recipient}"
 
     system_prompt = (
         prompt_template.replace(draft_placeholder, draft_message)
@@ -2134,6 +2402,9 @@ def validate_draft_quality(
         .replace(sender_name_placeholder, sender_name or "Tree Owner")
         .replace(sender_id_placeholder, sender_profile_id or "Unknown")
         .replace(context_placeholder, context_summary or "No context available")
+        .replace(verified_placeholder, verified_facts_str)
+        .replace(unverified_placeholder, unverified_facts_str)
+        .replace(known_placeholder, known_to_recipient_str)
     )
 
     start_time = time.time()
@@ -3465,6 +3736,94 @@ def ai_interface_module_tests() -> bool:
         "Correction guidance is formatted correctly from issues list",
         "_build_correction_guidance",
         "Test helper function that builds human-readable guidance",
+    )
+
+    # === PHASE 1.5.2: CONTEXT ACCURACY VALIDATION TESTS ===
+    def test_context_accuracy_result_dataclass() -> bool:
+        """Test ContextAccuracyResult dataclass."""
+        result = ContextAccuracyResult(
+            is_accurate=False,
+            verified_facts=[{"name": "John Smith", "confidence": "high"}],
+            unverified_facts=[{"name": "Jane Doe", "reason": "Not found"}],
+            known_to_recipient=[{"name": "Mary Jones"}],
+            accuracy_score=70,
+            warnings=["Jane Doe not found"],
+            recommendation="review",
+        )
+        return (
+            not result.is_accurate
+            and len(result.verified_facts) == 1
+            and len(result.unverified_facts) == 1
+            and len(result.known_to_recipient) == 1
+            and result.accuracy_score == 70
+            and result.recommendation == "review"
+        )
+
+    suite.run_test(
+        "Context Accuracy: Result Dataclass",
+        test_context_accuracy_result_dataclass,
+        "ContextAccuracyResult dataclass stores values correctly",
+        "ContextAccuracyResult",
+        "Test dataclass field assignment and retrieval",
+    )
+
+    def test_context_accuracy_empty_names() -> bool:
+        """Test that empty names list returns passing result."""
+        result = validate_context_accuracy(
+            extracted_names=[],
+            context_summary="Test context",
+        )
+        return (
+            result.is_accurate
+            and result.accuracy_score == 100
+            and result.recommendation == "proceed"
+            and len(result.verified_facts) == 0
+            and len(result.unverified_facts) == 0
+        )
+
+    suite.run_test(
+        "Context Accuracy: Empty Names List",
+        test_context_accuracy_empty_names,
+        "Empty extracted names returns passing validation",
+        "validate_context_accuracy",
+        "Test that no names to validate = automatic pass",
+    )
+
+    def test_extract_names_from_text() -> bool:
+        """Test name extraction from draft text."""
+        text = "My grandfather John Smith was born in 1920. His wife Mary Jane Watson lived in Chicago."
+        names = extract_names_from_text(text)
+        return (
+            len(names) >= 2
+            and any("John Smith" in n for n in names)
+            and any("Mary Jane Watson" in n for n in names)
+        )
+
+    suite.run_test(
+        "Context Accuracy: Name Extraction",
+        test_extract_names_from_text,
+        "Names are extracted from text correctly",
+        "extract_names_from_text",
+        "Test heuristic name extraction from draft messages",
+    )
+
+    def test_extract_names_filters_non_names() -> bool:
+        """Test that common non-names are filtered out."""
+        text = "Dear Friend, Thank You for sharing. Best Regards, John Smith."
+        names = extract_names_from_text(text)
+        # Should find John Smith but filter out Dear Friend, Thank You, Best Regards
+        return (
+            any("John Smith" in n for n in names)
+            and not any("Dear Friend" in n for n in names)
+            and not any("Best Regards" in n for n in names)
+        )
+
+    suite.run_test(
+        "Context Accuracy: Non-Name Filtering",
+        test_extract_names_filters_non_names,
+        "Common salutations and sign-offs are filtered from names",
+        "extract_names_from_text",
+        "Test that 'Dear Friend', 'Best Regards' are not detected as names",
     )
 
     return suite.finish_suite()
