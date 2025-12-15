@@ -312,6 +312,82 @@ def _update_tree_impact(metrics: ConversationMetrics, added_to_tree: bool) -> No
         metrics.added_to_tree_date = datetime.now(timezone.utc)
 
 
+def _get_status_counts(session: Session) -> dict[str, int]:
+    """Get counts of conversations by status from ConversationState."""
+    from core.database import ConversationState, ConversationStatusEnum
+
+    return {
+        "opt_out": session.query(ConversationState)
+        .filter(ConversationState.status == ConversationStatusEnum.OPT_OUT)
+        .count(),
+        "human_review": session.query(ConversationState)
+        .filter(ConversationState.status == ConversationStatusEnum.HUMAN_REVIEW)
+        .count(),
+        "productive": session.query(ConversationState)
+        .filter(ConversationState.last_intent == "PRODUCTIVE")
+        .count(),
+    }
+
+
+def _get_template_effectiveness(session: Session) -> dict[str, dict[str, Any]]:
+    """Get template effectiveness metrics (response rate by template)."""
+    template_effectiveness: dict[str, dict[str, Any]] = {}
+    templates = session.query(ConversationMetrics.initial_template_used).distinct().all()
+
+    for (template,) in templates:
+        if template:
+            total_with_template = (
+                session.query(ConversationMetrics).filter(ConversationMetrics.initial_template_used == template).count()
+            )
+            responses_with_template = (
+                session.query(ConversationMetrics)
+                .filter(
+                    ConversationMetrics.initial_template_used == template,
+                    ConversationMetrics.first_response_received.is_(True),
+                )
+                .count()
+            )
+
+            template_effectiveness[template] = {
+                "total": total_with_template,
+                "responses": responses_with_template,
+                "response_rate": (responses_with_template / total_with_template * 100)
+                if total_with_template > 0
+                else 0,
+            }
+
+    return template_effectiveness
+
+
+def _get_research_outcomes(session: Session, total_conversations: int) -> dict[str, Any]:
+    """Get research outcome metrics."""
+    from sqlalchemy import func
+
+    total_people_looked_up = session.query(func.sum(ConversationMetrics.people_looked_up)).scalar() or 0
+    total_people_found = session.query(func.sum(ConversationMetrics.people_found)).scalar() or 0
+    total_research_tasks = session.query(func.sum(ConversationMetrics.research_tasks_created)).scalar() or 0
+    people_added_to_tree = (
+        session.query(ConversationMetrics).filter(ConversationMetrics.added_to_tree.is_(True)).count()
+    )
+
+    return {
+        "research_outcomes": {
+            "people_looked_up": total_people_looked_up,
+            "people_found": total_people_found,
+            "success_rate_percent": round(
+                (total_people_found / total_people_looked_up * 100) if total_people_looked_up > 0 else 0, 2
+            ),
+            "research_tasks_created": total_research_tasks,
+        },
+        "tree_impact": {
+            "people_added_to_tree": people_added_to_tree,
+            "conversion_rate_percent": round(
+                (people_added_to_tree / total_conversations * 100) if total_conversations > 0 else 0, 2
+            ),
+        },
+    }
+
+
 def get_overall_analytics(session: Session) -> dict[str, Any]:
     """
     Get overall analytics across all conversations.
@@ -345,51 +421,17 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
     )
 
     # Get conversation phase distribution
-    phase_distribution = {}
+    phase_distribution: dict[str, int] = {}
     phases = (
         session.query(cast(ConversationMetrics.conversation_phase, SQLString), func.count(ConversationMetrics.id))
         .group_by(ConversationMetrics.conversation_phase)
         .all()
     )
-
     for phase, count in phases:
         phase_distribution[phase] = count
 
-    # Get template effectiveness (response rate by template)
-    template_effectiveness = {}
-    templates = session.query(ConversationMetrics.initial_template_used).distinct().all()
-
-    for (template,) in templates:
-        if template:
-            total_with_template = (
-                session.query(ConversationMetrics).filter(ConversationMetrics.initial_template_used == template).count()
-            )
-            responses_with_template = (
-                session.query(ConversationMetrics)
-                .filter(
-                    ConversationMetrics.initial_template_used == template,
-                    ConversationMetrics.first_response_received.is_(True),
-                )
-                .count()
-            )
-
-            template_effectiveness[template] = {
-                "total": total_with_template,
-                "responses": responses_with_template,
-                "response_rate": (responses_with_template / total_with_template * 100)
-                if total_with_template > 0
-                else 0,
-            }
-
-    # Get research outcomes
-    total_people_looked_up = session.query(func.sum(ConversationMetrics.people_looked_up)).scalar() or 0
-    total_people_found = session.query(func.sum(ConversationMetrics.people_found)).scalar() or 0
-    total_research_tasks = session.query(func.sum(ConversationMetrics.research_tasks_created)).scalar() or 0
-
-    # Get tree impact
-    people_added_to_tree = (
-        session.query(ConversationMetrics).filter(ConversationMetrics.added_to_tree.is_(True)).count()
-    )
+    # Get helper function results
+    research_tree_data = _get_research_outcomes(session, total_conversations)
 
     return {
         "total_conversations": total_conversations,
@@ -397,22 +439,10 @@ def get_overall_analytics(session: Session) -> dict[str, Any]:
         "response_rate_percent": round(response_rate, 2),
         "avg_engagement_score": round(avg_engagement, 2),
         "avg_time_to_first_response_hours": round(avg_time_to_response, 2),
+        "status_counts": _get_status_counts(session),
         "phase_distribution": phase_distribution,
-        "template_effectiveness": template_effectiveness,
-        "research_outcomes": {
-            "people_looked_up": total_people_looked_up,
-            "people_found": total_people_found,
-            "success_rate_percent": round(
-                (total_people_found / total_people_looked_up * 100) if total_people_looked_up > 0 else 0, 2
-            ),
-            "research_tasks_created": total_research_tasks,
-        },
-        "tree_impact": {
-            "people_added_to_tree": people_added_to_tree,
-            "conversion_rate_percent": round(
-                (people_added_to_tree / total_conversations * 100) if total_conversations > 0 else 0, 2
-            ),
-        },
+        "template_effectiveness": _get_template_effectiveness(session),
+        **research_tree_data,  # Includes research_outcomes and tree_impact
     }
 
 
@@ -435,6 +465,11 @@ def print_analytics_dashboard(session: Session) -> None:
     print(f"   Response Rate: {analytics['response_rate_percent']}%")
     print(f"   Average Engagement Score: {analytics['avg_engagement_score']}/100")
     print(f"   Average Time to First Response: {analytics['avg_time_to_first_response_hours']:.1f} hours")
+
+    print("\n📋 STATUS COUNTS")
+    print(f"   Productive Conversations: {analytics['status_counts']['productive']}")
+    print(f"   Opt-Out Requests: {analytics['status_counts']['opt_out']}")
+    print(f"   Human Review Required: {analytics['status_counts']['human_review']}")
 
     print("\n📈 CONVERSATION PHASES")
     for phase, count in analytics['phase_distribution'].items():
@@ -612,6 +647,11 @@ def _test_get_overall_analytics_empty() -> None:
         assert 'template_effectiveness' in analytics, "Should have template_effectiveness"
         assert 'research_outcomes' in analytics, "Should have research_outcomes"
         assert 'tree_impact' in analytics, "Should have tree_impact"
+        # Phase 4.1: Status counts
+        assert 'status_counts' in analytics, "Should have status_counts"
+        assert 'opt_out' in analytics['status_counts'], "Should have opt_out count"
+        assert 'human_review' in analytics['status_counts'], "Should have human_review count"
+        assert 'productive' in analytics['status_counts'], "Should have productive count"
     finally:
         session.close()
 

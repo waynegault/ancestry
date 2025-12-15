@@ -300,10 +300,27 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Measure and optimize communication effectiveness
 
-### 4.1 Metrics Collection
-- [ ] Track per-conversation: messages_sent, messages_received, response_rate
-- [ ] Calculate time_to_first_response
-- [ ] Record opt-out_count, productive_count, human_review_count
+### 4.1 Metrics Collection ✅ IMPLEMENTED
+- [x] Track per-conversation: messages_sent, messages_received, response_rate
+  - ✅ Already implemented in `ConversationMetrics` model (`core/database.py`)
+  - ✅ `update_conversation_metrics()` in `observability/conversation_analytics.py` tracks all per-conversation metrics
+- [x] Calculate time_to_first_response
+  - ✅ Already tracked as `time_to_first_response_hours` in `ConversationMetrics`
+  - ✅ `_update_received_message_metrics()` calculates time delta from first_message_sent
+- [x] Record opt_out_count, productive_count, human_review_count
+  - ✅ NEW: Added `_get_status_counts()` helper function
+  - ✅ Queries `ConversationState.status` for OPT_OUT and HUMAN_REVIEW counts
+  - ✅ Queries `ConversationState.last_intent == "PRODUCTIVE"` for productive count
+  - ✅ Integrated into `get_overall_analytics()` and `print_analytics_dashboard()`
+
+**Implementation Notes (Session 11):**
+- `observability/conversation_analytics.py`:
+  - Added `_get_status_counts()` helper to query ConversationState
+  - Added `_get_template_effectiveness()` helper to reduce local variables
+  - Added `_get_research_outcomes()` helper for research and tree impact metrics
+  - Refactored `get_overall_analytics()` to use helper functions (PLR0914 fix)
+  - Added `status_counts` section to dashboard output
+  - Updated test to verify status_counts structure (10 tests total)
 
 ### 4.2 Quality Scoring
 - [ ] Score draft quality: 0-100 based on personalization, evidence, specificity
