@@ -1,6 +1,6 @@
 # Ancestry Automation Platform - Implementation Roadmap
 
-**Last Updated:** December 16, 2025 (Session 9: AI-powered draft quality validation)
+**Last Updated:** December 16, 2025 (Session 9: AI-powered draft quality validation + auto-correction pipeline)
 **Status:** Active Development
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement with 100% AI-driven communication (except human-escalation cases)
 **Review Status:** ~103,000+ lines reviewed across 55+ modules
@@ -110,10 +110,11 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Auto-reject drafts that fail quality check with reason logged
 - **Implementation:** Added `validate_draft_quality()` function in ai_interface.py with `DraftQualityResult` dataclass. Self-message detection runs first (no AI needed), then AI quality check validates context. Returns structured result with quality_score 0-100, issues_found list, and recommendation.
 
-### 1.5.4 Auto-Correction Pipeline
-- [ ] When quality check fails, attempt one AI regeneration with explicit correction
-- [ ] If regeneration also fails, route to HUMAN_REVIEW with error context
-- [ ] Track correction success rate for prompt improvement
+### 1.5.4 Auto-Correction Pipeline ✅ IMPLEMENTED
+- [x] When quality check fails, attempt one AI regeneration with explicit correction
+- [x] If regeneration also fails, route to HUMAN_REVIEW with error context
+- [x] Track correction success rate for prompt improvement
+- **Implementation:** Added `attempt_draft_correction()` function in ai_interface.py with `DraftCorrectionResult` dataclass. Uses `draft_correction` prompt to regenerate drafts with explicit correction guidance. Self-messages are uncorrectable and route directly to HUMAN_REVIEW. Metrics tracked via prompt_telemetry.
 
 ### 1.5.5 Discovered Issues Log (December 2025)
 | Issue | Example | Root Cause | Fix Priority |

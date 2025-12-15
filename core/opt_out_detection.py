@@ -481,9 +481,7 @@ def generate_opt_out_acknowledgment(
         # Substitute placeholders (these are template strings, not f-strings)
         opt_out_placeholder = "{opt_out_message}"  # noqa: RUF027
         context_placeholder = "{conversation_context}"  # noqa: RUF027
-        system_prompt = prompt_template.replace(
-            opt_out_placeholder, opt_out_message
-        ).replace(
+        system_prompt = prompt_template.replace(opt_out_placeholder, opt_out_message).replace(
             context_placeholder, conversation_context or "No prior context available."
         )
 

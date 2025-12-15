@@ -2088,21 +2088,19 @@ def validate_draft_quality(
     )
 
     # Quick self-message check (don't need AI for this)
-    is_self_message = (
-        recipient_profile_id
-        and sender_profile_id
-        and str(recipient_profile_id) == str(sender_profile_id)
-    )
+    is_self_message = recipient_profile_id and sender_profile_id and str(recipient_profile_id) == str(sender_profile_id)
     if is_self_message:
         logger.error(f"Draft quality check: Self-message detected! recipient={recipient_profile_id}")
         return DraftQualityResult(
             passes_quality_check=False,
-            issues_found=[{
-                "category": "self_message",
-                "severity": "critical",
-                "description": "Message is addressed to the sender themselves",
-                "suggestion": "Do not send - this is a self-message",
-            }],
+            issues_found=[
+                {
+                    "category": "self_message",
+                    "severity": "critical",
+                    "description": "Message is addressed to the sender themselves",
+                    "suggestion": "Do not send - this is a self-message",
+                }
+            ],
             quality_score=0,
             recommendation="reject",
         )
@@ -2130,8 +2128,7 @@ def validate_draft_quality(
     context_placeholder = "{context_summary}"  # noqa: RUF027
 
     system_prompt = (
-        prompt_template
-        .replace(draft_placeholder, draft_message)
+        prompt_template.replace(draft_placeholder, draft_message)
         .replace(recipient_name_placeholder, recipient_name or "Unknown")
         .replace(recipient_id_placeholder, recipient_profile_id or "Unknown")
         .replace(sender_name_placeholder, sender_name or "Tree Owner")
@@ -2154,7 +2151,9 @@ def validate_draft_quality(
     if ai_response_str:
         try:
             ai_response = json.loads(ai_response_str)
-            logger.info(f"Draft quality validation complete. Score={ai_response.get('quality_score', 'N/A')} (Took {duration:.2f}s)")
+            logger.info(
+                f"Draft quality validation complete. Score={ai_response.get('quality_score', 'N/A')} (Took {duration:.2f}s)"
+            )
             return DraftQualityResult(
                 passes_quality_check=ai_response.get("passes_quality_check", True),
                 issues_found=ai_response.get("issues_found", []),
@@ -2167,6 +2166,238 @@ def validate_draft_quality(
     else:
         logger.warning(f"Draft quality validation failed (AI call failed). (Took {duration:.2f}s)")
         return default_result
+
+
+@dataclass
+class DraftCorrectionResult:
+    """Result of auto-correction attempt."""
+
+    success: bool
+    corrected_draft: Optional[str]
+    attempt_count: int
+    final_quality_result: Optional[DraftQualityResult]
+    routed_to_human_review: bool
+    failure_reason: Optional[str]
+
+
+def attempt_draft_correction(
+    original_draft: str,
+    quality_result: DraftQualityResult,
+    recipient_name: str,
+    recipient_profile_id: str,
+    sender_name: str,
+    sender_profile_id: str,
+    context_summary: str,
+    session_manager: Optional[SessionManager] = None,
+    max_attempts: int = 1,
+) -> DraftCorrectionResult:
+    """
+    Attempt to regenerate a draft with corrections when quality check fails.
+
+    Phase 1.5.4: Auto-correction pipeline that attempts regeneration with
+    explicit correction guidance, then routes to HUMAN_REVIEW if still failing.
+
+    Args:
+        original_draft: The draft that failed quality check
+        quality_result: The DraftQualityResult with issues found
+        recipient_name: Name of the recipient
+        recipient_profile_id: Profile ID of the recipient
+        sender_name: Name of the sender (typically the tree owner)
+        sender_profile_id: Profile ID of the sender
+        context_summary: Brief summary of conversation context
+        session_manager: Optional SessionManager for AI calls
+        max_attempts: Maximum regeneration attempts (default 1)
+
+    Returns:
+        DraftCorrectionResult with correction outcome
+    """
+    # Self-message is uncorrectable - route to human review immediately
+    if quality_result.recommendation == "reject" and any(
+        issue.get("category") == "self_message" for issue in quality_result.issues_found
+    ):
+        logger.error("Draft correction: Self-message detected - cannot correct, routing to HUMAN_REVIEW")
+        _record_correction_attempt(success=False, reason="self_message_uncorrectable")
+        return DraftCorrectionResult(
+            success=False,
+            corrected_draft=None,
+            attempt_count=0,
+            final_quality_result=quality_result,
+            routed_to_human_review=True,
+            failure_reason="Self-message detected - uncorrectable",
+        )
+
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.warning("attempt_draft_correction: AI_PROVIDER not configured, routing to HUMAN_REVIEW")
+        _record_correction_attempt(success=False, reason="no_ai_provider")
+        return DraftCorrectionResult(
+            success=False,
+            corrected_draft=None,
+            attempt_count=0,
+            final_quality_result=quality_result,
+            routed_to_human_review=True,
+            failure_reason="AI provider not configured",
+        )
+
+    # Build correction guidance from issues
+    correction_guidance = _build_correction_guidance(quality_result.issues_found)
+
+    for attempt in range(1, max_attempts + 1):
+        logger.info(f"Draft correction attempt {attempt}/{max_attempts}")
+
+        corrected_draft = _regenerate_draft_with_corrections(
+            original_draft=original_draft,
+            issues_found=quality_result.issues_found,
+            correction_guidance=correction_guidance,
+            recipient_name=recipient_name,
+            recipient_profile_id=recipient_profile_id,
+            sender_name=sender_name,
+            context_summary=context_summary,
+            session_manager=session_manager,
+            ai_provider=ai_provider,
+        )
+
+        if not corrected_draft or corrected_draft.startswith("BLOCKED:"):
+            logger.warning(f"Draft correction attempt {attempt} failed: {corrected_draft or 'empty response'}")
+            continue
+
+        # Validate the corrected draft
+        new_quality_result = validate_draft_quality(
+            draft_message=corrected_draft,
+            recipient_name=recipient_name,
+            recipient_profile_id=recipient_profile_id,
+            sender_name=sender_name,
+            sender_profile_id=sender_profile_id,
+            context_summary=context_summary,
+            session_manager=session_manager,
+        )
+
+        if new_quality_result.passes_quality_check:
+            logger.info(f"Draft correction successful on attempt {attempt}. Score: {new_quality_result.quality_score}")
+            _record_correction_attempt(success=True, reason=None, attempt_number=attempt)
+            return DraftCorrectionResult(
+                success=True,
+                corrected_draft=corrected_draft,
+                attempt_count=attempt,
+                final_quality_result=new_quality_result,
+                routed_to_human_review=False,
+                failure_reason=None,
+            )
+
+        logger.warning(
+            f"Corrected draft still has issues on attempt {attempt}. "
+            f"Score: {new_quality_result.quality_score}, Issues: {len(new_quality_result.issues_found)}"
+        )
+
+    # All attempts failed - route to human review
+    logger.warning(f"Draft correction failed after {max_attempts} attempts. Routing to HUMAN_REVIEW")
+    _record_correction_attempt(success=False, reason="max_attempts_exceeded", attempt_number=max_attempts)
+    return DraftCorrectionResult(
+        success=False,
+        corrected_draft=None,
+        attempt_count=max_attempts,
+        final_quality_result=quality_result,
+        routed_to_human_review=True,
+        failure_reason=f"Quality check failed after {max_attempts} correction attempts",
+    )
+
+
+def _build_correction_guidance(issues: list[dict[str, Any]]) -> str:
+    """Build human-readable correction guidance from issues list."""
+    if not issues:
+        return "No specific issues identified."
+
+    guidance_parts = []
+    for i, issue in enumerate(issues, 1):
+        category = issue.get("category", "unknown")
+        description = issue.get("description", "No description")
+        suggestion = issue.get("suggestion", "No suggestion")
+        guidance_parts.append(f"{i}. [{category.upper()}] {description}\n   Fix: {suggestion}")
+
+    return "\n".join(guidance_parts)
+
+
+def _regenerate_draft_with_corrections(
+    original_draft: str,
+    issues_found: list[dict[str, Any]],
+    correction_guidance: str,
+    recipient_name: str,
+    recipient_profile_id: str,
+    sender_name: str,
+    context_summary: str,
+    session_manager: Optional[SessionManager],
+    ai_provider: str,
+) -> Optional[str]:
+    """Regenerate draft using the draft_correction prompt."""
+    prompt_template = get_prompt("draft_correction")
+    if not prompt_template:
+        logger.warning("_regenerate_draft_with_corrections: draft_correction prompt not found")
+        return None
+
+    # Format issues as JSON string for the prompt
+    issues_json = json.dumps(issues_found, indent=2)
+
+    # Substitute placeholders (template strings)
+    original_placeholder = "{original_draft}"  # noqa: RUF027
+    issues_placeholder = "{issues_found}"  # noqa: RUF027
+    guidance_placeholder = "{correction_guidance}"  # noqa: RUF027
+    context_placeholder = "{context_summary}"  # noqa: RUF027
+    recipient_name_placeholder = "{recipient_name}"  # noqa: RUF027
+    recipient_id_placeholder = "{recipient_profile_id}"  # noqa: RUF027
+    sender_name_placeholder = "{sender_name}"  # noqa: RUF027
+
+    system_prompt = (
+        prompt_template.replace(original_placeholder, original_draft)
+        .replace(issues_placeholder, issues_json)
+        .replace(guidance_placeholder, correction_guidance)
+        .replace(context_placeholder, context_summary or "No context available")
+        .replace(recipient_name_placeholder, recipient_name or "Unknown")
+        .replace(recipient_id_placeholder, recipient_profile_id or "Unknown")
+        .replace(sender_name_placeholder, sender_name or "Tree Owner")
+    )
+
+    start_time = time.time()
+    corrected_text = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content="Regenerate the draft with the corrections applied.",
+        session_manager=session_manager,
+        max_tokens=800,
+        temperature=0.7,
+    )
+    duration = time.time() - start_time
+
+    if corrected_text:
+        logger.info(f"Draft regeneration completed. (Took {duration:.2f}s)")
+    else:
+        logger.warning(f"Draft regeneration failed. (Took {duration:.2f}s)")
+
+    return corrected_text
+
+
+def _record_correction_attempt(
+    success: bool,
+    reason: Optional[str],
+    attempt_number: int = 1,
+) -> None:
+    """Record correction attempt metrics for telemetry."""
+    try:
+        from ai.prompt_telemetry import record_prompt_result
+
+        record_prompt_result(
+            prompt_key="draft_correction",
+            experiment_variant="auto_correction_v1",
+            parse_success=success,
+            quality_score=100 if success else 0,
+            response_time_ms=0,  # Not tracking time here
+            metadata={
+                "correction_success": success,
+                "failure_reason": reason,
+                "attempt_number": attempt_number,
+            },
+        )
+    except Exception as e:
+        logger.debug(f"Failed to record correction attempt metrics: {e}")
 
 
 def generate_record_research_strategy(context_history: str, session_manager: SessionManager) -> dict[str, Any] | None:
@@ -3143,6 +3374,97 @@ def ai_interface_module_tests() -> bool:
         "DraftQualityResult dataclass stores values correctly",
         "DraftQualityResult",
         "Test dataclass field assignment and retrieval",
+    )
+
+    # === AUTO-CORRECTION PIPELINE TESTS ===
+    def test_correction_result_dataclass() -> bool:
+        """Test DraftCorrectionResult dataclass."""
+        result = DraftCorrectionResult(
+            success=False,
+            corrected_draft=None,
+            attempt_count=1,
+            final_quality_result=None,
+            routed_to_human_review=True,
+            failure_reason="Test failure",
+        )
+        return (
+            not result.success
+            and result.corrected_draft is None
+            and result.attempt_count == 1
+            and result.routed_to_human_review
+            and result.failure_reason == "Test failure"
+        )
+
+    suite.run_test(
+        "Auto-Correction: Result Dataclass",
+        test_correction_result_dataclass,
+        "DraftCorrectionResult dataclass stores values correctly",
+        "DraftCorrectionResult",
+        "Test dataclass field assignment and retrieval",
+    )
+
+    def test_self_message_routes_to_human_review() -> bool:
+        """Test that self-message immediately routes to HUMAN_REVIEW."""
+        # First create a quality result with self-message issue
+        quality_result = DraftQualityResult(
+            passes_quality_check=False,
+            issues_found=[
+                {
+                    "category": "self_message",
+                    "severity": "critical",
+                    "description": "Message addressed to sender",
+                    "suggestion": "Do not send",
+                }
+            ],
+            quality_score=0,
+            recommendation="reject",
+        )
+        result = attempt_draft_correction(
+            original_draft="Hello me!",
+            quality_result=quality_result,
+            recipient_name="Wayne",
+            recipient_profile_id="PROFILE123",
+            sender_name="Wayne",
+            sender_profile_id="PROFILE123",
+            context_summary="Test",
+            session_manager=None,
+            max_attempts=1,
+        )
+        return (
+            not result.success
+            and result.routed_to_human_review
+            and result.attempt_count == 0
+            and "Self-message" in (result.failure_reason or "")
+        )
+
+    suite.run_test(
+        "Auto-Correction: Self-Message Routes to Human Review",
+        test_self_message_routes_to_human_review,
+        "Self-message is immediately routed to HUMAN_REVIEW without correction attempt",
+        "attempt_draft_correction",
+        "Test that uncorrectable self-messages skip correction",
+    )
+
+    def test_build_correction_guidance() -> bool:
+        """Test that correction guidance is built correctly from issues."""
+        issues = [
+            {"category": "context_inversion", "description": "Wrong direction", "suggestion": "Fix it"},
+            {"category": "tone", "description": "Too casual", "suggestion": "Be formal"},
+        ]
+        guidance = _build_correction_guidance(issues)
+        return (
+            "[CONTEXT_INVERSION]" in guidance
+            and "Wrong direction" in guidance
+            and "[TONE]" in guidance
+            and "Too casual" in guidance
+        )
+
+    suite.run_test(
+        "Auto-Correction: Build Correction Guidance",
+        test_build_correction_guidance,
+        "Correction guidance is formatted correctly from issues list",
+        "_build_correction_guidance",
+        "Test helper function that builds human-readable guidance",
     )
 
     return suite.finish_suite()

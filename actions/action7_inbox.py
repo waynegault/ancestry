@@ -2718,9 +2718,7 @@ class InboxProcessor:
 
         # Use transition method for audit logging
         if status != state.status:
-            state.transition_status(
-                status, reason=transition_reason or "status update", triggered_by="action7_inbox"
-            )
+            state.transition_status(status, reason=transition_reason or "status update", triggered_by="action7_inbox")
         state.safety_flag = safety_flag
         session.commit()
 

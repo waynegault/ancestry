@@ -279,9 +279,7 @@ class SafetyGuard:
             and recipient_profile_id
             and sender_profile_id.strip().lower() == recipient_profile_id.strip().lower()
         ):
-            logger.critical(
-                f"🚨 SELF_MESSAGE: Blocked message to self (profile_id={sender_profile_id})"
-            )
+            logger.critical(f"🚨 SELF_MESSAGE: Blocked message to self (profile_id={sender_profile_id})")
             return SafetyCheckResult(
                 status=SafetyStatus.CRITICAL_ALERT,
                 reason="Attempted to send message to self (same profile_id)",
@@ -290,11 +288,7 @@ class SafetyGuard:
             )
 
         # Check by UUID
-        if (
-            sender_uuid
-            and recipient_uuid
-            and sender_uuid.strip().upper() == recipient_uuid.strip().upper()
-        ):
+        if sender_uuid and recipient_uuid and sender_uuid.strip().upper() == recipient_uuid.strip().upper():
             logger.critical(f"🚨 SELF_MESSAGE: Blocked message to self (uuid={sender_uuid})")
             return SafetyCheckResult(
                 status=SafetyStatus.CRITICAL_ALERT,
