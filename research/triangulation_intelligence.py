@@ -75,6 +75,40 @@ class TriangulationHypothesis:
 
 
 @dataclass
+class ClusterAnchor:
+    """
+    A match with confirmed tree placement that anchors a cluster.
+
+    Phase 5.3: Anchors are high-confidence reference points that help
+    identify the common ancestor for a cluster of matches.
+    """
+
+    match_uuid: str
+    match_name: str
+    shared_cm: float
+    confirmed_ancestor_name: Optional[str] = None
+    tree_depth: int = 0  # How many generations back the connection is known
+    has_linked_tree: bool = False
+    relationship_path: Optional[str] = None  # e.g., "3rd cousin via John Smith"
+
+
+@dataclass
+class ClusterResearchHypothesis:
+    """
+    Research hypothesis for an entire cluster.
+
+    Phase 5.3: Suggests research directions based on cluster characteristics.
+    """
+
+    hypothesis_id: str
+    description: str
+    suggested_actions: list[str]
+    priority: str  # "high", "medium", "low"
+    target_ancestor: Optional[str] = None
+    evidence_summary: str = ""
+
+
+@dataclass
 class MatchCluster:
     """A group of matches that likely share a common ancestor."""
 
@@ -85,6 +119,9 @@ class MatchCluster:
     average_shared_cm: float
     confidence_level: ConfidenceLevel
     evidence: list[Evidence]
+    # Phase 5.3 additions
+    anchors: list[ClusterAnchor] = field(default_factory=list)
+    research_hypotheses: list[ClusterResearchHypothesis] = field(default_factory=list)
 
 
 class TriangulationIntelligence:
@@ -569,6 +606,14 @@ class TriangulationIntelligence:
             )
         ]
 
+        # Phase 5.3: Identify cluster anchors
+        anchors = TriangulationIntelligence._identify_cluster_anchors(matches)
+
+        # Phase 5.3: Generate research hypotheses
+        research_hypotheses = TriangulationIntelligence._generate_cluster_hypotheses(
+            surname, matches, anchors, confidence
+        )
+
         return MatchCluster(
             cluster_id=f"cluster_{surname}_{len(matches)}",
             common_ancestor_hypothesis=f"Ancestor with surname {surname.title()}",
@@ -577,7 +622,133 @@ class TriangulationIntelligence:
             average_shared_cm=avg_cm,
             confidence_level=confidence,
             evidence=evidence,
+            anchors=anchors,
+            research_hypotheses=research_hypotheses,
         )
+
+    @staticmethod
+    def _identify_cluster_anchors(matches: list[dict[str, Any]]) -> list[ClusterAnchor]:
+        """
+        Identify anchor matches with confirmed tree placement.
+
+        Phase 5.3: Anchors are matches with linked trees or confirmed
+        ancestor information that help place the cluster in the family tree.
+
+        Args:
+            matches: List of match dictionaries
+
+        Returns:
+            List of ClusterAnchor objects sorted by confidence
+        """
+        anchors: list[ClusterAnchor] = []
+
+        for match in matches:
+            # Check for tree linkage indicators
+            has_tree = match.get("has_linked_tree", False) or match.get("tree_size", 0) > 0
+            confirmed_ancestor = match.get("common_ancestor_name") or match.get("mrca")
+            shared_cm = match.get("shared_cm", 0)
+            relationship = match.get("relationship_path") or match.get("relationship")
+
+            # A match is an anchor if it has a linked tree or confirmed ancestor
+            if has_tree or confirmed_ancestor:
+                anchor = ClusterAnchor(
+                    match_uuid=match.get("uuid", ""),
+                    match_name=match.get("name", "Unknown"),
+                    shared_cm=shared_cm,
+                    confirmed_ancestor_name=confirmed_ancestor,
+                    tree_depth=match.get("tree_depth", 0),
+                    has_linked_tree=has_tree,
+                    relationship_path=relationship,
+                )
+                anchors.append(anchor)
+
+        # Sort anchors by shared_cm (higher = more reliable)
+        anchors.sort(key=lambda a: a.shared_cm, reverse=True)
+        return anchors
+
+    @staticmethod
+    def _generate_cluster_hypotheses(
+        surname: str,
+        matches: list[dict[str, Any]],
+        anchors: list[ClusterAnchor],
+        confidence: ConfidenceLevel,
+    ) -> list[ClusterResearchHypothesis]:
+        """
+        Generate research hypotheses for a cluster.
+
+        Phase 5.3: Creates actionable research suggestions based on
+        cluster characteristics and anchor information.
+
+        Args:
+            surname: Common surname in cluster
+            matches: List of match dictionaries
+            anchors: List of identified anchors
+            confidence: Cluster confidence level
+
+        Returns:
+            List of ClusterResearchHypothesis objects
+        """
+        hypotheses: list[ClusterResearchHypothesis] = []
+        match_count = len(matches)
+        total_cm = sum(m.get("shared_cm", 0) for m in matches)
+
+        # Hypothesis 1: Based on anchors
+        if anchors:
+            best_anchor = anchors[0]
+            if best_anchor.confirmed_ancestor_name:
+                hypotheses.append(
+                    ClusterResearchHypothesis(
+                        hypothesis_id=f"h_{surname}_anchor",
+                        description=f"Cluster shares ancestor {best_anchor.confirmed_ancestor_name}",
+                        suggested_actions=[
+                            f"Review {best_anchor.match_name}'s tree for {best_anchor.confirmed_ancestor_name}",
+                            f"Search for descendants of {best_anchor.confirmed_ancestor_name} in other matches",
+                            "Compare shared segments between cluster members",
+                        ],
+                        priority="high",
+                        target_ancestor=best_anchor.confirmed_ancestor_name,
+                        evidence_summary=f"Anchor match ({best_anchor.shared_cm:.0f} cM) confirms connection",
+                    )
+                )
+
+        # Hypothesis 2: Based on surname pattern
+        if match_count >= 3:
+            priority = "high" if confidence == ConfidenceLevel.HIGH else "medium"
+            hypotheses.append(
+                ClusterResearchHypothesis(
+                    hypothesis_id=f"h_{surname}_pattern",
+                    description=f"{match_count} matches share {surname.title()} surname pattern",
+                    suggested_actions=[
+                        f"Research {surname.title()} family lines in your tree",
+                        f"Check for {surname.title()} in vital records (births, marriages, deaths)",
+                        "Look for geographic clustering among these matches",
+                    ],
+                    priority=priority,
+                    target_ancestor=f"Unknown {surname.title()} ancestor",
+                    evidence_summary=f"{match_count} matches, {total_cm:.0f} total cM shared",
+                )
+            )
+
+        # Hypothesis 3: Geographic research (if locations available)
+        locations = [m.get("location", "") for m in matches if m.get("location")]
+        if locations:
+            unique_locations = list({loc for loc in locations if loc})[:3]
+            if unique_locations:
+                hypotheses.append(
+                    ClusterResearchHypothesis(
+                        hypothesis_id=f"h_{surname}_geo",
+                        description=f"Geographic focus: {', '.join(unique_locations)}",
+                        suggested_actions=[
+                            f"Research {surname.title()} records in {unique_locations[0]}",
+                            "Check immigration/emigration records for this surname",
+                            "Look for church records in these locations",
+                        ],
+                        priority="medium",
+                        evidence_summary=f"Matches concentrated in {len(unique_locations)} location(s)",
+                    )
+                )
+
+        return hypotheses
 
     @staticmethod
     def _calculate_actionability(hypothesis: TriangulationHypothesis) -> float:
@@ -717,6 +888,59 @@ def _test_prioritization() -> None:
     assert prioritized[0].match_name == "Match 1"  # Higher confidence first
 
 
+def _test_cluster_anchor_identification() -> None:
+    """Test Phase 5.3 anchor identification in clusters."""
+    matches = [
+        {"uuid": "m1", "name": "Anchor Match", "shared_cm": 150, "has_linked_tree": True, "common_ancestor_name": "John Smith"},
+        {"uuid": "m2", "name": "Regular Match", "shared_cm": 80},
+        {"uuid": "m3", "name": "Tree Match", "shared_cm": 60, "tree_size": 500},
+    ]
+
+    anchors = TriangulationIntelligence._identify_cluster_anchors(matches)
+
+    assert len(anchors) == 2, "Should identify 2 anchors"
+    assert anchors[0].match_name == "Anchor Match", "Highest shared_cm anchor first"
+    assert anchors[0].confirmed_ancestor_name == "John Smith"
+    assert anchors[0].has_linked_tree is True
+
+
+def _test_cluster_research_hypotheses() -> None:
+    """Test Phase 5.3 hypothesis generation for clusters."""
+    matches = [
+        {"uuid": "m1", "name": "Match 1", "shared_cm": 100, "has_linked_tree": True, "common_ancestor_name": "Mary Jones"},
+        {"uuid": "m2", "name": "Match 2", "shared_cm": 80},
+        {"uuid": "m3", "name": "Match 3", "shared_cm": 60},
+    ]
+    anchors = TriangulationIntelligence._identify_cluster_anchors(matches)
+    hypotheses = TriangulationIntelligence._generate_cluster_hypotheses(
+        "jones", matches, anchors, ConfidenceLevel.HIGH
+    )
+
+    assert len(hypotheses) >= 2, "Should generate at least 2 hypotheses"
+    # First hypothesis should be anchor-based
+    assert any("Mary Jones" in h.description for h in hypotheses), "Should reference anchor ancestor"
+    # Should have suggested actions
+    assert all(len(h.suggested_actions) > 0 for h in hypotheses), "Each hypothesis should have actions"
+
+
+def _test_cluster_with_geographic_hypothesis() -> None:
+    """Test Phase 5.3 geographic hypothesis generation."""
+    matches = [
+        {"uuid": "m1", "name": "Match 1", "shared_cm": 100, "location": "Scotland"},
+        {"uuid": "m2", "name": "Match 2", "shared_cm": 80, "location": "Scotland"},
+        {"uuid": "m3", "name": "Match 3", "shared_cm": 60, "location": "Ireland"},
+    ]
+    anchors: list[ClusterAnchor] = []
+    hypotheses = TriangulationIntelligence._generate_cluster_hypotheses(
+        "smith", matches, anchors, ConfidenceLevel.MODERATE
+    )
+
+    # Should have geographic hypothesis
+    geo_hypothesis = [h for h in hypotheses if "geo" in h.hypothesis_id]
+    assert len(geo_hypothesis) == 1, "Should generate geographic hypothesis"
+    assert "Scotland" in geo_hypothesis[0].description or "Ireland" in geo_hypothesis[0].description
+
+
 def module_tests() -> bool:
     """Run all module tests."""
     suite = TestSuite("Triangulation Intelligence", "triangulation_intelligence.py")
@@ -728,6 +952,10 @@ def module_tests() -> bool:
     suite.run_test("Match cluster detection", _test_cluster_detection)
     suite.run_test("Relationship type proposal", _test_relationship_proposal)
     suite.run_test("Hypothesis prioritization", _test_prioritization)
+    # Phase 5.3 tests
+    suite.run_test("Cluster anchor identification", _test_cluster_anchor_identification)
+    suite.run_test("Cluster research hypotheses", _test_cluster_research_hypotheses)
+    suite.run_test("Geographic hypothesis generation", _test_cluster_with_geographic_hypothesis)
 
     return suite.finish_suite()
 
