@@ -115,6 +115,7 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] If regeneration also fails, route to HUMAN_REVIEW with error context
 - [x] Track correction success rate for prompt improvement
 - **Implementation:** Added `attempt_draft_correction()` function in ai_interface.py with `DraftCorrectionResult` dataclass. Uses `draft_correction` prompt to regenerate drafts with explicit correction guidance. Self-messages are uncorrectable and route directly to HUMAN_REVIEW. Metrics tracked via prompt_telemetry.
+- **Integration:** Wired into action8_messaging.py `_generate_contextual_draft_payload()` via `_validate_and_correct_draft()` helper. Runs after draft generation, before queueing. Adds `quality_validated` and `routed_to_human_review` flags to draft payload.
 
 ### 1.5.5 Discovered Issues Log (December 2025)
 | Issue | Example | Root Cause | Fix Priority |
