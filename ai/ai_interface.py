@@ -1376,6 +1376,259 @@ def _format_legacy_prompt(template: str, context: str, user_msg: str, data: str)
 # End of generate_genealogical_reply
 
 
+# === PHASE 2.3: STRUCTURED RESPONSE GENERATION ===
+
+
+@dataclass
+class EvidenceSource:
+    """A single piece of evidence used in a response."""
+
+    source: str  # e.g., "GEDCOM", "Census 1881", "Birth Record"
+    reference: str | None  # e.g., "@I123@", "RG11/1234"
+    fact: str  # e.g., "John Smith b. 1850"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "source": self.source,
+            "reference": self.reference,
+            "fact": self.fact,
+        }
+
+
+@dataclass
+class MissingInformation:
+    """A piece of missing information that would improve the answer."""
+
+    field: str  # e.g., "Birth place"
+    impact: str  # "high", "medium", "low"
+    suggested_source: str  # e.g., "Parish records"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "field": self.field,
+            "impact": self.impact,
+            "suggested_source": self.suggested_source,
+        }
+
+
+@dataclass
+class ConfidenceBreakdown:
+    """Breakdown of how confidence score was calculated."""
+
+    base: int  # Starting point (50)
+    adjustments: list[dict[str, str]]  # e.g., [{"+30": "Direct GEDCOM match"}]
+    final: int  # Final score after adjustments
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "base": self.base,
+            "adjustments": self.adjustments,
+            "final": self.final,
+        }
+
+
+@dataclass
+class StructuredReplyResult:
+    """
+    Result of structured response generation with evidence citations.
+
+    Phase 2.3: Evidence-backed answers with confidence scoring and uncertainty disclosure.
+    """
+
+    draft_message: str
+    confidence: int  # 0-100
+    confidence_breakdown: ConfidenceBreakdown
+    evidence_used: list[EvidenceSource]
+    missing_information: list[MissingInformation]
+    suggested_facts: list[str]
+    follow_up_questions: list[str]
+    route_to_human_review: bool
+    human_review_reason: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "draft_message": self.draft_message,
+            "confidence": self.confidence,
+            "confidence_breakdown": self.confidence_breakdown.to_dict(),
+            "evidence_used": [e.to_dict() for e in self.evidence_used],
+            "missing_information": [m.to_dict() for m in self.missing_information],
+            "suggested_facts": self.suggested_facts,
+            "follow_up_questions": self.follow_up_questions,
+            "route_to_human_review": self.route_to_human_review,
+            "human_review_reason": self.human_review_reason,
+        }
+
+    def should_route_to_human(self) -> bool:
+        """Check if this response should be routed to human review."""
+        return self.route_to_human_review or self.confidence < 50
+
+    def get_review_reason(self) -> str | None:
+        """Get the reason for human review routing."""
+        if self.human_review_reason:
+            return self.human_review_reason
+        if self.confidence < 50:
+            return f"Low confidence score ({self.confidence}/100)"
+        return None
+
+
+def generate_structured_reply(
+    user_question: str,
+    conversation_context: str,
+    tree_evidence: str,
+    semantic_search_results: str,
+    family_members: str,
+    relationship_path: str,
+    session_manager: SessionManager,
+) -> StructuredReplyResult | None:
+    """
+    Generate a structured response with evidence citations and confidence scoring.
+
+    Phase 2.3: Enhanced response generation that returns structured JSON with:
+    - Evidence citations for every factual claim
+    - Confidence scoring with breakdown
+    - Uncertainty disclosure
+    - Follow-up question generation
+    - Human review routing for low-confidence answers
+
+    Args:
+        user_question: The genealogical question to answer
+        conversation_context: Formatted conversation history
+        tree_evidence: Evidence from GEDCOM tree lookups
+        semantic_search_results: Results from semantic search
+        family_members: Family members data from TreeQueryService
+        relationship_path: Relationship explanation
+        session_manager: Session manager for AI calls
+
+    Returns:
+        StructuredReplyResult with all response components, or None if generation fails
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error("generate_structured_reply: AI_PROVIDER not configured.")
+        return None
+
+    if not user_question:
+        logger.error("generate_structured_reply: user_question is required.")
+        return None
+
+    # Load the response_generation prompt
+    prompt_template = get_prompt("response_generation")
+    if not prompt_template:
+        logger.error("generate_structured_reply: Failed to load 'response_generation' prompt.")
+        return None
+
+    # Format the prompt with all evidence
+    try:
+        formatted_prompt = prompt_template.format(
+            user_question=user_question,
+            conversation_context=conversation_context or "No previous conversation.",
+            tree_evidence=tree_evidence or "No tree evidence available.",
+            semantic_search_results=semantic_search_results or "No semantic search results.",
+            family_members=family_members or "No family members data.",
+            relationship_path=relationship_path or "No relationship path available.",
+        )
+    except KeyError as e:
+        logger.error(f"generate_structured_reply: Prompt formatting error: {e}")
+        return None
+
+    start_time = time.time()
+    response_text = _call_ai_model(
+        provider=ai_provider,
+        system_prompt=formatted_prompt,
+        user_content="Generate the structured JSON response based on the prompt.",
+        session_manager=session_manager,
+        max_tokens=1500,
+        temperature=0.5,  # Lower temperature for more consistent JSON output
+    )
+    duration = time.time() - start_time
+
+    if not response_text:
+        logger.error(f"generate_structured_reply: AI call failed. (Took {duration:.2f}s)")
+        return None
+
+    # Parse the JSON response
+    result = _parse_structured_reply_response(response_text)
+    if result:
+        logger.info(
+            f"Structured reply generated. Confidence: {result.confidence}/100, "
+            f"Human review: {result.should_route_to_human()}. (Took {duration:.2f}s)"
+        )
+    else:
+        logger.warning(f"generate_structured_reply: Failed to parse response. (Took {duration:.2f}s)")
+
+    return result
+
+
+def _parse_structured_reply_response(response_text: str) -> StructuredReplyResult | None:
+    """Parse the AI response into a StructuredReplyResult."""
+    try:
+        # Clean the response - remove markdown code blocks if present
+        cleaned = response_text.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned[7:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+
+        data = json.loads(cleaned)
+
+        # Parse confidence breakdown
+        breakdown_data = data.get("confidence_breakdown", {})
+        confidence_breakdown = ConfidenceBreakdown(
+            base=breakdown_data.get("base", 50),
+            adjustments=breakdown_data.get("adjustments", []),
+            final=breakdown_data.get("final", data.get("confidence", 50)),
+        )
+
+        # Parse evidence sources
+        evidence_used = [
+            EvidenceSource(
+                source=e.get("source", "Unknown"),
+                reference=e.get("reference"),
+                fact=e.get("fact", ""),
+            )
+            for e in data.get("evidence_used", [])
+        ]
+
+        # Parse missing information
+        missing_info = [
+            MissingInformation(
+                field=m.get("field", "Unknown"),
+                impact=m.get("impact", "medium"),
+                suggested_source=m.get("suggested_source", ""),
+            )
+            for m in data.get("missing_information", [])
+        ]
+
+        return StructuredReplyResult(
+            draft_message=data.get("draft_message", ""),
+            confidence=data.get("confidence", 50),
+            confidence_breakdown=confidence_breakdown,
+            evidence_used=evidence_used,
+            missing_information=missing_info,
+            suggested_facts=data.get("suggested_facts", []),
+            follow_up_questions=data.get("follow_up_questions", []),
+            route_to_human_review=data.get("route_to_human_review", False),
+            human_review_reason=data.get("human_review_reason"),
+        )
+
+    except json.JSONDecodeError as e:
+        logger.error(f"_parse_structured_reply_response: JSON parse error: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"_parse_structured_reply_response: Unexpected error: {e}")
+        return None
+
+
+# End of Phase 2.3 Structured Response Generation
+
+
 def _load_dialogue_prompt(log_prefix: str) -> str | None:
     """Load genealogical_dialogue_response prompt from JSON."""
     if not USE_JSON_PROMPTS:
@@ -3826,6 +4079,170 @@ def ai_interface_module_tests() -> bool:
         "Common salutations and sign-offs are filtered from names",
         "extract_names_from_text",
         "Test that 'Dear Friend', 'Best Regards' are not detected as names",
+    )
+
+    # === PHASE 2.3: STRUCTURED REPLY TESTS ===
+    def test_structured_reply_dataclasses() -> bool:
+        """Test StructuredReplyResult and related dataclasses."""
+        evidence = EvidenceSource(source="GEDCOM", reference="@I123@", fact="John Smith b. 1850")
+        missing = MissingInformation(field="Birth place", impact="high", suggested_source="Parish records")
+        breakdown = ConfidenceBreakdown(base=50, adjustments=[{"+30": "Direct match"}], final=80)
+        result = StructuredReplyResult(
+            draft_message="Test message",
+            confidence=80,
+            confidence_breakdown=breakdown,
+            evidence_used=[evidence],
+            missing_information=[missing],
+            suggested_facts=["Verify parents"],
+            follow_up_questions=["When was he born?"],
+            route_to_human_review=False,
+            human_review_reason=None,
+        )
+        return (
+            result.draft_message == "Test message"
+            and result.confidence == 80
+            and len(result.evidence_used) == 1
+            and result.evidence_used[0].source == "GEDCOM"
+            and len(result.missing_information) == 1
+            and result.missing_information[0].field == "Birth place"
+            and not result.should_route_to_human()
+        )
+
+    suite.run_test(
+        "Structured Reply: Dataclass Creation",
+        test_structured_reply_dataclasses,
+        "StructuredReplyResult and related dataclasses work correctly",
+        "StructuredReplyResult",
+        "Test Phase 2.3 dataclass creation and validation",
+    )
+
+    def test_structured_reply_to_dict() -> bool:
+        """Test StructuredReplyResult.to_dict() serialization."""
+        evidence = EvidenceSource(source="Census", reference="RG11/1234", fact="Fisherman in Banff")
+        missing = MissingInformation(field="Marriage date", impact="medium", suggested_source="Civil registration")
+        breakdown = ConfidenceBreakdown(base=50, adjustments=[{"-20": "Not found"}], final=30)
+        result = StructuredReplyResult(
+            draft_message="Low confidence message",
+            confidence=30,
+            confidence_breakdown=breakdown,
+            evidence_used=[evidence],
+            missing_information=[missing],
+            suggested_facts=["Find birth record"],
+            follow_up_questions=["Where was he from?"],
+            route_to_human_review=True,
+            human_review_reason="Low confidence",
+        )
+        d = result.to_dict()
+        return (
+            isinstance(d, dict)
+            and d["draft_message"] == "Low confidence message"
+            and d["confidence"] == 30
+            and len(d["evidence_used"]) == 1
+            and d["evidence_used"][0]["source"] == "Census"
+            and d["route_to_human_review"] is True
+        )
+
+    suite.run_test(
+        "Structured Reply: to_dict Serialization",
+        test_structured_reply_to_dict,
+        "StructuredReplyResult.to_dict() produces valid dictionary",
+        "StructuredReplyResult.to_dict",
+        "Test JSON-serializable dictionary conversion",
+    )
+
+    def test_structured_reply_human_review_routing() -> bool:
+        """Test should_route_to_human() logic."""
+        # Low confidence should route to human
+        low_conf = StructuredReplyResult(
+            draft_message="Test",
+            confidence=40,
+            confidence_breakdown=ConfidenceBreakdown(base=50, adjustments=[], final=40),
+            evidence_used=[],
+            missing_information=[],
+            suggested_facts=[],
+            follow_up_questions=[],
+            route_to_human_review=False,
+            human_review_reason=None,
+        )
+        # Explicit route should override
+        explicit = StructuredReplyResult(
+            draft_message="Test",
+            confidence=90,
+            confidence_breakdown=ConfidenceBreakdown(base=50, adjustments=[], final=90),
+            evidence_used=[],
+            missing_information=[],
+            suggested_facts=[],
+            follow_up_questions=[],
+            route_to_human_review=True,
+            human_review_reason="Sensitive topic",
+        )
+        return (
+            low_conf.should_route_to_human()  # Low confidence triggers
+            and low_conf.get_review_reason() == "Low confidence score (40/100)"
+            and explicit.should_route_to_human()  # Explicit flag triggers
+            and explicit.get_review_reason() == "Sensitive topic"
+        )
+
+    suite.run_test(
+        "Structured Reply: Human Review Routing",
+        test_structured_reply_human_review_routing,
+        "should_route_to_human() correctly identifies review cases",
+        "StructuredReplyResult.should_route_to_human",
+        "Test low confidence and explicit routing triggers",
+    )
+
+    def test_parse_structured_reply_response() -> bool:
+        """Test _parse_structured_reply_response JSON parsing."""
+        sample_json = """
+        {
+            "draft_message": "Hello! I found John Smith in my tree.",
+            "confidence": 85,
+            "confidence_breakdown": {
+                "base": 50,
+                "adjustments": [{"+30": "Direct match"}, {"+5": "Related members"}],
+                "final": 85
+            },
+            "evidence_used": [
+                {"source": "GEDCOM", "reference": "@I45@", "fact": "John Smith 1850-1920"}
+            ],
+            "missing_information": [],
+            "suggested_facts": ["Verify parents"],
+            "follow_up_questions": ["Do you have any records?"],
+            "route_to_human_review": false,
+            "human_review_reason": null
+        }
+        """
+        result = _parse_structured_reply_response(sample_json)
+        return (
+            result is not None
+            and result.draft_message.startswith("Hello!")
+            and result.confidence == 85
+            and result.confidence_breakdown.final == 85
+            and len(result.evidence_used) == 1
+            and result.evidence_used[0].reference == "@I45@"
+            and not result.route_to_human_review
+        )
+
+    suite.run_test(
+        "Structured Reply: JSON Parsing",
+        test_parse_structured_reply_response,
+        "_parse_structured_reply_response correctly parses valid JSON",
+        "_parse_structured_reply_response",
+        "Test AI response JSON parsing into dataclass",
+    )
+
+    def test_parse_structured_reply_invalid_json() -> bool:
+        """Test _parse_structured_reply_response handles invalid JSON gracefully."""
+        invalid_json = "This is not valid JSON at all"
+        result = _parse_structured_reply_response(invalid_json)
+        return result is None
+
+    suite.run_test(
+        "Structured Reply: Invalid JSON Handling",
+        test_parse_structured_reply_invalid_json,
+        "_parse_structured_reply_response returns None for invalid JSON",
+        "_parse_structured_reply_response",
+        "Test graceful error handling for malformed responses",
     )
 
     return suite.finish_suite()
