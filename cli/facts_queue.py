@@ -263,6 +263,126 @@ class FactsQueueService:
             by_severity=by_severity if by_severity else None,
         )
 
+    def create_tasks_for_critical_conflicts(
+        self,
+        severity_filter: list[ConflictSeverityEnum] | None = None,
+    ) -> tuple[int, int]:
+        """
+        Create MS To-Do tasks for HIGH and CRITICAL severity conflicts.
+
+        Phase 3.4: MS To-Do Integration for MAJOR_CONFLICT items.
+
+        Args:
+            severity_filter: List of severities to create tasks for.
+                            Defaults to [CRITICAL, HIGH].
+
+        Returns:
+            Tuple of (tasks_created, tasks_failed).
+        """
+        from integrations import ms_graph_utils
+
+        # Default to critical and high severity
+        if severity_filter is None:
+            severity_filter = [ConflictSeverityEnum.CRITICAL, ConflictSeverityEnum.HIGH]
+
+        # Get conflicts that need tasks
+        conflicts = (
+            self.session.query(DataConflict)
+            .filter(
+                DataConflict.status == ConflictStatusEnum.OPEN,
+                DataConflict.severity.in_(severity_filter),
+            )
+            .all()
+        )
+
+        if not conflicts:
+            logger.info("No critical/high severity conflicts found for task creation.")
+            return (0, 0)
+
+        # Acquire MS Graph token
+        token = ms_graph_utils.acquire_token_device_flow()
+        if not token:
+            logger.warning("MS Graph authentication failed. Cannot create tasks.")
+            return (0, len(conflicts))
+
+        # Get or create todo list
+        list_name = "Ancestry Research"
+        list_id = ms_graph_utils.get_todo_list_id(token, list_name)
+        if not list_id:
+            logger.warning(f"MS To-Do list '{list_name}' not found. Cannot create tasks.")
+            return (0, len(conflicts))
+
+        tasks_created = 0
+        tasks_failed = 0
+
+        for conflict in conflicts:
+            person = conflict.person
+            person_name = _get_person_display_name(person)
+
+            # Build task title
+            severity_emoji = {"CRITICAL": "🔴", "HIGH": "🟠"}.get(
+                conflict.severity.value if conflict.severity else "HIGH", "⚠️"
+            )
+            task_title = f"{severity_emoji} Conflict: {person_name} - {conflict.field_name}"
+
+            # Build task body with conflict details
+            task_body = _format_conflict_task_body(conflict, person_name)
+
+            # Determine importance based on severity
+            importance = "high" if conflict.severity == ConflictSeverityEnum.CRITICAL else "normal"
+
+            # Create categories for organization
+            categories = [
+                f"fact_type:{conflict.field_name or 'unknown'}",
+                f"person:{person_name[:30]}",
+                f"severity:{conflict.severity.value if conflict.severity else 'unknown'}",
+            ]
+
+            # Create the task
+            task_id = ms_graph_utils.create_todo_task(
+                access_token=token,
+                list_id=list_id,
+                task_title=task_title[:255],  # MS Graph title limit
+                task_body=task_body,
+                importance=importance,
+                categories=categories,
+            )
+
+            if task_id:
+                tasks_created += 1
+                logger.info(f"Created MS To-Do task for conflict #{conflict.id}: {task_title[:50]}...")
+            else:
+                tasks_failed += 1
+                logger.warning(f"Failed to create task for conflict #{conflict.id}")
+
+        return (tasks_created, tasks_failed)
+
+
+def _format_conflict_task_body(conflict: DataConflict, person_name: str) -> str:
+    """Format the task body with conflict details."""
+    lines = [
+        f"📋 Data Conflict for {person_name}",
+        "",
+        f"Field: {conflict.field_name}",
+        f"Existing Value: {conflict.existing_value or '(empty)'}",
+        f"New Value: {conflict.new_value or '(empty)'}",
+        f"Severity: {conflict.severity.value if conflict.severity else 'UNKNOWN'}",
+        f"Source: {conflict.source or 'conversation'}",
+        "",
+        "Action Required:",
+        "- Research to verify which value is correct",
+        "- Update the tree if new value is confirmed",
+        "- Resolve the conflict in facts_queue CLI",
+        "",
+        f"Conflict ID: #{conflict.id}",
+        f"Created: {conflict.created_at}",
+    ]
+
+    if conflict.confidence_score:
+        lines.insert(6, f"AI Confidence: {conflict.confidence_score}%")
+
+    return "\n".join(lines)
+
 
 # ==============================================================================
 # CLI Commands
@@ -483,6 +603,39 @@ def cmd_conflicts(args: argparse.Namespace) -> int:
         session.close()
 
 
+def cmd_create_tasks(args: argparse.Namespace) -> int:
+    """Create MS To-Do tasks for critical conflicts."""
+    session = _get_db_session()
+    service = FactsQueueService(session)
+
+    try:
+        # Determine severity filter
+        severity_filter = None
+        if args.severity:
+            try:
+                sev = ConflictSeverityEnum(args.severity.upper())
+                severity_filter = [sev]
+            except ValueError:
+                print(f"❌ Invalid severity: {args.severity}")
+                return 1
+
+        print("📝 Creating MS To-Do tasks for critical conflicts...")
+        tasks_created, tasks_failed = service.create_tasks_for_critical_conflicts(severity_filter)
+
+        if tasks_created == 0 and tasks_failed == 0:
+            print("✅ No critical/high severity conflicts found requiring tasks.")
+            return 0
+
+        print("\n📊 Task Creation Summary:")
+        print(f"  ✅ Created: {tasks_created}")
+        print(f"  ❌ Failed:  {tasks_failed}")
+
+        return 0 if tasks_failed == 0 else 1
+
+    finally:
+        session.close()
+
+
 def _get_person_display_name(person: Person | None) -> str:
     """Get display name for a person."""
     if not person:
@@ -547,6 +700,18 @@ def main() -> int:
         help="Filter by severity",
     )
     conflicts_parser.set_defaults(func=cmd_conflicts)
+
+    # create-tasks command (Phase 3.4)
+    create_tasks_parser = subparsers.add_parser(
+        "create-tasks",
+        help="Create MS To-Do tasks for critical conflicts",
+    )
+    create_tasks_parser.add_argument(
+        "--severity",
+        choices=["high", "critical"],
+        help="Create tasks only for specific severity (default: both high and critical)",
+    )
+    create_tasks_parser.set_defaults(func=cmd_create_tasks)
 
     args = parser.parse_args()
 
@@ -638,6 +803,29 @@ def facts_queue_module_tests() -> bool:
             result = _get_person_display_name(person)
             assert result == "johndoe"
 
+        # Test _format_conflict_task_body helper (Phase 3.4)
+        def test_format_conflict_task_body():
+            from unittest.mock import MagicMock
+
+            conflict = MagicMock()
+            conflict.id = 42
+            conflict.field_name = "birth_year"
+            conflict.existing_value = "1850"
+            conflict.new_value = "1855"
+            conflict.severity = ConflictSeverityEnum.HIGH
+            conflict.source = "conversation"
+            conflict.confidence_score = 85
+            conflict.created_at = "2025-12-15 10:30:00"
+
+            result = _format_conflict_task_body(conflict, "John Doe")
+            assert "John Doe" in result
+            assert "birth_year" in result
+            assert "1850" in result
+            assert "1855" in result
+            assert "HIGH" in result
+            assert "85%" in result
+            assert "#42" in result
+
         suite.run_test(
             "FactsQueueStats defaults",
             test_facts_queue_stats_defaults,
@@ -672,6 +860,11 @@ def facts_queue_module_tests() -> bool:
             "Person display name fallback",
             test_get_person_display_name_fallback_to_username,
             "Should fall back to username",
+        )
+        suite.run_test(
+            "Format conflict task body",
+            test_format_conflict_task_body,
+            "Should format conflict details for MS To-Do task",
         )
 
         return suite.finish_suite()

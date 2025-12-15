@@ -277,10 +277,22 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Color-coded severity display: 🔴 CRITICAL, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - Added 7 new tests (184 modules total)
 
-### 3.4 MS To-Do Integration
-- [ ] Create tasks for MAJOR_CONFLICT items requiring research
-- [ ] Include conflict details in task description
-- [ ] Tag tasks with fact type and person name
+### 3.4 MS To-Do Integration ✅ IMPLEMENTED
+- [x] Create tasks for MAJOR_CONFLICT items requiring research
+- [x] Include conflict details in task description
+- [x] Tag tasks with fact type and person name
+
+**Implementation Notes (Session 10 - December 15, 2025):**
+- Added `create_tasks_for_critical_conflicts()` method to `FactsQueueService`
+- Creates MS To-Do tasks for HIGH and CRITICAL severity conflicts
+- Task title format: `{severity_emoji} Conflict: {person_name} - {field_name}`
+- Task body includes: field, existing/new values, severity, source, confidence, conflict ID
+- Categories: `fact_type:{field}`, `person:{name}`, `severity:{level}`
+- Importance: "high" for CRITICAL, "normal" for HIGH
+- Added CLI command: `python -m cli.facts_queue create-tasks [--severity high|critical]`
+- Added `_format_conflict_task_body()` helper for consistent formatting
+- Uses existing `integrations/ms_graph_utils.py` for MS Graph API
+- Added 1 new test for task body formatting (8 tests total in facts_queue.py)
 
 ---
 
