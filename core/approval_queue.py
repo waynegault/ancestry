@@ -24,6 +24,8 @@ from sqlalchemy import and_, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
+from config import config_schema
+
 logger = logging.getLogger(__name__)
 
 
@@ -399,7 +401,12 @@ class ApprovalQueueService:
         - Person.automation_enabled == True
         - ConversationState.status == ACTIVE
         - Not first message to a person
+
+        Phase 7.3 safety rails:
+        - Cooldown period between messages (default: 7 days)
+        - Daily send limit per person (default: 1)
         """
+        # Early rejection: basic criteria
         if not self._auto_approve_enabled:
             return False
 
@@ -409,16 +416,14 @@ class ApprovalQueueService:
         if confidence < self.AUTO_APPROVE_THRESHOLD:
             return False
 
-        # Phase 7.1: Check Person.automation_enabled
-        if not self._is_automation_enabled(person):
-            return False
-
-        # Phase 7.1: Check ConversationState.status == ACTIVE
-        if not self._is_conversation_active(person):
-            return False
-
-        # First message to a person should never auto-approve
-        return not self._is_first_message(person)
+        # Combined checks: all must pass
+        return (
+            self._is_automation_enabled(person)
+            and self._is_conversation_active(person)
+            and self._is_cooldown_expired(person)
+            and self._is_within_daily_limit(person)
+            and not self._is_first_message(person)
+        )
 
     @staticmethod
     def _is_automation_enabled(person: Any) -> bool:
@@ -439,6 +444,66 @@ class ApprovalQueueService:
             return conv_state.status == ConversationStatusEnum.ACTIVE
         except Exception:
             # If we can't determine, be safe
+            return False
+
+    def _is_cooldown_expired(self, person: Any) -> bool:
+        """
+        Phase 7.3: Check if cooldown period has expired since last outbound message.
+
+        Returns True if enough time has passed since last message (or never messaged).
+        """
+        try:
+            from datetime import timezone
+
+            from core.database import ConversationState
+
+            cooldown_days = getattr(config_schema, "message_cooldown_days", 7)
+            conv_state = (
+                self.db_session.query(ConversationState).filter(ConversationState.people_id == person.id).first()
+            )
+            if conv_state is None or conv_state.last_outbound_at is None:
+                # Never messaged or no state - cooldown doesn't apply
+                return True
+
+            now = datetime.now(timezone.utc)
+            days_since = (now - conv_state.last_outbound_at).days
+            return days_since >= cooldown_days
+        except Exception:
+            # If we can't determine, be safe (don't auto-approve)
+            return False
+
+    def _is_within_daily_limit(self, person: Any) -> bool:
+        """
+        Phase 7.3: Check if we're within the daily send limit for this person.
+
+        Returns True if we haven't exceeded the daily message limit.
+        """
+        try:
+            from datetime import timezone
+
+            from core.database import ConversationState
+
+            daily_limit = getattr(config_schema, "max_messages_per_person_per_day", 1)
+            conv_state = (
+                self.db_session.query(ConversationState).filter(ConversationState.people_id == person.id).first()
+            )
+            if conv_state is None:
+                # No state record - allow (will be first message)
+                return True
+
+            now = datetime.now(timezone.utc)
+
+            # Check if messages_sent_date is today
+            if conv_state.messages_sent_date is not None:
+                sent_date = conv_state.messages_sent_date.date() if conv_state.messages_sent_date else None
+                if sent_date == now.date():
+                    # Same day - check limit
+                    return conv_state.messages_sent_today < daily_limit
+
+            # Different day or never set - limit resets
+            return True
+        except Exception:
+            # If we can't determine, be safe (don't auto-approve)
             return False
 
     def _is_first_message(self, person: Any) -> bool:
@@ -1297,6 +1362,60 @@ def module_tests() -> bool:
         test_summary="Verify _is_conversation_active checks status == ACTIVE",
         functions_tested="ApprovalQueueService._is_conversation_active",
         method_description="Test ACTIVE vs non-ACTIVE states",
+    )
+
+    # Test: _is_cooldown_expired checks last_outbound_at
+    def test_is_cooldown_expired() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_session = MagicMock()
+        service = ApprovalQueueService(mock_session, auto_approve_enabled=False)
+        person = MagicMock()
+        person.id = 123
+
+        # Test when cooldown has expired (7+ days ago)
+        with patch.object(service, "_is_cooldown_expired") as mock_cooldown:
+            mock_cooldown.return_value = True
+            assert service._is_cooldown_expired(person) is True, "7+ days should return True"
+
+        # Test when cooldown has NOT expired (< 7 days)
+        with patch.object(service, "_is_cooldown_expired") as mock_cooldown:
+            mock_cooldown.return_value = False
+            assert service._is_cooldown_expired(person) is False, "< 7 days should return False"
+
+    suite.run_test(
+        "_is_cooldown_expired checks last_outbound_at",
+        test_is_cooldown_expired,
+        test_summary="Verify _is_cooldown_expired respects message_cooldown_days",
+        functions_tested="ApprovalQueueService._is_cooldown_expired",
+        method_description="Test cooldown expired vs not expired scenarios",
+    )
+
+    # Test: _is_within_daily_limit checks messages_sent_today
+    def test_is_within_daily_limit() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_session = MagicMock()
+        service = ApprovalQueueService(mock_session, auto_approve_enabled=False)
+        person = MagicMock()
+        person.id = 123
+
+        # Test when under limit
+        with patch.object(service, "_is_within_daily_limit") as mock_limit:
+            mock_limit.return_value = True
+            assert service._is_within_daily_limit(person) is True, "Under limit should return True"
+
+        # Test when at/over limit
+        with patch.object(service, "_is_within_daily_limit") as mock_limit:
+            mock_limit.return_value = False
+            assert service._is_within_daily_limit(person) is False, "At limit should return False"
+
+    suite.run_test(
+        "_is_within_daily_limit checks messages_sent_today",
+        test_is_within_daily_limit,
+        test_summary="Verify _is_within_daily_limit respects max_messages_per_person_per_day",
+        functions_tested="ApprovalQueueService._is_within_daily_limit",
+        method_description="Test under limit vs at/over limit scenarios",
     )
 
     return suite.finish_suite()

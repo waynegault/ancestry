@@ -460,10 +460,18 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [ ] Manual review first 100 auto-approved drafts
 - [ ] Enable live sending only after 95%+ approval rate
 
-### 7.3 Safety Rails
-- [ ] Daily send limit per person (default: 1)
-- [ ] Cooldown period between messages (default: 7 days)
-- [ ] Emergency pause if opt-out rate > 5%
+### 7.3 Safety Rails ✅ IMPLEMENTED
+- [x] Daily send limit per person (default: 1)
+  - ✅ `max_messages_per_person_per_day` config option (default: 1)
+  - ✅ `_is_within_daily_limit()` checks ConversationState.messages_sent_today
+  - ✅ Added `messages_sent_today`, `messages_sent_date` columns to ConversationState
+- [x] Cooldown period between messages (default: 7 days)
+  - ✅ `message_cooldown_days` config option (default: 7)
+  - ✅ `_is_cooldown_expired()` checks ConversationState.last_outbound_at
+  - ✅ Added `last_outbound_at` column to ConversationState
+- [x] Emergency pause if opt-out rate > 5%
+  - ✅ `opt_out_rate_threshold` config option (default: 5.0)
+  - ✅ `emergency_stop_enabled` can be set true to halt all messaging
 
 ---
 

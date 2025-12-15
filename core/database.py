@@ -908,6 +908,24 @@ class ConversationState(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         comment="Timestamp (UTC) when conversation state was last updated.",
     )
+    # Phase 7.3: Cooldown tracking
+    last_outbound_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp (UTC) of last outbound message sent (for cooldown enforcement).",
+    )
+    messages_sent_today: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="Count of messages sent to this person today (resets daily).",
+    )
+    messages_sent_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Date for which messages_sent_today count applies.",
+    )
 
     # --- Relationships ---
     person: Mapped["Person"] = relationship("Person", back_populates="conversation_state")

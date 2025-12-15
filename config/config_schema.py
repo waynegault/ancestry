@@ -891,6 +891,12 @@ class ConfigSchema:
     max_send_per_run: int = 50  # Hard per-run cap for messaging sends (0 = unlimited, not recommended)
     dry_run_verified: bool = False  # Must be set true after a successful dry-run before production sends
     per_recipient_backoff_seconds: int = 0  # Extra per-recipient throttle layered on top of MIN_MESSAGE_INTERVAL
+
+    # Phase 7.3 Safety Rails
+    max_messages_per_person_per_day: int = 1  # Daily send limit per person (default: 1)
+    message_cooldown_days: int = 7  # Minimum days between messages to same person (default: 7)
+    opt_out_rate_threshold: float = 5.0  # Emergency pause if opt-out rate > this percentage
+
     custom_response_enabled: bool = True
     enable_task_dedup: bool = False  # Guard flag for Phase 4.3 de-dup rollout (testing mode only initially)
     enable_task_enrichment: bool = False  # Guard flag for Phase 4.4 enriched task generation rollout
