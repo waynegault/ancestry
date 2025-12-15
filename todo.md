@@ -61,10 +61,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 **Goal:** Establish end-to-end reply lifecycle from inbound message to sent response
 
 ### 1.1 Conversation State Machine Hardening
-- [ ] Verify state transitions per `reply_management.md` spec
+- [x] Verify state transitions per `reply_management.md` spec ✅ IMPLEMENTED (transition_status method)
 - [x] Add `automation_enabled` column to Person table (person-level toggle) ✅ IMPLEMENTED
 - [x] Ensure Action 8 respects `automation_enabled` + `conversation_state.status` ✅ IMPLEMENTED
-- [ ] Add state transition logging for auditability
+- [x] Add state transition logging for auditability ✅ IMPLEMENTED (transition_status with reason/triggered_by)
 
 ### 1.2 Review Queue Integration
 - [x] Wire DraftReply queue to Action 7 inbound processing ✅ IMPLEMENTED (InboundOrchestrator)
@@ -93,7 +93,7 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - [x] Add pre-draft check: block if recipient.profile_id == owner_profile_id ✅ IMPLEMENTED
 - [x] Add pre-draft check: block if recipient.uuid == owner_uuid ✅ IMPLEMENTED (via profile_id check)
 - [x] Log and alert when self-message attempt detected ✅ IMPLEMENTED
-- [ ] Add to SafetyGuard as SELF_MESSAGE category
+- [x] Add to SafetyGuard as SELF_MESSAGE category ✅ IMPLEMENTED (check_self_message static method)
 
 ### 1.5.2 Context Accuracy Validation
 - [ ] Pre-draft validation: verify mentioned ancestors exist in OUR tree, not theirs

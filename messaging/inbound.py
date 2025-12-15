@@ -605,7 +605,11 @@ class InboundOrchestrator:
 
             if safety_result.status == SafetyStatus.OPT_OUT:
                 # Hard stop: never contact again.
-                state.status = ConversationStatusEnum.OPT_OUT
+                state.transition_status(
+                    ConversationStatusEnum.OPT_OUT,
+                    reason=f"OPT_OUT detected: {safety_result.reason}",
+                    triggered_by="inbound_safety_check",
+                )
                 state.safety_flag = False
                 state.ai_summary = f"OPT_OUT: {safety_result.reason}\n{current_summary}"
                 with suppress(Exception):
@@ -613,7 +617,11 @@ class InboundOrchestrator:
                     person.automation_enabled = False
             else:
                 # Safety/critical/human review.
-                state.status = ConversationStatusEnum.HUMAN_REVIEW
+                state.transition_status(
+                    ConversationStatusEnum.HUMAN_REVIEW,
+                    reason=f"Safety flag: {safety_result.reason}",
+                    triggered_by="inbound_safety_check",
+                )
                 state.safety_flag = True
                 state.ai_summary = f"SAFETY FLAG: {safety_result.reason}\n{current_summary}"
                 with suppress(Exception):
@@ -632,9 +640,17 @@ class InboundOrchestrator:
 
             # Update status based on intent
             if intent == "DESIST":
-                state.status = ConversationStatusEnum.OPT_OUT
+                state.transition_status(
+                    ConversationStatusEnum.OPT_OUT,
+                    reason="DESIST intent detected in message",
+                    triggered_by="inbound_intent_classification",
+                )
             elif intent == "PRODUCTIVE":
-                state.status = ConversationStatusEnum.ACTIVE
+                state.transition_status(
+                    ConversationStatusEnum.ACTIVE,
+                    reason="PRODUCTIVE intent detected in message",
+                    triggered_by="inbound_intent_classification",
+                )
 
             self.db.commit()
 

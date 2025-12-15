@@ -41,6 +41,7 @@ class CriticalAlertCategory(Enum):
     SELF_HARM = "SELF_HARM"  # Suicide, self-harm indicators
     LEGAL_PRIVACY = "LEGAL_PRIVACY"  # GDPR, attorney, legal action
     HIGH_VALUE_DISCOVERY = "HIGH_VALUE_DISCOVERY"  # Family Bible, original photos
+    SELF_MESSAGE = "SELF_MESSAGE"  # Attempting to send message to self
 
 
 @dataclass
@@ -251,6 +252,59 @@ class SafetyGuard:
 
         return SafetyCheckResult(SafetyStatus.SAFE, "No critical alerts", [])
 
+    @staticmethod
+    def check_self_message(
+        sender_profile_id: str | None,
+        sender_uuid: str | None,
+        recipient_profile_id: str | None,
+        recipient_uuid: str | None,
+    ) -> SafetyCheckResult:
+        """
+        Check if a message is being sent to self.
+
+        This prevents the automation from sending messages to the owner's own profile.
+
+        Args:
+            sender_profile_id: The profile ID of the sender (owner).
+            sender_uuid: The UUID of the sender (owner).
+            recipient_profile_id: The profile ID of the recipient.
+            recipient_uuid: The UUID of the recipient.
+
+        Returns:
+            SafetyCheckResult with CRITICAL_ALERT if self-message detected.
+        """
+        # Check by profile_id
+        if (
+            sender_profile_id
+            and recipient_profile_id
+            and sender_profile_id.strip().lower() == recipient_profile_id.strip().lower()
+        ):
+            logger.critical(
+                f"🚨 SELF_MESSAGE: Blocked message to self (profile_id={sender_profile_id})"
+            )
+            return SafetyCheckResult(
+                status=SafetyStatus.CRITICAL_ALERT,
+                reason="Attempted to send message to self (same profile_id)",
+                flagged_terms=[f"profile_id={sender_profile_id}"],
+                category=CriticalAlertCategory.SELF_MESSAGE,
+            )
+
+        # Check by UUID
+        if (
+            sender_uuid
+            and recipient_uuid
+            and sender_uuid.strip().upper() == recipient_uuid.strip().upper()
+        ):
+            logger.critical(f"🚨 SELF_MESSAGE: Blocked message to self (uuid={sender_uuid})")
+            return SafetyCheckResult(
+                status=SafetyStatus.CRITICAL_ALERT,
+                reason="Attempted to send message to self (same UUID)",
+                flagged_terms=[f"uuid={sender_uuid}"],
+                category=CriticalAlertCategory.SELF_MESSAGE,
+            )
+
+        return SafetyCheckResult(SafetyStatus.SAFE, "Not a self-message", [])
+
     def check_message(self, message_text: str) -> SafetyCheckResult:
         """
         Analyzes a message for safety violations (legacy method).
@@ -391,6 +445,71 @@ def safety_module_tests() -> bool:
         suite.run_test("Critical: High Value", test_high_value_discovery, "High value -> HIGH_VALUE (not stop)")
         suite.run_test("Critical: Safe", test_critical_safe_message, "Normal message -> SAFE")
         suite.run_test("Critical: Priority", test_critical_priority_order, "Self-harm priority over threats")
+
+        # === SELF-MESSAGE DETECTION TESTS ===
+        def test_self_message_by_profile_id():
+            """Detect self-message by matching profile_id."""
+            result = guard.check_self_message(
+                sender_profile_id="12345",
+                sender_uuid=None,
+                recipient_profile_id="12345",
+                recipient_uuid=None,
+            )
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.SELF_MESSAGE
+
+        def test_self_message_by_uuid():
+            """Detect self-message by matching UUID (case-insensitive)."""
+            result = guard.check_self_message(
+                sender_profile_id=None,
+                sender_uuid="ABC123",
+                recipient_profile_id=None,
+                recipient_uuid="abc123",
+            )
+            assert result.status == SafetyStatus.CRITICAL_ALERT
+            assert result.category == CriticalAlertCategory.SELF_MESSAGE
+
+        def test_self_message_different_users():
+            """Different profile_id/UUID passes self-message check."""
+            result = guard.check_self_message(
+                sender_profile_id="12345",
+                sender_uuid="ABC123",
+                recipient_profile_id="67890",
+                recipient_uuid="DEF456",
+            )
+            assert result.status == SafetyStatus.SAFE
+            assert result.category is None
+
+        def test_self_message_none_values():
+            """None values should not match as self-message."""
+            result = guard.check_self_message(
+                sender_profile_id=None,
+                sender_uuid=None,
+                recipient_profile_id=None,
+                recipient_uuid=None,
+            )
+            assert result.status == SafetyStatus.SAFE
+
+        suite.run_test(
+            "Self-Message: profile_id match",
+            test_self_message_by_profile_id,
+            "Same profile_id -> CRITICAL_ALERT",
+        )
+        suite.run_test(
+            "Self-Message: UUID match",
+            test_self_message_by_uuid,
+            "Same UUID (case-insensitive) -> CRITICAL_ALERT",
+        )
+        suite.run_test(
+            "Self-Message: Different users",
+            test_self_message_different_users,
+            "Different IDs -> SAFE",
+        )
+        suite.run_test(
+            "Self-Message: None values",
+            test_self_message_none_values,
+            "None values -> SAFE",
+        )
 
         return suite.finish_suite()
 

@@ -72,6 +72,19 @@ class TestInboundOrchestrator(unittest.TestCase):
         mock_person.death_year = None
 
         mock_state = MagicMock(spec=ConversationState)
+        mock_state.status = ConversationStatusEnum.ACTIVE
+
+        # Add transition_status method that updates the status
+        def transition_status(  # noqa: ARG001
+            new_status: ConversationStatusEnum, reason: str = "", triggered_by: str = "test"
+        ) -> bool:
+            if mock_state.status != new_status:
+                mock_state.status = new_status
+                return True
+            return False
+
+        mock_state.transition_status = transition_status
+
         mock_metrics = MagicMock(spec=ConversationMetrics)
         mock_metrics.messages_received = 0
         mock_metrics.first_response_received = False

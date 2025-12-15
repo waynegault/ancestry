@@ -2710,10 +2710,17 @@ class InboxProcessor:
         status = state.status or ConversationStatusEnum.ACTIVE
         safety_flag = bool(state.safety_flag)
 
-        status, safety_flag = self._apply_safety_status(state, status, safety_flag, safety_result)
-        status = self._apply_intent_status(state, status, ai_intent)
+        status, safety_flag, reason = self._apply_safety_status(state, status, safety_flag, safety_result)
+        status, intent_reason = self._apply_intent_status(state, status, ai_intent)
 
-        state.status = status
+        # Combine reasons for audit trail
+        transition_reason = "; ".join(filter(None, [reason, intent_reason]))
+
+        # Use transition method for audit logging
+        if status != state.status:
+            state.transition_status(
+                status, reason=transition_reason or "status update", triggered_by="action7_inbox"
+            )
         state.safety_flag = safety_flag
         session.commit()
 
@@ -2723,43 +2730,48 @@ class InboxProcessor:
         status: ConversationStatusEnum,
         safety_flag: bool,
         safety_result: Optional[SafetyCheckResult],
-    ) -> tuple[ConversationStatusEnum, bool]:
+    ) -> tuple[ConversationStatusEnum, bool, str]:
+        """Apply safety status with reason tracking."""
+        reason = ""
         if not (safety_result and isinstance(safety_result, SafetyCheckResult)):
-            return status, safety_flag
+            return status, safety_flag, reason
 
         if safety_result.status == SafetyStatus.OPT_OUT:
-            return ConversationStatusEnum.OPT_OUT, True
+            return ConversationStatusEnum.OPT_OUT, True, f"OPT_OUT safety: {safety_result.reason}"
 
         if safety_result.status in {SafetyStatus.UNSAFE, SafetyStatus.NEEDS_REVIEW, SafetyStatus.CRITICAL_ALERT}:
             status = ConversationStatusEnum.HUMAN_REVIEW
             safety_flag = True
+            reason = f"Safety flag: {safety_result.reason}"
 
         if safety_result.reason:
             prefix = f"SAFETY FLAG: {safety_result.reason}"
             if not state.ai_summary or prefix not in state.ai_summary:
                 state.ai_summary = f"{prefix}\n{state.ai_summary or ''}".strip()
 
-        return status, safety_flag
+        return status, safety_flag, reason
 
     @staticmethod
     def _apply_intent_status(
         state: ConversationState, status: ConversationStatusEnum, ai_intent: Optional[str]
-    ) -> ConversationStatusEnum:
+    ) -> tuple[ConversationStatusEnum, str]:
+        """Apply intent-based status with reason tracking."""
+        reason = ""
         if not ai_intent:
-            return status
+            return status, reason
 
         state.last_intent = ai_intent
 
         if ai_intent in {"DESIST", "UNINTERESTED"}:
-            return ConversationStatusEnum.OPT_OUT
+            return ConversationStatusEnum.OPT_OUT, f"Intent: {ai_intent}"
 
         if ai_intent == "PRODUCTIVE" and status not in {
             ConversationStatusEnum.OPT_OUT,
             ConversationStatusEnum.HUMAN_REVIEW,
         }:
-            return ConversationStatusEnum.ACTIVE
+            return ConversationStatusEnum.ACTIVE, f"Intent: {ai_intent}"
 
-        return status
+        return status, reason
 
     def _assess_and_upsert(
         self,

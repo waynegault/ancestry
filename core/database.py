@@ -905,6 +905,41 @@ class ConversationState(Base):
     # --- Relationships ---
     person: Mapped["Person"] = relationship("Person", back_populates="conversation_state")
 
+    def transition_status(
+        self,
+        new_status: "ConversationStatusEnum",
+        reason: str,
+        triggered_by: str = "system",
+    ) -> bool:
+        """
+        Transition to a new conversation status with audit logging.
+
+        Args:
+            new_status: The target status to transition to.
+            reason: Human-readable reason for the transition.
+            triggered_by: What triggered the transition (e.g., action7, action8, safety_guard).
+
+        Returns:
+            True if transition was made, False if already in target status.
+        """
+        old_status = self.status
+
+        if old_status == new_status:
+            return False
+
+        self.status = new_status
+        self.updated_at = datetime.now(timezone.utc)
+
+        # Audit log
+        logger.info(
+            f"📋 ConversationState[{self.id}] transition: "
+            f"{old_status.value} → {new_status.value} | "
+            f"reason={reason} | triggered_by={triggered_by} | "
+            f"person_id={self.people_id}"
+        )
+
+        return True
+
 
 # End of ConversationState class
 
