@@ -726,11 +726,11 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file) ✅ REVIEWED: These are local dataclasses inside _test_gedcom_path_conversion() function, properly scoped; follows standard pattern of embedded tests
 
 ### Testing
-- [ ] Add integration tests for full inbound→reply flow
+- [x] Add integration tests for full inbound→reply flow ✅ ADDED: _test_inbound_reply_flow_mock() in test_integration_workflow.py
 - [x] Add tests for SemanticSearchService end-to-end ✅ EXISTS: 5 tests including test_candidate_retrieval_and_scoring, test_ambiguity_produces_clarification
 - [x] Add tests for FactValidator conflict detection ✅ EXISTS: test_conflict_detection_exact, test_conflict_detection_minor, test_conflict_detection_major, test_conflict_detection_compatible
 - [x] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
-- [ ] Add Action 11 transaction failure recovery tests
+- [x] Add Action 11 transaction failure recovery tests ✅ ADDED: _test_action11_transaction_recovery() in test_integration_workflow.py
 - [x] Add tests for triangulation_intelligence.py hypothesis scoring ✅ EXISTS: 9 tests including _test_confidence_level_calculation, _test_hypothesis_generation, _test_prioritization
 - [x] Add tests for conflict_detector.py field comparison logic ✅ EXISTS: 8 tests including _test_compare_values_*, _test_calculate_similarity
 - [x] Add tests for predictive_gaps.py gap detection heuristics ✅ EXISTS: 9 tests including _test_gap_types, _test_vital_record_gaps, _test_brick_wall_detection

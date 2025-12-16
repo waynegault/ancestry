@@ -270,7 +270,7 @@ result = generate_structured_reply(
 #   - route_to_human_review: bool (auto-set if confidence < 50)
 ```
 
-### InboundOrchestrator Integration (`core/inbound_orchestrator.py`)
+### InboundOrchestrator Integration (`messaging/inbound.py`)
 - **Phase 2 flow**: PRODUCTIVE message → semantic search → tree query → draft generation
 - **`_maybe_run_semantic_search()`**: Detects questions, runs SemanticSearchService
 - **`_run_research_flow()`**: Chains tree evidence gathering with AI reply generation

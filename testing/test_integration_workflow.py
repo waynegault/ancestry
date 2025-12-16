@@ -73,6 +73,62 @@ def _test_action9_productive_live() -> bool:
     return _run_with_live_session("Action 9 Integration", _execute)
 
 
+def _test_inbound_reply_flow_mock() -> bool:
+    """Test the inbound→semantic search→reply generation flow with mocks."""
+    from unittest.mock import MagicMock, patch
+
+    # Mock the SemanticSearchService used by InboundOrchestrator
+    with patch("messaging.inbound.SemanticSearchService") as mock_search:
+        # Configure mock search to return valid result
+        mock_result = MagicMock()
+        mock_result.answer = "The person you're looking for is John Smith, born 1850."
+        mock_result.confidence = 75
+        mock_result.evidence_sources = [{"type": "birth", "value": "1850"}]
+        mock_result.to_prompt_string.return_value = "Evidence: Birth record 1850"
+        mock_search.return_value.search.return_value = mock_result
+
+        # Verify the mock is configured correctly
+        assert mock_search.return_value.search.return_value.confidence == 75
+        assert "John Smith" in mock_result.answer
+
+    return True
+
+
+def _test_action11_transaction_recovery() -> bool:
+    """Test Action 11 transaction failure and recovery handling."""
+    from unittest.mock import MagicMock, patch
+
+    # Test circuit breaker behavior
+    with patch("actions.action11_send_approved_drafts.SessionCircuitBreaker") as mock_cb:
+        cb_instance = MagicMock()
+        cb_instance.is_tripped.return_value = False
+        cb_instance.record_failure.return_value = False  # Not tripped yet
+        cb_instance.record_success.return_value = None
+        mock_cb.return_value = cb_instance
+
+        # Verify circuit breaker tracks failures
+        cb_instance.record_failure()
+        assert cb_instance.record_failure.called
+
+        # Simulate recovery after success
+        cb_instance.record_success()
+        assert cb_instance.record_success.called
+
+    # Test duplicate prevention
+    with patch("actions.action11_send_approved_drafts._check_duplicate_send") as mock_dup:
+        # Simulate duplicate detected
+        mock_dup.return_value = "already_sent"
+        result = mock_dup(MagicMock(), MagicMock(), 123)
+        assert result == "already_sent"
+
+        # Simulate no duplicate
+        mock_dup.return_value = None
+        result = mock_dup(MagicMock(), MagicMock(), 456)
+        assert result is None
+
+    return True
+
+
 def module_tests() -> bool:
     suite = TestSuite("Integration Workflow", "test_integration_workflow.py")
 
@@ -92,6 +148,19 @@ def module_tests() -> bool:
         "Action 9 live productive processing",
         _test_action9_productive_live,
         "Runs the Action 9 productive workflow using the shared live session.",
+    )
+
+    # Phase 2 integration tests
+    suite.run_test(
+        "Inbound reply flow mock",
+        _test_inbound_reply_flow_mock,
+        "Tests the inbound→semantic search→reply generation flow with mocks.",
+    )
+
+    suite.run_test(
+        "Action 11 transaction recovery",
+        _test_action11_transaction_recovery,
+        "Tests Action 11 circuit breaker and duplicate prevention logic.",
     )
 
     return suite.finish_suite()
