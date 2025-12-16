@@ -921,7 +921,7 @@ def select_template_variant_ab_testing(person_id: int, base_template_key: str) -
     return base_template_key
 
 
-def track_template_selection(template_key: str, person_id: int, selection_reason: str):
+def track_template_selection(template_key: str, person_id: int, selection_reason: str) -> None:
     """Track template selection for debugging."""
     logger.debug(f"Template selected for person {person_id}: {template_key} ({selection_reason})")
 
@@ -1089,7 +1089,7 @@ def analyze_template_effectiveness(
         return {"error": str(e)}
 
 
-def print_template_effectiveness_report(days_back: int = 30):
+def print_template_effectiveness_report(days_back: int = 30) -> None:
     """
     Print a formatted report of template effectiveness.
 

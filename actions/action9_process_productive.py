@@ -2016,7 +2016,7 @@ class PersonProcessor:
         person: Person,
         suggested_tasks: list[str],
         log_prefix: str,
-    ):
+    ) -> None:
         """Create MS Graph tasks if configured and available."""
 
         # Check if we should skip task creation
@@ -2088,7 +2088,7 @@ class PersonProcessor:
             log_prefix,
         )
 
-    def _mark_message_processed(self, message: ConversationLog):
+    def _mark_message_processed(self, message: ConversationLog) -> None:
         """Mark a message as processed without sending a reply."""
         try:
             if self.db_state.session:
@@ -3296,7 +3296,7 @@ def _process_candidates(
     return state.overall_success
 
 
-def _final_commit(db_state: DatabaseState, state: ProcessingState):
+def _final_commit(db_state: DatabaseState, state: ProcessingState) -> None:
     """Perform final commit of any remaining data."""
 
     if not state.critical_db_error_occurred and (db_state.logs_to_add or db_state.person_updates):
@@ -3318,7 +3318,7 @@ def _final_commit(db_state: DatabaseState, state: ProcessingState):
             )
 
 
-def _log_summary(state: ProcessingState):
+def _log_summary(state: ProcessingState) -> None:
     """Log the processing summary."""
 
     logger.info("------ Action 9: Process Productive Summary -------")

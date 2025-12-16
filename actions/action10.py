@@ -53,7 +53,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -2757,7 +2757,7 @@ _PATCH_SENTINEL = object()
 
 
 @contextmanager
-def _temporary_module(module_name: str, module: ModuleType):
+def _temporary_module(module_name: str, module: ModuleType) -> Generator[ModuleType, None, None]:
     original = sys.modules.get(module_name)
     sys.modules[module_name] = module
     try:
@@ -2770,7 +2770,7 @@ def _temporary_module(module_name: str, module: ModuleType):
 
 
 @contextmanager
-def _patched_globals(replacements: dict[str, Any]):
+def _patched_globals(replacements: dict[str, Any]) -> Generator[None, None, None]:
     previous: dict[str, Any] = {}
     try:
         for attr, value in replacements.items():

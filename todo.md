@@ -717,7 +717,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 ## Technical Debt & Quality Tasks
 
 ### Code Quality
-- [ ] Add missing type hints to action modules
+- [x] Add missing type hints to action modules ✅ FIXED: Added return type hints to 9 functions across action6, action8, action9, action10
 - [x] Resolve remaining # type: ignore comments (see check_type_ignores.py) ✅ FIXED: 1 occurrence in message_personalization.py
 - [x] Update dead_code_candidates.json and clean stale code ✅ UPDATED: 136 candidates across 199 files
 - [ ] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery)

@@ -4433,7 +4433,7 @@ def _parse_details_response(details_response: Any, match_uuid: str) -> Optional[
 # ------------------------------------------------------------------------------
 
 
-def _log_page_summary(page: int, page_new: int, page_updated: int, page_skipped: int, page_errors: int):
+def _log_page_summary(page: int, page_new: int, page_updated: int, page_skipped: int, page_errors: int) -> None:
     """Logs a summary of processed matches for a single page with proper formatting."""
     logger.debug("")  # Blank line above
     logger.debug(f"---- Page {page} Summary ----")
