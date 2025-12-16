@@ -280,6 +280,20 @@ class AlertChecker:
         except Exception:
             pass  # Metrics not critical
 
+        # Forward CRITICAL alerts to notification system (Phase 6.2)
+        if alert.severity == AlertSeverity.CRITICAL:
+            try:
+                from observability.notifications import get_notification_manager
+
+                manager = get_notification_manager()
+                manager.notify_critical_alert(
+                    alert_type=alert.alert_type.value,
+                    message=alert.message,
+                    details=alert.details,
+                )
+            except Exception as e:
+                logger.warning(f"Could not forward critical alert to notification system: {e}")
+
     def get_active_alerts(self) -> list[Alert]:
         """Get list of currently active (unresolved) alerts."""
         return [a for a in self._active_alerts if not a.resolved]

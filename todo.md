@@ -444,11 +444,19 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Implementation:** messaging/safety.py SafetyGuard class integrated into action7_inbox.py
 
-### 6.2 Notification System
-- [ ] Add email/SMS alert option for CRITICAL alerts
-- [ ] Daily digest of HUMAN_REVIEW items
+### 6.2 Notification System ✅ IMPLEMENTED
+- [x] Add email/SMS alert option for CRITICAL alerts
+  - ✅ `NotificationManager` with `EmailNotificationChannel`, `SmsNotificationChannel`
+  - ✅ `AlertChecker._emit_alert()` forwards CRITICAL alerts to notification system
+  - ✅ `NotificationConfig.from_environment()` loads SMTP/SMS settings from .env
+- [x] Daily digest of HUMAN_REVIEW items
+  - ✅ `generate_daily_digest()` summarizes pending drafts, opt-outs, priorities
+  - ✅ `format_digest_notification()` creates formatted notification
+  - ✅ `send_daily_digest()` delivers via all enabled channels
 - [x] Emergency stop: global pause switch
   - ✅ `config_schema.emergency_stop_enabled` blocks all sending
+
+**Implementation:** observability/notifications.py NotificationManager + observability/alerts.py integration
 
 ### 6.3 Response Guidelines
 - [ ] Draft empathetic responses for escalation-path cases (for human editing)
