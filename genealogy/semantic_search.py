@@ -119,49 +119,61 @@ class SemanticSearchResult:
 
         Returns a human-readable summary suitable for the genealogical_reply prompt.
         """
-        lines: list[str] = []
-
-        # Intent and confidence
-        lines.append(f"Search Intent: {self.intent.value}")
-        lines.append(f"Confidence: {self.confidence}%")
-
-        # Answer draft (main result)
-        if self.answer_draft:
-            lines.append(f"\nPreliminary Answer: {self.answer_draft}")
-
-        # Candidates found
-        if self.candidates:
-            lines.append("\nCandidates Found in Tree:")
-            for name, candidate_list in self.candidates.items():
-                if candidate_list:
-                    lines.append(f"  {name}:")
-                    for c in candidate_list[:3]:  # Limit to top 3 per name
-                        details = []
-                        if c.birth_year:
-                            details.append(f"b. {c.birth_year}")
-                        if c.birth_place:
-                            details.append(f"in {c.birth_place}")
-                        if c.death_year:
-                            details.append(f"d. {c.death_year}")
-                        if c.match_score:
-                            details.append(f"score: {c.match_score}")
-                        detail_str = f" ({', '.join(details)})" if details else ""
-                        lines.append(f"    - {c.name}{detail_str}")
-
-        # Evidence blocks
-        if self.evidence:
-            lines.append("\nEvidence:")
-            for e in self.evidence[:5]:  # Limit to top 5 evidence blocks
-                conf_str = f" (confidence: {e.confidence}%)" if e.confidence else ""
-                lines.append(f"  [{e.source_type}]{conf_str}: {e.summary}")
-
-        # Missing information
-        if self.missing_information:
-            lines.append("\nInformation Needed for Better Match:")
-            for info in self.missing_information:
-                lines.append(f"  - {info}")
+        lines = _semantic_header_lines(self.intent, self.confidence, self.answer_draft)
+        lines.extend(_candidate_lines(self.candidates))
+        lines.extend(_evidence_lines(self.evidence))
+        lines.extend(_missing_info_lines(self.missing_information))
 
         return "\n".join(lines) if lines else "No semantic search results."
+
+
+def _semantic_header_lines(intent: SemanticSearchIntent, confidence: int, answer_draft: str) -> list[str]:
+    lines = [f"Search Intent: {intent.value}", f"Confidence: {confidence}%"]
+    if answer_draft:
+        lines.append(f"\nPreliminary Answer: {answer_draft}")
+    return lines
+
+
+def _candidate_lines(candidates: dict[str, list[CandidatePerson]]) -> list[str]:
+    if not candidates:
+        return []
+
+    lines: list[str] = ["\nCandidates Found in Tree:"]
+    for name, candidate_list in candidates.items():
+        if not candidate_list:
+            continue
+        lines.append(f"  {name}:")
+        for c in candidate_list[:3]:
+            details = []
+            if c.birth_year:
+                details.append(f"b. {c.birth_year}")
+            if c.birth_place:
+                details.append(f"in {c.birth_place}")
+            if c.death_year:
+                details.append(f"d. {c.death_year}")
+            if c.match_score:
+                details.append(f"score: {c.match_score}")
+            detail_str = f" ({', '.join(details)})" if details else ""
+            lines.append(f"    - {c.name}{detail_str}")
+    return lines
+
+
+def _evidence_lines(evidence: list[EvidenceBlock]) -> list[str]:
+    if not evidence:
+        return []
+    lines = ["\nEvidence:"]
+    for e in evidence[:5]:
+        conf_str = f" (confidence: {e.confidence}%)" if e.confidence else ""
+        lines.append(f"  [{e.source_type}]{conf_str}: {e.summary}")
+    return lines
+
+
+def _missing_info_lines(missing_information: list[str]) -> list[str]:
+    if not missing_information:
+        return []
+    lines = ["\nInformation Needed for Better Match:"]
+    lines.extend([f"  - {info}" for info in missing_information])
+    return lines
 
 
 class SemanticSearchService:

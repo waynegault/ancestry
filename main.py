@@ -14,28 +14,25 @@ from pathlib import Path
 
 
 def _ensure_venv() -> None:
-    """Ensure running in venv, auto-restart if needed."""
-    # Check if already in venv
+    """Ensure we are running inside the local .venv; re-run with it if not."""
     in_venv = hasattr(sys, "real_prefix") or (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix)
-
     if in_venv:
-        return  # Already in venv, continue
+        return
 
-    # Check if .venv exists
-    venv_python = Path(".venv") / "Scripts" / "python.exe"
-    if not venv_python.exists():
-        # Try Unix-style path
-        venv_python = Path(".venv") / "bin" / "python"
-        if not venv_python.exists():
-            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
-            return
+    venv_candidates = [Path(".venv") / "Scripts" / "python.exe", Path(".venv") / "bin" / "python"]
+    venv_python = next((p for p in venv_candidates if p.exists()), None)
 
-    # Re-run with venv Python - use os.execv to replace current process
-    # This avoids the parent process waiting on a subprocess
-    import os
+    if venv_python is None:
+        print("❌ No virtual environment found at .venv. Please create it before running main.py.")
+        sys.exit(1)
+
+    # Re-run using the venv interpreter while preserving stdin/stdout. Avoid execv
+    # because some Windows shells detach stdin on exec replacement.
+    import subprocess
 
     print(f"🔄 Re-running with venv Python: {venv_python}")
-    os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
+    result = subprocess.run([str(venv_python), __file__, *sys.argv[1:]], check=False)
+    sys.exit(result.returncode)
 
 
 _ensure_venv()

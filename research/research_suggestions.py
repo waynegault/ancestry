@@ -361,37 +361,37 @@ def _format_research_suggestion_message(
     """
     message_parts: list[str] = []
 
-    if collections or record_types:
+    def _append_collection_section() -> None:
+        if not (collections or record_types):
+            return
         message_parts.append("Based on our connection, you might find these records helpful:")
-
         if collections:
             message_parts.append("\n\nRelevant Ancestry Collections:")
-            for collection in collections:
-                message_parts.append(f"  • {collection}")
-
+            message_parts.extend([f"  • {collection}" for collection in collections])
         if record_types:
             message_parts.append("\n\nSpecific Records to Search:")
-            for record_type in record_types:
-                message_parts.append(f"  • {record_type}")
+            message_parts.extend([f"  • {record_type}" for record_type in record_types])
 
-    # Phase 5.1: Add ethnicity-based suggestions
-    if ethnicity_suggestions:
+    def _append_ethnicity_section() -> None:
+        if not ethnicity_suggestions:
+            return
         regions = ethnicity_suggestions.get("regions", [])
         surname_clusters = ethnicity_suggestions.get("surname_clusters", [])
-
         if regions:
-            region_str = ", ".join(regions)
-            message_parts.append(f"\n\nShared Ethnicity Regions: {region_str}")
-
+            message_parts.append(f"\n\nShared Ethnicity Regions: {', '.join(regions)}")
         if surname_clusters:
             message_parts.append("\n\nCommon Surname Clusters to Watch For:")
-            for surname in surname_clusters[:3]:
-                message_parts.append(f"  • {surname}")
+            message_parts.extend([f"  • {surname}" for surname in surname_clusters[:3]])
 
-    if strategies:
+    def _append_strategy_section() -> None:
+        if not strategies:
+            return
         message_parts.append("\n\nResearch Strategies:")
-        for strategy in strategies:
-            message_parts.append(f"  • {strategy}")
+        message_parts.extend([f"  • {strategy}" for strategy in strategies])
+
+    _append_collection_section()
+    _append_ethnicity_section()
+    _append_strategy_section()
 
     if message_parts:
         message_parts.append("\n\nWould you like me to share specific records from my tree?")

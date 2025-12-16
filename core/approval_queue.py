@@ -781,6 +781,42 @@ class ApprovalQueueService:
 
     def get_queue_stats(self) -> QueueStats:
         """Get statistics about the approval queue."""
+
+        def _apply_status_counts(stats: QueueStats, status_counts: list[tuple[str, int]]) -> None:
+            for status, count in status_counts:
+                if status == "PENDING":
+                    stats.pending_count = count
+                elif status == "AUTO_APPROVED":
+                    stats.auto_approved_count = count
+                elif status == "EXPIRED":
+                    stats.expired_count = count
+                elif status in {"APPROVED", "SENT"}:
+                    stats.total_approved += count
+                elif status in {"REJECTED", "DISCARDED"}:
+                    stats.total_rejected += count
+
+        def _count_today_by_status(statuses: list[str]) -> int:
+            from core.database import DraftReply
+
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+            return (
+                self.db_session.query(func.count(DraftReply.id))
+                .filter(and_(DraftReply.status.in_(statuses), DraftReply.created_at >= today_start))
+                .scalar()
+                or 0
+            )
+
+        def _emit_queue_metrics(stats: QueueStats) -> None:
+            try:
+                from observability.metrics_registry import metrics
+
+                metrics().review_queue_depth.set(status="pending", count=float(stats.pending_count))
+                metrics().review_queue_depth.set(status="auto_approved", count=float(stats.auto_approved_count))
+                metrics().review_queue_depth.set(status="expired", count=float(stats.expired_count))
+                metrics().review_queue_depth.set(status="acceptance_rate", count=stats.acceptance_rate)
+            except Exception:
+                pass
+
         try:
             from core.database import DraftReply
 
@@ -791,56 +827,10 @@ class ApprovalQueueService:
                 self.db_session.query(DraftReply.status, func.count(DraftReply.id)).group_by(DraftReply.status).all()
             )
 
-            for status, count in status_counts:
-                if status == "PENDING":
-                    stats.pending_count = count
-                elif status == "AUTO_APPROVED":
-                    stats.auto_approved_count = count
-                elif status == "EXPIRED":
-                    stats.expired_count = count
-                # Phase 4.2: Track total approved/rejected for acceptance_rate
-                elif status in {"APPROVED", "SENT"}:
-                    stats.total_approved += count
-                elif status in {"REJECTED", "DISCARDED"}:
-                    stats.total_rejected += count
-
-            # Count approved/rejected today
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
-            stats.approved_today = (
-                self.db_session.query(func.count(DraftReply.id))
-                .filter(
-                    and_(
-                        DraftReply.status.in_(["APPROVED", "SENT"]),
-                        DraftReply.created_at >= today_start,
-                    )
-                )
-                .scalar()
-                or 0
-            )
-
-            stats.rejected_today = (
-                self.db_session.query(func.count(DraftReply.id))
-                .filter(
-                    and_(
-                        DraftReply.status.in_(["REJECTED", "DISCARDED"]),
-                        DraftReply.created_at >= today_start,
-                    )
-                )
-                .scalar()
-                or 0
-            )
-
-            # Phase 9.1: Emit review_queue_depth gauge
-            try:
-                from observability.metrics_registry import metrics
-
-                metrics().review_queue_depth.set(status="pending", count=float(stats.pending_count))
-                metrics().review_queue_depth.set(status="auto_approved", count=float(stats.auto_approved_count))
-                metrics().review_queue_depth.set(status="expired", count=float(stats.expired_count))
-                # Phase 4.2: Emit acceptance rate metric
-                metrics().review_queue_depth.set(status="acceptance_rate", count=stats.acceptance_rate)
-            except Exception:
-                pass  # Metrics are non-critical
+            _apply_status_counts(stats, status_counts)
+            stats.approved_today = _count_today_by_status(["APPROVED", "SENT"])
+            stats.rejected_today = _count_today_by_status(["REJECTED", "DISCARDED"])
+            _emit_queue_metrics(stats)
 
             return stats
 
