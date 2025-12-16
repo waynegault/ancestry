@@ -9,8 +9,8 @@
 
 ## Immediate Tasks
 
-### ~~Code Graph Visualization~~ ✅ COMPLETED
-- [x] **Fix visualize_code_graph.html** - Graph view now renders properly
+### ~~Code Graph Visualization~~ 
+- [ ] **Fix visualize_code_graph.html** - Graph view now renders properly
   - Fixed: Smart node selection prioritizes file nodes (hubs) and their connections
   - Fixed: Initial load now shows 321 edges instead of 0 edges
   - Added: Helpful hint when filtering would show more connections
@@ -30,21 +30,21 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 | Inbox Processing + Safety | ✅ Production | High |
 | Entity Extraction | ✅ Production | Medium |
 | GEDCOM/API Tree Search | ✅ Production | High |
-| Context-Aware Draft Generation | ✅ Implemented | Medium |
-| Fact Validation Pipeline | ✅ Implemented | Medium |
-| Semantic Search (Q&A) | ✅ Implemented | Medium |
-| Semantic Search → Reply Integration | ✅ Implemented | Medium |
-| Approval Queue + Web UI | ✅ Implemented | Medium |
-| Self-Message Prevention | ✅ Implemented | High |
-| Draft Quality Guards | ✅ Implemented | High |
-| Context Accuracy Validation | ✅ Implemented | Medium |
+| Context-Aware Draft Generation |  | Medium |
+| Fact Validation Pipeline |  | Medium |
+| Semantic Search (Q&A) |  | Medium |
+| Semantic Search → Reply Integration |  | Medium |
+| Approval Queue + Web UI |  | Medium |
+| Self-Message Prevention |  | High |
+| Draft Quality Guards |  | High |
+| Context Accuracy Validation |  | Medium |
 | Message Personalization | ✅ Production | High |
 | Rate Limiting | ✅ Production | High |
 | Circuit Breakers | ✅ Production | High |
 | Opt-Out Detection | ✅ Production | High |
-| Health Checks | ✅ Implemented | Medium |
+| Health Checks |  | Medium |
 | Automated Reply Loop | ⚠️ Partial | Low |
-| Tree-Aware Answer Generation | ✅ Implemented | Medium |
+| Tree-Aware Answer Generation |  | Medium |
 | Engagement Analytics | ⚠️ Scaffolded | Low |
 | Auto-Approval Path | ⚠️ Scaffolded | Low |
 | Scheduled Jobs | ⚠️ Not Implemented | Low |
@@ -64,27 +64,27 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 **Goal:** Establish end-to-end reply lifecycle from inbound message to sent response
 
 ### 1.1 Conversation State Machine Hardening
-- [x] Verify state transitions per `reply_management.md` spec ✅ IMPLEMENTED (transition_status method)
-- [x] Add `automation_enabled` column to Person table (person-level toggle) ✅ IMPLEMENTED
-- [x] Ensure Action 8 respects `automation_enabled` + `conversation_state.status` ✅ IMPLEMENTED
-- [x] Add state transition logging for auditability ✅ IMPLEMENTED (transition_status with reason/triggered_by)
+- [ ] Verify state transitions per `reply_management.md` spec  (transition_status method)
+- [ ] Add `automation_enabled` column to Person table (person-level toggle)
+- [ ] Ensure Action 8 respects `automation_enabled` + `conversation_state.status`
+- [ ] Add state transition logging for auditability  (transition_status with reason/triggered_by)
 
 ### 1.2 Review Queue Integration
-- [x] Wire DraftReply queue to Action 7 inbound processing ✅ IMPLEMENTED (InboundOrchestrator)
-- [x] Implement idempotent draft creation (update existing pending draft per person/conversation) ✅ IMPLEMENTED (_find_existing_pending + _update_existing_pending)
+- [ ] Wire DraftReply queue to Action 7 inbound processing  (InboundOrchestrator)
+- [ ] Implement idempotent draft creation (update existing pending draft per person/conversation)  (_find_existing_pending + _update_existing_pending)
 - [ ] Add confidence scoring to drafts from ContextBuilder output (DEFERRED: requires AI response format changes)
-- [x] Create CLI commands: `list`, `review <id>`, `approve`, `reject`, `edit` ✅ PARTIAL (ApprovalQueueService exists)
-- [x] Create Web UI for draft review ✅ IMPLEMENTED (review_server.py on localhost:5000)
+- [ ] Create CLI commands: `list`, `review <id>`, `approve`, `reject`, `edit` ✅ PARTIAL (ApprovalQueueService exists)
+- [ ] Create Web UI for draft review  (review_server.py on localhost:5000)
 
 ### 1.3 Send Loop Completion
-- [x] Action 11: Mark DraftReply as SENT after successful send ✅ IMPLEMENTED
-- [x] Update ConversationState.status after send (ACTIVE → AwaitingReply) ✅ IMPLEMENTED (see 1.6.4)
-- [x] Log engagement event for analytics ✅ IMPLEMENTED (_record_engagement_event in action11)
+- [ ] Action 11: Mark DraftReply as SENT after successful send
+- [ ] Update ConversationState.status after send (ACTIVE → AwaitingReply)  (see 1.6.4)
+- [ ] Log engagement event for analytics  (_record_engagement_event in action11)
 
 ### 1.4 Opt-Out Enforcement
-- [x] On DESIST detection: set Person.automation_enabled=False, ConversationState.status=OPT_OUT ✅ IMPLEMENTED
-- [x] Block all future outbound for OPT_OUT persons ✅ IMPLEMENTED
-- [x] Add opt-out acknowledgment message generation (one final polite closure) ✅ IMPLEMENTED (generate_opt_out_acknowledgment in opt_out_detection.py)
+- [ ] On DESIST detection: set Person.automation_enabled=False, ConversationState.status=OPT_OUT
+- [ ] Block all future outbound for OPT_OUT persons
+- [ ] Add opt-out acknowledgment message generation (one final polite closure)  (generate_opt_out_acknowledgment in opt_out_detection.py)
 
 ---
 
@@ -93,31 +93,31 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 **Goal:** Prevent AI from generating obviously incorrect or inappropriate drafts
 
 ### 1.5.1 Self-Messaging Prevention
-- [x] Add pre-draft check: block if recipient.profile_id == owner_profile_id ✅ IMPLEMENTED
-- [x] Add pre-draft check: block if recipient.uuid == owner_uuid ✅ IMPLEMENTED (via profile_id check)
-- [x] Log and alert when self-message attempt detected ✅ IMPLEMENTED
-- [x] Add to SafetyGuard as SELF_MESSAGE category ✅ IMPLEMENTED (check_self_message static method)
+- [ ] Add pre-draft check: block if recipient.profile_id == owner_profile_id
+- [ ] Add pre-draft check: block if recipient.uuid == owner_uuid  (via profile_id check)
+- [ ] Log and alert when self-message attempt detected
+- [ ] Add to SafetyGuard as SELF_MESSAGE category  (check_self_message static method)
 
-### 1.5.2 Context Accuracy Validation ✅ IMPLEMENTED
-- [x] Pre-draft validation: verify mentioned ancestors exist in OUR tree, not theirs ✅ IMPLEMENTED
-- [x] Cross-reference extracted names against TreeQueryService before drafting ✅ IMPLEMENTED
-- [x] Flag drafts where AI mentions facts already known to recipient ✅ IMPLEMENTED
-- [x] Add AI prompt instruction: "Do not explain relationships the recipient already knows" ✅ IMPLEMENTED
+### 1.5.2 Context Accuracy Validation
+- [ ] Pre-draft validation: verify mentioned ancestors exist in OUR tree, not theirs
+- [ ] Cross-reference extracted names against TreeQueryService before drafting
+- [ ] Flag drafts where AI mentions facts already known to recipient
+- [ ] Add AI prompt instruction: "Do not explain relationships the recipient already knows"
 - **Implementation:** Added `ContextAccuracyResult` dataclass and `validate_context_accuracy()` function in ai_interface.py. Uses TreeQueryService to validate extracted names against our GEDCOM tree. Tracks verified_facts (found in tree), unverified_facts (not found), and known_to_recipient (likely already in recipient's tree). Updated `draft_quality_check` prompt v1.1.0 with new quality checks: unverified_fact and known_to_recipient categories. Enhanced `validate_draft_quality()` to run context accuracy validation automatically with optional extracted_names parameter. Added `extract_names_from_text()` helper for heuristic name extraction from drafts. 4 new tests added (18 total in ai_interface.py).
 
-### 1.5.3 AI-Powered Draft Review ✅ IMPLEMENTED
-- [x] Create `draft_quality_check` prompt in ai_prompts.json with:
+### 1.5.3 AI-Powered Draft Review
+- [ ] Create `draft_quality_check` prompt in ai_prompts.json with:
   - Self-reference detection ("Am I the sender?")
   - Context inversion detection ("Is this explaining their own ancestor to them?")
   - Obvious error patterns (wrong relationship direction, deceased person as living)
-- [x] Run quality check as post-generation validation before queuing
-- [x] Auto-reject drafts that fail quality check with reason logged
+- [ ] Run quality check as post-generation validation before queuing
+- [ ] Auto-reject drafts that fail quality check with reason logged
 - **Implementation:** Added `validate_draft_quality()` function in ai_interface.py with `DraftQualityResult` dataclass. Self-message detection runs first (no AI needed), then AI quality check validates context. Returns structured result with quality_score 0-100, issues_found list, and recommendation.
 
-### 1.5.4 Auto-Correction Pipeline ✅ IMPLEMENTED
-- [x] When quality check fails, attempt one AI regeneration with explicit correction
-- [x] If regeneration also fails, route to HUMAN_REVIEW with error context
-- [x] Track correction success rate for prompt improvement
+### 1.5.4 Auto-Correction Pipeline
+- [ ] When quality check fails, attempt one AI regeneration with explicit correction
+- [ ] If regeneration also fails, route to HUMAN_REVIEW with error context
+- [ ] Track correction success rate for prompt improvement
 - **Implementation:** Added `attempt_draft_correction()` function in ai_interface.py with `DraftCorrectionResult` dataclass. Uses `draft_correction` prompt to regenerate drafts with explicit correction guidance. Self-messages are uncorrectable and route directly to HUMAN_REVIEW. Metrics tracked via prompt_telemetry.
 - **Integration:** Wired into action8_messaging.py `_generate_contextual_draft_payload()` via `_validate_and_correct_draft()` helper. Runs after draft generation, before queueing. Adds `quality_validated` and `routed_to_human_review` flags to draft payload.
 
@@ -133,28 +133,28 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Ensure reliable, auditable message delivery with proper state management
 
-### 1.6.1 Transaction Safety ✅ IMPLEMENTED
-- [x] Wrap `_send_single_approved_draft` in explicit transaction (currently commits mid-loop)
-- [x] Add rollback on partial failure (e.g., log created but metrics update failed)
-- [x] Ensure draft status stays APPROVED if send API fails
+### 1.6.1 Transaction Safety
+- [ ] Wrap `_send_single_approved_draft` in explicit transaction (currently commits mid-loop)
+- [ ] Add rollback on partial failure (e.g., log created but metrics update failed)
+- [ ] Ensure draft status stays APPROVED if send API fails
 - **Implementation:** Core operations wrapped in try/except with `db_session.rollback()` on failure; non-critical operations (engagement event, metrics) isolated with separate error handling
 
-### 1.6.2 Draft Expiration ✅ IMPLEMENTED
-- [x] Implement draft expiration logic (expires_at field calculated but unused)
-- [x] Add scheduled job to mark PENDING → EXPIRED after 72 hours
-- [x] Surface expired drafts in review queue with different styling
+### 1.6.2 Draft Expiration
+- [ ] Implement draft expiration logic (expires_at field calculated but unused)
+- [ ] Add scheduled job to mark PENDING → EXPIRED after 72 hours
+- [ ] Surface expired drafts in review queue with different styling
 - **Implementation:** Added `expires_at` column to DraftReply model; `ApprovalQueueService.queue_for_review()` now stores expiration timestamp; `expire_old_drafts()` enhanced to use expires_at with fallback to created_at for legacy drafts
 
-### 1.6.3 Duplicate Send Prevention ✅ IMPLEMENTED
-- [x] Add guard: skip if draft already SENT (prevent re-processing on retry)
-- [x] Check for recent OUT log before sending (idempotency window)
-- [x] Log duplicate attempt instead of sending again
+### 1.6.3 Duplicate Send Prevention
+- [ ] Add guard: skip if draft already SENT (prevent re-processing on retry)
+- [ ] Check for recent OUT log before sending (idempotency window)
+- [ ] Log duplicate attempt instead of sending again
 - **Implementation:** New `_check_duplicate_send()` function checks draft.status=="SENT" and queries ConversationLog for recent OUT messages within 5-minute idempotency window
 
-### 1.6.4 ConversationState Synchronization ✅ IMPLEMENTED
-- [x] Update ConversationState.status after successful send (ACTIVE → AwaitingReply)
-- [x] Set ConversationState.last_outbound_at timestamp
-- [x] Verify state machine transitions per reply_management.md spec
+### 1.6.4 ConversationState Synchronization
+- [ ] Update ConversationState.status after successful send (ACTIVE → AwaitingReply)
+- [ ] Set ConversationState.last_outbound_at timestamp
+- [ ] Verify state machine transitions per reply_management.md spec
 - **Implementation:** Enhanced `_touch_conversation_state_after_send()` to update `conversation_phase="awaiting_reply"`, refresh `updated_at`, respect hard-stop states (OPT_OUT, HUMAN_REVIEW, PAUSED, COMPLETED), with debug logging
 
 ---
@@ -163,10 +163,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Answer genealogical questions from matches using GEDCOM/API evidence
 
-### 2.1 Semantic Search Enhancement ✅ IMPLEMENTED
-- [x] Integrate `SemanticSearchService.search()` into InboundOrchestrator for PRODUCTIVE messages with questions
-- [x] Add `to_prompt_string()` method to `SemanticSearchResult` for AI prompt integration
-- [x] Pass search results to `generate_genealogical_reply()` for draft generation
+### 2.1 Semantic Search Enhancement
+- [ ] Integrate `SemanticSearchService.search()` into InboundOrchestrator for PRODUCTIVE messages with questions
+- [ ] Add `to_prompt_string()` method to `SemanticSearchResult` for AI prompt integration
+- [ ] Pass search results to `generate_genealogical_reply()` for draft generation
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - Enhanced `genealogical_reply` prompt (v2.1.0) with `{semantic_search_results}` placeholder
@@ -176,11 +176,11 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Modified `_run_research_flow()` to pass semantic search results to reply generation
 - Added test for `to_prompt_string()` formatting in semantic_search.py (5 tests total)
 
-### 2.2 Evidence-Backed Answers ✅ IMPLEMENTED
-- [x] Extend `TreeQueryService.find_person()` with fuzzy birth-year tolerance (±5 years)
-- [x] Add `get_family_members()` method: parents, siblings, spouses, children
-- [x] Implement `explain_relationship()` for DNA match → common ancestor path
-- [x] Format evidence blocks for inclusion in AI prompts
+### 2.2 Evidence-Backed Answers
+- [ ] Extend `TreeQueryService.find_person()` with fuzzy birth-year tolerance (±5 years)
+- [ ] Add `get_family_members()` method: parents, siblings, spouses, children
+- [ ] Implement `explain_relationship()` for DNA match → common ancestor path
+- [ ] Format evidence blocks for inclusion in AI prompts
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - `find_person()` already had ±5 year fuzzy matching via `_match_year()` helper
@@ -192,13 +192,13 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Added `_get_spouse_ids()` with `_extract_spouse_ids_from_individual()` for spouse lookup
 - Added 3 new tests for family member functionality (7 tests total in tree_query_service.py)
 
-### 2.3 Answer Generation ✅ IMPLEMENTED
-- [x] Create `response_generation` prompt in ai_prompts.json with:
+### 2.3 Answer Generation
+- [ ] Create `response_generation` prompt in ai_prompts.json with:
   - Evidence citation requirements
   - Uncertainty disclosure rules
   - Follow-up question generation
-- [x] Return structured JSON: draft_message, confidence, missing_information, suggested_facts
-- [x] Route low-confidence answers to HUMAN_REVIEW
+- [ ] Return structured JSON: draft_message, confidence, missing_information, suggested_facts
+- [ ] Route low-confidence answers to HUMAN_REVIEW
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - Added `response_generation` prompt (v1.0.0) with structured JSON output schema
@@ -211,10 +211,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Human review routing: `confidence < 50` OR explicit `route_to_human_review=True`
 - Added 5 new tests for Phase 2.3 functionality (23 tests total in ai_interface.py)
 
-### 2.4 Relationship Explanation ✅ IMPLEMENTED
-- [x] Use ThruLines data (if scraped) or GEDCOM path calculation
-- [x] Generate natural-language explanations: "We both descend from [Ancestor] through [Path]"
-- [x] Include relationship labels: "3rd cousin twice removed via the Smith line"
+### 2.4 Relationship Explanation
+- [ ] Use ThruLines data (if scraped) or GEDCOM path calculation
+- [ ] Generate natural-language explanations: "We both descend from [Ancestor] through [Path]"
+- [ ] Include relationship labels: "3rd cousin twice removed via the Smith line"
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - `explain_relationship()` already existed with GEDCOM path calculation via `fast_bidirectional_bfs`
@@ -230,11 +230,11 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Extract, validate, and stage genealogical facts for tree improvement
 
-### 3.1 Fact Extraction 2.0 ✅ IMPLEMENTED
-- [x] Standardize all entity extraction to output `ExtractedFact` objects
-- [x] Add `from_conversation()` factory for common patterns
-- [x] Include date normalization (circa, before, after qualifiers)
-- [x] Track extraction confidence per fact type
+### 3.1 Fact Extraction 2.0
+- [ ] Standardize all entity extraction to output `ExtractedFact` objects
+- [ ] Add `from_conversation()` factory for common patterns
+- [ ] Include date normalization (circa, before, after qualifiers)
+- [ ] Track extraction confidence per fact type
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - `ExtractedFact` class already existed with `from_vital_record()` and `from_relationship()` factories
@@ -244,10 +244,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Confidence tracking already implemented in factory methods (95=certain, 75=probable, 50=uncertain)
 - Added 3 new tests (13 tests total in fact_validator.py)
 
-### 3.2 Conflict Detection ✅ IMPLEMENTED
-- [x] Run `FactValidator.validate_fact()` on Action 9 extracted entities
-- [x] Stage conflicts in `DataConflict` table with severity classification
-- [x] Generate SuggestedFact rows for non-conflicting high-confidence facts
+### 3.2 Conflict Detection
+- [ ] Run `FactValidator.validate_fact()` on Action 9 extracted entities
+- [ ] Stage conflicts in `DataConflict` table with severity classification
+- [ ] Generate SuggestedFact rows for non-conflicting high-confidence facts
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - Infrastructure already fully implemented in `action9_process_productive.py`
@@ -258,10 +258,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Also implemented in `messaging/inbound.py` `_harvest_facts()` method for InboundOrchestrator flow
 - `ConflictDetector` class in `research/conflict_detector.py` provides additional conflict management utilities
 
-### 3.3 Review Queue for Facts ✅ IMPLEMENTED
-- [x] Add CLI commands: `facts list`, `facts review <id>`, `facts approve/reject`
-- [x] Surface pending SuggestedFacts in main review queue
-- [x] Track approval rates for quality metrics
+### 3.3 Review Queue for Facts
+- [ ] Add CLI commands: `facts list`, `facts review <id>`, `facts approve/reject`
+- [ ] Surface pending SuggestedFacts in main review queue
+- [ ] Track approval rates for quality metrics
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - Created `cli/facts_queue.py` with full CLI for facts management:
@@ -277,10 +277,10 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - Color-coded severity display: 🔴 CRITICAL, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - Added 7 new tests (184 modules total)
 
-### 3.4 MS To-Do Integration ✅ IMPLEMENTED
-- [x] Create tasks for MAJOR_CONFLICT items requiring research
-- [x] Include conflict details in task description
-- [x] Tag tasks with fact type and person name
+### 3.4 MS To-Do Integration
+- [ ] Create tasks for MAJOR_CONFLICT items requiring research
+- [ ] Include conflict details in task description
+- [ ] Tag tasks with fact type and person name
 
 **Implementation Notes (Session 10 - December 15, 2025):**
 - Added `create_tasks_for_critical_conflicts()` method to `FactsQueueService`
@@ -300,14 +300,14 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Measure and optimize communication effectiveness
 
-### 4.1 Metrics Collection ✅ IMPLEMENTED
-- [x] Track per-conversation: messages_sent, messages_received, response_rate
+### 4.1 Metrics Collection
+- [ ] Track per-conversation: messages_sent, messages_received, response_rate
   - ✅ Already implemented in `ConversationMetrics` model (`core/database.py`)
   - ✅ `update_conversation_metrics()` in `observability/conversation_analytics.py` tracks all per-conversation metrics
-- [x] Calculate time_to_first_response
+- [ ] Calculate time_to_first_response
   - ✅ Already tracked as `time_to_first_response_hours` in `ConversationMetrics`
   - ✅ `_update_received_message_metrics()` calculates time delta from first_message_sent
-- [x] Record opt_out_count, productive_count, human_review_count
+- [ ] Record opt_out_count, productive_count, human_review_count
   - ✅ NEW: Added `_get_status_counts()` helper function
   - ✅ Queries `ConversationState.status` for OPT_OUT and HUMAN_REVIEW counts
   - ✅ Queries `ConversationState.last_intent == "PRODUCTIVE"` for productive count
@@ -322,17 +322,17 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
   - Added `status_counts` section to dashboard output
   - Updated test to verify status_counts structure (10 tests total)
 
-### 4.2 Quality Scoring ✅ IMPLEMENTED
-- [x] Score draft quality: 0-100 based on personalization, evidence, specificity
+### 4.2 Quality Scoring
+- [ ] Score draft quality: 0-100 based on personalization, evidence, specificity
   - ✅ Already implemented in `ai_interface.py` via `DraftQualityResult.quality_score`
   - ✅ NEW: Added `quality_score` column to `DraftReply` model for persistence
-- [x] Track acceptance_rate for drafts (approved vs rejected)
+- [ ] Track acceptance_rate for drafts (approved vs rejected)
   - ✅ NEW: Added `acceptance_rate` property to `QueueStats` dataclass
   - ✅ Updated `get_queue_stats()` to track `total_approved` and `total_rejected`
   - ✅ Emits `acceptance_rate` to Prometheus metrics
   - ✅ Displayed in CLI: `python -m cli.review_queue stats`
   - ✅ Added test for acceptance_rate property (13 tests in approval_queue.py)
-- [x] Compare quality scores to engagement outcomes
+- [ ] Compare quality scores to engagement outcomes
   - ✅ NEW: Added `get_quality_to_outcome_correlation()` function
   - ✅ Groups drafts by quality tiers (excellent/good/acceptable/poor)
   - ✅ Calculates acceptance rate per quality tier
@@ -347,12 +347,12 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 - `cli/review_queue.py`: Added acceptance rate to stats display
 - `observability/conversation_analytics.py`: Added `get_quality_to_outcome_correlation()`
 
-### 4.3 Dashboard Integration ✅ IMPLEMENTED
-- [x] Emit metrics to Prometheus hooks (already scaffolded)
+### 4.3 Dashboard Integration
+- [ ] Emit metrics to Prometheus hooks (already scaffolded)
   - ✅ NEW: Added `_ResponseFunnelGaugeProxy` for response funnel stages
   - ✅ NEW: Added `_QualityDistributionGaugeProxy` for draft quality tiers
   - ✅ NEW: Added `emit_dashboard_metrics()` function to update metrics from DB
-- [x] Create Grafana dashboard panels:
+- [ ] Create Grafana dashboard panels:
   - ✅ Response funnel (Sent → Replied → Productive → Fact Extracted) - metrics wired
   - ✅ Opt-out trends over time - `status_counts.opt_out` in analytics
   - ✅ Draft quality distribution - `quality_distribution` gauge by tier
@@ -368,14 +368,14 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
   - Added `emit_dashboard_metrics()` to populate Prometheus gauges from DB queries
 
 ### 4.4 Content-to-Outcome Correlation ✅ ALREADY IMPLEMENTED
-- [x] A/B test message templates (formal vs friendly)
+- [ ] A/B test message templates (formal vs friendly)
   - ✅ ExperimentManager in `ai/ab_testing.py` (612 lines)
   - ✅ MessagePersonalizer uses ExperimentManager for strategy A/B tests
-- [x] Track which prompt variants produce higher response rates
+- [ ] Track which prompt variants produce higher response rates
   - ✅ `ai_quality` histogram tracks by (provider, prompt_key, variant)
   - ✅ `personalization_ab_outcome` counter tracks response effectiveness
   - ✅ `_select_contextual_prompt_variant()` in action8_messaging.py
-- [x] Log experiment results for offline analysis
+- [ ] Log experiment results for offline analysis
   - ✅ `prompt_experiments.jsonl` logs all AI calls with variant info
   - ✅ `get_experiment_summary()` provides visibility
 
@@ -387,36 +387,36 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Proactively suggest research areas based on match characteristics
 
-### 5.1 Ethnicity-Based Suggestions ✅ IMPLEMENTED
-- [x] Identify shared ethnicity regions between owner and match
+### 5.1 Ethnicity-Based Suggestions
+- [ ] Identify shared ethnicity regions between owner and match
   - ✅ `_add_ethnicity_commonality()` in ai/context_builder.py calls `calculate_ethnicity_commonality()`
   - ✅ Returns shared_regions, similarity_score, top_shared_region
-- [x] Surface region-specific research suggestions in drafts
+- [ ] Surface region-specific research suggestions in drafts
   - ✅ `ETHNICITY_RESEARCH_SUGGESTIONS` mapping in research/research_suggestions.py
   - ✅ 7 ethnicity regions mapped (Scotland, Ireland, England, Wales, Germany, Norway, Sweden)
   - ✅ `_extract_ethnicity_suggestions()` returns collections, surname_clusters, strategies
-- [x] Link to relevant surname clusters
+- [ ] Link to relevant surname clusters
   - ✅ Surname clusters per region (e.g., MacLeod, Campbell for Scotland)
   - ✅ Surfaced in formatted_message as "Common Surname Clusters to Watch For"
 - **Implementation:** Enhanced generate_research_suggestions() with ethnicity_regions parameter; 3 new tests added
 
-### 5.2 Gap-Based Suggestions ✅ IMPLEMENTED (via Phase 11.3)
-- [x] Run PredictiveGapDetector on match tree (if available)
+### 5.2 Gap-Based Suggestions  (via Phase 11.3)
+- [ ] Run PredictiveGapDetector on match tree (if available)
   - ✅ `ContextBuilder._build_predictive_gaps()` calls PredictiveGapDetector.analyze_gaps()
-- [x] Include gap-filling suggestions in follow-up messages
+- [ ] Include gap-filling suggestions in follow-up messages
   - ✅ Top research gap surfaced in `_format_research()` for AI prompts
-- [x] Prioritize suggestions by research impact
+- [ ] Prioritize suggestions by research impact
   - ✅ Gaps include type, description, suggested_actions
 
-### 5.3 Cluster Analysis ✅ IMPLEMENTED
-- [x] Group matches by shared match patterns
+### 5.3 Cluster Analysis
+- [ ] Group matches by shared match patterns
   - ✅ `TriangulationIntelligence.find_clusters()` groups by surname patterns
   - ✅ `_group_by_surnames()` extracts surname components
-- [x] Identify cluster "anchors" with confirmed tree placement
+- [ ] Identify cluster "anchors" with confirmed tree placement
   - ✅ `ClusterAnchor` dataclass with match_uuid, confirmed_ancestor_name, has_linked_tree
   - ✅ `_identify_cluster_anchors()` finds matches with linked trees or confirmed ancestors
   - ✅ Anchors sorted by shared_cm for reliability ranking
-- [x] Suggest cluster-wide research hypotheses
+- [ ] Suggest cluster-wide research hypotheses
   - ✅ `ClusterResearchHypothesis` dataclass with description, suggested_actions, priority
   - ✅ `_generate_cluster_hypotheses()` creates 3 hypothesis types:
     - Anchor-based (uses confirmed ancestor from anchors)
@@ -430,46 +430,46 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Correctly identify and route cases requiring personal attention
 
-### 6.1 Escalation Categories ✅ IMPLEMENTED
-- [x] VISIT_REQUEST: "I'd like to visit you" → Immediate human review
+### 6.1 Escalation Categories
+- [ ] VISIT_REQUEST: "I'd like to visit you" → Immediate human review
   - ✅ `CriticalAlertCategory.THREATS_HOSTILITY` catches stalking patterns
-- [x] SELF_HARM: Suicide/distress signals → CRITICAL alert, no response
+- [ ] SELF_HARM: Suicide/distress signals → CRITICAL alert, no response
   - ✅ `CriticalAlertCategory.SELF_HARM` with `_CRITICAL_SELF_HARM_PATTERNS`
   - ✅ `check_critical_alerts()` returns CRITICAL_ALERT with highest priority
-- [x] LEGAL_THREAT: Attorney mentions → Log and pause
+- [ ] LEGAL_THREAT: Attorney mentions → Log and pause
   - ✅ `CriticalAlertCategory.LEGAL_PRIVACY` with `_CRITICAL_LEGAL_PATTERNS`
-- [x] ARTIFACT_DISCOVERY: Family Bible/photos → Priority notification
+- [ ] ARTIFACT_DISCOVERY: Family Bible/photos → Priority notification
   - ✅ `CriticalAlertCategory.HIGH_VALUE_DISCOVERY` with `_HIGH_VALUE_PATTERNS`
   - ✅ Returns HIGH_VALUE status (continues automation, flags for priority follow-up)
 
 **Implementation:** messaging/safety.py SafetyGuard class integrated into action7_inbox.py
 
-### 6.2 Notification System ✅ IMPLEMENTED
-- [x] Add email/SMS alert option for CRITICAL alerts
+### 6.2 Notification System
+- [ ] Add email/SMS alert option for CRITICAL alerts
   - ✅ `NotificationManager` with `EmailNotificationChannel`, `SmsNotificationChannel`
   - ✅ `AlertChecker._emit_alert()` forwards CRITICAL alerts to notification system
   - ✅ `NotificationConfig.from_environment()` loads SMTP/SMS settings from .env
-- [x] Daily digest of HUMAN_REVIEW items
+- [ ] Daily digest of HUMAN_REVIEW items
   - ✅ `generate_daily_digest()` summarizes pending drafts, opt-outs, priorities
   - ✅ `format_digest_notification()` creates formatted notification
   - ✅ `send_daily_digest()` delivers via all enabled channels
-- [x] Emergency stop: global pause switch
+- [ ] Emergency stop: global pause switch
   - ✅ `config_schema.emergency_stop_enabled` blocks all sending
 
 **Implementation:** observability/notifications.py NotificationManager + observability/alerts.py integration
 
-### 6.3 Response Guidelines ✅ IMPLEMENTED
-- [x] Draft empathetic responses for escalation-path cases (for human editing)
+### 6.3 Response Guidelines
+- [ ] Draft empathetic responses for escalation-path cases (for human editing)
   - ✅ `EscalationCategory` enum: BEREAVEMENT, LEGAL_PRIVACY, DNA_RESULT_SHOCK, HIGH_CONFLICT, SELF_HARM
   - ✅ `EmpatheticTemplate` dataclass with opening, body, closing, human_guidance
   - ✅ `EscalationDraft` dataclass with requires_review=True (never auto-sent)
   - ✅ `generate_empathetic_draft()` creates personalized drafts for review queue
   - ✅ `detect_escalation_category()` keyword-based category detection
   - ✅ Crisis resources included in SELF_HARM templates (988 hotline, Crisis Text Line)
-- [x] Never auto-send escalation responses
+- [ ] Never auto-send escalation responses
   - ✅ CRITICAL_ALERT status blocks automation path
   - ✅ `requires_review=True` always set on empathetic drafts
-- [x] Log all escalation decisions
+- [ ] Log all escalation decisions
   - ✅ logger.critical/error/warning in check_critical_alerts()
 
 **Implementation:** messaging/empathetic_responses.py template library + generate_empathetic_draft()
@@ -480,41 +480,41 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Enable safe auto-sending for high-confidence, routine messages
 
-### 7.1 Auto-Approval Criteria ✅ IMPLEMENTED
-- [x] quality_score >= 85 (uses AUTO_APPROVE_THRESHOLD=90)
+### 7.1 Auto-Approval Criteria
+- [ ] quality_score >= 85 (uses AUTO_APPROVE_THRESHOLD=90)
   - ✅ `_should_auto_approve()` checks `confidence >= AUTO_APPROVE_THRESHOLD`
-- [x] opt_out_score >= 95 (safety)
+- [ ] opt_out_score >= 95 (safety)
   - ✅ Covered by `priority not in {CRITICAL, HIGH}` check (hostile/unsafe = HIGH priority)
-- [x] No aggressive sentiment
+- [ ] No aggressive sentiment
   - ✅ `_should_auto_approve()` rejects CRITICAL/HIGH priority (aggressive = HIGH)
-- [x] Person.automation_enabled == True
+- [ ] Person.automation_enabled == True
   - ✅ `_is_automation_enabled()` checks person.automation_enabled
-- [x] ConversationState.status == ACTIVE
+- [ ] ConversationState.status == ACTIVE
   - ✅ `_is_conversation_active()` queries ConversationState.status
-- [x] Not flagged for manual review
+- [ ] Not flagged for manual review
   - ✅ `_is_first_message()` blocks first messages, priority check blocks flagged
 
-### 7.2 Gradual Rollout ✅ IMPLEMENTED
-- [x] Start with DRY_RUN mode (save but don't send)
+### 7.2 Gradual Rollout
+- [ ] Start with DRY_RUN mode (save but don't send)
   - ✅ Existing `app_mode=dry_run` prevents actual sends
   - ✅ `dry_run_verified` config gate for production
-- [x] Manual review first 100 auto-approved drafts
+- [ ] Manual review first 100 auto-approved drafts
   - ✅ `auto_approve_min_reviewed` config (default: 100)
   - ✅ `is_auto_approve_ready()` checks review count
-- [x] Enable live sending only after 95%+ approval rate
+- [ ] Enable live sending only after 95%+ approval rate
   - ✅ `auto_approve_min_acceptance_rate` config (default: 95.0)
   - ✅ `is_auto_approve_ready()` checks acceptance rate
 
-### 7.3 Safety Rails ✅ IMPLEMENTED
-- [x] Daily send limit per person (default: 1)
+### 7.3 Safety Rails
+- [ ] Daily send limit per person (default: 1)
   - ✅ `max_messages_per_person_per_day` config option (default: 1)
   - ✅ `_is_within_daily_limit()` checks ConversationState.messages_sent_today
   - ✅ Added `messages_sent_today`, `messages_sent_date` columns to ConversationState
-- [x] Cooldown period between messages (default: 7 days)
+- [ ] Cooldown period between messages (default: 7 days)
   - ✅ `message_cooldown_days` config option (default: 7)
   - ✅ `_is_cooldown_expired()` checks ConversationState.last_outbound_at
   - ✅ Added `last_outbound_at` column to ConversationState
-- [x] Emergency pause if opt-out rate > 5%
+- [ ] Emergency pause if opt-out rate > 5%
   - ✅ `opt_out_rate_threshold` config option (default: 5.0)
   - ✅ `emergency_stop_enabled` can be set true to halt all messaging
 
@@ -544,35 +544,35 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Production-grade visibility into system health and engagement outcomes
 
-### 9.1 Prometheus Metrics Integration ✅ IMPLEMENTED
-- [x] Emit `drafts_queued_total` counter (by priority, confidence bucket)
-- [x] Emit `drafts_sent_total` counter (by outcome: sent/skipped/error)
-- [x] Emit `review_queue_depth` gauge (by status: PENDING/APPROVED/EXPIRED)
-- [x] Add `response_rate` histogram (time from sent to reply received)
+### 9.1 Prometheus Metrics Integration
+- [ ] Emit `drafts_queued_total` counter (by priority, confidence bucket)
+- [ ] Emit `drafts_sent_total` counter (by outcome: sent/skipped/error)
+- [ ] Emit `review_queue_depth` gauge (by status: PENDING/APPROVED/EXPIRED)
+- [ ] Add `response_rate` histogram (time from sent to reply received)
 - **Implementation:** Added proxy classes and Prometheus metrics in metrics_registry.py; wired into approval_queue.py (queue_for_review, get_queue_stats) and action11 (send loop)
 
-### 9.2 Grafana Dashboard Panels ✅ IMPLEMENTED
-- [x] Response funnel: Sent → Replied → Productive → Fact Extracted
+### 9.2 Grafana Dashboard Panels
+- [ ] Response funnel: Sent → Replied → Productive → Fact Extracted
   - ✅ `response_funnel` gauge with stages: sent, replied, productive, fact_extracted
   - ✅ `emit_dashboard_metrics()` in conversation_analytics.py
-- [x] Opt-out trend over time (daily/weekly)
+- [ ] Opt-out trend over time (daily/weekly)
   - ✅ Tracked via `response_funnel` + ConversationState.status counters
-- [x] Draft quality score distribution
+- [ ] Draft quality score distribution
   - ✅ `quality_distribution` gauge with tiers: excellent, good, acceptable, poor
-- [x] Review queue age histogram (hours since creation)
+- [ ] Review queue age histogram (hours since creation)
   - ✅ `review_queue_depth` gauge tracks queue depth by status
 
-### 9.3 Alerting Rules ✅ IMPLEMENTED
-- [x] Alert if opt-out rate exceeds 5% in 24h window
+### 9.3 Alerting Rules
+- [ ] Alert if opt-out rate exceeds 5% in 24h window
   - ✅ `AlertChecker._check_opt_out_rate()` in observability/alerts.py
   - ✅ Queries ConversationState for opt-out statuses in configurable time window
-- [x] Alert if review queue depth > 50 for > 24 hours
+- [ ] Alert if review queue depth > 50 for > 24 hours
   - ✅ `AlertChecker._check_queue_depth()` checks pending DraftReply count
   - ✅ Configurable thresholds via AlertThresholds dataclass
-- [x] Alert on circuit breaker trips (API/session failures)
+- [ ] Alert on circuit breaker trips (API/session failures)
   - ✅ `AlertChecker._check_circuit_breaker()` checks circuit_breaker_registry
   - ✅ Returns WARNING alert when any breaker is OPEN
-- [x] Alert on emergency_stop_enabled activation
+- [ ] Alert on emergency_stop_enabled activation
   - ✅ `AlertChecker._check_emergency_stop()` returns CRITICAL alert
   - ✅ Also logged by action8/action11 when enabled
 - **Implementation:** Created observability/alerts.py with AlertChecker class; AlertSeverity/AlertType enums; Alert/AlertThresholds dataclasses; 9 module tests
@@ -583,24 +583,24 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Enable hands-off operation with periodic maintenance tasks
 
-### 10.1 Draft Lifecycle Management ✅ IMPLEMENTED
-- [x] Create `expire_old_drafts` scheduled job (call `ApprovalQueueService.expire_old_drafts()`)
-- [x] Run every 6 hours or on application startup
-- [x] Log expired draft count to metrics
+### 10.1 Draft Lifecycle Management
+- [ ] Create `expire_old_drafts` scheduled job (call `ApprovalQueueService.expire_old_drafts()`)
+- [ ] Run every 6 hours or on application startup
+- [ ] Log expired draft count to metrics
 - **Implementation:** Added `run_startup_maintenance_tasks()` to core/lifecycle.py; called from main.py after check_startup_status(); runs expire_old_drafts() on every app startup with count logging
 
-### 10.2 Inbox Polling ✅ IMPLEMENTED
-- [x] Add periodic inbox check (every 15-30 minutes when app is running)
+### 10.2 Inbox Polling
+- [ ] Add periodic inbox check (every 15-30 minutes when app is running)
   - ✅ `setup_inbox_polling()` in core/background_scheduler.py
   - ✅ Configurable interval (default 15 minutes)
-- [x] Process new inbound messages through InboundOrchestrator
+- [ ] Process new inbound messages through InboundOrchestrator
   - ✅ Callback integrates with action7_inbox.process_inbox_messages()
-- [x] Queue drafts for review automatically
+- [ ] Queue drafts for review automatically
   - ✅ InboundOrchestrator generates drafts as part of processing
 - **Implementation:** Created core/background_scheduler.py with BackgroundScheduler class; 8 module tests
 
-### 10.3 Session Maintenance ✅ IMPLEMENTED
-- [x] Implement session keepalive for long-running operations
+### 10.3 Session Maintenance
+- [ ] Implement session keepalive for long-running operations
   - ✅ `setup_session_keepalive()` in core/background_scheduler.py
   - ✅ Refreshes cookies at 25-minute mark (before 40-minute expiry)
   - ✅ Configurable interval (default 10 minutes)
@@ -617,37 +617,37 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 | Module | Lines | Status | Gap |
 |--------|-------|--------|-----|
-| triangulation_intelligence.py | 724 | ✅ Implemented | Not called from draft generation |
-| conflict_detector.py | 547 | ✅ Implemented | Not called from fact review |
-| predictive_gaps.py | 827 | ✅ Implemented | Not surfaced in drafts |
-| message_personalization.py | 1987 | ✅ Implemented | 30+ personalization functions available |
+| triangulation_intelligence.py | 724 |  | Not called from draft generation |
+| conflict_detector.py | 547 |  | Not called from fact review |
+| predictive_gaps.py | 827 |  | Not surfaced in drafts |
+| message_personalization.py | 1987 |  | 30+ personalization functions available |
 
-### 11.1 Triangulation Integration ✅ IMPLEMENTED
-- [x] Call `TriangulationIntelligence.generate_hypothesis()` during ContextBuilder assembly
-- [x] Include confidence scores in draft context
-- [x] Surface triangulation opportunities in follow-up message suggestions
+### 11.1 Triangulation Integration
+- [ ] Call `TriangulationIntelligence.generate_hypothesis()` during ContextBuilder assembly
+- [ ] Include confidence scores in draft context
+- [ ] Surface triangulation opportunities in follow-up message suggestions
 - [ ] Add `MatchCluster` detection to group related matches
 - **Implementation:** Added `_build_triangulation_hypothesis()` to ContextBuilder; hypothesis includes proposed_relationship, common_ancestor, confidence_score, evidence_count; formatted in `_format_research()` for AI prompts
 
-### 11.2 Conflict Detection Integration ✅ IMPLEMENTED
-- [x] Wire `ConflictDetector.detect_conflicts()` to Action 9 fact extraction
-- [x] Route HIGH/CRITICAL severity conflicts to review queue
+### 11.2 Conflict Detection Integration
+- [ ] Wire `ConflictDetector.detect_conflicts()` to Action 9 fact extraction
+- [ ] Route HIGH/CRITICAL severity conflicts to review queue
 - [ ] Add conflict resolution workflow to operator manual
 - [ ] Surface resolved conflicts as tree improvement candidates
 - **Implementation:** Added `ConflictSeverityEnum` to database.py; added `severity` column to DataConflict model; added `_map_conflict_severity()` and enhanced `_stage_conflict_if_needed()` in action9; added `get_critical_conflicts()` query method to ConflictDetector; HIGH/CRITICAL conflicts logged with warning for visibility
 
-### 11.3 Predictive Gap Integration ✅ IMPLEMENTED
-- [x] Call `PredictiveGapDetector.analyze_gaps()` for match tree analysis
-- [x] Include `ResearchGap` suggestions in draft personalization
+### 11.3 Predictive Gap Integration
+- [ ] Call `PredictiveGapDetector.analyze_gaps()` for match tree analysis
+- [ ] Include `ResearchGap` suggestions in draft personalization
 - [ ] Prioritize brick wall research in message content
 - [ ] Track gap resolution through conversation outcomes
 - **Implementation:** Added `_build_predictive_gaps()` to ContextBuilder; surfaces top research gap with type, description, suggested actions; formatted in `_format_research()` for AI prompts
 
-### 11.4 Personalization Enhancement ✅ IMPLEMENTED
-- [x] Enable full personalization function registry in MessagePersonalizer
-- [x] Add A/B testing for personalization strategies
-- [x] Track effectiveness metrics per personalization type
-- [x] Optimize based on response rates
+### 11.4 Personalization Enhancement
+- [ ] Enable full personalization function registry in MessagePersonalizer
+- [ ] Add A/B testing for personalization strategies
+- [ ] Track effectiveness metrics per personalization type
+- [ ] Optimize based on response rates
 - **Implementation:** Integrated ExperimentManager with MessagePersonalizer for A/B testing of personalization strategies (DNA-focused vs standard, research-heavy vs brief); added 4 Prometheus metrics (personalization_usage, personalization_effectiveness, personalization_ab_assignment, personalization_ab_outcome); enhanced `track_message_response()` to record effectiveness per function; added `get_experiment_summary()` for visibility; auto-optimization via `_get_ab_test_insights()` in recommendations
 
 ---
@@ -661,29 +661,29 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 | Module | Lines | Status | Gap |
 |--------|-------|--------|-----|
-| gedcom_intelligence.py | 951 | ✅ Implemented | AI analysis not called from draft generation |
-| dna_gedcom_crossref.py | 807 | ✅ Implemented | Cross-reference not wired to personalization |
-| gedcom_cache.py | ~400 | ✅ Implemented | Caching available but not widely used |
-| dna_utils.py | ~300 | ✅ Implemented | Utility functions available |
+| gedcom_intelligence.py | 951 |  | AI analysis not called from draft generation |
+| dna_gedcom_crossref.py | 807 |  | Cross-reference not wired to personalization |
+| gedcom_cache.py | ~400 |  | Caching available but not widely used |
+| dna_utils.py | ~300 |  | Utility functions available |
 
-### 12.1 GEDCOM Intelligence Integration ✅ IMPLEMENTED
-- [x] Call `GedcomIntelligenceAnalyzer.analyze_gaps()` during ContextBuilder assembly
-- [x] Surface `GedcomGap` findings in draft personalization
-- [x] Include `GedcomConflict` warnings in human review notes
+### 12.1 GEDCOM Intelligence Integration
+- [ ] Call `GedcomIntelligenceAnalyzer.analyze_gaps()` during ContextBuilder assembly
+- [ ] Surface `GedcomGap` findings in draft personalization
+- [ ] Include `GedcomConflict` warnings in human review notes
 - [ ] Route `ResearchOpportunity` items to MS To-Do tasks
 - **Implementation:** Added `_build_gedcom_intelligence()` to ContextBuilder; surfaces top gap, conflict (with severity), and research opportunity; formatted in `_format_research()` for AI prompts with ⚠️ warning for critical/major conflicts
 
-### 12.2 DNA-GEDCOM Cross-Reference Integration ✅ IMPLEMENTED
-- [x] Call `CrossReferenceService.find_matches()` during match processing
-- [x] Include relationship path confidence in draft context
-- [x] Surface cross-reference validation in draft quality scoring
+### 12.2 DNA-GEDCOM Cross-Reference Integration
+- [ ] Call `CrossReferenceService.find_matches()` during match processing
+- [ ] Include relationship path confidence in draft context
+- [ ] Surface cross-reference validation in draft quality scoring
 - [ ] Track cross-reference success rate for analytics
 - **Implementation:** Added `_build_dna_gedcom_crossref()` to ContextBuilder; uses DNAGedcomCrossReferencer to validate DNA match against GEDCOM tree; surfaces top match with confidence, conflicts, and verification opportunities; formatted in `_format_research()` with ✓ for high-confidence validated matches
 
-### 12.3 GEDCOM Cache Optimization ✅ IMPLEMENTED
-- [x] Enable GEDCOM caching for repeated tree access
-- [x] Add cache warming during startup for owner's tree
-- [x] Implement cache invalidation on tree updates
+### 12.3 GEDCOM Cache Optimization
+- [ ] Enable GEDCOM caching for repeated tree access
+- [ ] Add cache warming during startup for owner's tree
+- [ ] Implement cache invalidation on tree updates
 - **Implementation:** Added GEDCOM cache warming to `run_startup_maintenance_tasks()` in lifecycle.py via `preload_gedcom_cache()`; added `invalidate_gedcom_cache_on_update()` for explicit invalidation; cache also auto-invalidates based on file mtime hash; tests: ALL PASSED (13/13 gedcom_cache, 6/6 lifecycle)
 
 ---
@@ -692,24 +692,24 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 **Goal:** Leverage advanced infrastructure patterns for better maintainability
 
-### 13.1 Dependency Injection Expansion ✅ IMPLEMENTED
-- [x] Expand DI container usage beyond session_utils.py (currently only 2 imports)
-- [x] Register AIProviderManager in DI container
-- [x] Register ApprovalQueueService in DI container
+### 13.1 Dependency Injection Expansion
+- [ ] Expand DI container usage beyond session_utils.py (currently only 2 imports)
+- [ ] Register AIProviderManager in DI container
+- [ ] Register ApprovalQueueService in DI container
 - [ ] Add DI integration guide to developer documentation
 - **Implementation:** Added AIProviderManager as singleton and ApprovalQueueService as factory (requires DB session) to `configure_dependencies()` in dependency_injection.py; tests: ALL PASSED (19/19)
 
-### 13.2 Async Database Operations ✅ IMPLEMENTED
-- [x] Utilize `async_session_context()` for I/O-bound operations
-- [x] Add async support to ApprovalQueueService batch operations
+### 13.2 Async Database Operations
+- [ ] Utilize `async_session_context()` for I/O-bound operations
+- [ ] Add async support to ApprovalQueueService batch operations
 - [ ] Benchmark async vs sync for gather operations
 - [ ] Document when to use async patterns
 - **Implementation:** Added 3 async methods to ApprovalQueueService: `async_get_queue_stats()`, `async_get_pending_queue()`, `async_expire_old_drafts()`; uses run_in_executor for thread-pool execution; tests: 12/12 PASSED
 
-### 13.3 Protocol-Based Testing ✅ IMPLEMENTED
-- [x] Create mock implementations based on core/protocols.py
-- [x] Add protocol-based dependency injection for testing
-- [x] Reduce concrete type dependencies in tests
+### 13.3 Protocol-Based Testing
+- [ ] Create mock implementations based on core/protocols.py
+- [ ] Add protocol-based dependency injection for testing
+- [ ] Reduce concrete type dependencies in tests
 - **Implementation:** Created `testing/protocol_mocks.py` with 5 mock implementations (MockRateLimiter, MockDatabaseSession, MockSessionManager, MockCache, MockLogger) satisfying RateLimiterProtocol, DatabaseSessionProtocol, SessionManagerProtocol, CacheProtocol, LoggerProtocol; includes verify_protocol_compliance() validation; tests: 6/6 PASSED
 
 ---
@@ -718,18 +718,18 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 ### Code Quality
 - [ ] Add missing type hints to action modules
-- [x] Resolve remaining # type: ignore comments (see check_type_ignores.py) ✅ FIXED: 1 occurrence in message_personalization.py
-- [x] Update dead_code_candidates.json and clean stale code ✅ UPDATED: 136 candidates across 199 files
-- [x] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery) ✅ IMPLEMENTED
+- [ ] Resolve remaining # type: ignore comments (see check_type_ignores.py) ✅ FIXED: 1 occurrence in message_personalization.py
+- [ ] Update dead_code_candidates.json and clean stale code ✅ UPDATED: 136 candidates across 199 files
+- [ ] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery)
 - [ ] Remove TODO/FIXME comments by completing referenced tasks (83 found across codebase)
-- [x] Address placeholder implementations in triangulation_intelligence.py line 390 ✅ IMPLEMENTED: Now queries SharedMatch table properly
-- [x] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file) ✅ REVIEWED: These are local dataclasses inside _test_gedcom_path_conversion() function, properly scoped; follows standard pattern of embedded tests
+- [ ] Address placeholder implementations in triangulation_intelligence.py line 390 : Now queries SharedMatch table properly
+- [ ] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file) ✅ REVIEWED: These are local dataclasses inside _test_gedcom_path_conversion() function, properly scoped; follows standard pattern of embedded tests
 
 ### Testing
 - [ ] Add integration tests for full inbound→reply flow
 - [ ] Add tests for SemanticSearchService end-to-end
 - [ ] Add tests for FactValidator conflict detection
-- [x] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
+- [ ] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
 - [ ] Add Action 11 transaction failure recovery tests
 - [ ] Add tests for triangulation_intelligence.py hypothesis scoring
 - [ ] Add tests for conflict_detector.py field comparison logic
@@ -737,42 +737,42 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 ### Documentation
 - [ ] Update copilot-instructions.md with Phase 2 patterns
-- [x] Add operator manual for review queue ✅ EXISTS (docs/specs/operator_manual.md - 512 lines)
+- [ ] Add operator manual for review queue ✅ EXISTS (docs/specs/operator_manual.md - 512 lines)
 - [ ] Create architecture diagram for reply flow
-- [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)
-- [x] Add Web UI section to operator_manual.md (localhost:5000 workflow) ✅ CREATED: Section 9 with full usage guide
+- [ ] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)
+- [ ] Add Web UI section to operator_manual.md (localhost:5000 workflow) ✅ CREATED: Section 9 with full usage guide
 - [ ] Document MS Graph integration setup (integrations/ms_graph_utils.py - 813 lines)
 - [ ] Add troubleshooting guide for common errors
 
 ### Error Handling
-- [x] Implement recovery strategies referenced in error_handling.py header comments ✅ WIRED: action_runner._ensure_required_state() uses ancestry_session_recovery, ancestry_api_recovery, ancestry_database_recovery on failure
-- [x] Add circuit breaker integration to Action 11 send loop ✅ IMPLEMENTED: SessionCircuitBreaker with threshold=5, 5min recovery
-- [x] Create error categorization for send failures (network vs auth vs rate limit) ✅ IMPLEMENTED: SendErrorCategory enum with categorize_send_error() function
+- [ ] Implement recovery strategies referenced in error_handling.py header comments ✅ WIRED: action_runner._ensure_required_state() uses ancestry_session_recovery, ancestry_api_recovery, ancestry_database_recovery on failure
+- [ ] Add circuit breaker integration to Action 11 send loop : SessionCircuitBreaker with threshold=5, 5min recovery
+- [ ] Create error categorization for send failures (network vs auth vs rate limit) : SendErrorCategory enum with categorize_send_error() function
 
 ### Research Module Integration
-- [x] Wire TriangulationIntelligence into draft generation (724 lines ready but not called) ✅ ALREADY WIRED: ContextBuilder._build_triangulation_hypothesis() uses TriangulationIntelligence.analyze_match()
-- [x] Wire ConflictDetector into fact review workflow (547 lines ready but not called) ✅ ALREADY WIRED: Action 9 uses ConflictDetector for severity mapping; GEDCOM intelligence surfaces conflicts
-- [x] Wire PredictiveGapDetector suggestions into message personalization (827 lines ready) ✅ ALREADY WIRED: ContextBuilder._build_predictive_gaps() uses PredictiveGapDetector
-- [x] Add research module status to ContextBuilder output ✅ ALREADY IMPLEMENTED: _build_research_insights() includes triangulation, research_gaps, gedcom_intelligence, dna_gedcom_crossref
+- [ ] Wire TriangulationIntelligence into draft generation (724 lines ready but not called) ✅ ALREADY WIRED: ContextBuilder._build_triangulation_hypothesis() uses TriangulationIntelligence.analyze_match()
+- [ ] Wire ConflictDetector into fact review workflow (547 lines ready but not called) ✅ ALREADY WIRED: Action 9 uses ConflictDetector for severity mapping; GEDCOM intelligence surfaces conflicts
+- [ ] Wire PredictiveGapDetector suggestions into message personalization (827 lines ready) ✅ ALREADY WIRED: ContextBuilder._build_predictive_gaps() uses PredictiveGapDetector
+- [ ] Add research module status to ContextBuilder output ✅ ALREADY IMPLEMENTED: _build_research_insights() includes triangulation, research_gaps, gedcom_intelligence, dna_gedcom_crossref
 
 ### Core Infrastructure Gaps
-- [x] Wire FeatureFlags (594 lines) into action modules for gradual rollout ✅ IMPLEMENTED: Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
-- [x] Enable PII redaction filter (523 lines) in production logging ✅ WIRED: logging_config.py adds PIIRedactionFilter to file handler; enabled via PII_REDACTION_ENABLED=true
-- [x] Integrate HealthCheckRunner into startup validation (currently menu action only) ✅ WIRED: lifecycle.py calls run_startup_health_checks() in initialize_application()
-- [x] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator ✅ ALREADY WIRED: _update_metrics() tracks EngagementTracking events (message_received, reply_generated, facts_extracted)
-- [x] Connect A/B testing framework (612 lines) to prompt selection ✅ ALREADY WIRED: ai_interface.py uses get_prompt_with_experiment(); MessagePersonalizer uses ExperimentManager for strategy A/B tests
+- [ ] Wire FeatureFlags (594 lines) into action modules for gradual rollout : Action 11 now uses ACTION11_SEND_ENABLED flag; bootstrap registers 3 default flags
+- [ ] Enable PII redaction filter (523 lines) in production logging ✅ WIRED: logging_config.py adds PIIRedactionFilter to file handler; enabled via PII_REDACTION_ENABLED=true
+- [ ] Integrate HealthCheckRunner into startup validation (currently menu action only) ✅ WIRED: lifecycle.py calls run_startup_health_checks() in initialize_application()
+- [ ] Wire ConversationAnalytics (892 lines) events into InboundOrchestrator ✅ ALREADY WIRED: _update_metrics() tracks EngagementTracking events (message_received, reply_generated, facts_extracted)
+- [ ] Connect A/B testing framework (612 lines) to prompt selection ✅ ALREADY WIRED: ai_interface.py uses get_prompt_with_experiment(); MessagePersonalizer uses ExperimentManager for strategy A/B tests
 
 ### CLI Enhancement
-- [x] Add `cli/review_queue.py` module (referenced in operator_manual.md but uses approval_queue.py instead) ✅ CREATED: CLI with list, view, approve, reject, stats commands
+- [ ] Add `cli/review_queue.py` module (referenced in operator_manual.md but uses approval_queue.py instead) ✅ CREATED: CLI with list, view, approve, reject, stats commands
 - [ ] Consolidate ResearchToolsCLI (1210 lines) - many lazy-load patterns but good coverage
-- [x] Add progress indicators for long-running CLI operations ✅ ADDED: tqdm progress for ethnicity batch analysis in cli/research_tools.py
+- [ ] Add progress indicators for long-running CLI operations ✅ ADDED: tqdm progress for ethnicity batch analysis in cli/research_tools.py
 
 ### CI/CD Enhancements
-- [x] GitHub Actions for tests ✅ EXISTS (.github/workflows/tests.yml)
-- [x] GitHub Actions for quality gate ✅ EXISTS (.github/workflows/quality-gate.yml)
-- [x] GitHub Actions for lint/typecheck ✅ EXISTS (.github/workflows/lint-typecheck.yml)
-- [x] Add Docker workflow for containerized testing ✅ CREATED: .github/workflows/docker-test.yml
-- [x] Add production checklist validation to CI (scripts/check_production_guard.py) ✅ CREATED: .github/workflows/production-guard.yml
+- [ ] GitHub Actions for tests ✅ EXISTS (.github/workflows/tests.yml)
+- [ ] GitHub Actions for quality gate ✅ EXISTS (.github/workflows/quality-gate.yml)
+- [ ] GitHub Actions for lint/typecheck ✅ EXISTS (.github/workflows/lint-typecheck.yml)
+- [ ] Add Docker workflow for containerized testing ✅ CREATED: .github/workflows/docker-test.yml
+- [ ] Add production checklist validation to CI (scripts/check_production_guard.py) ✅ CREATED: .github/workflows/production-guard.yml
 
 ---
 
@@ -782,15 +782,15 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 | # | Prerequisite | Status |
 |---|-------------|--------|
-| 1 | Safety Detection: Critical alerts block automation | ✅ IMPLEMENTED (SafetyGuard) |
-| 2 | Opt-Out Respect: DESIST detection disables automation | ✅ IMPLEMENTED (OptOutDetector) |
-| 3 | Draft-First Posture: All messages require approval | ✅ IMPLEMENTED (ApprovalQueueService) |
-| 4 | Person-Level Toggle: `automation_enabled` column | ✅ IMPLEMENTED (Person model) |
-| 5 | Review Queue UI: Operational review interface | ✅ IMPLEMENTED (Web UI at localhost:5000, CLI commands) |
+| 1 | Safety Detection: Critical alerts block automation |  (SafetyGuard) |
+| 2 | Opt-Out Respect: DESIST detection disables automation |  (OptOutDetector) |
+| 3 | Draft-First Posture: All messages require approval |  (ApprovalQueueService) |
+| 4 | Person-Level Toggle: `automation_enabled` column |  (Person model) |
+| 5 | Review Queue UI: Operational review interface |  (Web UI at localhost:5000, CLI commands) |
 | 6 | Send Confirmation: Post-send state updates | ⚠️ PARTIAL (Action 11 marks SENT, ConversationState update missing) |
-| 7 | Idempotent Draft Creation: Prevent duplicate drafts | ✅ IMPLEMENTED (queue_for_review deduplicates) |
-| 8 | Auto-Approve Guards: First-message check, confidence threshold | ✅ IMPLEMENTED |
-| 9 | Self-Message Prevention: Block drafts to tree owner | ✅ IMPLEMENTED (Dec 2025) |
+| 7 | Idempotent Draft Creation: Prevent duplicate drafts |  (queue_for_review deduplicates) |
+| 8 | Auto-Approve Guards: First-message check, confidence threshold |  |
+| 9 | Self-Message Prevention: Block drafts to tree owner |  (Dec 2025) |
 
 ### Current Recommendation: **CONDITIONAL GO for Review-First Mode**
 

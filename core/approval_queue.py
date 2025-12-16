@@ -782,8 +782,9 @@ class ApprovalQueueService:
     def get_queue_stats(self) -> QueueStats:
         """Get statistics about the approval queue."""
 
-        def _apply_status_counts(stats: QueueStats, status_counts: list[tuple[str, int]]) -> None:
-            for status, count in status_counts:
+        def _apply_status_counts(stats: QueueStats, status_counts: list[Any]) -> None:
+            for row in status_counts:
+                status, count = row[0], row[1]
                 if status == "PENDING":
                     stats.pending_count = count
                 elif status == "AUTO_APPROVED":

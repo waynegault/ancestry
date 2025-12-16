@@ -1475,6 +1475,47 @@ class StructuredReplyResult:
         return None
 
 
+def _validate_structured_reply_inputs(ai_provider: str, user_question: str) -> tuple[bool, str | None]:
+    """Validate inputs for generate_structured_reply.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if not ai_provider:
+        return False, "AI_PROVIDER not configured."
+    if not user_question:
+        return False, "user_question is required."
+    return True, None
+
+
+def _format_structured_reply_prompt(
+    prompt_template: str,
+    user_question: str,
+    conversation_context: str,
+    tree_evidence: str,
+    semantic_search_results: str,
+    family_members: str,
+    relationship_path: str,
+) -> str | None:
+    """Format the prompt template with evidence data.
+
+    Returns:
+        Formatted prompt string or None if formatting fails.
+    """
+    try:
+        return prompt_template.format(
+            user_question=user_question,
+            conversation_context=conversation_context or "No previous conversation.",
+            tree_evidence=tree_evidence or "No tree evidence available.",
+            semantic_search_results=semantic_search_results or "No semantic search results.",
+            family_members=family_members or "No family members data.",
+            relationship_path=relationship_path or "No relationship path available.",
+        )
+    except KeyError as e:
+        logger.error(f"generate_structured_reply: Prompt formatting error: {e}")
+        return None
+
+
 def generate_structured_reply(
     user_question: str,
     conversation_context: str,
@@ -1507,32 +1548,26 @@ def generate_structured_reply(
         StructuredReplyResult with all response components, or None if generation fails
     """
     ai_provider = config_schema.ai_provider.lower()
-    if not ai_provider:
-        logger.error("generate_structured_reply: AI_PROVIDER not configured.")
+    is_valid, error_msg = _validate_structured_reply_inputs(ai_provider, user_question)
+    if not is_valid:
+        logger.error(f"generate_structured_reply: {error_msg}")
         return None
 
-    if not user_question:
-        logger.error("generate_structured_reply: user_question is required.")
-        return None
-
-    # Load the response_generation prompt
     prompt_template = get_prompt("response_generation")
     if not prompt_template:
         logger.error("generate_structured_reply: Failed to load 'response_generation' prompt.")
         return None
 
-    # Format the prompt with all evidence
-    try:
-        formatted_prompt = prompt_template.format(
-            user_question=user_question,
-            conversation_context=conversation_context or "No previous conversation.",
-            tree_evidence=tree_evidence or "No tree evidence available.",
-            semantic_search_results=semantic_search_results or "No semantic search results.",
-            family_members=family_members or "No family members data.",
-            relationship_path=relationship_path or "No relationship path available.",
-        )
-    except KeyError as e:
-        logger.error(f"generate_structured_reply: Prompt formatting error: {e}")
+    formatted_prompt = _format_structured_reply_prompt(
+        prompt_template,
+        user_question,
+        conversation_context,
+        tree_evidence,
+        semantic_search_results,
+        family_members,
+        relationship_path,
+    )
+    if not formatted_prompt:
         return None
 
     start_time = time.time()
@@ -1542,7 +1577,7 @@ def generate_structured_reply(
         user_content="Generate the structured JSON response based on the prompt.",
         session_manager=session_manager,
         max_tokens=1500,
-        temperature=0.5,  # Lower temperature for more consistent JSON output
+        temperature=0.5,
     )
     duration = time.time() - start_time
 
@@ -1550,7 +1585,6 @@ def generate_structured_reply(
         logger.error(f"generate_structured_reply: AI call failed. (Took {duration:.2f}s)")
         return None
 
-    # Parse the JSON response
     result = _parse_structured_reply_response(response_text)
     if result:
         logger.info(
@@ -2313,46 +2347,114 @@ class ContextAccuracyResult:
     recommendation: str  # "proceed", "review", "revise"
 
 
-def validate_context_accuracy(  # noqa: PLR0914 - necessary for comprehensive validation
+def _get_empty_context_accuracy_result() -> ContextAccuracyResult:
+    """Return result for empty names list."""
+    return ContextAccuracyResult(
+        is_accurate=True,
+        verified_facts=[],
+        unverified_facts=[],
+        known_to_recipient=[],
+        accuracy_score=100,
+        warnings=[],
+        recommendation="proceed",
+    )
+
+
+def _get_unavailable_service_result() -> ContextAccuracyResult:
+    """Return result when TreeQueryService is unavailable."""
+    return ContextAccuracyResult(
+        is_accurate=True,
+        verified_facts=[],
+        unverified_facts=[],
+        known_to_recipient=[],
+        accuracy_score=50,
+        warnings=["TreeQueryService unavailable - could not verify facts"],
+        recommendation="review",
+    )
+
+
+def _validate_name_in_tree(
+    clean_name: str,
+    tree_service: Any,
+    verified_facts: list[dict[str, Any]],
+    unverified_facts: list[dict[str, Any]],
+    warnings: list[str],
+) -> None:
+    """Validate a single name against the tree service."""
+    try:
+        search_result = tree_service.find_person(name=clean_name)
+        if search_result.found:
+            verified_facts.append(
+                {
+                    "name": clean_name,
+                    "matched_name": search_result.name,
+                    "confidence": search_result.confidence,
+                    "person_id": search_result.person_id,
+                    "birth_year": search_result.birth_year,
+                }
+            )
+        else:
+            unverified_facts.append(
+                {
+                    "name": clean_name,
+                    "reason": "Not found in tree",
+                    "alternatives": search_result.alternatives[:2] if search_result.alternatives else [],
+                }
+            )
+            warnings.append(f"'{clean_name}' not found in our tree")
+    except Exception as e:
+        logger.warning(f"Error searching for '{clean_name}': {e}")
+        unverified_facts.append({"name": clean_name, "reason": f"Search error: {e}", "alternatives": []})
+
+
+def _check_known_to_recipient(
+    recipient_tree_context: Optional[dict[str, Any]],
+    verified_facts: list[dict[str, Any]],
+    known_to_recipient: list[dict[str, Any]],
+    warnings: list[str],
+) -> None:
+    """Check which verified facts are already known to recipient."""
+    if not recipient_tree_context:
+        return
+    recipient_ancestors = recipient_tree_context.get("ancestors", [])
+    recipient_known_names = {a.get("name", "").lower() for a in recipient_ancestors if a.get("name")}
+    for fact in verified_facts:
+        if fact.get("name", "").lower() in recipient_known_names:
+            known_to_recipient.append({"name": fact.get("name"), "warning": "Recipient may already know this ancestor"})
+            warnings.append(f"'{fact.get('name')}' likely already known to recipient")
+
+
+def _calculate_context_accuracy_score(total_names: int, verified_count: int, known_count: int) -> int:
+    """Calculate accuracy score based on verification rate."""
+    if total_names == 0:
+        return 100
+    verification_rate = verified_count / total_names
+    known_penalty = min(known_count * 10, 30)
+    return max(0, min(100, int(verification_rate * 100) - known_penalty))
+
+
+def _determine_context_recommendation(unverified_count: int, total_names: int, known_count: int) -> str:
+    """Determine recommendation based on verification results."""
+    if unverified_count == 0 and known_count == 0:
+        return "proceed"
+    if total_names > 0 and unverified_count > total_names / 2:
+        return "revise"
+    if known_count > 0 or unverified_count > 0:
+        return "review"
+    return "proceed"
+
+
+def validate_context_accuracy(
     extracted_names: list[str],
     context_summary: str,
     recipient_tree_context: Optional[dict[str, Any]] = None,
     tree_service: Optional[Any] = None,
 ) -> ContextAccuracyResult:
-    """
-    Validate that extracted names exist in OUR tree before generating drafts.
+    """Validate that extracted names exist in OUR tree before generating drafts."""
+    _ = context_summary
 
-    Phase 1.5.2: Pre-draft validation to ensure we don't mention ancestors
-    that don't exist in our tree, or explain facts already known to recipient.
-
-    Args:
-        extracted_names: Names extracted from conversation/context to validate
-        context_summary: Brief context for logging
-        recipient_tree_context: Optional dict with recipient's known facts/ancestors
-        tree_service: Optional TreeQueryService instance for lookups
-
-    Returns:
-        ContextAccuracyResult with validation outcome
-    """
-    _ = context_summary  # Used for logging context identification
-
-    # Initialize result
-    verified_facts: list[dict[str, Any]] = []
-    unverified_facts: list[dict[str, Any]] = []
-    known_to_recipient: list[dict[str, Any]] = []
-    warnings: list[str] = []
-
-    # Quick exit if no names to validate
     if not extracted_names:
-        return ContextAccuracyResult(
-            is_accurate=True,
-            verified_facts=[],
-            unverified_facts=[],
-            known_to_recipient=[],
-            accuracy_score=100,
-            warnings=[],
-            recommendation="proceed",
-        )
+        return _get_empty_context_accuracy_result()
 
     # Get or initialize TreeQueryService
     if tree_service is None:
@@ -2362,90 +2464,29 @@ def validate_context_accuracy(  # noqa: PLR0914 - necessary for comprehensive va
             tree_service = TreeQueryService()
         except Exception as e:
             logger.warning(f"Could not initialize TreeQueryService: {e}")
-            # Return cautious result - we can't verify
-            return ContextAccuracyResult(
-                is_accurate=True,  # Allow to proceed, but with warning
-                verified_facts=[],
-                unverified_facts=[],
-                known_to_recipient=[],
-                accuracy_score=50,
-                warnings=["TreeQueryService unavailable - could not verify facts"],
-                recommendation="review",
-            )
+            return _get_unavailable_service_result()
 
-    # Validate each extracted name against our tree
+    verified_facts: list[dict[str, Any]] = []
+    unverified_facts: list[dict[str, Any]] = []
+    known_to_recipient: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+    # Validate each name
     for name in extracted_names:
-        if not name or not name.strip():
-            continue
+        if name and name.strip():
+            _validate_name_in_tree(name.strip(), tree_service, verified_facts, unverified_facts, warnings)
 
-        clean_name = name.strip()
+    # Check for known facts
+    _check_known_to_recipient(recipient_tree_context, verified_facts, known_to_recipient, warnings)
 
-        try:
-            # Search for this person in our tree
-            search_result = tree_service.find_person(name=clean_name)
-
-            if search_result.found:
-                verified_facts.append(
-                    {
-                        "name": clean_name,
-                        "matched_name": search_result.name,
-                        "confidence": search_result.confidence,
-                        "person_id": search_result.person_id,
-                        "birth_year": search_result.birth_year,
-                    }
-                )
-            else:
-                unverified_facts.append(
-                    {
-                        "name": clean_name,
-                        "reason": "Not found in tree",
-                        "alternatives": search_result.alternatives[:2] if search_result.alternatives else [],
-                    }
-                )
-                warnings.append(f"'{clean_name}' not found in our tree")
-
-        except Exception as e:
-            logger.warning(f"Error searching for '{clean_name}': {e}")
-            unverified_facts.append({"name": clean_name, "reason": f"Search error: {e}", "alternatives": []})
-
-    # Check for facts already known to recipient
-    if recipient_tree_context:
-        recipient_ancestors = recipient_tree_context.get("ancestors", [])
-        recipient_known_names = {a.get("name", "").lower() for a in recipient_ancestors if a.get("name")}
-
-        for fact in verified_facts:
-            if fact.get("name", "").lower() in recipient_known_names:
-                known_to_recipient.append(
-                    {"name": fact.get("name"), "warning": "Recipient may already know this ancestor"}
-                )
-                warnings.append(f"'{fact.get('name')}' likely already known to recipient")
-
-    # Calculate accuracy score
+    # Calculate metrics
     total_names = len(extracted_names)
     verified_count = len(verified_facts)
     known_count = len(known_to_recipient)
-
-    if total_names > 0:
-        # Score based on verification rate, penalize for explaining known facts
-        verification_rate = verified_count / total_names
-        known_penalty = min(known_count * 10, 30)  # Up to 30 point penalty
-        accuracy_score = int(verification_rate * 100) - known_penalty
-        accuracy_score = max(0, min(100, accuracy_score))
-    else:
-        accuracy_score = 100
-
-    # Determine recommendation
     unverified_count = len(unverified_facts)
-    if unverified_count == 0 and known_count == 0:
-        recommendation = "proceed"
-    elif unverified_count > total_names / 2:  # More than half unverified
-        recommendation = "revise"
-    elif known_count > 0 or unverified_count > 0:
-        recommendation = "review"
-    else:
-        recommendation = "proceed"
 
-    is_accurate = unverified_count == 0
+    accuracy_score = _calculate_context_accuracy_score(total_names, verified_count, known_count)
+    recommendation = _determine_context_recommendation(unverified_count, total_names, known_count)
 
     logger.debug(
         f"Context accuracy validation: {verified_count}/{total_names} verified, "
@@ -2454,7 +2495,7 @@ def validate_context_accuracy(  # noqa: PLR0914 - necessary for comprehensive va
     )
 
     return ContextAccuracyResult(
-        is_accurate=is_accurate,
+        is_accurate=unverified_count == 0,
         verified_facts=verified_facts,
         unverified_facts=unverified_facts,
         known_to_recipient=known_to_recipient,
@@ -2506,8 +2547,8 @@ def extract_names_from_text(text: str) -> list[str]:
             names.append(match)
 
     # Deduplicate while preserving order
-    seen = set()
-    unique_names = []
+    seen: set[str] = set()
+    unique_names: list[str] = []
     for name in names:
         if name.lower() not in seen:
             seen.add(name.lower())
@@ -2526,7 +2567,158 @@ class DraftQualityResult:
     recommendation: str  # "approve", "revise", "reject", "human_review"
 
 
-def validate_draft_quality(  # noqa: PLR0914 - necessary for comprehensive validation with context accuracy
+def _get_default_draft_quality_result() -> DraftQualityResult:
+    """Return default passing result."""
+    return DraftQualityResult(
+        passes_quality_check=True,
+        issues_found=[],
+        quality_score=100,
+        recommendation="approve",
+    )
+
+
+def _get_self_message_result(recipient_profile_id: str) -> DraftQualityResult:
+    """Return result for self-message detection."""
+    logger.error(f"Draft quality check: Self-message detected! recipient={recipient_profile_id}")
+    return DraftQualityResult(
+        passes_quality_check=False,
+        issues_found=[
+            {
+                "category": "self_message",
+                "severity": "critical",
+                "description": "Message is addressed to the sender themselves",
+                "suggestion": "Do not send - this is a self-message",
+            }
+        ],
+        quality_score=0,
+        recommendation="reject",
+    )
+
+
+def _run_context_accuracy_check(
+    extracted_names: Optional[list[str]],
+    recipient_tree_context: Optional[dict[str, Any]],
+    draft_message: str,
+    context_summary: str,
+) -> Optional[ContextAccuracyResult]:
+    """Run context accuracy validation if applicable."""
+    if not extracted_names and not recipient_tree_context:
+        return None
+    names_to_check = extracted_names or extract_names_from_text(draft_message)
+    if not names_to_check:
+        return None
+    result = validate_context_accuracy(
+        extracted_names=names_to_check,
+        context_summary=context_summary,
+        recipient_tree_context=recipient_tree_context,
+    )
+    logger.debug(
+        f"Context accuracy: {len(result.verified_facts)} verified, "
+        f"{len(result.unverified_facts)} unverified, "
+        f"{len(result.known_to_recipient)} known to recipient"
+    )
+    return result
+
+
+def _build_context_accuracy_strings(
+    context_accuracy_result: Optional[ContextAccuracyResult],
+) -> tuple[str, str, str]:
+    """Build formatted strings for context accuracy facts."""
+    verified_str = "None"
+    unverified_str = "None"
+    known_str = "None"
+    if context_accuracy_result:
+        if context_accuracy_result.verified_facts:
+            verified_str = ", ".join(
+                f"{f.get('name', 'Unknown')} (confidence: {f.get('confidence', 'unknown')})"
+                for f in context_accuracy_result.verified_facts
+            )
+        if context_accuracy_result.unverified_facts:
+            unverified_str = ", ".join(
+                f"{f.get('name', 'Unknown')} ({f.get('reason', 'unknown reason')})"
+                for f in context_accuracy_result.unverified_facts
+            )
+        if context_accuracy_result.known_to_recipient:
+            known_str = ", ".join(f"{f.get('name', 'Unknown')}" for f in context_accuracy_result.known_to_recipient)
+    return verified_str, unverified_str, known_str
+
+
+def _parse_draft_quality_response(ai_response_str: str, duration: float) -> DraftQualityResult:
+    """Parse AI response into DraftQualityResult."""
+    try:
+        ai_response = json.loads(ai_response_str)
+        logger.info(
+            f"Draft quality validation complete. Score={ai_response.get('quality_score', 'N/A')} (Took {duration:.2f}s)"
+        )
+        return DraftQualityResult(
+            passes_quality_check=ai_response.get("passes_quality_check", True),
+            issues_found=ai_response.get("issues_found", []),
+            quality_score=ai_response.get("quality_score", 100),
+            recommendation=ai_response.get("recommendation", "approve"),
+        )
+    except json.JSONDecodeError as e:
+        logger.error(f"Draft quality check JSON parsing failed: {e}")
+        return _get_default_draft_quality_result()
+
+
+def _check_draft_quality_prerequisites(
+    ai_provider: str,
+    draft_message: str,
+    prompt_template: str | None,
+    session_manager: Optional[SessionManager],
+) -> tuple[bool, DraftQualityResult | None]:
+    """Check prerequisites for draft quality validation.
+
+    Returns:
+        Tuple of (can_proceed, early_return_result)
+    """
+    if not ai_provider or not draft_message:
+        logger.warning("validate_draft_quality: AI_PROVIDER not configured or empty draft, skipping")
+        return False, _get_default_draft_quality_result()
+
+    if not prompt_template:
+        logger.warning("validate_draft_quality: draft_quality_check prompt not found, skipping")
+        return False, _get_default_draft_quality_result()
+
+    if session_manager is None:
+        logger.error("validate_draft_quality: session_manager is required")
+        return False, _get_default_draft_quality_result()
+
+    return True, None
+
+
+def _build_draft_quality_prompt(
+    prompt_template: str,
+    draft_message: str,
+    recipient_name: str,
+    recipient_profile_id: str,
+    sender_name: str,
+    sender_profile_id: str,
+    context_summary: str,
+    verified_str: str,
+    unverified_str: str,
+    known_str: str,
+) -> str:
+    """Build the system prompt for draft quality validation."""
+    # Template placeholders - intentionally NOT f-strings
+    replacements = {
+        "{draft_message}": draft_message,  # noqa: RUF027
+        "{recipient_name}": recipient_name or "Unknown",  # noqa: RUF027
+        "{recipient_profile_id}": recipient_profile_id or "Unknown",  # noqa: RUF027
+        "{sender_name}": sender_name or "Tree Owner",  # noqa: RUF027
+        "{sender_profile_id}": sender_profile_id or "Unknown",  # noqa: RUF027
+        "{context_summary}": context_summary or "No context available",  # noqa: RUF027
+        "{verified_facts}": verified_str,
+        "{unverified_facts}": unverified_str,
+        "{known_to_recipient}": known_str,
+    }
+    result = prompt_template
+    for placeholder, value in replacements.items():
+        result = result.replace(placeholder, value)
+    return result
+
+
+def validate_draft_quality(
     draft_message: str,
     recipient_name: str,
     recipient_profile_id: str,
@@ -2537,133 +2729,37 @@ def validate_draft_quality(  # noqa: PLR0914 - necessary for comprehensive valid
     extracted_names: Optional[list[str]] = None,
     recipient_tree_context: Optional[dict[str, Any]] = None,
 ) -> DraftQualityResult:
-    """
-    Validate a draft message for quality issues before queueing.
+    """Validate a draft message for quality issues before queueing."""
+    # Self-message check
+    if recipient_profile_id and sender_profile_id and str(recipient_profile_id) == str(sender_profile_id):
+        return _get_self_message_result(recipient_profile_id)
 
-    Phase 1.5.2/1.5.3: AI-powered draft review to detect:
-    - Self-message attempts
-    - Context inversion (explaining their facts to them)
-    - Unverified facts (names not in our tree)
-    - Known-to-recipient facts (don't re-explain their ancestors)
-    - Relationship direction errors
-    - Deceased person errors
-    - Factual inconsistencies
-
-    Args:
-        draft_message: The draft message to validate
-        recipient_name: Name of the recipient
-        recipient_profile_id: Profile ID of the recipient
-        sender_name: Name of the sender (typically the tree owner)
-        sender_profile_id: Profile ID of the sender
-        context_summary: Brief summary of conversation context
-        session_manager: Optional SessionManager for AI calls
-        extracted_names: Optional list of names to validate against our tree
-        recipient_tree_context: Optional dict with recipient's known ancestors
-
-    Returns:
-        DraftQualityResult with validation outcome
-    """
-    # Default result for failures
-    default_result = DraftQualityResult(
-        passes_quality_check=True,
-        issues_found=[],
-        quality_score=100,
-        recommendation="approve",
+    context_accuracy_result = _run_context_accuracy_check(
+        extracted_names, recipient_tree_context, draft_message, context_summary
     )
 
-    # Quick self-message check (don't need AI for this)
-    is_self_message = recipient_profile_id and sender_profile_id and str(recipient_profile_id) == str(sender_profile_id)
-    if is_self_message:
-        logger.error(f"Draft quality check: Self-message detected! recipient={recipient_profile_id}")
-        return DraftQualityResult(
-            passes_quality_check=False,
-            issues_found=[
-                {
-                    "category": "self_message",
-                    "severity": "critical",
-                    "description": "Message is addressed to the sender themselves",
-                    "suggestion": "Do not send - this is a self-message",
-                }
-            ],
-            quality_score=0,
-            recommendation="reject",
-        )
-
-    # Phase 1.5.2: Run context accuracy validation if names provided
-    context_accuracy_result: Optional[ContextAccuracyResult] = None
-    if extracted_names or recipient_tree_context:
-        # If no names provided, extract from draft
-        if not extracted_names:
-            extracted_names = extract_names_from_text(draft_message)
-
-        if extracted_names:
-            context_accuracy_result = validate_context_accuracy(
-                extracted_names=extracted_names,
-                context_summary=context_summary,
-                recipient_tree_context=recipient_tree_context,
-            )
-            logger.debug(
-                f"Context accuracy: {len(context_accuracy_result.verified_facts)} verified, "
-                f"{len(context_accuracy_result.unverified_facts)} unverified, "
-                f"{len(context_accuracy_result.known_to_recipient)} known to recipient"
-            )
-
     ai_provider = config_schema.ai_provider.lower()
-    if not ai_provider or not draft_message:
-        if not ai_provider:
-            logger.warning("validate_draft_quality: AI_PROVIDER not configured, skipping AI validation")
-        else:
-            logger.warning("validate_draft_quality: Empty draft, returning default pass")
-        return default_result
-
-    # Load prompt
     prompt_template = get_prompt("draft_quality_check")
-    if not prompt_template:
-        logger.warning("validate_draft_quality: draft_quality_check prompt not found, skipping")
-        return default_result
+    can_proceed, early_result = _check_draft_quality_prerequisites(
+        ai_provider, draft_message, prompt_template, session_manager
+    )
+    if not can_proceed:
+        assert early_result is not None  # Guaranteed by _check_draft_quality_prerequisites
+        return early_result
 
-    # Build context accuracy strings for prompt
-    verified_facts_str = "None"
-    unverified_facts_str = "None"
-    known_to_recipient_str = "None"
-
-    if context_accuracy_result:
-        if context_accuracy_result.verified_facts:
-            verified_facts_str = ", ".join(
-                f"{f.get('name', 'Unknown')} (confidence: {f.get('confidence', 'unknown')})"
-                for f in context_accuracy_result.verified_facts
-            )
-        if context_accuracy_result.unverified_facts:
-            unverified_facts_str = ", ".join(
-                f"{f.get('name', 'Unknown')} ({f.get('reason', 'unknown reason')})"
-                for f in context_accuracy_result.unverified_facts
-            )
-        if context_accuracy_result.known_to_recipient:
-            known_to_recipient_str = ", ".join(
-                f"{f.get('name', 'Unknown')}" for f in context_accuracy_result.known_to_recipient
-            )
-
-    # Substitute placeholders (template strings)
-    draft_placeholder = "{draft_message}"  # noqa: RUF027
-    recipient_name_placeholder = "{recipient_name}"  # noqa: RUF027
-    recipient_id_placeholder = "{recipient_profile_id}"  # noqa: RUF027
-    sender_name_placeholder = "{sender_name}"  # noqa: RUF027
-    sender_id_placeholder = "{sender_profile_id}"  # noqa: RUF027
-    context_placeholder = "{context_summary}"  # noqa: RUF027
-    verified_placeholder = "{verified_facts}"
-    unverified_placeholder = "{unverified_facts}"
-    known_placeholder = "{known_to_recipient}"
-
-    system_prompt = (
-        prompt_template.replace(draft_placeholder, draft_message)
-        .replace(recipient_name_placeholder, recipient_name or "Unknown")
-        .replace(recipient_id_placeholder, recipient_profile_id or "Unknown")
-        .replace(sender_name_placeholder, sender_name or "Tree Owner")
-        .replace(sender_id_placeholder, sender_profile_id or "Unknown")
-        .replace(context_placeholder, context_summary or "No context available")
-        .replace(verified_placeholder, verified_facts_str)
-        .replace(unverified_placeholder, unverified_facts_str)
-        .replace(known_placeholder, known_to_recipient_str)
+    verified_str, unverified_str, known_str = _build_context_accuracy_strings(context_accuracy_result)
+    assert prompt_template is not None  # Guaranteed by can_proceed check
+    system_prompt = _build_draft_quality_prompt(
+        prompt_template,
+        draft_message,
+        recipient_name,
+        recipient_profile_id,
+        sender_name,
+        sender_profile_id,
+        context_summary,
+        verified_str,
+        unverified_str,
+        known_str,
     )
 
     start_time = time.time()
@@ -2679,23 +2775,10 @@ def validate_draft_quality(  # noqa: PLR0914 - necessary for comprehensive valid
     duration = time.time() - start_time
 
     if ai_response_str:
-        try:
-            ai_response = json.loads(ai_response_str)
-            logger.info(
-                f"Draft quality validation complete. Score={ai_response.get('quality_score', 'N/A')} (Took {duration:.2f}s)"
-            )
-            return DraftQualityResult(
-                passes_quality_check=ai_response.get("passes_quality_check", True),
-                issues_found=ai_response.get("issues_found", []),
-                quality_score=ai_response.get("quality_score", 100),
-                recommendation=ai_response.get("recommendation", "approve"),
-            )
-        except json.JSONDecodeError as e:
-            logger.error(f"Draft quality check JSON parsing failed: {e}")
-            return default_result
-    else:
-        logger.warning(f"Draft quality validation failed (AI call failed). (Took {duration:.2f}s)")
-        return default_result
+        return _parse_draft_quality_response(ai_response_str, duration)
+
+    logger.warning(f"Draft quality validation failed (AI call failed). (Took {duration:.2f}s)")
+    return _get_default_draft_quality_result()
 
 
 @dataclass
@@ -2837,7 +2920,7 @@ def _build_correction_guidance(issues: list[dict[str, Any]]) -> str:
     if not issues:
         return "No specific issues identified."
 
-    guidance_parts = []
+    guidance_parts: list[str] = []
     for i, issue in enumerate(issues, 1):
         category = issue.get("category", "unknown")
         description = issue.get("description", "No description")
@@ -2886,6 +2969,10 @@ def _regenerate_draft_with_corrections(
         .replace(sender_name_placeholder, sender_name or "Tree Owner")
     )
 
+    if session_manager is None:
+        logger.warning("_regenerate_draft_with_corrections: session_manager is None, cannot call AI")
+        return None
+
     start_time = time.time()
     corrected_text = _call_ai_model(
         provider=ai_provider,
@@ -2908,24 +2995,29 @@ def _regenerate_draft_with_corrections(
 def _record_correction_attempt(
     success: bool,
     reason: Optional[str],
-    attempt_number: int = 1,
+    attempt_number: int = 1,  # noqa: ARG001 - reserved for future use
 ) -> None:
     """Record correction attempt metrics for telemetry."""
     try:
-        from ai.prompt_telemetry import record_prompt_result
+        from ai.prompt_telemetry import record_extraction_experiment_event
+        from core.common_params import ExtractionExperimentEvent
 
-        record_prompt_result(
+        event = ExtractionExperimentEvent(
+            variant_label="auto_correction_v1",
             prompt_key="draft_correction",
-            experiment_variant="auto_correction_v1",
+            prompt_version="1.0",
             parse_success=success,
-            quality_score=100 if success else 0,
-            response_time_ms=0,  # Not tracking time here
-            metadata={
-                "correction_success": success,
-                "failure_reason": reason,
-                "attempt_number": attempt_number,
-            },
+            error=reason if not success else None,
+            extracted_data={},
+            suggested_tasks=[],
+            raw_response_text="",
+            user_id=None,
+            quality_score=100.0 if success else 0.0,
+            component_coverage=0.0,
+            provider_name=None,
+            provider_model=None,
         )
+        record_extraction_experiment_event(event)
     except Exception as e:
         logger.debug(f"Failed to record correction attempt metrics: {e}")
 

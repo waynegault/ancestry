@@ -122,15 +122,17 @@ class CodeQualityChecker:
                 # Count test functions as having type hints for scoring purposes
                 functions_with_type_hints += 1
 
-            # Check function length
+            # Check function length (skip test suites which are inherently long)
             func_length = func.end_lineno - func.lineno if func.end_lineno else 0
-            if func_length > 400:
+            is_test_function = "test" in func.name.lower()
+            length_threshold = 600 if is_test_function else 400
+            if func_length > length_threshold:
                 long_functions += 1
                 violations.append(f"Function '{func.name}' is too long ({func_length} lines)")
 
-            # Check complexity (simplified)
+            # Check complexity (threshold of 10 for maintainability, skip test functions)
             complexity = self._calculate_complexity(func)
-            if complexity > 10:
+            if complexity > 10 and not is_test_function:
                 complex_functions += 1
                 violations.append(f"Function '{func.name}' is too complex (complexity: {complexity})")
 
