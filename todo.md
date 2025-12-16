@@ -720,15 +720,15 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Add missing type hints to action modules ✅ FIXED: Added return type hints to 9 functions across action6, action8, action9, action10
 - [x] Resolve remaining # type: ignore comments (see check_type_ignores.py) ✅ FIXED: 1 occurrence in message_personalization.py
 - [x] Update dead_code_candidates.json and clean stale code ✅ UPDATED: 136 candidates across 199 files
-- [ ] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery)
+- [x] Wire unused recovery decorators in error_handling.py (ancestry_session_recovery, ancestry_api_recovery) ✅ ALREADY WIRED: action_runner._ensure_required_state() calls all 3 recovery functions
 - [ ] Remove TODO/FIXME comments by completing referenced tasks (83 found across codebase)
 - [x] Address placeholder implementations in triangulation_intelligence.py line 390 ✅ Now queries SharedMatch table properly
 - [x] Clean up stub classes in relationship_utils.py (StubTag, StubIndi - test-only code in production file) ✅ REVIEWED: These are local dataclasses inside _test_gedcom_path_conversion() function, properly scoped; follows standard pattern of embedded tests
 
 ### Testing
 - [ ] Add integration tests for full inbound→reply flow
-- [ ] Add tests for SemanticSearchService end-to-end
-- [ ] Add tests for FactValidator conflict detection
+- [x] Add tests for SemanticSearchService end-to-end ✅ EXISTS: 5 tests including test_candidate_retrieval_and_scoring, test_ambiguity_produces_clarification
+- [x] Add tests for FactValidator conflict detection ✅ EXISTS: test_conflict_detection_exact, test_conflict_detection_minor, test_conflict_detection_major, test_conflict_detection_compatible
 - [x] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
 - [ ] Add Action 11 transaction failure recovery tests
 - [x] Add tests for triangulation_intelligence.py hypothesis scoring ✅ EXISTS: 9 tests including _test_confidence_level_calculation, _test_hypothesis_generation, _test_prioritization
