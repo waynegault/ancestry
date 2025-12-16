@@ -741,8 +741,8 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Create architecture diagram for reply flow
 - [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)
 - [x] Add Web UI section to operator_manual.md (localhost:5000 workflow) ✅ CREATED: Section 9 with full usage guide
-- [ ] Document MS Graph integration setup (integrations/ms_graph_utils.py - 813 lines)
-- [ ] Add troubleshooting guide for common errors
+- [x] Document MS Graph integration setup (integrations/ms_graph_utils.py - 813 lines) ✅ CREATED: docs/ms_graph_integration.md with setup, usage, and troubleshooting
+- [x] Add troubleshooting guide for common errors ✅ CREATED: docs/troubleshooting.md covering session, rate limit, DB, AI, and action-specific errors
 
 ### Error Handling
 - [x] Implement recovery strategies referenced in error_handling.py header comments ✅ WIRED: action_runner._ensure_required_state() uses ancestry_session_recovery, ancestry_api_recovery, ancestry_database_recovery on failure
