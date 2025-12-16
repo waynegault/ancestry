@@ -458,12 +458,21 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Implementation:** observability/notifications.py NotificationManager + observability/alerts.py integration
 
-### 6.3 Response Guidelines
-- [ ] Draft empathetic responses for escalation-path cases (for human editing)
+### 6.3 Response Guidelines ✅ IMPLEMENTED
+- [x] Draft empathetic responses for escalation-path cases (for human editing)
+  - ✅ `EscalationCategory` enum: BEREAVEMENT, LEGAL_PRIVACY, DNA_RESULT_SHOCK, HIGH_CONFLICT, SELF_HARM
+  - ✅ `EmpatheticTemplate` dataclass with opening, body, closing, human_guidance
+  - ✅ `EscalationDraft` dataclass with requires_review=True (never auto-sent)
+  - ✅ `generate_empathetic_draft()` creates personalized drafts for review queue
+  - ✅ `detect_escalation_category()` keyword-based category detection
+  - ✅ Crisis resources included in SELF_HARM templates (988 hotline, Crisis Text Line)
 - [x] Never auto-send escalation responses
   - ✅ CRITICAL_ALERT status blocks automation path
+  - ✅ `requires_review=True` always set on empathetic drafts
 - [x] Log all escalation decisions
   - ✅ logger.critical/error/warning in check_critical_alerts()
+
+**Implementation:** messaging/empathetic_responses.py template library + generate_empathetic_draft()
 
 ---
 
