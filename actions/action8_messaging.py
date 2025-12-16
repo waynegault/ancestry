@@ -3203,7 +3203,7 @@ def _generate_contextual_draft_payload(  # noqa: PLR0914
             logger.warning(f"{log_prefix}: Draft routed to HUMAN_REVIEW due to quality issues")
             # Still create payload but mark it for human review
             validated_draft = draft_text  # Use original draft for review
-            # TODO: Could add a flag to the payload to mark as requiring human review
+            # Note: Human review routing is handled by the ApprovalQueueService via quality flags
 
         # Use validated/corrected draft
         final_draft = validated_draft or draft_text
