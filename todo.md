@@ -736,7 +736,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [x] Add tests for predictive_gaps.py gap detection heuristics ✅ EXISTS: 9 tests including _test_gap_types, _test_vital_record_gaps, _test_brick_wall_detection
 
 ### Documentation
-- [ ] Update copilot-instructions.md with Phase 2 patterns
+- [x] Update copilot-instructions.md with Phase 2 patterns ✅ ADDED: Section "Phase 2: Tree-Aware Q&A System" with SemanticSearch, TreeQueryService, StructuredReply, InboundOrchestrator patterns
 - [x] Add operator manual for review queue ✅ EXISTS (docs/specs/operator_manual.md - 512 lines)
 - [ ] Create architecture diagram for reply flow
 - [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)

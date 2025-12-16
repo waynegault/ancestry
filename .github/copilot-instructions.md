@@ -223,6 +223,59 @@ Get-Content Logs\prompt_experiment_alerts.jsonl -Tail 10
 python prompt_telemetry.py --stats
 ```
 
+## Phase 2: Tree-Aware Q&A System
+
+### Semantic Search Integration (`genealogy/semantic_search.py`)
+```python
+# SemanticSearchService - Searches GEDCOM tree for evidence
+service = SemanticSearchService(gedcom_path)
+result = service.search(query="Who is John Smith?", context={})
+# Returns: SemanticSearchResult with answer, confidence, evidence_sources
+```
+- **`search()`**: Main entry point for tree-based Q&A
+- **`to_prompt_string()`**: Formats results for AI prompt integration
+- **Evidence sources**: Birth, death, marriage, census, DNA match data
+
+### Tree Query Service (`genealogy/tree_query_service.py`)
+```python
+# TreeQueryService - Structured tree data access
+tqs = TreeQueryService(gedcom_path)
+
+# Find person with fuzzy birth year matching (±5 years)
+person = tqs.find_person(name="John Smith", birth_year=1850)
+
+# Get family members
+family = tqs.get_family_members(person_id="I123")
+# Returns: parents, siblings, spouses, children with FamilyMember dataclass
+
+# Explain DNA relationship path
+relation = tqs.explain_relationship(person_id1="I123", person_id2="I456")
+# Returns: path description, relationship label, common ancestor
+```
+
+### Structured Reply Generation (`ai/ai_interface.py`)
+```python
+# generate_structured_reply() - Phase 2 response generation
+result = generate_structured_reply(
+    session_manager=sm,
+    user_question="Who was my great-grandmother?",
+    tree_evidence=evidence_dict,
+    semantic_results="..."
+)
+# Returns: StructuredReplyResult with:
+#   - draft_message: str
+#   - confidence: int (0-100)
+#   - missing_information: list[str]
+#   - suggested_facts: list[dict]
+#   - route_to_human_review: bool (auto-set if confidence < 50)
+```
+
+### InboundOrchestrator Integration (`core/inbound_orchestrator.py`)
+- **Phase 2 flow**: PRODUCTIVE message → semantic search → tree query → draft generation
+- **`_maybe_run_semantic_search()`**: Detects questions, runs SemanticSearchService
+- **`_run_research_flow()`**: Chains tree evidence gathering with AI reply generation
+- **Human review routing**: Low confidence answers flagged for operator review
+
 ## Developer Workflows
 
 ### Running Tests
