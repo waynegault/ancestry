@@ -148,8 +148,8 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 ### 1.6.3 Duplicate Send Prevention
 - [x] Add guard: skip if draft already SENT (prevent re-processing on retry) ✅
 - [x] Check for recent OUT log before sending (idempotency window) ✅
-- [ ] Log duplicate attempt instead of sending again
-- **Implementation:** New `_check_duplicate_send()` function checks draft.status=="SENT" and queries ConversationLog for recent OUT messages within 5-minute idempotency window
+- [x] Log duplicate attempt instead of sending again ✅
+- **Implementation:** New `_check_duplicate_send()` function checks draft.status=="SENT" and queries ConversationLog for recent OUT messages within 5-minute idempotency window; logging via logger.info() for both scenarios
 
 ### 1.6.4 ConversationState Synchronization
 - [x] Update ConversationState.status after successful send (ACTIVE → AwaitingReply) ✅
@@ -731,9 +731,9 @@ The following modules are **fully implemented** but **not integrated** into the 
 - [ ] Add tests for FactValidator conflict detection
 - [x] Populate empty `tests/` directory or remove it ✅ ADDED: tests/README.md explaining embedded test pattern
 - [ ] Add Action 11 transaction failure recovery tests
-- [ ] Add tests for triangulation_intelligence.py hypothesis scoring
-- [ ] Add tests for conflict_detector.py field comparison logic
-- [ ] Add tests for predictive_gaps.py gap detection heuristics
+- [x] Add tests for triangulation_intelligence.py hypothesis scoring ✅ EXISTS: 9 tests including _test_confidence_level_calculation, _test_hypothesis_generation, _test_prioritization
+- [x] Add tests for conflict_detector.py field comparison logic ✅ EXISTS: 8 tests including _test_compare_values_*, _test_calculate_similarity
+- [x] Add tests for predictive_gaps.py gap detection heuristics ✅ EXISTS: 9 tests including _test_gap_types, _test_vital_record_gaps, _test_brick_wall_detection
 
 ### Documentation
 - [ ] Update copilot-instructions.md with Phase 2 patterns
