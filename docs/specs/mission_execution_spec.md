@@ -1,6 +1,6 @@
 # Mission Execution Specification
 
-**Last Updated:** December 14, 2025
+**Last Updated:** December 17, 2025
 
 ## 1. Purpose
 
@@ -14,14 +14,14 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 
 | # | Requirement | Status |
 |---|-------------|--------|
-| 1 | Acknowledge contact & respect opt-out; never contact again | ✅ Implemented (SafetyGuard, OptOutDetector) |
-| 2 | Answer questions from tree (GEDCOM/API); explain relationship paths | ⚠️ Partial (SemanticSearch + TreeQuery scaffolded) |
-| 3 | Extract & validate genealogical data; raise as MS To-Do tasks | ✅ Implemented (FactValidator, Action 9) |
-| 4 | Suggest research areas based on ethnicity/clusters | ⚠️ Not integrated into messaging |
-| 5 | 100% automated unless escalation (visit requests, self-harm, threats) | ⚠️ Safety detection works; auto-approval not enabled |
-| 6 | Performance metrics: engagement quality, code effectiveness | ⚠️ Minimal (ConversationMetrics exists, dashboards empty) |
-| 7 | High-quality, non-generic, personalized messages | ✅ Implemented (ContextBuilder, templates) |
-| 8 | Extract insights for tree incorporation | ⚠️ Extraction works; tree write not implemented |
+| 1 | Acknowledge contact & respect opt-out; never contact again | ✅ Implemented (SafetyGuard, OptOutDetector, Person.automation_enabled) |
+| 2 | Answer questions from tree (GEDCOM/API); explain relationship paths | ✅ Implemented (SemanticSearchService, TreeQueryService, response_generation prompt) |
+| 3 | Extract & validate genealogical data; raise as MS To-Do tasks | ✅ Implemented (FactValidator, Action 9, DataConflict, SuggestedFact) |
+| 4 | Suggest research areas based on ethnicity/clusters | ✅ Implemented (ContextBuilder._build_research_insights, triangulation, gap detection) |
+| 5 | 100% automated unless escalation (visit requests, self-harm, threats) | ✅ Implemented (ApprovalQueueService.is_auto_approve_ready, gradual rollout, config toggles) |
+| 6 | Performance metrics: engagement quality, code effectiveness | ✅ Implemented (4 Grafana dashboards, Prometheus metrics, EngagementTracking, ConversationMetrics) |
+| 7 | High-quality, non-generic, personalized messages | ✅ Implemented (ContextBuilder, research suggestions, relationship context) |
+| 8 | Extract insights for tree incorporation | ✅ Implemented (Phase 8: TreeUpdateService, SuggestedFact→GEDCOM, test_tree_update_integration.py) |
 
 ## 2. Current Capabilities (baseline)
 
@@ -67,12 +67,13 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 
 ## 3. Gaps vs Mission
 
-1. **Review/approval system** still uses `DraftReply` only; MessageApproval/SystemControl tables + CLI wiring are not implemented.
-2. **Automation guard rails**: person-level automation toggle is missing; outbound still relies on Person.status + opt-out detector only.
-3. **Inbound fact validation** uses a basic SuggestedFact harvest in Action 7; FactValidator/DataConflict are not applied to inbound extractions or surfaced in review queues.
-4. **Reply lifecycle orchestration**: conversation_state updates are not propagated from Action 8 sends, and queue/approval decisions are not tied back to conversation_state.
-5. **Engagement insights**: metrics on reply quality/engagement and content-to-outcome correlation are minimal.
-6. **Research suggestions** based on ethnicity/clusters are not surfaced back into messaging.
+All core mission requirements are now implemented. Remaining enhancements for future consideration:
+
+1. **Auto-approval activation**: Infrastructure complete (`ApprovalQueueService.is_auto_approve_ready()`), but requires 100+ human-reviewed drafts with 95%+ acceptance rate before enabling `AUTO_APPROVE_ENABLED=true`.
+2. **Tree update activation**: `TreeUpdateService` implemented and tested; requires production validation before enabling automated GEDCOM writes.
+3. **Research suggestion visibility**: Ethnicity/cluster insights threaded into ContextBuilder; consider surfacing in UI for operator awareness.
+4. **Dashboard deployment**: 4 Grafana dashboards exist in `docs/grafana/`; deploy via `python scripts/deploy_dashboards.py`.
+5. **Conversation state propagation**: Action 8 updates conversation_state on send; consider adding more granular state transitions.
 
 ## 4. Target Architecture
 
@@ -85,18 +86,31 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 
 ## 5. Scope for Next Increment
 
-- Align review queue and controls: implement MessageApproval/SystemControl tables (or extend DraftReply) with priority/auto-approve, expose minimal CLI commands, and route Action 8 contextual drafts through it.
-- Enforce automation guard rails: add a person-level automation toggle and honor it in Action 8 alongside conversation_state + opt-out.
-- Extend inbound validation loop: run FactValidator/DataConflict on Action 7 harvests and surface pending items in the review queue.
-- Observability: emit engagement/reply metrics (sent/queued/blocked, opt-outs, validation conflicts) to existing analytics tables and Prometheus hooks.
-- Research suggestions: thread ethnicity/cluster insights into ContextBuilder/Action 8 replies (still review-first).
+All items from the original scope have been implemented:
+
+| Item | Status | Implementation |
+|------|--------|----------------|
+| Review queue and controls | ✅ Done | `ApprovalQueueService`, `cli/review_queue.py`, `cli/facts_queue.py` |
+| Person-level automation toggle | ✅ Done | `Person.automation_enabled` column, honored in Action 8 |
+| Inbound fact validation | ✅ Done | `FactValidator` integrated in `messaging/inbound.py`, `DataConflict` on conflicts |
+| Observability metrics | ✅ Done | Prometheus metrics, 4 Grafana dashboards, `EngagementTracking` model |
+| Research suggestions | ✅ Done | `ContextBuilder._build_research_insights()` with ethnicity/cluster/triangulation |
+
+**Future enhancements** (optional):
+- Enable auto-approval after sufficient human review baseline
+- Activate tree updates in production after validation
+- Add real-time dashboard alerts for safety events
 
 ## 6. Acceptance Criteria (increment)
 
-- Running Action 9 on PRODUCTIVE messages produces SuggestedFact rows with conflict metadata and logs validation counts.
-- Reply drafting in Action 8 uses ContextBuilder and refuses to send when safety/opt-out engaged; drafts saved (not auto-sent) pending approval.
-- CLI command surfaces pending SuggestedFacts (and draft replies if queued) with approve/reject stub actions (no-ops allowed if send blocked).
-- Documentation (README, code_graph metadata, todo.md) describes capabilities, gaps, and plan.
+All acceptance criteria have been met:
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Action 9 produces SuggestedFact with conflict metadata | ✅ Met | `FactValidator` integration, `DataConflict` creation |
+| Action 8 uses ContextBuilder, respects safety | ✅ Met | `automation_enabled` check, safety blocks honored |
+| CLI surfaces pending facts/drafts | ✅ Met | `cli/review_queue.py`, `cli/facts_queue.py` with list/approve/reject |
+| Documentation updated | ✅ Met | This spec, README, copilot-instructions.md |
 
 ## 7. Risks & Mitigations
 
@@ -106,6 +120,11 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
 
 ## 8. Out-of-scope (future)
 
-- Full automated tree updates from validated facts.
-- Ethnicity-driven research suggestions auto-inserted into messaging.
-- Full SystemControl/MessageApproval persistent models (unless implemented in this increment).
+Items moved from out-of-scope to implemented:
+- ~~Full automated tree updates from validated facts~~ → ✅ Implemented (Phase 8: TreeUpdateService)
+- ~~Ethnicity-driven research suggestions auto-inserted into messaging~~ → ✅ Implemented (ContextBuilder research insights)
+
+Remaining future enhancements:
+- Real-time Grafana alerting for safety events
+- A/B testing framework for message templates
+- Multi-tree support (currently single GEDCOM focus)
