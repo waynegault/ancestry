@@ -31,14 +31,14 @@
 | Detect and alert on update failures | Depends on API access |
 
 
-## Integration Opportunities
+## Integration Status
 
-These modules are **fully implemented** but could be better integrated:
+All major modules are **fully implemented and integrated**:
 
-| Module | Lines | Status | Integration Gap |
-|--------|-------|--------|-----------------|
-| `triangulation_intelligence.py` | 960+ | ✅ Implemented | Integrated via ContextBuilder._build_triangulation_hypothesis() |
-| `conflict_detector.py` | 587 | ✅ Implemented | Validation wired, full workflow not in messaging actions |
-| `predictive_gaps.py` | 827 | ✅ Implemented | Not wired into any action - could enhance research prioritization |
-| `dna_gedcom_crossref.py` | 807 | ✅ Implemented | Needs integration into research workflow |
-| `dependency_injection.py` | - | ✅ Exists | Container underutilized across codebase |
+| Module | Lines | Integration Point |
+|--------|-------|-------------------|
+| `triangulation_intelligence.py` | 960+ | ContextBuilder._build_triangulation_hypothesis(), CLI menu option 1 |
+| `conflict_detector.py` | 587 | CLI menu option 6 "Conflict Resolution", database DataConflict model |
+| `predictive_gaps.py` | 827 | ContextBuilder._build_predictive_gaps(), CLI menu option 2 "Gap Detection" |
+| `dna_gedcom_crossref.py` | 807 | ContextBuilder._build_dna_gedcom_crossref() |
+| `dependency_injection.py` | - | Core DI container (used selectively) |
