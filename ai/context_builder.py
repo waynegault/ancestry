@@ -70,6 +70,37 @@ class MatchContext:
     context_generated_at: str = ""
     context_version: str = "1.0"
 
+    def _identity_score(self) -> int:
+        """Score for identity data presence (+15 if name present)."""
+        return 15 if self.identity and self.identity.get("name") else 0
+
+    def _genetics_score(self) -> int:
+        """Score for genetics data presence (+20 if shared_cm present)."""
+        return 20 if self.genetics and self.genetics.get("shared_cm") else 0
+
+    def _genealogy_score(self) -> int:
+        """Score for genealogy data (+25 GEDCOM match, +15 common ancestors)."""
+        if not self.genealogy:
+            return 0
+        score = 25 if self.genealogy.get("gedcom_person_match") else 0
+        score += 15 if self.genealogy.get("known_common_ancestors") else 0
+        return score
+
+    def _history_score(self) -> int:
+        """Score for conversation history (+10 if any messages)."""
+        return 10 if self.history and self.history.get("messages") else 0
+
+    def _facts_score(self) -> int:
+        """Score for extracted facts (+10 if any facts or entities)."""
+        if not self.extracted_facts:
+            return 0
+        has_data = self.extracted_facts.get("facts") or self.extracted_facts.get("entities")
+        return 10 if has_data else 0
+
+    def _research_score(self) -> int:
+        """Score for research insights (+5 if any present)."""
+        return 5 if self.research and any(self.research.values()) else 0
+
     def calculate_confidence(self) -> int:
         """
         Calculate context confidence score (0-100) based on data completeness.
@@ -86,37 +117,15 @@ class MatchContext:
         Returns:
             Confidence score 0-100
         """
-        score = 0
-
-        # Identity: +15 if name present
-        if self.identity and self.identity.get("name"):
-            score += 15
-
-        # Genetics: +20 if shared_cm present
-        if self.genetics and self.genetics.get("shared_cm"):
-            score += 20
-
-        # GEDCOM match: +25 if found in tree
-        if self.genealogy:
-            if self.genealogy.get("gedcom_person_match"):
-                score += 25
-            # Common ancestors: +15 if any identified
-            if self.genealogy.get("known_common_ancestors"):
-                score += 15
-
-        # Conversation history: +10 if any messages
-        if self.history and self.history.get("messages"):
-            score += 10
-
-        # Extracted facts: +10 if any facts
-        if self.extracted_facts and (self.extracted_facts.get("facts") or self.extracted_facts.get("entities")):
-            score += 10
-
-        # Research insights: +5 if any present
-        if self.research and any(self.research.values()):
-            score += 5
-
-        return min(score, 100)
+        total = (
+            self._identity_score()
+            + self._genetics_score()
+            + self._genealogy_score()
+            + self._history_score()
+            + self._facts_score()
+            + self._research_score()
+        )
+        return min(total, 100)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

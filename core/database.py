@@ -1586,6 +1586,50 @@ class Person(Base):
         index=True,
         comment="When false, automated outbound messaging is disabled for this person (drafts may still be generated).",
     )
+    last_logged_in: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp (UTC) of the user's last login to Ancestry, if available.",
+    )
+    administrator_profile_id: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        index=True,
+        comment="Profile ID of the person managing the DNA kit, if different.",
+    )
+    administrator_username: Mapped[Optional[str]] = mapped_column(
+        String,
+        nullable=True,
+        comment="Display name of the kit administrator, if different.",
+    )
+    status: Mapped[PersonStatusEnum] = mapped_column(
+        SQLEnum(PersonStatusEnum),
+        nullable=False,
+        default=PersonStatusEnum.ACTIVE,
+        server_default=PersonStatusEnum.ACTIVE.value,
+        index=True,
+        comment="Current processing status of this person (e.g., ACTIVE, DESIST, ARCHIVE).",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        comment="Timestamp (UTC) when this person was first added.",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        comment="Timestamp (UTC) when this person was last updated.",
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Timestamp when this person was soft-deleted. Null for active records.",
+    )
 
     # --- Relationships ---
     conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
@@ -1633,80 +1677,6 @@ class Person(Base):
             return self.first_name
         return self.username
 
-    # End of Person class
-    last_logged_in: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        index=True,
-        comment="Timestamp (UTC) of the user's last login to Ancestry, if available.",
-    )
-    administrator_profile_id: Mapped[Optional[str]] = mapped_column(
-        String,
-        nullable=True,
-        index=True,
-        comment="Profile ID of the person managing the DNA kit, if different.",
-    )
-    administrator_username: Mapped[Optional[str]] = mapped_column(
-        String,
-        nullable=True,
-        comment="Display name of the kit administrator, if different.",
-    )
-    status: Mapped[PersonStatusEnum] = mapped_column(
-        SQLEnum(PersonStatusEnum),
-        nullable=False,
-        default=PersonStatusEnum.ACTIVE,  # Default new persons to ACTIVE
-        server_default=PersonStatusEnum.ACTIVE.value,  # Set DB default
-        index=True,
-        comment="Current processing status of this person (e.g., ACTIVE, DESIST, ARCHIVE).",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-        index=True,
-        comment="Timestamp when this person was soft-deleted. Null for active records.",
-    )
-
-    # --- Relationships ---
-    # One-to-one relationship with FamilyTree. `cascade` ensures deletion of related FamilyTree record if Person deleted.
-    family_tree: Mapped[Optional["FamilyTree"]] = relationship(
-        "FamilyTree",
-        back_populates="person",
-        uselist=False,
-        cascade="all, delete-orphan",
-    )
-    # One-to-one relationship with DnaMatch. `cascade` ensures deletion.
-    dna_match: Mapped[Optional["DnaMatch"]] = relationship(
-        "DnaMatch", back_populates="person", uselist=False, cascade="all, delete-orphan"
-    )
-    # One-to-many relationship with ConversationLog. `cascade` ensures deletion.
-    conversation_log_entries: Mapped[list["ConversationLog"]] = relationship(
-        "ConversationLog", back_populates="person", cascade="all, delete-orphan"
-    )
-    # One-to-one relationship with ConversationState. `cascade` ensures deletion.
-    conversation_state: Mapped[Optional["ConversationState"]] = relationship(
-        "ConversationState", back_populates="person", uselist=False, cascade="all, delete-orphan"
-    )
-    # One-to-one relationship with ConversationMetrics. `cascade` ensures deletion.
-    conversation_metrics: Mapped[Optional["ConversationMetrics"]] = relationship(
-        "ConversationMetrics", back_populates="person", uselist=False, cascade="all, delete-orphan"
-    )
-    # One-to-many relationship with EngagementTracking. `cascade` ensures deletion.
-    engagement_events: Mapped[list["EngagementTracking"]] = relationship(
-        "EngagementTracking", back_populates="person", cascade="all, delete-orphan"
-    )
-
-    # --- Properties ---
     @property
     def tree_status(self) -> str:
         """Returns 'in_tree' if person is in tree, else 'out_tree'."""

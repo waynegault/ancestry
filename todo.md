@@ -4,11 +4,18 @@
 **Mission:** Strengthen family tree accuracy through automated DNA match engagement
 
 
-### (Requires Design Changes)
+## Completed Recently
 
-- [ ] Add confidence scoring to drafts from ContextBuilder output
-  - **Reason:** Requires AI response format changes to return structured confidence values
-  - **Impact:** Low - drafts work without this, just lack granular confidence metadata
+- [x] Add confidence scoring to drafts from ContextBuilder output
+  - **Implemented:** `MatchContext.calculate_confidence()` method provides 0-100 score
+  - **Integrated:** Wired through InboundOrchestrator → action7_inbox → ApprovalQueueService
+  - **Storage:** `ai_confidence` column added to draft_replies table with index
+
+- [x] Database schema modernization (Dec 17, 2025)
+  - Fixed duplicate relationship definitions in Person model
+  - Added missing indexes on draft_replies (quality_score, ai_confidence, expires_at)
+  - Verified all 188 test modules passing
+
 
 ### (Requires External Infrastructure)
 
@@ -24,13 +31,14 @@
 | Detect and alert on update failures | Depends on API access |
 
 
+## Integration Opportunities
 
-## Not Integrated Yet
+These modules are **fully implemented** but could be better integrated:
 
-These modules exist but are scaffolded only:
-
-- `triangulation_intelligence.py` - Hypothesis generation
-- `conflict_detector.py` - Field comparison (validation wired, full workflow not)
-- `predictive_gaps.py` - Gap detection heuristics
-- `dna_gedcom_crossref.py` - DNA-GEDCOM cross-referencing
-- `dependency_injection.py` - Full DI container (underutilized)
+| Module | Lines | Status | Integration Gap |
+|--------|-------|--------|-----------------|
+| `triangulation_intelligence.py` | 960+ | ✅ Implemented | Integrated via ContextBuilder._build_triangulation_hypothesis() |
+| `conflict_detector.py` | 587 | ✅ Implemented | Validation wired, full workflow not in messaging actions |
+| `predictive_gaps.py` | 827 | ✅ Implemented | Not wired into any action - could enhance research prioritization |
+| `dna_gedcom_crossref.py` | 807 | ✅ Implemented | Needs integration into research workflow |
+| `dependency_injection.py` | - | ✅ Exists | Container underutilized across codebase |
