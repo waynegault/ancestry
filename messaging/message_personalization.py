@@ -43,7 +43,7 @@ except ImportError:
     def is_metrics_enabled() -> bool:
         return False
 
-    def metrics() -> Any:  # type: ignore[misc]
+    def metrics() -> None:
         return None
 
 
