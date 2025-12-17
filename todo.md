@@ -738,7 +738,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 ### Documentation
 - [x] Update copilot-instructions.md with Phase 2 patterns ✅ ADDED: Section "Phase 2: Tree-Aware Q&A System" with SemanticSearch, TreeQueryService, StructuredReply, InboundOrchestrator patterns
 - [x] Add operator manual for review queue ✅ EXISTS (docs/specs/operator_manual.md - 512 lines)
-- [ ] Create architecture diagram for reply flow
+- [x] Create architecture diagram for reply flow ✅ CREATED: docs/reply_flow_architecture.md with ASCII diagrams
 - [x] Document Web UI review interface (review_server.py) ✅ EXISTS (operator_manual.md covers CLI and Web UI)
 - [x] Add Web UI section to operator_manual.md (localhost:5000 workflow) ✅ CREATED: Section 9 with full usage guide
 - [x] Document MS Graph integration setup (integrations/ms_graph_utils.py - 813 lines) ✅ CREATED: docs/ms_graph_integration.md with setup, usage, and troubleshooting
