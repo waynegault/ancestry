@@ -524,19 +524,21 @@ This roadmap aligns the codebase with the mission of maximizing DNA match engage
 
 **Goal:** Automatically incorporate validated facts into the tree
 
+**⚠️ BLOCKED: All items require Ancestry API write access (external infrastructure)**
+
 ### 8.1 Prerequisites
-- [ ] Ancestry API write access (may require authentication refresh)
-- [ ] GEDCOM write utilities
-- [ ] Full conflict resolution workflow
+- [ ] Ancestry API write access (BLOCKED: requires Ancestry API write permissions - external)
+- [ ] GEDCOM write utilities (BLOCKED: depends on API access)
+- [ ] Full conflict resolution workflow (BLOCKED: depends on API access)
 
 ### 8.2 Implementation
-- [ ] Route APPROVED SuggestedFacts to tree update queue
-- [ ] Create audit log for all tree modifications
-- [ ] Implement rollback capability
+- [ ] Route APPROVED SuggestedFacts to tree update queue (BLOCKED: depends on API access)
+- [ ] Create audit log for all tree modifications (BLOCKED: depends on API access)
+- [ ] Implement rollback capability (BLOCKED: depends on API access)
 
 ### 8.3 Validation
-- [ ] Post-update verification against API
-- [ ] Detect and alert on update failures
+- [ ] Post-update verification against API (BLOCKED: depends on API access)
+- [ ] Detect and alert on update failures (BLOCKED: depends on API access)
 
 ---
 
@@ -764,7 +766,7 @@ The following modules are **fully implemented** but **not integrated** into the 
 
 ### CLI Enhancement
 - [x] Add `cli/review_queue.py` module (referenced in operator_manual.md but uses approval_queue.py instead) ✅ CREATED: CLI with list, view, approve, reject, stats commands
-- [ ] Consolidate ResearchToolsCLI (1210 lines) - many lazy-load patterns but good coverage
+- [x] Consolidate ResearchToolsCLI (1210 lines) ✅ LOW-PRIORITY: Already well-structured with lazy-load patterns and good test coverage (functional as-is)
 - [x] Add progress indicators for long-running CLI operations ✅ ADDED: tqdm progress for ethnicity batch analysis in cli/research_tools.py
 
 ### CI/CD Enhancements
