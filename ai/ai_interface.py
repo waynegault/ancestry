@@ -395,7 +395,7 @@ Your response should be ONLY the message text, with no additional formatting, ex
 # --- Private Helper for AI Calls ---
 
 
-def _apply_rate_limiting(session_manager: SessionManager, provider: str) -> None:
+def _apply_rate_limiting(session_manager: Optional[SessionManager], provider: str) -> None:
     """Apply rate limiting before AI API call."""
     try:
         if session_manager and hasattr(session_manager, "rate_limiter"):
@@ -750,14 +750,16 @@ def _handle_authentication_errors(e: Exception, provider: str) -> None:
         logger.error(f"Gemini Permission Denied: {e}")
 
 
-def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: SessionManager) -> None:
+def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: Optional[SessionManager]) -> None:
     """Handle rate limiting-related errors."""
     if RateLimitError and isinstance(e, RateLimitError):
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
-        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
+        if session_manager:
+            _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
     elif genai_errors and hasattr(genai_errors, "ResourceExhausted") and isinstance(e, genai_errors.ResourceExhausted):
         logger.error(f"Gemini Resource Exhausted (Rate Limit): {e}")
-        _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
+        if session_manager:
+            _handle_rate_limit_error(session_manager, f"AI Provider: {provider}")
 
 
 def _handle_api_errors(e: Exception, provider: str) -> None:
@@ -788,7 +790,7 @@ def _handle_internal_errors(e: Exception, provider: str) -> None:
         logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
 
 
-def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager) -> None:
+def _handle_ai_exceptions(e: Exception, provider: str, session_manager: Optional[SessionManager]) -> None:
     """Handle AI API exceptions with appropriate logging and actions."""
     _handle_authentication_errors(e, provider)
     _handle_rate_limit_errors(e, provider, session_manager)
@@ -801,7 +803,7 @@ def _call_ai_model(
     provider: str,
     system_prompt: str,
     user_content: str,
-    session_manager: SessionManager,
+    session_manager: Optional[SessionManager],
     max_tokens: int,
     temperature: float,
     response_format_type: str | None = None,

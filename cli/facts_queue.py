@@ -24,7 +24,6 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
 
 # Ensure project root is on path
 _project_root = Path(__file__).resolve().parent.parent

@@ -783,7 +783,7 @@ def invalidate_gedcom_cache_on_update(gedcom_path: Optional[str] = None) -> bool
 
             # For disk cache, rely on mtime change (automatic invalidation)
             # but clear any related cached items
-            success = invalidate_related_caches(prefix=f"gedcom_{Path(gedcom_path).stem}")
+            success = invalidate_related_caches(pattern=f"gedcom_{Path(gedcom_path).stem}")
             if success:
                 logger.info(f"Invalidated disk cache for: {gedcom_path}")
             return True

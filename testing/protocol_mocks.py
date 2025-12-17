@@ -25,7 +25,6 @@ Usage:
 import logging
 import sys
 from pathlib import Path
-from threading import Event
 from typing import Any, Optional
 
 # Ensure project root on path

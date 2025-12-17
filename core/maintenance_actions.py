@@ -753,6 +753,9 @@ def _test_initialize_db_manager_engine_invokes_initializer() -> bool:
         def close_connections(self, dispose_engine: bool = False) -> None:
             self.close_invocations.append(dispose_engine)
 
+        def get_session(self) -> Any:
+            return self.Session
+
     fake_manager = FakeManager()
     engine, session = _initialize_db_manager_engine(fake_manager)
     assert engine == "engine"

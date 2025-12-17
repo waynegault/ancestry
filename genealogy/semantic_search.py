@@ -144,7 +144,7 @@ def _candidate_lines(candidates: dict[str, list[CandidatePerson]]) -> list[str]:
             continue
         lines.append(f"  {name}:")
         for c in candidate_list[:3]:
-            details = []
+            details: list[str] = []
             if c.birth_year:
                 details.append(f"b. {c.birth_year}")
             if c.birth_place:

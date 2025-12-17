@@ -607,7 +607,7 @@ class TreeQueryService:
 
             norm_id = gedcom_utils.normalize_id(person_id)
 
-            if norm_id not in self._gedcom_data.indi_index:
+            if norm_id is None or norm_id not in self._gedcom_data.indi_index:
                 return not_found
 
             indi = self._gedcom_data.indi_index[norm_id]

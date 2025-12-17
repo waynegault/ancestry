@@ -1975,8 +1975,9 @@ def ancestry_session_recovery(session_manager: Optional[Any] = None, *_args: Any
         if session_manager is None:
             try:
                 from core.dependency_injection import get_service
+                from core.session_manager import SessionManager
 
-                session_manager = get_service("SessionManager")
+                session_manager = get_service(SessionManager)
             except Exception:
                 logger.warning("Could not obtain SessionManager from DI container")
 
@@ -2020,8 +2021,9 @@ def _get_session_manager_for_recovery(session_manager: Optional[Any]) -> Optiona
 
     try:
         from core.dependency_injection import get_service
+        from core.session_manager import SessionManager
 
-        return get_service("SessionManager")
+        return get_service(SessionManager)
     except Exception:
         pass
 
@@ -2101,8 +2103,9 @@ def ancestry_database_recovery(session_manager: Optional[Any] = None, *_args: An
         if session_manager is None:
             try:
                 from core.dependency_injection import get_service
+                from core.session_manager import SessionManager
 
-                session_manager = get_service("SessionManager")
+                session_manager = get_service(SessionManager)
             except Exception:
                 pass
 

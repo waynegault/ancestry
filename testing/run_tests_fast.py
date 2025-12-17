@@ -12,7 +12,6 @@ Usage:
     python testing/run_tests_fast.py --list    # List available test modules
 """
 
-import subprocess
 import sys
 from pathlib import Path
 

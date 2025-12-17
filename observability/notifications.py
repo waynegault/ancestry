@@ -150,8 +150,7 @@ class NotificationChannel(ABC):
 class ConsoleNotificationChannel(NotificationChannel):
     """Console-based notification channel (logging)."""
 
-    @staticmethod
-    def send(notification: Notification) -> bool:
+    def send(self, notification: Notification) -> bool:  # noqa: PLR6301
         """Log notification to console."""
         if notification.priority == NotificationPriority.CRITICAL:
             logger.critical(f"🚨 NOTIFICATION: {notification.subject}")
@@ -163,8 +162,7 @@ class ConsoleNotificationChannel(NotificationChannel):
             logger.info(f"📬 NOTIFICATION: {notification.subject}")
         return True
 
-    @staticmethod
-    def is_available() -> bool:
+    def is_available(self) -> bool:  # noqa: PLR6301
         """Console is always available."""
         return True
 

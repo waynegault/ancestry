@@ -78,7 +78,6 @@ from integrations import ms_graph_utils
 from messaging import build_safe_column_value
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from performance.connection_resilience import with_connection_resilience
-from research.conflict_detector import ConflictDetector, ConflictSeverity
 from research.person_lookup_utils import (
     PersonLookupResult,
     create_not_found_result,

@@ -347,8 +347,9 @@ class MatchContext:
 
         top_gap = intel_dict.get("top_gap")
         if isinstance(top_gap, dict):
-            gap_type = top_gap.get("type", "")
-            gap_desc = top_gap.get("description", "")
+            gap_dict = cast(dict[str, Any], top_gap)
+            gap_type: str = str(gap_dict.get("type", ""))
+            gap_desc: str = str(gap_dict.get("description", ""))
             if gap_type:
                 lines.append(f"Tree gap: {gap_type.replace('_', ' ').title()}")
             if gap_desc:
@@ -356,14 +357,16 @@ class MatchContext:
 
         top_conflict = intel_dict.get("top_conflict")
         if isinstance(top_conflict, dict):
-            conflict_type = top_conflict.get("type", "")
-            severity = top_conflict.get("severity", "")
+            conflict_dict = cast(dict[str, Any], top_conflict)
+            conflict_type: str = str(conflict_dict.get("type", ""))
+            severity: str = str(conflict_dict.get("severity", ""))
             if conflict_type and severity in {"critical", "major"}:
                 lines.append(f"⚠️ Tree conflict ({severity}): {conflict_type.replace('_', ' ')}")
 
         top_opp = intel_dict.get("top_opportunity")
         if isinstance(top_opp, dict):
-            opp_type = top_opp.get("type", "")
+            opp_dict = cast(dict[str, Any], top_opp)
+            opp_type: str = str(opp_dict.get("type", ""))
             if opp_type:
                 lines.append(f"Research opportunity: {opp_type.replace('_', ' ').title()}")
 
@@ -376,8 +379,9 @@ class MatchContext:
         crossref_dict = cast(dict[str, Any], dna_crossref)
         top_match = crossref_dict.get("top_match")
         if isinstance(top_match, dict):
-            confidence = top_match.get("confidence", 0)
-            match_type = top_match.get("match_type", "")
+            match_dict = cast(dict[str, Any], top_match)
+            confidence: float = float(match_dict.get("confidence", 0))
+            match_type: str = str(match_dict.get("match_type", ""))
             if confidence > 0.7:
                 lines.append(f"✓ DNA-Tree match validated: {match_type} ({confidence:.0%} confidence)")
             elif confidence > 0.4:

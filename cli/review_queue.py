@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Ensure project root is on path
 _project_root = Path(__file__).resolve().parent.parent

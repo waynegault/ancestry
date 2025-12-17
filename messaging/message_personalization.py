@@ -29,7 +29,7 @@ import json
 # Import standard modules
 import logging
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 # A/B testing and metrics imports for Phase 11.4
 from ai.ab_testing import ExperimentManager, Variant
@@ -43,7 +43,7 @@ except ImportError:
     def is_metrics_enabled() -> bool:
         return False
 
-    def metrics() -> None:
+    def metrics() -> Any:  # type: ignore[misc]
         return None
 
 
@@ -148,7 +148,7 @@ class MessagePersonalizer:
             return
 
         # Define personalization strategy experiments
-        strategy_experiments = [
+        strategy_experiments: list[dict[str, Any]] = [
             {
                 "id": "personalization_strategy_dna",
                 "name": "DNA-Focused vs Standard Personalization",
@@ -170,14 +170,15 @@ class MessagePersonalizer:
         ]
 
         for exp_config in strategy_experiments:
-            if exp_config["id"] not in self._experiment_manager.experiments:
+            exp_id = str(exp_config["id"])
+            if exp_id not in self._experiment_manager.experiments:
                 self._experiment_manager.create_experiment(
-                    experiment_id=exp_config["id"],
-                    name=exp_config["name"],
-                    description=exp_config["description"],
-                    variants=exp_config["variants"],
+                    experiment_id=exp_id,
+                    name=str(exp_config["name"]),
+                    description=str(exp_config["description"]),
+                    variants=cast(list[Variant], exp_config["variants"]),
                 )
-                logger.info(f"Created personalization experiment: {exp_config['id']}")
+                logger.info(f"Created personalization experiment: {exp_id}")
 
     def _build_personalization_registry(self) -> dict[str, Callable[[dict[str, Any]], str]]:
         """Build registry of all personalization functions for dynamic usage."""
@@ -1403,18 +1404,19 @@ class MessagePersonalizer:
 
         for exp_id, experiment in exp_manager.experiments.items():
             results = exp_manager.get_experiment_results(exp_id)
-            exp_summary = {
+            variant_names: list[str] = [v.name for v in experiment.variants]
+            exp_summary: dict[str, Any] = {
                 "id": exp_id,
                 "name": experiment.name,
                 "enabled": experiment.enabled,
                 "total_trials": len(results),
-                "variants": [v.name for v in experiment.variants],
+                "variants": variant_names,
             }
 
             if results:
                 # Calculate success rate per variant
                 variant_rates: dict[str, float] = {}
-                for vname in exp_summary["variants"]:
+                for vname in variant_names:
                     v_results = [r for r in results if r.variant_name == vname]
                     if v_results:
                         success_count = sum(1 for r in v_results if r.success)
@@ -1982,7 +1984,7 @@ def _test_effectiveness_metrics_recording() -> bool:
 
     # Test get_ab_test_insights doesn't crash
     try:
-        insights = personalizer._get_ab_test_insights()
+        insights = getattr(personalizer, "_get_ab_test_insights")()
         assert isinstance(insights, list), "Insights should be list"
     except Exception as e:
         logger.error(f"A/B test insights failed: {e}")

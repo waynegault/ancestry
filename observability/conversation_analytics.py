@@ -401,7 +401,7 @@ def get_quality_to_outcome_correlation(session: Session) -> dict[str, Any]:
     Returns:
         Dictionary with quality-to-outcome correlation data
     """
-    from sqlalchemy import case, func
+    from sqlalchemy import func
 
     from core.database import DraftReply
 

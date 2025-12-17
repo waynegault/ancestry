@@ -608,7 +608,7 @@ def get_pending_drafts(limit: int = 20) -> list[dict[str, Any]]:
         service = ApprovalQueueService(db_session)
         pending = service.get_pending_queue(limit=limit)
 
-        drafts = []
+        drafts: list[dict[str, Any]] = []
         for draft in pending:
             # Get conversation history
             conv_logs = (
@@ -619,7 +619,7 @@ def get_pending_drafts(limit: int = 20) -> list[dict[str, Any]]:
                 .all()
             )
 
-            conversation = []
+            conversation: list[dict[str, str]] = []
             for log in conv_logs:
                 conversation.append(
                     {
@@ -693,8 +693,8 @@ def api_reject(draft_id: int):
     try:
         from core.approval_queue import ApprovalQueueService
 
-        data = request.get_json() or {}
-        reason = data.get("reason", "")
+        data: dict[str, Any] = request.get_json() or {}
+        reason = str(data.get("reason", ""))
 
         db_session = get_db_session()
         if not db_session:
@@ -743,7 +743,8 @@ def _validate_rewrite_request(
 def api_rewrite(draft_id: int):
     """Rewrite a draft with AI using feedback."""
     try:
-        feedback = (request.get_json() or {}).get("feedback", "").strip()
+        json_data: dict[str, Any] = request.get_json() or {}
+        feedback = str(json_data.get("feedback", "")).strip()
         sm = SessionManager()
 
         db_session, draft, person, error = _validate_rewrite_request(draft_id, feedback, sm)

@@ -252,7 +252,6 @@ def setup_inbox_polling(
         interval_minutes: Time between inbox checks (default 15 minutes)
         enabled: Whether to enable polling immediately
     """
-    from functools import partial
 
     def _poll_inbox() -> None:
         """Inbox polling callback."""
@@ -269,14 +268,12 @@ def setup_inbox_polling(
                 logger.warning("Inbox polling skipped: DB not ready")
                 return
 
-            # Get inbox messages via Action 7
-            from actions.action7_inbox import process_inbox_messages
+            # Get inbox messages via Action 7 InboxProcessor
+            from actions.action7_inbox import InboxProcessor
 
-            # Process with InboundOrchestrator integration
-            result = process_inbox_messages(
-                session_manager=session_manager,
-                max_messages=10,  # Process in small batches
-            )
+            # Process with InboxProcessor - search_inbox is the main entry point
+            processor = InboxProcessor(session_manager)
+            result = processor.search_inbox()
 
             if result:
                 logger.info("📬 Inbox polling completed: new messages processed")

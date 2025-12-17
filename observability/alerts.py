@@ -226,22 +226,12 @@ class AlertChecker:
 
     @staticmethod
     def _check_circuit_breaker() -> Optional[Alert]:
-        """Check if any circuit breakers are tripped."""
-        try:
-            from core.circuit_breaker import circuit_breaker_registry
+        """Check if any circuit breakers are tripped.
 
-            if circuit_breaker_registry:
-                for name, breaker in circuit_breaker_registry.items():
-                    if hasattr(breaker, "is_open") and breaker.is_open():
-                        return Alert(
-                            alert_type=AlertType.CIRCUIT_BREAKER_TRIPPED,
-                            severity=AlertSeverity.WARNING,
-                            message=f"Circuit breaker '{name}' is OPEN",
-                            details={"breaker_name": name, "state": "OPEN"},
-                        )
-        except Exception:
-            pass  # Circuit breaker registry may not exist
-
+        Note: circuit_breaker_registry doesn't exist yet.
+        Individual circuit breakers are created per-use, not centrally registered.
+        This is a placeholder for future centralized registry.
+        """
         return None
 
     @staticmethod
@@ -272,11 +262,16 @@ class AlertChecker:
         else:
             logger.info(f"INFO ALERT [{alert.alert_type.value}]: {alert.message}")
 
-        # Emit to metrics if available
+        # Emit to metrics if available (alerts_total is optional)
         try:
-            from observability.metrics_registry import metrics
+            from observability.metrics_registry import is_metrics_enabled, metrics
 
-            metrics().alerts_total.increment(alert_type=alert.alert_type.value, severity=alert.severity.value)
+            if is_metrics_enabled():
+                m = metrics()
+                # Use getattr to safely access optional metric
+                alerts_counter = getattr(m, "alerts_total", None)
+                if alerts_counter is not None and hasattr(alerts_counter, "increment"):
+                    alerts_counter.increment(alert_type=alert.alert_type.value, severity=alert.severity.value)
         except Exception:
             pass  # Metrics not critical
 
