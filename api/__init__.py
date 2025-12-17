@@ -5,9 +5,18 @@ Provides unified API management including:
 - api_utils: API request orchestration and authentication
 - api_search_core: Core API search functionality
 - api_search_utils: API search utilities and helpers
+- tree_update: Tree modification service for Ancestry.com
 """
 
 from api.api_constants import *
+from api.tree_update import (
+    TreeOperationType,
+    TreeUpdateRequest,
+    TreeUpdateResponse,
+    TreeUpdateResult,
+    TreeUpdateService,
+    apply_approved_facts_batch,
+)
 
 __all__ = [
     "API_PATH_CSRF_TOKEN",
@@ -17,6 +26,13 @@ __all__ = [
     "API_PATH_SEND_MESSAGE_NEW",
     "API_PATH_UUID_LEGACY",
     "API_PATH_UUID_NAVHEADER",
+    # Tree Update exports
+    "TreeOperationType",
+    "TreeUpdateRequest",
+    "TreeUpdateResponse",
+    "TreeUpdateResult",
+    "TreeUpdateService",
+    "apply_approved_facts_batch",
 ]
 
 # -----------------------------------------------------------------------------
@@ -34,4 +50,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)

@@ -513,6 +513,140 @@ class ReviewQueue:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def approve_suggested_fact(
+        db_session: Session,
+        fact_id: int,
+        reviewer: str = "user",  # noqa: ARG004 Reserved for audit logging
+        apply_to_tree: bool = False,
+        tree_id: Optional[str] = None,
+        session_manager: Optional[object] = None,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Approve a suggested fact and optionally apply to Ancestry tree.
+
+        Args:
+            db_session: Active database session
+            fact_id: ID of the SuggestedFact to approve
+            reviewer: Identifier of who approved
+            apply_to_tree: Whether to apply to Ancestry tree
+            tree_id: Ancestry tree ID (required if apply_to_tree=True)
+            session_manager: SessionManager instance (required if apply_to_tree=True)
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        from core.database import FactStatusEnum, SuggestedFact
+
+        fact = db_session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+
+        if not fact:
+            return False, f"SuggestedFact {fact_id} not found"
+
+        if fact.status != FactStatusEnum.PENDING:
+            return False, f"SuggestedFact {fact_id} is not pending (status: {fact.status.value})"
+
+        # Update status to APPROVED
+        fact.status = FactStatusEnum.APPROVED
+        fact.updated_at = datetime.now(timezone.utc)
+
+        logger.info(f"Approved suggested fact {fact_id} for person {fact.people_id}")
+
+        # Optionally apply to Ancestry tree
+        if apply_to_tree:
+            if not tree_id or not session_manager:
+                return False, "tree_id and session_manager required for tree updates"
+
+            from api.tree_update import TreeUpdateResult, TreeUpdateService
+
+            tree_service = TreeUpdateService(session_manager)
+            result = tree_service.apply_suggested_fact(db_session, fact, tree_id)
+
+            if result.result != TreeUpdateResult.SUCCESS:
+                return False, f"Tree update failed: {result.message}"
+
+            logger.info(f"Applied fact {fact_id} to tree: {result.message}")
+
+        return True, None
+
+    @staticmethod
+    def reject_suggested_fact(
+        db_session: Session,
+        fact_id: int,
+        reviewer: str = "user",  # noqa: ARG004 Reserved for audit logging
+        reason: Optional[str] = None,
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Reject a suggested fact without applying.
+
+        Args:
+            db_session: Active database session
+            fact_id: ID of the SuggestedFact to reject
+            reviewer: Identifier of who rejected
+            reason: Optional rejection reason
+
+        Returns:
+            Tuple of (success, error_message)
+        """
+        from core.database import FactStatusEnum, SuggestedFact
+
+        fact = db_session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+
+        if not fact:
+            return False, f"SuggestedFact {fact_id} not found"
+
+        if fact.status != FactStatusEnum.PENDING:
+            return False, f"SuggestedFact {fact_id} is not pending (status: {fact.status.value})"
+
+        fact.status = FactStatusEnum.REJECTED
+        fact.updated_at = datetime.now(timezone.utc)
+
+        logger.info(f"Rejected suggested fact {fact_id} for person {fact.people_id}: {reason or 'no reason'}")
+        return True, None
+
+    @staticmethod
+    def list_pending_suggested_facts(
+        db_session: Session,
+        limit: int = 20,
+    ) -> list[dict]:
+        """
+        List pending suggested facts awaiting review.
+
+        Args:
+            db_session: Active database session
+            limit: Maximum number of items to return
+
+        Returns:
+            List of pending SuggestedFacts as dictionaries
+        """
+        from core.database import FactStatusEnum, SuggestedFact
+
+        facts = (
+            db_session.query(SuggestedFact, Person)
+            .join(Person, SuggestedFact.people_id == Person.id)
+            .filter(SuggestedFact.status == FactStatusEnum.PENDING)
+            .order_by(SuggestedFact.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for fact, person in facts:
+            result.append(
+                {
+                    "id": fact.id,
+                    "person_id": person.id,
+                    "person_name": person.display_name,
+                    "fact_type": fact.fact_type.value if fact.fact_type else "unknown",
+                    "original_value": fact.original_value,
+                    "new_value": fact.new_value,
+                    "confidence_score": fact.confidence_score,
+                    "created_at": fact.created_at.isoformat(),
+                }
+            )
+
+        return result
+
 
 # --- Test Functions ---
 

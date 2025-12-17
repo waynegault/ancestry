@@ -1044,9 +1044,149 @@ class SuggestedFact(Base):
 
     # --- Relationships ---
     person: Mapped["Person"] = relationship("Person", back_populates="suggested_facts")
+    update_logs: Mapped[list["TreeUpdateLog"]] = relationship(
+        "TreeUpdateLog",
+        back_populates="suggested_fact",
+        cascade="all, delete-orphan",
+    )
 
 
 # End of SuggestedFact class
+
+
+class TreeUpdateStatusEnum(enum.Enum):
+    """Status values for tree update log entries."""
+
+    SUCCESS = "success"  # Update applied successfully
+    FAILED = "failed"  # Update failed with error
+    PENDING = "pending"  # Queued for application
+    ROLLED_BACK = "rolled_back"  # Update was reverted
+
+
+class TreeUpdateLog(Base):
+    """
+    Audit log for all tree modification operations.
+
+    Tracks every update made to the Ancestry.com family tree via the
+    TreeUpdateService, including API responses, success/failure status,
+    and links to the source SuggestedFact that triggered the update.
+
+    Supports rollback by storing the original values and API payloads.
+    """
+
+    __tablename__ = "tree_update_log"
+
+    # --- Columns ---
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique identifier for the log entry.",
+    )
+    suggested_fact_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("suggested_facts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Link to the SuggestedFact that triggered this update.",
+    )
+    people_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("people.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Local database person ID.",
+    )
+    ancestry_person_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+        comment="Ancestry.com person ID that was modified.",
+    )
+    tree_id: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        comment="Ancestry.com tree ID.",
+    )
+    operation_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+        comment="Type of operation (UPDATE_PERSON, ADD_FACT, etc.).",
+    )
+    api_endpoint: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+        comment="API endpoint URL called.",
+    )
+    request_payload: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="JSON-serialized request payload sent to API.",
+    )
+    response_status: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="HTTP status code from API response.",
+    )
+    response_body: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="JSON-serialized API response body (truncated if large).",
+    )
+    status: Mapped[TreeUpdateStatusEnum] = mapped_column(
+        SQLEnum(TreeUpdateStatusEnum),
+        nullable=False,
+        default=TreeUpdateStatusEnum.PENDING,
+        index=True,
+        comment="Status of the update operation.",
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Error details if update failed.",
+    )
+    original_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Original value before update (for rollback support).",
+    )
+    new_value: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="New value applied in update.",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        comment="Timestamp (UTC) when update was attempted.",
+    )
+
+    # --- Relationships ---
+    suggested_fact: Mapped[Optional["SuggestedFact"]] = relationship(
+        "SuggestedFact",
+        back_populates="update_logs",
+    )
+    person: Mapped[Optional["Person"]] = relationship(
+        "Person",
+        back_populates="tree_update_logs",
+    )
+
+    # --- Indexes ---
+    __table_args__ = (
+        Index("ix_tree_update_log_status_created", "status", "created_at"),
+        Index("ix_tree_update_log_ancestry_person", "ancestry_person_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TreeUpdateLog(id={self.id}, ancestry_person={self.ancestry_person_id}, "
+            f"op={self.operation_type}, status={self.status.value})>"
+        )
+
+
+# End of TreeUpdateLog class
 
 
 class DataConflict(Base):
@@ -1664,6 +1804,9 @@ class Person(Base):
     )
     staged_updates: Mapped[list["StagedUpdate"]] = relationship(
         "StagedUpdate", back_populates="person", cascade="all, delete-orphan"
+    )
+    tree_update_logs: Mapped[list["TreeUpdateLog"]] = relationship(
+        "TreeUpdateLog", back_populates="person", cascade="all, delete-orphan"
     )
     draft_replies: Mapped[list["DraftReply"]] = relationship(
         "DraftReply", back_populates="person", cascade="all, delete-orphan"
