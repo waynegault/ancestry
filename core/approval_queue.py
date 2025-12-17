@@ -122,8 +122,10 @@ class ApprovalQueueService:
     """
 
     # Confidence thresholds for auto-approval
-    AUTO_APPROVE_THRESHOLD = 90
-    HIGH_PRIORITY_THRESHOLD = 70
+    # Context confidence threshold: based on data completeness (identity, genetics, GEDCOM, ancestors)
+    # Score breakdown: identity(+15), genetics(+20), GEDCOM(+25), ancestors(+15), history(+10), facts(+10), research(+5)
+    AUTO_APPROVE_THRESHOLD = 70  # Minimum context confidence for auto-approval
+    HIGH_PRIORITY_THRESHOLD = 70  # Below this triggers HIGH priority for review
 
     def __init__(self, db_session: DbSession, auto_approve_enabled: Optional[bool] = None) -> None:
         """Initialize the approval queue service."""
@@ -334,8 +336,15 @@ class ApprovalQueueService:
     def _update_existing_pending(
         self, existing_pending: Any, content_with_metadata: str, ai_confidence: int, priority: ReviewPriority
     ) -> Optional[int]:
+        needs_update = False
         if existing_pending.content != content_with_metadata:
             existing_pending.content = content_with_metadata
+            needs_update = True
+        if getattr(existing_pending, "ai_confidence", None) != ai_confidence:
+            existing_pending.ai_confidence = ai_confidence
+            needs_update = True
+
+        if needs_update:
             self.db_session.add(existing_pending)
             self.db_session.commit()
             logger.info(
@@ -368,6 +377,7 @@ class ApprovalQueueService:
             conversation_id=conversation_id,
             content=content_with_metadata,
             status="PENDING",
+            ai_confidence=ai_confidence,  # Store context confidence score
             expires_at=expires_at,
         )
         self.db_session.add(draft)
@@ -610,7 +620,7 @@ class ApprovalQueueService:
                     person_name=person.display_name,
                     conversation_id=draft.conversation_id,
                     content=draft.content,
-                    ai_confidence=80,  # Default; would come from draft if stored
+                    ai_confidence=draft.ai_confidence or 50,  # Read from DB, default 50 if not set
                     priority=ReviewPriority.NORMAL,
                     status=self._parse_draft_status(draft.status),
                     created_at=draft.created_at,

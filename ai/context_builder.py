@@ -70,6 +70,54 @@ class MatchContext:
     context_generated_at: str = ""
     context_version: str = "1.0"
 
+    def calculate_confidence(self) -> int:
+        """
+        Calculate context confidence score (0-100) based on data completeness.
+
+        Scoring breakdown:
+        - Identity present with name: +15 points
+        - Genetics data (shared_cm): +20 points
+        - GEDCOM match found: +25 points
+        - Common ancestors identified: +15 points
+        - Conversation history: +10 points
+        - Extracted facts: +10 points
+        - Research insights: +5 points
+
+        Returns:
+            Confidence score 0-100
+        """
+        score = 0
+
+        # Identity: +15 if name present
+        if self.identity and self.identity.get("name"):
+            score += 15
+
+        # Genetics: +20 if shared_cm present
+        if self.genetics and self.genetics.get("shared_cm"):
+            score += 20
+
+        # GEDCOM match: +25 if found in tree
+        if self.genealogy:
+            if self.genealogy.get("gedcom_person_match"):
+                score += 25
+            # Common ancestors: +15 if any identified
+            if self.genealogy.get("known_common_ancestors"):
+                score += 15
+
+        # Conversation history: +10 if any messages
+        if self.history and self.history.get("messages"):
+            score += 10
+
+        # Extracted facts: +10 if any facts
+        if self.extracted_facts and (self.extracted_facts.get("facts") or self.extracted_facts.get("entities")):
+            score += 10
+
+        # Research insights: +5 if any present
+        if self.research and any(self.research.values()):
+            score += 5
+
+        return min(score, 100)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -1300,6 +1348,37 @@ def _test_build_genealogy_includes_ancestry_tree_fields() -> bool:
     return True
 
 
+def _test_calculate_confidence() -> bool:
+    """Test MatchContext.calculate_confidence scoring."""
+    # Empty context - minimum score
+    empty = MatchContext()
+    assert empty.calculate_confidence() == 0, "Empty context should score 0"
+
+    # Identity only (+15)
+    identity_only = MatchContext(identity={"name": "John Smith", "uuid": "UUID123"})
+    assert identity_only.calculate_confidence() == 15, "Identity only should score 15"
+
+    # Identity + genetics (+15 + 20 = 35)
+    with_genetics = MatchContext(identity={"name": "John Smith"}, genetics={"shared_cm": 250, "shared_segments": 12})
+    assert with_genetics.calculate_confidence() == 35, "Identity + genetics should score 35"
+
+    # Full context - capped at 100
+    full_context = MatchContext(
+        identity={"name": "John Smith"},  # +15
+        genetics={"shared_cm": 250},  # +20
+        genealogy={
+            "gedcom_person_match": {"id": "I123", "name": "John Smith"},  # +25
+            "known_common_ancestors": [{"id": "I1", "name": "Ancestor"}],  # +15
+        },
+        history={"messages": [{"content": "Hi"}]},  # +10
+        extracted_facts={"facts": [{"type": "birth", "value": "1850"}]},  # +10
+        research={"insights": [{"title": "Find vital records"}]},  # +5
+    )
+    assert full_context.calculate_confidence() == 100, "Full context should cap at 100"
+
+    return True
+
+
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 # Add the new test to the runner manually if the utility supports it,
 # or just run it as part of a suite.
@@ -1317,6 +1396,7 @@ def _run_local_tests() -> bool:
         and _test_build_genealogy_resolves_gedcom_person_id()
         and _test_build_genealogy_skips_when_no_name()
         and _test_build_genealogy_includes_ancestry_tree_fields()
+        and _test_calculate_confidence()
     )
 
 

@@ -369,6 +369,13 @@ class DraftReply(Base):
         index=True,
         comment="Quality score 0-100 from draft validation (personalization, evidence, specificity).",
     )
+    # Phase 11.5: Context confidence score
+    ai_confidence: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="Context confidence 0-100 based on data completeness (identity, genetics, GEDCOM, ancestors).",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

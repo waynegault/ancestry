@@ -2111,7 +2111,9 @@ class InboxProcessor:
         }
 
     @staticmethod
-    def _save_draft_reply(session: DbSession, profile_id: str, conversation_id: str, content: str) -> bool:
+    def _save_draft_reply(
+        session: DbSession, profile_id: str, conversation_id: str, content: str, ai_confidence: int = 80
+    ) -> bool:
         """
         Saves a generated reply as a draft for human review.
         """
@@ -2130,13 +2132,12 @@ class InboxProcessor:
                 return False
 
             # Route through the unified approval queue to ensure de-duplication and consistent policy.
-            # Inbound-generated replies are intentionally not high-confidence to avoid auto-approval.
             service = ApprovalQueueService(session)
             draft_id = service.queue_for_review(
                 person_id=person.id,
                 conversation_id=conversation_id,
                 content=content,
-                ai_confidence=80,
+                ai_confidence=ai_confidence,
             )
 
             if draft_id is not None:
@@ -3094,8 +3095,11 @@ class InboxProcessor:
         ai_sentiment_result = result.get("intent")
         generated_reply = result.get("generated_reply")
         safety_result: Optional[SafetyCheckResult] = result.get("safety_result")
+        context_confidence: int = result.get("context_confidence", 80)  # Context-based confidence from orchestrator
 
-        if generated_reply and self._save_draft_reply(session, profile_id, api_conv_id, generated_reply):
+        if generated_reply and self._save_draft_reply(
+            session, profile_id, api_conv_id, generated_reply, ai_confidence=context_confidence
+        ):
             self.stats["drafts_queued"] = self.stats.get("drafts_queued", 0) + 1
 
         if safety_result and isinstance(safety_result, SafetyCheckResult):

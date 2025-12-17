@@ -172,14 +172,16 @@ class InboundOrchestrator:
 
         source_message_id = getattr(inbound_log, "id", None) if inbound_log is not None else None
 
-        research_results, generated_reply, extracted_data, semantic_search = self._run_research_flow(
-            intent=intent,
-            person=person,
-            message_content=message_content,
-            sender_id=sender_id,
-            conversation_id=conversation_id,
-            context_history=context_history,
-            source_message_id=source_message_id,
+        research_results, generated_reply, extracted_data, semantic_search, context_confidence = (
+            self._run_research_flow(
+                intent=intent,
+                person=person,
+                message_content=message_content,
+                sender_id=sender_id,
+                conversation_id=conversation_id,
+                context_history=context_history,
+                source_message_id=source_message_id,
+            )
         )
 
         # 4. Update Metrics
@@ -193,6 +195,7 @@ class InboundOrchestrator:
             "generated_reply": generated_reply,
             "extracted_data": extracted_data,
             "semantic_search": semantic_search,
+            "context_confidence": context_confidence,
         }
 
     @staticmethod
@@ -318,9 +321,9 @@ class InboundOrchestrator:
         conversation_id: str,
         context_history: str,
         source_message_id: Optional[int],
-    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]], int]:
         if intent not in {"PRODUCTIVE", "ENTHUSIASTIC"}:
-            return None, None, None, None
+            return None, None, None, None, 50  # Default confidence for non-productive intents
 
         extracted_data = extract_genealogical_entities(context_history, self.session_manager)
         semantic_search, semantic_search_prompt = self._maybe_run_semantic_search(
@@ -342,6 +345,7 @@ class InboundOrchestrator:
 
         research_results: Optional[list[dict[str, Any]]] = None
         generated_reply: Optional[str] = None
+        context_confidence: int = 50  # Default confidence when no context is built
 
         if extracted_data:
             research_results = self._perform_genealogical_research(extracted_data)
@@ -358,6 +362,8 @@ class InboundOrchestrator:
                         match_context = ContextBuilder(db_session=self.db).build_context(match_uuid)
                         tree_lookup_results = match_context.to_tree_lookup_results_string()
                         relationship_context = match_context.to_relationship_context_string()
+                        # Calculate context-based confidence score (0-100)
+                        context_confidence = match_context.calculate_confidence()
                 except Exception as exc:  # pragma: no cover
                     logger.debug("Tree context enrichment skipped (non-fatal): %s", exc)
 
@@ -381,7 +387,7 @@ class InboundOrchestrator:
                         semantic_search_ran=semantic_search is not None,
                     )
 
-        return research_results, generated_reply, extracted_data, semantic_search
+        return research_results, generated_reply, extracted_data, semantic_search, context_confidence
 
     def _resolve_person(self, sender_id: str) -> Optional[Person]:
         """Resolve Person object from sender_id (UUID or profile_id)."""
