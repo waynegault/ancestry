@@ -1199,17 +1199,23 @@ def parse_ancestry_person_details(
 # Import it from there instead of defining it here
 
 
-def print_group(label: str, items: list[dict[str, Any]]):
-    print(f"\n{label}:")
-    if items:
-        formatter = format_name
-        for item in items:
-            name_to_format = item.get("name")
-            print(f"  - {formatter(name_to_format)}")
-        # End of for
-    else:
-        print("  (None found)")
-    # End of if/else
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Debug printing helper, never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def print_group(label: str, items: list[dict[str, Any]]):
+#     print(f"\n{label}:")
+#     if items:
+#         formatter = format_name
+#         for item in items:
+#             name_to_format = item.get("name")
+#             print(f"  - {formatter(name_to_format)}")
+#         # End of for
+#     else:
+#         print("  (None found)")
+#     # End of if/else
+# =============================================================================
 
 
 def _get_api_timeout(default: int = 60) -> int:

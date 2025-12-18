@@ -488,56 +488,62 @@ def get_prompts_summary() -> dict[str, Any]:
         }
 
 
-def quick_test() -> dict[str, Any]:
-    """
-    Perform a quick test of the AI prompt utilities.
-
-    Returns:
-        dict[str, Any]: Test results
-    """
-    results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
-
-    try:
-        # Test 1: Load prompts
-        prompts = load_prompts()
-        if "prompts" in prompts:
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-            results["errors"].append("Failed to load prompts structure")
-
-        # Test 2: Validate structure
-        is_valid, validation_errors = validate_prompt_structure(prompts)
-        if is_valid:
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-            results["errors"].extend(validation_errors)
-
-        # Test 3: Get summary
-        summary = get_prompts_summary()
-        if "total_prompts" in summary:
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-            results["errors"].append("Failed to generate prompts summary")
-
-        # Test 4: Test import functionality
-        imported_count, imported_keys = import_improved_prompts()
-        if imported_count and imported_keys:
-            results["passed"] += 1
-        else:
-            results["failed"] += 1
-            results["errors"].append("Failed to test import functionality")
-
-    except Exception as e:
-        results["failed"] += 1
-        results["errors"].append(f"Unexpected error: {e!s}")
-
-    results["total"] = results["passed"] + results["failed"]
-    results["success_rate"] = results["passed"] / results["total"] * 100 if results["total"] > 0 else 0
-
-    return results
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Replaced by run_comprehensive_tests(), never called
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def quick_test() -> dict[str, Any]:
+#     """
+#     Perform a quick test of the AI prompt utilities.
+#
+#     Returns:
+#         dict[str, Any]: Test results
+#     """
+#     results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
+#
+#     try:
+#         # Test 1: Load prompts
+#         prompts = load_prompts()
+#         if "prompts" in prompts:
+#             results["passed"] += 1
+#         else:
+#             results["failed"] += 1
+#             results["errors"].append("Failed to load prompts structure")
+#
+#         # Test 2: Validate structure
+#         is_valid, validation_errors = validate_prompt_structure(prompts)
+#         if is_valid:
+#             results["passed"] += 1
+#         else:
+#             results["failed"] += 1
+#             results["errors"].extend(validation_errors)
+#
+#         # Test 3: Get summary
+#         summary = get_prompts_summary()
+#         if "total_prompts" in summary:
+#             results["passed"] += 1
+#         else:
+#             results["failed"] += 1
+#             results["errors"].append("Failed to generate prompts summary")
+#
+#         # Test 4: Test import functionality
+#         imported_count, imported_keys = import_improved_prompts()
+#         if imported_count and imported_keys:
+#             results["passed"] += 1
+#         else:
+#             results["failed"] += 1
+#             results["errors"].append("Failed to test import functionality")
+#
+#     except Exception as e:
+#         results["failed"] += 1
+#         results["errors"].append(f"Unexpected error: {e!s}")
+#
+#     results["total"] = results["passed"] + results["failed"]
+#     results["success_rate"] = results["passed"] / results["total"] * 100 if results["total"] > 0 else 0
+#
+#     return results
+# =============================================================================
 
 
 # ==============================================

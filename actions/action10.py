@@ -252,49 +252,55 @@ def _format_score_verification(total_score: float, total_calculated: int) -> lis
     return lines
 
 
-def detailed_scoring_breakdown(
-    test_name: str,
-    search_criteria: dict[str, Any],
-    candidate_data: dict[str, Any],
-    scoring_weights: dict[str, Any],
-    date_flex: dict[str, Any],
-    total_score: float,
-    field_scores: dict[str, int],
-    reasons: list[str],
-) -> str:
-    """Generate detailed scoring breakdown for test reporting."""
-    breakdown: list[str] = []
-    breakdown.append(f"\n{'=' * 80}")
-    breakdown.append(f"🔍 DETAILED SCORING BREAKDOWN: {test_name}")
-    breakdown.append(f"{'=' * 80}")
-
-    # Add formatted sections
-    breakdown.extend(_format_search_criteria(search_criteria))
-    breakdown.extend(_format_candidate_data(candidate_data))
-    breakdown.extend(_format_scoring_weights(scoring_weights))
-
-    # Date flexibility
-    breakdown.append("\n📅 DATE FLEXIBILITY:")
-    for key, value in date_flex.items():
-        breakdown.append(f"   {key}: {value}")
-
-    # Field analysis
-    field_lines, total_calculated = _format_field_analysis(field_scores)
-    breakdown.extend(field_lines)
-
-    # Match reasons
-    breakdown.append("\n📝 MATCH REASONS:")
-    for reason in reasons:
-        breakdown.append(f"   • {reason}")
-
-    # Score verification
-    breakdown.extend(_format_score_verification(total_score, total_calculated))
-
-    # Test person analysis
-    breakdown.extend(_format_test_person_analysis(field_scores, total_score))
-
-    breakdown.append(f"{'=' * 80}")
-    return "\n".join(breakdown)
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Debug helper function, never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def detailed_scoring_breakdown(
+#     test_name: str,
+#     search_criteria: dict[str, Any],
+#     candidate_data: dict[str, Any],
+#     scoring_weights: dict[str, Any],
+#     date_flex: dict[str, Any],
+#     total_score: float,
+#     field_scores: dict[str, int],
+#     reasons: list[str],
+# ) -> str:
+#     """Generate detailed scoring breakdown for test reporting."""
+#     breakdown: list[str] = []
+#     breakdown.append(f"\n{'=' * 80}")
+#     breakdown.append(f"🔍 DETAILED SCORING BREAKDOWN: {test_name}")
+#     breakdown.append(f"{'=' * 80}")
+#
+#     # Add formatted sections
+#     breakdown.extend(_format_search_criteria(search_criteria))
+#     breakdown.extend(_format_candidate_data(candidate_data))
+#     breakdown.extend(_format_scoring_weights(scoring_weights))
+#
+#     # Date flexibility
+#     breakdown.append("\n📅 DATE FLEXIBILITY:")
+#     for key, value in date_flex.items():
+#         breakdown.append(f"   {key}: {value}")
+#
+#     # Field analysis
+#     field_lines, total_calculated = _format_field_analysis(field_scores)
+#     breakdown.extend(field_lines)
+#
+#     # Match reasons
+#     breakdown.append("\n📝 MATCH REASONS:")
+#     for reason in reasons:
+#         breakdown.append(f"   • {reason}")
+#
+#     # Score verification
+#     breakdown.extend(_format_score_verification(total_score, total_calculated))
+#
+#     # Test person analysis
+#     breakdown.extend(_format_test_person_analysis(field_scores, total_score))
+#
+#     breakdown.append(f"{'=' * 80}")
+#     return "\n".join(breakdown)
+# =============================================================================
 
 
 def _format_test_person_analysis(field_scores: dict[str, int], total_score: float) -> list[str]:
@@ -1002,18 +1008,24 @@ def _build_filter_criteria(scoring_criteria: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_user_criteria(
-    args: Optional[argparse.Namespace] = None,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Get search criteria from user input or automated input args."""
-    logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
-
-    get_input = _create_input_getter(args)
-    basic_criteria = _collect_basic_criteria(get_input)
-    scoring_criteria = _create_date_objects(basic_criteria)
-    filter_criteria = _build_filter_criteria(scoring_criteria)
-
-    return scoring_criteria, filter_criteria
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Interactive user input helper, never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def get_user_criteria(
+#     args: Optional[argparse.Namespace] = None,
+# ) -> tuple[dict[str, Any], dict[str, Any]]:
+#     """Get search criteria from user input or automated input args."""
+#     logger.info("\n--- Enter Search Criteria (Press Enter to skip optional fields) ---")
+#
+#     get_input = _create_input_getter(args)
+#     basic_criteria = _collect_basic_criteria(get_input)
+#     scoring_criteria = _create_date_objects(basic_criteria)
+#     filter_criteria = _build_filter_criteria(scoring_criteria)
+#
+#     return scoring_criteria, filter_criteria
+# =============================================================================
 
 
 def log_criteria_summary(scoring_criteria: dict[str, Any], date_flex: dict[str, Any]) -> None:
