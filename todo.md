@@ -22,7 +22,7 @@ The codebase is **production-ready** with the following verification completed:
 The following safety mechanisms are in place and tested:
 
 1. **SafetyGuard** - Critical alert detection runs BEFORE any AI work
-2. **OptOutDetector** - Multi-layer pattern matching for opt-out detection  
+2. **OptOutDetector** - Multi-layer pattern matching for opt-out detection
 3. **DraftReply Queue** - All messages require approval before sending
 4. **Person.automation_enabled** - Per-person messaging control
 5. **ConversationState** - Status tracking (ACTIVE, OPT_OUT, HUMAN_REVIEW, PAUSED)
