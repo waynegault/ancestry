@@ -41,9 +41,25 @@ import ast
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any
+from tempfile import TemporaryDirectory
+from typing import Any, cast
+
+from testing.test_framework import TestSuite, create_standard_test_runner
 
 GRAPH_PATH = REPO_ROOT / "docs" / "code_graph.json"
+
+
+DEFAULT_DOCUMENTATION: dict[str, str] = {
+    "primary": "readme.md - Comprehensive project documentation",
+    "codebase": "docs/visualize_code_graph.html - Interactive code visualization",
+    "generator": "scripts/update_code_graph.py - Regenerates docs/code_graph.json",
+    "maintenance": "scripts/maintain_code_graph.py - Small maintenance operations on docs/code_graph.json",
+    "testing": "testing/test_framework.py - TestSuite framework and standard test runner",
+    "monitoring": "docs/grafana/ - Grafana dashboards and setup scripts",
+    "development": ".github/copilot-instructions.md - AI development guidelines",
+    "tasks": "todo.md - Implementation roadmap and production readiness status",
+    "audit": "docs/specs/mission_execution_spec.md - Mission scope, gaps, acceptance criteria",
+}
 
 # Directories to exclude from scanning
 SKIP_DIRS = {
@@ -79,7 +95,7 @@ class CodeGraphUpdater:
         self.scanned_nodes: dict[str, dict[str, Any]] = {}
         self.generated_links: list[dict[str, str]] = []
 
-    def load_current_graph(self):
+    def load_current_graph(self) -> None:
         """Loads existing graph to preserve metadata."""
         if not self.graph_path.exists():
             print(f"Graph file not found at {self.graph_path}, creating new.")
@@ -92,7 +108,7 @@ class CodeGraphUpdater:
             for node in data.get("nodes", []):
                 self.current_nodes[node["id"]] = node
 
-    def scan_codebase(self):
+    def scan_codebase(self) -> None:
         """Walks the codebase and parses Python files."""
         print(f"Scanning from {self.root_dir}...")
         for root, dirs, files in os.walk(self.root_dir):
@@ -227,91 +243,174 @@ class CodeGraphUpdater:
 
         GraphVisitor(self).visit(tree)
 
-    def update_graph(self):
+    def _merge_nodes(self) -> tuple[list[dict[str, Any]], int, int, int]:
+        final_nodes: list[dict[str, Any]] = []
+        updated_count = 0
+        new_count = 0
+
+        sorted_scanned_ids = sorted(self.scanned_nodes.keys())
+        preserve_fields = ["mechanism", "quality", "concerns", "opportunities", "tests", "notes", "summary"]
+
+        for node_id in sorted_scanned_ids:
+            new_node = self.scanned_nodes[node_id]
+            if node_id in self.current_nodes:
+                current = self.current_nodes[node_id]
+                merged = new_node.copy()
+                for field in preserve_fields:
+                    if current.get(field) and current.get(field) != "new":
+                        merged[field] = current[field]
+                final_nodes.append(merged)
+                updated_count += 1
+                continue
+
+            if new_node["summary"] == "Python source file.":
+                new_node["summary"] = f"Module {new_node['name']}"
+            final_nodes.append(new_node)
+            new_count += 1
+
+        removed_count = sum(1 for old_id in self.current_nodes if old_id not in self.scanned_nodes)
+        return final_nodes, updated_count, new_count, removed_count
+
+    def _build_output_data(
+        self,
+        final_nodes: list[dict[str, Any]],
+        new_count: int,
+        removed_count: int,
+    ) -> dict[str, Any]:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {
+            "metadata": {
+                "schemaVersion": "1.1",
+                "generatedAt": now_iso,
+                "lastUpdated": now_iso,
+                "description": "Code structure knowledge graph for Ancestry research automation platform.",
+                "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
+                "recentUpdates": f"Automated update: {new_count} added, {removed_count} removed.",
+                "documentation": DEFAULT_DOCUMENTATION,
+            },
+            "nodes": final_nodes,
+            "links": self.generated_links,
+        }
+
+    def _apply_existing_metadata(
+        self,
+        output_data: dict[str, Any],
+        *,
+        new_count: int,
+        updated_count: int,
+        removed_count: int,
+    ) -> None:
+        if not self.graph_path.exists():
+            return
+
+        with self.graph_path.open(encoding="utf-8") as f:
+            orig_data = json.load(f)
+        if "metadata" not in orig_data:
+            return
+
+        output_data["metadata"] = orig_data["metadata"]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        output_data["metadata"]["generatedAt"] = now_iso
+        output_data["metadata"]["lastUpdated"] = now_iso
+        output_data["metadata"]["scope"] = (
+            "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers."
+        )
+        output_data["metadata"]["recentUpdates"] = (
+            f"{datetime.now().strftime('%Y-%m-%d')}: Automated scan. {new_count} new, {updated_count} updated, {removed_count} removed. {len(self.generated_links)} links generated."
+        )
+
+        existing_docs = output_data["metadata"].get("documentation", {})
+        merged_docs: dict[str, str] = dict(existing_docs) if isinstance(existing_docs, dict) else {}
+        merged_docs.update(DEFAULT_DOCUMENTATION)
+        output_data["metadata"]["documentation"] = merged_docs
+
+    def update_graph(self) -> None:
         self.load_current_graph()
 
         # Override simple scan with visitor scan
         self.scan_codebase()
 
-        # Merge
-        final_nodes: list[dict[str, Any]] = []
-        updated_count = 0
-        new_count = 0
-        removed_count = 0
-
-        # Current nodes that were found in scan -> Update but keep metadata
-        # Current nodes NOT found in scan -> Remove (or move to Removed category if complex, but lets remove for now)
-
-        # Sort scanned nodes by ID to maintain order
-        sorted_scanned_ids = sorted(self.scanned_nodes.keys())
-
-        for node_id in sorted_scanned_ids:
-            new_node = self.scanned_nodes[node_id]
-            if node_id in self.current_nodes:
-                # Merge: keep manual fields from current
-                current = self.current_nodes[node_id]
-                merged = new_node.copy()
-                # Fields to preserve from manual entry being "Truth"
-                preserve_fields = ["mechanism", "quality", "concerns", "opportunities", "tests", "notes", "summary"]
-                for field in preserve_fields:
-                    if current.get(field) and current.get(field) != "new":  # Don't overwrite if it was just "new"
-                        merged[field] = current[field]
-                final_nodes.append(merged)
-                updated_count += 1
-            else:
-                # improved summary for totally new files if empty
-                if new_node["summary"] == "Python source file.":
-                    new_node["summary"] = f"Module {new_node['name']}"
-                final_nodes.append(new_node)
-                new_count += 1
-
-        # Calculate Removed
-        for old_id in self.current_nodes:
-            if old_id not in self.scanned_nodes:
-                removed_count += 1
+        final_nodes, updated_count, new_count, removed_count = self._merge_nodes()
 
         print(
             f"Graph update complete: {len(final_nodes)} nodes (Updated: {updated_count}, New: {new_count}, Removed: {removed_count})"
         )
 
-        # Construct final JSON
-        output_data = {
-            "metadata": {
-                "schemaVersion": "1.1",
-                "generatedAt": datetime.now(timezone.utc).isoformat(),
-                "lastUpdated": datetime.now(timezone.utc).isoformat(),
-                "description": "Code structure knowledge graph for Ancestry research automation platform.",
-                "scope": "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers.",
-                "recentUpdates": f"Automated update: {new_count} added, {removed_count} removed.",
-                "documentation": self.current_nodes.get("metadata", {}).get(
-                    "documentation", {}
-                ),  # Try to preserve, but accessing flat nodes dict won't work.
-                # Need to load metadata separately.
-            },
-            "nodes": final_nodes,
-            "links": self.generated_links,  # Use generated links from AST parsing
-        }
+        output_data = self._build_output_data(final_nodes, new_count=new_count, removed_count=removed_count)
 
         print(f"Generated {len(self.generated_links)} links from code structure.")
 
-        # Recover metadata and links from original file if possible
-        if self.graph_path.exists():
-            with self.graph_path.open(encoding="utf-8") as f:
-                orig_data = json.load(f)
-                if "metadata" in orig_data:
-                    output_data["metadata"] = orig_data["metadata"]
-                    now_iso = datetime.now(timezone.utc).isoformat()
-                    output_data["metadata"]["generatedAt"] = now_iso
-                    output_data["metadata"]["lastUpdated"] = now_iso
-                    output_data["metadata"]["scope"] = (
-                        "Complete project codebase analysis including core/*, actions, utilities, and AI integration layers."
-                    )
-                    output_data["metadata"]["recentUpdates"] = (
-                        f"{datetime.now().strftime('%Y-%m-%d')}: Automated scan. {new_count} new, {updated_count} updated, {removed_count} removed. {len(self.generated_links)} links generated."
-                    )
+        self._apply_existing_metadata(
+            output_data,
+            new_count=new_count,
+            updated_count=updated_count,
+            removed_count=removed_count,
+        )
 
         with self.graph_path.open("w", encoding="utf-8") as f:
             json.dump(output_data, f, indent=2)
+
+
+def _assert_metadata_documentation_merges_and_overrides() -> None:
+    with TemporaryDirectory() as tmp:
+        root_dir = Path(tmp)
+        (root_dir / "pkg").mkdir(parents=True, exist_ok=True)
+        (root_dir / "pkg" / "sample.py").write_text(
+            """\
+def hello(name: str) -> str:
+    return f\"Hello {name}\"
+""",
+            encoding="utf-8",
+        )
+
+        graph_path = root_dir / "docs" / "code_graph.json"
+        graph_path.parent.mkdir(parents=True, exist_ok=True)
+        graph_path.write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "schemaVersion": "1.1",
+                        "documentation": {
+                            "testing": "test_examples/README.md - BAD STALE PATH",
+                            "extra": "keep-me",
+                        },
+                    },
+                    "nodes": [],
+                    "links": [],
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        updater = CodeGraphUpdater(root_dir=root_dir, graph_path=graph_path)
+        updater.update_graph()
+
+        updated = json.loads(graph_path.read_text(encoding="utf-8"))
+        docs = updated.get("metadata", {}).get("documentation", {})
+        assert isinstance(docs, dict)
+
+        docs_typed = cast(dict[str, str], docs)
+        assert docs_typed.get("testing") == DEFAULT_DOCUMENTATION["testing"]
+        assert docs_typed.get("extra") == "keep-me"
+        assert docs_typed.get("generator") == DEFAULT_DOCUMENTATION["generator"]
+
+
+def module_tests() -> bool:
+    suite = TestSuite("scripts.update_code_graph", "scripts/update_code_graph.py")
+    suite.start_suite()
+    suite.run_test(
+        test_name="Merges documentation metadata",
+        test_func=_assert_metadata_documentation_merges_and_overrides,
+        test_summary="Ensure docs/code_graph.json metadata stays accurate",
+        functions_tested="CodeGraphUpdater.update_graph",
+        method_description="Generate graph in a temp repo with stale metadata, then assert canonical keys overwrite stale values while preserving extras",
+        expected_outcome="documentation.testing points to testing/test_framework.py; extra keys preserved",
+    )
+    return suite.finish_suite()
+
+
+run_comprehensive_tests = create_standard_test_runner(module_tests)
 
 
 if __name__ == "__main__":
