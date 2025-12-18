@@ -38,13 +38,11 @@ from typing import Any, Callable, Optional, Union, cast
 # (none currently needed)
 # === LOCAL IMPORTS ===
 from api.api_utils import (
-    call_getladder_api,
     call_suggest_api,
     call_treesui_list_api,
 )
 from config import config_schema
 from core.session_manager import SessionManager
-from research.relationship_utils import format_api_relationship_path
 from testing.test_utilities import create_standard_test_runner
 
 # === MODULE LOGGER ===

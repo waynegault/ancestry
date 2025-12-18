@@ -38,7 +38,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
 # === LOCAL IMPORTS ===
-from ai.ai_interface import assess_engagement, classify_message_intent
+from ai.ai_interface import assess_engagement
 
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from caching.cache_manager import (
