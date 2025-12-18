@@ -34,7 +34,6 @@ from api.tree_update import (
     TreeUpdateResult,
     TreeUpdateService,
 )
-from config import config_schema
 from core.database import (
     FactStatusEnum,
     FactTypeEnum,
@@ -114,7 +113,8 @@ def run_tree_updates(
 
     logger.info(f"🌳 Starting tree updates (mode={mode.value}, limit={limit})")
 
-    with session_manager.db_transaction() as db_session:
+    with session_manager.db_manager.get_session_context() as db_session:
+        assert db_session is not None, "Failed to get database session"
         # Query pending suggested facts
         query = db_session.query(SuggestedFact).filter(SuggestedFact.status == FactStatusEnum.PENDING)
 
@@ -369,7 +369,8 @@ def list_pending_facts(
     Returns:
         List of pending facts as dictionaries
     """
-    with session_manager.db_transaction() as db_session:
+    with session_manager.db_manager.get_session_context() as db_session:
+        assert db_session is not None, "Failed to get database session"
         return ReviewQueue.list_pending_suggested_facts(db_session, limit)
 
 
@@ -428,7 +429,7 @@ def coord(
     """
     # Get tree ID from config if not provided
     if not tree_id:
-        tree_id = config_schema.ancestry.tree_id
+        tree_id = session_manager.my_tree_id
         if not tree_id:
             logger.error("No tree_id provided and none configured")
             print("❌ Error: No tree ID configured. Set ANCESTRY_TREE_ID in .env")

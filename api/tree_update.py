@@ -159,18 +159,19 @@ class TreeUpdateService:
 
     def _get_user_id_from_session(self) -> str:
         """Extract user ID from active session."""
-        # Try to get from LAU cookie or config
+        # Try to get from session manager profile ID
         try:
-            cookies = self.session_manager.get_session_cookies()
-            if cookies and "LAU" in cookies:
-                return cookies["LAU"]
+            if hasattr(self.session_manager, "my_profile_id") and self.session_manager.my_profile_id:
+                return self.session_manager.my_profile_id
+            if hasattr(self.session_manager, "my_uuid") and self.session_manager.my_uuid:
+                return self.session_manager.my_uuid
         except Exception:
             pass
 
         # Fallback to config
-        from config.config_manager import config_manager
+        from config import config_schema
 
-        return config_manager.get("ANCESTRY_USER_ID", "")
+        return getattr(config_schema, "ancestry_user_id", "") or ""
 
     def _build_url(
         self,
@@ -392,7 +393,7 @@ class TreeUpdateService:
         """
         url = self._build_url("addperson", tree_id, source_person_id)
 
-        values = {
+        values: dict[str, Any] = {
             "fname": new_person_data.get("fname", ""),
             "lname": new_person_data.get("lname", ""),
             "sufname": new_person_data.get("sufname", ""),

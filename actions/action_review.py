@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from sqlalchemy.orm import Session
 
@@ -558,8 +558,9 @@ class ReviewQueue:
                 return False, "tree_id and session_manager required for tree updates"
 
             from api.tree_update import TreeUpdateResult, TreeUpdateService
+            from core.session_manager import SessionManager as SM
 
-            tree_service = TreeUpdateService(session_manager)
+            tree_service = TreeUpdateService(cast(SM, session_manager))
             result = tree_service.apply_suggested_fact(db_session, fact, tree_id)
 
             if result.result != TreeUpdateResult.SUCCESS:
@@ -608,7 +609,7 @@ class ReviewQueue:
     def list_pending_suggested_facts(
         db_session: Session,
         limit: int = 20,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """
         List pending suggested facts awaiting review.
 
@@ -630,7 +631,7 @@ class ReviewQueue:
             .all()
         )
 
-        result = []
+        result: list[dict[str, Any]] = []
         for fact, person in facts:
             result.append(
                 {

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional, Protocol
+from typing import Any, Optional, Protocol, cast
 
 from api.tree_update import (
     FACT_TYPE_TO_EVENT_TYPE,
@@ -24,22 +24,12 @@ from api.tree_update import (
     TreeUpdateResponse,
     TreeUpdateResult,
     TreeUpdateService,
-    apply_approved_facts_batch,
 )
 from core.database import (
-    FactStatusEnum,
     FactTypeEnum,
-    Person,
-    SuggestedFact,
-    TreeUpdateLog,
-    TreeUpdateStatusEnum,
 )
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
-
-if TYPE_CHECKING:
-    from core.session_manager import SessionManager
-
 
 # =============================================================================
 # Type Protocols for Testing
@@ -48,6 +38,12 @@ if TYPE_CHECKING:
 
 class APIManagerProtocol(Protocol):
     """Protocol for API manager required by TreeUpdateService."""
+
+    requests: list[dict[str, Any]]  # For testing: track requests made
+
+    def queue_response(self, response: Any) -> None:
+        """Queue a response to be returned on next request (testing only)."""
+        ...
 
     def post(
         self,
@@ -74,8 +70,14 @@ class TreeUpdateSessionProtocol(Protocol):
 
     api_manager: APIManagerProtocol
 
-    def get_session_cookies(self) -> dict[str, str]:
-        """Return session cookies."""
+    @property
+    def my_profile_id(self) -> str:
+        """Return user's profile ID."""
+        ...
+
+    @property
+    def my_uuid(self) -> str:
+        """Return user's UUID."""
         ...
 
 
@@ -194,13 +196,15 @@ class MockSessionManager(TreeUpdateSessionProtocol):
         self.api_manager = MockAPIManager()
         self._user_id = "test_user_123"
 
-    def get_session_cookies(self) -> dict[str, str]:
-        """Return mock session cookies."""
-        return {
-            "LAU": self._user_id,
-            "ATT": "mock_att_token",
-            "SecureATT": "mock_secure_att",
-        }
+    @property
+    def my_profile_id(self) -> str:
+        """Return mock profile ID."""
+        return self._user_id
+
+    @property
+    def my_uuid(self) -> str:
+        """Return mock UUID."""
+        return "mock_uuid_123"
 
 
 # =============================================================================
@@ -213,7 +217,7 @@ def _test_update_person_success() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_success_response({"updated": True}))
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Cast for type checker
     result = service.update_person(
         tree_id="tree123",
         person_id="person456",
@@ -238,7 +242,7 @@ def _test_update_person_failure() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_error_response(500, "Server error"))
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Cast for type checker
     result = service.update_person(
         tree_id="tree123",
         person_id="person456",
@@ -255,7 +259,7 @@ def _test_add_fact_success() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_success_response({"assertionId": "12345"}))
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Cast for type checker
     result = service.add_fact(
         tree_id="tree123",
         person_id="person456",
@@ -279,7 +283,7 @@ def _test_add_person_with_relationship() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_new_person_response("new_person_789"))
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
     result = service.add_person_with_relationship(
         tree_id="tree123",
         source_person_id="person456",
@@ -309,7 +313,7 @@ def _test_link_existing_person() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_success_response())
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
     result = service.link_existing_person(
         tree_id="tree123",
         source_person_id="person456",
@@ -337,7 +341,7 @@ def _test_remove_relationship() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_success_response())
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
     result = service.remove_relationship(
         tree_id="tree123",
         source_person_id="person456",
@@ -358,7 +362,7 @@ def _test_change_relationship_type() -> None:
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
     mock_sm.api_manager.queue_response(create_success_response())
 
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
     result = service.change_relationship_type(
         tree_id="tree123",
         source_person_id="person456",
@@ -395,7 +399,7 @@ def _test_fact_type_mapping() -> None:
 def _test_url_building() -> None:
     """Test API URL construction."""
     mock_sm: TreeUpdateSessionProtocol = MockSessionManager()
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
 
     # Force user_id to be set
     service._user_id = "test_user"
@@ -419,9 +423,15 @@ def _test_api_request_error_handling() -> None:
     class FailingAPIManager(APIManagerProtocol):
         """API manager that always raises connection errors."""
 
+        requests: list[dict[str, Any]] = []  # Protocol attribute
+
+        def queue_response(self, response: dict[str, Any]) -> None:
+            """Protocol method - not used for failure tests."""
+            pass
+
         def post(  # noqa: PLR6301
             self,
-            _url: str,
+            url: str,
             json: Optional[dict[str, Any]] = None,  # noqa: ARG002
             headers: Optional[dict[str, str]] = None,  # noqa: ARG002
             **_kwargs: Any,
@@ -430,7 +440,7 @@ def _test_api_request_error_handling() -> None:
 
         def get(  # noqa: PLR6301
             self,
-            _url: str,
+            url: str,
             headers: Optional[dict[str, str]] = None,  # noqa: ARG002
             **_kwargs: Any,
         ) -> Any:
@@ -442,11 +452,16 @@ def _test_api_request_error_handling() -> None:
         def __init__(self) -> None:
             self.api_manager = FailingAPIManager()
 
-        def get_session_cookies(self) -> dict[str, str]:  # noqa: PLR6301
-            return {"LAU": "test_user"}
+        @property
+        def my_profile_id(self) -> str:
+            return "test_user"
+
+        @property
+        def my_uuid(self) -> str:
+            return "test_uuid"
 
     mock_sm: TreeUpdateSessionProtocol = FailingSessionManager()
-    service = TreeUpdateService(mock_sm)  # Protocol-compatible mock
+    service = TreeUpdateService(cast(Any, mock_sm))  # Protocol-compatible mock
 
     # This should not raise, but return error result
     success, response, error = service._make_api_request(
