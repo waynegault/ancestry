@@ -558,9 +558,9 @@ class ReviewQueue:
                 return False, "tree_id and session_manager required for tree updates"
 
             from api.tree_update import TreeUpdateResult, TreeUpdateService
-            from core.session_manager import SessionManager as SM
+            from core.session_manager import SessionManager
 
-            tree_service = TreeUpdateService(cast(SM, session_manager))
+            tree_service = TreeUpdateService(cast(SessionManager, session_manager))
             result = tree_service.apply_suggested_fact(db_session, fact, tree_id)
 
             if result.result != TreeUpdateResult.SUCCESS:

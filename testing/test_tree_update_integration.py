@@ -423,7 +423,8 @@ def _test_api_request_error_handling() -> None:
     class FailingAPIManager(APIManagerProtocol):
         """API manager that always raises connection errors."""
 
-        requests: list[dict[str, Any]] = []  # Protocol attribute
+        def __init__(self) -> None:
+            self.requests: list[dict[str, Any]] = []  # Protocol attribute
 
         def queue_response(self, response: dict[str, Any]) -> None:
             """Protocol method - not used for failure tests."""
@@ -432,18 +433,20 @@ def _test_api_request_error_handling() -> None:
         def post(  # noqa: PLR6301
             self,
             url: str,
-            json: Optional[dict[str, Any]] = None,  # noqa: ARG002
-            headers: Optional[dict[str, str]] = None,  # noqa: ARG002
+            json: Optional[dict[str, Any]] = None,
+            headers: Optional[dict[str, str]] = None,
             **_kwargs: Any,
         ) -> Any:
+            _ = (url, json, headers)  # Unused parameters for failure simulation
             raise ConnectionError("Network unavailable")
 
         def get(  # noqa: PLR6301
             self,
             url: str,
-            headers: Optional[dict[str, str]] = None,  # noqa: ARG002
+            headers: Optional[dict[str, str]] = None,
             **_kwargs: Any,
         ) -> Any:
+            _ = (url, headers)  # Unused parameters for failure simulation
             raise ConnectionError("Network unavailable")
 
     class FailingSessionManager(TreeUpdateSessionProtocol):
