@@ -2629,7 +2629,7 @@ class PersonProcessor:
         if not tree_service:
             return "No family members data available (TreeQueryService not initialized)."
 
-        parts = []
+        parts: list[str] = []
         for result in lookup_results:
             if result.found and result.person_id:
                 try:
