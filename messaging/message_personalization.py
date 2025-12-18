@@ -43,7 +43,8 @@ except ImportError:
     def is_metrics_enabled() -> bool:
         return False
 
-    def metrics() -> Any:  # type: ignore[misc]
+    def metrics() -> Optional[Any]:
+        """Fallback metrics function when observability is not available."""
         return None
 
 
