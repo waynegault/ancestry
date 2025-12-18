@@ -1089,59 +1089,65 @@ def analyze_template_effectiveness(
         return {"error": str(e)}
 
 
-def print_template_effectiveness_report(days_back: int = 30) -> None:
-    """
-    Print a formatted report of template effectiveness.
-
-    Args:
-        days_back: Number of days to analyze
-    """
-    logger.info("=" * 60)
-    logger.info("TEMPLATE EFFECTIVENESS ANALYSIS")
-    logger.info("=" * 60)
-
-    analysis = analyze_template_effectiveness(days_back=days_back)
-
-    if "error" in analysis:
-        logger.error(f"Analysis failed: {analysis['error']}")
-        return
-
-    template_stats = analysis.get("template_stats", {})
-
-    if not template_stats:
-        logger.info("No template usage data found for the specified period.")
-        return
-
-    logger.info(f"Analysis Period: Last {days_back} days")
-    logger.info(f"Templates Analyzed: {len(template_stats)}")
-    logger.info("")
-
-    # Sort templates by response rate
-    sorted_templates = sorted(template_stats.items(), key=lambda x: x[1]["response_rate"], reverse=True)
-
-    logger.info("TEMPLATE PERFORMANCE RANKING:")
-    logger.info("-" * 60)
-    logger.info(f"{'Template':<25} {'Sent':<6} {'Resp':<6} {'Rate':<8} {'Avg Hours':<10}")
-    logger.info("-" * 60)
-
-    for template_name, stats in sorted_templates:
-        logger.info(
-            f"{template_name:<25} {stats['sent']:<6} {stats['responses']:<6} "
-            f"{stats['response_rate']:<7.1f}% {stats['avg_response_time_hours']:<9.1f}"
-        )
-
-    logger.info("-" * 60)
-
-    # Summary statistics
-    total_sent = sum(stats["sent"] for stats in template_stats.values())
-    total_responses = sum(stats["responses"] for stats in template_stats.values())
-    overall_rate = (total_responses / total_sent * 100) if total_sent > 0 else 0
-
-    logger.info("OVERALL STATISTICS:")
-    logger.info(f"Total Messages Sent: {total_sent}")
-    logger.info(f"Total Responses: {total_responses}")
-    logger.info(f"Overall Response Rate: {overall_rate:.1f}%")
-    logger.info("=" * 60)
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Report function defined but never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def print_template_effectiveness_report(days_back: int = 30) -> None:
+#     """
+#     Print a formatted report of template effectiveness.
+#
+#     Args:
+#         days_back: Number of days to analyze
+#     """
+#     logger.info("=" * 60)
+#     logger.info("TEMPLATE EFFECTIVENESS ANALYSIS")
+#     logger.info("=" * 60)
+#
+#     analysis = analyze_template_effectiveness(days_back=days_back)
+#
+#     if "error" in analysis:
+#         logger.error(f"Analysis failed: {analysis['error']}")
+#         return
+#
+#     template_stats = analysis.get("template_stats", {})
+#
+#     if not template_stats:
+#         logger.info("No template usage data found for the specified period.")
+#         return
+#
+#     logger.info(f"Analysis Period: Last {days_back} days")
+#     logger.info(f"Templates Analyzed: {len(template_stats)}")
+#     logger.info("")
+#
+#     # Sort templates by response rate
+#     sorted_templates = sorted(template_stats.items(), key=lambda x: x[1]["response_rate"], reverse=True)
+#
+#     logger.info("TEMPLATE PERFORMANCE RANKING:")
+#     logger.info("-" * 60)
+#     logger.info(f"{'Template':<25} {'Sent':<6} {'Resp':<6} {'Rate':<8} {'Avg Hours':<10}")
+#     logger.info("-" * 60)
+#
+#     for template_name, stats in sorted_templates:
+#         logger.info(
+#             f"{template_name:<25} {stats['sent']:<6} {stats['responses']:<6} "
+#             f"{stats['response_rate']:<7.1f}% {stats['avg_response_time_hours']:<9.1f}"
+#         )
+#
+#     logger.info("-" * 60)
+#
+#     # Summary statistics
+#     total_sent = sum(stats["sent"] for stats in template_stats.values())
+#     total_responses = sum(stats["responses"] for stats in template_stats.values())
+#     overall_rate = (total_responses / total_sent * 100) if total_sent > 0 else 0
+#
+#     logger.info("OVERALL STATISTICS:")
+#     logger.info(f"Total Messages Sent: {total_sent}")
+#     logger.info(f"Total Responses: {total_responses}")
+#     logger.info(f"Overall Response Rate: {overall_rate:.1f}%")
+#     logger.info("=" * 60)
+# =============================================================================
 
 
 # ------------------------------------------------------------------------------
@@ -2912,13 +2918,19 @@ def _build_shared_match_cluster_suggestion(
         return "", {}
 
 
-def _inject_research_suggestions(draft_text: str, suggestions: str) -> str:
-    """Append formatted research suggestions to a draft if provided."""
-
-    if not suggestions.strip():
-        return draft_text
-
-    return f"{draft_text}\n\n---\nResearch Suggestions:\n{suggestions.strip()}"
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Helper function defined but never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def _inject_research_suggestions(draft_text: str, suggestions: str) -> str:
+#     """Append formatted research suggestions to a draft if provided."""
+#
+#     if not suggestions.strip():
+#         return draft_text
+#
+#     return f"{draft_text}\n\n---\nResearch Suggestions:\n{suggestions.strip()}"
+# =============================================================================
 
 
 def _record_contextual_experiment_result(

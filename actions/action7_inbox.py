@@ -1296,18 +1296,24 @@ class InboxProcessor:
             "conversations_needing_processing": 0,
         }
 
-    def _check_browser_health(self, current_batch_num: int, state: dict[str, Any]) -> Optional[str]:
-        """Check browser health and attempt recovery if needed. Updates state with death/recovery counts."""
-        if current_batch_num % 5 == 0 and not self.session_manager.check_browser_health():
-            logger.warning(f"Browser health check failed at batch {current_batch_num}")
-            state["session_deaths"] += 1
-            if self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
-                logger.info("Session recovered successfully")
-                state["session_recoveries"] += 1
-                return None
-            logger.critical(f"Browser recovery failed at batch {current_batch_num} - halting inbox processing")
-            return "Browser Recovery Failed"
-        return None
+    # =========================================================================
+    # DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+    # Reason: Methods defined but never called in production
+    # See: todo.md "Technical Debt" section
+    # =========================================================================
+    # def _check_browser_health(self, current_batch_num: int, state: dict[str, Any]) -> Optional[str]:
+    #     """Check browser health and attempt recovery if needed. Updates state with death/recovery counts."""
+    #     if current_batch_num % 5 == 0 and not self.session_manager.check_browser_health():
+    #         logger.warning(f"Browser health check failed at batch {current_batch_num}")
+    #         state["session_deaths"] += 1
+    #         if self.session_manager.attempt_browser_recovery("Action 7 Browser Recovery"):
+    #             logger.info("Session recovered successfully")
+    #             state["session_recoveries"] += 1
+    #             return None
+    #         logger.critical(f"Browser recovery failed at batch {current_batch_num} - halting inbox processing")
+    #         return "Browser Recovery Failed"
+    #     return None
+    # =========================================================================
 
     def _validate_session(self) -> None:
         """Validate session before API call."""
@@ -1315,15 +1321,21 @@ class InboxProcessor:
             logger.error("Session became invalid during inbox processing loop.")
             raise WebDriverException("Session invalid before overview batch fetch")
 
-    def _calculate_api_limit(self, items_processed_before_stop: int) -> tuple[int, Optional[str]]:
-        """Calculate API limit for current batch considering overall limit."""
-        current_limit = self.api_batch_size
-        if self.max_inbox_limit > 0:
-            remaining_allowed = self.max_inbox_limit - items_processed_before_stop
-            if remaining_allowed <= 0:
-                return 0, f"Inbox Limit ({self.max_inbox_limit})"
-            current_limit = min(self.api_batch_size, remaining_allowed)
-        return current_limit, None
+    # =========================================================================
+    # DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+    # Reason: Method defined but never called in production
+    # See: todo.md "Technical Debt" section
+    # =========================================================================
+    # def _calculate_api_limit(self, items_processed_before_stop: int) -> tuple[int, Optional[str]]:
+    #     """Calculate API limit for current batch considering overall limit."""
+    #     current_limit = self.api_batch_size
+    #     if self.max_inbox_limit > 0:
+    #         remaining_allowed = self.max_inbox_limit - items_processed_before_stop
+    #         if remaining_allowed <= 0:
+    #             return 0, f"Inbox Limit ({self.max_inbox_limit})"
+    #         current_limit = min(self.api_batch_size, remaining_allowed)
+    #     return current_limit, None
+    # =========================================================================
 
     @staticmethod
     def _handle_empty_batch(next_cursor_from_api: Optional[str]) -> tuple[bool, Optional[str]]:
@@ -1675,46 +1687,52 @@ class InboxProcessor:
 
         return (False, None, None)
 
-    def _classify_message_with_ai(
-        self, context_messages: list[dict[str, Any]], my_pid_lower: Optional[str], api_conv_id: str
-    ) -> Optional[str]:
-        """Classify message using AI with recovery and guardrails.
-
-        Phase 2 Enhancement: Now checks Critical Alerts BEFORE AI classification.
-        """
-        if not my_pid_lower:
-            logger.warning(f"Cannot classify message for {api_conv_id}: my_pid_lower is None")
-            return None
-
-        # Phase 2: Check Critical Alerts FIRST (per reply_management.md spec)
-        should_skip_ai, override_label, _alert_category = self._check_critical_alerts(
-            context_messages, my_pid_lower, api_conv_id
-        )
-        if should_skip_ai and override_label:
-            logger.warning(
-                f"🛑 Skipping AI classification for {api_conv_id} due to Critical Alert. "
-                f"Using override label: {override_label}"
-            )
-            return override_label
-
-        formatted_context = self._format_context_for_ai(context_messages, my_pid_lower)
-
-        if not self.session_manager.is_sess_valid():
-            raise WebDriverException(f"Session invalid before AI classification call for ConvID {api_conv_id}")
-
-        @with_api_recovery(max_attempts=3, base_delay=2.0)
-        def _classify_with_recovery(context: str = formatted_context) -> Optional[str]:
-            return classify_message_intent(context, self.session_manager)
-
-        ai_result = _classify_with_recovery()
-        ai_sentiment_result = self._coerce_ai_result_to_string(ai_result)
-
-        final_label = self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
-
-        if final_label:
-            logger.info(f"AI Classification for {api_conv_id}: {final_label} (Original: {ai_sentiment_result})")
-
-        return final_label
+    # =========================================================================
+    # DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+    # Reason: Method defined but never called in production
+    # See: todo.md "Technical Debt" section
+    # =========================================================================
+    # def _classify_message_with_ai(
+    #     self, context_messages: list[dict[str, Any]], my_pid_lower: Optional[str], api_conv_id: str
+    # ) -> Optional[str]:
+    #     """Classify message using AI with recovery and guardrails.
+    #
+    #     Phase 2 Enhancement: Now checks Critical Alerts BEFORE AI classification.
+    #     """
+    #     if not my_pid_lower:
+    #         logger.warning(f"Cannot classify message for {api_conv_id}: my_pid_lower is None")
+    #         return None
+    #
+    #     # Phase 2: Check Critical Alerts FIRST (per reply_management.md spec)
+    #     should_skip_ai, override_label, _alert_category = self._check_critical_alerts(
+    #         context_messages, my_pid_lower, api_conv_id
+    #     )
+    #     if should_skip_ai and override_label:
+    #         logger.warning(
+    #             f"🛑 Skipping AI classification for {api_conv_id} due to Critical Alert. "
+    #             f"Using override label: {override_label}"
+    #         )
+    #         return override_label
+    #
+    #     formatted_context = self._format_context_for_ai(context_messages, my_pid_lower)
+    #
+    #     if not self.session_manager.is_sess_valid():
+    #         raise WebDriverException(f"Session invalid before AI classification call for ConvID {api_conv_id}")
+    #
+    #     @with_api_recovery(max_attempts=3, base_delay=2.0)
+    #     def _classify_with_recovery(context: str = formatted_context) -> Optional[str]:
+    #         return classify_message_intent(context, self.session_manager)
+    #
+    #     ai_result = _classify_with_recovery()
+    #     ai_sentiment_result = self._coerce_ai_result_to_string(ai_result)
+    #
+    #     final_label = self._downgrade_if_non_actionable(ai_sentiment_result, context_messages, my_pid_lower)
+    #
+    #     if final_label:
+    #         logger.info(f"AI Classification for {api_conv_id}: {final_label} (Original: {ai_sentiment_result})")
+    #
+    #     return final_label
+    # =========================================================================
 
     @staticmethod
     def _coerce_ai_result_to_string(ai_result: Any) -> Optional[str]:
@@ -1938,23 +1956,29 @@ class InboxProcessor:
             snippets.append(f"{dir_label}: {content[:500]}")
         return "\n\n".join(snippets)
 
-    @staticmethod
-    def _build_follow_up_context(
-        conversation_history_str: str,
-        latest_message: str,
-        direction: MessageDirectionEnum,
-        conversation_phase: Optional[Any],
-        ai_sentiment: Optional[str],
-    ) -> dict[str, str]:
-        phase_str = conversation_phase.value if conversation_phase else "unknown"
-        direction_str = "IN" if direction == MessageDirectionEnum.IN else "OUT"
-        return {
-            "conversation_history": conversation_history_str,
-            "latest_message": latest_message[:1000],
-            "direction": direction_str,
-            "conversation_phase": phase_str,
-            "ai_sentiment": ai_sentiment or "UNKNOWN",
-        }
+    # =========================================================================
+    # DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+    # Reason: Method defined but never called in production
+    # See: todo.md "Technical Debt" section
+    # =========================================================================
+    # @staticmethod
+    # def _build_follow_up_context(
+    #     conversation_history_str: str,
+    #     latest_message: str,
+    #     direction: MessageDirectionEnum,
+    #     conversation_phase: Optional[Any],
+    #     ai_sentiment: Optional[str],
+    # ) -> dict[str, str]:
+    #     phase_str = conversation_phase.value if conversation_phase else "unknown"
+    #     direction_str = "IN" if direction == MessageDirectionEnum.IN else "OUT"
+    #     return {
+    #         "conversation_history": conversation_history_str,
+    #         "latest_message": latest_message[:1000],
+    #         "direction": direction_str,
+    #         "conversation_phase": phase_str,
+    #         "ai_sentiment": ai_sentiment or "UNKNOWN",
+    #     }
+    # =========================================================================
 
     def _process_follow_up_result(
         self,

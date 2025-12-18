@@ -1276,65 +1276,71 @@ def _get_reference_id_for_relationship(reference_id: Optional[str]) -> Optional[
     return reference_id if reference_id else None
 
 
-def get_api_relationship_path(
-    session_manager: SessionManager,
-    person_id: str,
-    reference_id: Optional[str] = None,
-    reference_name: Optional[str] = "Reference Person",
-    tree_id: Optional[str] = None,
-) -> str:
-    """
-    Get the relationship path between an individual and the reference person using Ancestry API.
-
-    Args:
-        session_manager: SessionManager instance with active session
-        person_id: Ancestry API person ID
-        reference_id: Optional reference person ID (default: from config)
-        reference_name: Optional reference person name (default: "Reference Person")
-        tree_id: Optional tree ID (default: from session_manager or config)
-
-    Returns:
-        Formatted relationship path string
-    """
-    # Step 1: Check if session has identifiers (browserless capable)
-    if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
-        logger.error("Essential API identifiers not available (not logged in)")
-        return "(Session not valid)"
-
-    # Step 2: Get tree ID
-    tree_id = _get_tree_id_for_relationship(session_manager, tree_id)
-    if not tree_id:
-        logger.error("No tree ID available for API relationship path")
-        return "(Tree ID not available)"
-
-    # Step 3: Get reference ID
-    reference_id = _get_reference_id_for_relationship(reference_id)
-    if not reference_id:
-        logger.error("Reference person ID not provided and not found in config")
-        return "(Reference person ID not available)"
-
-    # Step 4: Get base URL
-    base_url = config_schema.api.base_url
-
-    # Step 5: Call the getladder API to get relationship path
-    logger.info(f"Getting relationship path from {person_id} to {reference_id} in tree {tree_id}")
-    ladder_data = call_getladder_api(
-        session_manager=session_manager,
-        owner_tree_id=tree_id,
-        target_person_id=person_id,
-        base_url=base_url,
-    )
-
-    if not ladder_data:
-        logger.warning(f"No ladder data returned for person {person_id}")
-        return f"(No relationship path found to {reference_name})"
-
-    try:
-        # Format the relationship path directly using the API formatter
-        return format_api_relationship_path(ladder_data, reference_name or "Reference Person", "Individual")
-    except Exception as e:
-        logger.error(f"Error formatting relationship path: {e}", exc_info=True)
-        return f"(Error formatting relationship path: {e!s})"
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Function defined but never called in production
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# def get_api_relationship_path(
+#     session_manager: SessionManager,
+#     person_id: str,
+#     reference_id: Optional[str] = None,
+#     reference_name: Optional[str] = "Reference Person",
+#     tree_id: Optional[str] = None,
+# ) -> str:
+#     """
+#     Get the relationship path between an individual and the reference person using Ancestry API.
+#
+#     Args:
+#         session_manager: SessionManager instance with active session
+#         person_id: Ancestry API person ID
+#         reference_id: Optional reference person ID (default: from config)
+#         reference_name: Optional reference person name (default: "Reference Person")
+#         tree_id: Optional tree ID (default: from session_manager or config)
+#
+#     Returns:
+#         Formatted relationship path string
+#     """
+#     # Step 1: Check if session has identifiers (browserless capable)
+#     if not getattr(session_manager.api_manager, "has_essential_identifiers", False):
+#         logger.error("Essential API identifiers not available (not logged in)")
+#         return "(Session not valid)"
+#
+#     # Step 2: Get tree ID
+#     tree_id = _get_tree_id_for_relationship(session_manager, tree_id)
+#     if not tree_id:
+#         logger.error("No tree ID available for API relationship path")
+#         return "(Tree ID not available)"
+#
+#     # Step 3: Get reference ID
+#     reference_id = _get_reference_id_for_relationship(reference_id)
+#     if not reference_id:
+#         logger.error("Reference person ID not provided and not found in config")
+#         return "(Reference person ID not available)"
+#
+#     # Step 4: Get base URL
+#     base_url = config_schema.api.base_url
+#
+#     # Step 5: Call the getladder API to get relationship path
+#     logger.info(f"Getting relationship path from {person_id} to {reference_id} in tree {tree_id}")
+#     ladder_data = call_getladder_api(
+#         session_manager=session_manager,
+#         owner_tree_id=tree_id,
+#         target_person_id=person_id,
+#         base_url=base_url,
+#     )
+#
+#     if not ladder_data:
+#         logger.warning(f"No ladder data returned for person {person_id}")
+#         return f"(No relationship path found to {reference_name})"
+#
+#     try:
+#         # Format the relationship path directly using the API formatter
+#         return format_api_relationship_path(ladder_data, reference_name or "Reference Person", "Individual")
+#     except Exception as e:
+#         logger.error(f"Error formatting relationship path: {e}", exc_info=True)
+#         return f"(Error formatting relationship path: {e!s})"
+# =============================================================================
 
 
 def _test_module_initialization() -> None:

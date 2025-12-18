@@ -1,36 +1,25 @@
 # TODO List
 
-## Operational Enablement
-- [x] Deploy Grafana dashboards (`python scripts/deploy_dashboards.py`) - ✅ 4 dashboards deployed
 
-## Code Quality & Maintenance
-- [x] Run dead code scan (`python testing/dead_code_scan.py`) - ✅ 146 candidates in Cache/dead_code_candidates.json
-- [x] Review import audit (`python testing/import_audit.py`) - ✅ 3/3 tests passed
-- [x] Check for type ignore directives (`python testing/check_type_ignores.py`) - ✅ Zero found
-- [x] Review dead code candidates - ✅ 146 analyzed, ~120 false positives (Flask/TypedDict/mixin), 4 genuine items commented out
-
-## Documentation
-- [x] Update README.md with current capabilities - ✅ Updated mission status, test counts
-- [x] Review operator_manual.md for accuracy - ✅ No outdated content
-- [x] Generate code_graph.json updates - ✅ 6998 nodes, 6835 links
-
-## Production Readiness
-- [x] Run production guard check (`python scripts/check_production_guard.py`) - ✅ APP_MODE=dry_run (safe)
-- [x] Review rate limiting configuration - ✅ REQUESTS_PER_SECOND=0.3
-- [x] Validate session management - ✅ SessionManager, db_manager, api_manager initialized
-
----
 
 ## Technical Debt (Commented Out Dead Code)
 
 The following functions have been commented out as dead code (2025-12-18). They are preserved in case they become useful in the future.
 
 | File | Function | Reason |
-|------|----------|--------|
+| ---- | -------- | ------ |
 | `ai/ai_prompt_utils.py` | `quick_test()` | Replaced by `run_comprehensive_tests()`, never called |
 | `actions/action10.py` | `detailed_scoring_breakdown()` | Debug helper function, never called in production |
 | `actions/action10.py` | `get_user_criteria()` | Interactive user input helper, unused in production |
 | `api/api_utils.py` | `print_group()` | Debug printing helper, never called |
+| `actions/action7_inbox.py` | `_check_browser_health()` | Method defined but never called |
+| `actions/action7_inbox.py` | `_calculate_api_limit()` | Method defined but never called |
+| `actions/action7_inbox.py` | `_classify_message_with_ai()` | Method defined but never called |
+| `actions/action7_inbox.py` | `_build_follow_up_context()` | Method defined but never called |
+| `actions/action8_messaging.py` | `print_template_effectiveness_report()` | Report function never called |
+| `actions/action8_messaging.py` | `_inject_research_suggestions()` | Helper function never called |
+| `browser/selenium_utils.py` | `wait_for_element()` | Duplicate of `core/utils._wait_for_element` |
+| `api/api_search_utils.py` | `get_api_relationship_path()` | Function defined but never called |
 
 ### Removal Candidates (False Positives in Dead Code Scan)
 

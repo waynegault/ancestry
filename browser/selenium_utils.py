@@ -199,16 +199,22 @@ def scroll_to_element(driver: Optional[WebDriver], element: Optional[WebElement]
     time.sleep(0.1)  # Brief pause for scroll completion
 
 
-@safe_execute(default_return=None, log_errors=False)
-def wait_for_element(
-    driver: Optional[WebDriver], selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
-) -> Optional[WebElement]:
-    """Wait for element to be present with unified error handling."""
-    if not driver:
-        return None
-
-    wait = WebDriverWait(driver, timeout)
-    return wait.until(expected_conditions.presence_of_element_located((by, selector)))
+# =============================================================================
+# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
+# Reason: Duplicate of core/utils._wait_for_element, never called
+# See: todo.md "Technical Debt" section
+# =============================================================================
+# @safe_execute(default_return=None, log_errors=False)
+# def wait_for_element(
+#     driver: Optional[WebDriver], selector: str, timeout: int = 10, by: str = By.CSS_SELECTOR
+# ) -> Optional[WebElement]:
+#     """Wait for element to be present with unified error handling."""
+#     if not driver:
+#         return None
+#
+#     wait = WebDriverWait(driver, timeout)
+#     return wait.until(expected_conditions.presence_of_element_located((by, selector)))
+# =============================================================================
 
 
 @safe_execute(default_return=False, log_errors=False)
