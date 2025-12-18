@@ -37,6 +37,7 @@ from ai.ai_interface import (
     extract_genealogical_entities,
     generate_contextual_response,
     generate_genealogical_reply,
+    generate_structured_reply,
 )
 
 # === LOCAL IMPORTS ===
@@ -2187,7 +2188,22 @@ class PersonProcessor:
         # Get person context data
         dna_data, tree_stats, relationship_path = self._get_person_context_data(person)
 
-        # Generate contextual response
+        # Phase 2.3: Try structured reply generation first
+        structured_result = generate_structured_reply(
+            user_question=user_last_message,
+            conversation_context=formatted_context,
+            tree_evidence=lookup_results_str,
+            semantic_search_results="",  # Action 9 doesn't run semantic search per-person yet
+            family_members=self._format_family_members_for_ai(lookup_results),
+            relationship_path=relationship_path,
+            session_manager=self.session_manager,
+        )
+
+        if structured_result:
+            logger.info(f"{log_prefix}: Generated structured contextual reply.")
+            return structured_result.draft_message
+
+        # Fallback to Phase 3 contextual response
         return generate_contextual_response(
             conversation_history=formatted_context,
             user_message=user_last_message,
@@ -2572,15 +2588,30 @@ class PersonProcessor:
         # Integrate Research Suggestions
         tree_lookup_str = self._add_research_suggestions(lookup_results, extracted_data, tree_lookup_str)
 
-        # Generate custom reply using standard genealogical reply (fallback)
-        custom_reply = generate_genealogical_reply(
+        # Phase 2.3: Use structured reply generation
+        structured_result = generate_structured_reply(
+            user_question=user_last_message,
             conversation_context=formatted_context,
-            user_last_message=user_last_message,
-            genealogical_data_str=genealogical_data_str,
+            tree_evidence=tree_lookup_str,
+            semantic_search_results="",  # Action 9 doesn't run semantic search per-person yet
+            family_members=self._format_family_members_for_ai(lookup_results),
+            relationship_path=relationship_str,
             session_manager=self.session_manager,
-            tree_lookup_results=tree_lookup_str,
-            relationship_context=relationship_str,
         )
+
+        if structured_result:
+            custom_reply = structured_result.draft_message
+            logger.info(f"{log_prefix}: Generated structured genealogical reply.")
+        else:
+            # Fallback to standard reply
+            custom_reply = generate_genealogical_reply(
+                conversation_context=formatted_context,
+                user_last_message=user_last_message,
+                genealogical_data_str=genealogical_data_str,
+                session_manager=self.session_manager,
+                tree_lookup_results=tree_lookup_str,
+                relationship_context=relationship_str,
+            )
 
         if custom_reply:
             logger.info(f"{log_prefix}: Generated custom genealogical reply.")
@@ -2588,6 +2619,27 @@ class PersonProcessor:
             logger.warning(f"{log_prefix}: Failed to generate custom reply. Will fall back.")
 
         return custom_reply
+
+    def _format_family_members_for_ai(self, lookup_results: list[PersonLookupResult]) -> str:
+        """Format family members from lookup results for AI prompt."""
+        if not lookup_results:
+            return "No family members data available."
+
+        tree_service = self._get_tree_query_service()
+        if not tree_service:
+            return "No family members data available (TreeQueryService not initialized)."
+
+        parts = []
+        for result in lookup_results:
+            if result.found and result.person_id:
+                try:
+                    family = tree_service.get_family_members(result.person_id)
+                    if family and family.found:
+                        parts.append(family.to_prompt_string())
+                except Exception as e:
+                    logger.debug(f"Error getting family members for {result.name}: {e}")
+
+        return "\n\n".join(parts) if parts else "No family members data available."
 
     def _compose_base_message(
         self,

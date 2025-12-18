@@ -102,7 +102,7 @@ from sqlalchemy import (
 )  # Minimal imports
 
 from ai.ab_testing import get_experiment_manager, get_prompt_variant
-from ai.ai_interface import generate_genealogical_reply
+from ai.ai_interface import generate_genealogical_reply, generate_structured_reply
 from ai.context_builder import ContextBuilder, MatchContext
 
 # === LOCAL IMPORTS ===
@@ -3158,16 +3158,35 @@ def _generate_draft_text_with_timing(
     prompt_selection: tuple[str, Optional[str], Optional[str]],
 ) -> tuple[Optional[str], float]:
     start_time = time.time()
-    draft_text = generate_genealogical_reply(
+
+    # Phase 2.3: Use structured reply generation
+    structured_result = generate_structured_reply(
+        user_question=last_message,
         conversation_context=context.to_prompt_string(),
-        user_last_message=last_message,
-        genealogical_data_str=context_json,
-        tree_lookup_results=context.to_tree_lookup_results_string(),
-        relationship_context=context.to_relationship_context_string(),
+        tree_evidence=context.to_tree_lookup_results_string(),
+        semantic_search_results="",  # Action 8 doesn't run semantic search per-person yet
+        family_members=context.to_family_members_string(),
+        relationship_path=context.to_relationship_context_string(),
         session_manager=session_manager,
-        prompt_key=prompt_selection[0],
-        prompt_variant=prompt_selection[1],
     )
+
+    if structured_result:
+        draft_text = structured_result.draft_message
+        # Note: Action 8 doesn't currently use the confidence score from structured_result
+        # but it's available for future enhancement.
+    else:
+        # Fallback to standard reply
+        draft_text = generate_genealogical_reply(
+            conversation_context=context.to_prompt_string(),
+            user_last_message=last_message,
+            genealogical_data_str=context_json,
+            tree_lookup_results=context.to_tree_lookup_results_string(),
+            relationship_context=context.to_relationship_context_string(),
+            session_manager=session_manager,
+            prompt_key=prompt_selection[0],
+            prompt_variant=prompt_selection[1],
+        )
+
     generation_ms = (time.time() - start_time) * 1000.0
     return draft_text, generation_ms
 

@@ -196,6 +196,11 @@ class MatchContext:
 
         return "\n".join(lines)
 
+    def to_family_members_string(self) -> str:
+        """Compact string describing family members."""
+        genealogy: dict[str, Any] = self.genealogy
+        return genealogy.get("family_members_str") or ""
+
     @staticmethod
     def _format_ancestry_tree_relationship_lines(genealogy: dict[str, Any]) -> list[str]:
         lines: list[str] = []
@@ -1049,10 +1054,22 @@ class ContextBuilder:
 
             self._apply_gedcom_relationship_evidence(genealogy, tree_service, resolved_person_id)
             self._apply_gedcom_common_ancestors(genealogy, tree_service, resolved_person_id)
+            self._apply_gedcom_family_members(genealogy, tree_service, resolved_person_id)
         except Exception as e:
             logger.debug(f"Error getting genealogy from TreeQueryService: {e}")
 
         return genealogy
+
+    @staticmethod
+    def _apply_gedcom_family_members(genealogy: dict[str, Any], tree_service: Any, person_id: str) -> None:
+        """Apply family members data from GEDCOM."""
+        try:
+            family = tree_service.get_family_members(person_id)
+            if family and getattr(family, "found", False):
+                genealogy["family_members"] = family.to_dict()
+                genealogy["family_members_str"] = family.to_prompt_string()
+        except Exception as e:
+            logger.debug(f"Error getting family members: {e}")
 
     @staticmethod
     def _init_genealogy(person: Any) -> dict[str, Any]:

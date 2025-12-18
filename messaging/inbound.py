@@ -15,6 +15,7 @@ from ai.ai_interface import (
     classify_message_intent,
     extract_genealogical_entities,
     generate_genealogical_reply,
+    generate_structured_reply,
 )
 from config import config_schema
 from core.database import (
@@ -343,51 +344,110 @@ class InboundOrchestrator:
                 source_message_id=source_message_id,
             )
 
-        research_results: Optional[list[dict[str, Any]]] = None
-        generated_reply: Optional[str] = None
-        context_confidence: int = 50  # Default confidence when no context is built
-
-        if extracted_data:
-            research_results = self._perform_genealogical_research(extracted_data)
-            if research_results:
-                genealogical_data_str = self._format_research_results(research_results)
-
-                tree_lookup_results = ""
-                relationship_context = ""
-                try:
-                    match_uuid = getattr(person, "uuid", None)
-                    if isinstance(match_uuid, str) and match_uuid:
-                        from ai.context_builder import ContextBuilder
-
-                        match_context = ContextBuilder(db_session=self.db).build_context(match_uuid)
-                        tree_lookup_results = match_context.to_tree_lookup_results_string()
-                        relationship_context = match_context.to_relationship_context_string()
-                        # Calculate context-based confidence score (0-100)
-                        context_confidence = match_context.calculate_confidence()
-                except Exception as exc:  # pragma: no cover
-                    logger.debug("Tree context enrichment skipped (non-fatal): %s", exc)
-
-                generated_reply = generate_genealogical_reply(
-                    context_history,
-                    message_content,
-                    genealogical_data_str,
-                    self.session_manager,
-                    tree_lookup_results=tree_lookup_results,
-                    relationship_context=relationship_context,
-                    semantic_search_results=semantic_search_prompt,
-                )
-
-                if generated_reply:
-                    self._persist_outbound_generated_reply_log(
-                        person=person,
-                        conversation_id=conversation_id,
-                        reply_content=generated_reply,
-                        intent=intent,
-                        research_matches_count=len(research_results),
-                        semantic_search_ran=semantic_search is not None,
-                    )
+        research_results, generated_reply, context_confidence = self._generate_research_reply(
+            person=person,
+            extracted_data=extracted_data,
+            message_content=message_content,
+            context_history=context_history,
+            semantic_search_prompt=semantic_search_prompt,
+            conversation_id=conversation_id,
+            intent=intent,
+        )
 
         return research_results, generated_reply, extracted_data, semantic_search, context_confidence
+
+    def _generate_research_reply(
+        self,
+        *,
+        person: Person,
+        extracted_data: Optional[dict[str, Any]],
+        message_content: str,
+        context_history: str,
+        semantic_search_prompt: str,
+        conversation_id: str,
+        intent: Optional[str],
+    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], int]:
+        """Generate research results and reply text."""
+        research_results: Optional[list[dict[str, Any]]] = None
+        generated_reply: Optional[str] = None
+        context_confidence: int = 50
+
+        if not extracted_data:
+            return research_results, generated_reply, context_confidence
+
+        research_results = self._perform_genealogical_research(extracted_data)
+        if not research_results:
+            return research_results, generated_reply, context_confidence
+
+        genealogical_data_str = self._format_research_results(research_results)
+        tree_lookup_results, relationship_context, family_members_str, context_confidence = self._get_tree_context(
+            person
+        )
+
+        # Phase 2.3: Use structured reply generation
+        structured_result = generate_structured_reply(
+            user_question=message_content,
+            conversation_context=context_history,
+            tree_evidence=tree_lookup_results,
+            semantic_search_results=semantic_search_prompt,
+            family_members=family_members_str,
+            relationship_path=relationship_context,
+            session_manager=self.session_manager,
+        )
+
+        if structured_result:
+            generated_reply = structured_result.draft_message
+            context_confidence = structured_result.confidence
+            if structured_result.should_route_to_human():
+                logger.info(
+                    "AI suggested human review for %s: %s",
+                    conversation_id,
+                    structured_result.get_review_reason(),
+                )
+        else:
+            generated_reply = generate_genealogical_reply(
+                context_history,
+                message_content,
+                genealogical_data_str,
+                self.session_manager,
+                tree_lookup_results=tree_lookup_results,
+                relationship_context=relationship_context,
+                semantic_search_results=semantic_search_prompt,
+            )
+
+        if generated_reply:
+            self._persist_outbound_generated_reply_log(
+                person=person,
+                conversation_id=conversation_id,
+                reply_content=generated_reply,
+                intent=intent,
+                research_matches_count=len(research_results),
+                semantic_search_ran=bool(semantic_search_prompt),
+            )
+
+        return research_results, generated_reply, context_confidence
+
+    def _get_tree_context(self, person: Person) -> tuple[str, str, str, int]:
+        """Fetch tree context and calculate confidence."""
+        tree_lookup_results = ""
+        relationship_context = ""
+        family_members_str = ""
+        context_confidence = 50
+
+        try:
+            match_uuid = getattr(person, "uuid", None)
+            if isinstance(match_uuid, str) and match_uuid:
+                from ai.context_builder import ContextBuilder
+
+                match_context = ContextBuilder(db_session=self.db).build_context(match_uuid)
+                tree_lookup_results = match_context.to_tree_lookup_results_string()
+                relationship_context = match_context.to_relationship_context_string()
+                family_members_str = match_context.to_family_members_string()
+                context_confidence = match_context.calculate_confidence()
+        except Exception as exc:  # pragma: no cover
+            logger.debug("Tree context enrichment skipped (non-fatal): %s", exc)
+
+        return tree_lookup_results, relationship_context, family_members_str, context_confidence
 
     def _resolve_person(self, sender_id: str) -> Optional[Person]:
         """Resolve Person object from sender_id (UUID or profile_id)."""

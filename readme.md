@@ -1948,6 +1948,12 @@ The following functions and classes are fully implemented and tested but not yet
 | `reload_config()` | Hot-reload configuration from files | Ready for config refresh |
 | `export_config()` | Export current config to file | Ready for config backup |
 | `get_environment_config()` | Get environment-specific config | Ready for multi-env support |
+
+### AI Integration (`ai/ai_interface.py`)
+
+| Function | Purpose | Integration Status |
+|----------|---------|-------------------|
+| `generate_structured_reply()` | Phase 2.3 structured response generation with evidence citations | Ready for integration into InboundOrchestrator |
 | `run_setup_wizard()` | Interactive configuration setup | Ready for first-run wizard |
 | `get_database_config()` | Database configuration subset | Ready for modular access |
 | `get_selenium_config()` | Browser configuration subset | Ready for modular access |
