@@ -8,9 +8,9 @@ to even start (import errors, syntax errors, etc).
 
 import subprocess
 import sys
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,7 +45,7 @@ def test_module(py_file: Path) -> tuple[str, bool, str, float]:
     try:
         result = subprocess.run(
             [sys.executable, str(py_file)],
-            capture_output=True,
+            check=False, capture_output=True,
             text=True,
             timeout=30,  # 30 second timeout
             cwd=str(REPO_ROOT),
