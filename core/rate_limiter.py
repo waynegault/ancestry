@@ -717,6 +717,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
 
         # Calculate age of persisted state
         import time
+
         age_hours = (time.time() - timestamp) / 3600 if timestamp else None
         age_str = f", age: {age_hours:.1f}h" if age_hours else ""
 
@@ -736,19 +737,12 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             restored_count += 1
 
             short_name = endpoint.replace(" API (Batch)", "").replace(" API", "")
-            restored_details.append(
-                f"{short_name}: {state.current_rate:.2f} req/s (prior 429s: {prior_429s})"
-            )
-            logger.debug(
-                f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s"
-            )
+            restored_details.append(f"{short_name}: {state.current_rate:.2f} req/s (prior 429s: {prior_429s})")
+            logger.debug(f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s")
 
         if restored_count > 0:
             details_str = " | ".join(restored_details)
-            logger.info(
-                f"📥 Restored {restored_count} endpoint rates from previous session{age_str}\n"
-                f"   {details_str}"
-            )
+            logger.info(f"📥 Restored {restored_count} endpoint rates from previous session{age_str}\n   {details_str}")
 
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""
@@ -1811,17 +1805,23 @@ def _test_429_decreases_rate() -> None:
     assert state is not None
     # 50% of range: 0.1 + (1.0 - 0.1) * 0.5 = 0.55
     expected_initial = 0.55
-    assert abs(state.current_rate - expected_initial) < 0.01, f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
+    assert abs(state.current_rate - expected_initial) < 0.01, (
+        f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
+    )
 
     limiter.on_429_error(endpoint)
     # Default backoff is 0.80: 0.55 * 0.80 = 0.44
     expected_after_429 = expected_initial * 0.80
-    assert abs(state.current_rate - expected_after_429) < 0.01, f"Expected {expected_after_429:.2f}, got {state.current_rate:.2f}"
+    assert abs(state.current_rate - expected_after_429) < 0.01, (
+        f"Expected {expected_after_429:.2f}, got {state.current_rate:.2f}"
+    )
 
     limiter.on_429_error(endpoint)
     # 0.44 * 0.80 = 0.352
     expected_after_2nd = expected_after_429 * 0.80
-    assert abs(state.current_rate - expected_after_2nd) < 0.01, f"Expected {expected_after_2nd:.2f}, got {state.current_rate:.2f}"
+    assert abs(state.current_rate - expected_after_2nd) < 0.01, (
+        f"Expected {expected_after_2nd:.2f}, got {state.current_rate:.2f}"
+    )
 
 
 def _test_success_threshold() -> None:
@@ -1845,7 +1845,9 @@ def _test_success_threshold() -> None:
     expected_initial = 0.55
     # Allow room for increase by adjusting max
     limiter._endpoint_states[endpoint].max_rate = 2.0
-    assert abs(state.current_rate - expected_initial) < 0.01, f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
+    assert abs(state.current_rate - expected_initial) < 0.01, (
+        f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
+    )
 
     # First 49 successes: no change
     for _ in range(49):
@@ -1856,7 +1858,9 @@ def _test_success_threshold() -> None:
     # 50th success: increases by 2%
     limiter.on_success(endpoint)
     expected_after_increase = expected_initial * 1.02
-    assert abs(state.current_rate - expected_after_increase) < 0.01, f"Expected {expected_after_increase:.2f}, got {state.current_rate:.2f}"
+    assert abs(state.current_rate - expected_after_increase) < 0.01, (
+        f"Expected {expected_after_increase:.2f}, got {state.current_rate:.2f}"
+    )
     assert state.success_count == 0, "Counter should reset after increase"
 
 

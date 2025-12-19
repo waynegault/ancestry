@@ -756,12 +756,16 @@ def _log_prefetch_summary(
 
     logger.info("--- Finished SEQUENTIAL API Pre-fetch. Duration: %.2fs ---", fetch_duration)
     logger.info("🔬 API Performance Breakdown:")
+
+    # Show all endpoints, including those with 0 calls (helps identify what was skipped)
     for endpoint, duration in endpoint_durations.items():
         count = endpoint_counts.get(endpoint, 0)
-        # Skip endpoints with 0 calls or 0 duration (cached/skipped)
         if count > 0 and duration > 0.001:
             avg = duration / count
             logger.info("   - %-20s: %3d calls | %6.2fs total | %5.2fs avg", endpoint, count, duration, avg)
+        elif count == 0:
+            # Show skipped endpoints at debug level for visibility when needed
+            logger.debug("   - %-20s: skipped (0 calls)", endpoint)
 
     if not config.enable_ethnicity_enrichment:
         logger.debug("🧬 Ethnicity enrichment disabled; skipping summary metrics.")
