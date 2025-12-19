@@ -12,6 +12,7 @@ if __package__ in {None, ""}:
 
 import logging
 
+from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
 from core.registry_utils import auto_register_module
 from core.utils import nav_to_page
 
@@ -105,7 +106,7 @@ def _test_navigation_requires_driver() -> bool:
         session_manager,
         action_label="Action 7",
         target_url="https://example.com",
-        wait_selector="#content",
+        wait_selector=WAIT_FOR_PAGE_SELECTOR,
         failure_reason="Driver missing",
     )
 
@@ -123,7 +124,7 @@ def _test_navigation_failure_logs_error() -> bool:
             session_manager,
             action_label="Action 7",
             target_url="https://example.com",
-            wait_selector="#content",
+            wait_selector=WAIT_FOR_PAGE_SELECTOR,
             failure_reason="Navigation failed",
         )
 
@@ -145,12 +146,12 @@ def _test_navigation_success_waits() -> bool:
             session_manager,
             action_label="Action 7",
             target_url="https://example.com",
-            wait_selector="#content",
+            wait_selector=WAIT_FOR_PAGE_SELECTOR,
             failure_reason="Should not hit",
         )
 
     mock_nav.assert_called_once_with(
-        session_manager.browser_manager.driver, "https://example.com", "#content", session_manager
+        session_manager.browser_manager.driver, "https://example.com", WAIT_FOR_PAGE_SELECTOR, session_manager
     )
     mock_sleep.assert_called_once_with(2)
     assert result is True, "Successful navigation should return True"

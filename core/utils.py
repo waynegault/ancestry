@@ -2659,7 +2659,7 @@ def _check_for_login_errors(driver: Any) -> Optional[str]:
     except TimeoutException:
         try:
             alert_element = WebDriverWait(driver, 0.5).until(
-                expected_conditions.presence_of_element_located((By.CSS_SELECTOR, "div.alert[role='alert']"))
+                expected_conditions.presence_of_element_located((By.CSS_SELECTOR, GENERIC_ALERT_SELECTOR))
             )
             alert_text = alert_element.text if alert_element and alert_element.text else "Unknown error"
             logger.error(f"Login failed: Generic alert found: '{alert_text}'.")
@@ -2679,13 +2679,13 @@ def _try_2fa_selectors(driver: Any) -> bool:
     """Try multiple selectors to detect 2FA page."""
     twofa_selectors = [
         ("css", TWO_STEP_VERIFICATION_HEADER_SELECTOR),
-        ("css", "body.mfaPage"),
-        ("xpath", "//h1[contains(text(), 'Two-step verification')]"),
-        ("xpath", "//h2[contains(text(), 'Two-step verification')]"),
-        ("xpath", "//h1[contains(text(), 'two-step')]"),
-        ("xpath", "//h2[contains(text(), 'two-step')]"),
-        ("css", "button[data-method='sms']"),
-        ("css", "button[data-method='email']"),
+        ("css", TWO_FA_BODY_SELECTOR),
+        ("xpath", TWO_FA_VERIFICATION_H1_XPATH),
+        ("xpath", TWO_FA_VERIFICATION_H2_XPATH),
+        ("xpath", TWO_FA_VERIFICATION_H1_TWO_STEP_XPATH),
+        ("xpath", TWO_FA_VERIFICATION_H2_TWO_STEP_XPATH),
+        ("css", TWO_FA_SMS_METHOD_BUTTON_SELECTOR),
+        ("css", TWO_FA_EMAIL_SELECTOR),
     ]
 
     for idx, (selector_type, selector) in enumerate(twofa_selectors):
@@ -2798,7 +2798,7 @@ def _verify_login_no_2fa(driver: Any, session_manager: "SessionManager", signin_
 def _debug_log_page_errors(driver: Any) -> None:
     """Log any visible error messages on the page."""
     try:
-        error_elements = driver.find_elements(By.CSS_SELECTOR, ".alert, .error, [role='alert']")
+        error_elements = driver.find_elements(By.CSS_SELECTOR, GENERIC_ERROR_ELEMENTS_SELECTOR)
         if error_elements:
             for elem in error_elements[:3]:
                 if elem.is_displayed():
@@ -3140,6 +3140,36 @@ def _execute_navigation(driver: WebDriver, url: str, page_timeout: int) -> None:
     waiter.until(_document_ready)
     time.sleep(random.uniform(0.5, 1.5))
 
+    # Some Ancestry pages show a cookie/privacy overlay that can prevent key
+    # content from becoming visible. Best-effort dismiss it on every navigation.
+    with contextlib.suppress(Exception):
+        consent(driver)
+
+
+def _dump_navigation_debug_artifacts(driver: WebDriver, selector: str) -> None:
+    """Best-effort dump of page HTML/screenshot for diagnosing selector failures."""
+    try:
+        logs_dir = Path("Logs")
+        logs_dir.mkdir(exist_ok=True)
+        ts = int(time.time())
+        safe_selector = re.sub(r"[^A-Za-z0-9_-]+", "_", selector)[:40] or "body"
+        base = f"nav_timeout_{ts}_{safe_selector}"
+        html_path = logs_dir / f"{base}.html"
+        png_path = logs_dir / f"{base}.png"
+
+        with contextlib.suppress(Exception):
+            html = driver.page_source
+            html_path.write_text(html or "", encoding="utf-8")
+
+        with contextlib.suppress(Exception):
+            # Use getattr to avoid Pylance warning about partially-typed selenium stub
+            save_fn: Callable[[str], bool] = getattr(driver, "save_screenshot")
+            save_fn(str(png_path))
+
+        logger.warning(f"Saved navigation debug artifacts: {html_path} and {png_path}")
+    except Exception as dump_err:
+        logger.debug(f"Failed to dump navigation debug artifacts: {dump_err}")
+
 
 def _get_landed_url_base(driver: WebDriver, attempt: int) -> Optional[str]:
     """Get and normalize the current URL after navigation."""
@@ -3279,12 +3309,25 @@ def _wait_for_element(
         logger.debug(f"Navigation successful and element '{wait_selector}' found.")
         return "success"
     except TimeoutException:
+        # Many modern pages render lists via virtualization/shadow DOM or keep
+        # elements present-but-not-visible briefly; a presence check is a safer
+        # readiness signal than strict visibility.
+        with contextlib.suppress(TimeoutException):
+            _wait_until_present(
+                WebDriverWait(driver, element_timeout),
+                (By.CSS_SELECTOR, wait_selector),
+            )
+            logger.debug(f"Element '{wait_selector}' present but not visible; treating navigation as successful.")
+            return "success"
+
         current_url_on_timeout = "Unknown"
         with contextlib.suppress(Exception):
             current_url_on_timeout = driver.current_url
         logger.warning(
             f"Timeout waiting for selector '{wait_selector}' at {current_url_on_timeout} (URL base was correct)."
         )
+
+        _dump_navigation_debug_artifacts(driver, wait_selector)
 
         action, wait_time = _check_for_unavailability(driver, unavailability_selectors)
         if action == "skip":
@@ -3481,7 +3524,7 @@ def _perform_navigation_attempt(
 def nav_to_page(
     driver: WebDriver,
     url: str,
-    selector: str = "body",  # CSS selector to wait for as indication of page load success
+    selector: str = WAIT_FOR_PAGE_SELECTOR,  # CSS selector to wait for as indication of page load success
     session_manager: Optional["SessionManager"] = None,  # Pass SessionManager for context/restart
 ) -> bool:
     """

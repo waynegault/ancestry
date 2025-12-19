@@ -15,7 +15,7 @@ if __package__ in {None, ""}:
 
 import logging
 
-from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
+from browser.css_selectors import MESSAGING_PAGE_CONTAINER_SELECTOR, WAIT_FOR_PAGE_SELECTOR
 from core.session_guards import ensure_navigation_ready, require_interactive_session
 from core.session_manager import SessionManager
 from core.utils import nav_to_page
@@ -227,7 +227,7 @@ def _run_action7_inbox(session_manager: SessionManager) -> bool:
             session_manager,
             action_label="Action 7",
             target_url=inbox_url,
-            wait_selector="div.messaging-container",
+            wait_selector=MESSAGING_PAGE_CONTAINER_SELECTOR,
             failure_reason="Could not navigate to inbox page.",
         ):
             return False

@@ -321,12 +321,13 @@ class SessionHealthMixin:
         if url and self.browser_manager.driver:
             logger.info(f"Navigating to: {url}")
             try:
+                from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
                 from core.utils import nav_to_page
 
                 nav_success = nav_to_page(
                     self.browser_manager.driver,
                     url,
-                    selector="body",
+                    selector=WAIT_FOR_PAGE_SELECTOR,
                     session_manager=cast("SessionManager", self),
                 )
                 if not nav_success:

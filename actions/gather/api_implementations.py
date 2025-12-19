@@ -144,7 +144,9 @@ def _ensure_action6_session_ready(
             return True
 
         logger.warning(f"Session invalid during {context} - attempting recovery")
-        if session_manager.ensure_session_ready():
+        # Action 6 prefetch often runs while the UI is mid-navigation; avoid gating readiness
+        # on UI-only cookies like 'trees'/'OptanonConsent' by using a known Action-6 action tag.
+        if session_manager.ensure_session_ready(action_name=f"coord:{context}"):
             return True
 
         if not require_browser:

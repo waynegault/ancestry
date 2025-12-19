@@ -55,14 +55,30 @@ FAILED_LOGIN_SELECTOR = "div#invalidCredentialsAlert.alert"
 TWO_FA_CODE_BUTTON_SELECTOR = "button#codeFormSubmitBtn"
 TWO_FA_CODE_INPUT_SELECTOR = "input#codeFormInput"
 
+# --- Generic UI/Error Selectors ---
+GENERIC_ALERT_SELECTOR = "div.alert[role='alert']"
+GENERIC_ERROR_ELEMENTS_SELECTOR = ".alert, .error, [role='alert']"
+
+# --- 2FA Detection Fallback Selectors (used for robust detection) ---
+TWO_FA_BODY_SELECTOR = "body.mfaPage"
+TWO_FA_SMS_METHOD_BUTTON_SELECTOR = "button[data-method='sms']"
+TWO_FA_VERIFICATION_H1_XPATH = "//h1[contains(text(), 'Two-step verification')]"
+TWO_FA_VERIFICATION_H2_XPATH = "//h2[contains(text(), 'Two-step verification')]"
+TWO_FA_VERIFICATION_H1_TWO_STEP_XPATH = "//h1[contains(text(), 'two-step')]"
+TWO_FA_VERIFICATION_H2_TWO_STEP_XPATH = "//h2[contains(text(), 'two-step')]"
+
 
 # --- DNA Matches List Page (https://www.ancestry.co.uk/discoveryui-matches/list/) ---
-MATCH_ENTRY_SELECTOR = "ui-custom[type='match-entry']"  # Individual match entry
-MATCH_NAME_LINK_SELECTOR = "a[data-testid='matchNameLink']"  # Link to the match's page
-SHARED_DNA_SELECTOR = "div[data-testid='sharedDnaAmount']"  # Shared DNA amount
-PREDICTED_RELATIONSHIP_SELECTOR = "section.sharedDnaContainer button.relationshipLabel"  # Predicted relationship
-TREE_INDICATOR_SELECTOR = "ui-person-avatar[indicator='tree']"  # Icon indicating a tree exists
-PAGINATION_SELECTOR = "ui-pagination[data-testid='paginator']"  # Pagination control
+MATCH_ENTRY_SELECTOR = (
+    "#matchListTabs, div.matchList, div.matchEntry"  # Any element that reliably indicates the list UI is loaded
+)
+MATCH_NAME_LINK_SELECTOR = "a.matchInfoName"  # Link to the match's page
+SHARED_DNA_SELECTOR = "div[data-testid='sharedDNA']"  # Shared DNA amount
+PREDICTED_RELATIONSHIP_SELECTOR = "button.relationshipLabel span.relationshipLabel"  # Predicted relationship
+TREE_INDICATOR_SELECTOR = (
+    "div.matchTreeInfo span.icon3-tree, div.matchTreeInfo span.icon3-locked"  # Icon indicating a linked tree exists
+)
+PAGINATION_SELECTOR = "nav.paging[aria-label='Pagination']"  # Pagination control
 
 
 # --- Individual Match Compare Page (https://www.ancestry.co.uk/discoveryui-matches/compare) ---
@@ -86,6 +102,7 @@ CLOSE_BUTTON_SELECTOR = "button.closeBtn.modalClose"  # Close button for the mod
 # --- Inbox/Messaging Page (https://www.ancestry.co.uk/messaging) ---
 INBOX_PAGE_LOAD_SELECTOR = "h1.sectionTitle:contains('Messages')"  # Selector for "Messages" heading
 INBOX_CONTAINER_SELECTOR = "div.cardContainer"  # "main#main > div > div > div.channelsSection" # "main#main > div > div > div > div:nth-of-type(2)"  # Container for inbox list
+MESSAGING_PAGE_CONTAINER_SELECTOR = "div.messaging-container"  # Container indicating /messaging UI is loaded
 RIGHT_PAGE_CHECK_SELECTOR = (
     "div.singleProfile[data-activeprofileid={profile_id}]"  # check that we are on the correct user's message page
 )

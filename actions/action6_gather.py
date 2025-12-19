@@ -284,7 +284,7 @@ def _get_csrf_token(session_manager: SessionManager, force_api_refresh: bool = F
         return None
 
 
-def _ensure_on_match_list_page(session_manager: SessionManager) -> bool:
+def _ensure_on_match_list_page(session_manager: SessionManager, desired_page: Optional[int] = None) -> bool:
     """
     Ensure browser is on the DNA match list page.
 
@@ -305,8 +305,25 @@ def _ensure_on_match_list_page(session_manager: SessionManager) -> bool:
 
         current_url = driver.current_url
 
-        if not current_url.startswith(target_matches_url_base):
-            if not nav_to_list(session_manager):
+        desired_page_int: Optional[int] = None
+        if desired_page is not None:
+            try:
+                desired_page_int = int(desired_page)
+            except (TypeError, ValueError):
+                desired_page_int = None
+
+        # If we're not on the match list base URL, navigate.
+        # If a desired page is provided, also navigate when the current URL doesn't reflect it.
+        needs_navigation = not current_url.startswith(target_matches_url_base)
+        if (
+            desired_page_int is not None
+            and desired_page_int > 0
+            and f"currentPage={desired_page_int}" not in current_url
+        ):
+            needs_navigation = True
+
+        if needs_navigation:
+            if not nav_to_list(session_manager, current_page=desired_page_int):
                 logger.error("Failed to navigate to DNA match list page.")
                 return False
         else:
@@ -350,7 +367,7 @@ def _navigate_and_get_initial_page_data(
         tuple: (matches_on_page, total_pages, success_flag)
     """
     # Ensure we're on the correct page
-    if not _ensure_on_match_list_page(session_manager):
+    if not _ensure_on_match_list_page(session_manager, desired_page=start_page):
         return None, None, False
 
     logger.debug(f"Fetching initial page {start_page} to determine total pages...")
@@ -4479,7 +4496,12 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
 # End of _adjust_delay
 
 
-def nav_to_list(session_manager: SessionManager) -> bool:
+def _can_nav_to_list(session_manager: Optional[SessionManager]) -> bool:
+    """Return True if the session is ready for match-list UI navigation."""
+    return bool(session_manager and session_manager.is_sess_valid() and session_manager.my_uuid)
+
+
+def nav_to_list(session_manager: SessionManager, current_page: Optional[int] = None) -> bool:
     """
     Navigates the browser directly to the user's specific DNA matches list page,
     using the UUID stored in the SessionManager. Verifies successful navigation
@@ -4487,17 +4509,35 @@ def nav_to_list(session_manager: SessionManager) -> bool:
 
     Args:
         session_manager: The active SessionManager instance.
+        current_page: Optional 1-based page index to include in the UI URL (resume support).
 
     Returns:
         True if navigation was successful, False otherwise.
     """
-    if not session_manager or not session_manager.is_sess_valid() or not session_manager.my_uuid:
+    if not _can_nav_to_list(session_manager):
         logger.error("nav_to_list: Session invalid or UUID missing.")
         return False
 
     my_uuid = session_manager.my_uuid
 
-    target_url = urljoin(config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}")
+    target_url_base = urljoin(config_schema.api.base_url, f"discoveryui-matches/list/{my_uuid}")
+    query_parts: list[str] = []
+    page_int: Optional[int] = None
+    if current_page is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            page_int = int(current_page)
+    if page_int is not None and page_int > 0:
+        query_parts.append(f"currentPage={page_int}")
+
+    # Include itemsPerPage to keep the UI paging consistent with API paging.
+    with contextlib.suppress(Exception):
+        per_page = int(MATCHES_PER_PAGE)
+        if per_page > 0:
+            query_parts.append(f"itemsPerPage={per_page}")
+
+    query = f"?{'&'.join(query_parts)}" if query_parts else ""
+    target_url = f"{target_url_base}{query}"
+
     logger.debug(f"Navigating to specific match list URL: {target_url}")
 
     driver = session_manager.browser_manager.driver
@@ -4516,7 +4556,7 @@ def nav_to_list(session_manager: SessionManager) -> bool:
     if success:
         try:
             current_url = driver.current_url
-            if not current_url.startswith(target_url):
+            if not current_url.startswith(target_url_base):
                 logger.warning(f"Navigation successful (element found), but final URL unexpected: {current_url}")
             else:
                 logger.debug("Successfully navigated to specific matches list page.")
@@ -4592,6 +4632,165 @@ def _test_combined_details_cache_helpers() -> bool:
 
     cache.invalidate(service="ancestry", endpoint="combined_details")
     return True
+
+
+def _test_nav_to_list_predefined_page() -> bool:
+    """Verify match list UI navigation supports an explicit resume page."""
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+
+    from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
+
+    class _FakeDriver:
+        def __init__(self) -> None:
+            self.current_url = ""
+
+    class _FakeSessionManager:
+        def __init__(self, my_uuid: str, driver: Any) -> None:
+            self.my_uuid = my_uuid
+            self.browser_manager = SimpleNamespace(driver=driver)
+
+        @staticmethod
+        def is_sess_valid() -> bool:
+            return True
+
+    fake_driver = _FakeDriver()
+    fake_sm = _FakeSessionManager(my_uuid="TEST-UUID", driver=fake_driver)
+
+    expected_base = urljoin(config_schema.api.base_url, "discoveryui-matches/list/TEST-UUID")
+
+    captured: dict[str, Any] = {}
+
+    def _stub_nav_to_page(
+        *,
+        driver: Any,
+        url: str,
+        selector: str = WAIT_FOR_PAGE_SELECTOR,
+        session_manager: Any = None,
+    ) -> bool:
+        captured["driver"] = driver
+        captured["url"] = url
+        captured["selector"] = selector
+        captured["session_manager"] = session_manager
+        # Simulate that the browser landed on the expected URL.
+        with contextlib.suppress(Exception):
+            driver.current_url = url
+        return True
+
+    original_nav_to_page = globals().get("nav_to_page")
+    try:
+        globals()["nav_to_page"] = _stub_nav_to_page
+
+        ok = nav_to_list(cast(Any, fake_sm), current_page=243)
+        assert ok is True
+        captured_url = cast(str, captured.get("url"))
+        assert captured_url.startswith(expected_base)
+        parsed = urlparse(captured_url)
+        qs = parse_qs(parsed.query)
+        assert qs.get("currentPage") == ["243"], f"Expected currentPage=243, got {qs.get('currentPage')}"
+        assert qs.get("itemsPerPage") == [str(MATCHES_PER_PAGE)], (
+            f"Expected itemsPerPage={MATCHES_PER_PAGE}, got {qs.get('itemsPerPage')}"
+        )
+        assert captured.get("driver") is fake_driver
+        assert captured.get("session_manager") is fake_sm
+        assert isinstance(captured.get("selector"), str) and captured.get("selector"), "Selector should be non-empty"
+        return True
+    finally:
+        if original_nav_to_page is not None:
+            globals()["nav_to_page"] = original_nav_to_page
+        else:
+            with contextlib.suppress(KeyError):
+                del globals()["nav_to_page"]
+
+
+def _test_nav_to_list_includes_items_per_page_when_page_omitted() -> bool:
+    """Verify UI navigation includes itemsPerPage even without a specific currentPage."""
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+
+    from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
+
+    class _FakeDriver:
+        def __init__(self) -> None:
+            self.current_url = ""
+
+    class _FakeSessionManager:
+        def __init__(self, my_uuid: str, driver: Any) -> None:
+            self.my_uuid = my_uuid
+            self.browser_manager = SimpleNamespace(driver=driver)
+
+        @staticmethod
+        def is_sess_valid() -> bool:
+            return True
+
+    fake_driver = _FakeDriver()
+    fake_sm = _FakeSessionManager(my_uuid="TEST-UUID", driver=fake_driver)
+
+    expected_base = urljoin(config_schema.api.base_url, "discoveryui-matches/list/TEST-UUID")
+    captured: dict[str, Any] = {}
+
+    def _stub_nav_to_page(
+        *,
+        driver: Any,
+        url: str,
+        selector: str = WAIT_FOR_PAGE_SELECTOR,
+        session_manager: Any = None,
+    ) -> bool:
+        _ = selector
+        _ = session_manager
+        captured["url"] = url
+        with contextlib.suppress(Exception):
+            driver.current_url = url
+        return True
+
+    original_nav_to_page = globals().get("nav_to_page")
+    try:
+        globals()["nav_to_page"] = _stub_nav_to_page
+
+        ok = nav_to_list(cast(Any, fake_sm), current_page=None)
+        assert ok is True
+
+        captured_url = cast(str, captured.get("url"))
+        assert captured_url.startswith(expected_base)
+        parsed = urlparse(captured_url)
+        qs = parse_qs(parsed.query)
+        assert qs.get("itemsPerPage") == [str(MATCHES_PER_PAGE)]
+        # currentPage is optional; if absent it should not break navigation.
+        return True
+    finally:
+        if original_nav_to_page is not None:
+            globals()["nav_to_page"] = original_nav_to_page
+        else:
+            with contextlib.suppress(KeyError):
+                del globals()["nav_to_page"]
+
+
+def _test_initial_navigation_threads_start_page() -> bool:
+    """Verify initial navigation passes start_page into match list page navigation."""
+    captured: dict[str, Any] = {}
+
+    def _stub_ensure_on_match_list_page(session_manager: SessionManager, desired_page: Optional[int] = None) -> bool:
+        captured["session_manager"] = session_manager
+        captured["desired_page"] = desired_page
+        # Force early exit from _navigate_and_get_initial_page_data so the test stays isolated.
+        return False
+
+    original_ensure = globals().get("_ensure_on_match_list_page")
+    try:
+        globals()["_ensure_on_match_list_page"] = _stub_ensure_on_match_list_page
+
+        fake_sm: Any = object()
+        matches, total_pages, ok = _navigate_and_get_initial_page_data(fake_sm, start_page=243)
+        assert (matches, total_pages, ok) == (None, None, False)
+        assert captured.get("session_manager") is fake_sm
+        assert captured.get("desired_page") == 243
+        return True
+    finally:
+        if original_ensure is not None:
+            globals()["_ensure_on_match_list_page"] = original_ensure
+        else:
+            with contextlib.suppress(KeyError):
+                del globals()["_ensure_on_match_list_page"]
 
 
 def _test_module_initialization() -> bool:
@@ -5178,6 +5377,33 @@ def action6_gather_module_tests() -> bool:
             functions_tested="_cache_combined_details(), _check_combined_details_cache()",
             method_description="Cache combined match payload then read from cache",
             expected_outcome="Combined details persist via UnifiedCacheManager and remain consistent",
+        )
+
+        suite.run_test(
+            test_name="Match list UI navigation supports predefined page",
+            test_func=_test_nav_to_list_predefined_page,
+            test_summary="Ensures nav_to_list can target a specific UI page for resume",
+            functions_tested="nav_to_list()",
+            method_description="Stub nav_to_page and verify ?currentPage is included in the navigation URL",
+            expected_outcome="Navigation URL includes the requested currentPage value",
+        )
+
+        suite.run_test(
+            test_name="Match list UI navigation includes itemsPerPage",
+            test_func=_test_nav_to_list_includes_items_per_page_when_page_omitted,
+            test_summary="Ensures nav_to_list always includes itemsPerPage for consistent paging",
+            functions_tested="nav_to_list()",
+            method_description="Stub nav_to_page and verify itemsPerPage is included even when current_page is None",
+            expected_outcome="Navigation URL includes itemsPerPage parameter",
+        )
+
+        suite.run_test(
+            test_name="Initial navigation threads start_page into UI nav",
+            test_func=_test_initial_navigation_threads_start_page,
+            test_summary="Ensures initial Action 6 navigation requests the desired page",
+            functions_tested="_navigate_and_get_initial_page_data(), _ensure_on_match_list_page()",
+            method_description="Stub _ensure_on_match_list_page and verify desired_page=start_page is passed",
+            expected_outcome="_navigate_and_get_initial_page_data passes start_page as desired_page",
         )
 
         # INITIALIZATION TESTS

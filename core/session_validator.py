@@ -23,13 +23,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
-
 # === STANDARD LIBRARY IMPORTS ===
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
+
+from browser.css_selectors import WAIT_FOR_PAGE_SELECTOR
 
 # === LOCAL IMPORTS ===
 from config import config_schema
@@ -276,7 +277,7 @@ class SessionValidator:
         nav_success = nav_to_page(
             driver,
             base_url,
-            selector="body",
+            selector=WAIT_FOR_PAGE_SELECTOR,
             session_manager=session_manager,
         )
         if not nav_success:
@@ -376,7 +377,7 @@ class SessionValidator:
                 nav_success = nav_to_page(
                     browser_manager.driver,
                     base_url,
-                    selector="body",
+                    selector=WAIT_FOR_PAGE_SELECTOR,
                     session_manager=getattr(browser_manager, "session_manager", None),
                 )
 

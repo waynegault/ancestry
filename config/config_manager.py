@@ -273,7 +273,9 @@ class ConfigManager:
 
         self._enforce_max_concurrency(api, unsafe_requested)
 
-        safe_rps = 0.3
+        # Safe default ceiling for sequential API calls.
+        # This is intentionally conservative, but should allow faster throughput than the original 0.3.
+        safe_rps = 0.5
         self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
         self._align_rate_limiter_max_rate(api, unsafe_requested)
 
@@ -303,19 +305,16 @@ class ConfigManager:
         if max_concurrency_configured == 1:
             return
 
-        if unsafe_requested:
-            if not getattr(type(self), "_unsafe_concurrency_override_logged", False):
-                logger.warning(
-                    "⚠️ Unsafe speed profile active; retaining max_concurrency=%s. Monitor session stability closely.",
-                    max_concurrency_configured,
-                )
-                type(self)._unsafe_concurrency_override_logged = True
-            return
+        # Even when unsafe rate limits are enabled, keep execution sequential unless a caller
+        # explicitly changes this code. Parallelism is a separate risk factor from request rate.
+        if unsafe_requested and not getattr(type(self), "_unsafe_concurrency_override_logged", False):
+            logger.warning(
+                "⚠️ Unsafe speed profile active; overriding max_concurrency=%s to sequential-safe value of 1",
+                max_concurrency_configured,
+            )
+            type(self)._unsafe_concurrency_override_logged = True
 
-        logger.warning(
-            "max_concurrency=%s overridden to sequential-safe value of 1",
-            max_concurrency_configured,
-        )
+        logger.warning("max_concurrency=%s overridden to sequential-safe value of 1", max_concurrency_configured)
         api.max_concurrency = 1
 
     def _enforce_requests_per_second(self, api: Any, unsafe_requested: bool, safe_rps: float) -> float:
@@ -341,12 +340,12 @@ class ConfigManager:
         if unsafe_requested:
             return
 
-        target_rps = getattr(api, "requests_per_second", 0.3)
+        target_rps = getattr(api, "requests_per_second", 0.5)
         max_rate = getattr(api, "rate_limiter_max_rate", target_rps)
 
-        # If max_rate is significantly higher than target_rps (e.g. > 1.5x), clamp it
-        # We allow some headroom (e.g. 0.5 vs 0.3) for adaptive speedup, but not 3.0 vs 0.3
-        limit = target_rps * 2.0  # Allow 2x speedup (0.3 -> 0.6)
+        # If max_rate is significantly higher than target_rps (e.g. > 1.5x), clamp it.
+        # We allow some headroom for adaptive speedup, but keep it bounded in safe mode.
+        limit = target_rps * 2.0  # Allow 2x speedup (0.5 -> 1.0)
 
         if max_rate > limit:
             if not getattr(type(self), "_rate_limiter_max_clamp_logged", False):
@@ -1528,7 +1527,7 @@ def _test_invalid_config_data() -> bool:
     manager = ConfigManager(auto_load=False)
     config = manager.load_config()
 
-    # Should fall back to default (0.3) or keep previous valid value, not crash
+    # Should fall back to a valid numeric value (schema default and/or safety clamps), not crash
     rps = config.api.requests_per_second
     assert isinstance(rps, (int, float)), f"RPS should be numeric, got {type(rps)}"
     assert rps > 0, f"RPS should be positive, got {rps}"
@@ -1618,7 +1617,7 @@ def _test_requests_per_second_loading() -> bool:
     try:
         # Skip loading from .env file for this test
         os.environ["CONFIG_SKIP_DOTENV"] = "1"
-        # Enable unsafe rate limits to allow custom RPS values > 0.3
+        # Enable unsafe rate limits to allow custom RPS values above the safe clamp.
         os.environ["ALLOW_UNSAFE_RATE_LIMIT"] = "true"
 
         # Test 1: Custom value from environment
@@ -1660,6 +1659,53 @@ def _test_requests_per_second_loading() -> bool:
     return True
 
 
+def _test_api_safety_clamps_safe_mode() -> bool:
+    """Test that safe-mode clamps allow faster RPS while staying sequential."""
+
+    import os
+
+    from dotenv import load_dotenv
+
+    keys = [
+        "REQUESTS_PER_SECOND",
+        "RATE_LIMITER_MAX_RATE",
+        "MAX_CONCURRENCY",
+        "ALLOW_UNSAFE_RATE_LIMIT",
+        "API_SPEED_PROFILE",
+        "CONFIG_SKIP_DOTENV",
+    ]
+    originals = {key: os.environ.get(key) for key in keys}
+
+    try:
+        os.environ["CONFIG_SKIP_DOTENV"] = "1"
+        os.environ["ALLOW_UNSAFE_RATE_LIMIT"] = "false"
+        os.environ["API_SPEED_PROFILE"] = "safe"
+
+        # Deliberately exceed safe-mode limits to ensure they clamp.
+        os.environ["REQUESTS_PER_SECOND"] = "0.9"
+        os.environ["RATE_LIMITER_MAX_RATE"] = "10.0"
+        os.environ["MAX_CONCURRENCY"] = "4"
+
+        manager = ConfigManager(auto_load=False)
+        config = manager.load_config()
+
+        assert config.api.max_concurrency == 1, "Safe mode must remain sequential"
+        assert config.api.requests_per_second == 0.5, "Safe-mode RPS clamp should be 0.5"
+        assert config.api.rate_limiter_max_rate == 1.0, "Safe-mode max rate should be 2x RPS (1.0)"
+
+    finally:
+        for key, value in originals.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+        # Reload dotenv to restore .env file values
+        load_dotenv(override=True)
+
+    return True
+
+
 # ==============================================
 # MAIN TEST SUITE RUNNER
 # ==============================================
@@ -1688,6 +1734,7 @@ def config_manager_module_tests() -> bool:
     test_config_access_performance = _test_config_access_performance
     test_config_error_handling = _test_config_error_handling
     test_requests_per_second_loading = _test_requests_per_second_loading
+    test_api_safety_clamps_safe_mode = _test_api_safety_clamps_safe_mode
 
     # INITIALIZATION TESTS
     suite.run_test(
@@ -1775,7 +1822,15 @@ def config_manager_module_tests() -> bool:
         test_requests_per_second_loading,
         "REQUESTS_PER_SECOND loads from environment correctly",
         "Test REQUESTS_PER_SECOND environment variable loading",
-        "Verify default 0.4, custom values, and invalid value handling",
+        "Verify custom values load in unsafe mode and invalid value handling",
+    )
+
+    suite.run_test(
+        "API Safety Clamps (Safe Mode)",
+        test_api_safety_clamps_safe_mode,
+        "Safe mode clamps RPS/max rate and stays sequential",
+        "Test safe-mode API clamp behavior",
+        "Verify RPS clamps to 0.5, max rate clamps to 1.0, and concurrency clamps to 1",
     )
 
     return suite.finish_suite()
