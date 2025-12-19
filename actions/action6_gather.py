@@ -4484,13 +4484,25 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         if hasattr(limiter, "on_success"):
             limiter.on_success()
             logger.debug("API success recorded in rate limiter")
-        # Log significant rate changes
+        # Log per-endpoint rates for better visibility
         metrics = limiter.get_metrics() if hasattr(limiter, "get_metrics") else None
         if metrics and hasattr(metrics, "current_fill_rate"):
+            # Build per-endpoint rate summary
+            endpoint_rates: list[str] = []
+            endpoint_states = getattr(limiter, "_endpoint_states", {})
+            key_endpoints = [
+                "Match Details API (Batch)",
+                "Badge Details API (Batch)",
+                "Match List API",
+            ]
+            for ep in key_endpoints:
+                state = endpoint_states.get(ep)
+                if state:
+                    endpoint_rates.append(f"{ep.split()[0]}={state.current_rate:.2f}")
+
+            rate_info = " | ".join(endpoint_rates) if endpoint_rates else f"global={metrics.current_fill_rate:.3f}"
             max_rate = getattr(limiter, "max_fill_rate", "N/A")
-            logger.info(
-                f"Rate limiting currently {metrics.current_fill_rate:.3f} req/s (Max: {max_rate}) after page {current_page}"
-            )
+            logger.info(f"📊 Rate status after page {current_page}: {rate_info} req/s (bounds: 0.2-{max_rate})")
 
 
 # End of _adjust_delay

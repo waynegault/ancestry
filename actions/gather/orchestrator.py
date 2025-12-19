@@ -361,6 +361,11 @@ class GatherOrchestrator:
 
         logger.info("Estimated matches: %s", total_matches_estimate_this_run)
 
+        # Log per-endpoint rate status at start for visibility
+        limiter = getattr(self.session_manager, "rate_limiter", None)
+        if limiter and hasattr(limiter, "log_endpoint_rates_summary"):
+            limiter.log_endpoint_rates_summary()
+
         loop_final_success = True
         matches_on_page_for_batch = initial_matches_on_page
 

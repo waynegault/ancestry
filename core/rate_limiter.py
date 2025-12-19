@@ -691,6 +691,38 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             if log_config and self._rate_caps:
                 self._log_endpoint_rate_caps(self._rate_caps)
 
+            # Apply persisted endpoint rates if available
+            self._restore_persisted_endpoint_rates()
+
+    def _restore_persisted_endpoint_rates(self) -> None:
+        """Restore per-endpoint rates from persisted state for continuity between sessions."""
+        persisted = _load_persisted_state()
+        if not persisted:
+            return
+
+        endpoint_rates = persisted.get("endpoint_rates", {})
+        if not endpoint_rates:
+            return
+
+        restored_count = 0
+        for endpoint, persisted_rate in endpoint_rates.items():
+            if endpoint not in self._endpoint_states:
+                continue
+
+            state = self._endpoint_states[endpoint]
+            # Only use persisted rate if it's lower (safer) than current rate
+            # This prevents starting too aggressively after config changes
+            if persisted_rate < state.current_rate:
+                old_rate = state.current_rate
+                state.current_rate = max(persisted_rate, state.min_rate)
+                restored_count += 1
+                logger.debug(
+                    f"Restored '{endpoint}' rate from previous session: {old_rate:.3f} → {state.current_rate:.3f} req/s"
+                )
+
+        if restored_count > 0:
+            logger.info(f"📥 Restored {restored_count} endpoint rates from previous session (safer rates preserved)")
+
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""
 
@@ -1060,6 +1092,33 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             cap_fragment,
         )
 
+    def log_endpoint_rates_summary(self) -> None:
+        """Log a formatted summary of per-endpoint rates for visibility.
+
+        Shows current rates for key batch APIs that are most likely to trigger 429s.
+        Called at session start and periodically during long runs.
+        """
+        key_endpoints = [
+            "Match Details API (Batch)",
+            "Badge Details API (Batch)",
+            "Profile Details API (Batch)",
+            "Match List API",
+            "Ethnicity Comparison API",
+        ]
+
+        rate_entries: list[str] = []
+        for endpoint in key_endpoints:
+            state = self._endpoint_states.get(endpoint)
+            if state:
+                status = "🟢" if state.total_429s == 0 else "🟡" if state.total_429s < 3 else "🔴"
+                rate_entries.append(
+                    f"  {status} {endpoint}: {state.current_rate:.2f} req/s "
+                    f"(bounds: {state.min_rate:.2f}-{state.max_rate:.2f}, 429s: {state.total_429s})"
+                )
+
+        if rate_entries:
+            logger.info("📊 Per-Endpoint Rate Summary:\n" + "\n".join(rate_entries))
+
     def get_status_message(self) -> str:
         """
         Get a human-readable status message for the rate limiter.
@@ -1413,12 +1472,23 @@ def persist_rate_limiter_state(
     limiter: Optional[AdaptiveRateLimiter],
     metrics: Optional[RateLimiterMetrics] = None,
 ) -> None:
-    """Persist the latest limiter state and optional metrics for next run reuse."""
+    """Persist the latest limiter state and optional metrics for next run reuse.
+
+    Includes per-endpoint rates so the next session starts with learned rates.
+    """
 
     if limiter is None:
         return
 
     metrics = metrics or limiter.get_metrics()
+
+    # Collect per-endpoint learned rates for persistence
+    endpoint_rates: dict[str, float] = {}
+    endpoint_429_counts: dict[str, int] = {}
+    for endpoint, state in limiter._endpoint_states.items():
+        if endpoint != limiter._default_endpoint:
+            endpoint_rates[endpoint] = state.current_rate
+            endpoint_429_counts[endpoint] = state.total_429s
 
     payload: dict[str, Any] = {
         "fill_rate": float(limiter.fill_rate),
@@ -1432,9 +1502,15 @@ def persist_rate_limiter_state(
         "rate_increases": int(metrics.rate_increases),
         "rate_decreases": int(metrics.rate_decreases),
         "error_429_count": int(metrics.error_429_count),
+        "endpoint_rates": endpoint_rates,
+        "endpoint_429_counts": endpoint_429_counts,
     }
 
     _persist_state(payload)
+    logger.info(
+        f"💾 Rate limiter state persisted: {len(endpoint_rates)} endpoint rates saved, "
+        f"429 errors: {metrics.error_429_count}"
+    )
 
 
 def reset_global_rate_limiter() -> None:
