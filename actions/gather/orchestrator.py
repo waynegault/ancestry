@@ -19,7 +19,6 @@ if __package__ in {None, ""}:
 import logging
 
 from actions.gather.checkpoint import finalize_checkpoint_after_run, load_checkpoint, persist_checkpoint
-from actions.gather.rate_persistence import persist_rates_periodically
 from actions.gather.metrics import (
     PageProcessingMetrics,
     accumulate_page_metrics,
@@ -30,6 +29,7 @@ from actions.gather.metrics import (
     log_timing_breakdown,
 )
 from actions.gather.persistence import process_batch_lookups as gather_process_batch_lookups
+from actions.gather.rate_persistence import persist_rates_periodically
 from config import config_schema
 from core.error_handling import (
     AuthenticationExpiredError,
