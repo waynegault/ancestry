@@ -2,11 +2,20 @@ from __future__ import annotations
 
 """DeepSeek provider adapter built on the OpenAI-compatible SDK."""
 
+import sys
+from pathlib import Path
+
+# Support standalone execution
+if __package__ in {None, ""}:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
 import logging
 from collections.abc import Sequence
 from typing import Any
 
-from .base import (
+from ai.providers.base import (
     BaseProvider,
     ProviderConfigurationError,
     ProviderRequest,
