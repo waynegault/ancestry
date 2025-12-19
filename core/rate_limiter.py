@@ -1042,10 +1042,11 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
                 old_delay = 1.0 / old_rate if old_rate > 0 else float("inf")
                 new_delay = 1.0 / state.current_rate if state.current_rate > 0 else float("inf")
 
-                # Only log if rate actually changed
+                # Only log if rate actually changed - use DEBUG to reduce log noise
+                # Rate increases are routine; 429 errors (warnings) are what matter
                 if abs(old_rate - state.current_rate) > 0.001:
                     pct_change = ((state.current_rate - old_rate) / old_rate) * 100 if old_rate > 0 else 0
-                    logger.info(
+                    logger.debug(
                         f"✅ '{effective_endpoint}' after {self.success_threshold} successes: "
                         f"rate {old_rate:.3f} → {state.current_rate:.3f} req/s ({pct_change:+.1f}%) | "
                         f"delay {old_delay:.2f}s → {new_delay:.2f}s | "
