@@ -616,6 +616,8 @@ def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_b
     recent_slow_calls = getattr(session_manager, '_recent_slow_calls', 0)
 
     # Adaptive batch sizing based on server performance
+    # NOTE: Only reduce batch size on slow server. Do NOT increase on fast server -
+    # fast responses mean we're calling fast, which triggers 429 rate limits.
     if avg_response_time > 10.0:  # Very slow server
         adapted_size = max(5, base_batch_size // 4)
         logger.info(f"Server very slow ({avg_response_time:.1f}s avg), reducing batch size to {adapted_size}")
@@ -625,9 +627,6 @@ def _get_adaptive_batch_size(session_manager: Optional["SessionManager"], base_b
     elif recent_slow_calls > 5:  # Multiple consecutive slow calls
         adapted_size = max(8, base_batch_size // 2)
         logger.info(f"Multiple slow calls ({recent_slow_calls}), reducing batch size to {adapted_size}")
-    elif avg_response_time < 3.0 and recent_slow_calls == 0:  # Fast server
-        adapted_size = min(50, int(base_batch_size * 1.5))
-        logger.debug(f"Server fast ({avg_response_time:.1f}s avg), increasing batch size to {adapted_size}")
     else:
         adapted_size = base_batch_size
 
@@ -4487,18 +4486,19 @@ def _adjust_delay(session_manager: SessionManager, current_page: int) -> None:
         # Log per-endpoint rates for better visibility
         metrics = limiter.get_metrics() if hasattr(limiter, "get_metrics") else None
         if metrics and hasattr(metrics, "current_fill_rate"):
-            # Build per-endpoint rate summary
+            # Build per-endpoint rate summary with short labels
             endpoint_rates: list[str] = []
             endpoint_states = getattr(limiter, "_endpoint_states", {})
+            # (full endpoint name, short label for log)
             key_endpoints = [
-                "Match Details API (Batch)",
-                "Badge Details API (Batch)",
-                "Match List API",
+                ("Match Details API (Batch)", "Match"),
+                ("Badge Details API (Batch)", "Badge"),
+                ("Match List API", "List"),
             ]
-            for ep in key_endpoints:
-                state = endpoint_states.get(ep)
+            for ep_name, label in key_endpoints:
+                state = endpoint_states.get(ep_name)
                 if state:
-                    endpoint_rates.append(f"{ep.split()[0]}={state.current_rate:.2f}")
+                    endpoint_rates.append(f"{label}={state.current_rate:.2f}")
 
             rate_info = " | ".join(endpoint_rates) if endpoint_rates else f"global={metrics.current_fill_rate:.3f}"
             max_rate = getattr(limiter, "max_fill_rate", "N/A")

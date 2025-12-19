@@ -758,7 +758,8 @@ def _log_prefetch_summary(
     logger.info("🔬 API Performance Breakdown:")
     for endpoint, duration in endpoint_durations.items():
         count = endpoint_counts.get(endpoint, 0)
-        if count > 0:
+        # Skip endpoints with 0 calls or 0 duration (cached/skipped)
+        if count > 0 and duration > 0.001:
             avg = duration / count
             logger.info("   - %-20s: %3d calls | %6.2fs total | %5.2fs avg", endpoint, count, duration, avg)
 

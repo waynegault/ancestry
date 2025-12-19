@@ -557,9 +557,9 @@ class APIManager:
         rate_limiter: Optional["AdaptiveRateLimiter"],
     ) -> RequestResult:
         """Build successful RequestResult from response."""
-        # Notify rate limiter of success
+        # Notify rate limiter of success (with endpoint for per-endpoint recovery)
         if rate_limiter is not None:
-            rate_limiter.on_success()
+            rate_limiter.on_success(endpoint_label)
 
         # Parse response
         if config.force_text_response:
