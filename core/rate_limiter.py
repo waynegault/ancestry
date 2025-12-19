@@ -878,7 +878,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             caps_by_rate.setdefault(cap, []).append(endpoint)
 
         # Sort by rate (slowest first) and format
-        cap_summaries = []
+        cap_summaries: list[str] = []
         for rate in sorted(caps_by_rate.keys()):
             endpoints = caps_by_rate[rate]
             if len(endpoints) <= 3:

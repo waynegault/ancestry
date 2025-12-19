@@ -170,8 +170,9 @@ class ConfigManager:
         config_manager = ConfigManager()
     """
 
-    _token_fill_rate_clamp_logged = False
-    _unsafe_concurrency_override_logged = False
+    _token_fill_rate_clamp_logged: bool = False
+    _unsafe_concurrency_override_logged: bool = False
+    _concurrency_override_logged: bool = False
 
     def __init__(
         self,

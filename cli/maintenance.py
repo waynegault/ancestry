@@ -1504,7 +1504,7 @@ class ConfigMaintenanceMixin:
         try:
             from config.config_manager import get_config_manager
             from core.feature_flags import bootstrap_feature_flags
-            from core.rate_limiter import get_rate_limiter
+            from core.rate_limiter import get_adaptive_rate_limiter
 
             manager = get_config_manager()
             if manager is None:
@@ -1518,7 +1518,7 @@ class ConfigMaintenanceMixin:
             # Refresh rate limiter with updated endpoint profiles
             api_settings = getattr(config, "api", None)
             endpoint_profiles = getattr(api_settings, "endpoint_throttle_profiles", {}) if api_settings else {}
-            limiter = get_rate_limiter()
+            limiter = get_adaptive_rate_limiter()
             if limiter and endpoint_profiles:
                 limiter.configure_endpoint_profiles(endpoint_profiles)
                 print(f"   Rate limiter: {len(endpoint_profiles)} endpoint profiles applied")

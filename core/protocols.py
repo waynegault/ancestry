@@ -56,7 +56,7 @@ class RateLimiterProtocol(Protocol):
         """Wait for rate limit, return actual wait time."""
         ...
 
-    def on_success(self) -> None:
+    def on_success(self, endpoint: str | None = None) -> None:
         """Report successful request for rate adaptation."""
         ...
 
