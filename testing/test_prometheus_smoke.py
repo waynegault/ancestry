@@ -10,16 +10,15 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-import requests
-
-from scripts import static_metrics_server
-
 # Allow running as a script without -m by adding project root to sys.path
 if __package__ in {None, ""}:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
 
+import requests
+
+from scripts import static_metrics_server
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
