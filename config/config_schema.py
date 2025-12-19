@@ -420,10 +420,8 @@ class APIConfig:
     # Conservative rate to prevent 429 errors with 72-second penalties
     # Sequential processing only - no parallel execution to prevent burst requests
     rate_limit_enabled: bool = True
-    requests_per_second: float = 2.0  # Increased to 2.0 for better throughput (Baseline: 2.0)
-    burst_limit: int = 20  # Increased burst limit for better responsiveness
-    speed_profile: str = "aggressive"  # Controls rate limiting behavior presets (safe, balanced, max)
-    allow_unsafe_rate_limit: bool = True  # Allow higher rates for dynamic adjustment
+    requests_per_second: float = 2.0  # Target requests per second (clamped to rate_limiter_max_rate)
+    burst_limit: int = 20  # Burst limit for responsiveness
     user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     accept_language: str = "en-US,en;q=0.9"
     target_match_throughput: float = 1.0  # Target matches processed per second (0 disables pacing)

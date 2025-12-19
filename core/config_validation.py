@@ -65,26 +65,6 @@ def should_suppress_config_warnings() -> bool:
     return any("test" in arg.lower() for arg in sys.argv)
 
 
-def warn_if_unsafe_profile(speed_profile: str, allow_unsafe: bool, suppress_warnings: bool) -> None:
-    """Emit warning when unsafe API profiles are active."""
-
-    if suppress_warnings:
-        return
-
-    if not (allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}):
-        return
-
-    # "baseline" profile is now considered a safe baseline (validated 2025-11-22)
-    if speed_profile == "baseline":
-        return
-
-    profile_label = speed_profile or "custom"
-    logger.warning(
-        "  Unsafe API speed profile '%s' active; safety clamps relaxed. Monitor for 429 errors.",
-        profile_label,
-    )
-
-
 def log_persisted_rate_state(persisted_state: dict[str, Any]) -> None:
     """Log persisted rate limiter metadata from previous runs."""
 
@@ -105,7 +85,7 @@ def log_persisted_rate_state(persisted_state: dict[str, Any]) -> None:
         )
 
 
-def log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: str) -> None:
+def log_rate_limiter_summary(config: Any) -> None:
     """Log the adaptive rate limiter plan without instantiating it early."""
 
     try:
@@ -121,17 +101,15 @@ def log_rate_limiter_summary(config: Any, allow_unsafe: bool, speed_profile: str
         success_threshold = configured_threshold
     else:
         success_threshold = max(batch_threshold, 10)
-    safe_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
-    desired_rate = safe_rps
-    allow_aggressive = allow_unsafe or speed_profile in {"max", "aggressive", "experimental"}
-    min_fill_rate = max(0.05, safe_rps * 0.25)
-    max_fill_rate = desired_rate if allow_aggressive else safe_rps
+    configured_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
+    min_fill_rate = getattr(config.api, "rate_limiter_min_rate", 0.5) or 0.5
+    max_fill_rate = getattr(config.api, "rate_limiter_max_rate", configured_rps)
     max_fill_rate = max(max_fill_rate, min_fill_rate)
     bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
 
     logger.info(
         "  Rate Limiter (planned): target=%.3f req/s | success_threshold=%d | bounds=%.3f-%.3f | capacity=%.1f",
-        desired_rate,
+        configured_rps,
         success_threshold,
         min_fill_rate,
         max_fill_rate,
@@ -149,12 +127,8 @@ def log_configuration_summary(config: Any) -> None:
     # os.system('cls' if os.name == 'nt' else 'clear')
 
     print(" CONFIG ".center(80, "="))
-    speed_profile = str(getattr(config.api, "speed_profile", "safe")).lower()
-    allow_unsafe = bool(getattr(config.api, "allow_unsafe_rate_limit", False))
     log_basic_configuration_values(config)
-    suppress_warnings = should_suppress_config_warnings()
-    warn_if_unsafe_profile(speed_profile, allow_unsafe, suppress_warnings)
-    log_rate_limiter_summary(config, allow_unsafe, speed_profile)
+    log_rate_limiter_summary(config)
     print("")  # Blank line after configuration
 
 
@@ -232,8 +206,7 @@ def _make_base_config() -> SimpleNamespace:
         max_throughput_catchup_delay=0.0,
         token_bucket_success_threshold=None,
         token_bucket_capacity=10.0,
-        speed_profile="safe",
-        allow_unsafe_rate_limit=False,
+        rate_limiter_max_rate=5.0,
     )
     return SimpleNamespace(
         batch_size=50,
@@ -256,20 +229,6 @@ def _test_check_processing_limits_allows_valid_batches() -> bool:
     config = SimpleNamespace(batch_size=10)
     with patch.object(logger, "warning") as mock_warn:
         check_processing_limits(config)
-    mock_warn.assert_not_called()
-    return True
-
-
-def _test_warn_if_unsafe_profile_emits_warning() -> bool:
-    with patch.object(logger, "warning") as mock_warn:
-        warn_if_unsafe_profile("max", allow_unsafe=True, suppress_warnings=False)
-    mock_warn.assert_called_once()
-    return True
-
-
-def _test_warn_if_unsafe_profile_suppressed() -> bool:
-    with patch.object(logger, "warning") as mock_warn:
-        warn_if_unsafe_profile("max", allow_unsafe=True, suppress_warnings=True)
     mock_warn.assert_not_called()
     return True
 
@@ -338,7 +297,7 @@ def _test_log_rate_limiter_summary_handles_import_error() -> bool:
         return original_import(name, *args, **kwargs)
 
     with patch.object(builtins, "__import__", side_effect=_fake_import):
-        log_rate_limiter_summary(config, allow_unsafe=False, speed_profile="safe")
+        log_rate_limiter_summary(config)
     # Should not raise
     return True
 
@@ -356,18 +315,6 @@ def module_tests() -> bool:
         "Processing limits valid",
         _test_check_processing_limits_allows_valid_batches,
         "Ensures valid batch sizes do not warn.",
-    )
-
-    suite.run_test(
-        "Unsafe profile warning",
-        _test_warn_if_unsafe_profile_emits_warning,
-        "Ensures unsafe profiles trigger warnings when not suppressed.",
-    )
-
-    suite.run_test(
-        "Unsafe profile suppressed",
-        _test_warn_if_unsafe_profile_suppressed,
-        "Ensures suppress flag skips unsafe profile warnings.",
     )
 
     suite.run_test(

@@ -262,102 +262,46 @@ class ConfigManager:
             raise ValidationError(f"Configuration loading failed: {e}") from e
 
     def _enforce_api_safety_constraints(self, config: ConfigSchema) -> None:
-        """Clamp API settings to safe sequential defaults unless override explicitly requested."""
+        """Clamp API settings to safe values - always enforce rate limits."""
 
         api = getattr(config, "api", None)
         if not api:
             return
 
-        speed_profile = str(getattr(api, "speed_profile", "safe")).lower()
-        unsafe_requested = self._unsafe_rate_limit_requested(api, speed_profile)
+        self._enforce_max_concurrency(api)
+        self._clamp_requests_per_second(api)
 
-        self._enforce_max_concurrency(api, unsafe_requested)
-
-        # Safe default ceiling for sequential API calls.
-        # This is intentionally conservative, but should allow faster throughput than the original 0.3.
-        safe_rps = 0.5
-        self._enforce_requests_per_second(api, unsafe_requested, safe_rps)
-        self._align_rate_limiter_max_rate(api, unsafe_requested)
-
-    @staticmethod
-    def _unsafe_rate_limit_requested(api: Any, speed_profile: str) -> bool:
-        """Return True when any configuration requests relaxed API safety."""
-
-        unsafe_requested = bool(getattr(api, "allow_unsafe_rate_limit", False))
-
-        if speed_profile in {"max", "aggressive", "experimental"}:
-            unsafe_requested = True
-
-        env_speed_profile = os.getenv("API_SPEED_PROFILE", "").strip().lower()
-        if env_speed_profile in {"max", "aggressive", "experimental"}:
-            unsafe_requested = True
-
-        env_allow_unsafe = os.getenv("ALLOW_UNSAFE_RATE_LIMIT", "").strip().lower()
-        if env_allow_unsafe in {"true", "1", "yes", "on"}:
-            unsafe_requested = True
-
-        return unsafe_requested
-
-    def _enforce_max_concurrency(self, api: Any, unsafe_requested: bool) -> None:
-        """Ensure concurrency stays within safe sequential defaults."""
+    def _enforce_max_concurrency(self, api: Any) -> None:
+        """Ensure concurrency stays at sequential default."""
 
         max_concurrency_configured = getattr(api, "max_concurrency", 1)
         if max_concurrency_configured == 1:
             return
 
-        # Even when unsafe rate limits are enabled, keep execution sequential unless a caller
-        # explicitly changes this code. Parallelism is a separate risk factor from request rate.
-        if unsafe_requested and not getattr(type(self), "_unsafe_concurrency_override_logged", False):
+        if not getattr(type(self), "_concurrency_override_logged", False):
             logger.warning(
-                "⚠️ Unsafe speed profile active; overriding max_concurrency=%s to sequential-safe value of 1",
+                "max_concurrency=%s overridden to sequential-safe value of 1",
                 max_concurrency_configured,
             )
-            type(self)._unsafe_concurrency_override_logged = True
+            type(self)._concurrency_override_logged = True
 
-        logger.warning("max_concurrency=%s overridden to sequential-safe value of 1", max_concurrency_configured)
         api.max_concurrency = 1
 
-    def _enforce_requests_per_second(self, api: Any, unsafe_requested: bool, safe_rps: float) -> float:
-        """Clamp requests_per_second when safety clamps are active."""
+    def _clamp_requests_per_second(self, api: Any) -> None:
+        """Clamp requests_per_second to rate_limiter_max_rate ceiling."""
 
-        current_rps = getattr(api, "requests_per_second", safe_rps)
-        if unsafe_requested or current_rps <= safe_rps:
-            return current_rps
+        current_rps = getattr(api, "requests_per_second", 1.0)
+        max_rate = getattr(api, "rate_limiter_max_rate", 5.0)
 
-        if not getattr(self, "_rps_clamp_logged", False):
-            logger.debug(
-                "requests_per_second %.2f exceeds validated safe limit %.2f; clamping to safe value",
-                current_rps,
-                safe_rps,
-            )
-            self._rps_clamp_logged = True
-
-        api.requests_per_second = safe_rps
-        return safe_rps
-
-    def _align_rate_limiter_max_rate(self, api: Any, unsafe_requested: bool) -> None:
-        """Keep rate limiter max rate aligned with the enforced RPS."""
-        if unsafe_requested:
-            return
-
-        target_rps = getattr(api, "requests_per_second", 0.5)
-        max_rate = getattr(api, "rate_limiter_max_rate", target_rps)
-
-        # If max_rate is significantly higher than target_rps (e.g. > 1.5x), clamp it.
-        # We allow some headroom for adaptive speedup, but keep it bounded in safe mode.
-        limit = target_rps * 2.0  # Allow 2x speedup (0.5 -> 1.0)
-
-        if max_rate > limit:
-            if not getattr(type(self), "_rate_limiter_max_clamp_logged", False):
+        if current_rps > max_rate:
+            if not getattr(self, "_rps_clamp_logged", False):
                 logger.info(
-                    "Rate limiter max rate %.2f significantly higher than requests_per_second %.2f; clamping to %.2f",
+                    "requests_per_second %.2f clamped to rate_limiter_max_rate %.2f",
+                    current_rps,
                     max_rate,
-                    target_rps,
-                    limit,
                 )
-                setattr(type(self), "_rate_limiter_max_clamp_logged", True)
-
-            api.rate_limiter_max_rate = limit
+                self._rps_clamp_logged = True
+            api.requests_per_second = max_rate
 
     def get_config(self, reload_if_changed: bool = True) -> ConfigSchema:
         """
@@ -1105,7 +1049,6 @@ class ConfigManager:
         self._set_string_config(config, "api", "tree_id", "MY_TREE_ID")
         self._set_string_config(config, "api", "my_user_id", "MY_PROFILE_ID")
         self._set_string_config(config, "api", "my_uuid", "MY_UUID")
-        self._set_string_config(config, "api", "speed_profile", "API_SPEED_PROFILE")
 
         # Integer configurations
         self._set_int_config(config, "api", "request_timeout", "REQUEST_TIMEOUT")
@@ -1133,7 +1076,6 @@ class ConfigManager:
 
         # Boolean configurations
         self._set_bool_config(config, "api", "rate_limit_enabled", "RATE_LIMIT_ENABLED")
-        self._set_bool_config(config, "api", "allow_unsafe_rate_limit", "ALLOW_UNSAFE_RATE_LIMIT")
 
         throttle_json = os.getenv("API_ENDPOINT_THROTTLES")
         if throttle_json:
@@ -1613,12 +1555,13 @@ def _test_requests_per_second_loading() -> bool:
     # Save original values
     original_value = os.environ.get("REQUESTS_PER_SECOND")
     original_skip_dotenv = os.environ.get("CONFIG_SKIP_DOTENV")
+    original_max_rate = os.environ.get("RATE_LIMITER_MAX_RATE")
 
     try:
         # Skip loading from .env file for this test
         os.environ["CONFIG_SKIP_DOTENV"] = "1"
-        # Enable unsafe rate limits to allow custom RPS values above the safe clamp.
-        os.environ["ALLOW_UNSAFE_RATE_LIMIT"] = "true"
+        # Set high max_rate so our test RPS values aren't clamped
+        os.environ["RATE_LIMITER_MAX_RATE"] = "10.0"
 
         # Test 1: Custom value from environment
         os.environ["REQUESTS_PER_SECOND"] = "0.2"
@@ -1654,13 +1597,18 @@ def _test_requests_per_second_loading() -> bool:
         elif "CONFIG_SKIP_DOTENV" in os.environ:
             del os.environ["CONFIG_SKIP_DOTENV"]
 
+        if original_max_rate is not None:
+            os.environ["RATE_LIMITER_MAX_RATE"] = original_max_rate
+        elif "RATE_LIMITER_MAX_RATE" in os.environ:
+            del os.environ["RATE_LIMITER_MAX_RATE"]
+
         # Reload dotenv to restore .env file values
         load_dotenv(override=True)
     return True
 
 
 def _test_api_safety_clamps_safe_mode() -> bool:
-    """Test that safe-mode clamps allow faster RPS while staying sequential."""
+    """Test that RPS is clamped to RATE_LIMITER_MAX_RATE and concurrency stays sequential."""
 
     import os
 
@@ -1670,28 +1618,23 @@ def _test_api_safety_clamps_safe_mode() -> bool:
         "REQUESTS_PER_SECOND",
         "RATE_LIMITER_MAX_RATE",
         "MAX_CONCURRENCY",
-        "ALLOW_UNSAFE_RATE_LIMIT",
-        "API_SPEED_PROFILE",
         "CONFIG_SKIP_DOTENV",
     ]
     originals = {key: os.environ.get(key) for key in keys}
 
     try:
         os.environ["CONFIG_SKIP_DOTENV"] = "1"
-        os.environ["ALLOW_UNSAFE_RATE_LIMIT"] = "false"
-        os.environ["API_SPEED_PROFILE"] = "safe"
 
-        # Deliberately exceed safe-mode limits to ensure they clamp.
-        os.environ["REQUESTS_PER_SECOND"] = "0.9"
-        os.environ["RATE_LIMITER_MAX_RATE"] = "10.0"
+        # Set RPS higher than max_rate to test clamping
+        os.environ["REQUESTS_PER_SECOND"] = "10.0"
+        os.environ["RATE_LIMITER_MAX_RATE"] = "5.0"
         os.environ["MAX_CONCURRENCY"] = "4"
 
         manager = ConfigManager(auto_load=False)
         config = manager.load_config()
 
-        assert config.api.max_concurrency == 1, "Safe mode must remain sequential"
-        assert config.api.requests_per_second == 0.5, "Safe-mode RPS clamp should be 0.5"
-        assert config.api.rate_limiter_max_rate == 1.0, "Safe-mode max rate should be 2x RPS (1.0)"
+        assert config.api.max_concurrency == 1, "Concurrency must remain sequential"
+        assert config.api.requests_per_second == 5.0, "RPS should be clamped to max_rate (5.0)"
 
     finally:
         for key, value in originals.items():
