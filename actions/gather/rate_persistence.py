@@ -5,6 +5,15 @@ Provides periodic persistence of rate limiter state during long-running
 gather operations to prevent loss of learned rates when runs are cancelled.
 """
 
+import sys
+from pathlib import Path
+
+# Support standalone execution
+if __package__ in {None, ""}:
+    REPO_ROOT = Path(__file__).resolve().parents[2]
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+
 import logging
 from typing import TYPE_CHECKING
 
