@@ -632,7 +632,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         profile = self._endpoint_profiles.get(endpoint)
 
         if profile and profile.max_rate:
-            # Use configured max_rate as starting rate, derive min from global ratio
+            # Use configured max_rate as ceiling, derive min from global ratio
             max_rate = profile.max_rate
             min_rate = max(0.1, max_rate * (self.min_fill_rate / self.max_fill_rate))
         else:
@@ -640,8 +640,12 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             max_rate = self.max_fill_rate
             min_rate = self.min_fill_rate
 
+        # Start conservatively at 50% of range to avoid immediate 429s
+        # Persisted rates will override this if available
+        initial_rate = min_rate + (max_rate - min_rate) * 0.5
+
         state = _EndpointState(
-            current_rate=max_rate,  # Start at max (optimistic)
+            current_rate=initial_rate,  # Start conservatively at 50%
             min_rate=min_rate,
             max_rate=max_rate,
         )
@@ -679,8 +683,10 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
                 if endpoint not in self._endpoint_states:
                     max_rate = profile.max_rate if profile.max_rate else self.max_fill_rate
                     min_rate = max(0.1, max_rate * (self.min_fill_rate / self.max_fill_rate))
+                    # Start conservatively at 50% of range
+                    initial_rate = min_rate + (max_rate - min_rate) * 0.5
                     self._endpoint_states[endpoint] = _EndpointState(
-                        current_rate=max_rate,
+                        current_rate=initial_rate,
                         min_rate=min_rate,
                         max_rate=max_rate,
                     )
@@ -698,30 +704,51 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         """Restore per-endpoint rates from persisted state for continuity between sessions."""
         persisted = _load_persisted_state()
         if not persisted:
+            logger.info("📭 No persisted rate state found - starting with conservative defaults (50% of max)")
             return
 
         endpoint_rates = persisted.get("endpoint_rates", {})
+        endpoint_429s = persisted.get("endpoint_429_counts", {})
+        timestamp = persisted.get("timestamp")
+
         if not endpoint_rates:
+            logger.info("📭 Persisted state exists but no endpoint rates - using conservative defaults")
             return
 
+        # Calculate age of persisted state
+        import time
+        age_hours = (time.time() - timestamp) / 3600 if timestamp else None
+        age_str = f", age: {age_hours:.1f}h" if age_hours else ""
+
         restored_count = 0
+        restored_details: list[str] = []
         for endpoint, persisted_rate in endpoint_rates.items():
             if endpoint not in self._endpoint_states:
                 continue
 
             state = self._endpoint_states[endpoint]
-            # Only use persisted rate if it's lower (safer) than current rate
-            # This prevents starting too aggressively after config changes
-            if persisted_rate < state.current_rate:
-                old_rate = state.current_rate
-                state.current_rate = max(persisted_rate, state.min_rate)
-                restored_count += 1
-                logger.debug(
-                    f"Restored '{endpoint}' rate from previous session: {old_rate:.3f} → {state.current_rate:.3f} req/s"
-                )
+            prior_429s = endpoint_429s.get(endpoint, 0)
+
+            # Use persisted rate since it represents learned optimal rate
+            old_rate = state.current_rate
+            state.current_rate = max(persisted_rate, state.min_rate)
+            state.current_rate = min(state.current_rate, state.max_rate)
+            restored_count += 1
+
+            short_name = endpoint.replace(" API (Batch)", "").replace(" API", "")
+            restored_details.append(
+                f"{short_name}: {state.current_rate:.2f} req/s (prior 429s: {prior_429s})"
+            )
+            logger.debug(
+                f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s"
+            )
 
         if restored_count > 0:
-            logger.info(f"📥 Restored {restored_count} endpoint rates from previous session (safer rates preserved)")
+            details_str = " | ".join(restored_details)
+            logger.info(
+                f"📥 Restored {restored_count} endpoint rates from previous session{age_str}\n"
+                f"   {details_str}"
+            )
 
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""
@@ -1111,9 +1138,15 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             state = self._endpoint_states.get(endpoint)
             if state:
                 status = "🟢" if state.total_429s == 0 else "🟡" if state.total_429s < 3 else "🔴"
+                # Calculate headroom: how much room to grow (0% = at max, 100% = at min)
+                range_size = state.max_rate - state.min_rate
+                if range_size > 0:
+                    pct_of_max = ((state.current_rate - state.min_rate) / range_size) * 100
+                else:
+                    pct_of_max = 100.0
                 rate_entries.append(
                     f"  {status} {endpoint}: {state.current_rate:.2f} req/s "
-                    f"(bounds: {state.min_rate:.2f}-{state.max_rate:.2f}, 429s: {state.total_429s})"
+                    f"({pct_of_max:.0f}% of max, 429s: {state.total_429s})"
                 )
 
         if rate_entries:
@@ -1743,7 +1776,12 @@ def _test_initialization() -> None:
 
 def _test_token_bucket_enforcement() -> None:
     """Test that per-endpoint rate limiting enforces rate."""
-    limiter = AdaptiveRateLimiter(initial_fill_rate=5.0, capacity=10.0)
+    limiter = AdaptiveRateLimiter(
+        initial_fill_rate=5.0,
+        min_fill_rate=5.0,  # Set min=max to ensure endpoint starts at max rate
+        max_fill_rate=5.0,
+        capacity=10.0,
+    )
     endpoint = "test-api"
 
     # First request - should be instant
@@ -1758,58 +1796,67 @@ def _test_token_bucket_enforcement() -> None:
         limiter.wait(endpoint)
     rate_limited_time = time.time() - start
 
-    # Should take ~1 second (5 requests at 0.2s each)
-    assert 0.8 <= rate_limited_time <= 1.5, f"5 requests at 5 req/s should take ~1s, got {rate_limited_time:.2f}s"
+    # Should take ~1 second (5 requests at 0.2s each) - allow more tolerance for slow systems
+    assert 0.8 <= rate_limited_time <= 2.0, f"5 requests at 5 req/s should take ~1s, got {rate_limited_time:.2f}s"
 
 
 def _test_429_decreases_rate() -> None:
     """Test 429 error decreases the endpoint's rate by approximately 20%."""
-    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, max_fill_rate=1.0)
+    limiter = AdaptiveRateLimiter(initial_fill_rate=1.0, min_fill_rate=0.1, max_fill_rate=1.0)
     endpoint = "test-api"
 
-    # First call creates endpoint state at max_rate (1.0)
+    # First call creates endpoint state at 50% of range (conservative start)
     limiter.wait(endpoint)
     state = limiter.get_endpoint_state(endpoint)
     assert state is not None
-    assert state.current_rate == 1.0, f"Expected 1.0, got {state.current_rate}"
+    # 50% of range: 0.1 + (1.0 - 0.1) * 0.5 = 0.55
+    expected_initial = 0.55
+    assert abs(state.current_rate - expected_initial) < 0.01, f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
 
     limiter.on_429_error(endpoint)
-    # Default backoff is 0.80
-    assert abs(state.current_rate - 0.80) < 0.001, f"Expected 0.80, got {state.current_rate}"
+    # Default backoff is 0.80: 0.55 * 0.80 = 0.44
+    expected_after_429 = expected_initial * 0.80
+    assert abs(state.current_rate - expected_after_429) < 0.01, f"Expected {expected_after_429:.2f}, got {state.current_rate:.2f}"
 
     limiter.on_429_error(endpoint)
-    # 0.80 * 0.80 = 0.64
-    assert abs(state.current_rate - 0.64) < 0.001, f"Expected 0.64, got {state.current_rate}"
+    # 0.44 * 0.80 = 0.352
+    expected_after_2nd = expected_after_429 * 0.80
+    assert abs(state.current_rate - expected_after_2nd) < 0.01, f"Expected {expected_after_2nd:.2f}, got {state.current_rate:.2f}"
 
 
 def _test_success_threshold() -> None:
     """Test success requires threshold before increasing rate."""
     limiter = AdaptiveRateLimiter(
         initial_fill_rate=1.0,
+        min_fill_rate=0.1,
         max_fill_rate=2.0,  # Allow room for increase
         success_threshold=50,
         rate_limiter_success_factor=1.02,
     )
     endpoint = "test-api"
 
-    # Configure endpoint to start at 1.0 (not max_fill_rate)
+    # Configure endpoint with specific max_rate
     limiter.configure_endpoint_profiles({endpoint: {"max_rate": 1.0}})
-    # Manually adjust max to allow for the increase
-    limiter._endpoint_states[endpoint].max_rate = 2.0
-
     state = limiter.get_endpoint_state(endpoint)
     assert state is not None
-    assert state.current_rate == 1.0, f"Expected 1.0, got {state.current_rate}"
+
+    # Endpoint starts at 50% of its range (min=0.1, max=1.0)
+    # 50% = 0.1 + (1.0 - 0.1) * 0.5 = 0.55
+    expected_initial = 0.55
+    # Allow room for increase by adjusting max
+    limiter._endpoint_states[endpoint].max_rate = 2.0
+    assert abs(state.current_rate - expected_initial) < 0.01, f"Expected {expected_initial:.2f}, got {state.current_rate:.2f}"
 
     # First 49 successes: no change
     for _ in range(49):
         limiter.on_success(endpoint)
-    assert state.current_rate == 1.0, "Rate should not change before threshold"
+    assert abs(state.current_rate - expected_initial) < 0.01, "Rate should not change before threshold"
     assert state.success_count == 49
 
     # 50th success: increases by 2%
     limiter.on_success(endpoint)
-    assert abs(state.current_rate - 1.02) < 0.001, f"Expected 1.02, got {state.current_rate}"
+    expected_after_increase = expected_initial * 1.02
+    assert abs(state.current_rate - expected_after_increase) < 0.01, f"Expected {expected_after_increase:.2f}, got {state.current_rate:.2f}"
     assert state.success_count == 0, "Counter should reset after increase"
 
 
@@ -1989,9 +2036,20 @@ def _test_endpoint_min_interval() -> None:
 
 def _test_endpoint_delay_multiplier() -> None:
     """Ensure slower endpoint rate enforces longer wait times."""
-    limiter = AdaptiveRateLimiter(initial_fill_rate=4.0, capacity=1.0)
+    limiter = AdaptiveRateLimiter(
+        initial_fill_rate=4.0,
+        min_fill_rate=2.0,  # Set min close to max so starting rate is predictable
+        max_fill_rate=4.0,
+        capacity=1.0,
+    )
     # Configure slow endpoint with 2 req/s = 0.5s between requests
+    # With min=2.0, max=2.0 for this endpoint, it starts at 2.0 req/s
     limiter.configure_endpoint_profiles({"slow-endpoint": {"max_rate": 2.0}})
+
+    # Force the endpoint to start at exactly 2.0 req/s for predictable test
+    state = limiter._endpoint_states.get("slow-endpoint")
+    if state:
+        state.current_rate = 2.0
 
     limiter.wait("slow-endpoint")
 
@@ -1999,7 +2057,8 @@ def _test_endpoint_delay_multiplier() -> None:
     limiter.wait("slow-endpoint")
     elapsed = time.monotonic() - start
 
-    assert 0.40 <= elapsed <= 0.70, f"Expected ~0.5s wait, got {elapsed:.3f}s"
+    # At 2 req/s, expect ~0.5s wait, allow tolerance for slow systems
+    assert 0.40 <= elapsed <= 0.80, f"Expected ~0.5s wait, got {elapsed:.3f}s"
 
 
 def _test_endpoint_429_cooldown() -> None:

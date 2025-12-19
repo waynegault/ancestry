@@ -19,6 +19,7 @@ if __package__ in {None, ""}:
 import logging
 
 from actions.gather.checkpoint import finalize_checkpoint_after_run, load_checkpoint, persist_checkpoint
+from actions.gather.rate_persistence import persist_rates_periodically
 from actions.gather.metrics import (
     PageProcessingMetrics,
     accumulate_page_metrics,
@@ -384,6 +385,13 @@ class GatherOrchestrator:
                 last_page_to_process=last_page_to_process,
                 total_pages_in_run=total_pages_in_run,
                 state=state,
+            )
+
+            # Persist rate limiter state periodically (every 10 pages)
+            persist_rates_periodically(
+                self.session_manager,
+                current_page_num,
+                interval=10,
             )
 
             if not loop_final_success:
