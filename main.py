@@ -392,19 +392,23 @@ def main() -> None:
             return
 
         # Pre-authenticate services
+        print("", file=sys.stderr)  # Blank line after health checks
+        print(" Session ".center(80, "="), file=sys.stderr)
         pre_authenticate_session()
         pre_authenticate_ms_graph()
 
         # Check startup status and validate AI provider
         check_startup_status(session_manager)
-        logger.info("✅ Health monitoring system initialized")
         validate_ai_provider_on_startup()
 
         # Run maintenance tasks (Phase 10.1: expire stale drafts, etc.)
+        print("", file=sys.stderr)
+        print(" Startup ".center(80, "="), file=sys.stderr)
         run_startup_maintenance_tasks(session_manager)
 
-        # Display tree owner at the end of startup checks
+        # Display tree owner at the end of startup section
         display_tree_owner(session_manager)
+        print("", file=sys.stderr)
 
         # Main menu loop
         while True:

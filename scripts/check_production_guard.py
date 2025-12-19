@@ -39,19 +39,13 @@ _ensure_venv()
 from config import config_schema
 
 
-def main() -> int:
-    issues: list[str] = []
-
+def _check_app_mode_issues(issues: list[str]) -> None:
+    """Check APP_MODE related configuration issues."""
     app_mode = getattr(config_schema, "app_mode", "development")
     if app_mode != "production":
         issues.append(f"APP_MODE is '{app_mode}' (expected 'production' for live sends)")
-
-    if getattr(config_schema, "emergency_stop_enabled", False):
-        issues.append("EMERGENCY_STOP is enabled")
-
     if app_mode == "production" and not getattr(config_schema, "dry_run_verified", False):
         issues.append("DRY_RUN_VERIFIED is false; run a full dry-run before production")
-
     if (
         app_mode == "production"
         and getattr(config_schema, "auto_approve_enabled", False)
@@ -59,10 +53,21 @@ def main() -> int:
     ):
         issues.append("Auto-approval enabled without ALLOW_PRODUCTION_AUTO_APPROVE=true")
 
+
+def _check_safety_issues(issues: list[str]) -> None:
+    """Check safety-related configuration issues."""
+    if getattr(config_schema, "emergency_stop_enabled", False):
+        issues.append("EMERGENCY_STOP is enabled")
     max_inbox = getattr(config_schema, "max_inbox", 0)
     max_send = getattr(config_schema, "max_send_per_run", 0)
     if max_inbox == 0 or max_send == 0:
         issues.append("MAX_INBOX and/or MAX_SEND_PER_RUN is 0 (unbounded or halted)")
+
+
+def main() -> int:
+    issues: list[str] = []
+    _check_app_mode_issues(issues)
+    _check_safety_issues(issues)
 
     if issues:
         print("Production guard FAILED:")
@@ -70,12 +75,13 @@ def main() -> int:
             print(f"  {i}. {issue}")
         return 1
 
+    app_mode = getattr(config_schema, "app_mode", "development")
     print("Production guard OK: all safety flags satisfied for production messaging.")
     print(
         f"APP_MODE={app_mode}, DRY_RUN_VERIFIED={getattr(config_schema, 'dry_run_verified', False)}, "
         f"AUTO_APPROVE_ENABLED={getattr(config_schema, 'auto_approve_enabled', False)}, "
         f"ALLOW_PRODUCTION_AUTO_APPROVE={getattr(config_schema, 'allow_production_auto_approve', False)}, "
-        f"MAX_INBOX={max_inbox}, MAX_SEND_PER_RUN={max_send}, "
+        f"MAX_INBOX={getattr(config_schema, 'max_inbox', 0)}, MAX_SEND_PER_RUN={getattr(config_schema, 'max_send_per_run', 0)}, "
         f"EMERGENCY_STOP={getattr(config_schema, 'emergency_stop_enabled', False)}"
     )
     return 0

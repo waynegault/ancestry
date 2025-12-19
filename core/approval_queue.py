@@ -131,8 +131,6 @@ class ApprovalQueueService:
         """Initialize the approval queue service."""
         self.db_session = db_session
         self._auto_approve_enabled = self._resolve_auto_approve_flag(auto_approve_enabled)
-        if not self._auto_approve_enabled:
-            logger.info("Auto-approval disabled (auto_approve_enabled=False)")
 
     @staticmethod
     def _resolve_auto_approve_flag(override: Optional[bool]) -> bool:

@@ -1183,10 +1183,11 @@ class ReviewQueueMixin:
             print("❌ Error: Could not load web interface.")
             print("   Make sure Flask is installed: pip install flask")
         except KeyboardInterrupt:
-            print("\n\n✅ Web server stopped. Returning to menu...")
+            print("\n\n✅ Web server stopped.")
         except Exception as exc:
             self._logger.error("Error launching web review UI: %s", exc, exc_info=True)
             print(f"Error: {exc}")
+        # Note: No input prompt - return directly to menu
 
 
 class CacheStatsMixin:
@@ -1243,16 +1244,67 @@ class CacheStatsMixin:
             print(f"    - {name}: {files} files, {size_mb:.2f} MB, removed {deleted} ({age_str})")
         return True
 
+    @staticmethod
+    def _should_show_value(value: Any) -> bool:
+        """Check if a value should be displayed (non-empty/non-zero)."""
+        return value not in (None, "", [], {}, 0, 0.0)
+
+    def _format_stat_line(self, key: str, value: Any) -> str:
+        """Format a single stat line for display."""
+        label = key.replace("_", " ").title()
+        # Summarize large nested structures
+        if isinstance(value, dict) and len(str(value)) > 100:
+            return f"  {label}: {len(value)} items"
+        return f"  {label}: {self.format_cache_stat_value(value)}"
+
     def render_stat_fields(self, stats: dict[str, Any]) -> bool:
+        """Render cache statistics, showing only the most useful metrics."""
+        priority_fields = [
+            "hit_rate",
+            "hits",
+            "misses",
+            "entries",
+            "memory_cache_entries",
+            "memory_usage_mb",
+            "total_size_mb",
+            "size_limit_gb",
+            "max_entries",
+        ]
+        skip_fields = {
+            "name",
+            "kind",
+            "health",
+            "targets",
+            "entries_utilization",
+            "size_compliant",
+            "volume",
+            "eviction_policy",
+            "evictions",
+            "module_name",
+        }
+
+        shown_keys: set[str] = set()
         shown_any = False
-        for key in sorted(stats.keys()):
-            if key in {"name", "kind", "health", "targets"}:
+
+        # Show priority fields first
+        for key in priority_fields:
+            if key not in stats or key in skip_fields:
                 continue
             value = stats[key]
-            if value in (None, "", [], {}):
+            if self._should_show_value(value):
+                print(self._format_stat_line(key, value))
+                shown_keys.add(key)
+                shown_any = True
+
+        # Show remaining interesting fields
+        for key in sorted(stats.keys()):
+            if key in skip_fields or key in shown_keys:
                 continue
-            print(f"  {key.replace('_', ' ').title()}: {self.format_cache_stat_value(value)}")
-            shown_any = True
+            value = stats[key]
+            if self._should_show_value(value):
+                print(self._format_stat_line(key, value))
+                shown_any = True
+
         return shown_any
 
     @staticmethod
@@ -1452,6 +1504,7 @@ class ConfigMaintenanceMixin:
         try:
             from config.config_manager import get_config_manager
             from core.feature_flags import bootstrap_feature_flags
+            from core.rate_limiter import get_rate_limiter
 
             manager = get_config_manager()
             if manager is None:
@@ -1459,10 +1512,18 @@ class ConfigMaintenanceMixin:
                 return
 
             manager.reload_config()
-            flags = bootstrap_feature_flags(manager.get_config())
-            print(
-                f"\n✅ Configuration reloaded from configured sources. Feature flags: {len(flags.get_all_flags())} loaded.\n"
-            )
+            config = manager.get_config()
+            flags = bootstrap_feature_flags(config)
+
+            # Refresh rate limiter with updated endpoint profiles
+            api_settings = getattr(config, "api", None)
+            endpoint_profiles = getattr(api_settings, "endpoint_throttle_profiles", {}) if api_settings else {}
+            limiter = get_rate_limiter()
+            if limiter and endpoint_profiles:
+                limiter.configure_endpoint_profiles(endpoint_profiles)
+                print(f"   Rate limiter: {len(endpoint_profiles)} endpoint profiles applied")
+
+            print(f"\n✅ Configuration reloaded. Feature flags: {len(flags.get_all_flags())} loaded.\n")
         except ImportError as exc:
             self._logger.error("Configuration reload failed: %s", exc)
             print(f"Error reloading configuration: {exc}")

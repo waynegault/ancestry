@@ -418,7 +418,7 @@ def _test_get_tree_name_from_config_uses_api_tree_name() -> None:
 
 def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["SessionManager", Any]:
     """Initialize application logging, configuration, and sleep prevention."""
-    print("")
+    print("", file=sys.stderr)
 
     _clear_startup_log_file()
 
@@ -427,7 +427,7 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
 
     sleep_state = _enable_system_sleep_prevention()
 
-    print(" Checks ".center(80, "="))
+    print(" Checks ".center(80, "="), file=sys.stderr)
     _log_sleep_prevention_status(sleep_state)
 
     _log_action_registry_status()

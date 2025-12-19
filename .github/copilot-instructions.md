@@ -70,15 +70,16 @@ ruff check .
 ### Rate Limiting (CRITICAL - Zero Tolerance)
 ```python
 # utils.py RateLimiter - Thread-safe token bucket algorithm
-# SEQUENTIAL PROCESSING ONLY - No parallel execution
-REQUESTS_PER_SECOND=0.3  # Conservative rate to prevent 429 errors (72-second penalties)
+# Per-endpoint adaptive rate limiting with independent states
+RATE_LIMITER_MAX_RATE=1.5  # Global max (conservative after 429 analysis)
+RATE_LIMITER_MIN_RATE=0.3  # Floor allows continued backoff headroom
 ```
-- **RateLimiter** is instantiated ONCE by SessionManager, shared across all API calls
-- **Sequential Processing**: All API calls are made one at a time to prevent burst requests
+- **AdaptiveRateLimiter** is instantiated ONCE by SessionManager, shared across all API calls
+- **Per-Endpoint Throttling**: Each API endpoint (by `api_description`) maintains independent rate state
+- **Endpoint profiles** in `.env` (`API_ENDPOINT_THROTTLES`) configure per-endpoint max_rate and cooldowns
 - Parallel processing (ThreadPoolExecutor) has been ELIMINATED to prevent 429 rate limiting
-- Recent fix (Oct 2025): Added `threading.Lock()` for thread safety - validated zero 429 errors
-- Changing RPS without 50+ page validation WILL break production
-- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should return 0
+- Fix (Jan 2025): Endpoint labels now use `api_description` to match throttle profiles correctly
+- Monitor: `Select-String -Path Logs\app.log -Pattern "429 error"` should decrease over time
 
 ### Database Schema (SQLAlchemy ORM)
 ```python
@@ -136,7 +137,8 @@ if __name__ == "__main__":
 class APISettings:
     max_pages: int = 1  # Processing limit
     max_concurrency: int = 1  # Sequential processing only (no parallel execution)
-    requests_per_second: float = 0.3  # CRITICAL: Empirically validated
+    rate_limiter_max_rate: float = 1.5  # Global max rate (conservative after 429 analysis)
+    rate_limiter_min_rate: float = 0.3  # Floor for continued backoff headroom
 ```
 - **ConfigManager** loads from `.env` → validates types → provides `config_schema` global
 - **Sequential Processing Only**: Parallel execution has been eliminated for API safety
@@ -144,8 +146,9 @@ class APISettings:
 
 ### Environment Variables (`.env`)
 ```env
-# Never change without validation
-REQUESTS_PER_SECOND=0.3  # Sequential processing only
+# Rate limiting bounds - validated after 429 analysis
+RATE_LIMITER_MAX_RATE=1.5  # Per-endpoint max (conservative)
+RATE_LIMITER_MIN_RATE=0.3  # Floor for backoff headroom
 
 # Safe to adjust for testing
 MAX_PAGES=1
@@ -481,9 +484,9 @@ _check_session_health_proactive(session_manager, current_page)
 
 ### 429 Rate Limit Errors
 - **Symptom**: "429 Too Many Requests" with 72-second backoff
-- **Solution**: Verify `REQUESTS_PER_SECOND=0.3` in `.env`, run `validate_rate_limiting.py`
-- **Note**: Sequential processing only - parallel execution has been eliminated
-- **Never**: Increase RPS without 50+ page validation showing zero 429s
+- **Solution**: Verify `RATE_LIMITER_MAX_RATE=1.5` and `RATE_LIMITER_MIN_RATE=0.3` in `.env`
+- **Note**: Per-endpoint throttle profiles in `API_ENDPOINT_THROTTLES` control per-API rates
+- **Never**: Increase max rate without 50+ page validation showing zero 429s
 
 ### Session Not Ready Errors
 - **Symptom**: "Cannot perform action: Session not ready"
@@ -527,18 +530,17 @@ class RateLimiter:
 ```
 
 **Key Features**:
-- **Burst handling**: Initial 10 tokens allow fast startup
-- **Adaptive backoff**: Increases delay on 429 errors (1.5x multiplier)
-- **Gradual recovery**: Decreases delay on success (0.95x multiplier)
-- **Max delay cap**: 15 seconds (prevents excessive waiting)
+- **Burst handling**: Initial capacity tokens allow fast startup
+- **Per-endpoint rates**: Each API endpoint maintains independent adaptive rate
+- **Adaptive backoff**: 429 errors reduce rate by `rate_limiter_429_backoff` (default 0.80 = 20%)
+- **Gradual recovery**: Success streaks increase rate by `rate_limiter_success_factor` (default 1.05 = 5%)
 
 **Configuration** (`.env`):
 ```env
-REQUESTS_PER_SECOND=0.4      # Fill rate for token bucket
-INITIAL_DELAY=1.0            # Starting delay between requests
-MAX_DELAY=15.0               # Maximum delay cap
-BACKOFF_FACTOR=1.5           # Multiplier on 429 errors
-DECREASE_FACTOR=0.95         # Gradual speedup on success
+RATE_LIMITER_MAX_RATE=1.5        # Per-endpoint max rate (conservative)
+RATE_LIMITER_MIN_RATE=0.3        # Floor for continued backoff
+RATE_LIMITER_429_BACKOFF=0.50    # Rate multiplier on 429 errors (50% reduction)
+RATE_LIMITER_SUCCESS_FACTOR=1.05 # Rate multiplier on success threshold
 ```
 
 ### Checkpoint System for Resume Capability
@@ -701,19 +703,20 @@ run_all_tests.py        # Test orchestrator with parallel execution
 
 ## Important Invariants
 1. **Single SessionManager Instance**: One per main.py execution, shared across all actions
-2. **Thread-Safe Rate Limiter**: One DynamicRateLimiter instance, all API calls serialize through it
+2. **Thread-Safe Rate Limiter**: One AdaptiveRateLimiter instance, all API calls serialize through it
 3. **Uppercase UUIDs**: All UUID storage and lookups use `.upper()` - no exceptions
 4. **exec_actn() Wrapper**: ALL action functions invoked through this, never called directly
 5. **Test Coverage**: New features require tests in same file using TestSuite pattern
 6. **No Hardcoded Credentials**: All secrets in `.env` or encrypted via `credentials.py`
 
-## Recent Critical Fixes (October 2025)
+## Recent Critical Fixes (January 2025)
+- **Per-Endpoint Rate Limiting Fix**: Endpoint labels now use `api_description` to match throttle profiles
+- **Rate Limits Tuned**: Lowered RATE_LIMITER_MAX_RATE to 1.5, RATE_LIMITER_MIN_RATE to 0.3
 - **Sequential Processing**: Eliminated ThreadPoolExecutor parallel processing to prevent 429 errors
-- **Rate Limiter Thread Safety**: Added `threading.Lock()` to DynamicRateLimiter (utils.py line 900)
+- **Rate Limiter Thread Safety**: Added `threading.Lock()` to AdaptiveRateLimiter (rate_limiter.py)
 - **UUID Case Sensitivity**: Standardized all lookups to uppercase (action6_gather.py)
-- **Session Caching**: Added `session.expire_all()` after bulk inserts (action6_gather.py line 2780)
-- **Configuration Simplification**: Removed THREAD_POOL_WORKERS, reduced REQUESTS_PER_SECOND to 0.3
-- **Checkpoint Logic**: Changed `start: int = 1` → `start: Optional[int] = None` for auto-resume (action6_gather.py line 2337)
+- **Session Caching**: Added `session.expire_all()` after bulk inserts (action6_gather.py)
+- **Checkpoint Logic**: Changed `start: int = 1` → `start: Optional[int] = None` for auto-resume
 
 ## Questions to Ask When Unclear
 1. "Does this action need browser automation?" → If yes, use `exec_actn()` with `ensure_session_ready()`

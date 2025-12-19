@@ -230,53 +230,44 @@ class PIIRedactionFilter(logging.Filter):
         self.redact_phones = redact_phones
         self.redact_names = redact_names
 
+    @staticmethod
+    def _format_message(record: logging.LogRecord) -> str:
+        """Format the log message from record, handling args."""
+        if isinstance(record.msg, str):
+            message = record.msg
+            if record.args:
+                try:
+                    message = record.msg % record.args
+                    record.args = ()
+                except (TypeError, ValueError):
+                    pass
+        else:
+            message = str(record.msg)
+        return message
+
+    def _apply_redactions(self, message: str) -> str:
+        """Apply configured redactions to message."""
+        if self.redact_emails:
+            message = redact_email(message)
+        if self.redact_profile_ids:
+            message = redact_profile_id(message)
+        if self.redact_uuids:
+            message = redact_uuid(message)
+        if self.redact_phones:
+            message = redact_phone(message)
+        if self.redact_names:
+            message = redact_display_name(message)
+        return message
+
     def filter(self, record: logging.LogRecord) -> bool:
-        """Apply PII redaction to log record if enabled.
-
-        Args:
-            record: The log record to filter.
-
-        Returns:
-            Always True (record is never filtered out, just modified).
-        """
+        """Apply PII redaction to log record if enabled."""
         if not self.enabled:
             return True
-
-        # Get the formatted message
         try:
-            # Handle both string and lazy formatting
-            if isinstance(record.msg, str):
-                message = record.msg
-                if record.args:
-                    try:
-                        message = record.msg % record.args
-                        # Clear args after formatting to prevent double-formatting
-                        record.args = ()
-                    except (TypeError, ValueError):
-                        # If formatting fails, just use the raw message
-                        pass
-            else:
-                message = str(record.msg)
-
-            # Apply redactions based on configuration
-            if self.redact_emails:
-                message = redact_email(message)
-            if self.redact_profile_ids:
-                message = redact_profile_id(message)
-            if self.redact_uuids:
-                message = redact_uuid(message)
-            if self.redact_phones:
-                message = redact_phone(message)
-            if self.redact_names:
-                message = redact_display_name(message)
-
-            # Update the record
-            record.msg = message
-
+            message = self._format_message(record)
+            record.msg = self._apply_redactions(message)
         except Exception:
-            # Never let redaction failure break logging
-            pass
-
+            pass  # Never let redaction failure break logging
         return True
 
 

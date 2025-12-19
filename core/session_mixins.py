@@ -437,7 +437,7 @@ class SessionIdentifierMixin:
                 url=url,
                 session_manager=self,
                 method="GET",
-                api_description="Get my profile_id",
+                api_description="Profile ID API",
             )
 
             if not response_data:

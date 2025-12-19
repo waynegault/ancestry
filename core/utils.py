@@ -1532,7 +1532,7 @@ def _handle_response_status(
         logger.debug(f"{api_description}: Successful response ({status} {reason}).")
         rate_limiter = _get_rate_limiter_from_session(session_manager)
         if rate_limiter:
-            rate_limiter.on_success()
+            rate_limiter.on_success(api_description)
         processed_response = _process_api_response(
             response=response,
             api_description=api_description,
@@ -3939,20 +3939,22 @@ def _test_rate_limiter() -> None:
     assert hasattr(limiter, "get_metrics"), "Rate limiter should have get_metrics method"
 
     # Test wait method (should not hang)
+    endpoint = "test-api"
     start_time = time.time()
-    limiter.wait()
+    limiter.wait(endpoint)
     elapsed = time.time() - start_time
     assert elapsed < 1.0, "Wait should complete quickly in test"
 
-    # Test AdaptiveRateLimiter interface
-    limiter.on_429_error()  # Simulate 429 error
+    # Test AdaptiveRateLimiter interface - per-endpoint 429 handling
+    limiter.on_429_error(endpoint)
     metrics = limiter.get_metrics()
     assert metrics.error_429_count == 1, "Should track 429 error"
 
-    # Test success tracking
-    limiter.on_success()
-    metrics = limiter.get_metrics()
-    assert metrics.success_count == 1, "Should track success"
+    # Test success tracking (per-endpoint)
+    limiter.on_success(endpoint)
+    state = limiter.get_endpoint_state(endpoint)
+    assert state is not None, "Endpoint state should exist"
+    assert state.success_count == 1, "Should track success per endpoint"
 
 
 def _test_login_status_function() -> None:

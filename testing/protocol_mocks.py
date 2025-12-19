@@ -69,9 +69,10 @@ class MockRateLimiter:
         self.last_endpoint = endpoint
         return self._wait_time
 
-    def on_success(self) -> None:
-        """Record success."""
+    def on_success(self, endpoint: Optional[str] = None) -> None:
+        """Record success for endpoint."""
         self.success_count += 1
+        self.last_endpoint = endpoint
 
     def on_429_error(self, endpoint: Optional[str] = None, retry_after: Optional[float] = None) -> None:
         """Record 429 error."""

@@ -3799,7 +3799,7 @@ def _call_match_list_api(
         method="GET",
         headers=match_list_headers,
         use_csrf_token=False,
-        api_description="Match list API",
+        api_description="Match List API",
         _allow_redirects=True,
     )
 
@@ -3821,7 +3821,7 @@ def _handle_303_with_redirect(
         method="GET",
         headers=match_list_headers,
         use_csrf_token=False,
-        api_description="Match list API (redirected)",
+        api_description="Match List API",  # Same endpoint, different code path
         _allow_redirects=False,
     )
     if isinstance(api_response_redirect, dict):
@@ -3882,7 +3882,7 @@ def _handle_303_session_refresh(
                 method="GET",
                 headers=match_list_headers,
                 use_csrf_token=False,
-                api_description="Match list API (Session Refreshed)",
+                api_description="Match List API",  # Same endpoint, after session refresh
                 _allow_redirects=True,
             )
             if isinstance(api_response_refresh, dict):

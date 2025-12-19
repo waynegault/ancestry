@@ -1,7 +1,7 @@
 from core.database import Person, SessionLocal
 
 
-def check_db():
+def check_db() -> None:
     session = SessionLocal()
     try:
         total = session.query(Person).count()

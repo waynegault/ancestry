@@ -39,22 +39,24 @@ def log_basic_configuration_values(config: Any) -> None:
     """Log the primary configuration values shown at startup."""
 
     logger.info(f"  MAX_PAGES: {config.api.max_pages}")
+    logger.info(f"  MATCHES_PER_PAGE: {getattr(config, 'matches_per_page', 20)}")
     logger.info(f"  BATCH_SIZE: {config.batch_size}")
     logger.info(f"  MAX_PRODUCTIVE_TO_PROCESS: {config.max_productive_to_process}")
     logger.info(f"  MAX_INBOX: {config.max_inbox}")
     logger.info(f"  PARALLEL_WORKERS: {config.parallel_workers}")
-    logger.info(f"  Rate Limiting - RPS: {config.api.requests_per_second}, Delay: {config.api.initial_delay}s")
+
+    # Per-endpoint rate limiting - show count of configured endpoints
+    endpoint_profiles = getattr(config.api, "endpoint_throttle_profiles", {})
+    endpoint_count = len(endpoint_profiles) if endpoint_profiles else 0
+    logger.info(f"  Rate Limiting: {endpoint_count} endpoints with adaptive rates")
 
     match_throughput = getattr(config.api, "target_match_throughput", 0.0)
     if match_throughput > 0:
         logger.info("  Match Throughput Target: %.2f match/s", match_throughput)
-    else:
-        logger.info("  Match Throughput Target: disabled")
 
-    logger.info(
-        "  Max Pacing Delay/Page: %.2fs",
-        getattr(config.api, "max_throughput_catchup_delay", 0.0),
-    )
+    max_delay = getattr(config.api, "max_throughput_catchup_delay", 0.0)
+    if max_delay > 0:
+        logger.info("  Max Pacing Delay/Page: %.2fs", max_delay)
 
 
 def should_suppress_config_warnings() -> bool:
@@ -65,71 +67,39 @@ def should_suppress_config_warnings() -> bool:
     return any("test" in arg.lower() for arg in sys.argv)
 
 
-def log_persisted_rate_state(persisted_state: dict[str, Any]) -> None:
-    """Log persisted rate limiter metadata from previous runs."""
-
-    saved_rate = persisted_state.get("fill_rate")
-    saved_requests = persisted_state.get("total_requests", "n/a")
-    timestamp_value = persisted_state.get("timestamp")
-    if isinstance(timestamp_value, (int, float)):
-        timestamp_str = datetime.fromtimestamp(timestamp_value).strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        timestamp_str = "unknown"
-
-    if isinstance(saved_rate, (int, float)):
-        logger.info(
-            "    Last run: %.3f req/s | saved at %s | total_requests=%s",
-            float(saved_rate),
-            timestamp_str,
-            saved_requests,
-        )
-
-
 def log_rate_limiter_summary(config: Any) -> None:
-    """Log the adaptive rate limiter plan without instantiating it early."""
+    """Log the adaptive rate limiter configuration summary.
 
-    try:
-        from core.rate_limiter import get_persisted_rate_state
-    except ImportError:
-        logger.debug("Rate limiter module unavailable during configuration summary")
-        return
-
-    persisted_state = get_persisted_rate_state()
+    Note: Per-endpoint rate limiting is now the primary mode. Each endpoint
+    has its own adaptive rate that adjusts based on 429 errors and success streaks.
+    The per-endpoint details are logged by AdaptiveRateLimiter._log_endpoint_configuration().
+    """
+    # Per-endpoint configuration is logged by rate_limiter._log_endpoint_configuration()
+    # Here we just log the adaptive parameters that apply to all endpoints
     batch_threshold = max(getattr(config, "batch_size", 50) or 50, 1)
     configured_threshold = getattr(config.api, "token_bucket_success_threshold", None)
     if isinstance(configured_threshold, int) and configured_threshold > 0:
         success_threshold = configured_threshold
     else:
         success_threshold = max(batch_threshold, 10)
-    configured_rps = getattr(config.api, "requests_per_second", 0.3) or 0.3
-    min_fill_rate = getattr(config.api, "rate_limiter_min_rate", 0.5) or 0.5
-    max_fill_rate = getattr(config.api, "rate_limiter_max_rate", configured_rps)
-    max_fill_rate = max(max_fill_rate, min_fill_rate)
-    bucket_capacity = getattr(config.api, "token_bucket_capacity", 10.0)
 
     logger.info(
-        "  Rate Limiter (planned): target=%.3f req/s | success_threshold=%d | bounds=%.3f-%.3f | capacity=%.1f",
-        configured_rps,
+        "  Rate Limiter: per-endpoint adaptive | success_threshold=%d (rate increases after %d consecutive successes)",
         success_threshold,
-        min_fill_rate,
-        max_fill_rate,
-        bucket_capacity,
+        success_threshold,
     )
-
-    if persisted_state:
-        log_persisted_rate_state(persisted_state)
 
 
 def log_configuration_summary(config: Any) -> None:
     """Log current configuration for transparency."""
-    # Clear screen at startup (temporarily disabled for debugging global session complaints)
-    # import os
-    # os.system('cls' if os.name == 'nt' else 'clear')
-
-    print(" CONFIG ".center(80, "="))
+    print(" CONFIG ".center(80, "="), file=sys.stderr)
     log_basic_configuration_values(config)
-    log_rate_limiter_summary(config)
-    print("")  # Blank line after configuration
+
+    # Log auto-approval status
+    auto_approve = getattr(config, "auto_approve_enabled", False)
+    logger.info("  Auto-approval: %s", "enabled" if auto_approve else "disabled")
+
+    print("", file=sys.stderr)  # Blank line after configuration
 
 
 def load_and_validate_config_schema() -> Any | None:
@@ -233,16 +203,6 @@ def _test_check_processing_limits_allows_valid_batches() -> bool:
     return True
 
 
-def _test_log_persisted_rate_state_formats_message() -> bool:
-    persisted = {"fill_rate": 0.45, "total_requests": 500, "timestamp": 1_725_000_000}
-    with patch.object(logger, "info") as mock_info:
-        log_persisted_rate_state(persisted)
-    mock_info.assert_called_once()
-    args, _ = mock_info.call_args
-    assert abs(float(args[1]) - 0.45) < 1e-6, "Formatted rate should be forwarded to logger"
-    return True
-
-
 def _test_should_suppress_config_warnings_detects_pytest_env() -> bool:
     with patch.dict(os.environ, {"PYTEST_CURRENT_TEST": "core/tests"}, clear=False):
         assert should_suppress_config_warnings() is True
@@ -315,12 +275,6 @@ def module_tests() -> bool:
         "Processing limits valid",
         _test_check_processing_limits_allows_valid_batches,
         "Ensures valid batch sizes do not warn.",
-    )
-
-    suite.run_test(
-        "Persisted rate state logging",
-        _test_log_persisted_rate_state_formats_message,
-        "Ensures persisted rate metadata is logged when available.",
     )
 
     suite.run_test(

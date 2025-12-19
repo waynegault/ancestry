@@ -587,18 +587,41 @@ class TreeQueryService:
             logger.error(f"Error getting person details: {e}", exc_info=True)
             return None
 
+    def _collect_parents(self, norm_id: str, result: FamilyMembersResult) -> None:
+        """Collect parent family members."""
+        parent_ids = self._gedcom_data.id_to_parents.get(norm_id, set())
+        for pid in parent_ids:
+            member = self._get_family_member_details(pid, "parent")
+            if member:
+                result.parents.append(member)
+
+    def _collect_siblings(self, norm_id: str, result: FamilyMembersResult) -> None:
+        """Collect sibling family members."""
+        parent_ids = self._gedcom_data.id_to_parents.get(norm_id, set())
+        for parent_id in parent_ids:
+            sibling_ids = self._gedcom_data.id_to_children.get(parent_id, set())
+            for sid in sibling_ids:
+                if sid != norm_id and not any(s.person_id == sid for s in result.siblings):
+                    member = self._get_family_member_details(sid, "sibling")
+                    if member:
+                        result.siblings.append(member)
+
+    def _collect_spouses_and_children(self, norm_id: str, result: FamilyMembersResult) -> None:
+        """Collect spouse and children family members."""
+        spouse_ids = self._get_spouse_ids(norm_id)
+        for sid in spouse_ids:
+            member = self._get_family_member_details(sid, "spouse")
+            if member:
+                result.spouses.append(member)
+        children_ids = self._gedcom_data.id_to_children.get(norm_id, set())
+        for cid in children_ids:
+            member = self._get_family_member_details(cid, "child")
+            if member:
+                result.children.append(member)
+
     def get_family_members(self, person_id: str) -> FamilyMembersResult:
-        """
-        Get all family members for a person: parents, siblings, spouses, and children.
-
-        Args:
-            person_id: GEDCOM ID of the person
-
-        Returns:
-            FamilyMembersResult with lists of family members by relation type
-        """
+        """Get all family members for a person: parents, siblings, spouses, and children."""
         not_found = FamilyMembersResult(found=False)
-
         if not self._ensure_initialized():
             return not_found
 
@@ -606,45 +629,16 @@ class TreeQueryService:
             from genealogy.gedcom import gedcom_utils
 
             norm_id = gedcom_utils.normalize_id(person_id)
-
             if norm_id is None or norm_id not in self._gedcom_data.indi_index:
                 return not_found
 
             indi = self._gedcom_data.indi_index[norm_id]
             person_name = gedcom_utils.get_full_name(indi) if hasattr(gedcom_utils, "get_full_name") else str(indi)
-
             result = FamilyMembersResult(found=True, person_id=norm_id, person_name=person_name)
 
-            # Get parents
-            parent_ids = self._gedcom_data.id_to_parents.get(norm_id, set())
-            for pid in parent_ids:
-                member = self._get_family_member_details(pid, "parent")
-                if member:
-                    result.parents.append(member)
-
-            # Get siblings (other children of same parents)
-            for parent_id in parent_ids:
-                sibling_ids = self._gedcom_data.id_to_children.get(parent_id, set())
-                for sid in sibling_ids:
-                    if sid != norm_id and not any(s.person_id == sid for s in result.siblings):
-                        member = self._get_family_member_details(sid, "sibling")
-                        if member:
-                            result.siblings.append(member)
-
-            # Get spouses (from FAMS records)
-            spouse_ids = self._get_spouse_ids(norm_id)
-            for sid in spouse_ids:
-                member = self._get_family_member_details(sid, "spouse")
-                if member:
-                    result.spouses.append(member)
-
-            # Get children
-            children_ids = self._gedcom_data.id_to_children.get(norm_id, set())
-            for cid in children_ids:
-                member = self._get_family_member_details(cid, "child")
-                if member:
-                    result.children.append(member)
-
+            self._collect_parents(norm_id, result)
+            self._collect_siblings(norm_id, result)
+            self._collect_spouses_and_children(norm_id, result)
             return result
 
         except Exception as e:

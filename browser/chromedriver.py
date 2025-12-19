@@ -483,8 +483,9 @@ def init_webdvr(_attach_attempt: bool = False) -> Optional[WebDriver]:
 
 def cleanup_webdrv() -> None:
     """
-    Cleans up any leftover chromedriver processes.  Important for preventing
-    orphaned processes and port conflicts.
+    Cleans up any leftover chromedriver processes and stale driver files.
+    Important for preventing orphaned processes and port conflicts.
+    Also removes stale undetected_chromedriver files that cause [WinError 183].
     """
     try:
         # Kill all Chrome processes.
@@ -504,11 +505,64 @@ def cleanup_webdrv() -> None:
             subprocess.run(["pkill", "-f", "chromedriver"], check=False)
             subprocess.run(["pkill", "-f", "chrome"], check=False)  # Kill Chrome itself
 
+        # Clean up stale undetected_chromedriver files that cause [WinError 183]
+        # This happens when the driver fails mid-patch and leaves the target file
+        _cleanup_stale_uc_files()
+
     except Exception as e:
         logger.error(f"Error during cleanup: {e}", exc_info=True)
 
 
-# end of cleanup_webdr
+def _try_remove_stale_file(stale_file: Path) -> None:
+    """Attempt to remove a single stale file with appropriate logging."""
+    if not stale_file.exists():
+        return
+    try:
+        stale_file.unlink()
+        logger.debug(f"Removed stale UC file: {stale_file}")
+    except PermissionError:
+        logger.warning(f"Cannot remove stale UC file (in use): {stale_file}")
+    except Exception as e:
+        logger.debug(f"Could not remove {stale_file}: {e}")
+
+
+def _cleanup_stale_uc_files() -> None:
+    """
+    Remove stale undetected_chromedriver files that cause [WinError 183].
+
+    When undetected_chromedriver patches chromedriver.exe, it renames it to
+    undetected_chromedriver.exe. If the process is interrupted, the target
+    file may already exist, causing the next init to fail with:
+    [WinError 183] Cannot create a file when that file already exists
+    """
+    if os.name != "nt":
+        return  # Only affects Windows
+
+    appdata = os.environ.get("APPDATA", "")
+    if not appdata:
+        return
+
+    uc_root = Path(appdata) / "undetected_chromedriver"
+    if not uc_root.exists():
+        return
+
+    # Files that may be stale and should be removed
+    stale_patterns = ["undetected_chromedriver.exe", "chromedriver.exe.bak"]
+
+    # Directories to check for stale files
+    dirs_to_check = [
+        uc_root,
+        uc_root / "undetected",
+        uc_root / "undetected" / "chromedriver-win32",
+    ]
+
+    for check_dir in dirs_to_check:
+        if check_dir.exists():
+            for pattern in stale_patterns:
+                _try_remove_stale_file(check_dir / pattern)
+
+
+# end of _cleanup_stale_uc_files
 
 
 # ------------------------------------------------------------------------------------

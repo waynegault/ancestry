@@ -518,6 +518,66 @@ def cache_result(
 # --- Cache Management Utilities ---
 
 
+def _try_clear_via_api() -> bool:
+    """Attempt to clear cache using the diskcache API."""
+    if not cache:
+        return False
+    try:
+        count = cache.clear()
+        logger.debug(f"Cache cleared successfully via API. {count} items removed from {CACHE_DIR}.")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear cache via API: {e}. Attempting manual removal...", exc_info=True)
+        try:
+            cache.close()
+        except Exception as close_err:
+            logger.warning(f"Failed to close cache before manual removal: {close_err}")
+        return False
+
+
+def _reinitialize_cache() -> bool:
+    """Reinitialize the cache object after manual directory removal."""
+    global cache  # pylint: disable=global-statement  # noqa: PLW0603
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Recreated empty cache directory: {CACHE_DIR}")
+        cache = Cache(
+            CACHE_DIR,
+            size_limit=int(2e9),
+            eviction_policy="least-recently-used",
+            disk_min_file_size=0,
+            timeout=60,
+            statistics=True,
+        )
+        logger.info("Cache re-initialized successfully after manual clear.")
+        return True
+    except OSError as mkdir_e:
+        logger.error(f"Failed to recreate cache directory {CACHE_DIR}: {mkdir_e}")
+        return False
+    except Exception as reinit_err:
+        logger.error(f"Failed to re-initialize cache after manual clear: {reinit_err}")
+        cache = None
+        return False
+
+
+def _try_manual_removal() -> bool:
+    """Attempt manual directory removal as fallback."""
+    if not CACHE_DIR or not CACHE_DIR.exists():
+        logger.debug("Cache directory does not exist. Nothing to clear manually.")
+        return True
+
+    try:
+        shutil.rmtree(CACHE_DIR)
+        logger.debug(f"Manually removed cache directory: {CACHE_DIR}")
+        return _reinitialize_cache()
+    except PermissionError:
+        logger.debug(f"Cache directory {CACHE_DIR} is locked (expected during reset)")
+        return False
+    except Exception as e:
+        logger.debug(f"Could not remove cache directory {CACHE_DIR}: {e}")
+        return False
+
+
 def clear_cache() -> bool:
     """
     Removes all items from the disk cache.
@@ -528,66 +588,14 @@ def clear_cache() -> bool:
         True if the cache was cleared successfully (either via API or manually),
         False otherwise.
     """
-    global cache  # pylint: disable=global-statement  # noqa: PLW0603
-
     # Step 1: Try clearing using the diskcache API if available
-    if cache:
-        try:
-            count = cache.clear()
-            logger.debug(f"Cache cleared successfully via API. {count} items removed from {CACHE_DIR}.")
-            return True
-        except Exception as e:
-            logger.error(
-                f"Failed to clear cache via API: {e}. Attempting manual removal...",
-                exc_info=True,
-            )
-            # CRITICAL FIX: Close the cache to release file locks before manual removal
-            try:
-                cache.close()
-            except Exception as close_err:
-                logger.warning(f"Failed to close cache before manual removal: {close_err}")
-
-            # Fall through to manual removal attempt
+    if _try_clear_via_api():
+        return True
 
     # Step 2: Fallback - Attempt manual directory removal
-    logger.warning("Cache object not available or API clear failed. Attempting manual directory removal...")
-    if CACHE_DIR and CACHE_DIR.exists():
-        try:
-            shutil.rmtree(CACHE_DIR)
-            logger.debug(f"Manually removed cache directory: {CACHE_DIR}")
-            # Recreate the directory immediately after removing it
-            try:
-                CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Recreated empty cache directory: {CACHE_DIR}")
-
-                # Re-initialize the cache object
-                try:
-                    cache = Cache(
-                        CACHE_DIR,
-                        size_limit=int(2e9),
-                        eviction_policy="least-recently-used",
-                        disk_min_file_size=0,
-                        timeout=60,
-                        statistics=True,
-                    )
-                    logger.info("Cache re-initialized successfully after manual clear.")
-                except Exception as reinit_err:
-                    logger.error(f"Failed to re-initialize cache after manual clear: {reinit_err}")
-                    cache = None
-
-                return True  # Manual removal and recreation successful
-            except OSError as mkdir_e:
-                logger.error(f"Failed to recreate cache directory {CACHE_DIR} after manual removal: {mkdir_e}")
-                return False  # Failed to recreate directory
-        except Exception as e:
-            logger.error(
-                f"Failed to manually remove cache directory {CACHE_DIR}: {e}",
-                exc_info=True,
-            )
-            return False  # Manual removal failed
-    else:
-        logger.debug("Cache directory does not exist. Nothing to clear manually.")
-        return True  # Considered success as the directory is gone
+    if not cache:
+        logger.debug("Cache object not available, attempting manual directory removal...")
+    return _try_manual_removal()
 
 
 # End of clear_cache

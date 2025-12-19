@@ -696,7 +696,9 @@ class APIManager:
                 print(result.json)
         """
         start_time = time.perf_counter()
-        endpoint_label = config.endpoint_label or self.sanitize_endpoint_label(config.url)
+        # Use endpoint_label if set, otherwise api_description (which matches throttle profiles),
+        # falling back to sanitized URL for metrics
+        endpoint_label = config.endpoint_label or config.api_description
         total_wait_time = 0.0
         attempt = 0
         last_error: Optional[str] = None
@@ -770,7 +772,8 @@ class APIManager:
             API response data or None if failed
         """
         method_upper = method.upper()
-        endpoint_label = self.sanitize_endpoint_label(url)
+        # Use api_description to match throttle profiles, fall back to sanitized URL
+        endpoint_label = api_description if api_description != "API Request" else self.sanitize_endpoint_label(url)
         status_code: Optional[int] = None
         result_label = "failure"
         start_time = time.perf_counter()
@@ -843,7 +846,7 @@ class APIManager:
             url=url,
             method="GET",
             use_csrf_token=False,  # Don't use CSRF token to get CSRF token
-            api_description="Get CSRF Token",
+            api_description="CSRF Token API",
         )
 
         if response_data and isinstance(response_data, dict):
@@ -873,7 +876,7 @@ class APIManager:
             url=url,
             method="GET",
             use_csrf_token=False,
-            api_description="Get Profile ID",
+            api_description="Profile ID API",
         )
 
         if response_data and isinstance(response_data, dict):

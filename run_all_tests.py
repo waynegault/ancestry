@@ -578,62 +578,54 @@ def run_linter() -> bool:
 # This function provides programmatic quality checking outside the test flow.
 # Integration pending: Will be connected to CI/CD pipeline or CLI command.
 # ============================================================================
-def run_quality_checks(flags: FeatureFlags | None = None) -> tuple[bool, list[tuple[str, float]]]:
-    """
-    Run Python best practices quality checks.
+def _get_quality_check_files(flags: FeatureFlags) -> list[str]:
+    """Get list of files to check for quality."""
+    key_files_env = os.getenv("QUALITY_CHECK_FILES")
+    if key_files_env:
+        return [token.strip() for token in key_files_env.split(",") if token.strip()]
 
-    Reserved for Future Development:
-        This function is fully implemented but not yet integrated into the
-        CLI or CI/CD pipeline. It provides standalone code quality analysis
-        that can fail the build if quality scores drop below thresholds.
+    key_files = [
+        "actions/action10.py",
+        "utils.py",
+        "main.py",
+        "python_best_practices.py",
+        "code_quality_checker.py",
+    ]
+    if flags.is_enabled("EXTENDED_QUALITY_SCOPE", default=False):
+        key_files.extend(["run_all_tests.py", "core/feature_flags.py"])
+    return key_files
 
-    Returns:
-        Tuple of (success: bool, quality_scores: list of (filename, score) tuples)
-    """
+
+def _get_quality_threshold(flags: FeatureFlags) -> float:
+    """Get quality check threshold from config."""
+    default_threshold = 70.0
+    env_threshold = os.getenv("QUALITY_CHECK_THRESHOLD")
     try:
-        # Import and run quality checker
+        threshold = float(env_threshold) if env_threshold else default_threshold
+    except ValueError:
+        threshold = default_threshold
+    if flags.is_enabled("STRICT_QUALITY_CHECKS", default=False):
+        threshold = max(threshold, 80.0)
+    return threshold
+
+
+def run_quality_checks(flags: FeatureFlags | None = None) -> tuple[bool, list[tuple[str, float]]]:
+    """Run Python best practices quality checks."""
+    try:
         from testing.code_quality_checker import CodeQualityChecker
 
         checker = CodeQualityChecker()
         current_dir = Path()
-
         flags = flags or bootstrap_feature_flags()
 
         if flags.is_enabled("DISABLE_QUALITY_CHECKS", default=False):
             return True, []
 
-        key_files_env = os.getenv("QUALITY_CHECK_FILES")
-        if key_files_env:
-            key_files = [token.strip() for token in key_files_env.split(",") if token.strip()]
-        else:
-            key_files = [
-                "actions/action10.py",
-                "utils.py",
-                "main.py",
-                "python_best_practices.py",
-                "code_quality_checker.py",
-            ]
-            if flags.is_enabled("EXTENDED_QUALITY_SCOPE", default=False):
-                key_files.extend(
-                    [
-                        "run_all_tests.py",
-                        "core/feature_flags.py",
-                    ]
-                )
-
+        key_files = _get_quality_check_files(flags)
+        threshold = _get_quality_threshold(flags)
         quality_scores: list[tuple[str, float]] = []
-        total_score = 0
+        total_score = 0.0
         files_checked = 0
-
-        default_threshold = 70.0
-        env_threshold = os.getenv("QUALITY_CHECK_THRESHOLD")
-        try:
-            threshold = float(env_threshold) if env_threshold else default_threshold
-        except ValueError:
-            threshold = default_threshold
-
-        if flags.is_enabled("STRICT_QUALITY_CHECKS", default=False):
-            threshold = max(threshold, 80.0)
 
         for file_name in key_files:
             file_path = current_dir / file_name
@@ -645,11 +637,8 @@ def run_quality_checks(flags: FeatureFlags | None = None) -> tuple[bool, list[tu
             else:
                 quality_scores.append((file_name, 0.0))
 
-        if files_checked > 0:
-            avg_score = total_score / files_checked
-            if avg_score < threshold:
-                return False, quality_scores
-
+        if files_checked > 0 and (total_score / files_checked) < threshold:
+            return False, quality_scores
         return True, quality_scores
 
     except Exception:

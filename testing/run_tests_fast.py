@@ -287,68 +287,10 @@ def list_modules() -> None:
         print(f"  • {module}")
 
 
-def main() -> int:
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="Fast test runner for rapid development feedback")
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Run all tests including integration tests",
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="List available test modules",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Show detailed output",
-    )
-    args = parser.parse_args()
-
-    if args.list:
-        list_modules()
-        return 0
-
-    # Determine which modules to run
-    modules = FAST_TEST_MODULES.copy()
-    if args.all:
-        modules.extend(INTEGRATION_TEST_MODULES)
-
-    print("=" * 60)
-    print("🚀 FAST TEST RUNNER")
-    print("=" * 60)
-    print(f"Running {len(modules)} test modules...")
-    print()
-
-    total_start = time.time()
-    passed = 0
-    failed = 0
-    total_tests = 0
-    failed_modules: list[str] = []
-
-    for module_name in modules:
-        if args.verbose:
-            print(f"  Testing {module_name}...", end=" ", flush=True)
-
-        success, duration, test_count = run_module_tests(module_name)
-        total_tests += test_count
-
-        if success:
-            passed += 1
-            if args.verbose:
-                print(f"✅ ({duration:.2f}s)")
-        else:
-            failed += 1
-            failed_modules.append(module_name)
-            if args.verbose:
-                print(f"❌ ({duration:.2f}s)")
-
-    total_duration = time.time() - total_start
-
-    # Summary
+def _print_test_summary(
+    passed: int, failed: int, total_duration: float, failed_modules: list[str], run_all: bool
+) -> None:
+    """Print test summary and recommendations."""
     print()
     print("=" * 60)
     print("📊 FAST TEST SUMMARY")
@@ -367,13 +309,56 @@ def main() -> int:
     if failed == 0:
         print()
         print("🎉 ALL FAST TESTS PASSED!")
-        if not args.all:
+        if not run_all:
             print("💡 Run with --all for full test coverage")
     else:
         print()
         print("⚠️  Some tests failed. Run full suite for details:")
         print("   python run_all_tests.py")
 
+
+def main() -> int:
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Fast test runner for rapid development feedback")
+    parser.add_argument("--all", action="store_true", help="Run all tests including integration tests")
+    parser.add_argument("--list", action="store_true", help="List available test modules")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
+    args = parser.parse_args()
+
+    if args.list:
+        list_modules()
+        return 0
+
+    modules = FAST_TEST_MODULES.copy()
+    if args.all:
+        modules.extend(INTEGRATION_TEST_MODULES)
+
+    print("=" * 60)
+    print("🚀 FAST TEST RUNNER")
+    print("=" * 60)
+    print(f"Running {len(modules)} test modules...")
+    print()
+
+    total_start = time.time()
+    passed = 0
+    failed = 0
+    failed_modules: list[str] = []
+
+    for module_name in modules:
+        if args.verbose:
+            print(f"  Testing {module_name}...", end=" ", flush=True)
+        success, duration, _ = run_module_tests(module_name)
+        if success:
+            passed += 1
+            if args.verbose:
+                print(f"✅ ({duration:.2f}s)")
+        else:
+            failed += 1
+            failed_modules.append(module_name)
+            if args.verbose:
+                print(f"❌ ({duration:.2f}s)")
+
+    _print_test_summary(passed, failed, time.time() - total_start, failed_modules, args.all)
     return 0 if failed == 0 else 1
 
 

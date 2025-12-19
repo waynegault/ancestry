@@ -422,46 +422,47 @@ class ConfigurationValidator:
         )
 
     def _validate_rate_limiting(self, config: ConfigSchema) -> None:
-        """Validate rate limiting configuration."""
+        """Validate rate limiting configuration for per-endpoint adaptive system."""
         api = getattr(config, "api", None)
         if api is None:
             return
 
-        # Check RPS
+        # Check fallback RPS (used for unconfigured endpoints)
         rps = getattr(api, "requests_per_second", 0)
-        rps_safe = 0.1 <= rps <= 2.0  # Safe range for Ancestry API
+        rps_safe = 0.1 <= rps <= 5.0  # Wider range since per-endpoint caps apply
         self._report.add(
             ValidationResult(
-                name="Rate Limit: RPS",
+                name="Rate Limit: Fallback RPS",
                 passed=rps_safe,
-                message=f"Requests per second: {rps}",
+                message=f"Fallback rate for unconfigured endpoints: {rps}/s",
                 severity="warning" if not rps_safe else "info",
-                suggestion="Keep REQUESTS_PER_SECOND between 0.1 and 2.0 to avoid 429 errors",
+                suggestion="Keep REQUESTS_PER_SECOND between 0.1 and 5.0",
             )
         )
 
-        # Check concurrency
-        concurrency = getattr(api, "max_concurrency", 1)
-        concurrency_safe = concurrency <= 2  # Sequential or limited parallel
+        # Check endpoint throttle profiles are configured
+        profiles = getattr(api, "endpoint_throttle_profiles", {})
+        has_profiles = isinstance(profiles, dict) and len(profiles) > 0
         self._report.add(
             ValidationResult(
-                name="Rate Limit: Concurrency",
-                passed=concurrency_safe,
-                message=f"Max concurrency: {concurrency}",
-                severity="warning" if not concurrency_safe else "info",
-                suggestion="Keep MAX_CONCURRENCY at 1-2 for API stability",
+                name="Rate Limit: Per-Endpoint",
+                passed=has_profiles,
+                message=f"Per-endpoint profiles: {len(profiles) if profiles else 0} configured",
+                severity="info",
+                suggestion="Per-endpoint rate limiting adapts automatically to each API",
             )
         )
 
-        # Check max delay
-        max_delay = getattr(api, "max_delay", 0)
+        # Check adaptive parameters
+        backoff = getattr(api, "rate_limiter_429_backoff", 0.80)
+        backoff_valid = 0.5 <= backoff <= 0.95
         self._report.add(
             ValidationResult(
-                name="Rate Limit: Max Delay",
-                passed=max_delay >= 5.0,
-                message=f"Max delay: {max_delay}s",
-                severity="warning" if max_delay < 5.0 else "info",
-                suggestion="Set MAX_DELAY to at least 5.0 seconds for error recovery",
+                name="Rate Limit: Backoff",
+                passed=backoff_valid,
+                message=f"429 backoff multiplier: {backoff:.0%}",
+                severity="warning" if not backoff_valid else "info",
+                suggestion="Keep RATE_LIMITER_429_BACKOFF between 0.5 and 0.95",
             )
         )
 

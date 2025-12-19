@@ -414,14 +414,13 @@ def reset_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:
                 except Exception as e:
                     logger.warning(f"Failed to clear Action 6 checkpoint: {e}")
 
-                # Clear general cache
+                # Clear general cache (may fail if cache.db is locked - this is OK)
                 try:
                     if clear_cache():
                         logger.info("✅ General cache cleared.")
-                    else:
-                        logger.warning("General cache clear returned False.")
+                    # Note: False return is expected if cache.db is locked during reset
                 except Exception as e:
-                    logger.warning(f"Failed to clear general cache: {e}")
+                    logger.debug(f"Cache clear skipped: {e}")
 
                 logger.info("✅ Database reset completed successfully.")
 
@@ -477,20 +476,19 @@ def _display_table_statistics() -> None:
         table_names = inspector.get_table_names()
 
         if not table_names:
-            logger.info("Database contains no tables")
+            print("Database contains no tables")
             return
 
-        logger.info("")
-        logger.info("Database Table Statistics:")
-        logger.info("-" * 60)
+        print("Database Table Statistics:")
+        print("-" * 60)
 
         with engine.connect() as conn:
             for table_name in sorted(table_names):
                 result = conn.execute(text(f"SELECT COUNT(*) FROM {table_name}"))
                 count = result.scalar()
-                logger.info(f"  {table_name:30s} {count:>10,} records")
+                print(f"  {table_name:30s} {count:>10,} records")
 
-        logger.info("-" * 60)
+        print("-" * 60)
 
     except Exception as e:
         logger.warning(f"Could not display table statistics: {e}")
@@ -536,6 +534,7 @@ def restore_db_actn(session_manager: SessionManager, *_extra: Any) -> bool:  # A
 
         shutil.copy2(backup_path, db_path)
         logger.info("Db restored from backup OK.")
+        print()  # Blank line after restore confirmation
 
         # Display table statistics
         _display_table_statistics()
@@ -581,7 +580,8 @@ def _display_session_info(session_manager: SessionManager) -> None:
 
 def _handle_logged_in_status(session_manager: SessionManager) -> bool:
     """Handle the case when user is already logged in."""
-    print("You are currently logged in to Ancestry.")
+    logger.info("You are currently logged in to Ancestry.")
+    logger.info("")  # Blank line after login confirmation
     _display_session_info(session_manager)
     return True
 
@@ -635,7 +635,7 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
         print("       Select any browser-required action (1, 6-9) to start the browser.")
         return False
 
-    print("Checking login status...")
+    logger.info("Checking login status...")
 
     # Call login_status directly to check initial status
     try:
@@ -787,11 +787,17 @@ def _test_close_main_pool_for_reset_invokes_gc() -> bool:
 
 def _test_handle_logged_in_status_outputs_message() -> bool:
     session_manager = SimpleNamespace()
-    with mock.patch(f"{__name__}._display_session_info") as display_info:
-        output = _capture_stdout(_handle_logged_in_status, cast(SessionManager, session_manager))
+    with (
+        mock.patch(f"{__name__}._display_session_info") as display_info,
+        mock.patch(f"{__name__}.logger") as mock_logger,
+    ):
+        result = _handle_logged_in_status(cast(SessionManager, session_manager))
 
-    assert "You are currently logged in" in output
+    # Verify logger.info was called with login message
+    calls = [str(call) for call in mock_logger.info.call_args_list]
+    assert any("logged in" in call.lower() for call in calls), f"Expected 'logged in' in {calls}"
     display_info.assert_called_once_with(session_manager)
+    assert result is True
     return True
 
 

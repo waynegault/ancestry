@@ -161,7 +161,7 @@ import argparse
 from unittest.mock import MagicMock, patch
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Dry Run Test Harness")
     parser.add_argument("--mock", action="store_true", help="Mock session and network calls")
     args = parser.parse_args()

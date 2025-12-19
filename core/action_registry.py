@@ -207,6 +207,8 @@ class ActionRegistry:
                 function=None,
                 category=ActionCategory.DATABASE,
                 browser_requirement=ActionRequirement.NONE,
+                requires_confirmation=True,
+                confirmation_message="create a backup of the database (overwrites existing backup)",
                 menu_order=3,
             )
         )
