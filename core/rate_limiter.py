@@ -722,7 +722,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         age_str = f", age: {age_hours:.1f}h" if age_hours else ""
 
         restored_count = 0
-        restored_details: list[str] = []
+        restored_details: list[tuple[str, float, int]] = []
         for endpoint, persisted_rate in endpoint_rates.items():
             if endpoint not in self._endpoint_states:
                 continue
@@ -737,12 +737,21 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             restored_count += 1
 
             short_name = endpoint.replace(" API (Batch)", "").replace(" API", "")
-            restored_details.append(f"{short_name}: {state.current_rate:.2f} req/s (prior 429s: {prior_429s})")
+            restored_details.append((short_name, state.current_rate, prior_429s))
             logger.debug(f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s")
 
         if restored_count > 0:
-            details_str = " | ".join(restored_details)
-            logger.info(f"📥 Restored {restored_count} endpoint rates from previous session{age_str}\n   {details_str}")
+            # Format as table for readability
+            table_lines = [f"📥 Restored {restored_count} endpoint rates from previous session{age_str}"]
+            table_lines.append("   ┌─────────────────────────────────────┬──────────┬───────────┐")
+            table_lines.append("   │ Endpoint                            │ Rate     │ Prior 429 │")
+            table_lines.append("   ├─────────────────────────────────────┼──────────┼───────────┤")
+            for name, rate, prior_429s in sorted(restored_details, key=lambda x: x[0]):
+                # Highlight endpoints that had 429 errors
+                marker = "⚠️" if prior_429s > 0 else "  "
+                table_lines.append(f"   │ {marker}{name:<33} │ {rate:>6.2f}/s │ {prior_429s:>9} │")
+            table_lines.append("   └─────────────────────────────────────┴──────────┴───────────┘")
+            logger.info("\n".join(table_lines))
 
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""
@@ -1135,10 +1144,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
                 status = "🟢" if state.total_429s == 0 else "🟡" if state.total_429s < 3 else "🔴"
                 # Calculate headroom: how much room to grow (0% = at max, 100% = at min)
                 range_size = state.max_rate - state.min_rate
-                if range_size > 0:
-                    pct_of_max = ((state.current_rate - state.min_rate) / range_size) * 100
-                else:
-                    pct_of_max = 100.0
+                pct_of_max = ((state.current_rate - state.min_rate) / range_size) * 100 if range_size > 0 else 100.0
                 rate_entries.append(
                     f"  {status} {endpoint}: {state.current_rate:.2f} req/s "
                     f"({pct_of_max:.0f}% of max, 429s: {state.total_429s})"

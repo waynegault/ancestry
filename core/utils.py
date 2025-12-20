@@ -3258,9 +3258,10 @@ def _check_signin_redirect(
     session_manager: Optional["SessionManager"],
 ) -> bool:
     """Check if redirect from signin to base URL is valid. Returns True if valid redirect."""
-    is_signin_to_base_redirect = target_url_base == signin_page_url_base and landed_url_base == urlparse(
-        config_schema.api.base_url
-    ).path.rstrip("/")
+    # When navigating to signin page and already logged in, Ancestry redirects to homepage
+    # Compare landed URL to base URL (scheme + netloc + path, normalized)
+    base_url_normalized = _parse_and_normalize_url(config_schema.api.base_url) or ""
+    is_signin_to_base_redirect = target_url_base == signin_page_url_base and landed_url_base == base_url_normalized
     if is_signin_to_base_redirect:
         logger.debug("Redirected from signin page to base URL. Verifying login status...")
         time.sleep(1)

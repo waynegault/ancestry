@@ -1039,7 +1039,7 @@ class ConfigSchema:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary (deep dataclass conversion)."""
-        return asdict(self)
+        return asdict(self)  # type: ignore[arg-type]  # Pylance false positive: self is a dataclass
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConfigSchema:
@@ -1067,7 +1067,7 @@ class ConfigSchema:
         nested_keys = set(sub_config_builders) | {"retry_policies"}
         main_data = {k: v for k, v in data.items() if k not in nested_keys}
 
-        return cls(
+        return cls(  # type: ignore[call-arg]  # Dynamic **kwargs from dict
             retry_policies=retry_policy_config,
             **built_configs,
             **main_data,
@@ -1331,7 +1331,7 @@ def _test_config_schema_creation() -> None:
         assert isinstance(config.security, SecurityConfig)
 
         # Test custom environment
-        custom_config = ConfigSchema(environment="production", debug_mode=True)
+        custom_config = ConfigSchema(environment="production", debug_mode=True)  # type: ignore[call-arg]
         assert custom_config.environment == "production"
         assert custom_config.debug_mode is True
 
@@ -1408,7 +1408,7 @@ def _test_config_schema_validation() -> None:
 
         # Test configuration with invalid environment
         try:
-            ConfigSchema(environment="invalid")
+            ConfigSchema(environment="invalid")  # type: ignore[call-arg]
             raise AssertionError("Should have raised ValueError for invalid environment")
         except ValueError:
             pass  # Expected
@@ -1446,7 +1446,7 @@ def _test_integration() -> None:
 
     with suppress_logging():
         # Create a full configuration
-        config = ConfigSchema(environment="production", debug_mode=False)
+        config = ConfigSchema(environment="production", debug_mode=False)  # type: ignore[call-arg]
 
         # Modify sub-configs
         config.database.pool_size = 20
@@ -1476,7 +1476,7 @@ def _test_performance() -> None:
         # Create multiple configurations
         configs: list[ConfigSchema] = []
         for i in range(100):
-            config = ConfigSchema(environment="testing", debug_mode=i % 2 == 0)
+            config = ConfigSchema(environment="testing", debug_mode=i % 2 == 0)  # type: ignore[call-arg]
             configs.append(config)
 
         creation_time = time.time() - start_time

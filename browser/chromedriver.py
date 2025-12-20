@@ -521,7 +521,8 @@ def _try_remove_stale_file(stale_file: Path) -> None:
         stale_file.unlink()
         logger.debug(f"Removed stale UC file: {stale_file}")
     except PermissionError:
-        logger.warning(f"Cannot remove stale UC file (in use): {stale_file}")
+        # File locked by another process - harmless, will be cleaned up next time
+        logger.debug(f"Cannot remove stale UC file (in use): {stale_file}")
     except Exception as e:
         logger.debug(f"Could not remove {stale_file}: {e}")
 

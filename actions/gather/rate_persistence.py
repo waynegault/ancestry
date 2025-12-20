@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Track last persisted page to avoid excessive writes
-_last_persisted_page: int = 0
+# Track last persisted page to avoid excessive writes (mutable container avoids global statement)
+_persistence_state = {"last_page": 0}
 
 
 def persist_rates_periodically(
@@ -45,14 +45,12 @@ def persist_rates_periodically(
     Returns:
         True if state was persisted, False otherwise
     """
-    global _last_persisted_page
-
     # Only persist at intervals
     if current_page > 0 and current_page % interval != 0:
         return False
 
     # Avoid duplicate persistence for same page
-    if current_page == _last_persisted_page:
+    if current_page == _persistence_state["last_page"]:
         return False
 
     limiter = getattr(session_manager, "rate_limiter", None)
@@ -64,7 +62,7 @@ def persist_rates_periodically(
 
         metrics = limiter.get_metrics()
         persist_rate_limiter_state(limiter, metrics)
-        _last_persisted_page = current_page
+        _persistence_state["last_page"] = current_page
 
         # Log endpoint rates summary for visibility at this checkpoint
         logger.debug(f"📊 Rate state persisted at page {current_page}")
@@ -77,8 +75,7 @@ def persist_rates_periodically(
 
 def reset_persistence_state() -> None:
     """Reset the last persisted page tracker (for testing)."""
-    global _last_persisted_page
-    _last_persisted_page = 0
+    _persistence_state["last_page"] = 0
 
 
 # ---------------------------------------------------------------------------

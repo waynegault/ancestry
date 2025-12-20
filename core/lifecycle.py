@@ -669,6 +669,14 @@ def cleanup_session_manager(session_manager: Optional[Any]) -> None:
     Args:
         session_manager: SessionManager instance to clean up
     """
+    # Stop metrics exporter FIRST - this is the only place it gets stopped
+    # (close_sess no longer stops it to keep it running between actions)
+    try:
+        from observability.metrics_exporter import stop_metrics_exporter
+
+        stop_metrics_exporter()
+    except Exception:
+        pass  # Silently ignore - may not be running
 
     if session_manager is not None:
         try:

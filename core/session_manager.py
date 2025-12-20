@@ -1357,7 +1357,9 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._transition_state(SessionLifecycleState.UNINITIALIZED, "Session fully closed")
         self._update_session_metrics(force_zero=True)
 
-        self._shutdown_metrics_exporter()
+        # NOTE: Metrics exporter intentionally NOT stopped here.
+        # It stays running across session closes to support menu-driven workflows.
+        # Only stopped on force_restart_sess() or application exit.
 
         logger.debug("Session closed.")
 
