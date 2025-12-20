@@ -1501,19 +1501,22 @@ def _format_structured_reply_prompt(
 ) -> str | None:
     """Format the prompt template with evidence data.
 
+    Uses str.replace() instead of .format() to avoid conflicts with
+    literal JSON braces in the prompt template examples.
+
     Returns:
         Formatted prompt string or None if formatting fails.
     """
     try:
-        return prompt_template.format(
-            user_question=user_question,
-            conversation_context=conversation_context or "No previous conversation.",
-            tree_evidence=tree_evidence or "No tree evidence available.",
-            semantic_search_results=semantic_search_results or "No semantic search results.",
-            family_members=family_members or "No family members data.",
-            relationship_path=relationship_path or "No relationship path available.",
-        )
-    except KeyError as e:
+        result = prompt_template
+        result = result.replace("{user_question}", user_question or "")
+        result = result.replace("{conversation_context}", conversation_context or "No previous conversation.")
+        result = result.replace("{tree_evidence}", tree_evidence or "No tree evidence available.")
+        result = result.replace("{semantic_search_results}", semantic_search_results or "No semantic search results.")
+        result = result.replace("{family_members}", family_members or "No family members data.")
+        result = result.replace("{relationship_path}", relationship_path or "No relationship path available.")
+        return result
+    except Exception as e:
         logger.error(f"generate_structured_reply: Prompt formatting error: {e}")
         return None
 

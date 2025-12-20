@@ -1883,7 +1883,7 @@ class InboxProcessor:
                 phase_result = ConversationPhaseEnum.RESPONSE_RECEIVED
 
             if phase_result:
-                logger.info(f"Conversation Phase for {conversation_id}: {phase_result.name}")
+                logger.debug(f"Conversation Phase for {conversation_id}: {phase_result.name}")
 
             return phase_result
 

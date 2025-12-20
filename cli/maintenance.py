@@ -546,6 +546,7 @@ class AnalyticsMixin:
                 print(f"   • Performance: {grafana_url}/d/ancestry-performance")
                 print(f"   • Genealogy:   {grafana_url}/d/ancestry-genealogy")
                 print(f"   • Code Quality: {grafana_url}/d/ancestry-code-quality")
+                print(f"   • Database:    {grafana_url}/d/ancestry-database")
                 print(
                     "\n💡 If dashboards are empty, data sources are re-applied automatically. "
                     "Verify Prometheus is reachable at http://localhost:9091 if panels stay blank.\n"

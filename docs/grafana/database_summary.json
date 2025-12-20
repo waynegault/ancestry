@@ -1,0 +1,506 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_SQLITE",
+      "label": "SQLite",
+      "type": "datasource",
+      "pluginId": "frser-sqlite-datasource",
+      "pluginName": "SQLite"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": "9.5.0"
+    },
+    {
+      "type": "datasource",
+      "id": "frser-sqlite-datasource",
+      "name": "SQLite",
+      "version": "3.0.0"
+    }
+  ],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "📊 Database Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 100 },
+              { "color": "yellow", "value": 1000 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM people",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM people",
+          "refId": "A"
+        }
+      ],
+      "title": "👥 Total People",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "purple", "value": null },
+              { "color": "green", "value": 100 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM dna_match",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM dna_match",
+          "refId": "A"
+        }
+      ],
+      "title": "🧬 DNA Matches",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "green", "value": 10 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM conversation_log",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM conversation_log",
+          "refId": "A"
+        }
+      ],
+      "title": "💬 Conversation Logs",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM draft_replies",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM draft_replies",
+          "refId": "A"
+        }
+      ],
+      "title": "📝 Draft Replies",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM shared_matches",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM shared_matches",
+          "refId": "A"
+        }
+      ],
+      "title": "🔗 Shared Matches",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "cyan", "value": null }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COUNT(*) as value FROM family_tree",
+          "queryType": "table",
+          "rawQueryText": "SELECT COUNT(*) as value FROM family_tree",
+          "refId": "A"
+        }
+      ],
+      "title": "🌳 Family Tree Records",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "panels": [],
+      "title": "👥 People by Status",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 6 },
+      "id": 10,
+      "options": {
+        "displayLabels": ["name", "value"],
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COALESCE(status, 'unknown') as status, COUNT(*) as count FROM people GROUP BY status ORDER BY count DESC",
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(status, 'unknown') as status, COUNT(*) as count FROM people GROUP BY status ORDER BY count DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "People by Status",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 6 },
+      "id": 11,
+      "options": {
+        "displayLabels": ["name", "value"],
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL GROUP BY ai_sentiment ORDER BY count DESC",
+          "queryType": "table",
+          "rawQueryText": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL GROUP BY ai_sentiment ORDER BY count DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "AI Sentiment Distribution",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 6 },
+      "id": 12,
+      "options": {
+        "displayLabels": ["name", "value"],
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "pieType": "pie",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT CASE WHEN shared_cm >= 400 THEN '400+ cM (Close)' WHEN shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match GROUP BY range ORDER BY MIN(shared_cm) DESC",
+          "queryType": "table",
+          "rawQueryText": "SELECT CASE WHEN shared_cm >= 400 THEN '400+ cM (Close)' WHEN shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match GROUP BY range ORDER BY MIN(shared_cm) DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "DNA Matches by cM Range",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "panels": [],
+      "title": "📋 Recent Activity",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "shared_cm" }, "properties": [{ "id": "custom.width", "value": 80 }] },
+          { "matcher": { "id": "byName", "options": "username" }, "properties": [{ "id": "custom.width", "value": 200 }] }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 20,
+      "options": {
+        "footer": { "enablePagination": true, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id ORDER BY p.created_at DESC LIMIT 20",
+          "queryType": "table",
+          "rawQueryText": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id ORDER BY p.created_at DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Recently Added People",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 21,
+      "options": {
+        "footer": { "enablePagination": true, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT p.username, c.direction, c.ai_sentiment, datetime(c.latest_timestamp) as timestamp FROM conversation_log c JOIN people p ON c.people_id = p.id ORDER BY c.latest_timestamp DESC LIMIT 20",
+          "queryType": "table",
+          "rawQueryText": "SELECT p.username, c.direction, c.ai_sentiment, datetime(c.latest_timestamp) as timestamp FROM conversation_log c JOIN people p ON c.people_id = p.id ORDER BY c.latest_timestamp DESC LIMIT 20",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Conversations",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "panels": [],
+      "title": "🧬 Top DNA Matches",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "align": "auto", "displayMode": "auto", "inspect": false },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "shared_cm" }, "properties": [{ "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "gauge" } }] }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "id": 30,
+      "options": {
+        "footer": { "enablePagination": true, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "shared_cm" }]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "queryText": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id ORDER BY d.shared_cm DESC LIMIT 50",
+          "queryType": "table",
+          "rawQueryText": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id ORDER BY d.shared_cm DESC LIMIT 50",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 50 DNA Matches by Shared cM",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["ancestry", "database", "sqlite"],
+  "templating": { "list": [] },
+  "time": { "from": "now-7d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Ancestry Database Summary",
+  "uid": "ancestry-database",
+  "version": 1,
+  "weekStart": ""
+}

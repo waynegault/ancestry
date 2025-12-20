@@ -462,6 +462,7 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
         ("ancestry-performance", "system_performance.json"),
         ("ancestry-genealogy", "genealogy_insights.json"),
         ("ancestry-code-quality", "code_quality.json"),
+        ("ancestry-database", "database_summary.json"),
     ]
 
     grafana_base = _grafana_base()
