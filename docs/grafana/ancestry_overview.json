@@ -51,7 +51,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -81,7 +81,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "histogram_quantile(0.95, sum(rate(ancestry_api_latency_seconds_bucket[5m])) by (le, endpoint))",
           "legendFormat": "{{endpoint}}",
@@ -94,7 +94,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -122,7 +122,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "sum(rate(ancestry_api_requests_total[5m])) by (endpoint)",
           "legendFormat": "{{endpoint}}",
@@ -135,7 +135,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -167,7 +167,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "ancestry_api_requests_total",
           "legendFormat": "Total Requests",
@@ -180,7 +180,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -212,7 +212,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "ancestry_session_uptime_seconds",
           "legendFormat": "Session Uptime",
@@ -225,7 +225,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -257,7 +257,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "ancestry_worker_thread_count",
           "legendFormat": "Worker Threads",
@@ -270,7 +270,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -298,7 +298,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "histogram_quantile(0.5, sum(rate(ancestry_rate_limiter_delay_seconds_bucket[5m])) by (le))",
           "legendFormat": "p50",
@@ -307,7 +307,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "histogram_quantile(0.95, sum(rate(ancestry_rate_limiter_delay_seconds_bucket[5m])) by (le))",
           "legendFormat": "p95",
@@ -316,7 +316,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "histogram_quantile(0.99, sum(rate(ancestry_rate_limiter_delay_seconds_bucket[5m])) by (le))",
           "legendFormat": "p99",
@@ -329,7 +329,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
+        "uid": "af6q4o115lgjkb"
       },
       "fieldConfig": {
         "defaults": {
@@ -357,7 +357,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
+            "uid": "af6q4o115lgjkb"
           },
           "expr": "sum(rate(ancestry_api_requests_total[5m])) by (result)",
           "legendFormat": "{{result}}",

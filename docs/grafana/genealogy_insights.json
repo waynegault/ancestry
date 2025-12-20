@@ -71,7 +71,7 @@
     {
       "title": "Total DNA Matches in Database",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -102,7 +102,7 @@
     {
       "title": "Total People in Database",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -125,7 +125,7 @@
     {
       "title": "Average Shared DNA (cM)",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -157,7 +157,7 @@
     {
       "title": "People Linked to Tree",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -188,7 +188,7 @@
     {
       "title": "DNA Matches by Relationship",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "options": {
         "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
@@ -203,7 +203,7 @@
     {
       "title": "Shared DNA Distribution (cM)",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
       "options": {
         "showHeader": true,
@@ -229,7 +229,7 @@
     {
       "title": "Total Conversations",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 0, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -252,7 +252,7 @@
     {
       "title": "Messages Received (Inbound)",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 6, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -282,7 +282,7 @@
     {
       "title": "Messages Sent (Outbound)",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 12, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -312,7 +312,7 @@
     {
       "title": "Response Rate",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 5, "w": 6, "x": 18, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -344,7 +344,7 @@
     {
       "title": "Message Sentiment Distribution",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
       "options": {
         "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
@@ -359,7 +359,7 @@
     {
       "title": "Recent Conversations Timeline",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
       "options": {
         "showHeader": true,
@@ -391,7 +391,7 @@
     {
       "title": "Contactable vs Non-Contactable",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 29},
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -406,7 +406,7 @@
     {
       "title": "Person Status Distribution",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 29},
       "options": {
         "legend": {"displayMode": "list", "placement": "bottom"},
@@ -421,7 +421,7 @@
     {
       "title": "Data Completeness Score",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 29},
       "fieldConfig": {
         "defaults": {
@@ -455,7 +455,7 @@
     {
       "title": "Top DNA Matches (Closest Relatives)",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 37},
       "options": {
         "showHeader": true,
@@ -475,7 +475,7 @@
     {
       "title": "Active vs Inactive Matches",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
       "options": {
         "showHeader": true,
