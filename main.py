@@ -339,6 +339,7 @@ def _assign_action_registry_functions() -> None:
     registry.set_action_function("a", _cli_helpers.show_analytics_dashboard)
     registry.set_action_function("b", _cli_helpers.show_metrics_report)
     registry.set_action_function("l", _cli_helpers.run_grafana_setup)
+    registry.set_action_function("o", _cli_helpers.open_grafana_dashboard)
     registry.set_action_function("g", _cli_helpers.open_graph_visualization)
     registry.set_action_function("d", _cli_helpers.show_cache_statistics)
     registry.set_action_function("e", _cli_helpers.run_config_health_check)

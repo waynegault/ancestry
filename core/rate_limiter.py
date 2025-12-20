@@ -741,19 +741,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             logger.debug(f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s")
 
         if restored_count > 0:
-            # Format as simple left-aligned table
-            import sys
-
-            print(f"\n📥 Restored {restored_count} endpoint rates from previous session{age_str}")
-            print(f"   {'Endpoint':<36} {'Rate':>8}  {'Prior 429':>9}")
-            print(f"   {'-' * 36} {'-' * 8}  {'-' * 9}")
-            for name, rate, prior_429s in sorted(restored_details, key=lambda x: x[0]):
-                marker = "*" if prior_429s > 0 else ""
-                display_name = f"{marker}{name}"
-                print(f"   {display_name:<36} {rate:>6.2f}/s  {prior_429s:>9}")
-            print()
-            sys.stdout.flush()
-            logger.debug(f"Restored {restored_count} endpoint rates from persisted state")
+            logger.debug(f"Restored {restored_count} endpoint rates from persisted state{age_str}")
 
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""

@@ -461,6 +461,18 @@ class ActionRegistry:
                 menu_order=240,
             )
         )
+        self.register(
+            ActionMetadata(
+                id="o",
+                name="Open Grafana Dashboard",
+                description="Open Grafana dashboard in web browser",
+                function=None,
+                category=ActionCategory.ANALYTICS,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=125,
+            )
+        )
 
     def _register_utility_actions(self) -> None:
         """Register utility meta actions."""

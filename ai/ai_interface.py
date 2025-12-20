@@ -811,6 +811,7 @@ def _call_ai_model(
     """
     Private helper to call the specified AI model.
     Handles API key loading, request construction, rate limiting, and error handling.
+    Implements exponential backoff retry for empty responses before falling back.
     """
     logger.debug(f"Calling AI model. Provider: {provider}, Max Tokens: {max_tokens}, Temp: {temperature}")
 
@@ -821,46 +822,77 @@ def _call_ai_model(
 
     last_exception: Exception | None = None
 
+    # Retry configuration for empty responses
+    max_retries = 3
+    base_delay = 1.0  # Starting delay in seconds
+
     for idx, active_provider in enumerate(provider_chain):
         next_provider = provider_chain[idx + 1] if idx < len(provider_chain) - 1 else None
-        _apply_rate_limiting(session_manager, active_provider)
 
-        try:
-            result = _route_ai_provider_call(
-                active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
-            )
-        except Exception as exc:
-            last_exception = exc
-            _handle_ai_exceptions(exc, active_provider, session_manager)
+        # Retry loop with exponential backoff for empty responses
+        for attempt in range(max_retries):
+            _apply_rate_limiting(session_manager, active_provider)
 
-            if next_provider is not None:
-                logger.warning(
-                    "AI provider '%s' failed (%s). Attempting fallback '%s'.",
-                    active_provider,
-                    type(exc).__name__,
-                    next_provider,
+            try:
+                result = _route_ai_provider_call(
+                    active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
                 )
-                continue
+            except Exception as exc:
+                last_exception = exc
+                _handle_ai_exceptions(exc, active_provider, session_manager)
 
-            break
+                if next_provider is not None:
+                    logger.warning(
+                        "AI provider '%s' failed (%s). Attempting fallback '%s'.",
+                        active_provider,
+                        type(exc).__name__,
+                        next_provider,
+                    )
+                    break  # Break retry loop, continue to next provider
 
-        if result is None:
-            if next_provider is not None:
+                # No fallback available - break out of retry loop
+                break
+
+            if result is not None:
+                # Success! Return the result
+                if active_provider != provider:
+                    logger.warning(
+                        "AI provider '%s' failed, successfully fell back to '%s'.",
+                        provider,
+                        active_provider,
+                    )
+                return result
+
+            # Empty response - retry with exponential backoff
+            if attempt < max_retries - 1:
+                delay = base_delay * (2**attempt)  # 1s, 2s, 4s
                 logger.warning(
-                    "AI provider '%s' returned no response. Attempting fallback '%s'.",
+                    "AI provider '%s' returned empty response (attempt %d/%d). Retrying in %.1fs...",
                     active_provider,
-                    next_provider,
+                    attempt + 1,
+                    max_retries,
+                    delay,
                 )
-                continue
-            break
+                time.sleep(delay)
+            else:
+                # Exhausted retries for this provider
+                logger.warning(
+                    "AI provider '%s' returned empty response after %d attempts.",
+                    active_provider,
+                    max_retries,
+                )
+                if next_provider is not None:
+                    logger.info("Attempting fallback to '%s'.", next_provider)
+        else:
+            # Retry loop completed without break (all retries exhausted, no exception)
+            # Continue to next provider if available
+            if next_provider is None:
+                break
+            continue
 
-        if active_provider != provider:
-            logger.warning(
-                "AI provider '%s' failed, successfully fell back to '%s'.",
-                provider,
-                active_provider,
-            )
-        return result
+        # Exception occurred and no fallback - exit provider loop
+        if last_exception is not None and next_provider is None:
+            break
 
     if last_exception is not None:
         logger.error(
@@ -871,7 +903,7 @@ def _call_ai_model(
         )
     else:
         logger.error(
-            "AI provider '%s' returned no usable response after trying %d option(s).",
+            "AI provider '%s' returned no usable response after trying %d option(s) with retries.",
             provider,
             len(provider_chain),
         )
@@ -1094,21 +1126,68 @@ def _salvage_flat_structure(parsed_json: dict[str, Any], default_empty_result: d
 
 
 def _attempt_json_repair(ai_response_str: str) -> dict[str, Any] | None:
-    """Attempt to repair truncated JSON by appending missing brackets/braces."""
+    """Attempt to repair truncated JSON by fixing common truncation issues."""
     try:
         logger.warning("Attempting to repair truncated JSON.")
-        repaired_json_str = ai_response_str.strip()
-        open_braces = repaired_json_str.count("{")
-        close_braces = repaired_json_str.count("}")
-        open_brackets = repaired_json_str.count("[")
-        close_brackets = repaired_json_str.count("]")
+        repaired = ai_response_str.strip()
 
-        repaired_json_str += "}" * (open_braces - close_braces)
-        repaired_json_str += "]" * (open_brackets - close_brackets)
+        # If empty or too short, bail out
+        if len(repaired) < 10:
+            logger.debug("Response too short to repair")
+            return None
 
-        parsed_json = json.loads(repaired_json_str)
-        logger.info("Successfully repaired truncated JSON.")
-        return parsed_json
+        # Remove trailing incomplete key-value pairs (e.g., '"key":' or '"key": "val')
+        # Find the last complete value (ends with }, ], ", number, true, false, null)
+        import re
+
+        # Try progressively more aggressive truncation repairs
+        repair_attempts = [
+            repaired,  # Original
+        ]
+
+        # Find last valid JSON terminator and truncate there
+        # Look for last complete array element or object property
+        for pattern in [
+            r',\s*"[^"]*":\s*"[^"]*$',  # Truncated string value
+            r',\s*"[^"]*":\s*\[[^\]]*$',  # Truncated array
+            r',\s*"[^"]*":\s*\{[^\}]*$',  # Truncated object
+            r',\s*"[^"]*":\s*$',  # Key with no value
+            r',\s*"[^"]*$',  # Incomplete key
+            r',\s*\{[^\}]*$',  # Incomplete object in array
+        ]:
+            match = re.search(pattern, repaired)
+            if match:
+                truncated = repaired[: match.start()]
+                repair_attempts.append(truncated)
+
+        # Also try removing last incomplete array/object element
+        for ending in [',\n', ', ', ',']:
+            if ending in repaired:
+                last_comma = repaired.rfind(ending)
+                if last_comma > len(repaired) // 2:  # Only if comma is in latter half
+                    repair_attempts.append(repaired[:last_comma])
+
+        # Try each repair attempt
+        for attempt in repair_attempts:
+            try:
+                # Balance brackets
+                open_braces = attempt.count("{")
+                close_braces = attempt.count("}")
+                open_brackets = attempt.count("[")
+                close_brackets = attempt.count("]")
+
+                balanced = attempt
+                balanced += "]" * (open_brackets - close_brackets)
+                balanced += "}" * (open_braces - close_braces)
+
+                parsed = json.loads(balanced)
+                logger.info("Successfully repaired truncated JSON.")
+                return parsed
+            except json.JSONDecodeError:
+                continue
+
+        logger.debug("All JSON repair attempts failed")
+        return None
     except Exception as repair_error:
         logger.error(f"Failed to repair JSON: {repair_error}")
         return None
@@ -1191,7 +1270,7 @@ def extract_genealogical_entities(context_history: str, session_manager: Session
         system_prompt=system_prompt,
         user_content=context_history,
         session_manager=session_manager,
-        max_tokens=2500,  # Increased to prevent truncated JSON responses
+        max_tokens=3500,  # Increased to handle large extractions with many people/relationships
         temperature=0.2,
         response_format_type="json_object",  # For DeepSeek
     )
@@ -1658,6 +1737,47 @@ def _parse_structured_reply_response(response_text: str) -> StructuredReplyResul
         )
 
     except json.JSONDecodeError as e:
+        logger.warning(f"_parse_structured_reply_response: JSON parse error: {e}, attempting repair")
+        repaired = _attempt_json_repair(response_text)
+        if repaired and isinstance(repaired, dict):
+            try:
+                # Try to build result from repaired data
+                breakdown_data = repaired.get("confidence_breakdown", {})
+                confidence_breakdown = ConfidenceBreakdown(
+                    base=breakdown_data.get("base", 50),
+                    adjustments=breakdown_data.get("adjustments", []),
+                    final=breakdown_data.get("final", repaired.get("confidence", 50)),
+                )
+                evidence_used = [
+                    EvidenceSource(
+                        source=e.get("source", "Unknown"),
+                        reference=e.get("reference"),
+                        fact=e.get("fact", ""),
+                    )
+                    for e in repaired.get("evidence_used", [])
+                ]
+                missing_info = [
+                    MissingInformation(
+                        field=m.get("field", "Unknown"),
+                        impact=m.get("impact", "medium"),
+                        suggested_source=m.get("suggested_source", ""),
+                    )
+                    for m in repaired.get("missing_information", [])
+                ]
+                logger.info("_parse_structured_reply_response: Successfully parsed repaired JSON")
+                return StructuredReplyResult(
+                    draft_message=repaired.get("draft_message", ""),
+                    confidence=repaired.get("confidence", 50),
+                    confidence_breakdown=confidence_breakdown,
+                    evidence_used=evidence_used,
+                    missing_information=missing_info,
+                    suggested_facts=repaired.get("suggested_facts", []),
+                    follow_up_questions=repaired.get("follow_up_questions", []),
+                    route_to_human_review=repaired.get("route_to_human_review", False),
+                    human_review_reason=repaired.get("human_review_reason"),
+                )
+            except Exception as repair_parse_error:
+                logger.error(f"_parse_structured_reply_response: Failed to parse repaired JSON: {repair_parse_error}")
         logger.error(f"_parse_structured_reply_response: JSON parse error: {e}")
         return None
     except Exception as e:
@@ -1874,9 +1994,21 @@ def assess_engagement(
         return None
 
     try:
-        result = json.loads(ai_response_str)
+        cleaned = _clean_json_response(ai_response_str) if ai_response_str else ""
+        if not cleaned:
+            logger.warning(f"{log_prefix}: Empty engagement response. (Took {duration:.2f}s)")
+            return None
+        result = json.loads(cleaned)
         logger.info(f"{log_prefix}: Engagement assessment OK. (Took {duration:.2f}s)")
         return result if isinstance(result, dict) else None
+    except json.JSONDecodeError as e:
+        # Try JSON repair for truncated responses
+        repaired = _attempt_json_repair(ai_response_str) if ai_response_str else None
+        if repaired:
+            logger.info(f"{log_prefix}: Engagement assessment OK (repaired). (Took {duration:.2f}s)")
+            return repaired if isinstance(repaired, dict) else None
+        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
+        return None
     except Exception as e:
         logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
         return None

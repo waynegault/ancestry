@@ -557,6 +557,14 @@ class AnalyticsMixin:
             print("\n⚠️  Grafana checker module not available")
             print("Ensure grafana_checker.py is in the project root directory\n")
 
+    def open_grafana_dashboard(self) -> None:
+        """Open Grafana dashboard in web browser."""
+        grafana_url = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
+        dashboard_url = f"{grafana_url}/d/ancestry-database"
+        print(f"\n🌐 Opening Grafana Dashboard: {dashboard_url}")
+        webbrowser.open(dashboard_url)
+        print("✅ Browser opened.\n")
+
 
 class ReviewQueueMixin:
     """Mixin for review queue operations."""
