@@ -741,17 +741,22 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             logger.debug(f"Restored '{endpoint}' rate: {old_rate:.3f} → {state.current_rate:.3f} req/s")
 
         if restored_count > 0:
-            # Format as table for readability
-            table_lines = [f"📥 Restored {restored_count} endpoint rates from previous session{age_str}"]
-            table_lines.append("   ┌─────────────────────────────────────┬──────────┬───────────┐")
-            table_lines.append("   │ Endpoint                            │ Rate     │ Prior 429 │")
-            table_lines.append("   ├─────────────────────────────────────┼──────────┼───────────┤")
+            # Format as table for readability - use print() since multiline tables
+            # don't render well through the log formatter
+            import sys
+
+            print(f"\n📥 Restored {restored_count} endpoint rates from previous session{age_str}")
+            print("   ┌─────────────────────────────────────┬──────────┬───────────┐")
+            print("   │ Endpoint                            │ Rate     │ Prior 429 │")
+            print("   ├─────────────────────────────────────┼──────────┼───────────┤")
             for name, rate, prior_429s in sorted(restored_details, key=lambda x: x[0]):
-                # Highlight endpoints that had 429 errors
-                marker = "⚠️" if prior_429s > 0 else "  "
-                table_lines.append(f"   │ {marker}{name:<33} │ {rate:>6.2f}/s │ {prior_429s:>9} │")
-            table_lines.append("   └─────────────────────────────────────┴──────────┴───────────┘")
-            logger.info("\n".join(table_lines))
+                # Combine marker and name, then apply width to the combined string
+                marker = "*" if prior_429s > 0 else " "
+                display_name = f"{marker}{name}"
+                print(f"   │ {display_name:<37} │ {rate:>6.2f}/s │ {prior_429s:>9} │")
+            print("   └─────────────────────────────────────┴──────────┴───────────┘")
+            sys.stdout.flush()
+            logger.debug(f"Restored {restored_count} endpoint rates from persisted state")
 
     def _reset_endpoint_profiles(self) -> None:
         """Clear existing endpoint throttle state."""
