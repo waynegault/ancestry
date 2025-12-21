@@ -335,7 +335,8 @@ function Import-Dashboards {
         @{file="ancestry_overview.json"; name="Ancestry Automation Overview"},
         @{file="system_performance.json"; name="System Performance & Health"},
         @{file="genealogy_insights.json"; name="Genealogy Research Insights"},
-        @{file="code_quality.json"; name="Code Quality & Architecture"}
+        @{file="code_quality.json"; name="Code Quality & Architecture"},
+        @{file="database_summary.json"; name="Database Summary"}
     )
 
     # Try both default and custom credentials

@@ -557,7 +557,7 @@ class AnalyticsMixin:
                 print(f"   • Database:    {grafana_url}/d/ancestry-database")
                 print(
                     "\n💡 If dashboards are empty, data sources are re-applied automatically. "
-                    "Verify Prometheus is reachable at http://localhost:9091 if panels stay blank.\n"
+                    "Verify Prometheus is reachable at http://localhost:9090 if panels stay blank.\n"
                 )
             else:
                 self._grafana_checker.ensure_grafana_ready(auto_setup=False, silent=False)
@@ -567,11 +567,8 @@ class AnalyticsMixin:
 
     def open_grafana_dashboard(self) -> None:
         """Open Grafana dashboard in web browser."""
-        grafana_url = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
-        dashboard_url = f"{grafana_url}/d/ancestry-database"
-        print(f"\n🌐 Opening Grafana Dashboard: {dashboard_url}")
-        webbrowser.open(dashboard_url)
-        print("✅ Browser opened.\n")
+        grafana_base = os.getenv("GRAFANA_BASE_URL", "http://localhost:3000")
+        self._open_grafana_dashboards(grafana_base)
 
 
 class ReviewQueueMixin:

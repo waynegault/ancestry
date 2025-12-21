@@ -22,7 +22,7 @@ from scripts import static_metrics_server
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
-PROM_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9091").rstrip("/")
+PROM_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090").rstrip("/")
 FAKE_METRICS_URL = os.getenv("PROM_FAKE_METRICS_URL", "http://localhost:9001/metrics")
 REQUEST_TIMEOUT = 5
 

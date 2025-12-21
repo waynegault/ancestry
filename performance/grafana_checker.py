@@ -331,7 +331,7 @@ def ensure_data_sources_configured(
 
     grafana_base = _grafana_base()
 
-    prom_url = prometheus_url or os.getenv("GRAFANA_PROM_URL") or os.getenv("PROMETHEUS_URL", "http://localhost:9091")
+    prom_url = prometheus_url or os.getenv("GRAFANA_PROM_URL") or os.getenv("PROMETHEUS_URL", "http://localhost:9090")
     sqlite_db = sqlite_path or os.getenv("GRAFANA_SQLITE_PATH") or str(PROJECT_ROOT / "Data" / "ancestry.db")
 
     success = True
