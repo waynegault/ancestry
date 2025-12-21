@@ -493,25 +493,33 @@ class AnalyticsMixin:
             except Exception as import_err:  # pragma: no cover - optional dependency
                 self._logger.debug("Dashboard auto-import check: %s", import_err)
 
+        overview_url = f"{grafana_base}/d/ancestry-overview"
         system_perf_url = f"{grafana_base}/d/ancestry-performance"
         genealogy_url = f"{grafana_base}/d/ancestry-genealogy"
         code_quality_url = f"{grafana_base}/d/ancestry-code-quality"
+        database_url = f"{grafana_base}/d/ancestry-database"
 
         print("🌐 Opening dashboards:")
-        print(f"   1. System Performance & Health: {system_perf_url}")
-        print(f"   2. Genealogy Research Insights: {genealogy_url}")
-        print(f"   3. Code Quality & Architecture: {code_quality_url}")
+        print(f"   1. Platform Overview:           {overview_url}")
+        print(f"   2. System Performance & Health: {system_perf_url}")
+        print(f"   3. Genealogy Research Insights: {genealogy_url}")
+        print(f"   4. Code Quality & Architecture: {code_quality_url}")
+        print(f"   5. Database Summary:            {database_url}")
         print("\n💡 If dashboards show 'Not found', run: l")
         print(
             "💡 If panels show 'No data': ensure Prometheus is scraping http://127.0.0.1:9001 (see docs/prometheus/prometheus.yml) and Grafana data source points to http://localhost:9090."
         )
         print("\n" + "=" * 70 + "\n")
 
+        webbrowser.open(overview_url)
+        time.sleep(0.3)
         webbrowser.open(system_perf_url)
-        time.sleep(0.5)
+        time.sleep(0.3)
         webbrowser.open(genealogy_url)
-        time.sleep(0.5)
+        time.sleep(0.3)
         webbrowser.open(code_quality_url)
+        time.sleep(0.3)
+        webbrowser.open(database_url)
 
     def run_grafana_setup(self) -> None:
         """Run grafana checker setup flow if helper module is present."""

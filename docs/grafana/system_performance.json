@@ -47,7 +47,7 @@
     {
       "title": "Session Active Time",
       "type": "stat",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -78,7 +78,7 @@
     {
       "title": "Total API Calls Made",
       "type": "stat",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -101,7 +101,7 @@
     {
       "title": "Active Worker Threads",
       "type": "stat",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -132,7 +132,7 @@
     {
       "title": "Session Refresh Count",
       "type": "stat",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -169,7 +169,7 @@
     {
       "title": "API Response Time by Endpoint (95th Percentile)",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "fieldConfig": {
         "defaults": {
@@ -190,7 +190,7 @@
     {
       "title": "API Request Rate (Requests/Second)",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
       "fieldConfig": {
         "defaults": {
@@ -211,7 +211,7 @@
     {
       "title": "API Success Rate vs Errors",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
       "fieldConfig": {
         "defaults": {
@@ -236,7 +236,7 @@
     {
       "title": "Average Response Time by Endpoint",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
       "fieldConfig": {
         "defaults": {
@@ -263,7 +263,7 @@
     {
       "title": "Rate Limiter Wait Time (Percentiles)",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 23},
       "fieldConfig": {
         "defaults": {
@@ -296,7 +296,7 @@
     {
       "title": "Actions Processed Over Time",
       "type": "timeseries",
-      "datasource": {"type": "prometheus", "uid": "af6q4o115lgjkb"},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 23},
       "fieldConfig": {
         "defaults": {

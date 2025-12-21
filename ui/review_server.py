@@ -556,9 +556,6 @@ def get_db_session() -> Optional[Any]:
     from testing.test_utilities import create_test_database
 
     try:
-        if os.getenv("SKIP_LIVE_API_TESTS", "").lower() == "true":
-            return create_test_database()
-
         from core.session_manager import SessionManager
 
         sm = SessionManager()

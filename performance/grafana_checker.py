@@ -354,7 +354,7 @@ def ensure_data_sources_configured(
             "url": "",
             "access": "proxy",
             "basicAuth": False,
-            "jsonData": {"database": sqlite_db},
+            "jsonData": {"path": sqlite_db},
         }
         if not _upsert_datasource(grafana_base, sqlite_payload):
             success = False

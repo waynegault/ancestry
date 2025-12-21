@@ -53,7 +53,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -81,7 +81,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM people", "format": "table",
           
           "refId": "A"
@@ -91,7 +91,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -118,7 +118,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM dna_match", "format": "table",
           
           "refId": "A"
@@ -128,7 +128,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -155,7 +155,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM conversation_log", "format": "table",
           
           "refId": "A"
@@ -165,7 +165,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -191,7 +191,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM draft_replies", "format": "table",
           
           "refId": "A"
@@ -201,7 +201,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -227,7 +227,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM shared_matches", "format": "table",
           
           "refId": "A"
@@ -237,7 +237,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -263,7 +263,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COUNT(*) as value FROM family_tree", "format": "table",
           
           "refId": "A"
@@ -281,7 +281,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -301,7 +301,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COALESCE(status, 'unknown') as status, COUNT(*) as count FROM people GROUP BY status ORDER BY count DESC", "format": "table",
           
           "refId": "A"
@@ -311,7 +311,7 @@
       "type": "piechart"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -331,7 +331,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL GROUP BY ai_sentiment ORDER BY count DESC", "format": "table",
           
           "refId": "A"
@@ -341,7 +341,7 @@
       "type": "piechart"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -361,7 +361,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT CASE WHEN shared_cm >= 400 THEN '400+ cM (Close)' WHEN shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match GROUP BY range ORDER BY MIN(shared_cm) DESC", "format": "table",
           
           "refId": "A"
@@ -379,7 +379,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -401,7 +401,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id ORDER BY p.created_at DESC LIMIT 20", "format": "table",
           
           "refId": "A"
@@ -411,7 +411,7 @@
       "type": "table"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -430,7 +430,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT p.username, c.direction, c.ai_sentiment, datetime(c.latest_timestamp) as timestamp FROM conversation_log c JOIN people p ON c.people_id = p.id ORDER BY c.latest_timestamp DESC LIMIT 20", "format": "table",
           
           "refId": "A"
@@ -448,7 +448,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -469,7 +469,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "df6q4o16ud4w0c" },
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
           "rawSql": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id ORDER BY d.shared_cm DESC LIMIT 50", "format": "table",
           
           "refId": "A"
