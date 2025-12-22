@@ -49,6 +49,19 @@ Thumbs.db
 ai/Logs/
 *.log
 
+# Playwright artifacts
+.playwright-mcp/
+
+# Database runtime files
+Data/chunks_head/
+Data/lock
+Data/queries.active
+Data/wal/
+Data/0*
+
+# Setup logs
+docs/grafana/setup_log.txt
+
 # Temporary and Development Files
 *.tmp
 *.temp
