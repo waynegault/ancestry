@@ -583,13 +583,13 @@
             "type": "frser-sqlite-datasource",
             "uid": "ancestry-sqlite"
           },
-          "rawSql": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL AND deleted_at IS NULL GROUP BY ai_sentiment ORDER BY count DESC",
+          "rawSql": "SELECT COALESCE(c.ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL AND c.ai_sentiment IS NOT NULL GROUP BY c.ai_sentiment ORDER BY count DESC",
           "format": "table",
           "refId": "A",
           "rawQuery": true,
           "queryType": "table",
-          "rawQueryText": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL AND deleted_at IS NULL GROUP BY ai_sentiment ORDER BY count DESC",
-          "queryText": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL AND deleted_at IS NULL GROUP BY ai_sentiment ORDER BY count DESC",
+          "rawQueryText": "SELECT COALESCE(c.ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL AND c.ai_sentiment IS NOT NULL GROUP BY c.ai_sentiment ORDER BY count DESC",
+          "queryText": "SELECT COALESCE(c.ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL AND c.ai_sentiment IS NOT NULL GROUP BY c.ai_sentiment ORDER BY count DESC",
           "timeColumns": []
         }
       ],
@@ -653,13 +653,13 @@
             "type": "frser-sqlite-datasource",
             "uid": "ancestry-sqlite"
           },
-          "rawSql": "SELECT CASE WHEN d.shared_cm >= 400 THEN '400+ cM (Close)' WHEN d.shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN d.shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.shared_cm) DESC",
+          "rawSql": "SELECT CASE WHEN d.cm_dna >= 400 THEN '400+ cM (Close)' WHEN d.cm_dna >= 90 THEN '90-400 cM (Extended)' WHEN d.cm_dna >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.cm_dna) DESC",
           "format": "table",
           "refId": "A",
           "rawQuery": true,
           "queryType": "table",
-          "rawQueryText": "SELECT CASE WHEN d.shared_cm >= 400 THEN '400+ cM (Close)' WHEN d.shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN d.shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.shared_cm) DESC",
-          "queryText": "SELECT CASE WHEN d.shared_cm >= 400 THEN '400+ cM (Close)' WHEN d.shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN d.shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.shared_cm) DESC",
+          "rawQueryText": "SELECT CASE WHEN d.cm_dna >= 400 THEN '400+ cM (Close)' WHEN d.cm_dna >= 90 THEN '90-400 cM (Extended)' WHEN d.cm_dna >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.cm_dna) DESC",
+          "queryText": "SELECT CASE WHEN d.cm_dna >= 400 THEN '400+ cM (Close)' WHEN d.cm_dna >= 90 THEN '90-400 cM (Extended)' WHEN d.cm_dna >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.cm_dna) DESC",
           "timeColumns": []
         }
       ],
@@ -757,13 +757,13 @@
             "type": "frser-sqlite-datasource",
             "uid": "ancestry-sqlite"
           },
-          "rawSql": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
+          "rawSql": "SELECT p.username, d.cm_dna as shared_cm, d.predicted_relationship, c.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
           "format": "table",
           "refId": "A",
           "rawQuery": true,
           "queryType": "table",
-          "rawQueryText": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
-          "queryText": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
+          "rawQueryText": "SELECT p.username, d.cm_dna as shared_cm, d.predicted_relationship, c.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
+          "queryText": "SELECT p.username, d.cm_dna as shared_cm, d.predicted_relationship, c.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20",
           "timeColumns": []
         }
       ],
@@ -923,13 +923,13 @@
             "type": "frser-sqlite-datasource",
             "uid": "ancestry-sqlite"
           },
-          "rawSql": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.shared_cm DESC LIMIT 50",
+          "rawSql": "SELECT p.username, d.cm_dna as shared_cm, d.shared_segments, d.predicted_relationship, p.status, c.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.cm_dna DESC LIMIT 50",
           "format": "table",
           "refId": "A",
           "rawQuery": true,
           "queryType": "table",
-          "rawQueryText": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.shared_cm DESC LIMIT 50",
-          "queryText": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.shared_cm DESC LIMIT 50",
+          "rawQueryText": "SELECT p.username, d.cm_dna as shared_cm, d.shared_segments, d.predicted_relationship, p.status, c.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.cm_dna DESC LIMIT 50",
+          "queryText": "SELECT p.username, d.cm_dna as shared_cm, d.shared_segments, d.predicted_relationship, p.status, c.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id LEFT JOIN conversation_log c ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.cm_dna DESC LIMIT 50",
           "timeColumns": []
         }
       ],
@@ -956,6 +956,6 @@
   "timezone": "browser",
   "title": "Ancestry Database Summary",
   "uid": "ancestry-database",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

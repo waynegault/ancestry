@@ -83,8 +83,10 @@ services:
       - GF_DATAPROXY_ALLOW_LOCAL_FILE_ACCESS=true
       # Debug logging for SQLite plugin
       - GF_LOG_FILTERS=plugin.frser-sqlite-datasource:debug
-      # Point SQLite datasource at the mounted app database (read-only)
-      - SQLITE_DB_PATH=/data/ancestry.db
+      # Point SQLite datasource at the in-container copy (synced on startup)
+      - SQLITE_DB_PATH=/var/lib/grafana/ancestry_ro.db
+    command: >-
+      /bin/sh -c "cp /data/ancestry.db /var/lib/grafana/ancestry_ro.db && /run.sh"
     networks:
       - ancestry-network
 

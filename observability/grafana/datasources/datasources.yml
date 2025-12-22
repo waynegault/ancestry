@@ -13,9 +13,9 @@ datasources:
     type: frser-sqlite-datasource
     uid: ancestry-sqlite
     access: proxy
-    # Use env var so it works in both Docker (/data/ancestry.db) and local Grafana (set SQLITE_DB_PATH to a full path)
+    # Read from the in-container copy to avoid host-volume SQLite locking errors
     url: ""
     editable: true
     jsonData:
-      path: ${SQLITE_DB_PATH}
+      path: /var/lib/grafana/ancestry_ro.db
       pathOptions: mode=ro

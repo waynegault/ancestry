@@ -561,7 +561,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(ancestry_action_processed_total[5m])) by (action)",
+          "expr": "sum(rate(ancestry_action_processed_total[5m])) by (action) or on() vector(0)",
           "legendFormat": "Action {{action}}",
           "refId": "A"
         }
