@@ -431,6 +431,7 @@ def initialize_application(config: Any, grafana_checker: Any = None) -> tuple["S
     _log_sleep_prevention_status(sleep_state)
 
     _log_action_registry_status()
+    _ensure_metrics_exporter_started(config)
     _run_chrome_diagnostics()
     _check_grafana_status(grafana_checker)
 
@@ -483,6 +484,31 @@ def _log_sleep_prevention_status(sleep_state: Any) -> None:
         logger.info("✅ System sleep prevention active")
     else:
         logger.info("⚠️ System sleep prevention inactive")
+
+
+def _ensure_metrics_exporter_started(config: Any) -> None:
+    """Start Prometheus exporter at startup so dashboards have data."""
+
+    try:
+        from observability.metrics_exporter import get_exporter_status, start_metrics_exporter
+
+        observability_cfg = getattr(config, "observability", None)
+        if not observability_cfg or not getattr(observability_cfg, "enable_prometheus_metrics", False):
+            return
+
+        if get_exporter_status() is not None:
+            return  # Already running
+
+        host = getattr(observability_cfg, "metrics_export_host", "127.0.0.1")
+        port = getattr(observability_cfg, "metrics_export_port", 9001)
+
+        started = start_metrics_exporter(host, port)
+        if started:
+            logger.info("✅ Prometheus metrics exporter started on %s:%s (startup)", host, port)
+        else:
+            logger.warning("⚠️ Prometheus metrics exporter could not start on %s:%s (startup)", host, port)
+    except Exception as exc:  # pragma: no cover - best-effort startup helper
+        logger.debug("Metrics exporter startup check skipped: %s", exc, exc_info=True)
 
 
 def _run_startup_health_checks(session_manager: "SessionManager") -> None:

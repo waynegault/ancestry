@@ -397,6 +397,56 @@ def ensure_data_sources_configured(
     return success
 
 
+def _patch_sqlite_targets(dashboard: dict[str, Any]) -> bool:
+    """Ensure SQLite panels carry required plugin fields.
+
+    The frser-sqlite plugin ignores `rawSql` unless `rawQuery` and `queryText`
+    are present. We also seed `rawQueryText`, `queryType`, and `timeColumns`
+    to mirror exported dashboards so panels render without manual edits.
+    """
+
+    sqlite_ds = {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"}
+    modified = False
+
+    def _patch_panels(panels: list[dict[str, Any]]) -> None:
+        nonlocal modified
+        for panel in panels:
+            if "panels" in panel and isinstance(panel["panels"], list):
+                _patch_panels(panel["panels"])
+
+            if panel.get("datasource") in (None, "default"):
+                panel["datasource"] = sqlite_ds
+                modified = True
+
+            for target in panel.get("targets", []):
+                if target.get("datasource") in (None, "default"):
+                    target["datasource"] = sqlite_ds
+                    modified = True
+
+                raw_sql = target.get("rawSql")
+                if not raw_sql:
+                    continue
+
+                if not target.get("queryText"):
+                    target["queryText"] = raw_sql
+                    modified = True
+                if not target.get("rawQueryText"):
+                    target["rawQueryText"] = raw_sql
+                    modified = True
+                if target.get("rawQuery") is None:
+                    target["rawQuery"] = True
+                    modified = True
+                if not target.get("queryType"):
+                    target["queryType"] = target.get("format", "table") or "table"
+                    modified = True
+                if target.get("timeColumns") is None:
+                    target["timeColumns"] = []
+                    modified = True
+
+    _patch_panels(dashboard.get("panels", []))
+    return modified
+
+
 def _dashboard_should_import(
     *,
     grafana_base: str,
@@ -442,6 +492,8 @@ def _import_dashboard(
         with dashboard_path.open(encoding="utf-8") as f:
             dashboard_json = json.load(f)
 
+        _patch_sqlite_targets(dashboard_json)
+
         import_payload = {
             "dashboard": dashboard_json,
             "overwrite": True,
@@ -476,6 +528,9 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
     if not is_grafana_running():
         logger.debug("Grafana not running, skipping dashboard check")
         return False
+
+    # Make sure the SQLite plugin is enabled so code-quality dashboards can run queries
+    _ensure_sqlite_plugin_enabled()
 
     dashboards_dir = PROJECT_ROOT / "docs" / "grafana"
     required_dashboards = [
@@ -520,7 +575,95 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
     # Ensure code_structure table is populated for the Code Quality dashboard
     _ensure_code_structure_table()
 
+    # Some SQLite panels require the plugin-specific queryText field; patch dashboards if missing
+    _ensure_sqlite_querytext_fields([uid for uid, _ in required_dashboards])
+
     return success
+
+
+def _ensure_sqlite_plugin_enabled() -> None:
+    """Enable the SQLite plugin if it is installed but disabled."""
+
+    grafana_base = _grafana_base()
+    headers = _grafana_api_auth_headers()
+
+    try:
+        resp = requests.get(
+            f"{grafana_base}/api/plugins/frser-sqlite-datasource/settings",
+            headers=headers,
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            logger.debug("Unable to query SQLite plugin settings (status=%s)", resp.status_code)
+            return
+
+        settings = resp.json()
+        if settings.get("enabled") is True:
+            return
+
+        enable_resp = requests.post(
+            f"{grafana_base}/api/plugins/frser-sqlite-datasource/settings",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"enabled": True},
+            timeout=5,
+        )
+        if enable_resp.status_code == 200:
+            logger.info("Enabled frser-sqlite-datasource plugin for Grafana")
+        else:
+            logger.debug(
+                "Failed to enable SQLite plugin (status=%s): %s",
+                enable_resp.status_code,
+                enable_resp.text,
+            )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Error enabling SQLite plugin: %s", exc)
+
+
+def _ensure_sqlite_querytext_fields(dashboard_uids: list[str]) -> None:
+    """Ensure Grafana panels include queryText for SQLite queries.
+
+    The frser-sqlite plugin expects a `queryText` field. Some imports only retain
+    `rawSql`, which results in empty panels. This patches dashboards in-place to
+    mirror `rawSql` into `queryText` when missing and forces overwrite via API.
+    """
+
+    grafana_base = _grafana_base()
+    headers = _grafana_api_auth_headers()
+    json_headers = {**headers, "Content-Type": "application/json"}
+
+    for uid in dashboard_uids:
+        try:
+            resp = requests.get(f"{grafana_base}/api/dashboards/uid/{uid}", headers=headers, timeout=5)
+            if resp.status_code != 200:
+                logger.debug("Skipping queryText patch for %s (status=%s)", uid, resp.status_code)
+                continue
+
+            payload = resp.json()
+            dashboard = payload.get("dashboard")
+            if not dashboard:
+                continue
+
+            if not _patch_sqlite_targets(dashboard):
+                continue
+
+            save_payload = {"dashboard": dashboard, "overwrite": True}
+            save_resp = requests.post(
+                f"{grafana_base}/api/dashboards/db",
+                headers=json_headers,
+                data=json.dumps(save_payload),
+                timeout=5,
+            )
+            if save_resp.status_code in {200, 202}:
+                logger.info("Patched dashboard %s to include queryText for SQLite panels", uid)
+            else:
+                logger.debug(
+                    "Failed to patch dashboard %s (status=%s): %s",
+                    uid,
+                    save_resp.status_code,
+                    save_resp.text,
+                )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Error patching dashboard %s: %s", uid, exc)
 
 
 def _ensure_code_structure_table() -> None:
