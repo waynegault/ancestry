@@ -703,7 +703,7 @@ class SecurityConfig:
 class ObservabilityConfig:
     """Observability and Prometheus exporter configuration."""
 
-    enable_prometheus_metrics: bool = False
+    enable_prometheus_metrics: bool = True
     metrics_export_host: str = "127.0.0.1"
     metrics_export_port: int = 9001
     metrics_namespace: str = "ancestry"

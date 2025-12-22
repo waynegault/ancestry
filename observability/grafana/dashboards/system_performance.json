@@ -95,7 +95,7 @@
       },
       "targets": [
         {
-          "expr": "ancestry_session_uptime_seconds",
+          "expr": "ancestry_session_uptime_seconds or vector(0)",
           "legendFormat": "Uptime",
           "refId": "A"
         }
@@ -134,7 +134,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ancestry_api_requests_total)",
+          "expr": "sum(ancestry_api_requests_total) or vector(0)",
           "legendFormat": "Total Requests",
           "refId": "A"
         }
@@ -190,7 +190,7 @@
       },
       "targets": [
         {
-          "expr": "ancestry_worker_thread_count",
+          "expr": "ancestry_worker_thread_count or vector(0)",
           "legendFormat": "Workers",
           "refId": "A"
         }
@@ -246,7 +246,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ancestry_session_refresh_total)",
+          "expr": "sum(ancestry_session_refresh_total) or vector(0)",
           "legendFormat": "Refreshes",
           "refId": "A"
         }

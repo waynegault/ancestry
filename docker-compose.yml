@@ -11,8 +11,6 @@
 # For development with code mounting:
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-version: '3.8'
-
 services:
   # Main application container
   app:
@@ -81,10 +79,14 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_INSTALL_PLUGINS=frser-sqlite-datasource
+      # Allow SQLite datasource to read local files (required for file:// access)
+      - GF_DATAPROXY_ALLOW_LOCAL_FILE_ACCESS=true
+      # Debug logging for SQLite plugin
+      - GF_LOG_FILTERS=plugin.frser-sqlite-datasource:debug
+      # Use the local copy inside the Grafana data volume to avoid SMB disk I/O errors
+      - SQLITE_DB_PATH=/var/lib/grafana/ancestry_ro.db
     networks:
       - ancestry-network
-    profiles:
-      - monitoring
 
   # Optional: Prometheus for metrics collection
   prometheus:
@@ -100,8 +102,6 @@ services:
       - '--storage.tsdb.path=/prometheus'
     networks:
       - ancestry-network
-    profiles:
-      - monitoring
 
 networks:
   ancestry-network:
