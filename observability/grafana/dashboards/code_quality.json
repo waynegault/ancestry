@@ -1,0 +1,380 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "nodeGraph",
+      "name": "Node Graph",
+      "version": "9.5.0"
+    },
+    {
+      "type": "datasource",
+      "id": "frser-sqlite-datasource",
+      "name": "SQLite",
+      "version": "3.5.0"
+    }
+  ],
+  "title": "Ancestry - Code Quality & Architecture",
+  "uid": "ancestry-code-quality",
+  "editable": true,
+  "tags": ["ancestry", "code-quality", "architecture", "technical-debt"],
+  "timezone": "browser",
+  "refresh": "1h",
+  "time": {
+    "from": "now-90d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "title": "Code Architecture Overview",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false
+    },
+    {
+      "title": "Total Code Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 50, "color": "green"},
+              {"value": 100, "color": "yellow"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(DISTINCT path) as value FROM code_structure WHERE type = 'file'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total Python files in codebase"
+    },
+    {
+      "title": "Total Functions",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'function'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total function definitions"
+    },
+    {
+      "title": "Total Classes",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 50, "color": "yellow"},
+              {"value": 100, "color": "orange"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'class'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Total class definitions"
+    },
+    {
+      "title": "Test Coverage Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 30, "color": "yellow"},
+              {"value": 50, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'file' AND json_extract(data, '$.tests') IS NOT NULL",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with documented test coverage"
+    },
+    {
+      "title": "Code Quality Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CASE \n    WHEN json_extract(data, '$.quality') = 'stable' THEN 'Stable'\n    WHEN json_extract(data, '$.quality') = 'review' THEN 'Needs Review'\n    WHEN json_extract(data, '$.quality') = 'refactor' THEN 'Needs Refactor'\n    WHEN json_extract(data, '$.quality') IS NULL THEN 'Not Assessed'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_structure\nGROUP BY json_extract(data, '$.quality')\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Distribution of code quality ratings from code_graph.json"
+    },
+    {
+      "title": "Module Type Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "pie"
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CASE \n    WHEN type = 'file' THEN 'Files'\n    WHEN type = 'function' THEN 'Functions'\n    WHEN type = 'class' THEN 'Classes'\n    WHEN type = 'module' THEN 'Modules'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_structure\nGROUP BY type\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Breakdown of code elements by type"
+    },
+    {
+      "title": "Technical Debt & Opportunities",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "collapsed": false
+    },
+    {
+      "title": "Modules with Concerns",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 10, "color": "yellow"},
+              {"value": 30, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE json_extract(data, '$.concerns') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.concerns')) > 0",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Code modules with documented concerns"
+    },
+    {
+      "title": "Improvement Opportunities",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE json_extract(data, '$.opportunities') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.opportunities')) > 0",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Documented optimization opportunities"
+    },
+    {
+      "title": "Untested Modules",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "green"},
+              {"value": 5, "color": "yellow"},
+              {"value": 15, "color": "red"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE type = 'file' AND json_extract(data, '$.tests') IS NULL",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Files without documented test coverage"
+    },
+    {
+      "title": "Top Concerns by Module",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 20},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Concern Count", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  name as 'Module',\n  path as 'File Path',\n  json_extract(data, '$.quality') as 'Quality',\n  json_array_length(json_extract(data, '$.concerns')) as 'Concern Count'\nFROM code_structure\nWHERE json_extract(data, '$.concerns') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.concerns')) > 0\nORDER BY json_array_length(json_extract(data, '$.concerns')) DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with the most documented concerns"
+    },
+    {
+      "title": "Optimization Opportunities",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 20},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Opportunity Count", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  name as 'Module',\n  path as 'File Path',\n  json_extract(data, '$.quality') as 'Quality',\n  json_array_length(json_extract(data, '$.opportunities')) as 'Opportunity Count'\nFROM code_structure\nWHERE json_extract(data, '$.opportunities') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.opportunities')) > 0\nORDER BY json_array_length(json_extract(data, '$.opportunities')) DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Modules with improvement opportunities"
+    },
+    {
+      "title": "Module Details & Documentation",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 30},
+      "collapsed": false
+    },
+    {
+      "title": "Core Architecture Files",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 31},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "File Path", "desc": false}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Summary"},
+            "properties": [{"id": "custom.width", "value": 400}]
+          }
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  path as 'File Path',\n  name as 'Module',\n  json_extract(data, '$.quality') as 'Quality',\n  CASE WHEN json_extract(data, '$.tests') IS NOT NULL THEN '✓' ELSE '✗' END as 'Tests',\n  SUBSTR(json_extract(data, '$.summary'), 1, 100) || '...' as 'Summary'\nFROM code_structure\nWHERE type = 'file'\n  AND (path LIKE 'core/%' OR path LIKE 'action%' OR path = 'main.py')\nORDER BY path\nLIMIT 30",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Key architecture files with quality and test status"
+    }
+  ]
+}

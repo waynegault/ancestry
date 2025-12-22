@@ -1,0 +1,483 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "piechart",
+      "name": "Pie chart",
+      "version": "9.5.0"
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": "9.5.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "2.41.0"
+    },
+    {
+      "type": "datasource",
+      "id": "frser-sqlite-datasource",
+      "name": "SQLite",
+      "version": "3.5.0"
+    }
+  ],
+  "title": "Ancestry - Genealogy Research Insights",
+  "uid": "ancestry-genealogy",
+  "editable": true,
+  "tags": ["ancestry", "genealogy", "dna", "research"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "title": "DNA Match Collection",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "collapsed": false
+    },
+    {
+      "title": "Total DNA Matches in Database",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 100, "color": "yellow"},
+              {"value": 500, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Total People in Database",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM people WHERE deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Average Shared DNA (cM)",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 50, "color": "green"},
+              {"value": 200, "color": "yellow"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT AVG(d.cm_dna) as value FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "People Linked to Tree",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 10, "color": "yellow"},
+              {"value": 50, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM people WHERE in_my_tree = 1 AND deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "DNA Matches by Relationship",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "rawSql": "SELECT d.predicted_relationship as metric, COUNT(*) as value FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY d.predicted_relationship ORDER BY value DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Shared DNA Distribution (cM)",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "cM Range", "desc": false}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CASE \n    WHEN d.cm_dna < 20 THEN '0-20 cM (Distant)'\n    WHEN d.cm_dna < 90 THEN '20-90 cM (4th-6th cousin)'\n    WHEN d.cm_dna < 200 THEN '90-200 cM (3rd-4th cousin)'\n    WHEN d.cm_dna < 425 THEN '200-425 cM (2nd-3rd cousin)'\n    WHEN d.cm_dna < 850 THEN '425-850 cM (1st-2nd cousin)'\n    ELSE '850+ cM (Close family)'\n  END as 'cM Range',\n  COUNT(*) as 'Match Count',\n  PRINTF('%.1f', AVG(d.cm_dna)) as 'Avg cM',\n  PRINTF('%.1f%%', 100.0 * COUNT(*) / (SELECT COUNT(*) FROM dna_match d2 JOIN people p2 ON d2.people_id = p2.id WHERE p2.deleted_at IS NULL)) as 'Percentage'\nFROM dna_match d\nJOIN people p ON d.people_id = p.id\nWHERE p.deleted_at IS NULL\nGROUP BY 1\nORDER BY MIN(d.cm_dna) DESC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Communication & Engagement",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "collapsed": false
+    },
+    {
+      "title": "Total Conversations",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(DISTINCT c.conversation_id) as value FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Messages Received (Inbound)",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "blue"},
+              {"value": 10, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE c.direction = 'IN' AND p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Messages Sent (Outbound)",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "purple"},
+              {"value": 50, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) as value FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE c.direction = 'OUT' AND p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Response Rate",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 15},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 10, "color": "yellow"},
+              {"value": 25, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CAST(100.0 * COUNT(DISTINCT CASE WHEN c.direction = 'IN' THEN c.conversation_id END) / \n  NULLIF(COUNT(DISTINCT CASE WHEN c.direction = 'OUT' THEN c.conversation_id END), 0) AS REAL) as value\nFROM conversation_log c\nJOIN people p ON c.people_id = p.id\nWHERE p.deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Message Sentiment Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
+        "pieType": "donut"
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  COALESCE(c.ai_sentiment, 'Not Analyzed') as metric,\n  COUNT(*) as value\nFROM conversation_log c\nJOIN people p ON c.people_id = p.id\nWHERE c.direction = 'IN' AND p.deleted_at IS NULL\nGROUP BY c.ai_sentiment\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Recent Conversations Timeline",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Latest Message", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Latest Message"},
+            "properties": [{"id": "custom.width", "value": 180}]
+          }
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  p.username as 'Match Name',\n  c.direction as 'Direction',\n  COALESCE(c.ai_sentiment, '-') as 'Sentiment',\n  SUBSTR(c.latest_message_content, 1, 50) || '...' as 'Message Preview',\n  datetime(c.latest_timestamp) as 'Latest Message'\nFROM conversation_log c\nJOIN people p ON c.people_id = p.id\nWHERE p.deleted_at IS NULL\nORDER BY c.latest_timestamp DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Research Progress & Data Quality",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "collapsed": false
+    },
+    {
+      "title": "Contactable vs Non-Contactable",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 29},
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "pieType": "pie"
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CASE WHEN contactable = 1 THEN 'Contactable' ELSE 'Not Contactable' END as metric,\n  COUNT(*) as value\nFROM people\nWHERE deleted_at IS NULL\nGROUP BY contactable",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Person Status Distribution",
+      "type": "piechart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 29},
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom"},
+        "pieType": "pie"
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  status as metric,\n  COUNT(*) as value\nFROM people\nWHERE deleted_at IS NULL\nGROUP BY status\nORDER BY value DESC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Data Completeness Score",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 29},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"value": 0, "color": "red"},
+              {"value": 50, "color": "yellow"},
+              {"value": 75, "color": "green"}
+            ]
+          }
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "text": {"titleSize": 16, "valueSize": 48},
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  CAST(100.0 * (\n    SUM(CASE WHEN first_name IS NOT NULL THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN gender IS NOT NULL THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN birth_year IS NOT NULL THEN 1 ELSE 0 END) +\n    SUM(CASE WHEN last_logged_in IS NOT NULL THEN 1 ELSE 0 END)\n  ) / (COUNT(*) * 4.0) AS REAL) as value\nFROM people\nWHERE deleted_at IS NULL",
+        "format": "table",
+        "refId": "A"
+      }],
+      "description": "Percentage of optional fields filled (first_name, gender, birth_year, last_logged_in)"
+    },
+    {
+      "title": "Top DNA Matches (Closest Relatives)",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 37},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Shared DNA (cM)", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  p.username as 'Match Name',\n  d.cm_dna as 'Shared DNA (cM)',\n  d.predicted_relationship as 'Relationship',\n  d.shared_segments as 'Segments',\n  CASE \n    WHEN d.from_my_fathers_side = 1 THEN 'Paternal'\n    WHEN d.from_my_mothers_side = 1 THEN 'Maternal'\n    ELSE 'Unknown'\n  END as 'Side',\n  CASE WHEN p.in_my_tree = 1 THEN '✓' ELSE '-' END as 'In Tree'\nFROM dna_match d\nJOIN people p ON d.people_id = p.id\nWHERE p.deleted_at IS NULL\nORDER BY d.cm_dna DESC\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "title": "Active vs Inactive Matches",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
+      "options": {
+        "showHeader": true,
+        "sortBy": [{"displayName": "Last Login", "desc": true}]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left"}
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT \n  p.username as 'Match Name',\n  d.cm_dna as 'Shared DNA (cM)',\n  COALESCE(datetime(p.last_logged_in), 'Never') as 'Last Login',\n  CASE \n    WHEN p.last_logged_in IS NULL THEN 'Unknown'\n    WHEN julianday('now') - julianday(p.last_logged_in) < 30 THEN 'Active (30d)'\n    WHEN julianday('now') - julianday(p.last_logged_in) < 90 THEN 'Recent (90d)'\n    ELSE 'Inactive (90d+)'\n  END as 'Activity Status'\nFROM people p\nJOIN dna_match d ON p.id = d.people_id\nWHERE p.deleted_at IS NULL\nORDER BY p.last_logged_in DESC NULLS LAST\nLIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }]
+    }
+  ]
+}
