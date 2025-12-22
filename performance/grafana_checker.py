@@ -397,6 +397,42 @@ def ensure_data_sources_configured(
     return success
 
 
+def _sqlite_set_default(container: dict[str, Any], key: str, value: Any, allow_default: bool = False) -> bool:
+    existing = container.get(key)
+    if existing is None or (allow_default and existing == "default"):
+        container[key] = value
+        return True
+    return False
+
+
+def _patch_sqlite_target(target: dict[str, Any], sqlite_ds: dict[str, Any]) -> bool:
+    updated = _sqlite_set_default(target, "datasource", sqlite_ds, allow_default=True)
+    raw_sql = target.get("rawSql")
+    if not raw_sql:
+        return updated
+
+    updated |= _sqlite_set_default(target, "queryText", raw_sql)
+    updated |= _sqlite_set_default(target, "rawQueryText", raw_sql)
+    updated |= _sqlite_set_default(target, "rawQuery", True)
+    updated |= _sqlite_set_default(target, "queryType", target.get("format", "table") or "table")
+    updated |= _sqlite_set_default(target, "timeColumns", [])
+    return updated
+
+
+def _patch_sqlite_panel(panel: dict[str, Any], sqlite_ds: dict[str, Any]) -> bool:
+    modified = _sqlite_set_default(panel, "datasource", sqlite_ds, allow_default=True)
+
+    for target in panel.get("targets", []):
+        if _patch_sqlite_target(target, sqlite_ds):
+            modified = True
+
+    for child in panel.get("panels", []) or []:
+        if _patch_sqlite_panel(child, sqlite_ds):
+            modified = True
+
+    return modified
+
+
 def _patch_sqlite_targets(dashboard: dict[str, Any]) -> bool:
     """Ensure SQLite panels carry required plugin fields.
 
@@ -408,42 +444,10 @@ def _patch_sqlite_targets(dashboard: dict[str, Any]) -> bool:
     sqlite_ds = {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"}
     modified = False
 
-    def _patch_panels(panels: list[dict[str, Any]]) -> None:
-        nonlocal modified
-        for panel in panels:
-            if "panels" in panel and isinstance(panel["panels"], list):
-                _patch_panels(panel["panels"])
+    for panel in dashboard.get("panels", []):
+        if _patch_sqlite_panel(panel, sqlite_ds):
+            modified = True
 
-            if panel.get("datasource") in (None, "default"):
-                panel["datasource"] = sqlite_ds
-                modified = True
-
-            for target in panel.get("targets", []):
-                if target.get("datasource") in (None, "default"):
-                    target["datasource"] = sqlite_ds
-                    modified = True
-
-                raw_sql = target.get("rawSql")
-                if not raw_sql:
-                    continue
-
-                if not target.get("queryText"):
-                    target["queryText"] = raw_sql
-                    modified = True
-                if not target.get("rawQueryText"):
-                    target["rawQueryText"] = raw_sql
-                    modified = True
-                if target.get("rawQuery") is None:
-                    target["rawQuery"] = True
-                    modified = True
-                if not target.get("queryType"):
-                    target["queryType"] = target.get("format", "table") or "table"
-                    modified = True
-                if target.get("timeColumns") is None:
-                    target["timeColumns"] = []
-                    modified = True
-
-    _patch_panels(dashboard.get("panels", []))
     return modified
 
 
