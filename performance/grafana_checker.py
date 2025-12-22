@@ -11,6 +11,7 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+import functools
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import requests
@@ -41,20 +43,42 @@ def _grafana_auth() -> tuple[str, str]:
     return os.getenv("GRAFANA_USER", "admin"), os.getenv("GRAFANA_PASSWORD", "admin")
 
 
+@functools.lru_cache(maxsize=1)
 def _grafana_api_auth_headers() -> dict[str, str]:
     """Return auth headers for Grafana HTTP API.
 
     Supports either basic auth (GRAFANA_USER/GRAFANA_PASSWORD) or a bearer token
     (GRAFANA_API_TOKEN).
     """
-
     token = os.getenv("GRAFANA_API_TOKEN")
     if token:
         return {"Authorization": f"Bearer {token}"}
 
     import base64
 
+    # Try configured credentials first
     grafana_user, grafana_pass = _grafana_auth()
+    candidates = [(grafana_user, grafana_pass)]
+
+    # If using defaults, also try 'ancestry' password
+    if grafana_user == "admin" and grafana_pass == "admin":
+        candidates.append(("admin", "ancestry"))
+
+    grafana_base = _grafana_base()
+
+    for user, pwd in candidates:
+        base64_auth = base64.b64encode(f"{user}:{pwd}".encode("ascii")).decode("ascii")
+        headers = {"Authorization": f"Basic {base64_auth}"}
+
+        # Verify credentials
+        try:
+            resp = requests.get(f"{grafana_base}/api/org", headers=headers, timeout=2)
+            if resp.status_code == 200:
+                return headers
+        except Exception:
+            continue
+
+    # Fallback to default if all fail (will likely fail later)
     base64_auth = base64.b64encode(f"{grafana_user}:{grafana_pass}".encode("ascii")).decode("ascii")
     return {"Authorization": f"Basic {base64_auth}"}
 
@@ -133,7 +157,7 @@ def run_automated_setup(silent: bool = False) -> bool:
         logger.error(f"Setup script not found: {SETUP_SCRIPT}")
         return False
 
-    logger.info("Launching Grafana automated setup...")
+    logger.info(f"Launching Grafana automated setup from: {SETUP_SCRIPT}")
 
     try:
         # Determine available PowerShell executable
@@ -157,7 +181,14 @@ def run_automated_setup(silent: bool = False) -> bool:
             timeout=300,
             check=False,  # 5 minute timeout
         )
-
+        if result.stdout:
+            print("--- PowerShell Output ---")
+            print(result.stdout)
+            print("-------------------------")
+        if result.stderr:
+            print("--- PowerShell Error ---")
+            print(result.stderr)
+            print("------------------------")
         if result.returncode == 0:
             logger.info("✓ Grafana setup completed successfully")
             return True
@@ -339,6 +370,7 @@ def ensure_data_sources_configured(
     prom_payload = {
         "name": "Prometheus",
         "type": "prometheus",
+        "uid": "ancestry-prometheus",
         "url": prom_url,
         "access": "proxy",
         "basicAuth": False,
@@ -351,6 +383,7 @@ def ensure_data_sources_configured(
         sqlite_payload = {
             "name": "SQLite",
             "type": "frser-sqlite-datasource",
+            "uid": "ancestry-sqlite",
             "url": "",
             "access": "proxy",
             "basicAuth": False,
@@ -412,20 +445,8 @@ def _import_dashboard(
         import_payload = {
             "dashboard": dashboard_json,
             "overwrite": True,
-            "inputs": [
-                {
-                    "name": "DS_PROMETHEUS",
-                    "type": "datasource",
-                    "pluginId": "prometheus",
-                    "value": "Prometheus",
-                },
-                {
-                    "name": "DS_SQLITE",
-                    "type": "datasource",
-                    "pluginId": "frser-sqlite-datasource",
-                    "value": "SQLite",
-                },
-            ],
+            # Inputs are no longer needed as we use fixed UIDs in the dashboard JSON
+            "inputs": [],
         }
 
         import_req = urllib.request.Request(
@@ -496,7 +517,96 @@ def ensure_dashboards_imported(force: bool = False) -> bool:
     if imported_count > 0:
         logger.info("Imported %s dashboard(s)", imported_count)
 
+    # Ensure code_structure table is populated for the Code Quality dashboard
+    _ensure_code_structure_table()
+
     return success
+
+
+def _ensure_code_structure_table() -> None:
+    """Ensure the code_structure table exists and is populated from code_graph.json."""
+    db_path = PROJECT_ROOT / "Data" / "ancestry.db"
+    json_path = PROJECT_ROOT / "docs" / "code_graph.json"
+
+    if not json_path.exists():
+        logger.warning("code_graph.json not found at %s", json_path)
+        return
+
+    import sqlite3
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Check if table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='code_structure'")
+        table_exists = cursor.fetchone() is not None
+
+        # Always refresh the table to ensure it matches the JSON
+        # This is fast enough for 7k rows and ensures consistency
+        if table_exists:
+            cursor.execute("DROP TABLE code_structure")
+
+        logger.info("Populating code_structure table from %s", json_path)
+
+        with Path(json_path).open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        nodes = data.get("nodes", [])
+
+        cursor.execute("""
+            CREATE TABLE code_structure (
+                id TEXT PRIMARY KEY,
+                type TEXT,
+                name TEXT,
+                path TEXT,
+                start_line INTEGER,
+                end_line INTEGER,
+                complexity INTEGER,
+                docstring_length INTEGER,
+                function_count INTEGER,
+                class_count INTEGER,
+                import_count INTEGER,
+                data TEXT
+            )
+        """)
+
+        # Batch insert for performance
+        batch_data: list[tuple[Any, ...]] = []
+        for node in nodes:
+            batch_data.append(
+                (
+                    node.get("id"),
+                    node.get("type"),
+                    node.get("name"),
+                    node.get("path"),  # Map path from JSON to path column
+                    node.get("start_line"),
+                    node.get("end_line"),
+                    node.get("complexity", 0),
+                    node.get("docstring_length", 0),
+                    node.get("function_count", 0),
+                    node.get("class_count", 0),
+                    node.get("import_count", 0),
+                    json.dumps(node),  # Store full node JSON in data column
+                )
+            )
+
+        cursor.executemany(
+            """
+            INSERT INTO code_structure (
+                id, type, name, path, start_line, end_line,
+                complexity, docstring_length, function_count, class_count, import_count, data
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            batch_data,
+        )
+
+        conn.commit()
+        logger.info("Successfully populated code_structure table with %d rows", len(nodes))
+
+        conn.close()
+    except Exception as e:
+        logger.error("Failed to ensure code_structure table: %s", e)
 
 
 def _test_check_grafana_status_handles_installation_flag() -> None:

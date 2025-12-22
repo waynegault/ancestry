@@ -1,12 +1,5 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_SQLITE",
-      "label": "SQLite",
-      "type": "datasource",
-      "pluginId": "frser-sqlite-datasource"
-    }
-  ],
+  "__inputs": [],
   "__requires": [
     {
       "type": "panel",
@@ -65,7 +58,7 @@
     {
       "title": "Total Code Modules",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 6, "x": 0, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -88,7 +81,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.name') as node_name,\n         json_extract(value, '$.path') as file_path\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(DISTINCT file_path) as value\nFROM code_graph\nWHERE node_type = 'file'",
+        "rawSql": "SELECT COUNT(DISTINCT path) as value FROM code_structure WHERE type = 'file'",
         "format": "table",
         "refId": "A"
       }],
@@ -97,7 +90,7 @@
     {
       "title": "Total Functions",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 6, "x": 6, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -112,7 +105,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'function'",
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'function'",
         "format": "table",
         "refId": "A"
       }],
@@ -121,7 +114,7 @@
     {
       "title": "Total Classes",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 6, "x": 12, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -144,7 +137,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'class'",
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'class'",
         "format": "table",
         "refId": "A"
       }],
@@ -153,7 +146,7 @@
     {
       "title": "Test Coverage Modules",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 6, "x": 18, "y": 1},
       "fieldConfig": {
         "defaults": {
@@ -176,7 +169,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'file' AND has_tests IS NOT NULL",
+        "rawSql": "SELECT COUNT(*) as value FROM code_structure WHERE type = 'file' AND json_extract(data, '$.tests') IS NOT NULL",
         "format": "table",
         "refId": "A"
       }],
@@ -185,14 +178,14 @@
     {
       "title": "Code Quality Distribution",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "options": {
         "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
         "pieType": "donut"
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.quality') as quality_level\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  CASE \n    WHEN quality_level = 'stable' THEN 'Stable'\n    WHEN quality_level = 'review' THEN 'Needs Review'\n    WHEN quality_level = 'refactor' THEN 'Needs Refactor'\n    WHEN quality_level IS NULL THEN 'Not Assessed'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_graph\nGROUP BY quality_level\nORDER BY value DESC",
+        "rawSql": "SELECT \n  CASE \n    WHEN json_extract(data, '$.quality') = 'stable' THEN 'Stable'\n    WHEN json_extract(data, '$.quality') = 'review' THEN 'Needs Review'\n    WHEN json_extract(data, '$.quality') = 'refactor' THEN 'Needs Refactor'\n    WHEN json_extract(data, '$.quality') IS NULL THEN 'Not Assessed'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_structure\nGROUP BY json_extract(data, '$.quality')\nORDER BY value DESC",
         "format": "table",
         "refId": "A"
       }],
@@ -201,14 +194,14 @@
     {
       "title": "Module Type Distribution",
       "type": "piechart",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
       "options": {
         "legend": {"displayMode": "table", "placement": "right", "calcs": ["value", "percent"]},
         "pieType": "pie"
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  CASE \n    WHEN node_type = 'file' THEN 'Files'\n    WHEN node_type = 'function' THEN 'Functions'\n    WHEN node_type = 'class' THEN 'Classes'\n    WHEN node_type = 'module' THEN 'Modules'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_graph\nGROUP BY node_type\nORDER BY value DESC",
+        "rawSql": "SELECT \n  CASE \n    WHEN type = 'file' THEN 'Files'\n    WHEN type = 'function' THEN 'Functions'\n    WHEN type = 'class' THEN 'Classes'\n    WHEN type = 'module' THEN 'Modules'\n    ELSE 'Other'\n  END as metric,\n  COUNT(*) as value\nFROM code_structure\nGROUP BY type\nORDER BY value DESC",
         "format": "table",
         "refId": "A"
       }],
@@ -223,7 +216,7 @@
     {
       "title": "Modules with Concerns",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 8, "x": 0, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -246,7 +239,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.concerns') as concerns_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE concerns_json IS NOT NULL \n  AND json_array_length(concerns_json) > 0",
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE json_extract(data, '$.concerns') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.concerns')) > 0",
         "format": "table",
         "refId": "A"
       }],
@@ -255,7 +248,7 @@
     {
       "title": "Improvement Opportunities",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 8, "x": 8, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -270,7 +263,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.opportunities') as opps_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE opps_json IS NOT NULL \n  AND json_array_length(opps_json) > 0",
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE json_extract(data, '$.opportunities') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.opportunities')) > 0",
         "format": "table",
         "refId": "A"
       }],
@@ -279,7 +272,7 @@
     {
       "title": "Untested Modules",
       "type": "stat",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 5, "w": 8, "x": 16, "y": 15},
       "fieldConfig": {
         "defaults": {
@@ -302,7 +295,7 @@
         "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT COUNT(*) as value\nFROM code_graph\nWHERE node_type = 'file' AND has_tests IS NULL",
+        "rawSql": "SELECT COUNT(*) as value\nFROM code_structure\nWHERE type = 'file' AND json_extract(data, '$.tests') IS NULL",
         "format": "table",
         "refId": "A"
       }],
@@ -311,7 +304,7 @@
     {
       "title": "Top Concerns by Module",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 10, "w": 12, "x": 0, "y": 20},
       "options": {
         "showHeader": true,
@@ -323,7 +316,7 @@
         }
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.concerns') as concerns_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  module_name as 'Module',\n  file_path as 'File Path',\n  quality as 'Quality',\n  json_array_length(concerns_json) as 'Concern Count'\nFROM code_graph\nWHERE concerns_json IS NOT NULL \n  AND json_array_length(concerns_json) > 0\nORDER BY json_array_length(concerns_json) DESC\nLIMIT 20",
+        "rawSql": "SELECT \n  name as 'Module',\n  path as 'File Path',\n  json_extract(data, '$.quality') as 'Quality',\n  json_array_length(json_extract(data, '$.concerns')) as 'Concern Count'\nFROM code_structure\nWHERE json_extract(data, '$.concerns') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.concerns')) > 0\nORDER BY json_array_length(json_extract(data, '$.concerns')) DESC\nLIMIT 20",
         "format": "table",
         "refId": "A"
       }],
@@ -332,7 +325,7 @@
     {
       "title": "Optimization Opportunities",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 10, "w": 12, "x": 12, "y": 20},
       "options": {
         "showHeader": true,
@@ -344,7 +337,7 @@
         }
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.opportunities') as opps_json\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  module_name as 'Module',\n  file_path as 'File Path',\n  quality as 'Quality',\n  json_array_length(opps_json) as 'Opportunity Count'\nFROM code_graph\nWHERE opps_json IS NOT NULL \n  AND json_array_length(opps_json) > 0\nORDER BY json_array_length(opps_json) DESC\nLIMIT 20",
+        "rawSql": "SELECT \n  name as 'Module',\n  path as 'File Path',\n  json_extract(data, '$.quality') as 'Quality',\n  json_array_length(json_extract(data, '$.opportunities')) as 'Opportunity Count'\nFROM code_structure\nWHERE json_extract(data, '$.opportunities') IS NOT NULL \n  AND json_array_length(json_extract(data, '$.opportunities')) > 0\nORDER BY json_array_length(json_extract(data, '$.opportunities')) DESC\nLIMIT 20",
         "format": "table",
         "refId": "A"
       }],
@@ -359,7 +352,7 @@
     {
       "title": "Core Architecture Files",
       "type": "table",
-      "datasource": {"type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}"},
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "ancestry-sqlite"},
       "gridPos": {"h": 10, "w": 24, "x": 0, "y": 31},
       "options": {
         "showHeader": true,
@@ -377,7 +370,7 @@
         ]
       },
       "targets": [{
-        "rawSql": "WITH code_graph AS (\n  SELECT json_extract(value, '$.type') as node_type,\n         json_extract(value, '$.name') as module_name,\n         json_extract(value, '$.path') as file_path,\n         json_extract(value, '$.summary') as summary,\n         json_extract(value, '$.quality') as quality,\n         json_extract(value, '$.tests') as has_tests\n  FROM json_each(\n    (SELECT json(value) FROM json_tree(\n      readfile('docs/code_graph.json'), '$.nodes'\n    ) WHERE type='array' LIMIT 1)\n  )\n)\nSELECT \n  file_path as 'File Path',\n  module_name as 'Module',\n  quality as 'Quality',\n  CASE WHEN has_tests IS NOT NULL THEN '✓' ELSE '✗' END as 'Tests',\n  SUBSTR(summary, 1, 100) || '...' as 'Summary'\nFROM code_graph\nWHERE node_type = 'file'\n  AND (file_path LIKE 'core/%' OR file_path LIKE 'action%' OR file_path = 'main.py')\nORDER BY file_path\nLIMIT 30",
+        "rawSql": "SELECT \n  path as 'File Path',\n  name as 'Module',\n  json_extract(data, '$.quality') as 'Quality',\n  CASE WHEN json_extract(data, '$.tests') IS NOT NULL THEN '✓' ELSE '✗' END as 'Tests',\n  SUBSTR(json_extract(data, '$.summary'), 1, 100) || '...' as 'Summary'\nFROM code_structure\nWHERE type = 'file'\n  AND (path LIKE 'core/%' OR path LIKE 'action%' OR path = 'main.py')\nORDER BY path\nLIMIT 30",
         "format": "table",
         "refId": "A"
       }],

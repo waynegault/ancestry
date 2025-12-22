@@ -49,6 +49,10 @@ class TestInboundOrchestrator(unittest.TestCase):
         self.patcher_generate = patch('messaging.inbound.generate_genealogical_reply')
         self.mock_generate = self.patcher_generate.start()
 
+        self.patcher_structured = patch('messaging.inbound.generate_structured_reply')
+        self.mock_structured = self.patcher_structured.start()
+        self.mock_structured.return_value = None
+
         self.patcher_semantic = patch('messaging.inbound.SemanticSearchService')
         self.mock_semantic_cls = self.patcher_semantic.start()
         self.mock_semantic = self.mock_semantic_cls.return_value
@@ -61,6 +65,7 @@ class TestInboundOrchestrator(unittest.TestCase):
         self.patcher_classify.stop()
         self.patcher_extract.stop()
         self.patcher_generate.stop()
+        self.patcher_structured.stop()
         self.patcher_semantic.stop()
 
     def _setup_db_mocks(self, person_found: bool = True, state_found: bool = True) -> tuple[Any, Any]:

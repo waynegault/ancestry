@@ -8,6 +8,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$LogFile = "$PSScriptRoot\setup_log.txt"
+Start-Transcript -Path $LogFile -Append
+
 # Configuration
 $GRAFANA_VERSION = "11.3.1"
 $GRAFANA_INSTALLER_URL = "https://dl.grafana.com/enterprise/release/grafana-enterprise-$GRAFANA_VERSION.windows-amd64.msi"
@@ -48,7 +51,7 @@ function Download-File {
 
 # Main installation workflow
 function Install-Grafana {
-    Write-Step "Automated Grafana Setup"
+    Write-Step "Automated Grafana Setup (Updated v2)"
 
     # 1. Check admin privileges
     if (-not (Test-Administrator)) {
@@ -264,12 +267,13 @@ function Configure-DataSources {
                 "Authorization" = "Basic $base64Auth"
                 "Content-Type" = "application/json"
             }
-            $response = Invoke-RestMethod -Uri "http://localhost:3000/api/org" -Headers $testHeaders -ErrorAction Stop
+            # Use /api/user instead of /api/org as it might be more reliable for basic auth check
+            $response = Invoke-RestMethod -Uri "http://localhost:3000/api/user" -Headers $testHeaders -ErrorAction Stop
             $headers = $testHeaders
-            Write-Success "Authenticated with credentials: $($cred.Split(':')[0])"
+            Write-Success "Authenticated with credentials: $($cred.Split(':')[0]) (using password: $($cred.Split(':')[1]))"
             break
         } catch {
-            # Try next credential
+            Write-Info "Auth failed for $($cred.Split(':')[0]):$($cred.Split(':')[1]) - $_"
         }
     }
 
@@ -280,10 +284,20 @@ function Configure-DataSources {
 
     # Check if Prometheus data source exists
     Write-Info "Configuring Prometheus data source..."
+
+    # Delete existing to ensure UID update
+    try {
+        $existing = Invoke-RestMethod -Uri "http://localhost:3000/api/datasources/name/Prometheus" -Headers $headers -ErrorAction SilentlyContinue
+        if ($existing) {
+             Invoke-RestMethod -Uri "http://localhost:3000/api/datasources/$($existing.id)" -Method Delete -Headers $headers -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
     try {
         $prometheusDatasource = @{
             name = "Prometheus"
             type = "prometheus"
+            uid = "ancestry-prometheus"
             url = "http://localhost:9090"
             access = "proxy"
             isDefault = $true
@@ -303,14 +317,27 @@ function Configure-DataSources {
 
     # Check if SQLite data source exists
     Write-Info "Configuring SQLite data source..."
+
+    # Delete existing to ensure UID update
+    try {
+        $existing = Invoke-RestMethod -Uri "http://localhost:3000/api/datasources/name/SQLite" -Headers $headers -ErrorAction SilentlyContinue
+        if ($existing) {
+             Invoke-RestMethod -Uri "http://localhost:3000/api/datasources/$($existing.id)" -Method Delete -Headers $headers -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
     try {
         $sqliteDatasource = @{
             name = "SQLite"
             type = "frser-sqlite-datasource"
+            uid = "ancestry-sqlite"
+            access = "proxy"
             jsonData = @{
                 path = $DB_PATH
             }
         } | ConvertTo-Json
+
+        Write-Info "SQLite Payload: $sqliteDatasource"
 
         $response = Invoke-RestMethod -Uri "http://localhost:3000/api/datasources" `
             -Method Post -Headers $headers -Body $sqliteDatasource -ErrorAction SilentlyContinue
@@ -321,6 +348,20 @@ function Configure-DataSources {
             Write-Success "SQLite data source already exists"
         } else {
             Write-Info "SQLite data source: Manual configuration needed"
+            Write-Info "Error details: $($_.Exception.Message)"
+
+            if ($_.Exception.Response) {
+                try {
+                    # Try reading content for PowerShell Core / .NET Core
+                    if ($_.Exception.Response.Content) {
+                        $responseBody = $_.Exception.Response.Content.ReadAsStringAsync().Result
+                        Write-Info "Response body: $responseBody"
+                    }
+                } catch {
+                    # Fallback or ignore
+                    Write-Info "Could not read response body: $_"
+                }
+            }
         }
     }
 
@@ -377,10 +418,6 @@ function Import-Dashboards {
             $importPayload = @{
                 dashboard = $dashboardJson
                 overwrite = $true
-                inputs = @(
-                    @{name="DS_PROMETHEUS"; type="datasource"; pluginId="prometheus"; value="Prometheus"},
-                    @{name="DS_SQLITE"; type="datasource"; pluginId="frser-sqlite-datasource"; value="SQLite"}
-                )
             } | ConvertTo-Json -Depth 20
 
             $response = Invoke-RestMethod -Uri "http://localhost:3000/api/dashboards/import" `
@@ -431,9 +468,8 @@ function Main {
             Write-Host "   ✅ Setup Complete!" -ForegroundColor Green
             Write-Host ("="*70) -ForegroundColor Cyan
             Write-Host "`n  Grafana is ready at: http://localhost:3000" -ForegroundColor Yellow
-            Write-Host "  Default login: admin / admin" -ForegroundColor Yellow
-            Write-Host "  ⚠️  Run 'reset_admin_password.ps1' to change password to 'ancestry'`n" -ForegroundColor Yellow
-            Write-Host "  ⚠️  Run 'reset_admin_password.ps1' to change password to 'ancestry'`n" -ForegroundColor Yellow
+            Write-Host "  Login: admin / ancestry (or admin / admin for fresh install)" -ForegroundColor Yellow
+            Write-Host "  ⚠️  If login fails, run 'reset_admin_password.ps1' to set password to 'ancestry'`n" -ForegroundColor Yellow
         } else {
             Write-Host "   ⚠️  Setup completed with warnings" -ForegroundColor Yellow
             Write-Host ("="*70) -ForegroundColor Cyan

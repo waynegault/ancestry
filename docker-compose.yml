@@ -39,7 +39,7 @@ services:
       - .env
     ports:
       # Prometheus metrics (if enabled)
-      - "9090:9090"
+      - "9001:9001"
     networks:
       - ancestry-network
     depends_on:
@@ -76,9 +76,11 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./observability/grafana:/etc/grafana/provisioning
+      - ./Data:/data
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
     networks:
       - ancestry-network
     profiles:
@@ -89,7 +91,7 @@ services:
     image: prom/prometheus:latest
     container_name: ancestry-prometheus
     ports:
-      - "9091:9090"
+      - "9090:9090"
     volumes:
       - ./observability/prometheus:/etc/prometheus
       - prometheus-data:/prometheus

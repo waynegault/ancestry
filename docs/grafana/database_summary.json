@@ -1,13 +1,5 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_SQLITE",
-      "label": "SQLite",
-      "type": "datasource",
-      "pluginId": "frser-sqlite-datasource",
-      "pluginName": "SQLite"
-    }
-  ],
+  "__inputs": [],
   "__requires": [
     {
       "type": "panel",
@@ -53,7 +45,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -81,9 +73,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM people", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM people WHERE deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -91,7 +83,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -118,9 +110,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM dna_match", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -128,7 +120,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -155,9 +147,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM conversation_log", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -165,7 +157,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -191,9 +183,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM draft_replies", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM draft_replies d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -201,7 +193,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -227,9 +219,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM shared_matches", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM shared_matches s JOIN people p ON s.person_id = p.id WHERE p.deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -237,7 +229,7 @@
       "type": "stat"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -263,9 +255,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COUNT(*) as value FROM family_tree", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COUNT(*) as value FROM family_tree f JOIN people p ON f.people_id = p.id WHERE p.deleted_at IS NULL", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -281,7 +273,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -301,9 +293,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COALESCE(status, 'unknown') as status, COUNT(*) as count FROM people GROUP BY status ORDER BY count DESC", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COALESCE(status, 'unknown') as status, COUNT(*) as count FROM people WHERE deleted_at IS NULL GROUP BY status ORDER BY count DESC", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -311,7 +303,7 @@
       "type": "piechart"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -331,9 +323,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL GROUP BY ai_sentiment ORDER BY count DESC", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT COALESCE(ai_sentiment, 'unclassified') as sentiment, COUNT(*) as count FROM people WHERE ai_sentiment IS NOT NULL AND deleted_at IS NULL GROUP BY ai_sentiment ORDER BY count DESC", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -341,7 +333,7 @@
       "type": "piechart"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -361,9 +353,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT CASE WHEN shared_cm >= 400 THEN '400+ cM (Close)' WHEN shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match GROUP BY range ORDER BY MIN(shared_cm) DESC", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT CASE WHEN d.shared_cm >= 400 THEN '400+ cM (Close)' WHEN d.shared_cm >= 90 THEN '90-400 cM (Extended)' WHEN d.shared_cm >= 20 THEN '20-90 cM (Distant)' ELSE '<20 cM (Very Distant)' END as range, COUNT(*) as count FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL GROUP BY range ORDER BY MIN(d.shared_cm) DESC", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -379,7 +371,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -401,9 +393,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id ORDER BY p.created_at DESC LIMIT 20", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT p.username, d.shared_cm, d.predicted_relationship, p.ai_sentiment, datetime(p.created_at) as added FROM people p LEFT JOIN dna_match d ON p.id = d.people_id WHERE p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT 20", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -411,7 +403,7 @@
       "type": "table"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -430,9 +422,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT p.username, c.direction, c.ai_sentiment, datetime(c.latest_timestamp) as timestamp FROM conversation_log c JOIN people p ON c.people_id = p.id ORDER BY c.latest_timestamp DESC LIMIT 20", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT p.username, c.direction, c.ai_sentiment, datetime(c.latest_timestamp) as timestamp FROM conversation_log c JOIN people p ON c.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY c.latest_timestamp DESC LIMIT 20", "format": "table",
+
           "refId": "A"
         }
       ],
@@ -448,7 +440,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
+      "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -469,9 +461,9 @@
       },
       "targets": [
         {
-          "datasource": { "type": "frser-sqlite-datasource", "uid": "${DS_SQLITE}" },
-          "rawSql": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id ORDER BY d.shared_cm DESC LIMIT 50", "format": "table",
-          
+          "datasource": { "type": "frser-sqlite-datasource", "uid": "ancestry-sqlite" },
+          "rawSql": "SELECT p.username, d.shared_cm, d.shared_segments, d.predicted_relationship, p.status, p.ai_sentiment FROM dna_match d JOIN people p ON d.people_id = p.id WHERE p.deleted_at IS NULL ORDER BY d.shared_cm DESC LIMIT 50", "format": "table",
+
           "refId": "A"
         }
       ],

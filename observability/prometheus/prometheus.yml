@@ -7,3 +7,4 @@ scrape_configs:
       - targets:
           - localhost:9001
           - host.docker.internal:9001
+          - app:9001

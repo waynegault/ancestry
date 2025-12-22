@@ -24,10 +24,11 @@ function Resolve-PrometheusPath {
     if ($Override) {
         return (Resolve-Path $Override).Path
     }
-    $candidates = @(
-        Join-Path $PSScriptRoot 'prometheus.exe',
-        'C:/Programs/Prometheus/prometheus.exe'
-    )
+    $candidates = @()
+    if ($PSScriptRoot) {
+        $candidates += Join-Path -Path $PSScriptRoot -ChildPath 'prometheus.exe'
+    }
+    $candidates += 'C:/Programs/Prometheus/prometheus.exe'
     foreach ($path in $candidates) {
         if (Test-Path $path) { return (Resolve-Path $path).Path }
     }

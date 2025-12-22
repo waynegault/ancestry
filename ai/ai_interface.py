@@ -50,8 +50,6 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import importlib
 import json
-
-# import logging - removed unused
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -118,12 +116,12 @@ if not xai_available:
 # === LOCAL IMPORTS ===
 import contextlib
 
+from ai.prompt_telemetry import record_extraction_experiment_event
 from ai.prompts import (
     get_prompt,
     get_prompt_version,
     get_prompt_with_experiment,
     load_prompts,
-    record_extraction_experiment_event,
     supports_json_prompts,
 )
 from ai.providers.base import (
@@ -141,10 +139,9 @@ from ai.providers.moonshot import MoonshotProvider
 # === PHASE 5.2: SYSTEM-WIDE CACHING OPTIMIZATION ===
 from caching.cache_manager import cached_api_call
 from config.config_schema import ConfigSchema
+from core.common_params import ExtractionExperimentEvent
 
 if TYPE_CHECKING:
-    from typing import TypedDict
-
     from core.session_manager import SessionManager
 
     class HealthStatus(TypedDict):
@@ -799,6 +796,51 @@ def _handle_ai_exceptions(e: Exception, provider: str, session_manager: Optional
 
 
 @cached_api_call("ai", ttl=1800)
+def _execute_provider_with_retries(
+    active_provider: str,
+    system_prompt: str,
+    user_content: str,
+    max_tokens: int,
+    temperature: float,
+    response_format_type: Optional[str],
+    session_manager: Optional[SessionManager],
+) -> tuple[Optional[str], Optional[Exception]]:
+    """Execute a single provider with retries."""
+    max_retries = 3
+    base_delay = 1.0
+    last_exception = None
+
+    for attempt in range(max_retries):
+        _apply_rate_limiting(session_manager, active_provider)
+
+        try:
+            result = _route_ai_provider_call(
+                active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
+            )
+            if result is not None:
+                return result, None
+        except Exception as exc:
+            last_exception = exc
+            _handle_ai_exceptions(exc, active_provider, session_manager)
+
+        if attempt < max_retries - 1:
+            delay = base_delay * (2**attempt)
+            logger.warning(
+                "AI provider '%s' failed or returned empty (attempt %d/%d). Retrying in %.1fs...",
+                active_provider,
+                attempt + 1,
+                max_retries,
+                delay,
+            )
+            time.sleep(delay)
+        else:
+            logger.error("AI provider '%s' failed after %d attempts.", active_provider, max_retries)
+
+    return None, last_exception
+
+    return None, last_exception
+
+
 def _call_ai_model(
     provider: str,
     system_prompt: str,
@@ -822,91 +864,37 @@ def _call_ai_model(
 
     last_exception: Exception | None = None
 
-    # Retry configuration for empty responses
-    max_retries = 3
-    base_delay = 1.0  # Starting delay in seconds
-
     for idx, active_provider in enumerate(provider_chain):
-        next_provider = provider_chain[idx + 1] if idx < len(provider_chain) - 1 else None
-
-        # Retry loop with exponential backoff for empty responses
-        for attempt in range(max_retries):
-            _apply_rate_limiting(session_manager, active_provider)
-
-            try:
-                result = _route_ai_provider_call(
-                    active_provider, system_prompt, user_content, max_tokens, temperature, response_format_type
-                )
-            except Exception as exc:
-                last_exception = exc
-                _handle_ai_exceptions(exc, active_provider, session_manager)
-
-                if next_provider is not None:
-                    logger.warning(
-                        "AI provider '%s' failed (%s). Attempting fallback '%s'.",
-                        active_provider,
-                        type(exc).__name__,
-                        next_provider,
-                    )
-                    break  # Break retry loop, continue to next provider
-
-                # No fallback available - break out of retry loop
-                break
-
-            if result is not None:
-                # Success! Return the result
-                if active_provider != provider:
-                    logger.warning(
-                        "AI provider '%s' failed, successfully fell back to '%s'.",
-                        provider,
-                        active_provider,
-                    )
-                return result
-
-            # Empty response - retry with exponential backoff
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)  # 1s, 2s, 4s
-                logger.warning(
-                    "AI provider '%s' returned empty response (attempt %d/%d). Retrying in %.1fs...",
-                    active_provider,
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                )
-                time.sleep(delay)
-            else:
-                # Exhausted retries for this provider
-                logger.warning(
-                    "AI provider '%s' returned empty response after %d attempts.",
-                    active_provider,
-                    max_retries,
-                )
-                if next_provider is not None:
-                    logger.info("Attempting fallback to '%s'.", next_provider)
-        else:
-            # Retry loop completed without break (all retries exhausted, no exception)
-            # Continue to next provider if available
-            if next_provider is None:
-                break
-            continue
-
-        # Exception occurred and no fallback - exit provider loop
-        if last_exception is not None and next_provider is None:
-            break
-
-    if last_exception is not None:
-        logger.error(
-            "AI provider '%s' failed after exhausting %d option(s): %s",
-            provider,
-            len(provider_chain),
-            type(last_exception).__name__,
+        result, exc = _execute_provider_with_retries(
+            active_provider,
+            system_prompt,
+            user_content,
+            max_tokens,
+            temperature,
+            response_format_type,
+            session_manager,
         )
-    else:
-        logger.error(
-            "AI provider '%s' returned no usable response after trying %d option(s) with retries.",
-            provider,
-            len(provider_chain),
-        )
+
+        if exc:
+            last_exception = exc
+            if idx < len(provider_chain) - 1:
+                logger.warning(
+                    "Provider '%s' failed (%s). Falling back to '%s'.",
+                    active_provider,
+                    type(exc).__name__,
+                    provider_chain[idx + 1],
+                )
+
+        if result is not None:
+            if active_provider != provider:
+                logger.warning(
+                    "AI provider '%s' failed, successfully fell back to '%s'.",
+                    provider,
+                    active_provider,
+                )
+            return result
+
+    logger.error("All AI providers failed. Last error: %s", last_exception)
     return None
 
 
@@ -1051,21 +1039,21 @@ def _record_extraction_telemetry(
         prompt_key = "extraction_task_alt" if variant_label == "alt" else "extraction_task"
         prompt_version = get_prompt_version(prompt_key)
 
-        telemetry_payload: dict[str, Any] = {
-            "variant_label": variant_label,
-            "prompt_key": prompt_key,
-            "prompt_version": prompt_version,
-            "parse_success": parse_success,
-            "extracted_data": parsed_json.get("extracted_data") if parsed_json else None,
-            "suggested_tasks": parsed_json.get("suggested_tasks") if parsed_json else None,
-            "raw_response_text": cleaned_response_str,
-            "user_id": getattr(session_manager, "user_id", None),
-            "quality_score": quality_score,
-            "component_coverage": component_coverage,
-            "anomaly_summary": anomaly_summary,
-            "error": error,
-        }
-        record_extraction_experiment_event(telemetry_payload)
+        event = ExtractionExperimentEvent(
+            variant_label=variant_label,
+            prompt_key=prompt_key,
+            prompt_version=prompt_version,
+            parse_success=parse_success,
+            extracted_data=parsed_json.get("extracted_data") if parsed_json else None,
+            suggested_tasks=parsed_json.get("suggested_tasks") if parsed_json else None,
+            raw_response_text=cleaned_response_str,
+            user_id=getattr(session_manager, "user_id", None),
+            quality_score=quality_score,
+            component_coverage=component_coverage,
+            anomaly_summary=anomaly_summary,
+            error=error,
+        )
+        record_extraction_experiment_event(event)
     except Exception:
         pass
 
@@ -1588,13 +1576,15 @@ def _format_structured_reply_prompt(
     """
     try:
         result = prompt_template
-        result = result.replace("{user_question}", user_question or "")
-        result = result.replace("{conversation_context}", conversation_context or "No previous conversation.")
-        result = result.replace("{tree_evidence}", tree_evidence or "No tree evidence available.")
-        result = result.replace("{semantic_search_results}", semantic_search_results or "No semantic search results.")
-        result = result.replace("{family_members}", family_members or "No family members data.")
-        result = result.replace("{relationship_path}", relationship_path or "No relationship path available.")
-        return result
+        result = result.replace("{user_question}", str(user_question or ""))  # noqa: RUF027
+        result = result.replace("{conversation_context}", str(conversation_context or "No previous conversation."))  # noqa: RUF027
+        result = result.replace("{tree_evidence}", str(tree_evidence or "No tree evidence available."))  # noqa: RUF027
+        result = result.replace(
+            "{semantic_search_results}",  # noqa: RUF027
+            str(semantic_search_results or "No semantic search results."),
+        )
+        result = result.replace("{family_members}", str(family_members or "No family members data."))  # noqa: RUF027
+        return result.replace("{relationship_path}", str(relationship_path or "No relationship path available."))  # noqa: RUF027
     except Exception as e:
         logger.error(f"generate_structured_reply: Prompt formatting error: {e}")
         return None
@@ -1956,6 +1946,28 @@ def generate_contextual_response(
 # End of generate_contextual_response
 
 
+def _parse_engagement_response(response_str: str, log_prefix: str) -> dict[str, Any] | None:
+    """Parse engagement assessment JSON response."""
+    try:
+        cleaned = _clean_json_response(response_str)
+        if not cleaned:
+            logger.warning(f"{log_prefix}: Empty engagement response.")
+            return None
+        result = json.loads(cleaned)
+        return result if isinstance(result, dict) else None
+    except json.JSONDecodeError as e:
+        # Try JSON repair for truncated responses
+        repaired = _attempt_json_repair(response_str)
+        if repaired and isinstance(repaired, dict):
+            logger.info(f"{log_prefix}: Engagement assessment OK (repaired).")
+            return repaired
+        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
+        return None
+
+
 def assess_engagement(
     conversation_history: str,
     session_manager: SessionManager,
@@ -1993,25 +2005,11 @@ def assess_engagement(
         logger.error(f"{log_prefix}: Engagement assessment failed. (Took {duration:.2f}s)")
         return None
 
-    try:
-        cleaned = _clean_json_response(ai_response_str) if ai_response_str else ""
-        if not cleaned:
-            logger.warning(f"{log_prefix}: Empty engagement response. (Took {duration:.2f}s)")
-            return None
-        result = json.loads(cleaned)
+    result = _parse_engagement_response(ai_response_str, log_prefix)
+    if result:
         logger.info(f"{log_prefix}: Engagement assessment OK. (Took {duration:.2f}s)")
-        return result if isinstance(result, dict) else None
-    except json.JSONDecodeError as e:
-        # Try JSON repair for truncated responses
-        repaired = _attempt_json_repair(ai_response_str) if ai_response_str else None
-        if repaired:
-            logger.info(f"{log_prefix}: Engagement assessment OK (repaired). (Took {duration:.2f}s)")
-            return repaired if isinstance(repaired, dict) else None
-        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"{log_prefix}: Failed to parse engagement JSON: {e}")
-        return None
+
+    return result
 
 
 def _format_clarification_prompt(
@@ -3136,9 +3134,6 @@ def _record_correction_attempt(
 ) -> None:
     """Record correction attempt metrics for telemetry."""
     try:
-        from ai.prompt_telemetry import record_extraction_experiment_event
-        from core.common_params import ExtractionExperimentEvent
-
         event = ExtractionExperimentEvent(
             variant_label="auto_correction_v1",
             prompt_key="draft_correction",
