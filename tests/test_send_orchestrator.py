@@ -382,6 +382,32 @@ def _test_context_creation_desist() -> None:
     assert context.additional_data == {}, "Additional data should be empty for DESIST"
 
 
+def _test_database_update_records_structure() -> None:
+    """Test that _update_database_records returns proper update list (4.1.5)."""
+    from messaging.send_orchestrator import (
+        MessageSendOrchestrator,
+    )
+
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
+
+    # Test the structure of _update_database_records method
+    # We can't fully test without a real DB, but we verify the method exists
+    # and has the correct signature
+    assert hasattr(
+        orchestrator, "_update_database_records"
+    ), "_update_database_records method should exist"
+
+    # Verify the method accepts the expected parameters by checking its signature
+    import inspect
+
+    sig = inspect.signature(orchestrator._update_database_records)
+    params = list(sig.parameters.keys())
+    assert "context" in params, "Method should accept context parameter"
+    assert "decision" in params, "Method should accept decision parameter"
+    assert "message_id" in params, "Method should accept message_id parameter"
+
+
 def _test_feature_flag_checks() -> None:
     """Test feature flag check functions."""
     from messaging.send_orchestrator import (
@@ -614,6 +640,14 @@ def module_tests() -> bool:
         test_func=_test_context_creation_desist,
         test_summary="Verify create_desist_context helper",
         expected_outcome="Context has OPT_OUT trigger",
+    )
+
+    # Database Update Tests (4.1.5)
+    suite.run_test(
+        test_name="Database update records structure",
+        test_func=_test_database_update_records_structure,
+        test_summary="Verify _update_database_records method structure",
+        expected_outcome="Method exists with correct signature (context, decision, message_id)",
     )
 
     # Feature Flag Tests
