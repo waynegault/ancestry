@@ -266,8 +266,7 @@ class MessageSendOrchestrator:
             SendResult indicating success/failure and audit trail.
         """
         self._logger.info(
-            f"Processing send request: person_id={context.person.id}, "
-            f"trigger={context.send_trigger.value}"
+            f"Processing send request: person_id={context.person.id}, trigger={context.send_trigger.value}"
         )
 
         # Feature flag check
@@ -283,9 +282,7 @@ class MessageSendOrchestrator:
         decision = self._make_decision(context)
 
         if not decision.should_send:
-            self._logger.info(
-                f"Send blocked for person_id={context.person.id}: {decision.block_reason}"
-            )
+            self._logger.info(f"Send blocked for person_id={context.person.id}: {decision.block_reason}")
             return SendResult(
                 success=False,
                 error=decision.block_reason,
@@ -507,8 +504,7 @@ class MessageSendOrchestrator:
             result = check_func(context)
             results.append(result)
             self._logger.debug(
-                f"Safety check {result.check_type.value}: "
-                f"{'PASS' if result.passed else 'FAIL'} - {result.reason}"
+                f"Safety check {result.check_type.value}: {'PASS' if result.passed else 'FAIL'} - {result.reason}"
             )
 
         return results
@@ -561,9 +557,7 @@ class MessageSendOrchestrator:
             safety_results=safety_results,
         )
 
-    def _determine_message_strategy(
-        self, context: MessageSendContext
-    ) -> tuple[Optional[str], ContentSource]:
+    def _determine_message_strategy(self, context: MessageSendContext) -> tuple[Optional[str], ContentSource]:
         """
         Determine the message type and content source based on the trigger.
 
@@ -630,9 +624,7 @@ class MessageSendOrchestrator:
     # Content Generation Methods (Phase 1.4)
     # --------------------------------------------------------------------------
 
-    def _generate_content(
-        self, context: MessageSendContext, decision: SendDecision
-    ) -> Optional[str]:
+    def _generate_content(self, context: MessageSendContext, decision: SendDecision) -> Optional[str]:
         """
         Generate or retrieve the message content.
 
@@ -659,9 +651,7 @@ class MessageSendOrchestrator:
         self._logger.error(f"Unknown content source: {content_source}")
         return None
 
-    def _generate_template_content(
-        self, context: MessageSendContext, decision: SendDecision
-    ) -> Optional[str]:
+    def _generate_template_content(self, context: MessageSendContext, decision: SendDecision) -> Optional[str]:
         """
         Generate content from a message template.
 
@@ -767,9 +757,7 @@ class MessageSendOrchestrator:
     # Send Execution Methods (Phase 1.5)
     # --------------------------------------------------------------------------
 
-    def _execute_send(
-        self, context: MessageSendContext, decision: SendDecision, content: str
-    ) -> SendResult:
+    def _execute_send(self, context: MessageSendContext, decision: SendDecision, content: str) -> SendResult:
         """
         Execute the actual message send.
 
@@ -932,9 +920,7 @@ class MessageSendOrchestrator:
 
         return updates
 
-    def _record_engagement_event(
-        self, context: MessageSendContext, decision: SendDecision, message_id: str
-    ) -> None:
+    def _record_engagement_event(self, context: MessageSendContext, decision: SendDecision, message_id: str) -> None:
         """
         Record an engagement tracking event.
 
@@ -963,9 +949,7 @@ class MessageSendOrchestrator:
             self._logger.warning(f"Failed to record engagement event: {e}")
             # Don't fail the send if engagement tracking fails
 
-    def _log_audit_trail(
-        self, context: MessageSendContext, decision: SendDecision, result: SendResult
-    ) -> None:
+    def _log_audit_trail(self, context: MessageSendContext, decision: SendDecision, result: SendResult) -> None:
         """
         Log the complete audit trail for this send operation.
 
@@ -1003,6 +987,172 @@ class MessageSendOrchestrator:
 
 
 # ------------------------------------------------------------------------------
+# Action Integration Functions
+# ------------------------------------------------------------------------------
+
+
+def should_use_orchestrator_for_action8() -> bool:
+    """
+    Check if Action 8 should use the unified orchestrator.
+
+    Returns True if both the master switch and Action 8-specific flag are enabled.
+    """
+    master_enabled = getattr(config_schema, "enable_unified_send_orchestrator", False)
+    action8_enabled = getattr(config_schema, "orchestrator_action8", False)
+    return master_enabled and action8_enabled
+
+
+def should_use_orchestrator_for_action9() -> bool:
+    """
+    Check if Action 9 should use the unified orchestrator.
+
+    Returns True if both the master switch and Action 9-specific flag are enabled.
+    """
+    master_enabled = getattr(config_schema, "enable_unified_send_orchestrator", False)
+    action9_enabled = getattr(config_schema, "orchestrator_action9", False)
+    return master_enabled and action9_enabled
+
+
+def should_use_orchestrator_for_action11() -> bool:
+    """
+    Check if Action 11 should use the unified orchestrator.
+
+    Returns True if both the master switch and Action 11-specific flag are enabled.
+    """
+    master_enabled = getattr(config_schema, "enable_unified_send_orchestrator", False)
+    action11_enabled = getattr(config_schema, "orchestrator_action11", False)
+    return master_enabled and action11_enabled
+
+
+def create_action8_context(
+    person: Person,
+    conversation_logs: list[ConversationLog],
+    conversation_state: Optional[ConversationState] = None,
+    template_key: Optional[str] = None,
+    message_text: Optional[str] = None,
+) -> MessageSendContext:
+    """
+    Create a MessageSendContext for Action 8 (automated sequence messages).
+
+    Args:
+        person: The person to message.
+        conversation_logs: Recent conversation history.
+        conversation_state: Current state in the message sequence.
+        template_key: The selected template key (e.g., "Out_Tree-Initial").
+        message_text: Pre-formatted message text (if available).
+
+    Returns:
+        MessageSendContext configured for Action 8.
+    """
+    additional_data: dict[str, Any] = {}
+    if template_key:
+        additional_data["template_key"] = template_key
+    if message_text:
+        additional_data["message_text"] = message_text
+
+    return MessageSendContext(
+        person=person,
+        send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
+        conversation_logs=conversation_logs,
+        conversation_state=conversation_state,
+        additional_data=additional_data,
+    )
+
+
+def create_action9_context(
+    person: Person,
+    conversation_logs: list[ConversationLog],
+    ai_generated_content: str,
+    conversation_state: Optional[ConversationState] = None,
+    ai_context: Optional[dict[str, Any]] = None,
+) -> MessageSendContext:
+    """
+    Create a MessageSendContext for Action 9 (AI-generated replies).
+
+    Args:
+        person: The person to reply to.
+        conversation_logs: Conversation history for context.
+        ai_generated_content: The AI-generated reply text.
+        conversation_state: Current conversation state.
+        ai_context: Additional AI context (prompt used, confidence, etc.).
+
+    Returns:
+        MessageSendContext configured for Action 9.
+    """
+    additional_data: dict[str, Any] = {
+        "ai_generated_content": ai_generated_content,
+    }
+    if ai_context:
+        additional_data["ai_context"] = ai_context
+
+    return MessageSendContext(
+        person=person,
+        send_trigger=SendTrigger.REPLY_RECEIVED,
+        conversation_logs=conversation_logs,
+        conversation_state=conversation_state,
+        additional_data=additional_data,
+    )
+
+
+def create_action11_context(
+    person: Person,
+    conversation_logs: list[ConversationLog],
+    draft_content: str,
+    draft_id: Optional[int] = None,
+    conversation_state: Optional[ConversationState] = None,
+) -> MessageSendContext:
+    """
+    Create a MessageSendContext for Action 11 (human-approved drafts).
+
+    Args:
+        person: The person to message.
+        conversation_logs: Conversation history.
+        draft_content: The approved draft content.
+        draft_id: Database ID of the draft (for status update).
+        conversation_state: Current conversation state.
+
+    Returns:
+        MessageSendContext configured for Action 11.
+    """
+    additional_data: dict[str, Any] = {
+        "draft_content": draft_content,
+    }
+    if draft_id:
+        additional_data["draft_id"] = draft_id
+
+    return MessageSendContext(
+        person=person,
+        send_trigger=SendTrigger.HUMAN_APPROVED,
+        conversation_logs=conversation_logs,
+        conversation_state=conversation_state,
+        additional_data=additional_data,
+    )
+
+
+def create_desist_context(
+    person: Person,
+    conversation_logs: list[ConversationLog],
+) -> MessageSendContext:
+    """
+    Create a MessageSendContext for DESIST acknowledgement.
+
+    Args:
+        person: The person who opted out.
+        conversation_logs: Conversation history.
+
+    Returns:
+        MessageSendContext configured for opt-out acknowledgement.
+    """
+    return MessageSendContext(
+        person=person,
+        send_trigger=SendTrigger.OPT_OUT,
+        conversation_logs=conversation_logs,
+        conversation_state=None,
+        additional_data={},
+    )
+
+
+# ------------------------------------------------------------------------------
 # Module Test Runner
 # ------------------------------------------------------------------------------
 
@@ -1017,7 +1167,9 @@ def _module_tests() -> bool:
     # Test 1: SendTrigger enum values
     suite.run_test(
         test_name="SendTrigger enum has 4 values",
-        test_func=lambda: None if len(SendTrigger) == 4 else (_ for _ in ()).throw(AssertionError("Expected 4 SendTrigger values")),
+        test_func=lambda: None
+        if len(SendTrigger) == 4
+        else (_ for _ in ()).throw(AssertionError("Expected 4 SendTrigger values")),
         test_summary="Verify SendTrigger enum has correct number of values",
         expected_outcome="SendTrigger has AUTOMATED_SEQUENCE, REPLY_RECEIVED, OPT_OUT, HUMAN_APPROVED",
     )
@@ -1025,7 +1177,9 @@ def _module_tests() -> bool:
     # Test 2: ContentSource enum values
     suite.run_test(
         test_name="ContentSource enum has 4 values",
-        test_func=lambda: None if len(ContentSource) == 4 else (_ for _ in ()).throw(AssertionError("Expected 4 ContentSource values")),
+        test_func=lambda: None
+        if len(ContentSource) == 4
+        else (_ for _ in ()).throw(AssertionError("Expected 4 ContentSource values")),
         test_summary="Verify ContentSource enum has correct number of values",
         expected_outcome="ContentSource has TEMPLATE, AI_GENERATED, DESIST_ACK, APPROVED_DRAFT",
     )
@@ -1033,7 +1187,9 @@ def _module_tests() -> bool:
     # Test 3: SafetyCheckType enum values
     suite.run_test(
         test_name="SafetyCheckType enum has 4 values",
-        test_func=lambda: None if len(SafetyCheckType) == 4 else (_ for _ in ()).throw(AssertionError("Expected 4 SafetyCheckType values")),
+        test_func=lambda: None
+        if len(SafetyCheckType) == 4
+        else (_ for _ in ()).throw(AssertionError("Expected 4 SafetyCheckType values")),
         test_summary="Verify SafetyCheckType enum has correct number of values",
         expected_outcome="SafetyCheckType has OPT_OUT_STATUS, APP_MODE_POLICY, CONVERSATION_HARD_STOP, DUPLICATE_PREVENTION",
     )

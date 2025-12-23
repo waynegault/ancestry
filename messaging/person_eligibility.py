@@ -272,9 +272,7 @@ class PersonEligibilityChecker:
                         is_eligible=False,
                         reason=IneligibilityReason.OPT_OUT_DETECTED,
                         reason_detail=(
-                            f"Opt-out detected in message "
-                            f"(confidence={confidence:.2f}, "
-                            f"action={suggested_action})"
+                            f"Opt-out detected in message (confidence={confidence:.2f}, action={suggested_action})"
                         ),
                     )
         except Exception as e:

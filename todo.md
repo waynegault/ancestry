@@ -140,9 +140,9 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 ### Phase 3: Refactor Action Modules
 
 #### 3.1 Refactor Action 8 (Generic Sequences)
-- [ ] **3.1.1** Add feature flag check at Action 8 entry point
-- [ ] **3.1.2** Create parallel code path using `MessageSendOrchestrator`
-- [ ] **3.1.3** Replace direct `_send_message()` calls with orchestrator
+- [x] **3.1.1** Add feature flag check at Action 8 entry point ✅ (2025-01-21)
+- [x] **3.1.2** Create parallel code path using `MessageSendOrchestrator` ✅ (2025-01-21)
+- [x] **3.1.3** Replace direct `_send_message()` calls with orchestrator ✅ (2025-01-21)
 - [ ] **3.1.4** Keep batch processing and rate limiting logic
 - [ ] **3.1.5** Remove duplicated safety check code (now in orchestrator)
 - [ ] **3.1.6** Remove duplicated database update code
@@ -150,8 +150,8 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [ ] **3.1.8** Add shadow mode logging (compare old vs new decisions)
 
 #### 3.2 Refactor Action 9 (Custom Replies)
-- [ ] **3.2.1** Add feature flag check at Action 9 send points
-- [ ] **3.2.2** Replace `_send_message()` with orchestrator call
+- [x] **3.2.1** Add feature flag check at Action 9 send points ✅ (2025-01-21)
+- [x] **3.2.2** Replace `_send_message()` with orchestrator call ✅ (2025-01-21)
   - Use `SendTrigger.REPLY_RECEIVED`
   - Pass AI-generated content via `additional_data`
 - [ ] **3.2.3** Keep AI extraction and processing logic unchanged
@@ -160,10 +160,10 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [ ] **3.2.6** Add shadow mode logging
 
 #### 3.3 Refactor Action 11 (Approved Drafts)
-- [ ] **3.3.1** Add feature flag check at Action 11 entry
+- [x] **3.3.1** Add feature flag check at Action 11 entry ✅ (2025-01-21)
 - [ ] **3.3.2** Keep draft fetching and approval filtering logic
 - [ ] **3.3.3** Keep circuit breaker pattern from lines 443-462
-- [ ] **3.3.4** Replace `_send_single_approved_draft()` with orchestrator
+- [x] **3.3.4** Replace `_send_single_approved_draft()` with orchestrator ✅ (2025-01-21)
   - Use `SendTrigger.HUMAN_APPROVED`
   - Pass draft content via `additional_data`
 - [ ] **3.3.5** Move duplicate prevention to orchestrator (already done in 1.2.4)

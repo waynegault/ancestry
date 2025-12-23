@@ -3449,6 +3449,81 @@ def _update_conv_state(conv_state: "ConversationState", result: _MessageSendResu
     conv_state.effective_conv_id = result.conversation_id
 
 
+# ------------------------------------------------------------------------------
+# Orchestrator Integration (Phase 3)
+# ------------------------------------------------------------------------------
+
+
+def _send_via_orchestrator(
+    session_manager: SessionManager,
+    msg_ctx: "MessageContext",
+    conv_state: "ConversationState",
+    msg_flags: "MessageFlags",
+) -> Optional[_MessageSendResult]:
+    """
+    Send message via unified MessageSendOrchestrator (Phase 3 integration).
+
+    This is a parallel code path that can be enabled via feature flags.
+    When enabled, it replaces the direct API call with orchestrator-based sending.
+
+    Args:
+        session_manager: Active session manager.
+        msg_ctx: Message context with person, text, template key.
+        conv_state: Conversation state with existing conv ID.
+        msg_flags: Flags indicating if message should be sent.
+
+    Returns:
+        _MessageSendResult if orchestrator handled the send, None if orchestrator
+        is disabled and legacy path should be used.
+    """
+    from messaging import (
+        MessageSendOrchestrator,
+        create_action8_context,
+        should_use_orchestrator_for_action8,
+    )
+
+    # Check if orchestrator is enabled for Action 8
+    if not should_use_orchestrator_for_action8():
+        return None  # Use legacy path
+
+    # Skip simulation mode - let legacy path handle it
+    if not msg_flags.send_message_flag:
+        return None
+
+    logger.debug(f"[ORCHESTRATOR] Using unified orchestrator for {msg_ctx.log_prefix}")
+
+    try:
+        # Create orchestrator context
+        context = create_action8_context(
+            person=msg_ctx.person,
+            conversation_logs=[],  # Will be loaded by orchestrator if needed
+            conversation_state=None,  # Will be determined by orchestrator
+            template_key=msg_ctx.message_to_send_key,
+            message_text=msg_ctx.message_text,
+        )
+
+        # Send via orchestrator
+        orchestrator = MessageSendOrchestrator(session_manager)
+        result = orchestrator.send(context)
+
+        if result.success:
+            message_status = "delivered OK"
+            effective_conv_id = result.message_id
+            logger.info(f"[ORCHESTRATOR] Message sent successfully for {msg_ctx.log_prefix}")
+        else:
+            # Orchestrator blocked or failed - treat as skip
+            message_status = f"skipped (orchestrator: {result.error})"
+            effective_conv_id = conv_state.existing_conversation_id or f"blocked_{uuid.uuid4()}"
+            logger.info(f"[ORCHESTRATOR] Message blocked for {msg_ctx.log_prefix}: {result.error}")
+
+        return _MessageSendResult(message_status, effective_conv_id)
+
+    except Exception as e:
+        logger.warning(f"[ORCHESTRATOR] Error using orchestrator for {msg_ctx.log_prefix}: {e}")
+        # Fall back to legacy path on error
+        return None
+
+
 def _send_or_simulate_message(
     session_manager: SessionManager,
     msg_ctx: 'MessageContext',
@@ -3456,6 +3531,12 @@ def _send_or_simulate_message(
     msg_flags: 'MessageFlags',
 ) -> _MessageSendResult:
     """Send or simulate message, return status and conversation ID."""
+    # Try orchestrator first (Phase 3 integration)
+    orchestrator_result = _send_via_orchestrator(session_manager, msg_ctx, conv_state, msg_flags)
+    if orchestrator_result is not None:
+        return orchestrator_result
+
+    # Legacy path: direct API call
     if msg_flags.send_message_flag:
         log_prefix_for_api = f"{msg_ctx.person.username} #{msg_ctx.person.id}"
         api_success, api_result = _safe_api_call_with_validation(

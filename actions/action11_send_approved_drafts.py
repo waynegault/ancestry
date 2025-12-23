@@ -40,6 +40,11 @@ from core.database import (
 )
 from core.feature_flags import is_feature_enabled
 from core.logging_utils import log_final_summary
+from messaging.send_orchestrator import (
+    MessageSendOrchestrator,
+    create_action11_context,
+    should_use_orchestrator_for_action11,
+)
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner, create_test_database
@@ -318,6 +323,59 @@ def _gather_send_context(
     return person, message_text, existing_conv_id, None
 
 
+def _send_via_orchestrator(
+    *,
+    db_session: Session,
+    session_manager: Any,
+    draft: DraftReply,
+    person: Person,
+    message_text: str,
+    existing_conv_id: Optional[str],
+) -> Optional[tuple[str, Optional[str]]]:
+    """
+    Try to send via orchestrator if enabled.
+
+    Returns:
+        ("sent", None): Orchestrator sent successfully
+        ("skipped", reason): Orchestrator blocked send (expected behavior)
+        None: Orchestrator not enabled, caller should use legacy path
+    """
+    if not should_use_orchestrator_for_action11():
+        return None
+
+    try:
+        # Get conversation logs for context
+        conv_logs = (
+            db_session.query(ConversationLog)
+            .filter(ConversationLog.people_id == person.id)
+            .order_by(ConversationLog.latest_timestamp.desc())
+            .limit(10)
+            .all()
+        )
+
+        # Create orchestrator context
+        context = create_action11_context(
+            person=person,
+            conversation_logs=conv_logs,
+            draft_content=message_text,
+            draft_id=draft.id,
+        )
+
+        # Send via orchestrator
+        orchestrator = MessageSendOrchestrator(session_manager)
+        result = orchestrator.send(context)
+
+        if result.success:
+            log_prefix = f"DraftReply #{draft.id} Person #{person.id}"
+            logger.info("%s: ✅ Orchestrator sent draft successfully", log_prefix)
+            return ("sent", None)
+        return ("skipped", result.error or "orchestrator_blocked")
+
+    except Exception as e:
+        logger.error("Orchestrator error for DraftReply #%s, falling back to legacy: %s", draft.id, e)
+        return None  # Fall back to legacy path
+
+
 def _send_single_approved_draft(
     *,
     db_session: Session,
@@ -334,6 +392,19 @@ def _send_single_approved_draft(
     assert person is not None
     assert message_text is not None
 
+    # Try orchestrator first (Phase 3 integration)
+    orchestrator_result = _send_via_orchestrator(
+        db_session=db_session,
+        session_manager=session_manager,
+        draft=draft,
+        person=person,
+        message_text=message_text,
+        existing_conv_id=existing_conv_id,
+    )
+    if orchestrator_result is not None:
+        return orchestrator_result
+
+    # Legacy path: direct API call
     log_prefix = f"DraftReply #{draft.id} Person #{person.id}"
 
     message_status, effective_conv_id = send_fn(

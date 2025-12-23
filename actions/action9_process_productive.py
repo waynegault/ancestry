@@ -77,6 +77,11 @@ from genealogy.fact_validator import (
 from genealogy.tree_query_service import PersonSearchResult, TreeQueryService
 from integrations import ms_graph_utils
 from messaging import build_safe_column_value
+from messaging.send_orchestrator import (
+    MessageSendOrchestrator,
+    create_action9_context,
+    should_use_orchestrator_for_action9,
+)
 from observability.conversation_analytics import record_engagement_event, update_conversation_metrics
 from performance.connection_resilience import with_connection_resilience
 from research.person_lookup_utils import (
@@ -2772,6 +2777,61 @@ class PersonProcessor:
             logger.error(f"{log_prefix}: Message formatting error: {e}. Using fallback.")
             return self._formatting_fallback(person)
 
+    def _send_via_orchestrator(
+        self,
+        person: Person,
+        context_logs: list[ConversationLog],
+        message_text: str,
+        message_type_id: int,
+        custom_reply: Optional[str],
+        latest_message: ConversationLog,
+        log_prefix: str,
+    ) -> Optional[bool]:
+        """
+        Try to send via orchestrator if enabled.
+        
+        Returns:
+            True: Orchestrator sent successfully
+            False: Orchestrator blocked send (expected behavior)
+            None: Orchestrator not enabled, caller should use legacy path
+        """
+        if not should_use_orchestrator_for_action9():
+            return None
+
+        try:
+            # Get conversation ID
+            conv_id = self._get_conversation_id(context_logs, log_prefix)
+            if not conv_id:
+                logger.warning(f"{log_prefix}: No conversation ID for orchestrator")
+                return None  # Fall back to legacy
+
+            # Create orchestrator context
+            context = create_action9_context(
+                person=person,
+                conversation_logs=context_logs,
+                ai_generated_content=message_text,
+                ai_context={
+                    "custom_reply": custom_reply,
+                    "inbound_message": latest_message.message_text if latest_message else None,
+                },
+            )
+
+            # Send via orchestrator
+            orchestrator = MessageSendOrchestrator(self.session_manager)
+            result = orchestrator.send(context)
+
+            if result.success:
+                logger.info(f"{log_prefix}: ✅ Orchestrator sent message successfully")
+                # Still need to update database - handle via orchestrator's database updates
+                # The orchestrator updates ConversationLog and ConversationState
+                return True
+            logger.info(f"{log_prefix}: Orchestrator blocked send: {result.error}")
+            return False
+
+        except Exception as e:
+            logger.error(f"{log_prefix}: Orchestrator error, falling back to legacy: {e}")
+            return None  # Fall back to legacy path
+
     def _send_message(
         self,
         person: Person,
@@ -2783,7 +2843,15 @@ class PersonProcessor:
         log_prefix: str,
     ) -> bool:
         """Send the message and handle database updates."""
+        # Try orchestrator first (Phase 3 integration)
+        orchestrator_result = self._send_via_orchestrator(
+            person, context_logs, message_text, message_type_id,
+            custom_reply, latest_message, log_prefix
+        )
+        if orchestrator_result is not None:
+            return orchestrator_result
 
+        # Legacy path: direct API call
         # Apply mode/recipient filtering
         send_flag, skip_reason = self._should_send_message(person)
 

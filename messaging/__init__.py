@@ -26,6 +26,13 @@ from .send_orchestrator import (
     SendDecision,
     SendResult,
     SendTrigger,
+    create_action8_context,
+    create_action9_context,
+    create_action11_context,
+    create_desist_context,
+    should_use_orchestrator_for_action8,
+    should_use_orchestrator_for_action9,
+    should_use_orchestrator_for_action11,
 )
 from .template_selector import (
     SelectionReason,
@@ -79,6 +86,10 @@ __all__ = [
     "calculate_follow_up_action",
     "cancel_pending_messages_on_status_change",
     "cancel_pending_on_reply",
+    "create_action8_context",
+    "create_action9_context",
+    "create_action11_context",
+    "create_desist_context",
     "detect_status_change_to_in_tree",
     "determine_engagement_tier",
     "determine_next_message_type",
@@ -88,6 +99,9 @@ __all__ = [
     "is_tree_creation_recent",
     "log_conversation_state_change",
     "safe_column_value",
+    "should_use_orchestrator_for_action8",
+    "should_use_orchestrator_for_action9",
+    "should_use_orchestrator_for_action11",
 ]
 
 # -----------------------------------------------------------------------------
@@ -105,4 +119,5 @@ run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(0 if run_comprehensive_tests() else 1)
