@@ -9,6 +9,14 @@ from .message_types import (
     get_message_type_category,
     is_terminal_message_type,
 )
+from .person_eligibility import (
+    EligibilityResult,
+    IneligibilityReason,
+    PersonEligibilityChecker,
+    PersonEligibilityContext,
+    RateLimitConfig,
+    TreeClassification,
+)
 from .send_orchestrator import (
     ContentSource,
     MessageSendContext,
@@ -18,6 +26,13 @@ from .send_orchestrator import (
     SendDecision,
     SendResult,
     SendTrigger,
+)
+from .template_selector import (
+    SelectionReason,
+    TemplateSelectionContext,
+    TemplateSelectionResult,
+    TemplateSelector,
+    TemplateVariant,
 )
 from .workflow_helpers import (
     build_safe_column_value,
@@ -39,14 +54,25 @@ __all__ = [
     "MESSAGE_TRANSITION_TABLE",
     "MESSAGE_TYPES",
     "ContentSource",
+    "EligibilityResult",
     "InboundOrchestrator",
+    "IneligibilityReason",
     "MessageSendContext",
     "MessageSendOrchestrator",
+    "PersonEligibilityChecker",
+    "PersonEligibilityContext",
+    "RateLimitConfig",
     "SafetyCheckResult",
     "SafetyCheckType",
+    "SelectionReason",
     "SendDecision",
     "SendResult",
     "SendTrigger",
+    "TemplateSelectionContext",
+    "TemplateSelectionResult",
+    "TemplateSelector",
+    "TemplateVariant",
+    "TreeClassification",
     "build_safe_column_value",
     "calculate_adaptive_interval",
     "calculate_days_since_login",

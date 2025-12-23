@@ -118,22 +118,22 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 ### Phase 2: Extract Supporting Modules
 
 #### 2.1 Person Eligibility Module
-- [ ] **2.1.1** Create `messaging/person_eligibility.py`
-- [ ] **2.1.2** Extract person filtering logic from Action 8
+- [x] **2.1.1** Create `messaging/person_eligibility.py` ✅ (2025-12-23)
+- [x] **2.1.2** Extract person filtering logic from Action 8 ✅ (2025-12-23)
   - In-tree vs out-tree classification
   - Contact eligibility rules
   - Rate limiting per-person
-- [ ] **2.1.3** Create `PersonEligibilityChecker` class
-- [ ] **2.1.4** Add unit tests for eligibility rules
+- [x] **2.1.3** Create `PersonEligibilityChecker` class ✅ (2025-12-23)
+- [x] **2.1.4** Add unit tests for eligibility rules ✅ (2025-12-23) - 8 tests
 
 #### 2.2 Template Selector Module
-- [ ] **2.2.1** Create `messaging/template_selector.py`
-- [ ] **2.2.2** Extract template selection logic from Action 8
-- [ ] **2.2.3** Create `TemplateSelector` class with methods:
+- [x] **2.2.1** Create `messaging/template_selector.py` ✅ (2025-12-23)
+- [x] **2.2.2** Extract template selection logic from Action 8 ✅ (2025-12-23)
+- [x] **2.2.3** Create `TemplateSelector` class with methods: ✅ (2025-12-23)
   - `select_initial_template(person, context) -> Template`
   - `select_followup_template(person, context) -> Template`
   - `select_final_reminder_template(person, context) -> Template`
-- [ ] **2.2.4** Add unit tests for template selection
+- [x] **2.2.4** Add unit tests for template selection ✅ (2025-12-23) - 8 tests
 
 ---
 
