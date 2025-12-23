@@ -9,6 +9,16 @@ from .message_types import (
     get_message_type_category,
     is_terminal_message_type,
 )
+from .send_orchestrator import (
+    ContentSource,
+    MessageSendContext,
+    MessageSendOrchestrator,
+    SafetyCheckResult,
+    SafetyCheckType,
+    SendDecision,
+    SendResult,
+    SendTrigger,
+)
 from .workflow_helpers import (
     build_safe_column_value,
     calculate_adaptive_interval,
@@ -28,7 +38,15 @@ __all__ = [
     "CORE_REQUIRED_TEMPLATE_KEYS",
     "MESSAGE_TRANSITION_TABLE",
     "MESSAGE_TYPES",
+    "ContentSource",
     "InboundOrchestrator",
+    "MessageSendContext",
+    "MessageSendOrchestrator",
+    "SafetyCheckResult",
+    "SafetyCheckType",
+    "SendDecision",
+    "SendResult",
+    "SendTrigger",
     "build_safe_column_value",
     "calculate_adaptive_interval",
     "calculate_days_since_login",

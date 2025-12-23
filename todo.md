@@ -16,100 +16,100 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 ### Phase 1: Create Message Send Orchestrator Foundation
 
 #### 1.1 Create Core Data Structures
-- [ ] **1.1.1** Create `messaging/send_orchestrator.py` with module docstring and imports
-- [ ] **1.1.2** Define `SendTrigger` enum with values:
+- [x] **1.1.1** Create `messaging/send_orchestrator.py` with module docstring and imports ✅ (2025-12-23)
+- [x] **1.1.2** Define `SendTrigger` enum with values: ✅ (2025-12-23)
   - `AUTOMATED_SEQUENCE` (Action 8 template messages)
   - `REPLY_RECEIVED` (Action 9 custom replies)
   - `OPT_OUT` (DESIST acknowledgements)
   - `HUMAN_APPROVED` (Action 11 draft approvals)
-- [ ] **1.1.3** Define `MessageSendContext` dataclass with fields:
+- [x] **1.1.3** Define `MessageSendContext` dataclass with fields: ✅ (2025-12-23)
   - `person: Person`
   - `send_trigger: SendTrigger`
   - `conversation_logs: list[ConversationLog]`
   - `conversation_state: Optional[ConversationState]`
   - `additional_data: dict[str, Any]` (AI context, draft content, template data)
-- [ ] **1.1.4** Define `SendDecision` dataclass for decision engine output:
+- [x] **1.1.4** Define `SendDecision` dataclass for decision engine output: ✅ (2025-12-23)
   - `should_send: bool`
   - `block_reason: Optional[str]`
   - `message_type: Optional[MessageType]`
   - `content_source: str` (template/ai/draft/desist_ack)
-- [ ] **1.1.5** Define `SendResult` dataclass:
+- [x] **1.1.5** Define `SendResult` dataclass: ✅ (2025-12-23)
   - `success: bool`
   - `message_id: Optional[str]`
   - `error: Optional[str]`
   - `database_updates: list[str]` (audit trail of what was updated)
 
 #### 1.2 Implement Safety Check Layer (Priority 1)
-- [ ] **1.2.1** Create `_check_opt_out_status()` method
+- [x] **1.2.1** Create `_check_opt_out_status()` method ✅ (2025-12-23)
   - Integrate existing detector from [opt_out_detection.py](messaging/opt_out_detection.py) lines 355-375
   - Return `(blocked: bool, reason: str)`
-- [ ] **1.2.2** Create `_check_app_mode_policy()` method
+- [x] **1.2.2** Create `_check_app_mode_policy()` method ✅ (2025-12-23)
   - Integrate existing check from [app_mode_policy.py](config/app_mode_policy.py)
   - Return `(blocked: bool, reason: str)`
-- [ ] **1.2.3** Create `_check_conversation_hard_stops()` method
+- [x] **1.2.3** Create `_check_conversation_hard_stops()` method ✅ (2025-12-23)
   - Check for DESIST, ARCHIVE, BLOCKED states
   - Reference existing logic in [action11_send_approved_drafts.py](actions/action11_send_approved_drafts.py) lines 119-135
   - Return `(blocked: bool, reason: str)`
-- [ ] **1.2.4** Create `_check_duplicate_prevention()` method
+- [x] **1.2.4** Create `_check_duplicate_prevention()` method ✅ (2025-12-23)
   - Centralize logic from [action11_send_approved_drafts.py](actions/action11_send_approved_drafts.py) lines 242-286
   - Check recent sends within configurable window (default 24h)
   - Return `(blocked: bool, reason: str)`
-- [ ] **1.2.5** Create `run_safety_checks()` method that combines all 4 checks
+- [x] **1.2.5** Create `run_safety_checks()` method that combines all 4 checks ✅ (2025-12-23)
   - Short-circuit on first failure
   - Log all check results for audit trail
 
 #### 1.3 Implement Decision Engine (Priority 2)
-- [ ] **1.3.1** Create `determine_message_strategy()` method with priority logic:
+- [x] **1.3.1** Create `determine_message_strategy()` method with priority logic: ✅ (2025-12-23)
   1. **DESIST Acknowledgement** - Person status is DESIST + acknowledgement not sent
   2. **Human-Approved Draft** - Approved draft exists + not yet sent
   3. **Custom Reply** - Recent productive inbound + no custom reply sent
   4. **Generic Sequence** - Default to state machine from [message_types.py](messaging/message_types.py) lines 96-131
-- [ ] **1.3.2** Extract DESIST detection logic from [action8_messaging.py](actions/action8_messaging.py) lines 2284-2301
-- [ ] **1.3.3** Extract draft approval check logic from [action11_send_approved_drafts.py](actions/action11_send_approved_drafts.py) lines 209-213
-- [ ] **1.3.4** Extract custom reply detection from [action9_process_productive.py](actions/action9_process_productive.py) lines 672-730
-- [ ] **1.3.5** Integrate state machine invocation from [message_types.py](messaging/message_types.py)
+- [x] **1.3.2** Extract DESIST detection logic from [action8_messaging.py](actions/action8_messaging.py) lines 2284-2301 ✅ (2025-12-23)
+- [x] **1.3.3** Extract draft approval check logic from [action11_send_approved_drafts.py](actions/action11_send_approved_drafts.py) lines 209-213 ✅ (2025-12-23)
+- [x] **1.3.4** Extract custom reply detection from [action9_process_productive.py](actions/action9_process_productive.py) lines 672-730 ✅ (2025-12-23)
+- [x] **1.3.5** Integrate state machine invocation from [message_types.py](messaging/message_types.py) ✅ (2025-12-23)
 
 #### 1.4 Implement Content Generation Layer
-- [ ] **1.4.1** Create `generate_message_content()` method with branching:
+- [x] **1.4.1** Create `generate_message_content()` method with branching: ✅ (2025-12-23)
   - Template messages → existing template selection logic
   - Custom replies → AI generation pipeline from Action 9
   - DESIST acks → opt-out acknowledgement generator
   - Approved drafts → strip internal metadata, use draft content
-- [ ] **1.4.2** Create `_generate_template_content()` helper
+- [x] **1.4.2** Create `_generate_template_content()` helper ✅ (2025-12-23)
   - Reference existing template selection in Action 8
-- [ ] **1.4.3** Create `_generate_ai_reply_content()` helper
+- [x] **1.4.3** Create `_generate_ai_reply_content()` helper ✅ (2025-12-23)
   - Reference AI generation in [action9_process_productive.py](actions/action9_process_productive.py) lines 2796-2805
-- [ ] **1.4.4** Create `_generate_desist_acknowledgement()` helper
+- [x] **1.4.4** Create `_generate_desist_acknowledgement()` helper ✅ (2025-12-23)
   - Reference [opt_out_detection.py](messaging/opt_out_detection.py) lines 444-462
-- [ ] **1.4.5** Create `_extract_approved_draft_content()` helper
+- [x] **1.4.5** Create `_extract_approved_draft_content()` helper ✅ (2025-12-23)
   - Strip internal metadata and formatting
 
 #### 1.5 Implement Send Execution
-- [ ] **1.5.1** Create `execute_send()` method:
+- [x] **1.5.1** Create `execute_send()` method: ✅ (2025-12-23)
   - Final validation (re-run safety checks)
   - Call canonical `call_send_message_api()` from [api_utils.py](api/api_utils.py) line 188
   - Handle API response and errors
-- [ ] **1.5.2** Create `_update_database_records()` helper:
+- [x] **1.5.2** Create `_update_database_records()` helper: ✅ (2025-12-23)
   - Update ConversationLog (new outbound entry)
   - Update ConversationState (advance state machine)
   - Update Person status (if applicable)
   - Update Draft status (mark as sent for Action 11)
-- [ ] **1.5.3** Create `_record_engagement_event()` helper:
+- [x] **1.5.3** Create `_record_engagement_event()` helper: ✅ (2025-12-23)
   - Log to engagement_events table
   - Record metrics for observability
-- [ ] **1.5.4** Create `_log_audit_trail()` helper:
+- [x] **1.5.4** Create `_log_audit_trail()` helper: ✅ (2025-12-23)
   - Log decision path, content source, database updates
   - Include all safety check results
 
 #### 1.6 Main Orchestrator Entry Point
-- [ ] **1.6.1** Create `MessageSendOrchestrator` class with constructor:
+- [x] **1.6.1** Create `MessageSendOrchestrator` class with constructor: ✅ (2025-12-23)
   - Accept `session_manager: SessionManager`
   - Initialize logger, metrics collector
-- [ ] **1.6.2** Create `send()` method as main entry point:
+- [x] **1.6.2** Create `send()` method as main entry point: ✅ (2025-12-23)
   - Accept `context: MessageSendContext`
   - Orchestrate: safety checks → decision → content generation → execute
   - Return `SendResult`
-- [ ] **1.6.3** Add feature flag check at entry point
+- [x] **1.6.3** Add feature flag check at entry point ✅ (2025-12-23)
   - `ENABLE_UNIFIED_SEND_ORCHESTRATOR` in `.env`
   - Default to `False` during rollout
 

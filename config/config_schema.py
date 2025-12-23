@@ -890,6 +890,13 @@ class ConfigSchema:
     dry_run_verified: bool = False  # Must be set true after a successful dry-run before production sends
     per_recipient_backoff_seconds: int = 0  # Extra per-recipient throttle layered on top of MIN_MESSAGE_INTERVAL
 
+    # Unified Message Send Orchestrator settings (Phase 1: Message Consolidation)
+    enable_unified_send_orchestrator: bool = False  # Master switch for unified send orchestrator
+    orchestrator_action8: bool = False  # Enable orchestrator for Action 8 (generic sequences)
+    orchestrator_action9: bool = False  # Enable orchestrator for Action 9 (custom replies)
+    orchestrator_action11: bool = False  # Enable orchestrator for Action 11 (approved drafts)
+    duplicate_prevention_hours: int = 24  # Hours to check for duplicate message prevention
+
     # Phase 7.2 Gradual Rollout
     auto_approve_min_reviewed: int = 100  # Minimum human-reviewed drafts before auto-approval is enabled
     auto_approve_min_acceptance_rate: float = 95.0  # Minimum acceptance rate (%) required for auto-approval
