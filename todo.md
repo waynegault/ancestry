@@ -182,20 +182,20 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 ### Phase 4: Testing Strategy
 
 #### 4.1 Unit Tests for Orchestrator
-- [ ] **4.1.1** Create `messaging/test_send_orchestrator.py`
-- [ ] **4.1.2** Test safety check combinations:
+- [x] **4.1.1** Create `tests/test_send_orchestrator.py` ✅ (2025-01-21)
+- [x] **4.1.2** Test safety check combinations: ✅ (2025-01-21)
   - All checks pass → should_send=True
   - Opt-out → should_send=False
   - App mode policy blocks → should_send=False
   - Conversation hard stop → should_send=False
   - Duplicate prevention → should_send=False
-- [ ] **4.1.3** Test decision engine priority:
+- [x] **4.1.3** Test decision engine priority: ✅ (2025-01-21)
   - DESIST takes precedence over approved draft
   - Approved draft takes precedence over custom reply
   - Custom reply takes precedence over generic sequence
-- [ ] **4.1.4** Test content generation for each path
+- [x] **4.1.4** Test content generation for each path ✅ (2025-01-21)
 - [ ] **4.1.5** Test database update consistency
-- [ ] **4.1.6** Test error handling and rollback
+- [x] **4.1.6** Test error handling and rollback ✅ (2025-01-21)
 
 #### 4.2 Integration Tests
 - [ ] **4.2.1** Create `tests/test_send_integration.py`
