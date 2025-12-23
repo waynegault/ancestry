@@ -330,7 +330,7 @@ def _send_via_orchestrator(
     draft: DraftReply,
     person: Person,
     message_text: str,
-    existing_conv_id: Optional[str],
+    _existing_conv_id: Optional[str],  # Reserved for future use
 ) -> Optional[tuple[str, Optional[str]]]:
     """
     Try to send via orchestrator if enabled.
@@ -399,7 +399,7 @@ def _send_single_approved_draft(
         draft=draft,
         person=person,
         message_text=message_text,
-        existing_conv_id=existing_conv_id,
+        _existing_conv_id=existing_conv_id,
     )
     if orchestrator_result is not None:
         return orchestrator_result

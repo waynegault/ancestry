@@ -16,11 +16,15 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING, Any, Optional, cast
+from unittest.mock import MagicMock
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
+
+if TYPE_CHECKING:
+    from core.database import Person
+    from core.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +117,9 @@ class MockDbSession:
         """Mock rollback."""
         self._committed = False
 
-    def query(self, model: Any) -> MagicMock:
-        """Mock query."""
+    def query(self, _model: Any) -> MagicMock:
+        """Mock query - model parameter required for interface compatibility."""
+        _ = self  # Keep self for interface compatibility
         mock = MagicMock()
         mock.filter.return_value = mock
         mock.filter_by.return_value = mock
@@ -161,6 +166,16 @@ class MockSessionManager:
         return ContextManager(self._db_session)
 
 
+def _get_mock_person(**kwargs: Any) -> Person:
+    """Create a mock Person with proper type cast for testing."""
+    return cast("Person", MockPerson(**kwargs))
+
+
+def _get_mock_session_manager() -> SessionManager:
+    """Create a mock SessionManager with proper type cast for testing."""
+    return cast("SessionManager", MockSessionManager())
+
+
 # =============================================================================
 # Integration Test Functions
 # =============================================================================
@@ -170,18 +185,17 @@ def _test_full_flow_automated_sequence() -> None:
     """Test full flow for AUTOMATED_SEQUENCE trigger."""
     from core.database import PersonStatusEnum
     from messaging.send_orchestrator import (
-        MessageSendContext,
         MessageSendOrchestrator,
         SendTrigger,
         create_action8_context,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
-    session_manager = MockSessionManager()
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
+    session_manager = _get_mock_session_manager()
 
     # Create context using helper
     context = create_action8_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
         template_key="Out_Tree-Initial",
         message_text="Hello, I noticed we're DNA matches...",
@@ -192,7 +206,7 @@ def _test_full_flow_automated_sequence() -> None:
     assert context.additional_data.get("template_key") == "Out_Tree-Initial"
 
     # Test orchestrator (disabled by default)
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    orchestrator = MessageSendOrchestrator(session_manager)
     result = orchestrator.send(context)
 
     # Should return disabled message since feature flag is off
@@ -204,14 +218,13 @@ def _test_full_flow_reply_received() -> None:
     """Test full flow for REPLY_RECEIVED trigger (Action 9)."""
     from core.database import PersonStatusEnum
     from messaging.send_orchestrator import (
-        MessageSendContext,
         MessageSendOrchestrator,
         SendTrigger,
         create_action9_context,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
-    session_manager = MockSessionManager()
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
+    session_manager = _get_mock_session_manager()
 
     # Create inbound message log
     inbound_log = MockConversationLog(
@@ -222,8 +235,8 @@ def _test_full_flow_reply_received() -> None:
 
     # Create context using helper
     context = create_action9_context(
-        person=person,  # type: ignore[arg-type]
-        conversation_logs=[inbound_log],  # type: ignore[list-item]
+        person=person,
+        conversation_logs=cast(list[Any], [inbound_log]),
         ai_generated_content="Thank you for reaching out! Let me share...",
         ai_context={"confidence": 0.92, "model": "gemini-1.5-flash"},
     )
@@ -233,7 +246,7 @@ def _test_full_flow_reply_received() -> None:
     assert "ai_generated_content" in context.additional_data
 
     # Test orchestrator
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    orchestrator = MessageSendOrchestrator(session_manager)
     result = orchestrator.send(context)
 
     assert result.success is False
@@ -244,14 +257,13 @@ def _test_full_flow_opt_out() -> None:
     """Test full flow for OPT_OUT trigger (DESIST acknowledgement)."""
     from core.database import PersonStatusEnum
     from messaging.send_orchestrator import (
-        MessageSendContext,
         MessageSendOrchestrator,
         SendTrigger,
         create_desist_context,
     )
 
-    person = MockPerson(status=PersonStatusEnum.DESIST)
-    session_manager = MockSessionManager()
+    person = _get_mock_person(status=PersonStatusEnum.DESIST)
+    session_manager = _get_mock_session_manager()
 
     # Create inbound opt-out message
     inbound_log = MockConversationLog(
@@ -262,15 +274,15 @@ def _test_full_flow_opt_out() -> None:
 
     # Create context using helper
     context = create_desist_context(
-        person=person,  # type: ignore[arg-type]
-        conversation_logs=[inbound_log],  # type: ignore[list-item]
+        person=person,
+        conversation_logs=cast(list[Any], [inbound_log]),
     )
 
     # Verify context configuration
     assert context.send_trigger == SendTrigger.OPT_OUT
 
     # Test orchestrator
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    orchestrator = MessageSendOrchestrator(session_manager)
     result = orchestrator.send(context)
 
     # Feature flag disabled
@@ -281,18 +293,17 @@ def _test_full_flow_human_approved() -> None:
     """Test full flow for HUMAN_APPROVED trigger (Action 11)."""
     from core.database import PersonStatusEnum
     from messaging.send_orchestrator import (
-        MessageSendContext,
         MessageSendOrchestrator,
         SendTrigger,
         create_action11_context,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
-    session_manager = MockSessionManager()
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
+    session_manager = _get_mock_session_manager()
 
     # Create context using helper
     context = create_action11_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
         draft_content="This is my carefully reviewed and approved message.",
         draft_id=42,
@@ -304,7 +315,7 @@ def _test_full_flow_human_approved() -> None:
     assert context.additional_data.get("draft_id") == 42
 
     # Test orchestrator
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    orchestrator = MessageSendOrchestrator(session_manager)
     result = orchestrator.send(context)
 
     assert result.success is False
@@ -315,7 +326,6 @@ def _test_mixed_scenario_approved_draft_plus_desist() -> None:
     """Test priority when person has approved draft but is DESIST status."""
     from core.database import PersonStatusEnum
     from messaging.send_orchestrator import (
-        ContentSource,
         MessageSendContext,
         MessageSendOrchestrator,
         SafetyCheckType,
@@ -323,13 +333,13 @@ def _test_mixed_scenario_approved_draft_plus_desist() -> None:
     )
 
     # Person has DESIST status but we're trying to send approved draft
-    person = MockPerson(status=PersonStatusEnum.DESIST)
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.DESIST)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     # Create context for approved draft
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.HUMAN_APPROVED,
         additional_data={"draft_content": "Approved message", "draft_id": 1},
     )
@@ -356,12 +366,12 @@ def _test_mixed_scenario_conversation_blocked() -> None:
 
     # Person is ACTIVE but conversation state has safety flag
     conv_state = MockConversationState(safety_flag=True)
-    person = MockPerson(status=PersonStatusEnum.ACTIVE, conversation_state=conv_state)
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE, conversation_state=conv_state)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -381,12 +391,12 @@ def _test_database_consistency_objects_added() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -407,7 +417,7 @@ def _test_conversation_logs_passed_correctly() -> None:
         SendTrigger,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
 
     # Create multiple conversation logs
     logs = [
@@ -417,9 +427,9 @@ def _test_conversation_logs_passed_correctly() -> None:
     ]
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.REPLY_RECEIVED,
-        conversation_logs=logs,  # type: ignore[list-item]
+        conversation_logs=cast(list[Any], logs),
     )
 
     assert len(context.conversation_logs) == 3
@@ -437,12 +447,12 @@ def _test_decision_records_block_reason() -> None:
     )
 
     # DESIST person attempting automated sequence (not DESIST ack)
-    person = MockPerson(status=PersonStatusEnum.DESIST)
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.DESIST)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 

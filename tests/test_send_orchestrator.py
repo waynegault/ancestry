@@ -16,13 +16,17 @@ from __future__ import annotations
 
 import logging
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING, Any, Optional, cast
+from unittest.mock import MagicMock
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
+
+if TYPE_CHECKING:
+    from core.database import Person
+    from core.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +59,7 @@ class MockConversationLog:
     conversation_id: str = "conv_123"
     people_id: int = 1
     direction: str = "OUT"
-    latest_timestamp: datetime = datetime.now(timezone.utc)
+    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     message_text: str = "Test message"
     message_template_id: Optional[int] = None
 
@@ -73,20 +77,31 @@ class MockConversationState:
     safety_flag: bool = False
 
 
-@dataclass
 class MockSessionManager:
     """Mock SessionManager for testing."""
 
-    def get_db_conn(self) -> MagicMock:
+    @staticmethod
+    def get_db_conn() -> MagicMock:
         """Return a mock database session."""
         return MagicMock()
 
-    def get_db_conn_context(self) -> MagicMock:
+    @staticmethod
+    def get_db_conn_context() -> MagicMock:
         """Return a mock context manager for database session."""
         mock = MagicMock()
         mock.__enter__ = MagicMock(return_value=MagicMock())
         mock.__exit__ = MagicMock(return_value=False)
         return mock
+
+
+def _get_mock_person(**kwargs: Any) -> Person:
+    """Create a mock Person with proper type cast for testing."""
+    return cast("Person", MockPerson(**kwargs))
+
+
+def _get_mock_session_manager() -> SessionManager:
+    """Create a mock SessionManager with proper type cast for testing."""
+    return cast("SessionManager", MockSessionManager())
 
 
 # =============================================================================
@@ -104,13 +119,12 @@ def _test_safety_check_opt_out_blocks() -> None:
         SendTrigger,
     )
 
-    person = MockPerson(status=PersonStatusEnum.DESIST)
-
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.DESIST)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -133,13 +147,12 @@ def _test_safety_check_all_pass() -> None:
         SendTrigger,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
-
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -161,13 +174,13 @@ def _test_decision_engine_desist_priority() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     # Create context with OPT_OUT trigger
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.OPT_OUT,
     )
 
@@ -187,13 +200,13 @@ def _test_decision_engine_human_approved() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     # Create context with HUMAN_APPROVED trigger
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.HUMAN_APPROVED,
         additional_data={"template_key": "Custom_Draft", "draft_content": "Hello!"},
     )
@@ -213,12 +226,12 @@ def _test_decision_engine_reply_received() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.REPLY_RECEIVED,
         additional_data={"ai_generated_content": "AI response here"},
     )
@@ -238,16 +251,16 @@ def _test_decision_engine_automated_sequence() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
-    message_type, content_source = orchestrator._determine_message_strategy(context)
+    _message_type, content_source = orchestrator._determine_message_strategy(context)
 
     # State machine should return a message type for first message
     assert content_source == ContentSource.TEMPLATE, "Content source should be TEMPLATE"
@@ -256,26 +269,19 @@ def _test_decision_engine_automated_sequence() -> None:
 def _test_content_generation_approved_draft() -> None:
     """Test content extraction from approved draft."""
     from messaging.send_orchestrator import (
-        ContentSource,
         MessageSendContext,
         MessageSendOrchestrator,
-        SendDecision,
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.HUMAN_APPROVED,
         additional_data={"draft_content": "This is my approved draft message."},
-    )
-
-    decision = SendDecision(
-        should_send=True,
-        content_source=ContentSource.APPROVED_DRAFT,
     )
 
     content = orchestrator._extract_approved_draft_content(context)
@@ -286,20 +292,18 @@ def _test_content_generation_approved_draft() -> None:
 def _test_content_generation_ai_reply() -> None:
     """Test AI reply content extraction."""
     from messaging.send_orchestrator import (
-        ContentSource,
         MessageSendContext,
         MessageSendOrchestrator,
-        SendDecision,
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     # The orchestrator looks for 'ai_response' or 'message_content', not 'ai_generated_content'
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.REPLY_RECEIVED,
         additional_data={"ai_response": "AI generated response."},
     )
@@ -313,10 +317,10 @@ def _test_context_creation_action8() -> None:
     """Test Action 8 context creation helper."""
     from messaging.send_orchestrator import SendTrigger, create_action8_context
 
-    person = MockPerson()
+    person = _get_mock_person()
 
     context = create_action8_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
         template_key="Out_Tree-Initial",
         message_text="Hello, I'm reaching out...",
@@ -331,10 +335,10 @@ def _test_context_creation_action9() -> None:
     """Test Action 9 context creation helper."""
     from messaging.send_orchestrator import SendTrigger, create_action9_context
 
-    person = MockPerson()
+    person = _get_mock_person()
 
     context = create_action9_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
         ai_generated_content="AI response",
         ai_context={"confidence": 0.95},
@@ -349,10 +353,10 @@ def _test_context_creation_action11() -> None:
     """Test Action 11 context creation helper."""
     from messaging.send_orchestrator import SendTrigger, create_action11_context
 
-    person = MockPerson()
+    person = _get_mock_person()
 
     context = create_action11_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
         draft_content="Approved draft content",
         draft_id=42,
@@ -367,10 +371,10 @@ def _test_context_creation_desist() -> None:
     """Test DESIST context creation helper."""
     from messaging.send_orchestrator import SendTrigger, create_desist_context
 
-    person = MockPerson()
+    person = _get_mock_person()
 
     context = create_desist_context(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         conversation_logs=[],
     )
 
@@ -400,12 +404,12 @@ def _test_orchestrator_disabled_returns_early() -> None:
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -428,13 +432,12 @@ def _test_safety_check_conversation_hard_stop() -> None:
 
     # Create person with conversation state in hard stop
     conv_state = MockConversationState(status="DESIST")
-    person = MockPerson(status=PersonStatusEnum.ACTIVE, conversation_state=conv_state)
-
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE, conversation_state=conv_state)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 
@@ -461,14 +464,14 @@ def _test_duplicate_prevention_recent_send() -> None:
         latest_timestamp=recent_time,
     )
 
-    person = MockPerson(status=PersonStatusEnum.ACTIVE)
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person(status=PersonStatusEnum.ACTIVE)
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
-        conversation_logs=[recent_log],  # type: ignore[list-item]
+        conversation_logs=cast(list[Any], [recent_log]),
     )
 
     result = orchestrator._check_duplicate_prevention(context)
@@ -479,19 +482,18 @@ def _test_duplicate_prevention_recent_send() -> None:
 
 def _test_error_handling_in_send() -> None:
     """Test error handling when send fails."""
-    from config import config_schema
     from messaging.send_orchestrator import (
         MessageSendContext,
         MessageSendOrchestrator,
         SendTrigger,
     )
 
-    person = MockPerson()
-    session_manager = MockSessionManager()
-    orchestrator = MessageSendOrchestrator(session_manager)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    session_manager = _get_mock_session_manager()
+    orchestrator = MessageSendOrchestrator(session_manager)
 
     context = MessageSendContext(
-        person=person,  # type: ignore[arg-type]
+        person=person,
         send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
     )
 

@@ -2782,7 +2782,7 @@ class PersonProcessor:
         person: Person,
         context_logs: list[ConversationLog],
         message_text: str,
-        message_type_id: int,
+        _message_type_id: int,  # Reserved for future use
         custom_reply: Optional[str],
         latest_message: ConversationLog,
         log_prefix: str,

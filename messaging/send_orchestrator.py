@@ -1200,7 +1200,7 @@ def _module_tests() -> bool:
 
         mock_person = SimpleNamespace(id=1, status=None)
         ctx = MessageSendContext(
-            person=mock_person,  # type: ignore[arg-type]
+            person=cast("Person", mock_person),
             send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
         )
         assert ctx.person.id == 1, "Person ID should be 1"

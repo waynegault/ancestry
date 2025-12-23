@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from testing.test_framework import TestSuite
 
@@ -113,14 +113,16 @@ class TemplateSelector:
     """
 
     # Distant relationship patterns
-    DISTANT_RELATIONSHIP_PATTERNS = frozenset([
-        "4th cousin",
-        "5th cousin",
-        "6th cousin",
-        "distant cousin",
-        "half",
-        "removed",
-    ])
+    DISTANT_RELATIONSHIP_PATTERNS = frozenset(
+        [
+            "4th cousin",
+            "5th cousin",
+            "6th cousin",
+            "distant cousin",
+            "half",
+            "removed",
+        ]
+    )
 
     def __init__(self, templates: dict[str, str]) -> None:
         """Initialize with available templates."""
@@ -151,31 +153,25 @@ class TemplateSelector:
             TemplateSelectionResult with selected template key and metadata
         """
         ctx = context or TemplateSelectionContext()
+        ctx = self._prepare_context(ctx, person)
 
-        # Get person_id for A/B testing
-        if person and ctx.person_id is None:
-            ctx.person_id = getattr(person, "id", None)
+        # Try each selection strategy in priority order
+        result = self._try_ab_test(base_template_key, ctx)
+        if result:
+            return result
 
-        # 1. A/B testing takes priority if enabled
-        if ctx.enable_ab_testing and ctx.person_id:
-            return self._select_ab_test_variant(base_template_key, ctx.person_id)
+        result = self._try_distant_variant(base_template_key, ctx)
+        if result:
+            return result
 
-        # 2. Check for distant relationship
-        if ctx.family_tree:
-            is_distant = self._is_distant_relationship(ctx.family_tree)
-            if is_distant:
-                return self._select_distant_variant(base_template_key)
+        result = self._try_confidence_variant(base_template_key, ctx)
+        if result:
+            return result
 
-        # 3. Confidence-based selection
-        confidence_score = self._calculate_confidence_score(ctx)
-        if confidence_score > 0:
-            return self._select_by_confidence(base_template_key, confidence_score)
-
-        # 4. Short variant if preferred
         if ctx.prefer_short:
-            short_result = self._try_short_variant(base_template_key)
-            if short_result:
-                return short_result
+            result = self._try_short_variant(base_template_key)
+            if result:
+                return result
 
         # 5. Fallback to base template
         return TemplateSelectionResult(
@@ -216,6 +212,47 @@ class TemplateSelector:
         in_tree = getattr(person, "in_my_tree", False)
         base_key = "In_Tree-Final_Reminder" if in_tree else "Out_Tree-Final_Reminder"
         return self.select_template(base_key, person, ctx)
+
+    @staticmethod
+    def _prepare_context(
+        ctx: TemplateSelectionContext,
+        person: Optional[Person],
+    ) -> TemplateSelectionContext:
+        """Prepare context with person_id if available."""
+        if person and ctx.person_id is None:
+            ctx.person_id = getattr(person, "id", None)
+        return ctx
+
+    def _try_ab_test(
+        self,
+        base_template_key: str,
+        ctx: TemplateSelectionContext,
+    ) -> Optional[TemplateSelectionResult]:
+        """Try A/B test selection if enabled."""
+        if ctx.enable_ab_testing and ctx.person_id:
+            return self._select_ab_test_variant(base_template_key, ctx.person_id)
+        return None
+
+    def _try_distant_variant(
+        self,
+        base_template_key: str,
+        ctx: TemplateSelectionContext,
+    ) -> Optional[TemplateSelectionResult]:
+        """Try distant relationship variant if applicable."""
+        if ctx.family_tree and self._is_distant_relationship(ctx.family_tree):
+            return self._select_distant_variant(base_template_key)
+        return None
+
+    def _try_confidence_variant(
+        self,
+        base_template_key: str,
+        ctx: TemplateSelectionContext,
+    ) -> Optional[TemplateSelectionResult]:
+        """Try confidence-based variant if score > 0."""
+        confidence_score = self._calculate_confidence_score(ctx)
+        if confidence_score > 0:
+            return self._select_by_confidence(base_template_key, confidence_score)
+        return None
 
     def _select_ab_test_variant(
         self,
@@ -342,31 +379,44 @@ class TemplateSelector:
         actual_rel_lower = actual_rel.lower()
         return any(pattern in actual_rel_lower for pattern in self.DISTANT_RELATIONSHIP_PATTERNS)
 
-    def _calculate_confidence_score(self, context: TemplateSelectionContext) -> int:  # noqa: PLR6301
+    def _calculate_confidence_score(self, context: TemplateSelectionContext) -> int:
         """Calculate confidence score from context."""
         score = 0
+        score += self._family_tree_confidence(context.family_tree)
+        score += self._dna_match_confidence(context.dna_match)
+        return score
 
-        # Family tree confidence
-        if context.family_tree:
-            actual_rel = getattr(context.family_tree, "actual_relationship", None)
-            if actual_rel and actual_rel != "N/A" and actual_rel.strip():
-                score += 2
+    @staticmethod
+    def _family_tree_confidence(family_tree: Optional[FamilyTree]) -> int:
+        """Calculate confidence from family tree data."""
+        if not family_tree:
+            return 0
 
-            common_ancestor = getattr(context.family_tree, "common_ancestor", None)
-            if common_ancestor and common_ancestor.strip():
-                score += 1
+        score = 0
+        actual_rel = getattr(family_tree, "actual_relationship", None)
+        if actual_rel and actual_rel != "N/A" and actual_rel.strip():
+            score += 2
 
-            person_name = getattr(context.family_tree, "person_name_in_tree", None)
-            if person_name and person_name.strip():
-                score += 1
+        common_ancestor = getattr(family_tree, "common_ancestor", None)
+        if common_ancestor and common_ancestor.strip():
+            score += 1
 
-        # DNA match confidence
-        if context.dna_match:
-            predicted_rel = getattr(context.dna_match, "predicted_relationship", None)
-            if predicted_rel and predicted_rel != "N/A" and predicted_rel.strip():
-                score += 1
+        person_name = getattr(family_tree, "person_name_in_tree", None)
+        if person_name and person_name.strip():
+            score += 1
 
         return score
+
+    @staticmethod
+    def _dna_match_confidence(dna_match: Optional[DnaMatch]) -> int:
+        """Calculate confidence from DNA match data."""
+        if not dna_match:
+            return 0
+
+        predicted_rel = getattr(dna_match, "predicted_relationship", None)
+        if predicted_rel and predicted_rel != "N/A" and predicted_rel.strip():
+            return 1
+        return 0
 
 
 # ============================================================
@@ -403,6 +453,14 @@ def module_tests() -> bool:
         actual_relationship: str = "2nd cousin"
         common_ancestor: str = "John Smith"
         person_name_in_tree: str = "Jane Doe"
+
+    def _get_mock_person(**kwargs: Any) -> Person:
+        """Create a mock Person with proper type cast."""
+        return cast("Person", MockPerson(**kwargs))
+
+    def _get_mock_family_tree(**kwargs: Any) -> FamilyTree:
+        """Create a mock FamilyTree with proper type cast."""
+        return cast("FamilyTree", MockFamilyTree(**kwargs))
 
     # Test 1: TemplateVariant enum
     def test_variant_enum() -> None:
@@ -468,7 +526,7 @@ def module_tests() -> bool:
 
     # Test 6: Confidence-based selection
     ctx_high = TemplateSelectionContext(
-        family_tree=MockFamilyTree(),  # type: ignore[arg-type]
+        family_tree=_get_mock_family_tree(),
     )
     result_high = selector.select_template("Out_Tree-Initial", context=ctx_high)
 
@@ -483,8 +541,8 @@ def module_tests() -> bool:
     )
 
     # Test 7: Select initial template for out-tree person
-    person = MockPerson(in_my_tree=False)
-    initial_result = selector.select_initial_template(person)  # type: ignore[arg-type]
+    person = _get_mock_person(in_my_tree=False)
+    initial_result = selector.select_initial_template(person)
 
     def test_initial_template() -> None:
         assert "Out_Tree-Initial" in initial_result.template_key
@@ -496,8 +554,8 @@ def module_tests() -> bool:
     )
 
     # Test 8: Select initial template for in-tree person
-    in_tree_person = MockPerson(in_my_tree=True)
-    in_tree_result = selector.select_initial_template(in_tree_person)  # type: ignore[arg-type]
+    in_tree_person = _get_mock_person(in_my_tree=True)
+    in_tree_result = selector.select_initial_template(in_tree_person)
 
     def test_in_tree_initial() -> None:
         assert in_tree_result.template_key == "In_Tree-Initial"

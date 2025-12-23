@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from testing.test_framework import TestSuite
 
@@ -253,7 +253,11 @@ class PersonEligibilityChecker:
             if person_id:
                 can_send: bool
                 reason: str
-                can_send, reason = detector.validate_can_send(person_id)  # type: ignore[attr-defined]
+                validate_fn = getattr(detector, "validate_can_send", None)
+                if validate_fn:
+                    can_send, reason = validate_fn(person_id)
+                else:
+                    can_send, reason = True, ""
                 if not can_send:
                     return EligibilityResult(
                         is_eligible=False,
@@ -263,7 +267,8 @@ class PersonEligibilityChecker:
 
             # Check latest inbound message for opt-out signals
             if context.latest_inbound_message:
-                analysis = detector.analyze_message(context.latest_inbound_message)  # type: ignore[attr-defined]
+                analyze_fn = getattr(detector, "analyze_message", None)
+                analysis: Any = analyze_fn(context.latest_inbound_message) if analyze_fn else None
                 is_opt_out: bool = getattr(analysis, "is_opt_out", False)
                 if is_opt_out:
                     confidence: float = getattr(analysis, "confidence", 0.0)
@@ -281,7 +286,7 @@ class PersonEligibilityChecker:
 
         return EligibilityResult(is_eligible=True)
 
-    def _check_rate_limit(  # noqa: PLR6301
+    def _check_rate_limit(
         self,
         _person: Person,  # Reserved for future per-person rate tracking
         context: PersonEligibilityContext,
@@ -291,16 +296,37 @@ class PersonEligibilityChecker:
         logs = context.conversation_logs
 
         if not logs:
-            # No conversation history - not rate limited
             return EligibilityResult(is_eligible=True)
 
         now = datetime.now()
-        window_start = now - timedelta(hours=config.window_hours)
-        cooldown_threshold = now - timedelta(hours=config.cooldown_hours)
+        outbound_count, most_recent = self._count_outbound_messages(logs, now - timedelta(hours=config.window_hours))
 
-        # Count outbound messages in window
-        outbound_in_window = 0
-        most_recent_outbound: Optional[datetime] = None
+        # Check cooldown
+        cooldown_result = self._check_cooldown(now, most_recent, config)
+        if cooldown_result:
+            return cooldown_result
+
+        # Check max messages in window
+        if outbound_count >= config.max_messages_per_window:
+            return EligibilityResult(
+                is_eligible=False,
+                reason=IneligibilityReason.RATE_LIMITED,
+                reason_detail=(
+                    f"Already sent {outbound_count} messages in last "
+                    f"{config.window_hours}h (max: {config.max_messages_per_window})"
+                ),
+            )
+
+        return EligibilityResult(is_eligible=True)
+
+    @staticmethod
+    def _count_outbound_messages(
+        logs: list[ConversationLog],
+        window_start: datetime,
+    ) -> tuple[int, Optional[datetime]]:
+        """Count outbound messages and find most recent."""
+        outbound_count = 0
+        most_recent: Optional[datetime] = None
 
         for log in logs:
             log_direction = getattr(log, "direction", None)
@@ -308,31 +334,31 @@ class PersonEligibilityChecker:
 
             if log_direction == "outbound" and log_timestamp:
                 if log_timestamp > window_start:
-                    outbound_in_window += 1
-                if most_recent_outbound is None or log_timestamp > most_recent_outbound:
-                    most_recent_outbound = log_timestamp
+                    outbound_count += 1
+                if most_recent is None or log_timestamp > most_recent:
+                    most_recent = log_timestamp
 
-        # Check cooldown
-        if most_recent_outbound and most_recent_outbound > cooldown_threshold:
-            hours_since = (now - most_recent_outbound).total_seconds() / 3600
+        return outbound_count, most_recent
+
+    @staticmethod
+    def _check_cooldown(
+        now: datetime,
+        most_recent: Optional[datetime],
+        config: RateLimitConfig,
+    ) -> Optional[EligibilityResult]:
+        """Check if cooldown period has passed."""
+        if not most_recent:
+            return None
+
+        cooldown_threshold = now - timedelta(hours=config.cooldown_hours)
+        if most_recent > cooldown_threshold:
+            hours_since = (now - most_recent).total_seconds() / 3600
             return EligibilityResult(
                 is_eligible=False,
                 reason=IneligibilityReason.RATE_LIMITED,
                 reason_detail=f"Last message sent {hours_since:.1f}h ago (cooldown: {config.cooldown_hours}h)",
             )
-
-        # Check max messages in window
-        if outbound_in_window >= config.max_messages_per_window:
-            return EligibilityResult(
-                is_eligible=False,
-                reason=IneligibilityReason.RATE_LIMITED,
-                reason_detail=(
-                    f"Already sent {outbound_in_window} messages in last "
-                    f"{config.window_hours}h (max: {config.max_messages_per_window})"
-                ),
-            )
-
-        return EligibilityResult(is_eligible=True)
+        return None
 
     def _classify_tree_status(self, person: Person) -> TreeClassification:
         """Classify person's relationship to the family tree."""
@@ -390,6 +416,10 @@ def module_tests() -> bool:
         in_my_tree: bool = False
         family_tree: Optional[object] = None
 
+    def _get_mock_person(**kwargs: Any) -> Person:
+        """Create a mock Person with proper type cast."""
+        return cast("Person", MockPerson(**kwargs))
+
     # Test 1: IneligibilityReason enum
     def test_ineligibility_enum() -> None:
         assert len(IneligibilityReason) == 9
@@ -424,8 +454,8 @@ def module_tests() -> bool:
 
     # Test 4: Checker with eligible person
     checker = PersonEligibilityChecker()
-    person = MockPerson()
-    eligibility = checker.check_eligibility(person)  # type: ignore[arg-type]
+    person = _get_mock_person()
+    eligibility = checker.check_eligibility(person)
 
     def test_eligible_person() -> None:
         assert eligibility.is_eligible
@@ -437,8 +467,8 @@ def module_tests() -> bool:
     )
 
     # Test 5: Checker with blocked status
-    blocked_person = MockPerson(status="BLOCKED")
-    blocked_result = checker.check_eligibility(blocked_person)  # type: ignore[arg-type]
+    blocked_person = _get_mock_person(status="BLOCKED")
+    blocked_result = checker.check_eligibility(blocked_person)
 
     def test_blocked_person() -> None:
         assert not blocked_result.is_eligible and blocked_result.reason == IneligibilityReason.STATUS_BLOCKED
@@ -450,8 +480,8 @@ def module_tests() -> bool:
     )
 
     # Test 6: Checker with no contact info
-    no_contact = MockPerson(profile_id=None, administrator_profile_id=None)
-    no_contact_result = checker.check_eligibility(no_contact)  # type: ignore[arg-type]
+    no_contact = _get_mock_person(profile_id=None, administrator_profile_id=None)
+    no_contact_result = checker.check_eligibility(no_contact)
 
     def test_no_contact() -> None:
         assert not no_contact_result.is_eligible and no_contact_result.reason == IneligibilityReason.NO_CONTACT_INFO
@@ -463,8 +493,8 @@ def module_tests() -> bool:
     )
 
     # Test 7: Tree classification - out of tree
-    out_tree_person = MockPerson(in_my_tree=False)
-    out_tree_result = checker.check_eligibility(out_tree_person)  # type: ignore[arg-type]
+    out_tree_person = _get_mock_person(in_my_tree=False)
+    out_tree_result = checker.check_eligibility(out_tree_person)
 
     def test_out_of_tree() -> None:
         assert out_tree_result.tree_classification == TreeClassification.OUT_OF_TREE
