@@ -394,9 +394,7 @@ def _test_database_update_records_structure() -> None:
     # Test the structure of _update_database_records method
     # We can't fully test without a real DB, but we verify the method exists
     # and has the correct signature
-    assert hasattr(
-        orchestrator, "_update_database_records"
-    ), "_update_database_records method should exist"
+    assert hasattr(orchestrator, "_update_database_records"), "_update_database_records method should exist"
 
     # Verify the method accepts the expected parameters by checking its signature
     import inspect

@@ -51,6 +51,23 @@ if TYPE_CHECKING:
 
 from config import config_schema
 from messaging.message_types import MESSAGE_TYPES
+from messaging.send_audit import (
+    add_safety_check,
+    create_audit_entry,
+    finalize_safety_checks,
+    set_api_result,
+    set_content_info,
+    set_database_update,
+    set_decision,
+    set_feature_flags,
+    write_audit_entry,
+)
+from messaging.send_metrics import (
+    record_decision_path,
+    record_safety_block,
+    record_send_attempt,
+    timed_generation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +300,11 @@ class MessageSendOrchestrator:
 
         if not decision.should_send:
             self._logger.info(f"Send blocked for person_id={context.person.id}: {decision.block_reason}")
+            # Record safety block metrics
+            record_decision_path("block")
+            for check in decision.safety_check_results:
+                if not check.passed:
+                    record_safety_block(check.check_type.value)
             return SendResult(
                 success=False,
                 error=decision.block_reason,
@@ -290,10 +312,12 @@ class MessageSendOrchestrator:
                 database_updates=[f"blocked: {decision.block_reason}"],
             )
 
-        # Generate content
-        content = self._generate_content(context, decision)
+        # Generate content (with timing)
+        with timed_generation(decision.content_source.value if decision.content_source else "unknown"):
+            content = self._generate_content(context, decision)
         if content is None:
             self._logger.error(f"Failed to generate content for person_id={context.person.id}")
+            record_send_attempt(context.send_trigger.value, success=False, error_type="content_generation")
             return SendResult(
                 success=False,
                 error="Content generation failed",
@@ -772,12 +796,17 @@ class MessageSendOrchestrator:
             SendResult indicating success/failure.
         """
         database_updates: list[str] = []
+        trigger_type = context.send_trigger.value
 
         try:
             # Call the canonical send API
             message_id = self._call_send_api(context, content)
 
             if message_id:
+                # Record successful send metrics
+                record_send_attempt(trigger_type, success=True)
+                record_decision_path("send")
+
                 # Update database records
                 db_updates = self._update_database_records(context, decision, message_id)
                 database_updates.extend(db_updates)
@@ -792,6 +821,8 @@ class MessageSendOrchestrator:
                     decision=decision,
                     database_updates=database_updates,
                 )
+            # API returned no message ID
+            record_send_attempt(trigger_type, success=False, error_type="no_message_id")
             return SendResult(
                 success=False,
                 error="API returned no message ID",
@@ -801,6 +832,7 @@ class MessageSendOrchestrator:
 
         except Exception as e:
             self._logger.error(f"Send execution failed: {e}")
+            record_send_attempt(trigger_type, success=False, error_type="exception")
             return SendResult(
                 success=False,
                 error=str(e),
@@ -953,11 +985,67 @@ class MessageSendOrchestrator:
         """
         Log the complete audit trail for this send operation.
 
+        Writes to both the Python logger and the JSON audit log file.
+
         Args:
             context: The message send context.
             decision: The send decision.
             result: The send result.
         """
+        # Create audit entry for JSON audit log
+        entry = create_audit_entry(
+            person_id=context.person.id,
+            profile_id=getattr(context.person, "profile_id", None),
+            conversation_id=getattr(context.conversation_state, "id", None) if context.conversation_state else None,
+            trigger_type=context.send_trigger.value,
+            action_source="orchestrator",
+        )
+
+        # Set decision information
+        set_decision(
+            entry,
+            decision="send" if decision.should_send else "block",
+            reason=decision.block_reason,
+        )
+
+        # Add safety check results
+        for check_result in decision.safety_results:
+            add_safety_check(
+                entry,
+                check_name=check_result.check_type.value,
+                passed=check_result.passed,
+                reason=check_result.reason,
+            )
+        finalize_safety_checks(entry)
+
+        # Set content info
+        if decision.content_source:
+            set_content_info(entry, source=decision.content_source.value)
+
+        # Set API result
+        set_api_result(
+            entry,
+            called=result.success or result.error is not None,
+            success=result.success,
+            error=result.error,
+        )
+
+        # Set database updates
+        if result.database_updates:
+            set_database_update(entry, updated=True, fields=result.database_updates)
+
+        # Set feature flags
+        set_feature_flags(
+            entry,
+            {
+                "ENABLE_UNIFIED_SEND_ORCHESTRATOR": True,  # We're in the orchestrator
+            },
+        )
+
+        # Write to JSON audit log
+        write_audit_entry(entry)
+
+        # Also log to Python logger for backwards compatibility
         audit_data = {
             "person_id": context.person.id,
             "trigger": context.send_trigger.value,
@@ -965,7 +1053,7 @@ class MessageSendOrchestrator:
                 "should_send": decision.should_send,
                 "block_reason": decision.block_reason,
                 "message_type": decision.message_type,
-                "content_source": decision.content_source.value,
+                "content_source": decision.content_source.value if decision.content_source else None,
             },
             "safety_checks": [
                 {

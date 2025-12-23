@@ -76,6 +76,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 **Operations:**
 
 - [Operator Manual](docs/specs/operator_manual.md) - Review queue CLI, approval workflow, emergency controls
+- [Orchestrator Rollback](docs/orchestrator_rollback.md) - Rollback procedures for MessageSendOrchestrator
 
 ### Architecture Highlights
 
@@ -1285,6 +1286,34 @@ Errors: 0
 Recommendation: Safe to proceed with deployment
 ```
 
+#### Grafana Dashboard Deployment (`scripts/deploy_dashboards.py`)
+
+Automate deployment of pre-configured Grafana dashboards.
+
+**Features**:
+
+- Deploy all dashboard JSON files from `docs/grafana/`
+- Authenticate via Grafana API token
+- Validate connection before deployment
+- Support for incremental updates
+
+**Usage**:
+
+```bash
+# Check connection (no deployment)
+python scripts/deploy_dashboards.py --check-only --token <api_token>
+
+# Deploy all dashboards
+python scripts/deploy_dashboards.py --token <api_token>
+
+# Use environment variable for token
+export GRAFANA_API_TOKEN="your-token"
+python scripts/deploy_dashboards.py
+
+# Run built-in tests
+python scripts/deploy_dashboards.py --test
+```
+
 #### Running Tests
 
 ```bash
@@ -2114,6 +2143,8 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   ├── template_selector.py     # Template selection logic
 │   ├── send_orchestrator.py     # Unified message send pipeline
 │   ├── shadow_mode_analyzer.py  # Shadow mode decision comparison
+│   ├── send_metrics.py          # Prometheus metrics for send operations
+│   ├── send_audit.py            # Audit trail for send decisions
 │   └── templates/       # Message templates
 ├── observability/       # Monitoring
 │   ├── prometheus_exporter.py

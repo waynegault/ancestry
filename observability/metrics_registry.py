@@ -449,6 +449,98 @@ class _QualityDistributionGaugeProxy:
         metric.labels(tier=tier or "unknown").set(max(count, 0.0))
 
 
+# Phase 6.1: Send Orchestrator Metrics
+
+
+class _SendAttemptsCounterProxy:
+    """Wrapper for send_attempts_total counter (Phase 6.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, trigger: str, result: str, amount: float = 1.0) -> None:
+        """Increment send attempts by trigger type and result."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(trigger=trigger or "other", result=result or "unknown").inc(amount)
+
+
+class _SafetyBlocksCounterProxy:
+    """Wrapper for safety_blocks_total counter (Phase 6.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, check_type: str, amount: float = 1.0) -> None:
+        """Increment safety blocks by check type."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(check_type=check_type or "other").inc(amount)
+
+
+class _ContentGenerationTimeHistogramProxy:
+    """Wrapper for content_generation_time histogram (Phase 6.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusHistogram] = None
+
+    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+        self._metric = metric
+
+    def observe(self, source: str, seconds: float) -> None:
+        """Record content generation time by source."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(source=source or "other").observe(max(seconds, 0.0))
+
+
+class _SendApiResultsCounterProxy:
+    """Wrapper for send_api_results_total counter (Phase 6.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, endpoint: str, result: str, status_family: str, amount: float = 1.0) -> None:
+        """Increment API results by endpoint, result, and status family."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(
+            endpoint=endpoint or "unknown",
+            result=result or "unknown",
+            status_family=status_family or "unknown",
+        ).inc(amount)
+
+
+class _DecisionPathsCounterProxy:
+    """Wrapper for decision_paths_total counter (Phase 6.1)."""
+
+    def __init__(self) -> None:
+        self._metric: Optional[PrometheusCounter] = None
+
+    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+        self._metric = metric
+
+    def inc(self, decision: str, amount: float = 1.0) -> None:
+        """Increment decision path counter."""
+        metric = self._metric
+        if metric is None:
+            return
+        metric.labels(decision=decision or "other").inc(amount)
+
+
 class MetricsBundle:
     """Container exposing all metric proxies."""
 
@@ -478,6 +570,12 @@ class MetricsBundle:
         # Phase 4.3: Dashboard integration metrics
         self.response_funnel = _ResponseFunnelGaugeProxy()
         self.quality_distribution = _QualityDistributionGaugeProxy()
+        # Phase 6.1: Send orchestrator metrics
+        self.send_attempts = _SendAttemptsCounterProxy()
+        self.safety_blocks = _SafetyBlocksCounterProxy()
+        self.content_generation_time = _ContentGenerationTimeHistogramProxy()
+        self.send_api_results = _SendApiResultsCounterProxy()
+        self.decision_paths = _DecisionPathsCounterProxy()
 
     def assign(self, metrics_map: dict[str, Any]) -> None:
         """Bind proxies to real metrics."""
@@ -506,6 +604,12 @@ class MetricsBundle:
         # Phase 4.3: Dashboard integration metrics
         self.response_funnel.set_metric(metrics_map.get("response_funnel"))
         self.quality_distribution.set_metric(metrics_map.get("quality_distribution"))
+        # Phase 6.1: Send orchestrator metrics
+        self.send_attempts.set_metric(metrics_map.get("send_attempts"))
+        self.safety_blocks.set_metric(metrics_map.get("safety_blocks"))
+        self.content_generation_time.set_metric(metrics_map.get("content_generation_time"))
+        self.send_api_results.set_metric(metrics_map.get("send_api_results"))
+        self.decision_paths.set_metric(metrics_map.get("decision_paths"))
 
     def reset(self) -> None:
         """Clear metric bindings (no-op proxies)."""
@@ -804,6 +908,48 @@ class MetricsRegistry:
             "personalization_ab_outcome_total",
             "A/B test outcomes for personalization strategies",
             labelnames=("experiment_id", "variant_name", "response_intent"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        # Phase 6.1: Send orchestrator metrics
+        metrics_map["send_attempts"] = Counter(
+            "send_attempts_total",
+            "Total message send attempts by trigger type and result",
+            labelnames=("trigger", "result"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["safety_blocks"] = Counter(
+            "safety_blocks_total",
+            "Total sends blocked by safety checks",
+            labelnames=("check_type",),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["content_generation_time"] = Histogram(
+            "content_generation_seconds",
+            "Content generation time by source",
+            labelnames=("source",),
+            namespace=namespace,
+            buckets=(0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0),
+            registry=registry,
+        )
+
+        metrics_map["send_api_results"] = Counter(
+            "send_api_results_total",
+            "Send API call results by endpoint, result, and status family",
+            labelnames=("endpoint", "result", "status_family"),
+            namespace=namespace,
+            registry=registry,
+        )
+
+        metrics_map["decision_paths"] = Counter(
+            "decision_paths_total",
+            "Orchestrator decision path counts",
+            labelnames=("decision",),
             namespace=namespace,
             registry=registry,
         )
