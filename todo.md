@@ -143,7 +143,7 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [x] **3.1.1** Add feature flag check at Action 8 entry point ✅ (2025-01-21)
 - [x] **3.1.2** Create parallel code path using `MessageSendOrchestrator` ✅ (2025-01-21)
 - [x] **3.1.3** Replace direct `_send_message()` calls with orchestrator ✅ (2025-01-21)
-- [ ] **3.1.4** Keep batch processing and rate limiting logic
+- [x] **3.1.4** Keep batch processing and rate limiting logic ✅ (verified - code preserved)
 - [ ] **3.1.5** Remove duplicated safety check code (now in orchestrator)
 - [ ] **3.1.6** Remove duplicated database update code
 - [ ] **3.1.7** Update metrics collection to use orchestrator metrics
@@ -154,19 +154,19 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [x] **3.2.2** Replace `_send_message()` with orchestrator call ✅ (2025-01-21)
   - Use `SendTrigger.REPLY_RECEIVED`
   - Pass AI-generated content via `additional_data`
-- [ ] **3.2.3** Keep AI extraction and processing logic unchanged
-- [ ] **3.2.4** Keep conversation context building unchanged
+- [x] **3.2.3** Keep AI extraction and processing logic unchanged ✅ (verified - code preserved)
+- [x] **3.2.4** Keep conversation context building unchanged ✅ (verified - code preserved)
 - [ ] **3.2.5** Remove duplicated database update code
 - [x] **3.2.6** Add shadow mode logging ✅ (2025-12-23)
 
 #### 3.3 Refactor Action 11 (Approved Drafts)
 - [x] **3.3.1** Add feature flag check at Action 11 entry ✅ (2025-01-21)
-- [ ] **3.3.2** Keep draft fetching and approval filtering logic
-- [ ] **3.3.3** Keep circuit breaker pattern from lines 443-462
+- [x] **3.3.2** Keep draft fetching and approval filtering logic ✅ (verified - code preserved)
+- [x] **3.3.3** Keep circuit breaker pattern from lines 443-462 ✅ (verified - code preserved)
 - [x] **3.3.4** Replace `_send_single_approved_draft()` with orchestrator ✅ (2025-01-21)
   - Use `SendTrigger.HUMAN_APPROVED`
   - Pass draft content via `additional_data`
-- [ ] **3.3.5** Move duplicate prevention to orchestrator (already done in 1.2.4)
+- [x] **3.3.5** Move duplicate prevention to orchestrator (already done in 1.2.4) ✅
 - [ ] **3.3.6** Remove duplicated safety check code
 - [x] **3.3.7** Add shadow mode logging ✅ (2025-12-23)
 

@@ -2110,6 +2110,10 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   └── universal_scoring.py
 ├── messaging/           # Messaging system
 │   ├── message_personalization.py
+│   ├── person_eligibility.py    # Person eligibility checks
+│   ├── template_selector.py     # Template selection logic
+│   ├── send_orchestrator.py     # Unified message send pipeline
+│   ├── shadow_mode_analyzer.py  # Shadow mode decision comparison
 │   └── templates/       # Message templates
 ├── observability/       # Monitoring
 │   ├── prometheus_exporter.py
