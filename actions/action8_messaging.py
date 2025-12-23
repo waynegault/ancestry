@@ -3466,6 +3466,8 @@ def _send_via_orchestrator(
     This is a parallel code path that can be enabled via feature flags.
     When enabled, it replaces the direct API call with orchestrator-based sending.
 
+    Handles both regular automated sequence messages AND DESIST acknowledgements.
+
     Args:
         session_manager: Active session manager.
         msg_ctx: Message context with person, text, template key.
@@ -3479,6 +3481,7 @@ def _send_via_orchestrator(
     from messaging import (
         MessageSendOrchestrator,
         create_action8_context,
+        create_desist_context,
         should_use_orchestrator_for_action8,
     )
 
@@ -3493,14 +3496,25 @@ def _send_via_orchestrator(
     logger.debug(f"[ORCHESTRATOR] Using unified orchestrator for {msg_ctx.log_prefix}")
 
     try:
-        # Create orchestrator context
-        context = create_action8_context(
-            person=msg_ctx.person,
-            conversation_logs=[],  # Will be loaded by orchestrator if needed
-            conversation_state=None,  # Will be determined by orchestrator
-            template_key=msg_ctx.message_to_send_key,
-            message_text=msg_ctx.message_text,
-        )
+        # Detect DESIST acknowledgement - use OPT_OUT trigger
+        is_desist_ack = msg_ctx.message_to_send_key == "User_Requested_Desist"
+
+        if is_desist_ack:
+            # Create DESIST context for opt-out acknowledgement
+            context = create_desist_context(
+                person=msg_ctx.person,
+                conversation_logs=[],  # Will be loaded by orchestrator if needed
+            )
+            logger.debug(f"[ORCHESTRATOR] DESIST acknowledgement for {msg_ctx.log_prefix}")
+        else:
+            # Create regular Action 8 context for automated sequence
+            context = create_action8_context(
+                person=msg_ctx.person,
+                conversation_logs=[],  # Will be loaded by orchestrator if needed
+                conversation_state=None,  # Will be determined by orchestrator
+                template_key=msg_ctx.message_to_send_key,
+                message_text=msg_ctx.message_text,
+            )
 
         # Send via orchestrator
         orchestrator = MessageSendOrchestrator(session_manager)

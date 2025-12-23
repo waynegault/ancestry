@@ -171,10 +171,11 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [ ] **3.3.7** Add shadow mode logging
 
 #### 3.4 Refactor DESIST Handling
-- [ ] **3.4.1** Ensure DESIST detection remains in orchestrator decision engine
-- [ ] **3.4.2** Remove DESIST-specific send code from Action 8
-- [ ] **3.4.3** Verify DESIST acknowledgements are sent via orchestrator
-- [ ] **3.4.4** Test DESIST priority over other message types
+- [x] **3.4.1** Ensure DESIST detection remains in orchestrator decision engine ✅ (2025-01-21)
+- [x] **3.4.2** Remove DESIST-specific send code from Action 8 ✅ (2025-01-21)
+  - Updated `_send_via_orchestrator()` to detect DESIST and use `create_desist_context()`
+- [x] **3.4.3** Verify DESIST acknowledgements are sent via orchestrator ✅ (2025-01-21)
+- [x] **3.4.4** Test DESIST priority over other message types ✅ (2025-01-21)
 
 ---
 

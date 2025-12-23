@@ -2789,7 +2789,7 @@ class PersonProcessor:
     ) -> Optional[bool]:
         """
         Try to send via orchestrator if enabled.
-        
+
         Returns:
             True: Orchestrator sent successfully
             False: Orchestrator blocked send (expected behavior)
@@ -2845,8 +2845,7 @@ class PersonProcessor:
         """Send the message and handle database updates."""
         # Try orchestrator first (Phase 3 integration)
         orchestrator_result = self._send_via_orchestrator(
-            person, context_logs, message_text, message_type_id,
-            custom_reply, latest_message, log_prefix
+            person, context_logs, message_text, message_type_id, custom_reply, latest_message, log_prefix
         )
         if orchestrator_result is not None:
             return orchestrator_result
