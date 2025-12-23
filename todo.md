@@ -147,7 +147,7 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [ ] **3.1.5** Remove duplicated safety check code (now in orchestrator)
 - [ ] **3.1.6** Remove duplicated database update code
 - [ ] **3.1.7** Update metrics collection to use orchestrator metrics
-- [ ] **3.1.8** Add shadow mode logging (compare old vs new decisions)
+- [x] **3.1.8** Add shadow mode logging (compare old vs new decisions) ✅ (2025-12-23)
 
 #### 3.2 Refactor Action 9 (Custom Replies)
 - [x] **3.2.1** Add feature flag check at Action 9 send points ✅ (2025-01-21)
@@ -157,7 +157,7 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [ ] **3.2.3** Keep AI extraction and processing logic unchanged
 - [ ] **3.2.4** Keep conversation context building unchanged
 - [ ] **3.2.5** Remove duplicated database update code
-- [ ] **3.2.6** Add shadow mode logging
+- [x] **3.2.6** Add shadow mode logging ✅ (2025-12-23)
 
 #### 3.3 Refactor Action 11 (Approved Drafts)
 - [x] **3.3.1** Add feature flag check at Action 11 entry ✅ (2025-01-21)
@@ -168,7 +168,7 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
   - Pass draft content via `additional_data`
 - [ ] **3.3.5** Move duplicate prevention to orchestrator (already done in 1.2.4)
 - [ ] **3.3.6** Remove duplicated safety check code
-- [ ] **3.3.7** Add shadow mode logging
+- [x] **3.3.7** Add shadow mode logging ✅ (2025-12-23)
 
 #### 3.4 Refactor DESIST Handling
 - [x] **3.4.1** Ensure DESIST detection remains in orchestrator decision engine ✅ (2025-01-21)

@@ -2777,6 +2777,49 @@ class PersonProcessor:
             logger.error(f"{log_prefix}: Message formatting error: {e}. Using fallback.")
             return self._formatting_fallback(person)
 
+    def _run_shadow_mode_comparison(
+        self,
+        person: Person,
+        message_text: str,
+        custom_reply: Optional[str],
+    ) -> None:
+        """
+        Run shadow mode comparison between legacy and orchestrator decisions.
+
+        This runs when orchestrator is NOT enabled but shadow mode IS enabled.
+        """
+        try:
+            from messaging.send_orchestrator import create_action9_context
+            from messaging.shadow_mode_analyzer import LegacyDecision, ShadowModeAnalyzer
+
+            analyzer = ShadowModeAnalyzer(self.session_manager)
+            if not analyzer.is_enabled:
+                return
+
+            # Create legacy decision from current state
+            send_flag, skip_reason = self._should_send_message(person)
+            legacy_decision = LegacyDecision(
+                action_name="Action9",
+                should_send=send_flag,
+                block_reason=skip_reason if not send_flag else None,
+                person_id=person.id,
+                trigger_type="REPLY_RECEIVED",
+            )
+
+            # Create context for orchestrator
+            context = create_action9_context(
+                person=person,
+                conversation_logs=[],
+                ai_generated_content=message_text,
+                ai_context={"custom_reply": custom_reply},
+            )
+
+            # Run shadow comparison
+            analyzer.run_shadow_check(context, legacy_decision)
+
+        except Exception as e:
+            logger.debug(f"[SHADOW] Shadow mode comparison failed: {e}")
+
     def _send_via_orchestrator(
         self,
         person: Person,
@@ -2849,6 +2892,9 @@ class PersonProcessor:
         )
         if orchestrator_result is not None:
             return orchestrator_result
+
+        # Run shadow mode comparison if enabled (Phase 4.3)
+        self._run_shadow_mode_comparison(person, message_text, custom_reply)
 
         # Legacy path: direct API call
         # Apply mode/recipient filtering

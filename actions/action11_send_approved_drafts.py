@@ -323,6 +323,49 @@ def _gather_send_context(
     return person, message_text, existing_conv_id, None
 
 
+def _run_shadow_mode_comparison(
+    session_manager: Any,
+    draft: DraftReply,
+    person: Person,
+    message_text: str,
+) -> None:
+    """
+    Run shadow mode comparison between legacy and orchestrator decisions.
+
+    This runs when orchestrator is NOT enabled but shadow mode IS enabled.
+    """
+    try:
+        from messaging.send_orchestrator import create_action11_context
+        from messaging.shadow_mode_analyzer import LegacyDecision, ShadowModeAnalyzer
+
+        analyzer = ShadowModeAnalyzer(session_manager)
+        if not analyzer.is_enabled:
+            return
+
+        # Create legacy decision - Action 11 sends if we get here
+        legacy_decision = LegacyDecision(
+            action_name="Action11",
+            should_send=True,  # If we reach this point, legacy would send
+            block_reason=None,
+            person_id=person.id,
+            trigger_type="HUMAN_APPROVED",
+        )
+
+        # Create context for orchestrator
+        context = create_action11_context(
+            person=person,
+            conversation_logs=[],
+            draft_content=message_text,
+            draft_id=draft.id,
+        )
+
+        # Run shadow comparison
+        analyzer.run_shadow_check(context, legacy_decision)
+
+    except Exception as e:
+        logger.debug(f"[SHADOW] Shadow mode comparison failed: {e}")
+
+
 def _send_via_orchestrator(
     *,
     db_session: Session,
@@ -403,6 +446,9 @@ def _send_single_approved_draft(
     )
     if orchestrator_result is not None:
         return orchestrator_result
+
+    # Run shadow mode comparison if enabled (Phase 4.3)
+    _run_shadow_mode_comparison(session_manager, draft, person, message_text)
 
     # Legacy path: direct API call
     log_prefix = f"DraftReply #{draft.id} Person #{person.id}"

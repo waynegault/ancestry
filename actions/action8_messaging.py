@@ -3450,6 +3450,61 @@ def _update_conv_state(conv_state: "ConversationState", result: _MessageSendResu
 
 
 # ------------------------------------------------------------------------------
+# Shadow Mode Integration (Phase 4.3)
+# ------------------------------------------------------------------------------
+
+
+def _run_shadow_mode_comparison(
+    session_manager: SessionManager,
+    msg_ctx: "MessageContext",
+    msg_flags: "MessageFlags",
+) -> None:
+    """
+    Run shadow mode comparison between legacy and orchestrator decisions.
+
+    This runs when the orchestrator is NOT enabled (feature flag off) but
+    shadow mode IS enabled. It compares what the legacy code will do vs
+    what the orchestrator would do, logging any discrepancies.
+
+    Args:
+        session_manager: Active session manager.
+        msg_ctx: Message context with person and message info.
+        msg_flags: Flags indicating if message should be sent.
+    """
+    try:
+        from messaging.send_orchestrator import create_action8_context
+        from messaging.shadow_mode_analyzer import LegacyDecision, ShadowModeAnalyzer
+
+        analyzer = ShadowModeAnalyzer(session_manager)
+        if not analyzer.is_enabled:
+            return  # Shadow mode not enabled
+
+        # Create legacy decision from current flags
+        legacy_decision = LegacyDecision(
+            action_name="Action8",
+            should_send=msg_flags.send_message_flag,
+            block_reason=msg_flags.skip_log_reason if not msg_flags.send_message_flag else None,
+            person_id=msg_ctx.person.id,
+            trigger_type="AUTOMATED_SEQUENCE",
+        )
+
+        # Create context for orchestrator
+        context = create_action8_context(
+            person=msg_ctx.person,
+            conversation_logs=[],
+            conversation_state=None,
+            template_key=msg_ctx.message_to_send_key,
+            message_text=msg_ctx.message_text,
+        )
+
+        # Run shadow comparison (orchestrator decision without sending)
+        analyzer.run_shadow_check(context, legacy_decision)
+
+    except Exception as e:
+        logger.debug(f"[SHADOW] Shadow mode comparison failed: {e}")
+
+
+# ------------------------------------------------------------------------------
 # Orchestrator Integration (Phase 3)
 # ------------------------------------------------------------------------------
 
@@ -3549,6 +3604,9 @@ def _send_or_simulate_message(
     orchestrator_result = _send_via_orchestrator(session_manager, msg_ctx, conv_state, msg_flags)
     if orchestrator_result is not None:
         return orchestrator_result
+
+    # Run shadow mode comparison if enabled (Phase 4.3)
+    _run_shadow_mode_comparison(session_manager, msg_ctx, msg_flags)
 
     # Legacy path: direct API call
     if msg_flags.send_message_flag:
