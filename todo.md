@@ -198,13 +198,13 @@ All routes ultimately call `call_send_message_api()` in [api_utils.py](api/api_u
 - [x] **4.1.6** Test error handling and rollback ✅ (2025-01-21)
 
 #### 4.2 Integration Tests
-- [ ] **4.2.1** Create `tests/test_send_integration.py`
-- [ ] **4.2.2** Test full flow for AUTOMATED_SEQUENCE trigger
-- [ ] **4.2.3** Test full flow for REPLY_RECEIVED trigger
-- [ ] **4.2.4** Test full flow for OPT_OUT trigger
-- [ ] **4.2.5** Test full flow for HUMAN_APPROVED trigger
-- [ ] **4.2.6** Test mixed scenarios (e.g., approved draft exists + DESIST status)
-- [ ] **4.2.7** Verify database consistency after each flow
+- [x] **4.2.1** Create `tests/test_send_integration.py` ✅ (2025-01-21)
+- [x] **4.2.2** Test full flow for AUTOMATED_SEQUENCE trigger ✅ (2025-01-21)
+- [x] **4.2.3** Test full flow for REPLY_RECEIVED trigger ✅ (2025-01-21)
+- [x] **4.2.4** Test full flow for OPT_OUT trigger ✅ (2025-01-21)
+- [x] **4.2.5** Test full flow for HUMAN_APPROVED trigger ✅ (2025-01-21)
+- [x] **4.2.6** Test mixed scenarios (e.g., approved draft exists + DESIST status) ✅ (2025-01-21)
+- [x] **4.2.7** Verify database consistency after each flow ✅ (2025-01-21)
 
 #### 4.3 Shadow Mode Validation
 - [ ] **4.3.1** Create `messaging/shadow_mode_analyzer.py`
