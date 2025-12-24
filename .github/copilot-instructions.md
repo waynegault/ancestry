@@ -111,7 +111,7 @@ if __name__ == "__main__":
 - Tests embedded in source files (not separate test/ directory)
 - Zero fake passes - every test must validate real behavior
 
-## Action Modules (11 Total)
+## Action Modules (12 Total)
 
 ### Action 6: DNA Match Gathering (`action6_gather.py`)
 - **coord()** function (line 2337+): Main orchestrator using ThreadPoolExecutor for parallel API fetches
@@ -128,6 +128,13 @@ if __name__ == "__main__":
 - **process_productive_messages()** (line 1425+): Converts PRODUCTIVE conversations → MS To-Do tasks
 - Uses `genealogical_task_templates.py` for 8 task categories (vital records, census, DNA, etc.)
 - Quality scoring: 0-100 based on specificity (verbs, years, record types, locations)
+
+### Action 16: Unified Send (`action16_unified_send.py`)
+- **UnifiedSendProcessor** class: Consolidates all outbound messaging into single pass
+- **Priority system**: DESIST_ACK(1) → APPROVED_DRAFT(2) → AI_REPLY(3) → TEMPLATE_SEQUENCE(4)
+- **One message per person max**: Gathers candidates from all sources, processes highest priority only
+- **Uses MessageSendOrchestrator**: All sends flow through unified pipeline
+- **Replaces**: Running Actions 8+9+11 separately for outbound messaging
 
 ## Configuration System
 
@@ -662,6 +669,7 @@ actions/
   action8_messaging.py  # Automated messaging
   action9_process_productive.py  # Productive conversation processing
   action10.py           # GEDCOM analysis and genealogical intelligence
+  action16_unified_send.py  # Unified outbound messaging (replaces running 8+9+11 separately)
   gather/               # Checkpoint, fetch, metrics, orchestration, persistence
 core/
   session_manager.py    # Central orchestrator (THE critical component)

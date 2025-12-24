@@ -145,6 +145,56 @@ def send_approved_drafts_action(session_manager: Any, *_: Any) -> bool:
         return False
 
 
+def _get_unified_send() -> Any:
+    """Lazy import of run_unified_send from action16_unified_send."""
+    from actions.action16_unified_send import run_unified_send
+
+    return run_unified_send
+
+
+@require_interactive_session("unified send")
+def run_unified_send_action(session_manager: Any, *args: Any) -> bool:
+    """
+    Action 16: Unified Send - Consolidated outbound messaging.
+
+    Processes all outbound messages in a single pass with priority ordering:
+    1. DESIST Acknowledgements
+    2. Approved Drafts
+    3. AI Replies
+    4. Template Sequences
+
+    Args:
+        session_manager: SessionManager for database and API access.
+        *args: Optional max_sends limit.
+
+    Returns:
+        True if action completed successfully.
+    """
+    logger.debug("Starting unified send...")
+    try:
+        logger.debug("Navigating to Base URL before unified send...")
+        if not nav_to_page(
+            session_manager.browser_manager.driver,
+            config.api.base_url,
+            WAIT_FOR_PAGE_SELECTOR,
+            session_manager,
+        ):
+            logger.error("Failed nav to base URL. Aborting unified send.")
+            return False
+
+        run_unified_send = _get_unified_send()
+        result = run_unified_send(session_manager, *args)
+        if result is False:
+            logger.error("Unified send reported failure.")
+            return False
+        print("")
+        logger.info("Unified send OK.")
+        return True
+    except Exception as e:
+        logger.error(f"Error during unified send: {e}", exc_info=True)
+        return False
+
+
 @require_interactive_session("process productive messages")
 def process_productive_messages_action(session_manager: Any, *_: Any) -> bool:
     """Action to process productive messages. Relies on exec_actn ensuring session is ready."""

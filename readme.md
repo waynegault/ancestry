@@ -689,6 +689,45 @@ Identifies triangulation opportunities by analyzing shared matches and common an
 3. Identifies common ancestors in the shared matches' trees
 4. Generates a hypothesis message (e.g., "We both match X, related through Y")
 
+#### Action 16: Unified Send (`actions/action16_unified_send.py`)
+
+Consolidates all outbound messaging into a single pass with priority-based processing.
+
+**Features**:
+
+- **Single Menu Option**: Replaces running Actions 8+9+11 separately
+- **Priority Processing**: Higher priority messages sent first, one message per person max
+- **All Safety Checks**: Uses MessageSendOrchestrator for unified safety pipeline
+- **App Mode Compliant**: Respects `app_mode` settings via orchestrator safety layer
+
+**Priority Order** (lower = higher priority):
+
+1. **DESIST_ACK** (1) - Opt-out acknowledgements
+2. **APPROVED_DRAFT** (2) - Human-approved draft replies
+3. **AI_REPLY** (3) - AI-generated responses to productive conversations
+4. **TEMPLATE_SEQUENCE** (4) - Automated template messaging
+
+**Usage**:
+
+```bash
+python main.py
+# Select option 16: Unified Send [max_sends]
+```
+
+**Candidate Gathering**:
+
+- DESIST persons without acknowledgement sent
+- Approved drafts with status "APPROVED"
+- Productive conversations with unanswered inbound messages (last 7 days)
+- Persons eligible for automated template sequences
+
+**Key Behavior**:
+
+- One message per person: If a person qualifies for multiple message types, only the highest priority is sent
+- Candidates sorted by priority before processing
+- Rate limiting applied through orchestrator
+- Full audit trail logged for each send
+
 ### AI Integration
 
 #### Multi-Provider Architecture (`ai/ai_interface.py`)
@@ -2078,12 +2117,13 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 ## Project Structure
 
 ```text
-├── actions/              # Action modules (6-11)
+├── actions/              # Action modules (6-16)
 │   ├── action6_gather.py
 │   ├── action7_inbox.py
 │   ├── action8_messaging.py
 │   ├── action9_process_productive.py
 │   ├── action10.py
+│   ├── action16_unified_send.py  # Unified outbound messaging
 │   └── gather/          # Action 6 sub-modules
 │       ├── checkpoint.py
 │       ├── fetch.py

@@ -23,7 +23,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # Add project root to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -31,10 +31,15 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from testing.test_framework import TestSuite
 
-try:
-    import requests
-except ImportError:
-    requests = None  # type: ignore[assignment]
+if TYPE_CHECKING:
+    import requests as requests_module
+
+    _requests: requests_module = requests_module
+else:
+    try:
+        import requests as _requests
+    except ImportError:
+        _requests = None
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +117,7 @@ def deploy_dashboard(
     Returns:
         Tuple of (success, message).
     """
-    if requests is None:
+    if _requests is None:
         return False, "requests library not installed (pip install requests)"
 
     try:
@@ -125,7 +130,7 @@ def deploy_dashboard(
         }
 
         url = f"{grafana_url.rstrip('/')}/api/dashboards/db"
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response = _requests.post(url, json=payload, headers=headers, timeout=30)
 
         if response.status_code == 200:
             result = response.json()
@@ -135,7 +140,7 @@ def deploy_dashboard(
 
     except FileNotFoundError:
         return False, f"File not found: {dashboard_path}"
-    except (json.JSONDecodeError, requests.exceptions.RequestException, Exception) as e:
+    except (json.JSONDecodeError, Exception) as e:
         error_type = type(e).__name__
         return False, f"{error_type}: {e}"
 
@@ -179,25 +184,35 @@ def check_grafana_connection(grafana_url: str, api_token: str) -> tuple[bool, st
     Returns:
         Tuple of (success, message).
     """
-    if requests is None:
+    if _requests is None:
         return False, "requests library not installed"
+
+    success = False
+    message = ""
 
     try:
         headers = {"Authorization": f"Bearer {api_token}"}
         url = f"{grafana_url.rstrip('/')}/api/org"
-        response = requests.get(url, headers=headers, timeout=10)
+        response = _requests.get(url, headers=headers, timeout=10)
 
         if response.status_code == 200:
             org = response.json()
-            return True, f"Connected to org: {org.get('name', 'unknown')}"
-        if response.status_code == 401:
-            return False, "Invalid API token"
-        return False, f"Unexpected response: {response.status_code}"
+            success, message = True, f"Connected to org: {org.get('name', 'unknown')}"
+        elif response.status_code == 401:
+            message = "Invalid API token"
+        else:
+            message = f"Unexpected response: {response.status_code}"
 
-    except requests.exceptions.ConnectionError:
-        return False, f"Cannot connect to {grafana_url}"
     except Exception as e:
-        return False, f"Error: {e}"
+        error_type = type(e).__name__
+        if "ConnectionError" in error_type or "connect" in str(e).lower():
+            message = f"Cannot connect to {grafana_url}"
+        elif "Timeout" in error_type:
+            message = f"Timeout connecting to {grafana_url}"
+        else:
+            message = f"Error: {e}"
+
+    return success, message
 
 
 def main() -> int:

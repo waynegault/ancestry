@@ -278,6 +278,21 @@ class ActionRegistry:
                 menu_order=15,
             )
         )
+        self.register(
+            ActionMetadata(
+                id="16",
+                name="Unified Send",
+                description="Consolidated outbound: DESIST → Approved Drafts → AI Replies → Templates",
+                function=None,
+                category=ActionCategory.WORKFLOW,
+                browser_requirement=ActionRequirement.FULL_SESSION,
+                requires_confirmation=True,
+                confirmation_message="run unified outbound messaging (replaces Actions 8+9+11)",
+                input_hint="[max_sends]",
+                max_args=1,
+                menu_order=16,
+            )
+        )
 
     def _register_browser_actions(self) -> None:
         """Register browser-requiring actions."""
