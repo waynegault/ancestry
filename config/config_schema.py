@@ -890,6 +890,14 @@ class ConfigSchema:
     dry_run_verified: bool = False  # Must be set true after a successful dry-run before production sends
     per_recipient_backoff_seconds: int = 0  # Extra per-recipient throttle layered on top of MIN_MESSAGE_INTERVAL
 
+    # AI Moderation Layer (Phase 4.3)
+    enable_draft_moderation: bool = True  # Run AI moderation on drafts before human review
+    moderation_reject_threshold: float = 0.9  # Confidence threshold for auto-reject by moderator
+
+    # Simplified Prompt Mode (Phase 4.4)
+    use_simple_prompts: bool = False  # Use shorter, focused prompts for reply generation
+    simple_prompt_max_words: int = 200  # Maximum word count for simple prompt replies
+
     # Unified Message Send Orchestrator settings (Phase 1: Message Consolidation)
     enable_unified_send_orchestrator: bool = False  # Master switch for unified send orchestrator
     orchestrator_action8: bool = False  # Enable orchestrator for Action 8 (generic sequences)

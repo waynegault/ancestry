@@ -903,6 +903,48 @@ def _call_ai_model(
 # --- Public AI Interaction Functions ---
 
 
+def call_ai_with_prompt(
+    prompt: str,
+    session_manager: Optional[SessionManager] = None,
+    max_tokens: int = 1000,
+    temperature: float = 0.7,
+    response_format: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Simple public interface to call AI with a raw prompt.
+
+    This is a convenience function for cases where you need direct AI access
+    without the structured prompt system (e.g., moderation, one-off queries).
+
+    Args:
+        prompt: The complete prompt text (will be used as user content)
+        session_manager: Optional SessionManager for rate limiting
+        max_tokens: Maximum tokens in response (default 1000)
+        temperature: Creativity/randomness (0.0-1.0, default 0.7)
+        response_format: Optional response format type (e.g., "json_object")
+
+    Returns:
+        AI response text or None if all providers fail
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error("call_ai_with_prompt: AI_PROVIDER not configured.")
+        return None
+
+    # Use a minimal system prompt for direct queries
+    system_prompt = "You are a helpful assistant. Follow the instructions in the user message carefully."
+
+    return _call_ai_model(
+        provider=ai_provider,
+        system_prompt=system_prompt,
+        user_content=prompt,
+        session_manager=session_manager,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        response_format_type=response_format,
+    )
+
+
 @cached_api_call("ai", ttl=3600)  # Cache AI responses for 1 hour
 def classify_message_intent(context_history: str, session_manager: SessionManager) -> str | None:
     """
@@ -1343,6 +1385,128 @@ def generate_genealogical_reply(
     else:
         logger.error(f"AI reply generation failed. (Took {duration:.2f}s)")
     return reply_text
+
+
+def generate_simple_reply(
+    user_message: str,
+    tree_facts: str,
+    session_manager: SessionManager,
+    has_data: bool = True,
+) -> str | None:
+    """
+    Generate a simple, focused genealogical reply using simplified prompts.
+
+    This uses the shorter, more constrained prompts that produce concise
+    replies under 200 words focused on verified facts only.
+
+    Args:
+        user_message: The DNA match's message to reply to
+        tree_facts: Verified facts from your tree (formatted string)
+        session_manager: Session manager for AI calls
+        has_data: Whether matching tree data was found
+
+    Returns:
+        Generated reply text, or None if generation fails
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error("generate_simple_reply: AI_PROVIDER not configured.")
+        return None
+
+    # Select prompt based on whether we have matching data
+    prompt_key = "simple_reply" if has_data else "simple_reply_no_data"
+
+    try:
+        prompt_template = get_prompt(prompt_key)
+        if not prompt_template:
+            logger.warning(f"Prompt '{prompt_key}' not found, falling back to complex prompt")
+            return None
+
+        # Format the prompt with context
+        if has_data:
+            formatted_prompt = prompt_template.replace("{user_message}", user_message).replace(
+                "{my_tree_facts}", tree_facts or "No tree data available"
+            )
+        else:
+            formatted_prompt = prompt_template.replace("{user_message}", user_message)
+
+        start_time = time.time()
+        reply_text = _call_ai_model(
+            provider=ai_provider,
+            system_prompt=formatted_prompt,
+            user_content="Generate the reply message now.",
+            session_manager=session_manager,
+            max_tokens=400,  # Shorter for simple replies
+            temperature=0.6,  # Slightly lower for more consistent output
+        )
+        duration = time.time() - start_time
+
+        if reply_text:
+            logger.info(f"Simple reply generation successful. (Took {duration:.2f}s)")
+        else:
+            logger.error(f"Simple reply generation failed. (Took {duration:.2f}s)")
+        return reply_text
+
+    except Exception as e:
+        logger.error(f"Error generating simple reply: {e}")
+        return None
+
+
+def generate_simple_outreach(
+    match_name: str,
+    shared_cm: int,
+    my_surnames: str,
+    session_manager: SessionManager,
+) -> str | None:
+    """
+    Generate a simple initial outreach message to a DNA match.
+
+    Args:
+        match_name: Name of the DNA match
+        shared_cm: Shared DNA in centimorgans
+        my_surnames: Comma-separated list of key surnames
+        session_manager: Session manager for AI calls
+
+    Returns:
+        Generated outreach message, or None if generation fails
+    """
+    ai_provider = config_schema.ai_provider.lower()
+    if not ai_provider:
+        logger.error("generate_simple_outreach: AI_PROVIDER not configured.")
+        return None
+
+    try:
+        prompt_template = get_prompt("simple_initial_outreach")
+        if not prompt_template:
+            logger.warning("Prompt 'simple_initial_outreach' not found")
+            return None
+
+        formatted_prompt = (
+            prompt_template.replace("{match_name}", match_name)
+            .replace("{shared_cm}", str(shared_cm))  # noqa: RUF027
+            .replace("{my_surnames}", my_surnames)
+        )
+
+        start_time = time.time()
+        reply_text = _call_ai_model(
+            provider=ai_provider,
+            system_prompt=formatted_prompt,
+            user_content="Generate the outreach message now.",
+            session_manager=session_manager,
+            max_tokens=300,
+            temperature=0.7,
+        )
+        duration = time.time() - start_time
+
+        if reply_text:
+            logger.info(f"Simple outreach generation successful. (Took {duration:.2f}s)")
+        else:
+            logger.error(f"Simple outreach generation failed. (Took {duration:.2f}s)")
+        return reply_text
+
+    except Exception as e:
+        logger.error(f"Error generating simple outreach: {e}")
+        return None
 
 
 def _extract_variant_text(variant_entry: Any) -> Optional[str]:

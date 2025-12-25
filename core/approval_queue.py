@@ -10,6 +10,7 @@ Key Features:
 - Queue management for draft replies
 - Priority-based review ordering
 - Auto-approval for high-confidence messages
+- AI moderation layer before human review
 - Emergency stop controls
 - CLI integration for review workflow
 """
@@ -24,6 +25,7 @@ from sqlalchemy import and_, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
+from ai.draft_moderator import ModerationAction, moderate_draft
 from config import config_schema
 
 logger = logging.getLogger(__name__)
@@ -240,6 +242,34 @@ class ApprovalQueueService:
             if person is None:
                 return None
 
+            # === AI MODERATION LAYER ===
+            # Run independent AI review before human review
+            moderation_result = self._run_ai_moderation(
+                content=content,
+                person_name=getattr(person, "name", "Unknown"),
+                context_summary=_context_summary,
+            )
+
+            if moderation_result:
+                if moderation_result.action == ModerationAction.REJECT:
+                    logger.warning(
+                        f"🚫 Draft REJECTED by AI moderator for person {person_id}: {moderation_result.explanation}"
+                    )
+                    return None
+
+                if moderation_result.action == ModerationAction.MODIFY:
+                    logger.info(
+                        f"✏️ Draft MODIFIED by AI moderator for person {person_id}: {moderation_result.explanation}"
+                    )
+                    content = moderation_result.moderated_draft
+
+                if moderation_result.action == ModerationAction.FLAG:
+                    # Escalate to HIGH priority for human review
+                    logger.info(
+                        f"⚠️ Draft FLAGGED by AI moderator for person {person_id}: {moderation_result.explanation}"
+                    )
+                    # Will be handled by priority calculation below
+
             # Embed review-only metadata (no schema migrations).
             content_with_metadata = append_internal_metadata(
                 content,
@@ -252,8 +282,12 @@ class ApprovalQueueService:
                 ),
             )
 
-            # Determine priority based on confidence
-            priority = self._calculate_priority(ai_confidence, person)
+            # Determine priority based on confidence (and moderation flags)
+            priority = self._calculate_priority(
+                ai_confidence,
+                person,
+                moderation_flagged=moderation_result and moderation_result.action == ModerationAction.FLAG,
+            )
 
             # De-duplicate: if a pending draft already exists for this conversation/person,
             # update it in-place instead of inserting a new row.
@@ -409,11 +443,53 @@ class ApprovalQueueService:
             return "50-69"
         return "0-49"
 
-    def _calculate_priority(self, confidence: int, person: Any) -> ReviewPriority:
-        """Calculate review priority based on confidence and person context."""
+    @staticmethod
+    def _run_ai_moderation(
+        content: str,
+        person_name: str,
+        context_summary: Optional[str] = None,
+    ) -> Optional[Any]:
+        """
+        Run AI moderation on draft before human review.
+
+        Returns:
+            ModerationResult if moderation ran, None if disabled or error
+        """
+        try:
+            # Check if moderation is enabled
+            if (
+                hasattr(config_schema, "ai")
+                and hasattr(config_schema.ai, "enable_draft_moderation")
+                and not config_schema.ai.enable_draft_moderation
+            ):
+                return None
+
+            return moderate_draft(
+                draft_text=content,
+                original_message="",  # Not available at this point
+                recipient_name=person_name,
+                context=context_summary or "",
+            )
+
+        except Exception as e:
+            # Log but don't block - moderation is optional enhancement
+            logger.warning(f"AI moderation failed (non-blocking): {e}")
+            return None
+
+    def _calculate_priority(
+        self,
+        confidence: int,
+        person: Any,
+        moderation_flagged: bool = False,
+    ) -> ReviewPriority:
+        """Calculate review priority based on confidence, person context, and moderation flags."""
         # Critical: Previous DESIST or sensitive history
         if hasattr(person, "status") and person.status.value in {"DESIST", "BLOCKED"}:
             return ReviewPriority.CRITICAL
+
+        # High: Flagged by AI moderator
+        if moderation_flagged:
+            return ReviewPriority.HIGH
 
         # High: Low confidence
         if confidence < self.HIGH_PRIORITY_THRESHOLD:
