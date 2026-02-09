@@ -77,7 +77,6 @@ from collections import deque
 from collections.abc import Collection, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from typing import (
     Any,

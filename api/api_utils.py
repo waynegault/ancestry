@@ -176,10 +176,6 @@ def _get_clean_display_date_callable() -> Callable[[Optional[str]], str]:
 # --- Test framework imports ---
 # TestSuite is imported via TYPE_CHECKING for type hints only
 
-# === MODULE LOGGER ===
-# Use centralized log file from .env (LOG_FILE)
-logger = setup_logging(log_level="INFO")
-
 # Note: format_api_relationship_path has been moved to relationship_utils.py
 
 
@@ -3550,8 +3546,6 @@ def _run_integration_tests(suite: "TestSuite") -> None:
 
     def test_logging_integration():
         """Test integration with logging configuration."""
-        from core.logging_config import setup_logging
-
         assert callable(setup_logging), "setup_logging should be callable"
         assert logger is not None, "Logger should be initialized"
 

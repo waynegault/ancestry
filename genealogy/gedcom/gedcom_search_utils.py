@@ -56,7 +56,6 @@ logger = logging.getLogger(__name__)
 import importlib
 import json
 from functools import lru_cache
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Optional, cast
 

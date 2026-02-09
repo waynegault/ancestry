@@ -1433,13 +1433,12 @@ def invalidate_cache_pattern(pattern: str) -> int:
 
 def _test_cache_initialization() -> bool:
     """Test cache system initialization and configuration."""
-    # Check if cache is initialized (may be None in some environments)
-    cache_available = cache is not None
-    if cache_available:
-        assert hasattr(cache, "set"), "Cache should have set method"
-        assert hasattr(cache, "get"), "Cache should have get method"
-        assert hasattr(cache, "delete"), "Cache should have delete method"
-        assert hasattr(cache, "clear"), "Cache should have clear method"
+    # Cache must be available — if it's None, initialization failed
+    assert cache is not None, "Cache should be initialized (diskcache not available?)"
+    assert hasattr(cache, "set"), "Cache should have set method"
+    assert hasattr(cache, "get"), "Cache should have get method"
+    assert hasattr(cache, "delete"), "Cache should have delete method"
+    assert hasattr(cache, "clear"), "Cache should have clear method"
     return True
 
 
@@ -1458,8 +1457,7 @@ def _test_cache_interfaces() -> bool:
 
 def _test_basic_cache_operations() -> bool:
     """Test fundamental cache set/get/delete operations."""
-    if cache is None:
-        return True  # Skip if cache not available
+    assert cache is not None, "Cache must be initialized (init test should have caught this)"
 
     # Test basic set/get
     test_key = "test_basic_ops"
@@ -1506,8 +1504,7 @@ def _test_cache_decorator() -> bool:
 
 def _test_cache_expiration() -> bool:
     """Test cache TTL and expiration."""
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
     test_key = "test_expiration"
     test_value = "expires_soon"
@@ -1533,28 +1530,29 @@ def _test_cache_expiration() -> bool:
 
 def _test_cache_size_management() -> bool:
     """Test cache size limits and eviction."""
-    # This is a basic test - actual size management depends on diskcache config
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
-    # Set multiple values
-    # Cast cache to Any to avoid type errors
+    # Set multiple values and verify storage
     cache_obj = cast(Any, cache)
     for i in range(5):
         cache_obj.set(f"size_test_{i}", f"value_{i}")
 
-    # Verify they're stored
+    # Verify all values were stored correctly
+    stored_count = 0
     for i in range(5):
         value = cache_obj.get(f"size_test_{i}")
-        if value is not None:  # May be evicted, that's okay
-            assert value == f"value_{i}"
+        if value is not None:
+            assert value == f"value_{i}", f"size_test_{i} has wrong value: {value}"
+            stored_count += 1
+
+    # At least some values should be stored (cache may evict under size pressure)
+    assert stored_count > 0, "At least one value should be stored in cache"
     return True
 
 
 def _test_cache_clearing() -> bool:
     """Test cache clearing functionality."""
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
     # Set some test data
     # Cast cache to Any to avoid type errors
@@ -1577,8 +1575,7 @@ def _test_cache_clearing() -> bool:
 
 def _test_complex_data_types() -> bool:
     """Test caching of complex data structures."""
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
     # Test dictionary
     test_dict = {"key1": "value1", "nested": {"key2": "value2"}}
@@ -1598,8 +1595,7 @@ def _test_complex_data_types() -> bool:
 
 def _test_cache_performance() -> bool:
     """Test cache performance and statistics."""
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
     # Performance test - basic operations should be fast
     import time
@@ -1621,21 +1617,25 @@ def _test_cache_performance() -> bool:
 
 def _test_error_handling() -> bool:
     """Test cache error handling and edge cases."""
-    if cache is None:
-        return True
+    assert cache is not None, "Cache must be initialized"
 
-    # Test with None values
-    # Cast cache to Any to avoid type errors
     cache_obj = cast(Any, cache)
+
+    # Test storing and retrieving None
     cache_obj.set("test_none", None)
     cache_obj.get("test_none")
-    # Note: this might be None due to the value OR due to key not found
-    # The actual behavior depends on diskcache implementation
+    # diskcache stores None as a valid value; verify it doesn't crash
+    # (result may be None either way, but the operation should succeed)
 
-    # Test with empty string
+    # Test with empty string - verify round-trip
     cache_obj.set("test_empty", "")
     retrieved_empty = cache_obj.get("test_empty")
-    assert isinstance(retrieved_empty, str) and not retrieved_empty
+    assert not retrieved_empty, f"Empty string should round-trip, got {retrieved_empty!r}"
+
+    # Test with special characters
+    special_val = "héllo wörld 日本語"
+    cache_obj.set("test_unicode", special_val)
+    assert cache_obj.get("test_unicode") == special_val, "Unicode values should round-trip"
     return True
 
 

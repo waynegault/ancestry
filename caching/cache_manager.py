@@ -713,11 +713,13 @@ def _test_memory_management() -> bool:
 
 
 def _test_database_integration() -> bool:
-    """Test database query caching configuration exists."""
+    """Test database query caching configuration values are sensible."""
     config = SYSTEM_CACHE_CONFIG
     assert config.db_query_ttl > 0, "DB query TTL should be positive"
     assert config.db_connection_pool_size > 0, "Pool size should be positive"
     assert config.db_query_cache_size > 0, "Query cache size should be positive"
+    # Verify TTL is within reasonable bounds (1s - 1 hour)
+    assert config.db_query_ttl <= 3600, f"DB query TTL {config.db_query_ttl} seems too high"
     return True
 
 
@@ -735,10 +737,15 @@ def _test_api_integration() -> bool:
 def _test_session_management() -> bool:
     """Test session component caching lifecycle."""
     manager = CacheCoordinator()
+    # Verify stats structure exists
     stats = manager.session_cache.get_stats()
     assert "cache_hits" in stats, "Should track session cache hits"
     assert "cache_misses" in stats, "Should track session cache misses"
     assert "components_cached" in stats, "Should track components cached"
+    # Verify stats values are numeric and non-negative
+    assert isinstance(stats["cache_hits"], (int, float)), "cache_hits should be numeric"
+    assert stats["cache_hits"] >= 0, "cache_hits should be non-negative"
+    assert stats["cache_misses"] >= 0, "cache_misses should be non-negative"
     return True
 
 
@@ -767,22 +774,29 @@ def _test_recovery_mechanisms() -> bool:
 
 
 def _test_data_corruption_handling() -> bool:
-    """Test cache handles corrupted data gracefully."""
+    """Test cache handles missing and unexpected data gracefully."""
     manager = CacheCoordinator()
     # Get from non-existent key should return None, not crash
     result = manager.api_cache.get_cached_api_response("nonexistent", "endpoint", {"key": "value"})
     assert result is None, "Non-existent key should return None"
+    # Different params for same service/endpoint should be separate cache entries
+    manager.api_cache.cache_api_response("svc", "ep", {"p": 1}, {"data": "v1"}, ttl=60)
+    result_diff = manager.api_cache.get_cached_api_response("svc", "ep", {"p": 2})
+    assert result_diff is None, "Different params should not return cached data from other params"
     return True
 
 
 def _test_data_encryption() -> bool:
-    """Test cache infrastructure is available for encryption support."""
-    # Encryption is handled at the storage layer (diskcache)
-    # Verify CacheCoordinator can be instantiated and has required subsystems
+    """Test cache subsystem availability for storage layer encryption."""
     manager = CacheCoordinator()
+    # Verify all three subsystems are available
     assert manager.session_cache is not None, "Session cache should be available"
     assert manager.api_cache is not None, "API cache should be available"
     assert manager.system_cache is not None, "System cache should be available"
+    # Verify each has operational methods (not just exists)
+    assert callable(getattr(manager.session_cache, 'get_stats', None)), "session_cache needs get_stats"
+    assert callable(getattr(manager.api_cache, 'get_stats', None)), "api_cache needs get_stats"
+    assert callable(getattr(manager.system_cache, 'get_stats', None)), "system_cache needs get_stats"
     return True
 
 
@@ -798,15 +812,21 @@ def _test_access_control() -> bool:
 
 
 def _test_audit_logging() -> bool:
-    """Test cache operations are trackable via stats."""
+    """Test cache stats reflect operations performed."""
     manager = CacheCoordinator()
-    # Perform operations
+    # Get baseline stats
+    stats_before = manager.get_comprehensive_stats()
+    assert stats_before is not None, "Stats should be available"
+    assert "api_cache" in stats_before, "Should include API cache stats"
+    # Perform a cache operation
     manager.api_cache.cache_api_response("audit", "test", {}, {"data": 1}, ttl=60)
     manager.api_cache.get_cached_api_response("audit", "test", {})
-    stats = manager.get_comprehensive_stats()
-    # Stats should be available and include all subsystems
-    assert stats is not None, "Stats should be available after operations"
-    assert "api_cache" in stats, "Should include API cache stats"
+    # Get updated stats
+    stats_after = manager.get_comprehensive_stats()
+    assert stats_after is not None, "Stats should still be available after ops"
+    # Verify api_cache stats are a dict with expected structure
+    api_stats = stats_after["api_cache"]
+    assert isinstance(api_stats, dict), "API cache stats should be a dict"
     return True
 
 
@@ -822,21 +842,28 @@ def _test_configuration_loading() -> bool:
 
 
 def _test_environment_adaptation() -> bool:
-    """Test cache adapts to environment constraints."""
+    """Test cache memory optimization works across environments."""
     manager = CacheCoordinator()
     # Memory optimization should work regardless of environment
     result = manager.system_cache.optimize_memory()
-    assert "optimized" in result
+    assert isinstance(result, str), "optimize_memory should return a string"
+    assert "optimized" in result, "Result should indicate optimization occurred"
+    # Memory usage should be reported as non-negative
+    mem_after = manager.system_cache.get_memory_usage_mb()
+    assert mem_after >= 0, "Memory after optimization should be non-negative"
     return True
 
 
 def _test_feature_toggles() -> bool:
-    """Test cache feature configuration toggles."""
+    """Test cache feature configuration toggles are properly typed."""
     config = SESSION_CACHE_CONFIG
-    assert isinstance(config.enable_component_reuse, bool)
-    assert isinstance(config.track_session_lifecycle, bool)
+    assert isinstance(config.enable_component_reuse, bool), "enable_component_reuse should be bool"
+    assert isinstance(config.track_session_lifecycle, bool), "track_session_lifecycle should be bool"
     system_config = SYSTEM_CACHE_CONFIG
-    assert isinstance(system_config.enable_aggressive_gc, bool)
+    assert isinstance(system_config.enable_aggressive_gc, bool), "enable_aggressive_gc should be bool"
+    # Verify TTL values are positive integers
+    assert config.session_ttl_seconds > 0, "session_ttl_seconds must be positive"
+    assert config.component_ttl_seconds > 0, "component_ttl_seconds must be positive"
     return True
 
 

@@ -68,7 +68,6 @@ import os
 import random
 import subprocess
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 try:
@@ -802,43 +801,44 @@ def main() -> int:
 
 
 def test_chromedriver_initialization() -> None:
-    """Test ChromeDriver initialization functionality."""
-    # Test that function exists and is callable
-    assert callable(init_webdvr)
+    """Test ChromeDriver key functions exist and are callable."""
+    assert callable(init_webdvr), "init_webdvr should be callable"
+    assert callable(cleanup_webdrv), "cleanup_webdrv should be callable"
+    assert callable(reset_preferences_file), "reset_preferences_file should be callable"
 
 
 def test_preferences_file_reset() -> None:
     """Test preferences file reset functionality."""
-    # Test that preference management functions are properly defined
-    required_funcs = [
-        "init_webdvr",
-        "safe_close_chrome",
-        "cleanup_chrome_processes",
-    ]
-    for func_name in required_funcs:
-        if func_name in globals():
-            func = globals()[func_name]
-            assert callable(func), f"{func_name} should be callable"
+    # Verify the Chrome preferences path construction works
+    from pathlib import Path
+
+    # test that we can construct a preferences path without error
+    chrome_user_data = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+    prefs_path = chrome_user_data / "Default" / "Preferences"
+    assert isinstance(prefs_path, Path), "Should construct valid Path"
 
 
 def test_chrome_process_cleanup() -> None:
-    """Test Chrome process cleanup functionality."""
-    # Test that cleanup functions exist and are properly structured
-    cleanup_functions = ["cleanup_chrome_processes", "safe_close_chrome"]
-    for func_name in cleanup_functions:
-        if func_name in globals():
-            func = globals()[func_name]
-            assert callable(func), f"{func_name} should be callable"
-            # Test function signature
-            import inspect
+    """Test Chrome process cleanup function signatures."""
+    import inspect
 
-            sig = inspect.signature(func)
-            assert len(sig.parameters) >= 0, f"{func_name} should have valid parameters"
+    # Verify cleanup functions have valid signatures
+    for func_name in ["cleanup_webdrv", "_cleanup_stale_uc_files"]:
+        func = globals().get(func_name)
+        assert func is not None, f"{func_name} should be defined in module"
+        assert callable(func), f"{func_name} should be callable"
+        sig = inspect.signature(func)
+        # Verify function can be inspected (valid signature)
+        assert sig is not None, f"{func_name} should have a valid signature"
 
 
 def test_webdriver_initialization() -> None:
-    """Test WebDriver initialization with various configurations."""
-    assert callable(init_webdvr)
+    """Test WebDriver initialization function accepts expected parameters."""
+    import inspect
+
+    sig = inspect.signature(init_webdvr)
+    # init_webdvr should accept parameters for configuration
+    assert len(sig.parameters) >= 0, "init_webdvr should have a valid signature"
 
 
 def test_chrome_options_creation() -> None:

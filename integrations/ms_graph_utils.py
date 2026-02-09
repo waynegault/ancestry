@@ -524,9 +524,9 @@ def test_initialization():
     # Test MSAL availability
     assert msal is not None, "MSAL library should be available"
 
-    # Test test data with 12345 identifier
-    test_client_id = "test_client_12345"
-    assert "12345" in test_client_id, "Test data should contain 12345 identifier"
+    # Test that key functions are defined and callable
+    assert callable(acquire_token_device_flow), "acquire_token_device_flow should be callable"
+    assert callable(create_todo_task), "create_todo_task should be callable"
 
 
 def test_core_functionality():
@@ -557,11 +557,7 @@ def test_core_functionality():
 def test_edge_cases():
     """Test edge cases and error scenarios."""
 
-    # Test invalid client ID handling
-    invalid_client_id = ""
-    assert len(invalid_client_id) == 0, "Empty client ID should be detected"
-
-    # Test with mock error responses
+    # Test handling of None device flow response
     with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
         mock_app = MagicMock()
         mock_msal.return_value = mock_app
@@ -569,103 +565,69 @@ def test_edge_cases():
         mock_app.acquire_token_silent.return_value = None
         mock_app.initiate_device_flow.return_value = None  # Simulate failure
 
-        # Test handling of None device flow
         result = acquire_token_device_flow()
-        # Should handle gracefully - returns None or str (access token)
-        assert result is None or isinstance(result, str)
+        # Should handle gracefully - returns None on failure
+        assert result is None, "None device flow should return None"
 
-    # Test file operations error handling
-    # Use a mock to verify permission error handling without creating real files
-    mock_file = MagicMock()
-    mock_file.__enter__ = MagicMock(return_value=mock_file)
-    mock_file.__exit__ = MagicMock(return_value=False)
-    with patch("pathlib.Path.open", side_effect=PermissionError("Test permission error")):
-        try:
-            # Test that permission errors are handled
-            from pathlib import Path
+    # Test with empty accounts and failed silent acquisition
+    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
+        mock_app = MagicMock()
+        mock_msal.return_value = mock_app
+        mock_app.get_accounts.return_value = [{"username": "test@test.com"}]
+        mock_app.acquire_token_silent.return_value = None
+        mock_app.initiate_device_flow.return_value = {
+            "user_code": "TESTCODE",
+            "device_code": "DEVCODE",
+        }
+        mock_app.acquire_token_by_device_flow.return_value = {"error": "expired_token"}
 
-            with Path("test_file").open("w", encoding="utf-8") as f:
-                f.write("test")
-        except PermissionError:
-            pass  # Expected behavior - permission errors should be caught
+        result = acquire_token_device_flow()
+        assert result is None or isinstance(result, str), "Should handle expired token gracefully"
 
 
 def test_integration():
-    """Test integration with Microsoft Graph services."""
-
-    # Test token validation structure
-    test_token = {
-        "access_token": "test_token_12345",
-        "token_type": "Bearer",
-        "expires_in": 3600,
-    }
-
-    # Validate token structure
-    assert "access_token" in test_token, "Token should have access_token"
-    assert "token_type" in test_token, "Token should have token_type"
-    assert test_token["token_type"] == "Bearer", "Token type should be Bearer"
-
-    # Test API endpoint construction
+    """Test Graph API request construction logic."""
+    # Test API endpoint construction matches expected format
     graph_endpoint = "https://graph.microsoft.com/v1.0"
     me_endpoint = f"{graph_endpoint}/me"
-    assert "graph.microsoft.com" in me_endpoint, "Endpoint should use Graph domain"
-    assert "/v1.0/me" in me_endpoint, "Endpoint should target user profile"
+    assert me_endpoint == "https://graph.microsoft.com/v1.0/me"
+
+    # Test that task list endpoint is constructed correctly
+    task_list_id = "abc123"
+    tasks_endpoint = f"{graph_endpoint}/me/todo/lists/{task_list_id}/tasks"
+    assert task_list_id in tasks_endpoint, "Task endpoint should contain list ID"
+    assert tasks_endpoint.startswith("https://graph.microsoft.com"), "Should use Graph domain"
 
 
 def test_performance():
-    """Test performance characteristics."""
-
+    """Test data processing performance with realistic payloads."""
     import time
 
-    # Test function execution time
-    start_time = time.time()
-
-    # Simulate Graph API call structure
+    # Simulate processing a realistic Graph API response (100 items)
     mock_response = {"value": [{"id": f"item_{i}", "name": f"Test Item {i}"} for i in range(100)]}
 
-    # Test data processing
-    processed_count = 0
-    for item in mock_response["value"]:
-        if "id" in item and "name" in item:
-            processed_count += 1
+    start_time = time.perf_counter()
+    processed = [item for item in mock_response["value"] if "id" in item and "name" in item]
+    duration = time.perf_counter() - start_time
 
-    end_time = time.time()
-    duration = end_time - start_time
-
-    # Performance assertions
-    assert processed_count == 100, "Should process all 100 items"
-    assert duration < 1.0, "Processing should complete within 1 second"
+    assert len(processed) == 100, f"Should process all 100 items, got {len(processed)}"
+    assert duration < 1.0, f"Processing took {duration:.3f}s, should be under 1s"
 
 
 def test_error_handling():
-    """Test error handling and recovery mechanisms."""
+    """Test error handling for Graph API failures."""
+    # Test that acquire_token_device_flow handles MSAL failures gracefully
+    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
+        mock_app = MagicMock()
+        mock_msal.return_value = mock_app
+        mock_app.get_accounts.return_value = []
+        mock_app.acquire_token_silent.return_value = None
+        # Simulate device flow failure
+        mock_app.initiate_device_flow.return_value = None
 
-    # Test HTTP error simulation
-    from unittest.mock import Mock
-
-    # Test 401 Unauthorized handling
-    mock_response_401 = Mock()
-    mock_response_401.status_code = 401
-    mock_response_401.json.return_value = {"error": "Unauthorized"}
-
-    # Test error response structure
-    assert mock_response_401.status_code == 401, "Should simulate 401 error"
-
-    # Test 403 Forbidden handling
-    mock_response_403 = Mock()
-    mock_response_403.status_code = 403
-    mock_response_403.json.return_value = {"error": "Forbidden"}
-
-    assert mock_response_403.status_code == 403, "Should simulate 403 error"
-
-    # Test network timeout simulation
-    with patch("requests.get", side_effect=TimeoutError("Network timeout")):
-        try:
-            import requests
-
-            requests.get("https://graph.microsoft.com/v1.0/me", timeout=1)
-        except TimeoutError:
-            pass  # Expected behavior for timeout handling
+        result = acquire_token_device_flow()
+        # Should return None on failure, not crash
+        assert result is None, "Failed device flow should return None"
 
 
 def test_enhanced_task_creation():
@@ -673,53 +635,33 @@ def test_enhanced_task_creation():
     Test enhanced task creation with priority, due date, and categories.
 
     Phase 5.3: Enhanced MS To-Do Task Creation
-    Tests the new parameters for better task management.
+    Tests the create_todo_task function handles enhanced parameters.
     """
     from datetime import datetime, timedelta
 
-    # Test 1: Validate importance parameter handling
+    # Test importance level validation
     valid_importance_levels = ["low", "normal", "high"]
     for level in valid_importance_levels:
-        assert level in valid_importance_levels, f"Importance level '{level}' should be valid"
+        assert isinstance(level, str), f"Importance level should be string: {level}"
 
-    # Test 2: Validate due date format
+    # Test due date formatting
     test_due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-    assert len(test_due_date) == 10, "Due date should be in YYYY-MM-DD format"
-    assert test_due_date.count("-") == 2, "Due date should have 2 hyphens"
+    parts = test_due_date.split("-")
+    assert len(parts) == 3, "Due date should have year-month-day"
+    assert len(parts[0]) == 4, "Year should be 4 digits"
 
-    # Test 3: Validate categories structure
-    test_categories = ["Ancestry Research", "Close Relative", "In Tree"]
-    assert isinstance(test_categories, list), "Categories should be a list"
-    assert all(isinstance(cat, str) for cat in test_categories), "All categories should be strings"
-
-    # Test 4: Validate task data structure with enhanced fields
+    # Test task body construction matches Graph API schema
     task_data = {
         "title": "Test Task",
         "body": {"content": "Test body", "contentType": "text"},
         "importance": "high",
         "dueDateTime": {"dateTime": f"{test_due_date}T00:00:00", "timeZone": "UTC"},
-        "categories": test_categories,
+        "categories": ["Ancestry Research"],
     }
-
-    assert "importance" in task_data, "Task data should include importance"
-    assert "dueDateTime" in task_data, "Task data should include dueDateTime"
-    assert "categories" in task_data, "Task data should include categories"
-    assert task_data["importance"] in valid_importance_levels, "Importance should be valid"
-    assert "dateTime" in task_data["dueDateTime"], "dueDateTime should have dateTime field"
-    assert "timeZone" in task_data["dueDateTime"], "dueDateTime should have timeZone field"
-
-    # Test 5: Validate relationship-based priority calculation logic
-    relationship_priority_map = {
-        "1st cousin": "high",
-        "2nd cousin": "high",
-        "3rd cousin": "normal",
-        "4th cousin": "normal",
-        "5th cousin": "low",
-        "distant": "low",
-    }
-
-    for relationship, expected_priority in relationship_priority_map.items():
-        assert expected_priority in valid_importance_levels, f"Priority for {relationship} should be valid"
+    # Verify structure matches Graph API requirements
+    assert task_data["body"]["contentType"] in {"text", "html"}, "contentType must be text or html"
+    assert "T" in task_data["dueDateTime"]["dateTime"], "dateTime must include time separator"
+    assert task_data["importance"] in valid_importance_levels, "importance must be valid level"
 
     logger.info("✓ Enhanced task creation validation complete")
 
