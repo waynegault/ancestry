@@ -1,0 +1,9 @@
+# MCP Server dependencies
+mcp>=1.0.0
+
+# Note: This server also requires the waynegault/ancestry repo
+# to be available and configured. Set ANCESTRY_ROOT environment
+# variable to point to your ancestry repo location.
+#
+# The ancestry repo has its own requirements.txt that must also
+# be installed.
