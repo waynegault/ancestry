@@ -3,31 +3,38 @@
 ## Core Dependencies
 
 ### Web Automation
-*   **Selenium**: `4.31.0+` (Browser automation)
+*   **Selenium**: `4.40.0+` (Browser automation)
 *   **WebDriver Manager**: (Driver management)
 *   **CloudScraper**: `1.2.71` (Anti-bot protection bypass)
 
 ### Database
-*   **SQLAlchemy**: `2.0.40+` (ORM)
+*   **SQLAlchemy**: `2.0.46+` (ORM)
 *   **DiskCache**: `5.6.3` (Persistent caching)
 *   **SQLite**: (Embedded database, inferred from `Data/ancestry.db` in instructions)
 
 ### AI / LLM
-*   **Google Generative AI**: `0.8.4+` (Primary provider - Gemini)
-*   **OpenAI**: `1.82.0` (Shared client for DeepSeek/Moonshot)
+*   **Google Generative AI**: `0.8.6+` (Primary provider - Gemini)
+*   **OpenAI**: `2.17.0+` (Shared client for DeepSeek/Moonshot)
+*   **xai-sdk**: `1.4.0` (Grok AI)
+*   **Providers via `OpenAICompatibleProvider`**: DeepSeek, Moonshot/Kimi, Local LLM (LM Studio), Grok, Inception, Tetrate
 
 ### Testing
-*   **Pytest**: `8.3.5` (Test runner)
-*   **Pytest-Cov**: `6.1.1` (Coverage reporting)
-*   **Coverage**: `7.8.0` (Code coverage)
+*   **Pytest**: `9.0.2+` (Test runner)
+*   **Pytest-Cov**: `7.0.0+` (Coverage reporting)
+*   **Coverage**: `7.13.4+` (Code coverage)
 
 ### Utilities
-*   **Requests**: `2.32.3+` (HTTP client)
-*   **BeautifulSoup4**: `4.13.3+` (HTML parsing)
-*   **Pydantic**: `2.11.3` (Data validation)
-*   **Pandas**: `2.2.3` (Data manipulation)
-*   **Tqdm**: `4.67.1+` (Progress bars)
+*   **Requests**: `2.32.5+` (HTTP client)
+*   **BeautifulSoup4**: `4.14.3+` (HTML parsing)
+*   **Pydantic**: `2.12.5+` (Data validation)
+*   **Pandas**: `3.0.0+` (Data manipulation)
+*   **Tqdm**: `4.67.3+` (Progress bars)
 *   **Psutil**: (System monitoring)
+*   **RapidFuzz**: `3.14.3` (Fuzzy matching)
+*   **Flask**: `3.1.2` (Web UI)
+*   **prometheus_client**: `0.24.1` (Observability)
+*   **tabulate**: `0.9.0` (Table formatting)
+*   **tenacity**: `9.1.4` (Retry logic)
 
 ## Infrastructure Stability
 

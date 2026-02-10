@@ -317,29 +317,6 @@ class SearchCriteria:
     name_flex: str | None = None
 
 
-@dataclass
-class RequestConfig:
-    """
-    HTTP request configuration parameters.
-
-    Used in utils.py for _api_req and related functions.
-    """
-
-    url: str
-    method: str = "GET"
-    headers: dict[str, str] | None = None
-    referer_url: str | None = None
-    use_csrf_token: bool = False
-    add_default_origin: bool = False
-    timeout: int | None = None
-    allow_redirects: bool = True
-    data: dict[str, Any] | None = None
-    json_data: dict[str, Any] | None = None
-    json: dict[str, Any] | None = None
-    force_text_response: bool = False
-    cookie_jar: Any | None = None
-
-
 # ==============================================
 # Comprehensive Test Suite
 # ==============================================
@@ -401,27 +378,12 @@ def _test_search_criteria_initialization() -> bool:
     return True
 
 
-def _test_request_config_initialization() -> bool:
-    """Test RequestConfig initialization."""
-    config = RequestConfig(url="https://example.com/api", method="POST", use_csrf_token=True)
-
-    assert config.url == "https://example.com/api", "Should store url"
-    assert config.method == "POST", "Should store method"
-    assert config.use_csrf_token is True, "Should store use_csrf_token"
-    return True
-
-
 def _test_dataclass_defaults() -> bool:
     """Test that dataclass defaults work correctly."""
     # RetryContext defaults (updated to match .env configuration)
     ctx = RetryContext(attempt=1, max_attempts=3, max_delay=10.0)
     assert ctx.backoff_factor == 1.80, "Should have default backoff_factor from .env (1.80)"
     assert ctx.current_delay == 0.10, "Should have default current_delay from .env (0.10)"
-
-    # RequestConfig defaults
-    config = RequestConfig(url="https://example.com")
-    assert config.method == "GET", "Should have default method"
-    assert config.allow_redirects is True, "Should have default allow_redirects"
 
     return True
 
@@ -475,14 +437,6 @@ def common_params_module_tests() -> bool:
             "SearchCriteria initializes with search parameters",
             "Test SearchCriteria creation with search data",
             "Test search criteria setup",
-        )
-
-        suite.run_test(
-            "RequestConfig Initialization",
-            _test_request_config_initialization,
-            "RequestConfig initializes with HTTP request parameters",
-            "Test RequestConfig creation with request settings",
-            "Test HTTP request configuration",
         )
 
         suite.run_test(

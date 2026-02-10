@@ -7,9 +7,9 @@ The Data Validation Pipeline ensures that genealogical facts extracted from conv
 **Primary Goal:** Transform raw extracted data into validated, structured facts with conflict detection and human-in-the-loop approval.
 
 **Location:**
-- New Module: `genealogy/fact_validator.py`
+- Module: `genealogy/fact_validator.py`
 - Existing Model: `SuggestedFact` (database.py)
-- Integration Point: `action9_process_productive.py`
+- Integration Point: `InboundOrchestrator._validate_and_stage_facts()` in `messaging/inbound.py` (Note: originally spec'd against action9_process_productive.py, but actual integration is via InboundOrchestrator)
 
 ---
 
@@ -288,6 +288,8 @@ Index("ix_suggested_facts_status_confidence", "status", "confidence_score"),
 ---
 
 ## 7. Implementation Steps
+
+> **Note:** These steps are now fully implemented.
 
 1. **Create `genealogy/fact_validator.py`**: Implement `FactValidator` class with conflict detection.
 2. **Add comparison functions**: Date, name, and location comparison with tolerance.

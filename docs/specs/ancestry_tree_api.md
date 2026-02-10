@@ -491,7 +491,7 @@ FACT_TYPE_TO_API = {
 
 ### Rate Limiting Considerations
 
-- Use existing `RateLimiter` from `utils.py`
+- Use existing `RateLimiter` from `core/rate_limiter.py`
 - Recommend: 1 write per 3 seconds minimum
 - Ancestry may have stricter limits on write operations
 
@@ -515,9 +515,9 @@ All write operations should be logged to:
 
 ## Phase 8 Implementation Checklist
 
-- [ ] Create `TreeUpdateService` class in `api/tree_update.py`
+- [x] Create `TreeUpdateService` class in `api/tree_update.py`
 - [ ] Implement `apply_suggested_fact()` method
-- [ ] Add `TreeUpdateLog` model to `database.py`
+- [x] Add `TreeUpdateLog` model to `database.py`
 - [ ] Wire into approval workflow (Action Review)
 - [ ] Add post-update verification (re-fetch and compare)
 - [ ] Integration tests with mock responses

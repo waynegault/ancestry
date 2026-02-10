@@ -434,9 +434,6 @@ def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Any | None:
         gedcom_path: Path to the GEDCOM file
 
     Returns:
-            if isinstance(disk_cached, dict) and "id_to_spouses" not in disk_cached:
-                logger.debug("Disk GEDCOM cache missing spouse map; refreshing cached entry with rebuilt data.")
-                _store_gedcom_in_disk_cache(gedcom_data, disk_cache_key)
         GedcomData instance or None if loading fails
 
     Note:

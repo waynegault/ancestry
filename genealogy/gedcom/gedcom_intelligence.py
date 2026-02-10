@@ -459,39 +459,46 @@ class GedcomIntelligenceAnalyzer:
             return "Unknown Name"
 
     @staticmethod
-    def _extract_birth_year(_person_record: Any) -> int | None:
-        """Extract birth year from GEDCOM record."""
+    def _extract_birth_year(person_record: Any) -> int | None:
+        """Extract birth year from GEDCOM record via get_event_info."""
         try:
-            # This would need to be implemented based on the actual GEDCOM structure
-            # For now, returning None as placeholder
-            return None
+            from genealogy.gedcom.gedcom_utils import get_event_info
+
+            date_obj, _date_str, _place_str = get_event_info(person_record, "BIRT")
+            return date_obj.year if date_obj else None
         except Exception:
             return None
 
     @staticmethod
-    def _extract_death_year(_person_record: Any) -> int | None:
-        """Extract death year from GEDCOM record."""
+    def _extract_death_year(person_record: Any) -> int | None:
+        """Extract death year from GEDCOM record via get_event_info."""
         try:
-            # This would need to be implemented based on the actual GEDCOM structure
-            return None
+            from genealogy.gedcom.gedcom_utils import get_event_info
+
+            date_obj, _date_str, _place_str = get_event_info(person_record, "DEAT")
+            return date_obj.year if date_obj else None
         except Exception:
             return None
 
     @staticmethod
-    def _extract_birth_place(_person_record: Any) -> str | None:
-        """Extract birth place from GEDCOM record."""
+    def _extract_birth_place(person_record: Any) -> str | None:
+        """Extract birth place from GEDCOM record via get_event_info."""
         try:
-            # This would need to be implemented based on the actual GEDCOM structure
-            return None
+            from genealogy.gedcom.gedcom_utils import get_event_info
+
+            _date_obj, _date_str, place_str = get_event_info(person_record, "BIRT")
+            return place_str if place_str and place_str != "N/A" else None
         except Exception:
             return None
 
     @staticmethod
-    def _extract_death_place(_person_record: Any) -> str | None:
-        """Extract death place from GEDCOM record."""
+    def _extract_death_place(person_record: Any) -> str | None:
+        """Extract death place from GEDCOM record via get_event_info."""
         try:
-            # This would need to be implemented based on the actual GEDCOM structure
-            return None
+            from genealogy.gedcom.gedcom_utils import get_event_info
+
+            _date_obj, _date_str, place_str = get_event_info(person_record, "DEAT")
+            return place_str if place_str and place_str != "N/A" else None
         except Exception:
             return None
 

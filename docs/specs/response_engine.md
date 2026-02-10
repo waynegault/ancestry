@@ -6,7 +6,7 @@ The Automated Response Engine is a subsystem designed to generate personalized, 
 **Primary Goal:** To produce a `Context` object that provides the LLM with all necessary information to write a genealogical message that sounds like a human researcher.
 
 **Location:**
-- New Module: `ai/context_builder.py`
+- Module: `ai/context_builder.py`
 - Integration Point: `action8_messaging.py`
 
 ---
@@ -36,6 +36,7 @@ classDiagram
         +calculate_relationship_path(match_uuid)
         +search_tree_for_person(name)
     }
+    note for GenealogyEngine "Note: implemented via Action 10 functions\nand MatchContext in ai/context_builder.py"
 
     class Person {
         <<SQLAlchemy Model>>
@@ -237,6 +238,8 @@ This is the payload `ContextBuilder` produces to send to the LLM.
 ```
 
 ## 7. Implementation Steps
+
+> **Note:** These steps are now fully implemented.
 
 1.  **Create `ai/context_builder.py`**: Implement the class structure and DB queries.
 2.  **Update `action10.py`**: Ensure it exposes a `get_relationship_context(uuid)` method that returns a dictionary, not just prints to console.

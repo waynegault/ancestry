@@ -111,6 +111,7 @@ This flow describes how GEDCOM data is loaded, analyzed, and used to generate co
 
 * **File:** `actions/action9_process_productive.py`
 * **Function:** `_generate_contextual_reply_with_lookup`
+* **Note:** This flow is now routed through `InboundOrchestrator._run_research_flow()` in `messaging/inbound.py` for integrated semantic search and draft generation.
 * **Process:**
   1. **Gather Data:**
      * Calls `_get_person_context_data` to get DNA match info and tree statistics.

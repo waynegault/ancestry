@@ -521,8 +521,6 @@ class FactValidator:
             logger.warning(f"Error querying SuggestedFact table: {e}")
             return []
 
-        return existing
-
     def _handle_no_existing(self, fact: ExtractedFact) -> ValidationResult:
         """Handle case where no existing fact exists."""
         if fact.confidence >= self.AUTO_APPROVE_MIN_CONFIDENCE:

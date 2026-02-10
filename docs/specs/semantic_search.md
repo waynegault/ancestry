@@ -10,7 +10,7 @@
 - follow-up questions when ambiguity exists
 - optional staging of extracted facts through the existing validation + human-review loop
 
-This spec is intentionally designed to build on existing primitives:
+This system is built on existing primitives:
 
 - `TreeQueryService` and Action 10 genealogy/search utilities
 - `ContextBuilder` for match-centric context assembly
@@ -83,11 +83,11 @@ Recommended fields:
 
 ### 4.1 Placement
 
-Introduce a service layer that is reusable by Action 7 (inbound), Action 8 (draft generation), Action 9 (task generation), and operator tooling.
+A service layer reusable by Action 7 (inbound), Action 8 (draft generation), Action 9 (task generation), and operator tooling.
 
-Proposed module:
+Implemented module:
 
-- `genealogy/semantic_search.py` (or `research/semantic_search.py` if that better matches existing structure)
+- `genealogy/semantic_search.py`
 
 ### 4.2 Dependencies
 

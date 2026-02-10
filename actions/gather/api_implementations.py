@@ -2,6 +2,7 @@
 import contextlib
 import logging
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime, timezone
 from typing import Any, cast
 from urllib.parse import urljoin
@@ -18,7 +19,6 @@ from api.api_constants import (
 from caching.cache import cache as disk_cache
 from config import config_schema
 from core.api_manager import RequestConfig, RetryPolicy
-from core.error_handling import api_retry
 from core.session_manager import SessionManager
 from core.unified_cache_manager import get_unified_cache
 from core.utils import format_name
@@ -33,6 +33,79 @@ from research.relationship_utils import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Response Parsing Helpers (moved from action6_gather to eliminate circular import)
+# ---------------------------------------------------------------------------
+
+
+def _extract_relationship_string(predictions: list[Any]) -> str | None:
+    """Extract formatted relationship string from predictions."""
+    if not predictions:
+        return None
+
+    valid_preds: list[dict[str, Any]] = []
+    for candidate in predictions:
+        if isinstance(candidate, dict) and "distributionProbability" in candidate and "pathsToMatch" in candidate:
+            valid_preds.append(candidate)
+
+    if not valid_preds:
+        return None
+
+    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
+    top_prob_raw = best_pred.get("distributionProbability", 0.0)
+    top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
+
+    paths_raw = best_pred.get("pathsToMatch", [])
+    path_entries = paths_raw if isinstance(paths_raw, Sequence) else []
+
+    labels: list[str] = []
+    for path in path_entries:
+        if isinstance(path, dict):
+            path_dict = cast(dict[str, Any], path)
+            label_value = path_dict.get("label")
+            if isinstance(label_value, str):
+                labels.append(label_value)
+
+    max_labels_param = 2
+    final_labels = labels[:max_labels_param]
+    relationship_str_val = " or ".join(map(str, final_labels))
+    return f"{relationship_str_val} [{top_prob:.1f}%]"
+
+
+def _parse_details_response(details_response: Any, match_uuid: str) -> dict[str, Any] | None:
+    """Parse match details API response."""
+    if not (details_response and isinstance(details_response, dict)):
+        if isinstance(details_response, requests.Response):
+            logger.error(
+                f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
+            )
+        else:
+            logger.error(f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}")
+        return None
+
+    details_dict = cast(dict[str, Any], details_response)
+    relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
+
+    # Extract relationship predictions
+    predictions = details_dict.get("predictions", [])
+    relationship_str = _extract_relationship_string(predictions)
+
+    return {
+        "admin_profile_id": details_dict.get("adminUcdmId"),
+        "admin_username": details_dict.get("adminDisplayName"),
+        "tester_profile_id": details_dict.get("userId"),
+        "tester_username": details_dict.get("displayName"),
+        "tester_initials": details_dict.get("displayInitials"),
+        "gender": details_dict.get("subjectGender"),
+        "shared_segments": relationship_part.get("sharedSegments"),
+        "longest_shared_segment": relationship_part.get("longestSharedSegment"),
+        "meiosis": relationship_part.get("meiosis"),
+        "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
+        "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
+        "relationship_str": relationship_str,
+    }
 
 
 def _call_api_request(
@@ -99,7 +172,6 @@ def _call_api_request(
     return None
 
 
-@api_retry(retry_on=[requests.exceptions.RequestException, ConnectionError])
 def _get_api_headers() -> dict[str, str]:
     """Get standard API headers for match details requests."""
     return {
@@ -239,24 +311,6 @@ def fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) 
     return payload if payload else None
 
 
-def needs_ethnicity_refresh(existing_dna_match: Any | None) -> bool:
-    """Return True if the existing DNA match record is missing ethnicity data."""
-    if not existing_dna_match:
-        return False
-
-    _, column_map = _get_ethnicity_config()
-    if not column_map:
-        return False
-
-    for column_name in column_map.values():
-        if not hasattr(existing_dna_match, column_name):
-            return True
-        if getattr(existing_dna_match, column_name) is None:
-            return True
-
-    return False
-
-
 def _fetch_match_details_api(
     session_manager: SessionManager, my_uuid: str, match_uuid: str
 ) -> dict[str, Any] | None:
@@ -278,11 +332,6 @@ def _fetch_match_details_api(
             use_csrf_token=False,
             api_description="Match Details API (Batch)",
         )
-        # Note: _parse_details_response is not moved yet, assuming it's small or I missed it.
-        # Wait, I missed _parse_details_response!
-        # I need to find it in action6_gather.py
-        from actions.action6_gather import _parse_details_response
-
         return _parse_details_response(details_response, match_uuid)
 
     except ConnectionError as conn_err:
@@ -506,7 +555,6 @@ def fetch_combined_details(session_manager: SessionManager, match_uuid: str) -> 
     return combined_data if combined_data else None
 
 
-@api_retry(retry_on=[requests.exceptions.RequestException, ConnectionError])
 def _get_cached_badge_details(match_uuid: str) -> dict[str, Any] | None:
     """Try to get badge details from cache."""
     cache_key = f"badge_details_{match_uuid}"

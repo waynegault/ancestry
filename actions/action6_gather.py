@@ -16,7 +16,7 @@ SessionManager.
 
 import contextlib
 import logging
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Final, cast
@@ -76,7 +76,6 @@ from actions.gather.api_implementations import (
     fetch_batch_ladder as _fetch_batch_ladder,
     fetch_combined_details as _fetch_combined_details,
     fetch_ethnicity_for_batch as _fetch_ethnicity_for_batch,
-    needs_ethnicity_refresh as _needs_ethnicity_refresh,
 )
 from actions.gather.metrics import PageProcessingMetrics
 from actions.gather.orchestrator import GatherConfiguration, GatherOrchestrator
@@ -86,6 +85,7 @@ from actions.gather.performance_logging import (
 from actions.gather.persistence import (
     BatchLookupArtifacts,
     PersistenceHooks,
+    needs_ethnicity_refresh as _needs_ethnicity_refresh,
     prepare_and_commit_batch_data as gather_prepare_and_commit_batch_data,
     process_batch_lookups as gather_process_batch_lookups,
 )
@@ -4347,94 +4347,6 @@ def get_matches(
 
 
 # End of get_matches
-
-
-def _extract_relationship_string(predictions: list[Any]) -> str | None:
-    """Extract formatted relationship string from predictions."""
-    if not predictions:
-        return None
-
-    valid_preds: list[dict[str, Any]] = []
-    for candidate in predictions:
-        if isinstance(candidate, dict) and "distributionProbability" in candidate and "pathsToMatch" in candidate:
-            valid_preds.append(candidate)
-
-    if not valid_preds:
-        return None
-
-    best_pred = max(valid_preds, key=lambda x: x.get("distributionProbability", 0.0))
-    top_prob_raw = best_pred.get("distributionProbability", 0.0)
-    top_prob = float(top_prob_raw) if isinstance(top_prob_raw, (int, float)) else 0.0
-
-    paths_raw = best_pred.get("pathsToMatch", [])
-    path_entries = paths_raw if isinstance(paths_raw, Sequence) else []
-
-    labels: list[str] = []
-    for path in path_entries:
-        if isinstance(path, dict):
-            path_dict = cast(dict[str, Any], path)
-            label_value = path_dict.get("label")
-            if isinstance(label_value, str):
-                labels.append(label_value)
-
-    max_labels_param = 2  # Default used in action6
-    final_labels = labels[:max_labels_param]
-    relationship_str_val = " or ".join(map(str, final_labels))
-    return f"{relationship_str_val} [{top_prob:.1f}%]"
-
-
-def _parse_details_response(details_response: Any, match_uuid: str) -> dict[str, Any] | None:
-    """Parse match details API response."""
-    if not (details_response and isinstance(details_response, dict)):
-        if isinstance(details_response, requests.Response):
-            logger.error(
-                f"Match Details API failed for UUID {match_uuid}. Status: {details_response.status_code} {details_response.reason}"
-            )
-        else:
-            logger.error(f"Match Details API did not return dict for UUID {match_uuid}. Type: {type(details_response)}")
-        return None
-
-    details_dict = cast(dict[str, Any], details_response)
-    relationship_part = cast(dict[str, Any], details_dict.get("relationship", {}))
-
-    # Extract relationship predictions
-    predictions = details_dict.get("predictions", [])
-    relationship_str = _extract_relationship_string(predictions)
-
-    return {
-        "admin_profile_id": details_dict.get("adminUcdmId"),
-        "admin_username": details_dict.get("adminDisplayName"),
-        "tester_profile_id": details_dict.get("userId"),
-        "tester_username": details_dict.get("displayName"),
-        "tester_initials": details_dict.get("displayInitials"),
-        "gender": details_dict.get("subjectGender"),
-        "shared_segments": relationship_part.get("sharedSegments"),
-        "longest_shared_segment": relationship_part.get("longestSharedSegment"),
-        "meiosis": relationship_part.get("meiosis"),
-        "from_my_fathers_side": bool(details_dict.get("fathersSide", False)),
-        "from_my_mothers_side": bool(details_dict.get("mothersSide", False)),
-        "relationship_str": relationship_str,
-    }
-
-    badge_dict = cast(dict[str, Any], badge_response)
-    person_badged = cast(dict[str, Any], badge_dict.get("personBadged", {}))
-    if not person_badged:
-        logger.warning(f"Badge details response for UUID {match_uuid} missing 'personBadged' key.")
-        return None
-
-    their_cfpid = person_badged.get("personId")
-    raw_firstname = person_badged.get("firstName")
-    formatted_name_val = format_name(raw_firstname)
-    their_firstname_formatted = (
-        formatted_name_val.split()[0] if formatted_name_val and formatted_name_val != "Valued Relative" else "Unknown"
-    )
-
-    return {
-        "their_cfpid": their_cfpid,
-        "their_firstname": their_firstname_formatted,
-        "their_lastname": person_badged.get("lastName", "Unknown"),
-        "their_birth_year": person_badged.get("birthYear"),
-    }
 
 
 # ------------------------------------------------------------------------------

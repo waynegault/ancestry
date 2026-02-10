@@ -1,6 +1,6 @@
 # Mission Execution Specification
 
-**Last Updated:** December 17, 2025
+**Last Updated:** July 14, 2025
 
 ## 1. Purpose
 
@@ -46,9 +46,9 @@ Deliver an end-to-end, automated but safety-conscious workflow to engage DNA mat
   - Creates MS To-Do tasks from productive conversations
   - GEDCOM/API lookups for mentioned people
 
-### 2.4 Response Generation (IMPLEMENTED, NEEDS INTEGRATION)
+### 2.4 Response Generation (FULLY INTEGRATED via InboundOrchestrator)
 - **ContextBuilder:** Assembles rich context (identity, genetics, history, genealogy)
-- **Action 8:**
+- **Action 8** (now consolidated by Action 16 Unified Send)**:**
   - Generates contextual drafts
   - Queues via `DraftReply`/ApprovalQueueService
   - Respects safety blocks (OPT_OUT, HUMAN_REVIEW, PAUSED)

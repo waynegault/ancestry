@@ -85,6 +85,8 @@ If **ANY** of the following conditions are met, the conversation immediately tra
 
 ### 3.2 Regex Patterns (Blocklist)
 
+Opt-out patterns are loaded from `Data/opt_out_phrases.json`.
+
 These patterns are case-insensitive.
 
 #### Category: Threats & Hostility
@@ -127,7 +129,7 @@ When a Critical Alert is triggered:
 ### 4.2 Integration Points
 
 - **`action7_inbox.py`**:
-  - Inject `CriticalAlertDetector` before AI classification.
+  - Inject `SafetyGuard` before AI classification.
   - Update `process_message` to handle state transitions.
 - **`action8_messaging.py`**:
   - Check `conversation_state` before sending.

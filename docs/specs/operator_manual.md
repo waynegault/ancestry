@@ -14,7 +14,8 @@ This manual describes how to operate the Human-in-the-Loop (HITL) system for rev
 6. [Emergency Controls](#emergency-controls)
 7. [Monitoring & Metrics](#monitoring--metrics)
 8. [Sending Approved Drafts (Action 11)](#sending-approved-drafts-action-11)
-9. [Web UI Review Interface](#web-ui-review-interface)
+9. [Unified Send (Action 16)](#unified-send-action-16)
+10. [Web UI Review Interface](#web-ui-review-interface)
 
 ---
 
@@ -209,6 +210,17 @@ Run:
 ```bash
 python main.py
 # Choose: 11  (Send Approved Drafts)
+```
+
+---
+
+## Unified Send (Action 16)
+
+> **Note:** Action 16 (Unified Send) is the preferred approach for all outbound messaging. It consolidates DESIST acknowledgements, approved drafts, AI replies, and template sequences into a single prioritized pass — replacing the need to run Actions 8, 9, and 11 separately. See `actions/action16_unified_send.py` for details.
+
+```bash
+python main.py
+# Choose: 16  (Unified Send)
 ```
 
 ---
@@ -641,5 +653,4 @@ Tested and supported on:
 
 ---
 
-Last Updated: December 14, 2025
-
+Last Updated: July 14, 2025

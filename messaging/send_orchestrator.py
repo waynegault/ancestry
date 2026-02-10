@@ -152,7 +152,7 @@ class MessageSendContext:
 
 
 @dataclass
-class SafetyCheckResult:
+class SendSafetyCheckResult:
     """
     Result of a single safety check.
 
@@ -188,7 +188,7 @@ class SendDecision:
     block_reason: str | None = None
     message_type: str | None = None
     content_source: ContentSource = ContentSource.TEMPLATE
-    safety_results: list[SafetyCheckResult] = field(default_factory=list)
+    safety_results: list[SendSafetyCheckResult] = field(default_factory=list)
 
 
 @dataclass
@@ -339,7 +339,7 @@ class MessageSendOrchestrator:
     # --------------------------------------------------------------------------
 
     @staticmethod
-    def _check_opt_out_status(context: MessageSendContext) -> SafetyCheckResult:
+    def _check_opt_out_status(context: MessageSendContext) -> SendSafetyCheckResult:
         """
         Check if the person has opted out of contact.
 
@@ -349,7 +349,7 @@ class MessageSendOrchestrator:
             context: The message send context.
 
         Returns:
-            SafetyCheckResult indicating if sending is blocked.
+            SendSafetyCheckResult indicating if sending is blocked.
         """
         from core.database import PersonStatusEnum
 
@@ -360,25 +360,25 @@ class MessageSendOrchestrator:
         if person_status == PersonStatusEnum.DESIST:
             # Allow ONLY if this is an opt-out acknowledgement
             if context.send_trigger == SendTrigger.OPT_OUT:
-                return SafetyCheckResult(
+                return SendSafetyCheckResult(
                     check_type=SafetyCheckType.OPT_OUT_STATUS,
                     passed=True,
                     reason="Opt-out acknowledgement allowed",
                 )
-            return SafetyCheckResult(
+            return SendSafetyCheckResult(
                 check_type=SafetyCheckType.OPT_OUT_STATUS,
                 passed=False,
                 reason="Person status is DESIST (opted out)",
                 details={"person_id": person.id, "status": str(person_status)},
             )
 
-        return SafetyCheckResult(
+        return SendSafetyCheckResult(
             check_type=SafetyCheckType.OPT_OUT_STATUS,
             passed=True,
         )
 
     @staticmethod
-    def _check_app_mode_policy(context: MessageSendContext) -> SafetyCheckResult:
+    def _check_app_mode_policy(context: MessageSendContext) -> SendSafetyCheckResult:
         """
         Check if app mode policy allows sending to this person.
 
@@ -388,7 +388,7 @@ class MessageSendOrchestrator:
             context: The message send context.
 
         Returns:
-            SafetyCheckResult indicating if sending is blocked.
+            SendSafetyCheckResult indicating if sending is blocked.
         """
         from core.app_mode_policy import should_allow_outbound_to_person
 
@@ -396,20 +396,20 @@ class MessageSendOrchestrator:
         decision = should_allow_outbound_to_person(person)
 
         if not decision.allowed:
-            return SafetyCheckResult(
+            return SendSafetyCheckResult(
                 check_type=SafetyCheckType.APP_MODE_POLICY,
                 passed=False,
                 reason=decision.reason or "App mode policy blocked send",
                 details={"person_id": person.id, "app_mode": config_schema.app_mode},
             )
 
-        return SafetyCheckResult(
+        return SendSafetyCheckResult(
             check_type=SafetyCheckType.APP_MODE_POLICY,
             passed=True,
         )
 
     @staticmethod
-    def _check_conversation_hard_stops(context: MessageSendContext) -> SafetyCheckResult:
+    def _check_conversation_hard_stops(context: MessageSendContext) -> SendSafetyCheckResult:
         """
         Check for conversation states that should block sending.
 
@@ -419,7 +419,7 @@ class MessageSendOrchestrator:
             context: The message send context.
 
         Returns:
-            SafetyCheckResult indicating if sending is blocked.
+            SendSafetyCheckResult indicating if sending is blocked.
         """
         from core.database import PersonStatusEnum
 
@@ -434,19 +434,19 @@ class MessageSendOrchestrator:
         }
 
         if person_status in hard_stop_statuses:
-            return SafetyCheckResult(
+            return SendSafetyCheckResult(
                 check_type=SafetyCheckType.CONVERSATION_HARD_STOP,
                 passed=False,
                 reason=f"Person has hard-stop status: {person_status.value if person_status else 'unknown'}",
                 details={"person_id": person.id, "status": str(person_status)},
             )
 
-        return SafetyCheckResult(
+        return SendSafetyCheckResult(
             check_type=SafetyCheckType.CONVERSATION_HARD_STOP,
             passed=True,
         )
 
-    def _check_duplicate_prevention(self, context: MessageSendContext) -> SafetyCheckResult:
+    def _check_duplicate_prevention(self, context: MessageSendContext) -> SendSafetyCheckResult:
         """
         Check if we've recently sent a message to prevent duplicates.
 
@@ -457,7 +457,7 @@ class MessageSendOrchestrator:
             context: The message send context.
 
         Returns:
-            SafetyCheckResult indicating if sending is blocked.
+            SendSafetyCheckResult indicating if sending is blocked.
         """
         from datetime import timedelta
 
@@ -481,7 +481,7 @@ class MessageSendOrchestrator:
             )
 
             if recent_outbound:
-                return SafetyCheckResult(
+                return SendSafetyCheckResult(
                     check_type=SafetyCheckType.DUPLICATE_PREVENTION,
                     passed=False,
                     reason=f"Message already sent within {duplicate_window_hours} hours",
@@ -494,19 +494,19 @@ class MessageSendOrchestrator:
         except Exception as e:
             self._logger.warning(f"Error checking duplicate prevention: {e}")
             # Fail open - allow send if we can't check
-            return SafetyCheckResult(
+            return SendSafetyCheckResult(
                 check_type=SafetyCheckType.DUPLICATE_PREVENTION,
                 passed=True,
                 reason="Duplicate check failed, allowing send",
                 details={"error": str(e)},
             )
 
-        return SafetyCheckResult(
+        return SendSafetyCheckResult(
             check_type=SafetyCheckType.DUPLICATE_PREVENTION,
             passed=True,
         )
 
-    def run_safety_checks(self, context: MessageSendContext) -> list[SafetyCheckResult]:
+    def run_safety_checks(self, context: MessageSendContext) -> list[SendSafetyCheckResult]:
         """
         Run all safety checks and return results.
 
@@ -516,9 +516,9 @@ class MessageSendOrchestrator:
             context: The message send context.
 
         Returns:
-            List of SafetyCheckResult objects.
+            List of SendSafetyCheckResult objects.
         """
-        results: list[SafetyCheckResult] = []
+        results: list[SendSafetyCheckResult] = []
 
         # Run checks in priority order
         checks = [
@@ -1335,9 +1335,9 @@ def _module_tests() -> bool:
         expected_outcome="SendResult with success=True and message_id='123' has error=None",
     )
 
-    # Test 7: SafetyCheckResult creation
+    # Test 7: SendSafetyCheckResult creation
     def test_safety_check_result() -> None:
-        result = SafetyCheckResult(
+        result = SendSafetyCheckResult(
             check_type=SafetyCheckType.OPT_OUT_STATUS,
             passed=False,
             reason="Person opted out",
@@ -1347,10 +1347,10 @@ def _module_tests() -> bool:
         assert result.reason == "Person opted out", "reason should be 'Person opted out'"
 
     suite.run_test(
-        test_name="SafetyCheckResult creation works",
+        test_name="SendSafetyCheckResult creation works",
         test_func=test_safety_check_result,
-        test_summary="Verify SafetyCheckResult dataclass can be instantiated",
-        expected_outcome="SafetyCheckResult is created with correct check_type, passed, and reason",
+        test_summary="Verify SendSafetyCheckResult dataclass can be instantiated",
+        expected_outcome="SendSafetyCheckResult is created with correct check_type, passed, and reason",
     )
 
     return suite.finish_suite()

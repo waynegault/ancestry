@@ -16,7 +16,7 @@ Features:
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -423,8 +423,7 @@ class ReviewQueue:
         """
         from sqlalchemy import func
 
-        cutoff = datetime.now(UTC)
-        cutoff = cutoff.replace(day=cutoff.day - max_age_days) if cutoff.day > max_age_days else cutoff
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
 
         # Expire old staged updates
         expired_updates = (

@@ -7,8 +7,8 @@ The Human-in-the-Loop (HITL) Safeguards system ensures that automated messaging 
 **Primary Goal:** Prevent harmful or inappropriate automated messages while maintaining operational efficiency through tiered approval workflows.
 
 **Location:**
-- New Module: `core/approval_queue.py`
-- New CLI: `cli/review_commands.py`
+- Implemented Module: `core/approval_queue.py`
+- Implemented CLI: `cli/review_queue.py` (Note: originally spec'd as `cli/review_commands.py`)
 - Integration Points: `action8_messaging.py`, `action9_process_productive.py`
 
 ---
@@ -18,6 +18,8 @@ The Human-in-the-Loop (HITL) Safeguards system ensures that automated messaging 
 ### 2.1 Database Models
 
 #### MessageApproval Table
+
+(Note: implemented as `DraftReply` model in core/database.py)
 
 ```python
 class MessageApprovalStatusEnum(enum.Enum):
@@ -71,6 +73,8 @@ class MessageApproval(Base):
 ```
 
 #### SystemControl Table
+
+(Note: implemented via environment variables in .env: `AUTO_APPROVE_ENABLED`, `EMERGENCY_STOP`, `APP_MODE`)
 
 ```python
 class SystemControlEnum(enum.Enum):
