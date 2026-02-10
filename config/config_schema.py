@@ -898,6 +898,10 @@ class ConfigSchema:
     use_simple_prompts: bool = False  # Use shorter, focused prompts for reply generation
     simple_prompt_max_words: int = 200  # Maximum word count for simple prompt replies
 
+    # Shadow Mode (Phase 4.3: Validation before full deployment)
+    shadow_mode_enabled: bool = False  # Master switch: enable shadow comparisons in legacy Actions 8/9/11
+    action16_shadow_mode: bool = False  # Action 16 shadow mode: log all send decisions without executing
+
     # Unified Message Send Orchestrator settings (Phase 1: Message Consolidation)
     enable_unified_send_orchestrator: bool = False  # Master switch for unified send orchestrator
     orchestrator_action8: bool = False  # Enable orchestrator for Action 8 (generic sequences)

@@ -6,7 +6,7 @@ Provides browser automation infrastructure including:
 - css_selectors: CSS selectors for Ancestry website automation
 """
 
-_SUBMODULES = frozenset(["chromedriver", "css_selectors", "selenium_utils"])
+_SUBMODULES = frozenset(["chromedriver", "css_selectors", "navigation", "selenium_utils"])
 
 
 def __getattr__(name: str):

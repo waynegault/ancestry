@@ -24,15 +24,17 @@ Features:
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import and_, not_, or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from config import config_schema
@@ -61,6 +63,9 @@ if TYPE_CHECKING:
     from core.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
+
+# Shadow mode log path
+ACTION16_SHADOW_LOG_PATH = Path("Logs/action16_shadow_decisions.jsonl")
 
 
 # ------------------------------------------------------------------------------
@@ -105,9 +110,31 @@ class UnifiedSendResult:
     blocked_count: int = 0
     error_count: int = 0
     skipped_count: int = 0
+    shadow_logged_count: int = 0
     by_priority: dict[str, int] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
+    shadow_mode: bool = False
+
+
+@dataclass
+class ShadowDecisionLog:
+    """A single shadow-mode decision entry for comparison-ready output."""
+
+    timestamp: str
+    person_id: int
+    person_name: str
+    priority: str
+    priority_value: int
+    source_type: str
+    would_send: bool
+    block_reason: str | None = None
+    message_preview: str | None = None
+    source_data: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
 
 
 # ------------------------------------------------------------------------------
@@ -132,6 +159,15 @@ class UnifiedSendProcessor:
         self._session_manager = session_manager
         self._orchestrator = MessageSendOrchestrator(session_manager)
         self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self._shadow_mode = self._check_shadow_mode()
+
+    @staticmethod
+    def _check_shadow_mode() -> bool:
+        """Check if Action 16 shadow mode is enabled via config."""
+        try:
+            return bool(getattr(config_schema, "action16_shadow_mode", False))
+        except Exception:
+            return False
 
     @property
     def db_session(self) -> Session:
@@ -145,6 +181,8 @@ class UnifiedSendProcessor:
         """
         Process all outbound messaging needs.
 
+        In shadow mode, all send decisions are logged but NOT executed.
+
         Args:
             max_sends: Optional limit on number of messages to send.
 
@@ -153,9 +191,11 @@ class UnifiedSendProcessor:
         """
         start_time = time.time()
         result = UnifiedSendResult()
+        result.shadow_mode = self._shadow_mode
 
+        mode_label = "SHADOW MODE (log-only)" if self._shadow_mode else "LIVE"
         self._logger.info("=" * 60)
-        self._logger.info("UNIFIED SEND: Starting consolidated outbound processing")
+        self._logger.info(f"UNIFIED SEND [{mode_label}]: Starting consolidated outbound processing")
         self._logger.info("=" * 60)
 
         try:
@@ -186,6 +226,12 @@ class UnifiedSendProcessor:
                 if max_sends is not None and send_count >= max_sends:
                     self._logger.info(f"Reached max_sends limit ({max_sends})")
                     break
+
+                # Shadow mode: log decision without sending
+                if self._shadow_mode:
+                    self._log_shadow_decision(candidate, result)
+                    processed_person_ids.add(candidate.person.id)
+                    continue
 
                 # Process this candidate
                 priority_name = candidate.priority.name
@@ -502,15 +548,74 @@ class UnifiedSendProcessor:
             result.errors.append(f"Person #{person.id}: {e}")
             return False
 
+    def _log_shadow_decision(self, candidate: SendCandidate, result: UnifiedSendResult) -> None:
+        """Log a shadow-mode decision without executing the send.
+
+        Records what WOULD have been sent, to whom, and at what priority,
+        producing a comparison-ready JSONL log file.
+        """
+        person = candidate.person
+        priority_name = candidate.priority.name
+        log_prefix = f"[SHADOW][Person #{person.id}][{priority_name}]"
+
+        # Determine the message preview from context
+        msg_preview: str | None = None
+        try:
+            ctx = candidate.context
+            if hasattr(ctx, "message_content") and ctx.message_content:
+                msg_preview = str(ctx.message_content)[:200]
+            elif hasattr(ctx, "draft_content") and ctx.draft_content:
+                msg_preview = str(ctx.draft_content)[:200]
+        except Exception:
+            pass
+
+        person_name = getattr(person, "display_name", None) or getattr(person, "name", "") or ""
+
+        entry = ShadowDecisionLog(
+            timestamp=datetime.now(UTC).isoformat(),
+            person_id=person.id,
+            person_name=str(person_name),
+            priority=priority_name,
+            priority_value=candidate.priority.value,
+            source_type=candidate.source_data.get("type", "unknown"),
+            would_send=True,
+            block_reason=None,
+            message_preview=msg_preview,
+            source_data=candidate.source_data,
+        )
+
+        # Write to JSONL log
+        try:
+            ACTION16_SHADOW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with ACTION16_SHADOW_LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry.to_dict()) + "\n")
+        except OSError as e:
+            self._logger.error(f"{log_prefix} Failed to write shadow log: {e}")
+
+        self._logger.info(
+            f"{log_prefix} 👻 WOULD SEND: {entry.source_type} "
+            f"to '{person_name}' (priority={candidate.priority.value})"
+        )
+
+        result.shadow_logged_count += 1
+        result.by_priority[priority_name] = result.by_priority.get(priority_name, 0) + 1
+
     def _log_summary(self, result: UnifiedSendResult) -> None:
         """Log the final summary."""
+        mode_label = "SHADOW MODE" if result.shadow_mode else "LIVE"
         self._logger.info("=" * 60)
-        self._logger.info("UNIFIED SEND: Summary")
+        self._logger.info(f"UNIFIED SEND [{mode_label}]: Summary")
         self._logger.info("=" * 60)
         self._logger.info(f"Total candidates: {result.total_candidates}")
-        self._logger.info(f"Sent: {result.sent_count}")
-        self._logger.info(f"Blocked: {result.blocked_count}")
-        self._logger.info(f"Errors: {result.error_count}")
+
+        if result.shadow_mode:
+            self._logger.info(f"Shadow-logged (would send): {result.shadow_logged_count}")
+            self._logger.info(f"Shadow log: {ACTION16_SHADOW_LOG_PATH}")
+        else:
+            self._logger.info(f"Sent: {result.sent_count}")
+            self._logger.info(f"Blocked: {result.blocked_count}")
+            self._logger.info(f"Errors: {result.error_count}")
+
         self._logger.info(f"Skipped (duplicates): {result.skipped_count}")
         self._logger.info(f"Duration: {result.duration_seconds:.1f}s")
 
@@ -624,6 +729,447 @@ def _module_tests() -> bool:
             assert result.error_count == 0, "No errors expected"
 
     suite.run_test("Process with no candidates", test_process_empty_candidates)
+
+    # --------------------------------------------------------------------------
+    # Integration Tests: Priority Routing & One-Message-Per-Person
+    # --------------------------------------------------------------------------
+
+    # Test 5: DESIST_ACK beats AI_REPLY for the same person
+    def test_desist_beats_ai_reply() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_person = MagicMock()
+        mock_person.id = 100
+
+        desist_ctx = MagicMock()
+        ai_ctx = MagicMock()
+
+        candidates = [
+            SendCandidate(person=mock_person, priority=MessagePriority.AI_REPLY, context=ai_ctx),
+            SendCandidate(person=mock_person, priority=MessagePriority.DESIST_ACK, context=desist_ctx),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result) as mock_send,
+        ):
+            result = processor.process()
+
+        # Only one message should be sent (DESIST_ACK, not AI_REPLY)
+        assert result.sent_count == 1, f"Expected 1 send, got {result.sent_count}"
+        assert result.skipped_count == 1, f"Expected 1 skipped, got {result.skipped_count}"
+        # The context passed to send() should be the DESIST one (sorted first)
+        mock_send.assert_called_once_with(desist_ctx)
+
+    suite.run_test(
+        "DESIST_ACK takes priority over AI_REPLY for same person",
+        test_desist_beats_ai_reply,
+    )
+
+    # Test 6: APPROVED_DRAFT beats TEMPLATE_SEQUENCE for the same person
+    def test_approved_draft_beats_template() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_person = MagicMock()
+        mock_person.id = 200
+
+        draft_ctx = MagicMock()
+        template_ctx = MagicMock()
+
+        candidates = [
+            SendCandidate(person=mock_person, priority=MessagePriority.TEMPLATE_SEQUENCE, context=template_ctx),
+            SendCandidate(person=mock_person, priority=MessagePriority.APPROVED_DRAFT, context=draft_ctx),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result) as mock_send,
+        ):
+            result = processor.process()
+
+        assert result.sent_count == 1, f"Expected 1 send, got {result.sent_count}"
+        assert result.skipped_count == 1, f"Expected 1 skipped, got {result.skipped_count}"
+        mock_send.assert_called_once_with(draft_ctx)
+
+    suite.run_test(
+        "APPROVED_DRAFT takes priority over TEMPLATE_SEQUENCE for same person",
+        test_approved_draft_beats_template,
+    )
+
+    # Test 7: One-message-per-person with all four priority types
+    def test_one_message_per_person_all_priorities() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_person = MagicMock()
+        mock_person.id = 300
+
+        contexts = {p: MagicMock() for p in MessagePriority}
+
+        candidates = [
+            SendCandidate(person=mock_person, priority=p, context=contexts[p])
+            for p in MessagePriority
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result) as mock_send,
+        ):
+            result = processor.process()
+
+        assert result.sent_count == 1, f"Expected exactly 1 send, got {result.sent_count}"
+        assert result.skipped_count == 3, f"Expected 3 skipped, got {result.skipped_count}"
+        # Highest priority (DESIST_ACK) should win
+        mock_send.assert_called_once_with(contexts[MessagePriority.DESIST_ACK])
+
+    suite.run_test(
+        "One-message-per-person with all 4 priority types",
+        test_one_message_per_person_all_priorities,
+    )
+
+    # Test 8: Multiple different persons each get exactly one message
+    def test_multiple_persons_each_get_one() -> None:
+        from unittest.mock import MagicMock, patch
+
+        person_a = MagicMock()
+        person_a.id = 401
+        person_b = MagicMock()
+        person_b.id = 402
+
+        ctx_a_template = MagicMock()
+        ctx_a_ai = MagicMock()
+        ctx_b_desist = MagicMock()
+        ctx_b_draft = MagicMock()
+
+        candidates = [
+            SendCandidate(person=person_a, priority=MessagePriority.TEMPLATE_SEQUENCE, context=ctx_a_template),
+            SendCandidate(person=person_a, priority=MessagePriority.AI_REPLY, context=ctx_a_ai),
+            SendCandidate(person=person_b, priority=MessagePriority.APPROVED_DRAFT, context=ctx_b_draft),
+            SendCandidate(person=person_b, priority=MessagePriority.DESIST_ACK, context=ctx_b_desist),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result) as mock_send,
+        ):
+            result = processor.process()
+
+        assert result.sent_count == 2, f"Expected 2 sends, got {result.sent_count}"
+        assert result.skipped_count == 2, f"Expected 2 skipped, got {result.skipped_count}"
+        # Both persons should be in by_priority
+        sent_contexts = [call.args[0] for call in mock_send.call_args_list]
+        # Person B's DESIST_ACK (priority 1) processed first, then Person A's AI_REPLY (priority 3)
+        assert ctx_b_desist in sent_contexts, "Person B should get DESIST_ACK"
+        assert ctx_a_ai in sent_contexts, "Person A should get AI_REPLY"
+        assert ctx_a_template not in sent_contexts, "Person A's TEMPLATE should be skipped"
+        assert ctx_b_draft not in sent_contexts, "Person B's DRAFT should be skipped"
+
+    suite.run_test(
+        "Multiple persons each receive exactly one message",
+        test_multiple_persons_each_get_one,
+    )
+
+    # Test 9: max_sends limits total sends across persons
+    def test_max_sends_limit() -> None:
+        from unittest.mock import MagicMock, patch
+
+        persons = []
+        candidates = []
+        for i in range(5):
+            p = MagicMock()
+            p.id = 500 + i
+            persons.append(p)
+            ctx = MagicMock()
+            candidates.append(
+                SendCandidate(person=p, priority=MessagePriority.TEMPLATE_SEQUENCE, context=ctx)
+            )
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result) as mock_send,
+        ):
+            result = processor.process(max_sends=2)
+
+        assert result.sent_count == 2, f"Expected 2 sends with max_sends=2, got {result.sent_count}"
+        assert mock_send.call_count == 2, f"Expected 2 send calls, got {mock_send.call_count}"
+
+    suite.run_test("max_sends limits total sends", test_max_sends_limit)
+
+    # Test 10: Blocked send does not count toward max_sends
+    def test_blocked_not_counted_as_sent() -> None:
+        from unittest.mock import MagicMock, patch
+
+        person_blocked = MagicMock()
+        person_blocked.id = 601
+        person_ok = MagicMock()
+        person_ok.id = 602
+
+        ctx_blocked = MagicMock()
+        ctx_ok = MagicMock()
+
+        candidates = [
+            SendCandidate(person=person_blocked, priority=MessagePriority.DESIST_ACK, context=ctx_blocked),
+            SendCandidate(person=person_ok, priority=MessagePriority.DESIST_ACK, context=ctx_ok),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        blocked_result = MagicMock()
+        blocked_result.success = False
+        blocked_result.error = "Safety check failed"
+        success_result = MagicMock()
+        success_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(
+                processor._orchestrator,
+                "send",
+                side_effect=[blocked_result, success_result],
+            ),
+        ):
+            result = processor.process()
+
+        assert result.sent_count == 1, f"Expected 1 sent, got {result.sent_count}"
+        assert result.blocked_count == 1, f"Expected 1 blocked, got {result.blocked_count}"
+
+    suite.run_test(
+        "Blocked sends count as blocked not sent",
+        test_blocked_not_counted_as_sent,
+    )
+
+    # Test 11: by_priority dict tracks correct categories
+    def test_by_priority_tracking() -> None:
+        from unittest.mock import MagicMock, patch
+
+        p1 = MagicMock()
+        p1.id = 701
+        p2 = MagicMock()
+        p2.id = 702
+        p3 = MagicMock()
+        p3.id = 703
+
+        candidates = [
+            SendCandidate(person=p1, priority=MessagePriority.DESIST_ACK, context=MagicMock()),
+            SendCandidate(person=p2, priority=MessagePriority.DESIST_ACK, context=MagicMock()),
+            SendCandidate(person=p3, priority=MessagePriority.APPROVED_DRAFT, context=MagicMock()),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        mock_send_result = MagicMock()
+        mock_send_result.success = True
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=mock_send_result),
+        ):
+            result = processor.process()
+
+        assert result.by_priority.get("DESIST_ACK") == 2, (
+            f"Expected 2 DESIST_ACK, got {result.by_priority.get('DESIST_ACK')}"
+        )
+        assert result.by_priority.get("APPROVED_DRAFT") == 1, (
+            f"Expected 1 APPROVED_DRAFT, got {result.by_priority.get('APPROVED_DRAFT')}"
+        )
+
+    suite.run_test("by_priority tracks send categories correctly", test_by_priority_tracking)
+
+    # Test 12: Error during send is recorded without crashing
+    def test_send_error_recorded() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_person = MagicMock()
+        mock_person.id = 800
+
+        candidates = [
+            SendCandidate(person=mock_person, priority=MessagePriority.AI_REPLY, context=MagicMock()),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(
+                processor._orchestrator,
+                "send",
+                side_effect=RuntimeError("Network failure"),
+            ),
+        ):
+            result = processor.process()
+
+        assert result.error_count == 1, f"Expected 1 error, got {result.error_count}"
+        assert result.sent_count == 0, f"Expected 0 sent, got {result.sent_count}"
+        assert len(result.errors) == 1, f"Expected 1 error message, got {len(result.errors)}"
+        assert "800" in result.errors[0], "Error should reference person ID"
+
+    suite.run_test("Send error is recorded without crashing", test_send_error_recorded)
+
+    # Test 13: Person with no valid candidates (all blocked by orchestrator)
+    def test_all_candidates_blocked() -> None:
+        from unittest.mock import MagicMock, patch
+
+        p1 = MagicMock()
+        p1.id = 901
+        p2 = MagicMock()
+        p2.id = 902
+
+        candidates = [
+            SendCandidate(person=p1, priority=MessagePriority.DESIST_ACK, context=MagicMock()),
+            SendCandidate(person=p2, priority=MessagePriority.TEMPLATE_SEQUENCE, context=MagicMock()),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        blocked = MagicMock()
+        blocked.success = False
+        blocked.error = "Daily limit"
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send", return_value=blocked),
+        ):
+            result = processor.process()
+
+        assert result.sent_count == 0, f"Expected 0 sent, got {result.sent_count}"
+        assert result.blocked_count == 2, f"Expected 2 blocked, got {result.blocked_count}"
+        assert result.total_candidates == 2
+
+    suite.run_test(
+        "All candidates blocked results in zero sends",
+        test_all_candidates_blocked,
+    )
+
+    # Test 14: Duration is recorded
+    def test_duration_recorded() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+
+        with patch.object(processor, "_gather_all_candidates", return_value=[]):
+            result = processor.process()
+
+        assert result.duration_seconds >= 0, "Duration should be non-negative"
+
+    suite.run_test("Duration is recorded in result", test_duration_recorded)
+
+    # --------------------------------------------------------------------------
+    # Shadow Mode Tests
+    # --------------------------------------------------------------------------
+
+    # Test 15: Shadow mode prevents actual sends
+    def test_shadow_mode_no_sends() -> None:
+        from unittest.mock import MagicMock, patch
+
+        mock_person = MagicMock()
+        mock_person.id = 1001
+        mock_person.display_name = "Shadow Test Person"
+
+        candidates = [
+            SendCandidate(
+                person=mock_person,
+                priority=MessagePriority.DESIST_ACK,
+                context=MagicMock(),
+                source_data={"type": "desist_ack"},
+            ),
+            SendCandidate(
+                person=mock_person,
+                priority=MessagePriority.AI_REPLY,
+                context=MagicMock(),
+                source_data={"type": "ai_reply"},
+            ),
+        ]
+
+        mock_sm = MagicMock()
+        processor = UnifiedSendProcessor(mock_sm)
+        processor._shadow_mode = True  # Force shadow mode
+
+        with (
+            patch.object(processor, "_gather_all_candidates", return_value=candidates),
+            patch.object(processor._orchestrator, "send") as mock_send,
+            patch("builtins.open", MagicMock()),
+        ):
+            result = processor.process()
+
+        # Orchestrator.send should NEVER be called in shadow mode
+        mock_send.assert_not_called()
+        assert result.shadow_mode is True, "Result should indicate shadow mode"
+        assert result.sent_count == 0, "No actual sends in shadow mode"
+        assert result.shadow_logged_count == 1, f"Expected 1 shadow log (dedup), got {result.shadow_logged_count}"
+
+    suite.run_test("Shadow mode prevents actual sends", test_shadow_mode_no_sends)
+
+    # Test 16: Shadow mode result defaults
+    def test_shadow_result_defaults() -> None:
+        result = UnifiedSendResult()
+        assert result.shadow_mode is False, "Shadow mode off by default"
+        assert result.shadow_logged_count == 0, "Shadow count starts at 0"
+
+    suite.run_test("UnifiedSendResult shadow defaults", test_shadow_result_defaults)
+
+    # Test 17: ShadowDecisionLog serialization
+    def test_shadow_decision_log_serialization() -> None:
+        entry = ShadowDecisionLog(
+            timestamp="2026-02-10T00:00:00+00:00",
+            person_id=42,
+            person_name="Test Person",
+            priority="DESIST_ACK",
+            priority_value=1,
+            source_type="desist_ack",
+            would_send=True,
+        )
+        d = entry.to_dict()
+        assert d["person_id"] == 42
+        assert d["priority"] == "DESIST_ACK"
+        assert d["would_send"] is True
+        # Must be JSON-serializable
+        serialized = json.dumps(d)
+        assert "42" in serialized
+
+    suite.run_test("ShadowDecisionLog serializes to JSON", test_shadow_decision_log_serialization)
+
+    # Test 18: Shadow mode config check defaults to False
+    def test_shadow_mode_config_default() -> None:
+        # _check_shadow_mode uses getattr with default=False
+        # Without setting config, it should return False
+        result = UnifiedSendProcessor._check_shadow_mode()
+        assert result is False, "Shadow mode should be OFF by default"
+
+    suite.run_test("Shadow mode config defaults to False", test_shadow_mode_config_default)
 
     return suite.finish_suite()
 

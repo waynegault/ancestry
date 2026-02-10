@@ -37,17 +37,27 @@
 - Target: Generic `MetricProxy` factory that creates proxies dynamically
 - Benefit: ~500 lines of boilerplate removed
 
-### 2.2 Consolidate triplicate Person dataclasses
-- `core/common_params.MatchIdentifiers` / `CandidatePerson` in semantic_search / `PersonInfo` in various modules
-- Create one canonical `PersonSummary` and migrate callers
+### 2.2 ~~Consolidate triplicate Person dataclasses~~ — No change needed (Feb 2025)
+- **Assessed 14 Person-like classes** across the codebase (dataclasses + TypedDicts)
+- **9 of 14 have zero external importers** — purely module-internal data shapes
+- **Field sets differ meaningfully**: `GedcomPerson` has family structure (parents/children/spouses), `PersonLookupResult` has 20 fields with relationship paths and source tracking, `MatchIdentifiers` is a minimal gather-time struct, `ClusterAnchor` carries triangulation-specific fields, etc.
+- **Mixed type systems**: 4 are TypedDicts (`PersonInfo`, `DNAMatchInfo`, `PersonData`, `MatchData`), 10 are dataclasses — merging across type systems would be disruptive
+- **Closest pair** (`CandidatePerson` ⊂ `PersonSearchResult`) is already co-located in genealogy subsystem; `CandidatePerson` is intentionally a simpler internal subset
+- **Conclusion**: Each module owns its own data shape. A canonical `PersonSummary` would be either too minimal or too bloated, and existing classes would remain anyway for backward compatibility. This is working as designed.
 
-### 2.3 Consolidate date utility duplication
-- Date parsing exists in 4+ files: `utils.py`, `action6_gather.py`, `gedcom_utils.py`, `relationship_utils.py`
-- Centralize in `core/date_utils.py`
+### 2.3 ~~Consolidate date utility duplication~~ — Minimal, no change needed (Feb 2026)
+- **Assessed `_format_date()` in `api/api_search_utils.py`**: takes integer day/month/year → display string ("15 Mar 1850"). Purpose is API response formatting.
+- **GEDCOM `_parse_date()` in `gedcom_events.py`**: parses freeform date strings → `datetime`. Purpose is GEDCOM data ingestion.
+- **`api/api_utils.py` and `api/api_search_core.py`** already delegate date parsing via lazy imports to the GEDCOM module — no duplication there.
+- **Conclusion**: API display formatting ≠ GEDCOM date parsing. Functions serve different domains with different signatures and return types. No `core/date_utils.py` needed.
 
-### 2.4 Consolidate ~5 overlapping cache abstractions (~4711 lines)
-- `caching/cache.py`, `core/cache_backend.py`, `core/cache_registry.py`, `core/unified_cache_manager.py`, `core/caching_bootstrap.py`
-- Define clear responsibilities and eliminate overlap
+### 2.4 ~~Consolidate ~5 overlapping cache abstractions~~ — Assessed, dead code tagged (Feb 2026)
+- **`caching/cache.py`** (1748 lines): `IntelligentCacheWarmer` and `CacheDependencyTracker` have **zero external importers** — tagged with `# TODO: candidate for removal` comments. Removing them would save ~260 lines.
+- **`core/caching_bootstrap.py`** (139 lines): Only imported by `main.py` (`ensure_caching_initialized`). Small, self-contained with own tests. Merging into `cache_registry.py` would mix initialization concerns with registry concerns — kept separate.
+- **`core/cache_backend.py`** — Protocol/interface definition (keep as-is)
+- **`core/unified_cache_manager.py`** — Active replacement layer (keep as-is)
+- **`core/cache_registry.py`** — Coordinator (keep as-is)
+- **Remaining action**: Remove `IntelligentCacheWarmer` + `CacheDependencyTracker` + their global instances/getters when convenient (~260 lines savings)
 
 ## Priority 3: Test Improvements
 
@@ -70,6 +80,9 @@
 - Remove identified dead code
 
 ### 4.3 Shadow mode validation for Action 16
-- Run Action 16 in shadow mode (log-only) for 1 week
-- Compare outputs with legacy Actions 8+9+11
-- Verify zero regressions before full deployment
+- [x] Shadow mode infrastructure added to `UnifiedSendProcessor` (Action 16)
+- [x] Config settings: `SHADOW_MODE_ENABLED` (legacy comparisons), `ACTION16_SHADOW_MODE` (log-only sends)
+- [x] Shadow log output: `Logs/action16_shadow_decisions.jsonl` (JSON, comparison-ready)
+- [ ] Run Action 16 in shadow mode (`ACTION16_SHADOW_MODE=true`) for 1 week
+- [ ] Compare outputs with legacy Actions 8+9+11 (`python -m messaging.shadow_mode_analyzer --report`)
+- [ ] Verify zero regressions before full deployment

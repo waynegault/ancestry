@@ -23,7 +23,7 @@ import itertools
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any, TypeAlias, cast
+from typing import Any, cast
 
 from api.api_search_utils import get_api_family_details
 from api.api_utils import (

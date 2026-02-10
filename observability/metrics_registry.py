@@ -69,547 +69,179 @@ PrometheusGauge = _GaugeMetric
 PrometheusHistogram = _HistogramMetric
 
 
-class _ApiLatencyProxy:
-    """Wrapper for API latency histogram."""
+# ---------------------------------------------------------------------------
+# Generic metric proxy & registry table
+# ---------------------------------------------------------------------------
 
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
+def _clamp_non_negative(v: float) -> float:
+    """Clamp value to >= 0."""
+    return max(v, 0.0)
+
+
+def _clamp_ratio(v: float) -> float:
+    """Clamp value to [0.0, 1.0]."""
+    return min(max(v, 0.0), 1.0)
+
+
+class _MetricProxy:
+    """Generic proxy that wraps a Prometheus Counter, Gauge, or Histogram.
+
+    Provides ``inc`` / ``set`` / ``observe`` methods whose positional arguments
+    correspond to label values (in the order given by *label_names*) followed
+    by the numeric value / amount.  When the underlying metric has not been
+    injected yet (``set_metric`` not called, or called with ``None``), every
+    method is a safe no-op.
+    """
+
+    __slots__ = (
+        "_label_defaults",
+        "_label_names",
+        "_metric",
+        "_metric_type",
+        "_n_labels",
+        "_value_clamp",
+    )
+
+    def __init__(
+        self,
+        metric_type: str,
+        label_names: tuple[str, ...] = (),
+        value_clamp: Any | None = None,
+        label_defaults: dict[str, str] | None = None,
+    ) -> None:
+        self._metric: Any | None = None
+        self._metric_type = metric_type
+        self._label_names = label_names
+        self._n_labels = len(label_names)
+        self._value_clamp = value_clamp
+        self._label_defaults = label_defaults or {}
+
+    # -- wiring ------------------------------------------------------------
+
+    def set_metric(self, metric: Any | None) -> None:
         self._metric = metric
 
-    def observe(self, endpoint: str, status_family: str, seconds: float) -> None:
+    # -- internal dispatch -------------------------------------------------
+
+    def _dispatch(self, label_values: tuple[Any, ...], value: float) -> None:
         metric = self._metric
         if metric is None:
             return
-        seconds = max(seconds, 0.0)
-        metric.labels(endpoint=endpoint, status_family=status_family).observe(seconds)
 
-
-class _ApiRequestCounterProxy:
-    """Wrapper for API request counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, endpoint: str, method: str, result: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(endpoint=endpoint, method=method, result=result).inc(amount)
-
-
-class _CacheHitRatioGaugeProxy:
-    """Wrapper for cache hit ratio gauge."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, service: str, endpoint: str, ratio: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        clamped = min(max(ratio, 0.0), 1.0)
-        metric.labels(service=service, endpoint=endpoint).set(clamped)
-
-
-class _CacheOperationsCounterProxy:
-    """Wrapper for cache operations counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, service: str, endpoint: str, operation: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(service=service, endpoint=endpoint, operation=operation).inc(amount)
-
-
-class _SessionUptimeGaugeProxy:
-    """Wrapper for session uptime gauge."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, seconds: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.set(max(seconds, 0.0))
-
-
-class _SessionRefreshCounterProxy:
-    """Wrapper for session refresh counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, reason: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(reason=reason).inc(amount)
-
-
-class _ActionProcessedCounterProxy:
-    """Wrapper for action throughput counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, action: str, result: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(action=action, result=result).inc(amount)
-
-
-class _CircuitBreakerStateGaugeProxy:
-    """Wrapper for circuit breaker state gauge."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, breaker: str, state: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(breaker=breaker).set(state)
-
-
-class _CircuitBreakerTripCounterProxy:
-    """Wrapper for circuit breaker trip counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, breaker: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(breaker=breaker).inc(amount)
-
-
-class _RateLimiterDelayHistogramProxy:
-    """Wrapper for rate limiter delay histogram."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, seconds: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.observe(max(seconds, 0.0))
-
-
-class _WorkerThreadGaugeProxy:
-    """Wrapper for worker thread count gauge."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, count: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.set(max(count, 0.0))
-
-
-class _DatabaseQueryHistogramProxy:
-    """Wrapper for database query duration histogram."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, operation: str, seconds: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        safe_operation = operation or "unknown"
-        metric.labels(operation=safe_operation).observe(max(seconds, 0.0))
-
-
-class _DatabaseRowsCounterProxy:
-    """Wrapper for rows-affected counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, operation: str, amount: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        safe_operation = operation or "unknown"
-        metric.labels(operation=safe_operation).inc(max(amount, 0.0))
-
-
-class _ActionDurationHistogramProxy:
-    """Wrapper for action duration histogram."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, action: str, seconds: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(action=action).observe(max(seconds, 0.0))
-
-
-class _InternalMetricGaugeProxy:
-    """Wrapper for internal collector metric gauge."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, service: str, metric_name: str, stat: str, value: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(service=service, metric=metric_name, stat=stat).set(value)
-
-
-class _AIQualityHistogramProxy:
-    """Wrapper for AI extraction quality histogram."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, provider: str, prompt_key: str, variant: str, score: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(
-            provider=provider or "unknown", prompt_key=prompt_key or "unknown", variant=variant or "default"
-        ).observe(max(score, 0.0))
-
-
-class _AIParseResultCounterProxy:
-    """Wrapper for AI parse success/failure counter."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, provider: str, prompt_key: str, result: str) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        normalized = result or "unknown"
-        metric.labels(provider=provider or "unknown", prompt_key=prompt_key or "unknown", result=normalized).inc()
-
-
-# === Phase 9.1: Draft and Review Queue Metrics ===
-
-
-class _DraftsQueuedCounterProxy:
-    """Wrapper for drafts_queued_total counter (Phase 9.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, priority: str, confidence_bucket: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(priority=priority or "normal", confidence_bucket=confidence_bucket or "unknown").inc(amount)
-
-
-class _DraftsSentCounterProxy:
-    """Wrapper for drafts_sent_total counter (Phase 9.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, outcome: str, amount: float = 1.0) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(outcome=outcome or "unknown").inc(amount)
-
-
-class _ReviewQueueDepthGaugeProxy:
-    """Wrapper for review_queue_depth gauge (Phase 9.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, status: str, count: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(status=status or "unknown").set(max(count, 0.0))
-
-
-class _ResponseTimeHistogramProxy:
-    """Wrapper for response_time histogram (Phase 9.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, hours: float) -> None:
-        metric = self._metric
-        if metric is None:
-            return
-        metric.observe(max(hours, 0.0))
-
-
-class _ResponseFunnelGaugeProxy:
-    """Wrapper for response_funnel gauge (Phase 4.3)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, stage: str, count: float) -> None:
-        """Set count for a funnel stage: sent, replied, productive, fact_extracted."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(stage=stage or "unknown").set(max(count, 0.0))
-
-
-class _QualityDistributionGaugeProxy:
-    """Wrapper for draft_quality_distribution gauge (Phase 4.3)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusGauge | None = None
-
-    def set_metric(self, metric: PrometheusGauge | None) -> None:
-        self._metric = metric
-
-    def set(self, tier: str, count: float) -> None:
-        """Set count for a quality tier: excellent, good, acceptable, poor."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(tier=tier or "unknown").set(max(count, 0.0))
-
-
-# Phase 6.1: Send Orchestrator Metrics
-
-
-class _SendAttemptsCounterProxy:
-    """Wrapper for send_attempts_total counter (Phase 6.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, trigger: str, result: str, amount: float = 1.0) -> None:
-        """Increment send attempts by trigger type and result."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(trigger=trigger or "other", result=result or "unknown").inc(amount)
-
-
-class _SafetyBlocksCounterProxy:
-    """Wrapper for safety_blocks_total counter (Phase 6.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, check_type: str, amount: float = 1.0) -> None:
-        """Increment safety blocks by check type."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(check_type=check_type or "other").inc(amount)
-
-
-class _ContentGenerationTimeHistogramProxy:
-    """Wrapper for content_generation_time histogram (Phase 6.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusHistogram | None = None
-
-    def set_metric(self, metric: PrometheusHistogram | None) -> None:
-        self._metric = metric
-
-    def observe(self, source: str, seconds: float) -> None:
-        """Record content generation time by source."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(source=source or "other").observe(max(seconds, 0.0))
-
-
-class _SendApiResultsCounterProxy:
-    """Wrapper for send_api_results_total counter (Phase 6.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, endpoint: str, result: str, status_family: str, amount: float = 1.0) -> None:
-        """Increment API results by endpoint, result, and status family."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(
-            endpoint=endpoint or "unknown",
-            result=result or "unknown",
-            status_family=status_family or "unknown",
-        ).inc(amount)
-
-
-class _DecisionPathsCounterProxy:
-    """Wrapper for decision_paths_total counter (Phase 6.1)."""
-
-    def __init__(self) -> None:
-        self._metric: PrometheusCounter | None = None
-
-    def set_metric(self, metric: PrometheusCounter | None) -> None:
-        self._metric = metric
-
-    def inc(self, decision: str, amount: float = 1.0) -> None:
-        """Increment decision path counter."""
-        metric = self._metric
-        if metric is None:
-            return
-        metric.labels(decision=decision or "other").inc(amount)
+        if self._label_names:
+            labels: dict[str, Any] = {}
+            for i, name in enumerate(self._label_names):
+                raw = label_values[i] if i < len(label_values) else None
+                default = self._label_defaults.get(name)
+                labels[name] = (raw or default) if default is not None else raw
+            target = metric.labels(**labels)
+        else:
+            target = metric
+
+        if self._value_clamp is not None:
+            value = self._value_clamp(value)
+
+        if self._metric_type == "counter":
+            target.inc(value)
+        elif self._metric_type == "gauge":
+            target.set(value)
+        else:
+            target.observe(value)
+
+    # -- public action methods (backward-compatible signatures) ------------
+
+    def inc(self, *args: Any, amount: float = 1.0) -> None:
+        """Counter increment.  Positional args = label values, then optional amount."""
+        n = self._n_labels
+        label_values = args[:n]
+        if len(args) > n:
+            amount = float(args[n])
+        self._dispatch(label_values, amount)
+
+    def set(self, *args: Any, value: float | None = None) -> None:
+        """Gauge set.  Positional args = label values, then numeric value."""
+        n = self._n_labels
+        label_values = args[:n]
+        if value is None:
+            value = float(args[n]) if len(args) > n else 0.0
+        self._dispatch(label_values, value)
+
+    def observe(self, *args: Any, value: float | None = None) -> None:
+        """Histogram observe.  Positional args = label values, then numeric value."""
+        n = self._n_labels
+        label_values = args[:n]
+        if value is None:
+            value = float(args[n]) if len(args) > n else 0.0
+        self._dispatch(label_values, value)
+
+    def record(self, *args: Any, value: float | None = None, amount: float = 1.0) -> None:
+        """Generic recording method dispatching to the correct action."""
+        if self._metric_type == "counter":
+            self.inc(*args, amount=amount)
+        elif self._metric_type == "gauge":
+            self.set(*args, value=value)
+        else:
+            self.observe(*args, value=value)
+
+
+def _make_proxy(
+    metric_type: str,
+    label_names: tuple[str, ...] = (),
+    value_clamp: Any | None = None,
+    label_defaults: dict[str, str] | None = None,
+) -> _MetricProxy:
+    """Factory shorthand for creating a :class:`_MetricProxy`."""
+    return _MetricProxy(metric_type, label_names, value_clamp, label_defaults)
+
+
+# Registry table: each entry describes one proxy on MetricsBundle.
+# (attr_name, metric_type, label_names, value_clamp, label_defaults)
+_PROXY_REGISTRY: list[tuple[str, str, tuple[str, ...], Any | None, dict[str, str] | None]] = [
+    ("api_latency", "histogram", ("endpoint", "status_family"), _clamp_non_negative, None),
+    ("api_requests", "counter", ("endpoint", "method", "result"), None, None),
+    ("cache_hit_ratio", "gauge", ("service", "endpoint"), _clamp_ratio, None),
+    ("cache_operations", "counter", ("service", "endpoint", "operation"), None, None),
+    ("session_uptime", "gauge", (), _clamp_non_negative, None),
+    ("session_refresh", "counter", ("reason",), None, None),
+    ("action_processed", "counter", ("action", "result"), None, None),
+    ("circuit_breaker_state", "gauge", ("breaker",), None, None),
+    ("circuit_breaker_trips", "counter", ("breaker",), None, None),
+    ("rate_limiter_delay", "histogram", (), _clamp_non_negative, None),
+    ("worker_thread_count", "gauge", (), _clamp_non_negative, None),
+    ("database_query_latency", "histogram", ("operation",), _clamp_non_negative, {"operation": "unknown"}),
+    ("database_rows", "counter", ("operation",), _clamp_non_negative, {"operation": "unknown"}),
+    ("action_duration", "histogram", ("action",), _clamp_non_negative, None),
+    ("internal_metrics", "gauge", ("service", "metric", "stat"), None, None),
+    ("ai_quality", "histogram", ("provider", "prompt_key", "variant"), _clamp_non_negative, {"provider": "unknown", "prompt_key": "unknown", "variant": "default"}),
+    ("ai_parse_results", "counter", ("provider", "prompt_key", "result"), None, {"provider": "unknown", "prompt_key": "unknown", "result": "unknown"}),
+    ("drafts_queued", "counter", ("priority", "confidence_bucket"), None, {"priority": "normal", "confidence_bucket": "unknown"}),
+    ("drafts_sent", "counter", ("outcome",), None, {"outcome": "unknown"}),
+    ("review_queue_depth", "gauge", ("status",), _clamp_non_negative, {"status": "unknown"}),
+    ("response_time", "histogram", (), _clamp_non_negative, None),
+    ("response_funnel", "gauge", ("stage",), _clamp_non_negative, {"stage": "unknown"}),
+    ("quality_distribution", "gauge", ("tier",), _clamp_non_negative, {"tier": "unknown"}),
+    ("send_attempts", "counter", ("trigger", "result"), None, {"trigger": "other", "result": "unknown"}),
+    ("safety_blocks", "counter", ("check_type",), None, {"check_type": "other"}),
+    ("content_generation_time", "histogram", ("source",), _clamp_non_negative, {"source": "other"}),
+    ("send_api_results", "counter", ("endpoint", "result", "status_family"), None, {"endpoint": "unknown", "result": "unknown", "status_family": "unknown"}),
+    ("decision_paths", "counter", ("decision",), None, {"decision": "other"}),
+]
 
 
 class MetricsBundle:
     """Container exposing all metric proxies."""
 
     def __init__(self) -> None:
-        self.api_latency = _ApiLatencyProxy()
-        self.api_requests = _ApiRequestCounterProxy()
-        self.cache_hit_ratio = _CacheHitRatioGaugeProxy()
-        self.cache_operations = _CacheOperationsCounterProxy()
-        self.session_uptime = _SessionUptimeGaugeProxy()
-        self.session_refresh = _SessionRefreshCounterProxy()
-        self.action_processed = _ActionProcessedCounterProxy()
-        self.circuit_breaker_state = _CircuitBreakerStateGaugeProxy()
-        self.circuit_breaker_trips = _CircuitBreakerTripCounterProxy()
-        self.rate_limiter_delay = _RateLimiterDelayHistogramProxy()
-        self.worker_thread_count = _WorkerThreadGaugeProxy()
-        self.database_query_latency = _DatabaseQueryHistogramProxy()
-        self.database_rows = _DatabaseRowsCounterProxy()
-        self.action_duration = _ActionDurationHistogramProxy()
-        self.internal_metrics = _InternalMetricGaugeProxy()
-        self.ai_quality = _AIQualityHistogramProxy()
-        self.ai_parse_results = _AIParseResultCounterProxy()
-        # Phase 9.1: Draft and review queue metrics
-        self.drafts_queued = _DraftsQueuedCounterProxy()
-        self.drafts_sent = _DraftsSentCounterProxy()
-        self.review_queue_depth = _ReviewQueueDepthGaugeProxy()
-        self.response_time = _ResponseTimeHistogramProxy()
-        # Phase 4.3: Dashboard integration metrics
-        self.response_funnel = _ResponseFunnelGaugeProxy()
-        self.quality_distribution = _QualityDistributionGaugeProxy()
-        # Phase 6.1: Send orchestrator metrics
-        self.send_attempts = _SendAttemptsCounterProxy()
-        self.safety_blocks = _SafetyBlocksCounterProxy()
-        self.content_generation_time = _ContentGenerationTimeHistogramProxy()
-        self.send_api_results = _SendApiResultsCounterProxy()
-        self.decision_paths = _DecisionPathsCounterProxy()
+
+        for _attr, _mtype, _labels, _clamp, _defaults in _PROXY_REGISTRY:
+            setattr(self, _attr, _make_proxy(_mtype, _labels, _clamp, _defaults))
 
     def assign(self, metrics_map: dict[str, Any]) -> None:
         """Bind proxies to real metrics."""
-        self.api_latency.set_metric(metrics_map.get("api_latency"))
-        self.api_requests.set_metric(metrics_map.get("api_requests"))
-        self.cache_hit_ratio.set_metric(metrics_map.get("cache_hit_ratio"))
-        self.cache_operations.set_metric(metrics_map.get("cache_operations"))
-        self.session_uptime.set_metric(metrics_map.get("session_uptime"))
-        self.session_refresh.set_metric(metrics_map.get("session_refresh"))
-        self.action_processed.set_metric(metrics_map.get("action_processed"))
-        self.circuit_breaker_state.set_metric(metrics_map.get("circuit_breaker_state"))
-        self.circuit_breaker_trips.set_metric(metrics_map.get("circuit_breaker_trips"))
-        self.rate_limiter_delay.set_metric(metrics_map.get("rate_limiter_delay"))
-        self.worker_thread_count.set_metric(metrics_map.get("worker_thread_count"))
-        self.database_query_latency.set_metric(metrics_map.get("database_query_latency"))
-        self.database_rows.set_metric(metrics_map.get("database_rows"))
-        self.action_duration.set_metric(metrics_map.get("action_duration"))
-        self.internal_metrics.set_metric(metrics_map.get("internal_metrics"))
-        self.ai_quality.set_metric(metrics_map.get("ai_quality"))
-        self.ai_parse_results.set_metric(metrics_map.get("ai_parse_results"))
-        # Phase 9.1: Draft and review queue metrics
-        self.drafts_queued.set_metric(metrics_map.get("drafts_queued"))
-        self.drafts_sent.set_metric(metrics_map.get("drafts_sent"))
-        self.review_queue_depth.set_metric(metrics_map.get("review_queue_depth"))
-        self.response_time.set_metric(metrics_map.get("response_time"))
-        # Phase 4.3: Dashboard integration metrics
-        self.response_funnel.set_metric(metrics_map.get("response_funnel"))
-        self.quality_distribution.set_metric(metrics_map.get("quality_distribution"))
-        # Phase 6.1: Send orchestrator metrics
-        self.send_attempts.set_metric(metrics_map.get("send_attempts"))
-        self.safety_blocks.set_metric(metrics_map.get("safety_blocks"))
-        self.content_generation_time.set_metric(metrics_map.get("content_generation_time"))
-        self.send_api_results.set_metric(metrics_map.get("send_api_results"))
-        self.decision_paths.set_metric(metrics_map.get("decision_paths"))
+        for _attr, *_ in _PROXY_REGISTRY:
+            proxy: _MetricProxy = getattr(self, _attr)
+            proxy.set_metric(metrics_map.get(_attr))
 
     def reset(self) -> None:
         """Clear metric bindings (no-op proxies)."""

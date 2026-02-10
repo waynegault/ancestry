@@ -1134,6 +1134,7 @@ def warm_cache_with_data(cache_key: str, data: Any, expire: int | None = None) -
 # === PHASE 12.4.1: ADVANCED CACHING STRATEGIES & CACHE WARMING ===
 
 
+# TODO: candidate for removal — zero external importers as of Feb 2026 audit
 class IntelligentCacheWarmer:
     """
     Intelligent cache warming system that learns from usage patterns
@@ -1306,6 +1307,7 @@ class IntelligentCacheWarmer:
         return False
 
 
+# TODO: candidate for removal — zero external importers as of Feb 2026 audit
 class CacheDependencyTracker:
     """
     Tracks dependencies between cache entries for intelligent invalidation.

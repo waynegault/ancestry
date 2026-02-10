@@ -839,8 +839,6 @@ def _execute_provider_with_retries(
 
     return None, last_exception
 
-    return None, last_exception
-
 
 def _call_ai_model(
     provider: str,

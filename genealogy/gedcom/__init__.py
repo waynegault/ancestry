@@ -2,6 +2,8 @@
 
 Provides GEDCOM file parsing and analysis including:
 - gedcom_utils: Core GEDCOM processing utilities
+- gedcom_parser: Name extraction and validation helpers
+- gedcom_events: Event extraction, date parsing, and formatting
 - gedcom_cache: GEDCOM data caching
 - gedcom_intelligence: GEDCOM analysis and insights
 - gedcom_search_utils: GEDCOM search functionality
@@ -9,7 +11,7 @@ Provides GEDCOM file parsing and analysis including:
 
 from typing import Any
 
-_SUBMODULES = frozenset(["gedcom_cache", "gedcom_intelligence", "gedcom_search_utils", "gedcom_utils"])
+_SUBMODULES = frozenset(["gedcom_cache", "gedcom_events", "gedcom_intelligence", "gedcom_parser", "gedcom_search_utils", "gedcom_utils"])
 
 
 def __getattr__(name: str) -> Any:
